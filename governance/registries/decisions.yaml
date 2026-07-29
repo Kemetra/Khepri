@@ -1,0 +1,10 @@
+schema_version: 1
+decisions:
+  - id: KHEPRI-DEC-001
+    title: Khepri authority and predecessor reference policy
+    state: accepted
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-001-successor-reference-policy.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-001-bootstrap.md

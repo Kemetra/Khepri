@@ -1,0 +1,11 @@
+schema_version: 1
+families:
+  - id: FND
+    name: Platform Foundation
+    state: active
+    owner: AHMED-SHAABAN
+    document: governance/families/FND.md
+    depends_on: []
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-001-bootstrap.md
