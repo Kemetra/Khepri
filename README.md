@@ -93,8 +93,8 @@ Khepri is designed around five non-negotiable properties:
 | Atomic approval packages | **Accepted** | Digest-locked, dependency-closed approval can be materialized mechanically |
 | RRA product family | **Active** | The private-beta family boundary is authorized |
 | RRA-001 through RRA-007 | **Approved** | Invitations, intake, profiling, facts, narrative, reports, and operations are specified |
-| Runtime/provider architecture | **Pending decision** | Final technology and provider selections are not yet authorized |
-| Product application | **Not implemented** | Application work begins only after the architecture decision is accepted |
+| Runtime/provider architecture | **Accepted** | [KHEPRI-DEC-005](governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md) fixes the runtime, provider, and deployment boundary |
+| Product application | **In bounded slices** | RRA-001, RRA-002, and RRA-003 have specification-linked implementations; RRA-004 onward are not implemented |
 | Beta launch | **Not authorized** | Client count and observation period require separate human authorization |
 
 The authoritative state is always in
@@ -123,6 +123,8 @@ The authoritative state is always in
 | [`governance/approvals/`](governance/approvals/) | Durable bootstrap and digest-locked package evidence |
 | [`governance/reference-reviews/`](governance/reference-reviews/) | Bounded review evidence for the pinned predecessor |
 | [`src/khepri_gov/`](src/khepri_gov/) | Fail-closed governance validator and digest tooling |
+| [`src/khepri/rra/`](src/khepri/rra/) | Specification-linked RRA implementation slices |
+| [`migrations/`](migrations/) | Alembic migrations for the authoritative PostgreSQL schema |
 | [`tests/`](tests/) | Governance, provenance, lifecycle, dependency, and evidence regression tests |
 
 ## Quality gate
