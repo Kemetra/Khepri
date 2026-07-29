@@ -10,6 +10,7 @@ from khepri_gov.approval_packages import document_digest, manifest_digest
 from tests.test_cli import (
     assert_invalid,
     read_yaml,
+    run_cli,
     run_validator,
     valid_repository,
     write_document,
@@ -903,3 +904,50 @@ def test_other_unstructured_approval_evidence_is_rejected(tmp_path: Path) -> Non
         "approval-packages: unstructured approval evidence is limited to "
         "APP-001-bootstrap.md",
     )
+
+
+def test_document_digest_command(tmp_path: Path) -> None:
+    document = tmp_path / "decision.md"
+    document.write_bytes(b"# KHEPRI-DEC-002\n")
+
+    result = run_cli(tmp_path, "document-digest", "decision.md")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == (
+        "sha256:9b08cd92ee3f228e9d7167a935ec8acf13567019c633471fa6dab2bc1f5790ef\n"
+    )
+
+
+def test_approval_digest_command(tmp_path: Path) -> None:
+    path = tmp_path / "APP-002.yaml"
+    write_yaml(path, example_package())
+
+    result = run_cli(tmp_path, "approval-digest", "APP-002.yaml")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == (
+        "sha256:796d415bf26999eb891b4af35f1b4f49f814abb4ed83a1320e5f646fb0ac0f07\n"
+    )
+
+
+def test_digest_command_rejects_missing_path_without_traceback(
+    tmp_path: Path,
+) -> None:
+    result = run_cli(tmp_path, "document-digest", "missing.md")
+
+    assert result.returncode == 1
+    assert result.stderr == "ERROR path does not resolve to a repository file\n"
+    assert "Traceback" not in result.stderr
+
+
+def test_approval_digest_rejects_malformed_package_without_traceback(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "APP-002.yaml"
+    path.write_bytes(b"[invalid")
+
+    result = run_cli(tmp_path, "approval-digest", "APP-002.yaml")
+
+    assert result.returncode == 1
+    assert result.stderr == "ERROR approval-packages:APP-002.yaml: invalid YAML\n"
+    assert "Traceback" not in result.stderr

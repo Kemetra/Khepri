@@ -139,19 +139,30 @@ def valid_repository(root: Path) -> None:
     )
 
 
-def run_validator(root: Path) -> subprocess.CompletedProcess[str]:
+def run_cli(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     source_path = str(PROJECT_ROOT / "src")
     environment["PYTHONPATH"] = os.pathsep.join(
         part for part in [source_path, environment.get("PYTHONPATH", "")] if part
     )
     return subprocess.run(
-        [sys.executable, "-m", "khepri_gov.cli", "--root", str(root), "validate"],
+        [
+            sys.executable,
+            "-m",
+            "khepri_gov.cli",
+            "--root",
+            str(root),
+            *arguments,
+        ],
         check=False,
         capture_output=True,
         text=True,
         env=environment,
     )
+
+
+def run_validator(root: Path) -> subprocess.CompletedProcess[str]:
+    return run_cli(root, "validate")
 
 
 def registry_path(root: Path, name: str) -> Path:

@@ -34,6 +34,19 @@ uv run pytest
 Python 3.13 is required. Validation fails closed: malformed, incomplete, or inconsistent
 governance data returns a nonzero exit code with artifact-specific errors.
 
+## Approval packages
+
+Digest-locked YAML approval packages group one dependency-closed governance action without
+replacing the registries as the source of lifecycle state. A proposed package is review
+material only. An approved package requires durable evidence from its named active human owner,
+and automation may materialize only its exact listed transitions.
+
+Use `uv run khepri-gov document-digest PATH` to lock each governed document and
+`uv run khepri-gov approval-digest PACKAGE_PATH` to lock the canonical package manifest. The
+approval statement must name the authority and package ID and include the full manifest digest.
+`APP-001-bootstrap.md` is the sole legacy Markdown exception. The mechanism decision,
+`KHEPRI-DEC-004`, remains proposed.
+
 ## Change workflow
 
 1. Start with a small independently verifiable governance slice.
