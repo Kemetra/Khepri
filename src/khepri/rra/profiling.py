@@ -167,7 +167,7 @@ def build_profile(
     media_type: str,
     source_sha256_hex: str,
 ) -> DatasetProfile:
-    frame = _materialize(content, media_type)
+    frame = materialize(content, media_type)
     if frame.width == 0:
         raise ProfileRejected("Upload content is invalid or unsupported.")
     if frame.width > MAX_PROFILED_COLUMNS:
@@ -208,7 +208,8 @@ def build_profile(
     )
 
 
-def _materialize(content: bytes, media_type: str) -> pl.DataFrame:
+def materialize(content: bytes, media_type: str) -> pl.DataFrame:
+    """Read governed CSV/XLSX content with every column held as text."""
     try:
         if media_type == CSV_MEDIA_TYPE:
             return pl.read_csv(
@@ -328,6 +329,19 @@ def _resolve_date_format(values: list[str]) -> tuple[str | None, bool]:
     return None, True
 
 
+def parse_date(value: str, date_format: str) -> date | None:
+    """Parse one value under an already-resolved column date format."""
+    for name, patterns in _DATE_FORMATS:
+        if name != date_format:
+            continue
+        for pattern in patterns:
+            try:
+                return datetime.strptime(value, pattern).date()
+            except ValueError:
+                continue
+    return None
+
+
 def _parse_all(values: list[str], pattern: str) -> list[date] | None:
     parsed: list[date] = []
     for value in values:
@@ -429,7 +443,16 @@ def normalize_label(label: str) -> str:
     return normalized.replace("ى", "ي").replace("ة", "ه")
 
 
+def safe_value_label(source: str, *, fallback: str) -> str:
+    """Reduce a customer-derived value to a safe display label."""
+    return _sanitize(source) or fallback
+
+
 def _safe_label(source: str, position: int) -> str:
+    return _sanitize(source) or f"column_{position + 1}"
+
+
+def _sanitize(source: str) -> str:
     normalized = unicodedata.normalize("NFKC", source)
     while normalized[:1] in _LABEL_UNSAFE_PREFIX:
         normalized = normalized[1:]
@@ -439,8 +462,7 @@ def _safe_label(source: str, position: int) -> str:
         if unicodedata.category(character)[0] in {"L", "N", "M"}
         or character in _LABEL_ALLOWED_PUNCTUATION
     ]
-    collapsed = " ".join("".join(kept).split())[:MAX_SAFE_LABEL_LENGTH].strip()
-    return collapsed or f"column_{position + 1}"
+    return " ".join("".join(kept).split())[:MAX_SAFE_LABEL_LENGTH].strip()
 
 
 def _rate(count: int, total: int) -> str:
