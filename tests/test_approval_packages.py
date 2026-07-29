@@ -306,3 +306,421 @@ def test_proposed_package_must_not_claim_approval(tmp_path: Path) -> None:
         result,
         "approval-packages:APP-002: proposed package must not contain approval",
     )
+
+
+def package_artifacts(package: dict[str, object]) -> list[dict[str, object]]:
+    artifacts = package["artifacts"]
+    assert isinstance(artifacts, list)
+    assert all(isinstance(artifact, dict) for artifact in artifacts)
+    return artifacts
+
+
+def test_package_rejects_unsupported_decision_transition(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    package_artifacts(package)[0]["to_state"] = "rejected"
+    rewrite_package(path, package)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: unsupported transition for "
+        "KHEPRI-DEC-002: proposed -> rejected",
+    )
+
+
+def test_proposed_artifact_must_remain_at_from_state(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    decisions_path = root_path(tmp_path, "decisions")
+    decisions = read_yaml(decisions_path)
+    decisions["decisions"][1]["state"] = "rejected"  # type: ignore[index]
+    write_yaml(decisions_path, decisions)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: KHEPRI-DEC-002 must remain at "
+        "from_state 'proposed'",
+    )
+
+
+def test_initial_approval_cannot_supersede_prior_evidence(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    package_artifacts(package)[0]["supersedes_approval_ref"] = (
+        "governance/approvals/APP-001-bootstrap.md"
+    )
+    rewrite_package(path, package)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: initial approval must not supersede prior evidence",
+    )
+
+
+def root_path(root: Path, registry: str) -> Path:
+    return root / "governance" / "registries" / f"{registry}.yaml"
+
+
+def approve_package(
+    root: Path,
+    path: Path,
+    package: dict[str, object],
+    *,
+    evidence_ref: str = (
+        "https://github.com/Kemetra/Khepri/pull/4"
+        "#issuecomment-0000000000"
+    ),
+) -> None:
+    digest = manifest_digest(package)
+    package["state"] = "approved"
+    package["approval"] = {
+        "approved_by": "AHMED-SHAABAN",
+        "approved_at": "2026-07-29",
+        "approved_manifest_digest": digest,
+        "evidence_ref": evidence_ref,
+    }
+    decisions_path = root_path(root, "decisions")
+    decisions = read_yaml(decisions_path)
+    artifact = decisions["decisions"][1]  # type: ignore[index]
+    artifact.update(
+        {
+            "state": "accepted",
+            "approved_by": "AHMED-SHAABAN",
+            "approved_at": "2026-07-29",
+            "approval_ref": "governance/approvals/APP-002.yaml",
+        }
+    )
+    write_yaml(decisions_path, decisions)
+    write_yaml(path, package)
+
+
+def test_valid_approved_package_passes(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    approve_package(tmp_path, path, package)
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("approval_mutation", "message"),
+    [
+        (
+            lambda approval: approval.pop("evidence_ref"),
+            "approval-packages:APP-002: approval missing required field 'evidence_ref'",
+        ),
+        (
+            lambda approval: approval.update(extra=True),
+            "approval-packages:APP-002: approval has unknown field 'extra'",
+        ),
+        (
+            lambda approval: approval.update(approved_by="UNKNOWN"),
+            "approval-packages:APP-002: unknown or inactive approver 'UNKNOWN'",
+        ),
+        (
+            lambda approval: approval.update(
+                approved_manifest_digest="sha256:" + ("0" * 64)
+            ),
+            "approval-packages:APP-002: approved_manifest_digest must equal "
+            "manifest_digest",
+        ),
+        (
+            lambda approval: approval.update(
+                evidence_ref="https://example.com/approval"
+            ),
+            "approval-packages:APP-002: evidence_ref must be a Khepri GitHub "
+            "review or comment URL",
+        ),
+    ],
+)
+def test_approved_package_rejects_invalid_approval(
+    tmp_path: Path,
+    approval_mutation: Callable[[dict[str, object]], object],
+    message: str,
+) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    approve_package(tmp_path, path, package)
+    approval = package["approval"]
+    assert isinstance(approval, dict)
+    approval_mutation(approval)
+    write_yaml(path, package)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, message)
+
+
+def test_approved_package_requires_approval_mapping(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    approve_package(tmp_path, path, package)
+    del package["approval"]
+    write_yaml(path, package)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: approved package requires approval mapping",
+    )
+
+
+def test_package_owner_and_approver_must_match(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    authorities_path = root_path(tmp_path, "authorities")
+    authorities = read_yaml(authorities_path)
+    authority_document = "governance/authorities/other.md"
+    write_document(tmp_path, authority_document)
+    authorities["authorities"].append(  # type: ignore[union-attr]
+        {
+            "id": "OTHER",
+            "name": "Other",
+            "roles": ["product_owner"],
+            "active": True,
+            "document": authority_document,
+        }
+    )
+    write_yaml(authorities_path, authorities)
+    approve_package(tmp_path, path, package)
+    approval = package["approval"]
+    assert isinstance(approval, dict)
+    approval["approved_by"] = "OTHER"
+    write_yaml(path, package)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: package owner and approver must match",
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        (
+            "state",
+            "proposed",
+            "approval-packages:APP-002: KHEPRI-DEC-002 must be at to_state 'accepted'",
+        ),
+        (
+            "approved_by",
+            "OTHER",
+            "approval-packages:APP-002: KHEPRI-DEC-002 approved_by does not match package",
+        ),
+        (
+            "approved_at",
+            "2026-07-28",
+            "approval-packages:APP-002: KHEPRI-DEC-002 approved_at does not match package",
+        ),
+        (
+            "approval_ref",
+            "https://github.com/Kemetra/Khepri/pull/4",
+            "approval-packages:APP-002: KHEPRI-DEC-002 approval_ref must be "
+            "governance/approvals/APP-002.yaml",
+        ),
+    ],
+)
+def test_approved_package_requires_exact_materialization(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    approve_package(tmp_path, path, package)
+    decisions_path = root_path(tmp_path, "decisions")
+    decisions = read_yaml(decisions_path)
+    decisions["decisions"][1][field] = value  # type: ignore[index]
+    write_yaml(decisions_path, decisions)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, message)
+
+
+def add_rra_graph(root: Path) -> list[dict[str, object]]:
+    family_document = "governance/families/RRA.md"
+    first_document = "governance/specifications/RRA-001.md"
+    second_document = "governance/specifications/RRA-002.md"
+    for document in (family_document, first_document, second_document):
+        write_document(root, document)
+
+    families_path = root_path(root, "families")
+    families = read_yaml(families_path)
+    families["families"].append(  # type: ignore[union-attr]
+        {
+            "id": "RRA",
+            "name": "Retail Reporting Automation",
+            "state": "proposed",
+            "owner": "AHMED-SHAABAN",
+            "document": family_document,
+            "depends_on": ["FND"],
+        }
+    )
+    write_yaml(families_path, families)
+
+    specifications_path = root_path(root, "specifications")
+    specifications = read_yaml(specifications_path)
+    specifications["specifications"].extend(  # type: ignore[union-attr]
+        [
+            {
+                "id": "RRA-001",
+                "title": "First",
+                "state": "draft",
+                "family": "RRA",
+                "owner": "AHMED-SHAABAN",
+                "document": first_document,
+                "depends_on": [],
+            },
+            {
+                "id": "RRA-002",
+                "title": "Second",
+                "state": "draft",
+                "family": "RRA",
+                "owner": "AHMED-SHAABAN",
+                "document": second_document,
+                "depends_on": ["RRA-001"],
+            },
+        ]
+    )
+    write_yaml(specifications_path, specifications)
+
+    return [
+        {
+            "id": "RRA",
+            "document": family_document,
+            "document_sha256": document_digest(root / family_document),
+            "from_state": "proposed",
+            "to_state": "active",
+        },
+        {
+            "id": "RRA-001",
+            "document": first_document,
+            "document_sha256": document_digest(root / first_document),
+            "from_state": "draft",
+            "to_state": "approved",
+        },
+        {
+            "id": "RRA-002",
+            "document": second_document,
+            "document_sha256": document_digest(root / second_document),
+            "from_state": "draft",
+            "to_state": "approved",
+        },
+    ]
+
+
+def write_rra_package(
+    root: Path,
+    artifacts: list[dict[str, object]],
+) -> Path:
+    package: dict[str, object] = {
+        "schema_version": 1,
+        "id": "APP-002",
+        "title": "RRA package",
+        "state": "proposed",
+        "owner": "AHMED-SHAABAN",
+        "scope": "Approve the ordered RRA graph.",
+        "exclusions": ["Product application code"],
+        "artifacts": artifacts,
+    }
+    package["manifest_digest"] = manifest_digest(package)
+    path = root / "governance/approvals/APP-002.yaml"
+    write_yaml(path, package)
+    return path
+
+
+def test_dependency_closed_package_passes(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    artifacts = add_rra_graph(tmp_path)
+    write_rra_package(tmp_path, artifacts)
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_family_must_precede_its_specification(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    artifacts = add_rra_graph(tmp_path)
+    artifacts[0], artifacts[1] = artifacts[1], artifacts[0]
+    write_rra_package(tmp_path, artifacts)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: family 'RRA' is not active before RRA-001",
+    )
+
+
+def test_dependency_must_precede_dependent_specification(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    artifacts = add_rra_graph(tmp_path)
+    artifacts[1], artifacts[2] = artifacts[2], artifacts[1]
+    write_rra_package(tmp_path, artifacts)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: dependency 'RRA-001' is not approved before RRA-002",
+    )
+
+
+def test_draft_dependency_cannot_be_omitted(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    artifacts = add_rra_graph(tmp_path)
+    write_rra_package(tmp_path, [artifacts[0], artifacts[2]])
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: dependency 'RRA-001' is not approved before RRA-002",
+    )
+
+
+@pytest.mark.parametrize(
+    ("artifact_index", "to_state", "message"),
+    [
+        (
+            0,
+            "retired",
+            "approval-packages:APP-002: unsupported transition for "
+            "RRA: proposed -> retired",
+        ),
+        (
+            1,
+            "implemented",
+            "approval-packages:APP-002: unsupported transition for "
+            "RRA-001: draft -> implemented",
+        ),
+    ],
+)
+def test_family_and_specification_transitions_are_closed(
+    tmp_path: Path,
+    artifact_index: int,
+    to_state: str,
+    message: str,
+) -> None:
+    valid_repository(tmp_path)
+    artifacts = add_rra_graph(tmp_path)
+    artifacts[artifact_index]["to_state"] = to_state
+    write_rra_package(tmp_path, artifacts)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, message)
