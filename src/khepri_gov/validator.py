@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 
 import yaml
 
+from khepri_gov.approval_packages import validate_approval_packages
+
 SCHEMA_VERSION = 1
 REGISTRY_NAMES = ("authorities", "decisions", "families", "specifications")
 REFERENCE_REGISTRY_NAME = "reference-assessments"
@@ -573,4 +575,5 @@ def validate_repository(root: Path) -> list[str]:
     assessments = _load_reference_assessments(root, errors)
     if assessments is not None:
         _validate_reference_assessments(root, assessments, registries, errors)
+    errors.extend(validate_approval_packages(root, registries))
     return errors

@@ -18,3 +18,8 @@ decisions:
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-003-rra-private-beta.md
+  - id: KHEPRI-DEC-004
+    title: Atomic approval packages and bounded implementation authority
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-004-atomic-approval-packages.md

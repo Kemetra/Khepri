@@ -1,0 +1,18 @@
+# Replace every symbolic zero digest with output from:
+#   uv run khepri-gov document-digest PATH
+#   uv run khepri-gov approval-digest PACKAGE_PATH
+schema_version: 1
+id: APP-000
+title: Example atomic approval package
+state: proposed
+owner: AHMED-SHAABAN
+scope: Approve only the exact governed artifacts listed below.
+exclusions:
+  - Product application code
+manifest_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+artifacts:
+  - id: KHEPRI-DEC-000
+    document: governance/decisions/KHEPRI-DEC-000-example.md
+    document_sha256: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    from_state: proposed
+    to_state: accepted
