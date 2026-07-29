@@ -61,6 +61,7 @@ PACKAGE_APPROVAL_FIELDS = {
     "approved_manifest_digest",
     "evidence_ref",
 }
+ARTIFACT_APPROVAL_FIELDS = {"approved_by", "approved_at", "approval_ref"}
 
 Artifact = dict[str, Any]
 Registries = Mapping[str, list[Artifact]]
@@ -264,17 +265,30 @@ def _valid_evidence_ref(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     parsed = urlparse(value)
-    valid_path = parsed.path.startswith(
-        ("/Kemetra/Khepri/pull/", "/Kemetra/Khepri/issues/")
+    path_match = re.fullmatch(
+        r"/Kemetra/Khepri/(?P<kind>pull|issues)/[0-9]+",
+        parsed.path,
     )
-    valid_fragment = parsed.fragment.startswith(
-        ("issuecomment-", "pullrequestreview-")
+    fragment_match = re.fullmatch(
+        r"(?P<kind>issuecomment|pullrequestreview)-[0-9]+",
+        parsed.fragment,
+    )
+    review_matches_pull = (
+        fragment_match is not None
+        and (
+            fragment_match.group("kind") == "issuecomment"
+            or (
+                path_match is not None
+                and path_match.group("kind") == "pull"
+            )
+        )
     )
     return (
         parsed.scheme == "https"
-        and parsed.hostname == "github.com"
-        and valid_path
-        and valid_fragment
+        and parsed.netloc == "github.com"
+        and path_match is not None
+        and fragment_match is not None
+        and review_matches_pull
     )
 
 
@@ -343,6 +357,18 @@ def _validate_transitions_and_materialization(
         }
         for registry in ("families", "specifications")
     }
+    for entry in artifacts:
+        if not isinstance(entry, dict):
+            continue
+        artifact_id = entry.get("id")
+        known = known_artifacts.get(artifact_id) if isinstance(artifact_id, str) else None
+        from_state = entry.get("from_state")
+        if (
+            known is not None
+            and known[0] in simulated_states
+            and isinstance(from_state, str)
+        ):
+            simulated_states[known[0]][artifact_id] = from_state
     package_ref = path.relative_to(root.resolve()).as_posix()
 
     for entry in artifacts:
@@ -380,6 +406,15 @@ def _validate_transitions_and_materialization(
         if is_initial and "supersedes_approval_ref" in entry:
             errors.append(
                 f"{label}: initial approval must not supersede prior evidence"
+            )
+        if (
+            package_state == "proposed"
+            and is_initial
+            and ARTIFACT_APPROVAL_FIELDS.intersection(registry_artifact)
+        ):
+            errors.append(
+                f"{label}: {artifact_id} must not contain approval fields "
+                "before initial approval"
             )
 
         expected_state = from_state if package_state == "proposed" else to_state

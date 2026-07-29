@@ -348,6 +348,31 @@ def test_proposed_artifact_must_remain_at_from_state(tmp_path: Path) -> None:
     )
 
 
+def test_initial_proposed_artifact_must_not_contain_approval_fields(
+    tmp_path: Path,
+) -> None:
+    valid_repository(tmp_path)
+    proposed_package(tmp_path)
+    decisions_path = root_path(tmp_path, "decisions")
+    decisions = read_yaml(decisions_path)
+    decisions["decisions"][1].update(  # type: ignore[index]
+        {
+            "approved_by": "AHMED-SHAABAN",
+            "approved_at": "2026-07-29",
+            "approval_ref": "https://github.com/Kemetra/Khepri/pull/4",
+        }
+    )
+    write_yaml(decisions_path, decisions)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: KHEPRI-DEC-002 must not contain approval "
+        "fields before initial approval",
+    )
+
+
 def test_initial_approval_cannot_supersede_prior_evidence(tmp_path: Path) -> None:
     valid_repository(tmp_path)
     path, package = proposed_package(tmp_path)
@@ -436,6 +461,26 @@ def test_valid_approved_package_passes(tmp_path: Path) -> None:
         (
             lambda approval: approval.update(
                 evidence_ref="https://example.com/approval"
+            ),
+            "approval-packages:APP-002: evidence_ref must be a Khepri GitHub "
+            "review or comment URL",
+        ),
+        (
+            lambda approval: approval.update(
+                evidence_ref=(
+                    "https://github.com/Kemetra/Khepri/pull/not-a-pr"
+                    "#issuecomment-123"
+                )
+            ),
+            "approval-packages:APP-002: evidence_ref must be a Khepri GitHub "
+            "review or comment URL",
+        ),
+        (
+            lambda approval: approval.update(
+                evidence_ref=(
+                    "https://github.com/Kemetra/Khepri/issues/4"
+                    "#pullrequestreview-not-a-review"
+                )
             ),
             "approval-packages:APP-002: evidence_ref must be a Khepri GitHub "
             "review or comment URL",
@@ -678,6 +723,58 @@ def test_dependency_must_precede_dependent_specification(tmp_path: Path) -> None
     assert_invalid(
         result,
         "approval-packages:APP-002: dependency 'RRA-001' is not approved before RRA-002",
+    )
+
+
+def materialize_rra_package(root: Path, path: Path) -> None:
+    package = read_yaml(path)
+    package["state"] = "approved"
+    package["approval"] = {
+        "approved_by": "AHMED-SHAABAN",
+        "approved_at": "2026-07-29",
+        "approved_manifest_digest": package["manifest_digest"],
+        "evidence_ref": (
+            "https://github.com/Kemetra/Khepri/pull/4"
+            "#issuecomment-5121383450"
+        ),
+    }
+    write_yaml(path, package)
+
+    for registry, artifact_ids, target_state in (
+        ("families", {"RRA"}, "active"),
+        ("specifications", {"RRA-001", "RRA-002"}, "approved"),
+    ):
+        registry_path = root_path(root, registry)
+        data = read_yaml(registry_path)
+        artifacts = data[registry]
+        assert isinstance(artifacts, list)
+        for artifact in artifacts:
+            if artifact["id"] in artifact_ids:
+                artifact.update(
+                    {
+                        "state": target_state,
+                        "approved_by": "AHMED-SHAABAN",
+                        "approved_at": "2026-07-29",
+                        "approval_ref": "governance/approvals/APP-002.yaml",
+                    }
+                )
+        write_yaml(registry_path, data)
+
+
+def test_approved_package_replays_dependencies_from_pre_transition_states(
+    tmp_path: Path,
+) -> None:
+    valid_repository(tmp_path)
+    artifacts = add_rra_graph(tmp_path)
+    artifacts[0], artifacts[1] = artifacts[1], artifacts[0]
+    path = write_rra_package(tmp_path, artifacts)
+    materialize_rra_package(tmp_path, path)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: family 'RRA' is not active before RRA-001",
     )
 
 
