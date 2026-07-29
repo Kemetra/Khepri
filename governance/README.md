@@ -8,9 +8,24 @@ The registries in `registries/` are the machine-readable source of truth:
   approval.
 - `specifications.yaml` records specification identity, state, family, ownership,
   dependencies, and approval.
+- `reference-assessments.yaml` records the exact pinned predecessor provenance, technical
+  disposition, newly written Khepri targets, and review evidence for all 42 capability
+  references.
 
 Documents under `authorities/`, `decisions/`, `families/`, and `specifications/` explain
-intent and boundaries. Templates under `templates/` define the minimum review shape.
+intent and boundaries. Technical reference-review evidence is under `reference-reviews/`.
+Templates under `templates/` define the minimum review shape.
 
 The registry schema version is closed. Change it only through an accepted decision and a
 validator update that can reject unsupported input.
+
+## Current transfer boundary
+
+`KHEPRI-DEC-002`, `KHEPRI-DEC-003`, the `RRA` family, and `RRA-001` through `RRA-007` are
+proposed or draft. Their presence documents reviewable Khepri intent; it is not approval and
+does not authorize product application code. Ahmed Shaaban must supply explicit, traceable
+evidence before those registry entries may advance.
+
+The 42 technical assessments were performed by automation against the exact pinned blobs.
+Their `reviewed` state means the references have a recorded disposition, not that any Khepri
+target was approved.

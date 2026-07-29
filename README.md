@@ -13,6 +13,13 @@ boundaries but do not override those registries.
 material only. It grants no approval, carries no authority into Khepri, and must not be
 copied as a catalog, specification set, governance ledger, or application implementation.
 
+The pinned predecessor's 42 capability specifications now have exact, content-free provenance
+and technical dispositions in
+[`governance/registries/reference-assessments.yaml`](governance/registries/reference-assessments.yaml).
+The proposed Retail Reporting Automation private-beta family and its seven draft specifications
+are review material only. They do not authorize application implementation until their named
+human authority supplies traceable approval and the required architecture decision is accepted.
+
 ## Local checks
 
 Install [uv](https://docs.astral.sh/uv/), then run:
