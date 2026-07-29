@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 from typing import Any, Protocol
@@ -16,6 +17,8 @@ _ACCOUNT_ID = re.compile(r"^\d{12}$")
 
 class S3Client(Protocol):
     def put_object(self, **kwargs: object) -> dict[str, Any]: ...
+
+    def get_object(self, **kwargs: object) -> dict[str, Any]: ...
 
     def delete_object(self, **kwargs: object) -> dict[str, Any]: ...
 
@@ -86,6 +89,27 @@ class S3EncryptedObjectStore:
             encryption_algorithm="aws:kms",
             kms_key_id=self._kms_key_arn,
         )
+
+    def get(self, key: str) -> bytes:
+        response = self._client.get_object(
+            Bucket=self._bucket,
+            Key=key,
+            ExpectedBucketOwner=self._expected_bucket_owner,
+            ChecksumMode="ENABLED",
+        )
+        body = response.get("Body")
+        if body is None:
+            raise StoragePolicyViolation("S3 returned no object body.")
+        content = body.read()
+        checksum = base64.b64encode(hashlib.sha256(content).digest()).decode("ascii")
+        if (
+            response.get("ChecksumSHA256") != checksum
+            or response.get("ServerSideEncryption") != "aws:kms"
+            or response.get("SSEKMSKeyId") != self._kms_key_arn
+            or "VersionId" in response
+        ):
+            raise StoragePolicyViolation("S3 did not prove the required storage policy.")
+        return content
 
     def delete(self, key: str) -> None:
         self._delete_unversioned(key)

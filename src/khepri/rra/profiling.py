@@ -1,0 +1,449 @@
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import re
+import unicodedata
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+
+import polars as pl
+
+from khepri.rra.intake import CSV_MEDIA_TYPE, XLSX_MEDIA_TYPE
+
+PROFILE_VERSION = "rra003.profile.v1"
+
+MAX_PROFILED_COLUMNS = 512
+MAX_SAFE_LABEL_LENGTH = 64
+HIGH_NULL_RATE = Decimal("0.5")
+PERSONAL_DATA_SHAPE_RATE = Decimal("0.5")
+
+TYPE_EMPTY = "empty"
+TYPE_INTEGER = "integer"
+TYPE_DECIMAL = "decimal"
+TYPE_DATE = "date"
+TYPE_TEXT = "text"
+
+NUMERIC_TYPES = frozenset({TYPE_INTEGER, TYPE_DECIMAL})
+
+_INTEGER = re.compile(r"[+-]?\d+")
+_DECIMAL = re.compile(r"[+-]?(?:\d+\.\d*|\.\d+)")
+_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}")
+_PHONE = re.compile(r"\+?\d[\d \-()]{7,18}\d")
+_IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
+_DIGITS_ONLY = re.compile(r"\d+")
+
+_DATE_FORMATS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("iso_date", ("%Y-%m-%d", "%Y/%m/%d")),
+    ("iso_month", ("%Y-%m",)),
+    ("iso_datetime", ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S")),
+    ("day_first", ("%d/%m/%Y", "%d-%m-%Y")),
+    ("month_first", ("%m/%d/%Y", "%m-%d-%Y")),
+)
+
+_PERSONAL_DATA_LABEL_TOKENS: dict[str, frozenset[str]] = {
+    "email": frozenset({"email", "emails", "mail", "بريد", "ايميل"}),
+    "phone": frozenset(
+        {"phone", "phones", "mobile", "msisdn", "tel", "telephone", "whatsapp", "هاتف", "جوال"}
+    ),
+    "person_name": frozenset(
+        {
+            "firstname",
+            "lastname",
+            "fullname",
+            "surname",
+            "customername",
+            "clientname",
+            "buyername",
+            "contactname",
+            "cardholder",
+            "cardholdername",
+            "اسم",
+            "الاسم",
+        }
+    ),
+    "address": frozenset({"address", "street", "postcode", "zip", "عنوان", "العنوان"}),
+    "national_id": frozenset(
+        {"ssn", "nid", "nationalid", "iqama", "passport", "هوية", "الهوية", "جواز"}
+    ),
+    "financial_instrument": frozenset({"iban", "pan", "cardnumber", "creditcard", "ايبان"}),
+    "date_of_birth": frozenset({"dob", "birthdate", "dateofbirth", "ميلاد"}),
+}
+
+_LABEL_UNSAFE_PREFIX = frozenset({"=", "+", "-", "@", "\t", "\r", "\n"})
+_LABEL_ALLOWED_PUNCTUATION = frozenset(" _-()/%.&#:")
+
+
+class ProfileRejected(ValueError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnProfile:
+    position: int
+    safe_label: str
+    source_label_digest: str
+    inferred_type: str
+    row_count: int
+    non_null_count: int
+    null_count: int
+    null_rate: str
+    distinct_count: int
+    minimum: str | None
+    maximum: str | None
+    date_format: str | None
+    personal_data_risk: bool
+    personal_data_signals: tuple[str, ...]
+    findings: tuple[str, ...]
+
+    @property
+    def is_numeric(self) -> bool:
+        return self.inferred_type in NUMERIC_TYPES
+
+    def as_document(self) -> dict[str, object]:
+        return {
+            "position": self.position,
+            "safe_label": self.safe_label,
+            "source_label_digest": self.source_label_digest,
+            "inferred_type": self.inferred_type,
+            "row_count": self.row_count,
+            "non_null_count": self.non_null_count,
+            "null_count": self.null_count,
+            "null_rate": self.null_rate,
+            "distinct_count": self.distinct_count,
+            "minimum": self.minimum,
+            "maximum": self.maximum,
+            "date_format": self.date_format,
+            "personal_data_risk": self.personal_data_risk,
+            "personal_data_signals": list(self.personal_data_signals),
+            "findings": list(self.findings),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetProfile:
+    profile_version: str
+    media_type: str
+    source_sha256_hex: str
+    row_count: int
+    column_count: int
+    columns: tuple[ColumnProfile, ...]
+    findings: tuple[str, ...]
+
+    def column_at(self, position: int) -> ColumnProfile:
+        return self.columns[position]
+
+    def as_document(self) -> dict[str, object]:
+        return {
+            "profile_version": self.profile_version,
+            "media_type": self.media_type,
+            "source_sha256_hex": self.source_sha256_hex,
+            "row_count": self.row_count,
+            "column_count": self.column_count,
+            "columns": [column.as_document() for column in self.columns],
+            "findings": list(self.findings),
+        }
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(canonical_json(self.as_document()).encode()).hexdigest()
+
+
+def canonical_json(document: object) -> str:
+    return json.dumps(
+        document,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+
+
+def build_profile(
+    *,
+    content: bytes,
+    media_type: str,
+    source_sha256_hex: str,
+) -> DatasetProfile:
+    frame = _materialize(content, media_type)
+    if frame.width == 0:
+        raise ProfileRejected("Upload content is invalid or unsupported.")
+    if frame.width > MAX_PROFILED_COLUMNS:
+        raise ProfileRejected("Upload has more columns than the profiler admits.")
+
+    row_count = frame.height
+    columns: list[ColumnProfile] = []
+    labels: list[str] = []
+    for position, name in enumerate(frame.columns):
+        safe_label = _safe_label(name, position)
+        labels.append(safe_label)
+        columns.append(
+            _profile_column(
+                frame.get_column(name),
+                position=position,
+                safe_label=safe_label,
+                source_label=name,
+                row_count=row_count,
+            )
+        )
+
+    findings: list[str] = []
+    if row_count == 0:
+        findings.append("no_data_rows")
+    if len(set(labels)) != len(labels):
+        findings.append("duplicate_safe_labels")
+    if all(column.inferred_type == TYPE_EMPTY for column in columns):
+        findings.append("all_columns_empty")
+
+    return DatasetProfile(
+        profile_version=PROFILE_VERSION,
+        media_type=media_type,
+        source_sha256_hex=source_sha256_hex,
+        row_count=row_count,
+        column_count=len(columns),
+        columns=tuple(columns),
+        findings=tuple(findings),
+    )
+
+
+def _materialize(content: bytes, media_type: str) -> pl.DataFrame:
+    try:
+        if media_type == CSV_MEDIA_TYPE:
+            return pl.read_csv(
+                io.BytesIO(content),
+                has_header=True,
+                infer_schema_length=0,
+                truncate_ragged_lines=False,
+                rechunk=True,
+            )
+        if media_type == XLSX_MEDIA_TYPE:
+            return pl.read_excel(
+                io.BytesIO(content),
+                engine="calamine",
+                infer_schema_length=0,
+            )
+    except Exception as error:
+        raise ProfileRejected("Upload content is invalid or unsupported.") from error
+    raise ProfileRejected("Upload media type is not profilable.")
+
+
+def _profile_column(
+    series: pl.Series,
+    *,
+    position: int,
+    safe_label: str,
+    source_label: str,
+    row_count: int,
+) -> ColumnProfile:
+    series = series.cast(pl.String)
+    null_count = int(series.null_count())
+    non_null_count = row_count - null_count
+    values = series.drop_nulls().unique(maintain_order=True).to_list()
+    stripped = [value.strip() for value in values]
+    present = list(dict.fromkeys(value for value in stripped if value))
+
+    findings: list[str] = []
+    if any(value != original for value, original in zip(stripped, values, strict=True)):
+        findings.append("whitespace_padded_values")
+    if any(not value for value in stripped):
+        findings.append("blank_text_values")
+
+    inferred_type, date_format, type_findings = _infer_type(present)
+    findings.extend(type_findings)
+
+    signals = _personal_data_signals(safe_label, present)
+    personal_data_risk = bool(signals)
+
+    minimum, maximum = (None, None)
+    if not personal_data_risk:
+        minimum, maximum = _range(present, inferred_type, date_format)
+
+    null_rate = _rate(null_count, row_count)
+    if Decimal(null_rate) > HIGH_NULL_RATE and row_count:
+        findings.append("high_null_rate")
+    if inferred_type == TYPE_EMPTY:
+        findings.append("all_values_null")
+
+    return ColumnProfile(
+        position=position,
+        safe_label=safe_label,
+        source_label_digest=hashlib.sha256(source_label.encode()).hexdigest(),
+        inferred_type=inferred_type,
+        row_count=row_count,
+        non_null_count=non_null_count,
+        null_count=null_count,
+        null_rate=null_rate,
+        distinct_count=len(present),
+        minimum=minimum,
+        maximum=maximum,
+        date_format=date_format,
+        personal_data_risk=personal_data_risk,
+        personal_data_signals=tuple(signals),
+        findings=tuple(dict.fromkeys(findings)),
+    )
+
+
+def _infer_type(values: list[str]) -> tuple[str, str | None, list[str]]:
+    if not values:
+        return TYPE_EMPTY, None, []
+
+    if all(_INTEGER.fullmatch(value) for value in values):
+        return TYPE_INTEGER, None, []
+    if all(_is_decimal(value) for value in values):
+        return TYPE_DECIMAL, None, []
+
+    date_format, ambiguous = _resolve_date_format(values)
+    if date_format is not None:
+        return TYPE_DATE, date_format, []
+
+    findings: list[str] = []
+    if ambiguous:
+        findings.append("ambiguous_date_order")
+    numeric = sum(1 for value in values if _is_decimal(value) or _INTEGER.fullmatch(value))
+    if 0 < numeric < len(values):
+        findings.append("mixed_numeric_and_text")
+    return TYPE_TEXT, None, findings
+
+
+def _is_decimal(value: str) -> bool:
+    return bool(_DECIMAL.fullmatch(value) or _INTEGER.fullmatch(value))
+
+
+def _resolve_date_format(values: list[str]) -> tuple[str | None, bool]:
+    parsed: dict[str, list[date]] = {}
+    for name, patterns in _DATE_FORMATS:
+        for pattern in patterns:
+            candidate = _parse_all(values, pattern)
+            if candidate is not None:
+                parsed.setdefault(name, candidate)
+                break
+    if not parsed:
+        return None, False
+    names = list(parsed)
+    reference = parsed[names[0]]
+    if all(parsed[name] == reference for name in names[1:]):
+        return names[0], False
+    return None, True
+
+
+def _parse_all(values: list[str], pattern: str) -> list[date] | None:
+    parsed: list[date] = []
+    for value in values:
+        try:
+            parsed.append(datetime.strptime(value, pattern).date())
+        except ValueError:
+            return None
+    return parsed
+
+
+def _range(
+    values: list[str],
+    inferred_type: str,
+    date_format: str | None,
+) -> tuple[str | None, str | None]:
+    if inferred_type in NUMERIC_TYPES:
+        try:
+            numbers = [Decimal(value) for value in values]
+        except InvalidOperation:
+            return None, None
+        return str(min(numbers)), str(max(numbers))
+    if inferred_type == TYPE_DATE and date_format is not None:
+        dates = _parse_dates(values, date_format)
+        if dates:
+            return min(dates).isoformat(), max(dates).isoformat()
+    return None, None
+
+
+def _parse_dates(values: list[str], date_format: str) -> list[date]:
+    patterns = next(
+        (patterns for name, patterns in _DATE_FORMATS if name == date_format),
+        (),
+    )
+    for pattern in patterns:
+        parsed = _parse_all(values, pattern)
+        if parsed is not None:
+            return parsed
+    return []
+
+
+def _personal_data_signals(safe_label: str, values: list[str]) -> list[str]:
+    signals: list[str] = []
+    tokens = label_tokens(safe_label)
+    collapsed = "".join(tokens)
+    for signal, vocabulary in _PERSONAL_DATA_LABEL_TOKENS.items():
+        if vocabulary & set(tokens) or collapsed in vocabulary:
+            signals.append(f"label_{signal}")
+
+    if values:
+        shapes = {
+            "value_email": sum(1 for value in values if _EMAIL.fullmatch(value)),
+            "value_phone": sum(1 for value in values if _is_phone(value)),
+            "value_iban": sum(1 for value in values if _IBAN.fullmatch(value.replace(" ", ""))),
+            "value_payment_card": sum(1 for value in values if _is_payment_card(value)),
+        }
+        total = Decimal(len(values))
+        for signal, matched in shapes.items():
+            if matched and Decimal(matched) / total >= PERSONAL_DATA_SHAPE_RATE:
+                signals.append(signal)
+    return sorted(set(signals))
+
+
+def _is_phone(value: str) -> bool:
+    if not _PHONE.fullmatch(value):
+        return False
+    digits = "".join(character for character in value if character.isdigit())
+    return 9 <= len(digits) <= 15
+
+
+def _is_payment_card(value: str) -> bool:
+    digits = value.replace(" ", "").replace("-", "")
+    if not _DIGITS_ONLY.fullmatch(digits) or not 13 <= len(digits) <= 19:
+        return False
+    total = 0
+    for index, character in enumerate(reversed(digits)):
+        digit = int(character)
+        if index % 2:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
+    return total % 10 == 0
+
+
+def label_tokens(label: str) -> tuple[str, ...]:
+    normalized = normalize_label(label)
+    return tuple(token for token in re.split(r"[^0-9a-zء-ي]+", normalized) if token)
+
+
+def normalize_label(label: str) -> str:
+    normalized = unicodedata.normalize("NFKC", label).casefold()
+    normalized = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character) and character != "ـ"
+    )
+    for source in "آأإ":
+        normalized = normalized.replace(source, "ا")
+    return normalized.replace("ى", "ي").replace("ة", "ه")
+
+
+def _safe_label(source: str, position: int) -> str:
+    normalized = unicodedata.normalize("NFKC", source)
+    while normalized[:1] in _LABEL_UNSAFE_PREFIX:
+        normalized = normalized[1:]
+    kept = [
+        character
+        for character in normalized
+        if unicodedata.category(character)[0] in {"L", "N", "M"}
+        or character in _LABEL_ALLOWED_PUNCTUATION
+    ]
+    collapsed = " ".join("".join(kept).split())[:MAX_SAFE_LABEL_LENGTH].strip()
+    return collapsed or f"column_{position + 1}"
+
+
+def _rate(count: int, total: int) -> str:
+    if total <= 0:
+        return "0.0000"
+    return str((Decimal(count) / Decimal(total)).quantize(Decimal("0.0001")))

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -17,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.sql import Select
 
+from khepri.rra.datasets import DatasetProfileRecord
 from khepri.rra.deletion import DeletionEvidence, DeletionJob
 from khepri.rra.intake import UploadMetadata
 from khepri.rra.sessions import (
@@ -117,6 +120,44 @@ class UploadRow(Base):
     )
     encryption_algorithm: Mapped[str] = mapped_column(String, nullable=False)
     kms_key_id: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class DatasetProfileRow(Base):
+    __tablename__ = "rra_dataset_profiles"
+    __table_args__ = (
+        CheckConstraint("row_count >= 0", name="ck_profile_row_count"),
+        CheckConstraint("column_count > 0", name="ck_profile_column_count"),
+        CheckConstraint(
+            "length(source_sha256_hex) = 64",
+            name="ck_profile_source_digest",
+        ),
+        CheckConstraint(
+            "length(profile_digest) = 64",
+            name="ck_profile_digest",
+        ),
+        UniqueConstraint("upload_id", name="uq_profile_upload"),
+        UniqueConstraint("session_id", name="uq_profile_session"),
+        ForeignKeyConstraint(
+            ["owner_id", "session_id"],
+            ["rra_beta_sessions.owner_id", "rra_beta_sessions.session_id"],
+            name="fk_profile_session_scope",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    profile_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
+    upload_id: Mapped[str] = mapped_column(String, nullable=False)
+    profile_version: Mapped[str] = mapped_column(String, nullable=False)
+    mapping_version: Mapped[str] = mapped_column(String, nullable=False)
+    source_sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    column_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    admissible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    document: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
 
 
 class DeletionJobRow(Base):
@@ -348,6 +389,60 @@ class SqlUploadRepository:
             return None if row is None else _upload_from_row(row)
 
 
+class SqlProfileRepository:
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self._factory = factory
+
+    def add_profile(self, record: DatasetProfileRecord) -> DatasetProfileRecord:
+        try:
+            with self._factory.begin() as database:
+                database.add(
+                    DatasetProfileRow(
+                        profile_id=record.profile_id,
+                        owner_id=record.owner_id,
+                        session_id=record.session_id,
+                        upload_id=record.upload_id,
+                        profile_version=record.profile_version,
+                        mapping_version=record.mapping_version,
+                        source_sha256_hex=record.source_sha256_hex,
+                        profile_digest=record.profile_digest,
+                        row_count=record.row_count,
+                        column_count=record.column_count,
+                        admissible=record.admissible,
+                        created_at=record.created_at,
+                        document=record.document,
+                    )
+                )
+            return record
+        except IntegrityError:
+            existing = self.get_profile_for_upload(record.upload_id, record.scope)
+            if existing is None:
+                raise
+            return existing
+
+    def get_profile_for_upload(
+        self,
+        upload_id: str,
+        scope: SessionScope,
+    ) -> DatasetProfileRecord | None:
+        statement = select(DatasetProfileRow).where(
+            DatasetProfileRow.upload_id == upload_id,
+            DatasetProfileRow.owner_id == scope.owner_id,
+            DatasetProfileRow.session_id == scope.session_id,
+        )
+        with self._factory() as database:
+            row = database.scalar(statement)
+            return None if row is None else _profile_from_row(row)
+
+    def get_profile_for_session(self, session_id: str) -> DatasetProfileRecord | None:
+        statement = select(DatasetProfileRow).where(
+            DatasetProfileRow.session_id == session_id
+        )
+        with self._factory() as database:
+            row = database.scalar(statement)
+            return None if row is None else _profile_from_row(row)
+
+
 class SqlDeletionRepository:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
@@ -419,6 +514,12 @@ class SqlDeletionRepository:
             )
             if evidence is None and upload is not None:
                 raise ValueError("Deletion evidence is required for an existing target.")
+            database.execute(
+                delete(DatasetProfileRow).where(
+                    DatasetProfileRow.owner_id == row.owner_id,
+                    DatasetProfileRow.session_id == row.session_id,
+                )
+            )
             if evidence is not None:
                 self._add_evidence(database, row, evidence)
                 if upload is None or upload.upload_id != evidence.target_id:
@@ -544,6 +645,24 @@ def _upload_from_row(row: UploadRow) -> UploadMetadata:
         expires_at=_utc(row.expires_at),
         encryption_algorithm=row.encryption_algorithm,
         kms_key_id=row.kms_key_id,
+    )
+
+
+def _profile_from_row(row: DatasetProfileRow) -> DatasetProfileRecord:
+    return DatasetProfileRecord(
+        profile_id=row.profile_id,
+        owner_id=row.owner_id,
+        session_id=row.session_id,
+        upload_id=row.upload_id,
+        profile_version=row.profile_version,
+        mapping_version=row.mapping_version,
+        source_sha256_hex=row.source_sha256_hex,
+        profile_digest=row.profile_digest,
+        row_count=row.row_count,
+        column_count=row.column_count,
+        admissible=row.admissible,
+        created_at=_utc(row.created_at),
+        document=dict(row.document),
     )
 
 
