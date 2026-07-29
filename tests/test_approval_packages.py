@@ -724,3 +724,182 @@ def test_family_and_specification_transitions_are_closed(
     result = run_validator(tmp_path)
 
     assert_invalid(result, message)
+
+
+def proposed_renewal(
+    root: Path,
+    *,
+    package_id: str = "APP-003",
+    supersedes: str = "governance/approvals/APP-002.yaml",
+) -> tuple[Path, dict[str, object]]:
+    document = "governance/decisions/KHEPRI-DEC-002.md"
+    (root / document).write_bytes(b"# revised decision\n")
+    package: dict[str, object] = {
+        "schema_version": 1,
+        "id": package_id,
+        "title": "Renew atomic package decision",
+        "state": "proposed",
+        "owner": "AHMED-SHAABAN",
+        "scope": "Renew the exact listed decision.",
+        "exclusions": ["Product application code"],
+        "artifacts": [
+            {
+                "id": "KHEPRI-DEC-002",
+                "document": document,
+                "document_sha256": document_digest(root / document),
+                "from_state": "accepted",
+                "to_state": "accepted",
+                "supersedes_approval_ref": supersedes,
+            }
+        ],
+    }
+    package["manifest_digest"] = manifest_digest(package)
+    path = root / "governance/approvals" / f"{package_id}.yaml"
+    write_yaml(path, package)
+    return path, package
+
+
+def approved_package_with_renewal(
+    root: Path,
+) -> tuple[Path, dict[str, object], Path, dict[str, object]]:
+    first_path, first_package = proposed_package(root)
+    approve_package(root, first_path, first_package)
+    renewal_path, renewal_package = proposed_renewal(root)
+    return first_path, first_package, renewal_path, renewal_package
+
+
+def test_valid_proposed_renewal_chain_passes(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    approved_package_with_renewal(tmp_path)
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_changed_document_requires_proposed_renewal(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    approve_package(tmp_path, path, package)
+    document = package_artifacts(package)[0]["document"]
+    assert isinstance(document, str)
+    (tmp_path / document).write_bytes(b"# changed without renewal\n")
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-002: governed document for "
+        "KHEPRI-DEC-002 changed without renewal",
+    )
+
+
+def test_renewal_must_supersede_current_approval(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    first_path, first_package = proposed_package(tmp_path)
+    approve_package(tmp_path, first_path, first_package)
+    proposed_renewal(
+        tmp_path,
+        supersedes="governance/approvals/APP-999.yaml",
+    )
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-003: KHEPRI-DEC-002 does not currently use "
+        "the superseded approval",
+    )
+
+
+def test_artifact_cannot_appear_in_multiple_proposed_packages(
+    tmp_path: Path,
+) -> None:
+    valid_repository(tmp_path)
+    first_path, first_package = proposed_package(tmp_path)
+    approve_package(tmp_path, first_path, first_package)
+    proposed_renewal(tmp_path)
+    proposed_renewal(tmp_path, package_id="APP-004")
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages: artifact KHEPRI-DEC-002 appears in multiple "
+        "proposed packages",
+    )
+
+
+def test_renewal_must_preserve_current_state(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    first_path, first_package = proposed_package(tmp_path)
+    approve_package(tmp_path, first_path, first_package)
+    renewal_path, renewal = proposed_renewal(tmp_path)
+    package_artifacts(renewal)[0]["to_state"] = "rejected"
+    rewrite_package(renewal_path, renewal)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-003: renewal must preserve state 'accepted'",
+    )
+
+
+def test_approved_renewal_must_replace_registry_approval_ref(
+    tmp_path: Path,
+) -> None:
+    valid_repository(tmp_path)
+    _, _, renewal_path, renewal = approved_package_with_renewal(tmp_path)
+    digest = manifest_digest(renewal)
+    renewal["state"] = "approved"
+    renewal["approval"] = {
+        "approved_by": "AHMED-SHAABAN",
+        "approved_at": "2026-07-30",
+        "approved_manifest_digest": digest,
+        "evidence_ref": (
+            "https://github.com/Kemetra/Khepri/pull/5"
+            "#pullrequestreview-0000000000"
+        ),
+    }
+    write_yaml(renewal_path, renewal)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages:APP-003: KHEPRI-DEC-002 approval_ref must be "
+        "governance/approvals/APP-003.yaml",
+    )
+
+
+def test_legacy_bootstrap_markdown_evidence_remains_valid(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    evidence = "governance/approvals/APP-001-bootstrap.md"
+    write_document(tmp_path, evidence)
+    decisions_path = root_path(tmp_path, "decisions")
+    decisions = read_yaml(decisions_path)
+    decisions["decisions"][0]["approval_ref"] = evidence  # type: ignore[index]
+    write_yaml(decisions_path, decisions)
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_other_unstructured_approval_evidence_is_rejected(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    evidence = "governance/approvals/APP-999.md"
+    write_document(tmp_path, evidence)
+    decisions_path = root_path(tmp_path, "decisions")
+    decisions = read_yaml(decisions_path)
+    decisions["decisions"][0]["approval_ref"] = evidence  # type: ignore[index]
+    write_yaml(decisions_path, decisions)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages: unstructured approval evidence is limited to "
+        "APP-001-bootstrap.md",
+    )
