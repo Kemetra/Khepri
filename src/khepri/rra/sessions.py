@@ -49,6 +49,8 @@ class BetaSession:
     content_expires_at: datetime
     consent_version: str | None = None
     consented_at: datetime | None = None
+    deletion_requested_at: datetime | None = None
+    content_deleted_at: datetime | None = None
 
 
 class SessionStore(Protocol):
@@ -141,7 +143,11 @@ class InvitationService:
         if not consent_version:
             raise ValueError("Consent version is required.")
         session = self._store.get_session(session_id)
-        if session is None or now >= session.content_expires_at:
+        if (
+            session is None
+            or now >= session.content_expires_at
+            or session.deletion_requested_at is not None
+        ):
             raise SessionExpired("Session content has expired.")
         consented = replace(
             session,
@@ -153,7 +159,7 @@ class InvitationService:
 
 
 def require_upload_consent(session: BetaSession, *, now: datetime) -> None:
-    if now >= session.content_expires_at:
+    if now >= session.content_expires_at or session.deletion_requested_at is not None:
         raise SessionExpired("Session content has expired.")
     if session.consent_version is None or session.consented_at is None:
         raise ConsentRequired("Consent is required before upload.")

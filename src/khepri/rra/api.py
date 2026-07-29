@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from khepri.rra.deletion import DeletionRetryRequired, DeletionService
 from khepri.rra.intake import (
     IntakeRejected,
     IntakeService,
@@ -59,6 +60,7 @@ def create_app(
     service: InvitationService,
     clock: Callable[[], datetime],
     intake_service: IntakeService | None = None,
+    deletion_service: DeletionService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
 
@@ -144,6 +146,40 @@ def create_app(
                     detail="Upload storage is unavailable.",
                 ) from error
             return _upload_response(metadata)
+
+    if deletion_service is not None:
+
+        @app.delete(
+            "/api/v1/beta/content",
+            status_code=status.HTTP_204_NO_CONTENT,
+        )
+        def delete_session_content(
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> Response:
+            if session_id is None:
+                raise _session_unavailable()
+            try:
+                deletion_service.delete_session_content(
+                    session_id=session_id,
+                    reason="immediate",
+                    now=clock(),
+                )
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except DeletionRetryRequired as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Content deletion is pending retry.",
+                ) from error
+            response = Response(status_code=status.HTTP_204_NO_CONTENT)
+            response.delete_cookie(
+                key=SESSION_COOKIE,
+                secure=True,
+                httponly=True,
+                samesite="strict",
+                path="/api/v1/beta",
+            )
+            return response
 
     return app
 
