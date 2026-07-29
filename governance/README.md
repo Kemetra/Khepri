@@ -37,15 +37,15 @@ uv run khepri-gov approval-digest governance/approvals/APP-NNN.yaml
 One-action approval evidence must identify the authority, package ID, and complete manifest
 digest. Automation and passing checks are never approval. `APP-001-bootstrap.md` is the only
 legacy unstructured Markdown approval; all later repository-local approval packages use YAML.
-`KHEPRI-DEC-004` proposes this mechanism and remains proposed until traceable human approval is
-recorded.
+`KHEPRI-DEC-004` accepts this mechanism. `APP-002.yaml` records its first dependency-closed
+approval and the exact evidence used to materialize it.
 
 ## Current transfer boundary
 
 `KHEPRI-DEC-002`, `KHEPRI-DEC-003`, `KHEPRI-DEC-004`, the `RRA` family, and `RRA-001` through
-`RRA-007` are proposed or draft. Their presence documents reviewable Khepri intent; it is not
-approval and does not authorize product application code. Ahmed Shaaban must supply explicit,
-traceable evidence before those registry entries may advance.
+`RRA-007` are approved through `APP-002`. Product application code remains blocked until a
+separate architecture decision accepts the final runtime and provider selections. Beta launch
+still requires a separate authorization defining client count and observation period.
 
 The 42 technical assessments were performed by automation against the exact pinned blobs.
 Their `reviewed` state means the references have a recorded disposition, not that any Khepri
