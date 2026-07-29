@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/khepri_gov"]
+packages = ["src/khepri", "src/khepri_gov"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
