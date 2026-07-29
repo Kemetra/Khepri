@@ -11,8 +11,11 @@ families:
     approval_ref: governance/approvals/APP-001-bootstrap.md
   - id: RRA
     name: Retail Reporting Automation
-    state: proposed
+    state: active
     owner: AHMED-SHAABAN
     document: governance/families/RRA.md
     depends_on:
       - FND
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml

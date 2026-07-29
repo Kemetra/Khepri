@@ -12,55 +12,73 @@ specifications:
     approval_ref: governance/approvals/APP-001-bootstrap.md
   - id: RRA-001
     title: Beta Invitations and Isolated Sessions
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-001.md
     depends_on: []
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-002
     title: Governed File Intake and Deletion Lifecycle
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-002.md
     depends_on:
       - RRA-001
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-003
     title: Retail Data Profiling and Admissibility
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-003.md
     depends_on:
       - RRA-002
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-004
     title: Deterministic Retail Fact Package
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-004.md
     depends_on:
       - RRA-003
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-005
     title: Grounded Arabic and English Narrative
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-005.md
     depends_on:
       - RRA-004
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-006
     title: Unified Web PDF and Excel Report Bundle
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-006.md
     depends_on:
       - RRA-004
       - RRA-005
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-007
     title: Reliable Report Operations and Performance Evidence
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-007.md
@@ -71,3 +89,6 @@ specifications:
       - RRA-004
       - RRA-005
       - RRA-006
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
