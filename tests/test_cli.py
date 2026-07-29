@@ -229,6 +229,21 @@ def test_accepted_artifacts_require_complete_approval_evidence(
     assert_invalid(result, f"specifications:FND-001: missing approval field '{field}'")
 
 
+def test_accepted_artifacts_reject_non_string_approvers(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path = registry_path(tmp_path, "specifications")
+    data = read_yaml(path)
+    data["specifications"][0]["approved_by"] = ["AHMED-SHAABAN"]  # type: ignore[index]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "specifications:FND-001: approved_by must be a string authority id",
+    )
+
+
 def test_draft_specifications_do_not_claim_approval(tmp_path: Path) -> None:
     valid_repository(tmp_path)
     path = registry_path(tmp_path, "specifications")
@@ -311,6 +326,31 @@ def test_specifications_require_an_active_known_family(
     assert_invalid(result, message)
 
 
+def test_specifications_reject_non_string_family_ids(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path = registry_path(tmp_path, "specifications")
+    data = read_yaml(path)
+    data["specifications"][0]["family"] = None  # type: ignore[index]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "specifications:FND-001: family must be a string id")
+
+
+def test_unhashable_states_fail_closed_without_a_traceback(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path = registry_path(tmp_path, "families")
+    data = read_yaml(path)
+    data["families"][0]["state"] = []  # type: ignore[index]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "families:FND: invalid state []")
+    assert "Traceback" not in result.stderr
+
+
 def test_unknown_schema_versions_fail_closed(tmp_path: Path) -> None:
     valid_repository(tmp_path)
     path = registry_path(tmp_path, "authorities")
@@ -320,7 +360,23 @@ def test_unknown_schema_versions_fail_closed(tmp_path: Path) -> None:
 
     result = run_validator(tmp_path)
 
-    assert_invalid(result, "authorities: unsupported schema_version 2; expected 1")
+    assert_invalid(result, "authorities: unsupported schema_version 2; expected integer 1")
+
+
+@pytest.mark.parametrize("version", [True, 1.0])
+def test_schema_version_must_be_an_integer(tmp_path: Path, version: object) -> None:
+    valid_repository(tmp_path)
+    path = registry_path(tmp_path, "authorities")
+    data = read_yaml(path)
+    data["schema_version"] = version
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        f"authorities: unsupported schema_version {version!r}; expected integer 1",
+    )
 
 
 def test_missing_registry_fails_closed(tmp_path: Path) -> None:

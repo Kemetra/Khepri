@@ -52,9 +52,10 @@ def _load_registry(root: Path, name: str, errors: list[str]) -> list[Artifact] |
         errors.append(f"{name}: registry root must be a mapping")
         return None
     version = data.get("schema_version")
-    if version != SCHEMA_VERSION:
+    if type(version) is not int or version != SCHEMA_VERSION:
         errors.append(
-            f"{name}: unsupported schema_version {version!r}; expected {SCHEMA_VERSION}"
+            f"{name}: unsupported schema_version {version!r}; "
+            f"expected integer {SCHEMA_VERSION}"
         )
     artifacts = data.get(name)
     if not isinstance(artifacts, list):
@@ -96,7 +97,7 @@ def _validate_shape(
 
         if registry in STATE_VOCABULARIES:
             state = artifact.get("state")
-            if state not in STATE_VOCABULARIES[registry]:
+            if not isinstance(state, str) or state not in STATE_VOCABULARIES[registry]:
                 errors.append(f"{label}: invalid state {state!r}")
 
         _validate_document(root, label, artifact.get("document"), errors)
@@ -168,13 +169,16 @@ def _validate_authorities(
             elif isinstance(owner, str) and owner not in active:
                 errors.append(f"{label}: owner {owner!r} is inactive")
 
-            if artifact.get("state") not in APPROVED_STATES[registry]:
+            state = artifact.get("state")
+            if not isinstance(state, str) or state not in APPROVED_STATES[registry]:
                 continue
             for field in APPROVAL_FIELDS:
                 if field not in artifact or artifact[field] in ("", None):
                     errors.append(f"{label}: missing approval field '{field}'")
             approved_by = artifact.get("approved_by")
-            if isinstance(approved_by, str) and approved_by not in known:
+            if approved_by not in ("", None) and not isinstance(approved_by, str):
+                errors.append(f"{label}: approved_by must be a string authority id")
+            elif isinstance(approved_by, str) and approved_by not in known:
                 errors.append(f"{label}: unknown approver {approved_by!r}")
             elif isinstance(approved_by, str) and approved_by not in active:
                 errors.append(f"{label}: approver {approved_by!r} is inactive")
@@ -254,9 +258,11 @@ def _validate_family_relationships(
     for index, specification in enumerate(registries.get("specifications", [])):
         label = _artifact_label("specifications", specification, index)
         family_id = specification.get("family")
-        if not isinstance(family_id, str) or family_id not in families:
-            if isinstance(family_id, str):
-                errors.append(f"{label}: unknown family {family_id!r}")
+        if not isinstance(family_id, str):
+            errors.append(f"{label}: family must be a string id")
+            continue
+        if family_id not in families:
+            errors.append(f"{label}: unknown family {family_id!r}")
             continue
         if families[family_id].get("state") != "active":
             errors.append(f"{label}: family {family_id!r} is not active")
