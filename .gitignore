@@ -1,0 +1,13 @@
+.venv/
+.uv-cache/
+.pytest_cache/
+.pytest-cache/
+.pytest-tmp/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.claude/worktrees/
+tests/.pytest_tmp*/
+dist/
+build/
