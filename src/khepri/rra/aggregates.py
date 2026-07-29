@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -133,30 +135,37 @@ def build_series(
 def build_comparison(
     *,
     dimension: str,
-    labels: list[str | None],
+    values: list[str | None],
     revenues: list[Decimal | None],
     units: list[int | None],
+    display: Callable[[str], str] | None = None,
     limit: int = MAX_COMPARISON_BUCKETS,
 ) -> Comparison:
-    accumulators: dict[str, _Accumulator] = {}
-    for label, revenue, unit in zip(labels, revenues, units, strict=True):
-        key = label if label is not None else UNLABELLED_BUCKET_LABEL
-        accumulators.setdefault(key, _Accumulator()).add(revenue, unit)
+    """Group by the source value; sanitize only the label that is displayed.
 
+    Grouping never merges two distinct source values, even when they reduce to
+    the same display text. Colliding labels are disambiguated by a stable digest
+    of the source value so each bucket stays individually identifiable.
+    """
+    accumulators: dict[str | None, _Accumulator] = {}
+    for value, revenue, unit in zip(values, revenues, units, strict=True):
+        accumulators.setdefault(value, _Accumulator()).add(revenue, unit)
+
+    labels = _labels(list(accumulators), display)
     ordered = sorted(
         accumulators,
-        key=lambda label: (
-            -accumulators[label].revenue,
-            -accumulators[label].units,
-            label,
+        key=lambda value: (
+            -accumulators[value].revenue,
+            -accumulators[value].units,
+            labels[value],
         ),
     )
     kept, dropped = ordered[:limit], ordered[limit:]
-    buckets = [accumulators[label].bucket(label) for label in kept]
+    buckets = [accumulators[value].bucket(labels[value]) for value in kept]
     if dropped:
         remainder = _Accumulator()
-        for label in dropped:
-            remainder.merge(accumulators[label])
+        for value in dropped:
+            remainder.merge(accumulators[value])
         buckets.append(remainder.bucket(OTHER_BUCKET_LABEL))
     return Comparison(
         dimension=dimension,
@@ -164,6 +173,30 @@ def build_comparison(
         distinct_values=len(accumulators),
         truncated_values=len(dropped),
     )
+
+
+def _labels(
+    values: list[str | None],
+    display: Callable[[str], str] | None,
+) -> dict[str | None, str]:
+    rendered = {
+        value: UNLABELLED_BUCKET_LABEL
+        if value is None
+        else (display(value) if display is not None else value)
+        for value in values
+    }
+    counts: dict[str, int] = {}
+    for label in rendered.values():
+        counts[label] = counts.get(label, 0) + 1
+    return {
+        value: label if counts[label] == 1 else f"{label} ({_discriminator(value)})"
+        for value, label in rendered.items()
+    }
+
+
+def _discriminator(value: str | None) -> str:
+    source = "" if value is None else value
+    return hashlib.sha256(source.encode()).hexdigest()[:6]
 
 
 def reconciles(

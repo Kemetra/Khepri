@@ -60,7 +60,7 @@ def test_series_skips_rows_without_a_date() -> None:
 def test_comparison_ranks_by_revenue_then_units_then_label() -> None:
     comparison = build_comparison(
         dimension="store",
-        labels=["Giza", "Cairo", "Giza"],
+        values=["Giza", "Cairo", "Giza"],
         revenues=[Decimal("1.00"), Decimal("5.00"), Decimal("2.00")],
         units=[1, 5, 2],
     )
@@ -73,7 +73,7 @@ def test_comparison_ranks_by_revenue_then_units_then_label() -> None:
 def test_comparison_gives_unlabelled_rows_their_own_bucket() -> None:
     comparison = build_comparison(
         dimension="store",
-        labels=["Cairo", None],
+        values=["Cairo", None],
         revenues=[Decimal("1.00"), Decimal("2.00")],
         units=[1, 2],
     )
@@ -86,7 +86,7 @@ def test_comparison_folds_the_tail_into_one_disclosed_bucket() -> None:
     size = MAX_COMPARISON_BUCKETS + 3
     comparison = build_comparison(
         dimension="category",
-        labels=[f"c{index:02d}" for index in range(size)],
+        values=[f"c{index:02d}" for index in range(size)],
         revenues=[Decimal(index + 1) for index in range(size)],
         units=[1] * size,
     )
@@ -100,7 +100,7 @@ def test_comparison_folds_the_tail_into_one_disclosed_bucket() -> None:
 def test_measures_absent_from_every_row_stay_absent() -> None:
     comparison = build_comparison(
         dimension="store",
-        labels=["Cairo"],
+        values=["Cairo"],
         revenues=[None],
         units=[None],
     )
@@ -148,3 +148,44 @@ def test_reconciliation_rejects_a_drifted_measure_or_row_count() -> None:
         units_total=4,
         rows_total=4,
     )
+
+
+def test_distinct_values_that_share_a_display_label_are_never_merged() -> None:
+    comparison = build_comparison(
+        dimension="channel",
+        values=["=Online", "Online"],
+        revenues=[Decimal("1.00"), Decimal("2.00")],
+        units=[1, 2],
+        display=lambda value: value.lstrip("="),
+    )
+
+    assert comparison.distinct_values == 2
+    assert len(comparison.buckets) == 2
+    assert sum(bucket.revenue for bucket in comparison.buckets) == Decimal("3.00")
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert len(set(labels)) == 2
+    assert all(label.startswith("Online (") for label in labels)
+
+
+def test_labels_that_do_not_collide_keep_their_plain_display_text() -> None:
+    comparison = build_comparison(
+        dimension="channel",
+        values=["=Online", "Retail"],
+        revenues=[Decimal("1.00"), Decimal("2.00")],
+        units=[1, 2],
+        display=lambda value: value.lstrip("="),
+    )
+
+    assert sorted(bucket.label for bucket in comparison.buckets) == ["Online", "Retail"]
+
+
+def test_a_source_value_matching_the_unlabelled_text_stays_separate() -> None:
+    comparison = build_comparison(
+        dimension="store",
+        values=[UNLABELLED_BUCKET_LABEL, None],
+        revenues=[Decimal("1.00"), Decimal("2.00")],
+        units=[1, 2],
+    )
+
+    assert comparison.distinct_values == 2
+    assert len({bucket.label for bucket in comparison.buckets}) == 2

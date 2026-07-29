@@ -60,6 +60,7 @@ METRIC_RETURNS = "returns"
 REASON_INPUT_UNAVAILABLE = "required_input_unavailable"
 REASON_ZERO_DENOMINATOR = "zero_denominator"
 REASON_RECONCILIATION_FAILED = "reconciliation_failed"
+REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
 
 CAVEAT_CURRENCY_NOT_DECLARED = "currency_not_declared"
 CAVEAT_DUPLICATE_ROWS = "duplicate_rows_present"
@@ -237,6 +238,7 @@ class _Measures:
     returns: list[Decimal | None]
     monetary_precision: int
     null_measure_inputs: bool
+    transaction_identifiers_complete: bool
 
 
 def build_fact_package(
@@ -250,6 +252,8 @@ def build_fact_package(
 ) -> FactPackage:
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
+    _assert_content_matches_profile(content, profile)
+    _assert_mapping_matches_profile(mapping, profile)
 
     frame = materialize(content, media_type)
     measures = _measures(frame, profile, mapping)
@@ -261,7 +265,16 @@ def build_fact_package(
 
     revenue_total = _sum_decimal(measures.revenue)
     units_total = _sum_integer(measures.units)
-    transactions_total = _distinct(measures.transactions)
+    transactions_total = (
+        _distinct(measures.transactions)
+        if measures.transaction_identifiers_complete
+        else None
+    )
+    transactions_reason = (
+        REASON_INPUT_UNAVAILABLE
+        if measures.transaction_identifiers_complete
+        else REASON_INCOMPLETE_IDENTIFIERS
+    )
     cost_total = _sum_decimal(measures.cost)
     discount_total = _sum_decimal(measures.discount)
     returns_total = _sum_decimal(measures.returns)
@@ -310,6 +323,7 @@ def build_fact_package(
         unit_kind=UNIT_COUNT,
         precision=0,
         inputs=(SEMANTIC_TRANSACTION_ID,),
+        reason=transactions_reason,
     )
     add(
         METRIC_COST,
@@ -341,6 +355,7 @@ def build_fact_package(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_ID),
+        unavailable_reason=transactions_reason,
     )
     _add_ratio(
         add,
@@ -372,8 +387,16 @@ def build_fact_package(
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
     )
 
+    primary = (
+        SEMANTIC_REVENUE
+        if revenue_total is not None
+        else SEMANTIC_UNITS
+        if units_total is not None
+        else None
+    )
     series = _series(
         measures,
+        primary=primary,
         formula_version=formula_version,
         refusals=refusals,
         caveats=caveats,
@@ -382,6 +405,7 @@ def build_fact_package(
         frame,
         mapping,
         measures,
+        primary=primary,
         revenue_total=revenue_total,
         units_total=units_total,
         row_count=row_count,
@@ -419,19 +443,45 @@ def build_fact_package(
     )
 
 
+def _assert_content_matches_profile(content: bytes, profile: DatasetProfile) -> None:
+    if hashlib.sha256(content).hexdigest() != profile.source_sha256_hex:
+        raise FactsRefused("Content does not match the profile it is attributed to.")
+
+
+def _assert_mapping_matches_profile(mapping: RetailMapping, profile: DatasetProfile) -> None:
+    for entry in mapping.mappings:
+        for candidate in entry.candidates:
+            if candidate.position >= len(profile.columns):
+                raise FactsRefused("Mapping references a column outside the profile.")
+            if profile.column_at(candidate.position).safe_label != candidate.safe_label:
+                raise FactsRefused("Mapping does not describe the profiled schema.")
+
+
 def _series(
     measures: _Measures,
     *,
+    primary: str | None,
     formula_version: str,
     refusals: list[RefusedResult],
     caveats: list[str],
 ) -> list[FactSeries]:
+    unavailable = [
+        f"{measure}_by_period"
+        for measure in (SEMANTIC_REVENUE, SEMANTIC_UNITS)
+        if measure != primary
+    ]
     dated = [value for value in measures.dates if value is not None]
-    if not dated:
-        refusals.append(
-            RefusedResult(metric="revenue_by_period", reason=REASON_INPUT_UNAVAILABLE)
+    if primary is None or not dated:
+        refusals.extend(
+            RefusedResult(metric=f"{measure}_by_period", reason=REASON_INPUT_UNAVAILABLE)
+            for measure in (SEMANTIC_REVENUE, SEMANTIC_UNITS)
         )
         return []
+    metric = f"{primary}_by_period"
+    refusals.extend(
+        RefusedResult(metric=name, reason=REASON_INPUT_UNAVAILABLE)
+        for name in unavailable
+    )
 
     granularity = granularity_for(dated)
     series = build_series(
@@ -460,12 +510,12 @@ def _series(
         rows_total=len(covered),
     ):
         refusals.append(
-            RefusedResult(metric="revenue_by_period", reason=REASON_RECONCILIATION_FAILED)
+            RefusedResult(metric=metric, reason=REASON_RECONCILIATION_FAILED)
         )
         return []
 
     fact_id, citation_id = _identity(
-        metric="revenue_by_period",
+        metric=metric,
         scope=(granularity,),
         formula_version=formula_version,
     )
@@ -473,7 +523,7 @@ def _series(
         FactSeries(
             fact_id=fact_id,
             citation_id=citation_id,
-            metric="revenue_by_period",
+            metric=metric,
             series=series,
             caveats=tuple(entry_caveats),
         )
@@ -485,6 +535,7 @@ def _comparisons(
     mapping: RetailMapping,
     measures: _Measures,
     *,
+    primary: str | None,
     revenue_total: Decimal | None,
     units_total: int | None,
     row_count: int,
@@ -494,18 +545,25 @@ def _comparisons(
 ) -> list[FactComparison]:
     results: list[FactComparison] = []
     for dimension in COMPARISON_DIMENSIONS:
-        metric = f"revenue_by_{dimension}"
         column = mapping.for_semantic(dimension).column
-        if column is None:
-            refusals.append(
-                RefusedResult(metric=metric, reason=REASON_INPUT_UNAVAILABLE)
-            )
+        unavailable = [
+            f"{measure}_by_{dimension}"
+            for measure in (SEMANTIC_REVENUE, SEMANTIC_UNITS)
+            if measure != primary or column is None
+        ]
+        refusals.extend(
+            RefusedResult(metric=name, reason=REASON_INPUT_UNAVAILABLE)
+            for name in unavailable
+        )
+        if column is None or primary is None:
             continue
+        metric = f"{primary}_by_{dimension}"
         comparison = build_comparison(
             dimension=dimension,
-            labels=_label_values(frame, column.position),
+            values=_raw_values(frame, column.position),
             revenues=measures.revenue,
             units=measures.units,
+            display=lambda value: safe_value_label(value, fallback="unlabelled"),
         )
         if not reconciles(
             comparison.buckets,
@@ -596,6 +654,10 @@ def _measures(
         returns=returns,
         monetary_precision=min(monetary_scale, MAX_MONETARY_PRECISION),
         null_measure_inputs=null_inputs,
+        transaction_identifiers_complete=(
+            transaction_column is None
+            or all(value is not None for value in transactions)
+        ),
     )
 
 
@@ -608,9 +670,17 @@ def _add_ratio(
     unit_kind: str,
     precision: int,
     inputs: tuple[str, ...],
+    unavailable_reason: str = REASON_INPUT_UNAVAILABLE,
 ) -> None:
     if numerator is None or denominator is None:
-        add(metric, None, unit_kind=unit_kind, precision=precision, inputs=inputs)
+        add(
+            metric,
+            None,
+            unit_kind=unit_kind,
+            precision=precision,
+            inputs=inputs,
+            reason=unavailable_reason,
+        )
         return
     if Decimal(denominator) == 0:
         add(
@@ -733,13 +803,6 @@ def _date_values(frame: pl.DataFrame, position: int, date_format: str) -> list[d
 
 def _text_values(frame: pl.DataFrame, position: int) -> list[str | None]:
     return list(_raw_values(frame, position))
-
-
-def _label_values(frame: pl.DataFrame, position: int) -> list[str | None]:
-    return [
-        None if raw is None else safe_value_label(raw, fallback="unlabelled")
-        for raw in _raw_values(frame, position)
-    ]
 
 
 def _raw_values(frame: pl.DataFrame, position: int) -> list[str | None]:

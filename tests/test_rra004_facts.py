@@ -25,6 +25,7 @@ from khepri.rra.facts import (
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
     PACKAGE_VERSION,
+    REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
     REASON_ZERO_DENOMINATOR,
     UNIT_COUNT,
@@ -348,3 +349,98 @@ def test_every_emitted_metric_declares_its_governed_inputs() -> None:
     for fact in result.facts:
         assert fact.inputs
         assert fact.precision >= 0
+
+
+def test_content_that_does_not_match_the_profile_is_refused() -> None:
+    profile = build_profile(
+        content=GOLDEN,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(GOLDEN).hexdigest(),
+    )
+    mapping = build_mapping(profile)
+    other = GOLDEN.replace(b"125.50", b"999.99")
+
+    with pytest.raises(FactsRefused):
+        build_fact_package(
+            content=other,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+        )
+
+
+def test_a_mapping_from_another_schema_is_refused() -> None:
+    profile = build_profile(
+        content=GOLDEN,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(GOLDEN).hexdigest(),
+    )
+    reordered = b"units,revenue,date\n3,125.50,2026-01-05\n2,90.00,2026-01-06\n"
+    other_profile = build_profile(
+        content=reordered,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(reordered).hexdigest(),
+    )
+    foreign = build_mapping(other_profile)
+    assert foreign.for_semantic("transaction_date").column.position == 2
+
+    with pytest.raises(FactsRefused):
+        build_fact_package(
+            content=GOLDEN,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=foreign,
+            decision=assess_admissibility(profile, build_mapping(profile)),
+        )
+
+
+def test_a_units_only_dataset_never_emits_a_revenue_series() -> None:
+    content = b"date,units,category\n2026-01-05,3,Beverages\n2026-01-06,2,Snacks\n"
+
+    result = package(content)
+
+    assert result.fact(METRIC_REVENUE) is None
+    assert result.series[0].metric == "units_by_period"
+    assert result.refusal("revenue_by_period").reason == REASON_INPUT_UNAVAILABLE
+    assert result.comparison(SEMANTIC_CATEGORY).metric == "units_by_category"
+    assert result.refusal("revenue_by_category").reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_a_revenue_dataset_still_names_its_aggregates_by_revenue() -> None:
+    result = package(GOLDEN)
+
+    assert result.series[0].metric == "revenue_by_period"
+    assert result.comparison(SEMANTIC_CATEGORY).metric == "revenue_by_category"
+    assert result.refusal("units_by_period").reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_incomplete_transaction_identifiers_refuse_the_affected_metrics() -> None:
+    content = (
+        b"date,revenue,units,invoice_no\n"
+        b"2026-01-05,100.00,2,INV-1\n"
+        b"2026-01-06,50.00,1,\n"
+    )
+
+    result = package(content)
+
+    assert result.value(METRIC_REVENUE) == "150.00"
+    assert result.fact(METRIC_TRANSACTIONS) is None
+    assert result.fact(METRIC_AVERAGE_ORDER_VALUE) is None
+    assert result.refusal(METRIC_TRANSACTIONS).reason == REASON_INCOMPLETE_IDENTIFIERS
+    assert result.refusal(METRIC_AVERAGE_ORDER_VALUE).reason == (
+        REASON_INCOMPLETE_IDENTIFIERS
+    )
+
+
+def test_complete_transaction_identifiers_still_produce_the_metrics() -> None:
+    content = (
+        b"date,revenue,units,invoice_no\n"
+        b"2026-01-05,100.00,2,INV-1\n"
+        b"2026-01-06,50.00,1,INV-2\n"
+    )
+
+    result = package(content)
+
+    assert result.value(METRIC_TRANSACTIONS) == "2"
+    assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "75.00"
