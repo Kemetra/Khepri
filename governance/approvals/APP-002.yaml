@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-002
 title: RRA private beta governance approval
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Approve the selective-transfer protocol, the bounded RRA private-beta decision, the atomic
@@ -13,6 +13,11 @@ exclusions:
   - Commercial authentication, workspaces, organizations, billing, scheduling, and agency features
   - Any claim that technical review or automation is human approval
 manifest_digest: sha256:db6ccce28f508bfde39b827adf10e06afaa1f9d634ed89ab864c56dccee941b8
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-07-29
+  approved_manifest_digest: sha256:db6ccce28f508bfde39b827adf10e06afaa1f9d634ed89ab864c56dccee941b8
+  evidence_ref: https://github.com/Kemetra/Khepri/pull/4#issuecomment-5121383450
 artifacts:
   - id: KHEPRI-DEC-002
     document: governance/decisions/KHEPRI-DEC-002-selective-transfer-protocol.md

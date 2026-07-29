@@ -10,16 +10,25 @@ decisions:
     approval_ref: governance/approvals/APP-001-bootstrap.md
   - id: KHEPRI-DEC-002
     title: Selective predecessor assessment and re-specification protocol
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-002-selective-transfer-protocol.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: KHEPRI-DEC-003
     title: Retail Reporting Automation private beta boundary
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-003-rra-private-beta.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
   - id: KHEPRI-DEC-004
     title: Atomic approval packages and bounded implementation authority
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-004-atomic-approval-packages.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-29
+    approval_ref: governance/approvals/APP-002.yaml
