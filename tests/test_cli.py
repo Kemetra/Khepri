@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 PROJECT_ROOT = Path(__file__).parents[1]
+REFERENCE_COMMIT = "f206b7f2c021c7d4e25ba131776ca4b22db6d876"
 
 
 def write_yaml(path: Path, content: object) -> None:
@@ -112,6 +113,30 @@ def valid_repository(root: Path) -> None:
             ],
         },
     )
+    write_yaml(
+        registry / "reference-assessments.yaml",
+        {
+            "schema_version": 1,
+            "source_repository": "Kemetra/Seshat-Platform",
+            "source_commit": REFERENCE_COMMIT,
+            "assessments": [
+                {
+                    "source_id": f"SESHAT-SPEC-{index:03d}",
+                    "sources": [
+                        {
+                            "path": f"specs/{index:03d}-capability/spec.md",
+                            "blob_id": f"{index:040x}",
+                        }
+                    ],
+                    "review_state": "pending",
+                    "disposition": "candidate",
+                    "rationale": "Awaiting bounded Khepri review.",
+                    "target_artifact_ids": [],
+                }
+                for index in range(1, 43)
+            ],
+        },
+    )
 
 
 def run_validator(root: Path) -> subprocess.CompletedProcess[str]:
@@ -131,6 +156,16 @@ def run_validator(root: Path) -> subprocess.CompletedProcess[str]:
 
 def registry_path(root: Path, name: str) -> Path:
     return root / "governance" / "registries" / f"{name}.yaml"
+
+
+def first_assessment(root: Path) -> tuple[Path, dict[str, object], dict[str, object]]:
+    path = registry_path(root, "reference-assessments")
+    data = read_yaml(path)
+    assessments = data["assessments"]
+    assert isinstance(assessments, list)
+    assessment = assessments[0]
+    assert isinstance(assessment, dict)
+    return path, data, assessment
 
 
 def assert_invalid(result: subprocess.CompletedProcess[str], message: str) -> None:
@@ -326,6 +361,28 @@ def test_specifications_require_an_active_known_family(
     assert_invalid(result, message)
 
 
+def test_draft_specification_can_prepare_a_proposed_family(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    family_path = registry_path(tmp_path, "families")
+    families = read_yaml(family_path)
+    family = families["families"][0]  # type: ignore[index]
+    family["state"] = "proposed"
+    for field in ("approved_by", "approved_at", "approval_ref"):
+        del family[field]
+    write_yaml(family_path, families)
+    specification_path = registry_path(tmp_path, "specifications")
+    specifications = read_yaml(specification_path)
+    specification = specifications["specifications"][0]  # type: ignore[index]
+    specification["state"] = "draft"
+    for field in ("approved_by", "approved_at", "approval_ref"):
+        del specification[field]
+    write_yaml(specification_path, specifications)
+
+    result = run_validator(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_specifications_reject_non_string_family_ids(tmp_path: Path) -> None:
     valid_repository(tmp_path)
     path = registry_path(tmp_path, "specifications")
@@ -396,3 +453,246 @@ def test_invalid_yaml_fails_closed_without_a_traceback(tmp_path: Path) -> None:
 
     assert_invalid(result, "families: invalid YAML")
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        (
+            "source_repository",
+            "Kemetra/Other",
+            "source_repository must be 'Kemetra/Seshat-Platform'",
+        ),
+        (
+            "source_commit",
+            "0" * 40,
+            f"source_commit must be '{REFERENCE_COMMIT}'",
+        ),
+    ],
+)
+def test_reference_registry_requires_exact_source_pin(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    valid_repository(tmp_path)
+    path = registry_path(tmp_path, "reference-assessments")
+    data = read_yaml(path)
+    data[field] = value
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, message)
+
+
+def test_reference_registry_requires_all_42_assessments(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path = registry_path(tmp_path, "reference-assessments")
+    data = read_yaml(path)
+    data["assessments"].pop()  # type: ignore[union-attr]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "reference-assessments: expected 42 assessments; found 41")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("review_state", "approved", "invalid review_state 'approved'"),
+        ("disposition", "copied", "invalid disposition 'copied'"),
+    ],
+)
+def test_reference_states_and_dispositions_are_closed(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment[field] = value
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, message)
+
+
+def test_duplicate_reference_ids_and_paths_are_rejected(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path = registry_path(tmp_path, "reference-assessments")
+    data = read_yaml(path)
+    assessments = data["assessments"]
+    assessments[1]["source_id"] = assessments[0]["source_id"]  # type: ignore[index]
+    assessments[1]["sources"] = deepcopy(assessments[0]["sources"])  # type: ignore[index]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "duplicate source_id")
+    assert "duplicate source path" in result.stderr
+    assert "duplicate source reference" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("path", "../spec.md", "malformed source path '../spec.md'"),
+        ("path", r"specs\001\spec.md", r"malformed source path 'specs\\001\\spec.md'"),
+        ("path", "C:/spec.md", "malformed source path 'C:/spec.md'"),
+        ("path", "specs//001/spec.md", "malformed source path 'specs//001/spec.md'"),
+        ("blob_id", "not-a-blob", "malformed Git blob id 'not-a-blob'"),
+    ],
+)
+def test_malformed_reference_sources_are_rejected(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment["sources"][0][field] = value  # type: ignore[index]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, message)
+
+
+@pytest.mark.parametrize("field", ["reviewed_by", "reviewed_at", "review_ref"])
+def test_reviewed_references_require_complete_evidence(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment.update(
+        {
+            "review_state": "reviewed",
+            "disposition": "deferred",
+            "reviewed_by": "AUTOMATION-CODEX",
+            "reviewed_at": "2026-07-29",
+            "review_ref": "https://github.com/Kemetra/Khepri/pull/2",
+        }
+    )
+    del assessment[field]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, f"missing review evidence field '{field}'")
+
+
+def test_pending_references_cannot_claim_review_evidence(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment["reviewed_by"] = "AHMED-SHAABAN"
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "pending assessment must not claim 'reviewed_by'")
+
+
+def test_reviewed_at_requires_an_iso_date(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment.update(
+        {
+            "review_state": "reviewed",
+            "disposition": "deferred",
+            "reviewed_by": "AUTOMATION-CODEX",
+            "reviewed_at": "29 July",
+            "review_ref": "https://github.com/Kemetra/Khepri/pull/2",
+        }
+    )
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "reviewed_at must be an ISO 8601 date")
+
+
+def test_adapted_reference_requires_existing_unique_targets(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment.update(
+        {
+            "review_state": "reviewed",
+            "disposition": "adapted",
+            "target_artifact_ids": ["FND-001", "FND-001", "UNKNOWN"],
+            "reviewed_by": "AUTOMATION-CODEX",
+            "reviewed_at": "2026-07-29",
+            "review_ref": "https://github.com/Kemetra/Khepri/pull/2",
+        }
+    )
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "duplicate target artifact id")
+    assert "unknown target artifact 'UNKNOWN'" in result.stderr
+
+
+def test_adapted_reference_cannot_target_an_authority(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment.update(
+        {
+            "review_state": "reviewed",
+            "disposition": "adapted",
+            "target_artifact_ids": ["AHMED-SHAABAN"],
+            "reviewed_by": "AUTOMATION-CODEX",
+            "reviewed_at": "2026-07-29",
+            "review_ref": "https://github.com/Kemetra/Khepri/pull/2",
+        }
+    )
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "unknown target artifact 'AHMED-SHAABAN'")
+
+
+def test_adapted_reference_rejects_an_empty_target_list(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment.update(
+        {
+            "review_state": "reviewed",
+            "disposition": "adapted",
+            "reviewed_by": "AUTOMATION-CODEX",
+            "reviewed_at": "2026-07-29",
+            "review_ref": "https://github.com/Kemetra/Khepri/pull/2",
+        }
+    )
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "adapted assessment requires an existing Khepri target")
+
+
+def test_non_adapted_reference_cannot_name_targets(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    path, data, assessment = first_assessment(tmp_path)
+    assessment["target_artifact_ids"] = ["FND-001"]
+    write_yaml(path, data)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "candidate assessment must not name targets")
+
+
+def test_missing_reference_registry_fails_closed(tmp_path: Path) -> None:
+    valid_repository(tmp_path)
+    registry_path(tmp_path, "reference-assessments").unlink()
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(result, "reference-assessments: registry does not exist")
