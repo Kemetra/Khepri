@@ -4,10 +4,19 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import Cookie, FastAPI, HTTPException, Response, status
+from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from khepri.rra.intake import (
+    IntakeRejected,
+    IntakeService,
+    StoragePolicyViolation,
+    UploadAlreadyExists,
+    UploadMetadata,
+    UploadTooLarge,
+)
 from khepri.rra.sessions import (
+    ConsentRequired,
     InvitationRejected,
     InvitationService,
     SessionExpired,
@@ -37,10 +46,19 @@ class ConsentRequest(BaseModel):
     consent_version: ConsentVersion
 
 
+class UploadResponse(BaseModel):
+    upload_id: str
+    size_bytes: int
+    sha256_hex: str
+    media_type: str
+    expires_at: datetime
+
+
 def create_app(
     *,
     service: InvitationService,
     clock: Callable[[], datetime],
+    intake_service: IntakeService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
 
@@ -88,8 +106,70 @@ def create_app(
             raise _session_unavailable() from error
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+    if intake_service is not None:
+
+        @app.post(
+            "/api/v1/beta/uploads",
+            response_model=UploadResponse,
+            status_code=status.HTTP_201_CREATED,
+        )
+        async def upload_retail_input(
+            request: Request,
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> UploadResponse:
+            if session_id is None:
+                raise _session_unavailable()
+            try:
+                pending = intake_service.begin(
+                    session_id=session_id,
+                    declared_size=_declared_size(request),
+                    now=clock(),
+                )
+                async for chunk in request.stream():
+                    pending.append(chunk)
+                metadata = pending.complete(now=clock())
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except ConsentRequired as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except UploadTooLarge as error:
+                raise HTTPException(status_code=413, detail=str(error)) from error
+            except UploadAlreadyExists as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            except IntakeRejected as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            except StoragePolicyViolation as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Upload storage is unavailable.",
+                ) from error
+            return _upload_response(metadata)
+
     return app
 
 
 def _session_unavailable() -> HTTPException:
     return HTTPException(status_code=401, detail="Session is unavailable.")
+
+
+def _declared_size(request: Request) -> int | None:
+    value = request.headers.get("content-length")
+    if value is None:
+        return None
+    try:
+        size = int(value)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Content-Length is invalid.") from error
+    if size < 0:
+        raise HTTPException(status_code=400, detail="Content-Length is invalid.")
+    return size
+
+
+def _upload_response(metadata: UploadMetadata) -> UploadResponse:
+    return UploadResponse(
+        upload_id=metadata.upload_id,
+        size_bytes=metadata.size_bytes,
+        sha256_hex=metadata.sha256_hex,
+        media_type=metadata.media_type,
+        expires_at=metadata.expires_at,
+    )
