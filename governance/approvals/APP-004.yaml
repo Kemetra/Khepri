@@ -1,0 +1,21 @@
+schema_version: 1
+id: APP-004
+title: RRA beta benchmark workload and environment approval
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-006 exactly as digested, fixing the RRA private-beta benchmark workload,
+  its measurement rules, its benchmark identity, and the digest discipline that binds them.
+exclusions:
+  - Environment sizing, infrastructure provisioning, and the reviewed AWS CDK definition
+  - Any claim that a benchmark run has been performed or certified
+  - Any claim that the approved completion objective has been met
+  - Beta launch authorization
+  - Any claim that technical review or automation is human approval
+manifest_digest: sha256:b7253ee22fa97c29adef27af6798be8e072d4d9491fedd9c2991eede6d2ca825
+artifacts:
+  - id: KHEPRI-DEC-006
+    document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
+    document_sha256: sha256:b062387dc3e9d846fcf170effbb4b5b9a92afcb6984aecbab310ba30134f6bbe
+    from_state: proposed
+    to_state: accepted
