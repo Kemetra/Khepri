@@ -1,0 +1,331 @@
+"""The canonical bilingual web surface of one report bundle.
+
+**This module presents figures. It never produces one.** Every number on the
+page is a string the bundle already rendered, copied into a cell; `CitedFigure`
+carries a `Decimal` beside that string and this renderer never reads it.
+RRA-006 excludes independent surface calculations, and the way to exclude them
+is to leave the renderer nothing to calculate with — a total it could sum, a
+value it could format, a precision it could choose. So the view model built here
+holds `text`, and the arithmetic that produced it happened once, in `bundle`.
+
+**Two documents, not one bilingual page.** A document has one root element and
+therefore one `dir`, so a single page cannot declare both that Arabic reads
+right to left and that English reads left to right. The surface is a pair of
+documents keyed by language, each stating its own `lang` and `dir`, and the
+stylesheet uses logical properties throughout — `margin-inline-start` rather
+than `margin-left` — so one stylesheet lays out both directions without a
+mirrored copy that could drift from the original.
+
+**Escaping is a property of the environment, not of a habit.** Autoescaping is
+on, and nothing reachable from the bundle is ever marked safe. Labels, caveats
+and narrative prose are customer- or provider-derived text; a label reading
+`<script>` has to arrive at the reader as the four characters somebody typed.
+The stylesheet is included as *template source* rather than passed in as a
+variable, which is what keeps `|safe` out of this template entirely: a page with
+one `|safe` in it has an escaping convention, not an escaping guarantee.
+
+**What is not here.** No PDF, no workbook, no browser. The template carries two
+empty extension blocks so a print stylesheet and embedded font faces can be
+layered on by the slice that owns them, and no JavaScript is bundled at all —
+navigation is ordinary anchors, which is the smallest amount of script that can
+satisfy a navigable report.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from jinja2 import Environment, PackageLoader, StrictUndefined
+
+from khepri.rra.bundle import (
+    LANGUAGE_DIRECTION,
+    SURFACE_WEB,
+    CitedFigure,
+    ReportBundle,
+    StatedFigure,
+    SurfaceContent,
+    SurfaceLanguage,
+)
+from khepri.rra.narrative import (
+    LANGUAGE_ARABIC,
+    LANGUAGE_ENGLISH,
+    REQUIRED_LANGUAGES,
+    NarrativeDraft,
+)
+
+HTML_SURFACE_VERSION = "rra006.html.v1"
+
+TEMPLATE_PACKAGE = "khepri.rra.rendering"
+TEMPLATE_DIRECTORY = "templates"
+TEMPLATE_NAME = "report.html.j2"
+STYLESHEET_NAME = "report.css"
+
+# The page's own furniture, in both governed languages. Headings and column
+# names are the renderer's to write — they say nothing about the data — but they
+# are held here rather than in the template so that the two languages are one
+# table with one key set, and a heading added to one cannot silently be missing
+# from the other.
+_CHROME: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "title": "Retail report",
+        "skip": "Skip to the report",
+        "navigation": "On this page",
+        "about": "About this report",
+        "figures": "Figures",
+        "figures_caption": "Every figure in this report, beside the fact it cites",
+        "caveats": "Data caveats",
+        "commentary": "Commentary",
+        "citations": "Citations",
+        "provenance": "Provenance and versions",
+        "label": "Label",
+        "metric": "Metric",
+        "kind": "Kind",
+        "unit": "Unit",
+        "value": "Value",
+        "citation": "Citation",
+        "total": "Total",
+        "none": "None",
+        "cites": "Cites",
+    },
+    LANGUAGE_ARABIC: {
+        "title": "تقرير التجزئة",
+        "skip": "الانتقال إلى التقرير",
+        "navigation": "في هذه الصفحة",
+        "about": "عن هذا التقرير",
+        "figures": "الأرقام",
+        "figures_caption": "كل رقم في هذا التقرير، بجانب الحقيقة التي يُسند إليها",
+        "caveats": "تحذيرات البيانات",
+        "commentary": "التعليق",
+        "citations": "الإسنادات",
+        "provenance": "المصدر والإصدارات",
+        "label": "التسمية",
+        "metric": "المقياس",
+        "kind": "النوع",
+        "unit": "الوحدة",
+        "value": "القيمة",
+        "citation": "الإسناد",
+        "total": "الإجمالي",
+        "none": "لا يوجد",
+        "cites": "يُسند إلى",
+    },
+}
+
+
+class SurfaceRenderFailed(RuntimeError):
+    """The web surface could not be produced from the bundle as supplied."""
+
+
+@dataclass(frozen=True, slots=True)
+class FigureCell:
+    """One figure as one document prints it: the supplied text, and nothing else.
+
+    There is no `value` field on purpose. A renderer holding the `Decimal` beside
+    the string is a renderer that can format the number itself, and the whole
+    guarantee of this surface is that it cannot.
+    """
+
+    figure_id: str
+    citation_id: str
+    metric: str
+    kind: str
+    unit_kind: str
+    label: str | None
+    text: str
+
+    def __post_init__(self) -> None:
+        _require_text(self.figure_id, "figure_id")
+        _require_text(self.citation_id, "citation_id")
+        _require_text(self.text, "text")
+
+
+@dataclass(frozen=True, slots=True)
+class NarrativePassage:
+    """One passage of commentary, and the facts it says it is citing."""
+
+    section_id: str
+    text: str
+    cited_fact_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _require_text(self.section_id, "section_id")
+        _require_text(self.text, "text")
+
+
+@dataclass(frozen=True, slots=True)
+class HtmlSurface:
+    """The rendered pages, beside the claim `bundle.reconcile` will judge.
+
+    Both are returned together because they are derived from one pass over the
+    bundle. A renderer that built the claim separately from the page could
+    reconcile perfectly while shipping a page that says something else.
+    """
+
+    content: SurfaceContent
+    documents: dict[str, str]
+
+    def __post_init__(self) -> None:
+        if set(self.documents) != set(REQUIRED_LANGUAGES):
+            raise ValueError("An HTML surface publishes exactly the governed languages.")
+        for language, document in self.documents.items():
+            _require_text(document, f"documents[{language}]")
+
+
+class HtmlReportRenderer:
+    """The web surface of `bundle.SurfaceRenderer`."""
+
+    def __init__(self, *, environment: Environment | None = None) -> None:
+        self._environment = build_environment() if environment is None else environment
+        if not self._environment.autoescape:
+            # A label reading `<script>` is customer text either way; whether the
+            # reader sees it or runs it is decided entirely here.
+            raise ValueError("The report environment must autoescape.")
+
+    @property
+    def surface(self) -> str:
+        return SURFACE_WEB
+
+    @property
+    def environment(self) -> Environment:
+        return self._environment
+
+    def render(self, bundle: ReportBundle) -> SurfaceContent:
+        return self.render_html(bundle).content
+
+    def render_html(self, bundle: ReportBundle) -> HtmlSurface:
+        """Render both documents, and the claim about what they present."""
+        template = self._environment.get_template(TEMPLATE_NAME)
+        cells = {language: _cells(bundle, language) for language in REQUIRED_LANGUAGES}
+        documents = {
+            language: template.render(_context(bundle, language, cells[language]))
+            for language in REQUIRED_LANGUAGES
+        }
+        return HtmlSurface(content=_content(bundle, cells), documents=documents)
+
+
+def build_environment() -> Environment:
+    """The one environment these templates are rendered in.
+
+    `autoescape` is unconditional rather than selected by file extension: the
+    templates here are named for what they are, and an extension test is a
+    guarantee that depends on somebody naming the next one correctly.
+
+    `StrictUndefined` fails closed. A context key the template asks for and the
+    renderer did not supply is a hole in the page, and a hole that renders as an
+    empty string is a figure, caveat, or disclosure quietly missing.
+    """
+    return Environment(
+        loader=PackageLoader(TEMPLATE_PACKAGE, TEMPLATE_DIRECTORY),
+        autoescape=True,
+        undefined=StrictUndefined,
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+
+
+def _content(
+    bundle: ReportBundle,
+    cells: dict[str, tuple[FigureCell, ...]],
+) -> SurfaceContent:
+    return SurfaceContent(
+        surface=SURFACE_WEB,
+        bundle_id=bundle.bundle_id,
+        languages=tuple(
+            SurfaceLanguage(
+                language=language,
+                direction=LANGUAGE_DIRECTION[language],
+                stated=tuple(
+                    StatedFigure(figure_id=cell.figure_id, text=cell.text)
+                    for cell in cells[language]
+                ),
+                caveats=bundle.caveats,
+                disclosure=bundle.disclosure(language),
+            )
+            for language in REQUIRED_LANGUAGES
+        ),
+    )
+
+
+def _cells(bundle: ReportBundle, language: str) -> tuple[FigureCell, ...]:
+    return tuple(_cell(figure, language) for figure in bundle.figures)
+
+
+def _cell(figure: CitedFigure, language: str) -> FigureCell:
+    text = figure.renderings.get(language)
+    if text is None:
+        # A figure the bundle did not render in this language is a cell this
+        # surface would have to write for itself. It refuses instead.
+        raise SurfaceRenderFailed("A figure carries no rendering for a governed language.")
+    return FigureCell(
+        figure_id=figure.figure_id,
+        citation_id=figure.citation_id,
+        metric=figure.metric,
+        kind=figure.kind,
+        unit_kind=figure.unit_kind,
+        label=figure.label,
+        text=text,
+    )
+
+
+def _context(
+    bundle: ReportBundle,
+    language: str,
+    cells: tuple[FigureCell, ...],
+) -> dict[str, object]:
+    return {
+        "language": language,
+        "direction": LANGUAGE_DIRECTION[language],
+        "stylesheet": STYLESHEET_NAME,
+        "chrome": _CHROME[language],
+        "disclosure": bundle.disclosure(language),
+        "narrative_state": bundle.narrative_state,
+        "caveats": list(bundle.caveats),
+        "cells": list(cells),
+        "citations": sorted({cell.citation_id for cell in cells}),
+        "passages": list(_passages(bundle.narrative, language)),
+        "provenance": _provenance(bundle),
+    }
+
+
+def _passages(
+    narrative: NarrativeDraft | None,
+    language: str,
+) -> tuple[NarrativePassage, ...]:
+    if narrative is None:
+        return ()
+    entry = next(
+        (item for item in narrative.languages if item.language == language),
+        None,
+    )
+    if entry is None:
+        # A narrative missing one language would publish commentary to one
+        # reader and silence to the other, which is the parity failure the
+        # bundle exists to prevent.
+        raise SurfaceRenderFailed("The narrative carries no passage for a governed language.")
+    return tuple(
+        NarrativePassage(
+            section_id=section.section_id,
+            text=section.text,
+            cited_fact_ids=tuple(section.cited_fact_ids),
+        )
+        for section in entry.sections
+    )
+
+
+def _provenance(bundle: ReportBundle) -> tuple[tuple[str, str], ...]:
+    """The version strings and digests a reader can check this report against.
+
+    Machine-readable, identical in both languages, and content-free by
+    construction: every entry comes from `BundleIdentity`, whose fields are all
+    governed versions, digests, or counts.
+    """
+    document = bundle.identity.as_document()
+    entries = {**{name: str(value) for name, value in document.items()}}
+    entries["bundle_id"] = bundle.bundle_id
+    entries["html_surface_version"] = HTML_SURFACE_VERSION
+    return tuple(sorted(entries.items()))
+
+
+def _require_text(value: str, name: str) -> None:
+    if not value.strip():
+        raise ValueError(f"{name} is required.")
