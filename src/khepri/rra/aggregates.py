@@ -234,8 +234,10 @@ def _disambiguate(
 ) -> dict[str | None, str]:
     """Give every bucket a distinct label without ever hashing a protected key.
 
-    A digest is only a hint, not a guarantee: six hex characters do collide.
-    Whatever survives the digest pass is separated by a deterministic index.
+    A digest is only a hint, not a guarantee: six hex characters do collide, and
+    an ordinal suffix can itself match a literal source label. Each label is
+    therefore claimed against the labels already assigned, incrementing the
+    ordinal until one is free, so uniqueness holds by construction.
     """
     counts: dict[str, int] = {}
     for label in rendered.values():
@@ -248,13 +250,21 @@ def _disambiguate(
         for key, label in rendered.items()
     }
 
-    seen: dict[str, int] = {}
+    # Protected keys claim their labels first so a redacted bucket keeps the
+    # canonical generated label and an ordinary value is the one displaced.
+    order = sorted(suffixed, key=lambda key: key not in protected)
+    taken: set[str] = set()
     final: dict[str | None, str] = {}
-    for key, label in suffixed.items():
-        occurrence = seen.get(label, 0) + 1
-        seen[label] = occurrence
-        final[key] = label if occurrence == 1 else f"{label} #{occurrence}"
-    return final
+    for key in order:
+        label = suffixed[key]
+        candidate = label
+        occurrence = 1
+        while candidate in taken:
+            occurrence += 1
+            candidate = f"{label} #{occurrence}"
+        taken.add(candidate)
+        final[key] = candidate
+    return {key: final[key] for key in rendered}
 
 
 def _discriminator(key: str | None) -> str:

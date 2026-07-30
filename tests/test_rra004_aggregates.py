@@ -217,3 +217,21 @@ def test_colliding_discriminators_still_produce_distinct_labels() -> None:
     assert comparison.distinct_values == 2
     assert len(set(labels)) == 2
     assert sum(bucket.value for bucket in comparison.buckets) == Decimal("3.00")
+
+
+def test_an_ordinal_suffix_never_collides_with_a_literal_source_label() -> None:
+    # The first two share the discriminator 93f4f2, so the loser becomes
+    # "Online (93f4f2) #2" -- which the third value spells literally.
+    comparison = build_comparison(
+        dimension="channel",
+        keys=["Online*<@", "Online~\\>", "Online (93f4f2) #2"],
+        values=[Decimal("1.00"), Decimal("2.00"), Decimal("3.00")],
+        display=lambda value: "Online" if value.startswith("Online*") or value.startswith(
+            "Online~"
+        ) else value,
+    )
+
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert comparison.distinct_values == 3
+    assert len(set(labels)) == 3
+    assert sum(bucket.value for bucket in comparison.buckets) == Decimal("6.00")

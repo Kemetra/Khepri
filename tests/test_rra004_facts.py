@@ -648,3 +648,11 @@ def test_an_emitted_returns_total_declares_its_interpretation() -> None:
 
     assert result.value(METRIC_RETURNS) == "5.00"
     assert CAVEAT_RETURNS_AS_AMOUNT in result.caveats
+
+
+def test_count_magnitude_beyond_the_governed_maximum_is_refused() -> None:
+    huge = b"9" * 70
+    content = b"date,revenue,units\n2026-01-05,10.00," + huge + b"\n2026-01-06,20.00,1\n"
+
+    with pytest.raises(FactsRefused):
+        package(content)

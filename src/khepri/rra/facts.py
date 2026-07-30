@@ -85,8 +85,9 @@ CAVEAT_RETURNS_AS_AMOUNT = "returns_interpreted_as_amount"
 RATIO_PRECISION = 4
 MIN_MONETARY_PRECISION = 2
 MAX_MONETARY_PRECISION = 6
-# Bounded so a governed total stays exact under the serializing context too.
-MAX_MONETARY_DIGITS = 18
+# Bounded so a governed total stays exact under the serializing context too,
+# and so no value can exceed the arithmetic context when it is quantized.
+MAX_MEASURE_DIGITS = 18
 ARITHMETIC_PRECISION = 60
 
 COMPARISON_DIMENSIONS = (
@@ -839,7 +840,7 @@ def _decimal_values(frame: pl.DataFrame, position: int) -> tuple[list[Decimal | 
             value = Decimal(raw)
         except InvalidOperation as error:
             raise FactsRefused("Governed measure contains an unparsable value.") from error
-        if len(value.as_tuple().digits) > MAX_MONETARY_DIGITS:
+        if len(value.as_tuple().digits) > MAX_MEASURE_DIGITS:
             raise FactsRefused("Monetary input magnitude exceeds the governed maximum.")
         exponent = value.as_tuple().exponent
         scale = max(scale, -int(exponent)) if isinstance(exponent, int) else scale
@@ -854,9 +855,12 @@ def _integer_values(frame: pl.DataFrame, position: int) -> list[int | None]:
             values.append(None)
             continue
         try:
-            values.append(int(raw))
+            count = int(raw)
         except ValueError as error:
             raise FactsRefused("Governed measure contains an unparsable value.") from error
+        if len(str(abs(count))) > MAX_MEASURE_DIGITS:
+            raise FactsRefused("Count input magnitude exceeds the governed maximum.")
+        values.append(count)
     return values
 
 
