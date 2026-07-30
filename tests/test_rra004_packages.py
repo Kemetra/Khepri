@@ -402,6 +402,32 @@ def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
     assert test.client.get("/api/v1/beta/facts").json()["package_id"] == "fct_next"
 
 
+def test_a_profile_mapped_under_superseded_rules_refuses_the_package() -> None:
+    # The package cites the profile it is published against, so the two must
+    # have been decided under the same mapping rules.
+    test = prepared()
+    with test.factory.begin() as database:
+        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
+
+    response = test.client.post("/api/v1/beta/facts")
+
+    assert response.status_code == 409
+    assert "superseded" in response.json()["detail"]
+    with test.factory() as database:
+        assert database.scalar(select(FactPackageRow)) is None
+
+
+def test_a_superseded_profile_never_serves_an_older_package_as_current() -> None:
+    # With a package already published, the stale profile must refuse rather
+    # than hand back the earlier publication as though it were current.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+    with test.factory.begin() as database:
+        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
+
+    assert test.client.post("/api/v1/beta/facts").status_code == 409
+
+
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
     first = prepared().client.post("/api/v1/beta/facts").json()
     second = prepared().client.post("/api/v1/beta/facts").json()

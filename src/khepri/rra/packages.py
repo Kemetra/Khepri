@@ -22,7 +22,7 @@ from khepri.rra.facts import (
     build_fact_package,
 )
 from khepri.rra.intake import SessionReader, StoragePolicyViolation, UploadRepository
-from khepri.rra.mapping import build_mapping
+from khepri.rra.mapping import MAPPING_VERSION, build_mapping
 from khepri.rra.profiling import build_profile
 from khepri.rra.sessions import (
     SessionExpired,
@@ -138,10 +138,21 @@ class FactPackageService:
         # two disagree, so the package inherits the decision rather than
         # re-taking it.
         request = _requested_by(profile_record)
+        # A package cites the profile it was published against, so the two must
+        # have been decided under the same mapping rules. Publishing under newer
+        # rules than the profile was mapped with would attribute this package's
+        # figures to an admissibility decision taken under the old ones.
+        if profile_record.mapping_version != MAPPING_VERSION:
+            raise PackageRefused(
+                "Stored profile was mapped under a superseded mapping version."
+            )
+        # Keyed by the versions the stored row will actually carry. Keying the
+        # lookup on anything else lets the check miss a row the insert then
+        # collides with.
         versions = PackageVersions(
             package_version=PACKAGE_VERSION,
             formula_version=FORMULA_VERSION,
-            mapping_version=profile_record.mapping_version,
+            mapping_version=MAPPING_VERSION,
         )
         existing = self._packages.get_package_for_versions(
             profile_record.profile_id,
