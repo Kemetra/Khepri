@@ -13,6 +13,17 @@ database. Authenticating instead against the uploaded object is not durable:
 RRA-002 deletes it on request or at expiry, so the guarantee would lapse
 exactly when a package is most likely to be cited. The limit is accepted
 deliberately rather than by oversight.
+
+**What happens when the governed versions advance.** A profile produced under
+superseded profiling or mapping rules cannot back a package, and a session's
+profile is written once per upload, so between a deployment and that session's
+expiry its fact requests are refused with no way to re-profile. This is
+deliberate: the alternative is publishing figures attributed to an
+admissibility decision taken under rules that no longer hold. It resolves
+itself, because RRA-002 expires the upload and deletes the content, after which
+a fresh upload is profiled under the current rules. Making it recoverable
+sooner needs versioned profiles, which is an RRA-003 contract change and not
+decided here.
 """
 
 from __future__ import annotations
