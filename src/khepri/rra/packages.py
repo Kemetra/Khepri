@@ -1,3 +1,20 @@
+"""Publication and retrieval of the governed retail fact package.
+
+**What the integrity checks here do and do not cover.** A stored package is
+verified against its own digest, and everything it claims about its provenance
+is checked against the profile it cites. Both authenticators live in the same
+database as the document they authenticate, so they detect accidental
+corruption, partial writes, and a package drifting from its profile. They do
+not detect a writer with database access who alters a figure and recomputes the
+digest, and no check reading only from this store could.
+
+Closing that would need a signature over the digest with a key held outside the
+database. Authenticating instead against the uploaded object is not durable:
+RRA-002 deletes it on request or at expiry, so the guarantee would lapse
+exactly when a package is most likely to be cited. The limit is accepted
+deliberately rather than by oversight.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -78,7 +95,9 @@ class FactPackageRecord:
 
         The package is content-addressed and presented as immutable, so serving
         a document that does not hash to its recorded address would publish
-        altered figures under an address that vouches for the originals.
+        altered figures under an address that vouches for the originals. This
+        catches corruption and partial writes, not a writer who recomputes the
+        digest -- see the module docstring for why that boundary is where it is.
         """
         if hashlib.sha256(canonical_json(self.document).encode()).hexdigest() != (
             self.package_digest
