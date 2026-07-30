@@ -789,6 +789,54 @@ def test_an_identifier_embedded_in_a_larger_value_is_redacted() -> None:
         assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
 
 
+def test_aggregate_facts_declare_their_unit_kind() -> None:
+    built = package(GOLDEN)
+    document = built.as_document()
+
+    for measure, unit_kind in ((METRIC_REVENUE, UNIT_MONETARY), (METRIC_UNITS, UNIT_COUNT)):
+        assert built.trend(measure).unit_kind == unit_kind
+        assert built.comparison(SEMANTIC_CATEGORY, measure).unit_kind == unit_kind
+
+    # A report consumer reads the serialized document, not the objects, so the
+    # unit has to survive serialization rather than be inferred from the metric.
+    for entry in (*document["series"], *document["comparisons"]):
+        assert entry["unit_kind"] in {UNIT_MONETARY, UNIT_COUNT}
+
+
+def test_an_address_literal_mailbox_is_redacted_like_a_domain_one() -> None:
+    # A bracketed host has no domain labels and no alphabetic suffix, so the
+    # structural domain check rejects it and the label sanitizer would publish
+    # the whole identifier as "buyer192.0.2.1".
+    for value in ("buyer@[192.0.2.1]", "Jane <buyer@[192.0.2.1]>", "buyer@[IPv6:2001:db8::1]"):
+        content = (
+            "date,revenue,category\n"
+            "2026-01-05,10.00,Beverages\n"
+            "2026-01-06,20.00,Snacks\n"
+            "2026-01-07,30.00,Bakery\n"
+            f"2026-01-08,40.00,{value}\n"
+        ).encode()
+
+        comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+        labels = [bucket.label for bucket in comparison.buckets]
+        assert comparison.redacted_values == 1, value
+        assert all("192" not in label and "buyer" not in label for label in labels), value
+        assert all("db8" not in label for label in labels), value
+        assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
+
+
+def test_an_ordinary_label_containing_an_at_sign_is_not_redacted() -> None:
+    content = (
+        b"date,revenue,branch\n"
+        b"2026-01-05,10.00,Cairo @ Festival City\n"
+        b"2026-01-06,20.00,Giza\n"
+    )
+
+    comparison = package(content).comparison(SEMANTIC_STORE).comparison
+
+    assert comparison.redacted_values == 0
+    assert "Cairo Festival City" in [bucket.label for bucket in comparison.buckets]
+
+
 def test_a_grouped_phone_number_inside_a_larger_value_is_redacted() -> None:
     # Splitting the value on whitespace breaks the grouping the number is
     # written in, leaving fragments too short to recognize.

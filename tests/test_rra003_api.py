@@ -12,6 +12,7 @@ from khepri.rra.api import create_app
 from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
 from khepri.rra.intake import IntakeService, StoredObject
+from khepri.rra.mapping import MAPPING_VERSION
 from khepri.rra.persistence import (
     Base,
     SqlDeletionRepository,
@@ -19,6 +20,7 @@ from khepri.rra.persistence import (
     SqlSessionStore,
     SqlUploadRepository,
 )
+from khepri.rra.profiling import PROFILE_VERSION
 from khepri.rra.sessions import InvitationService
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
@@ -176,8 +178,8 @@ def test_profile_admits_a_golden_retail_dataset() -> None:
     assert response.status_code == 201
     body = response.json()
     assert body["profile_id"] == "prf_1"
-    assert body["profile_version"] == "rra003.profile.v1"
-    assert body["mapping_version"] == "rra003.mapping.v1"
+    assert body["profile_version"] == PROFILE_VERSION
+    assert body["mapping_version"] == MAPPING_VERSION
     assert len(body["profile_digest"]) == 64
     assert body["row_count"] == 2
     assert body["column_count"] == 5

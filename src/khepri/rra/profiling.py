@@ -13,7 +13,7 @@ import polars as pl
 
 from khepri.rra.intake import CSV_MEDIA_TYPE, XLSX_MEDIA_TYPE
 
-PROFILE_VERSION = "rra003.profile.v1"
+PROFILE_VERSION = "rra003.profile.v2"
 
 MAX_PROFILED_COLUMNS = 512
 MAX_SAFE_LABEL_LENGTH = 64
@@ -39,6 +39,10 @@ _PHONE_SPAN = re.compile(r"(?<![^\W_])\+?\d[\d .\-()/]{7,18}\d(?![^\W_])")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
 _FRAGMENT_SEPARATORS = re.compile(r"[\s<>,;:()\[\]{}\"'|]+")
+# A mailbox written against a bracketed address literal is split apart by the
+# fragment separators, so it is also sought as a span whose bracketed host is
+# kept whole.
+_EMAIL_CANDIDATE = re.compile(r"[^\s<>,;:()\[\]{}\"'|]+@(?:\[[^\]\s]*\]|[^\s<>,;:()\[\]{}\"'|]+)")
 
 _DATE_FORMATS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("iso_date", ("%Y-%m-%d", "%Y/%m/%d")),
@@ -425,7 +429,7 @@ def personal_value_shapes(value: str) -> tuple[str, ...]:
     # carry it to a published label intact.
     candidates = (text, *_fragments(text))
     shapes: list[str] = []
-    if any(_is_email(part) for part in candidates):
+    if any(_is_email(part) for part in candidates) or _contains_email(text):
         shapes.append("value_email")
     if any(_is_phone(part) for part in candidates) or _contains_phone(text):
         shapes.append("value_phone")
@@ -476,11 +480,37 @@ def _is_email(value: str) -> bool:
     local, separator, domain = value.partition("@")
     if not separator or not local or "@" in domain or " " in value:
         return False
+    # A mailbox may name its host by address instead of by domain, in which case
+    # there are no labels to check and no alphabetic suffix to require.
+    if domain.startswith("[") and domain.endswith("]"):
+        return _is_address_literal(domain[1:-1])
     labels = domain.split(".")
     if len(labels) < 2 or not all(_is_domain_label(label) for label in labels):
         return False
+    if _is_ipv4(domain):
+        return True
     suffix = labels[-1]
     return len(suffix) >= 2 and any(character.isalpha() for character in suffix)
+
+
+def _contains_email(text: str) -> bool:
+    return any(_is_email(match.group()) for match in _EMAIL_CANDIDATE.finditer(text))
+
+
+def _is_address_literal(text: str) -> bool:
+    candidate = text[5:] if text[:5].casefold() == "ipv6:" else text
+    if _is_ipv4(candidate):
+        return True
+    return ":" in candidate and all(
+        character in "0123456789abcdefABCDEF:." for character in candidate
+    )
+
+
+def _is_ipv4(text: str) -> bool:
+    parts = text.split(".")
+    return len(parts) == 4 and all(
+        part.isdigit() and len(part) <= 3 and int(part) <= 255 for part in parts
+    )
 
 
 def _is_domain_label(label: str) -> bool:

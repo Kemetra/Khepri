@@ -14,7 +14,10 @@ from khepri.rra.profiling import (
     label_tokens,
 )
 
-MAPPING_VERSION = "rra003.mapping.v1"
+# v2 publishes the measure-kind disqualifiers and the shared-column refusal. The
+# same profiled input can map differently under v1, so a recorded mapping
+# version has to distinguish them for replay to mean anything.
+MAPPING_VERSION = "rra003.mapping.v2"
 
 SEMANTIC_TRANSACTION_DATE = "transaction_date"
 SEMANTIC_REVENUE = "revenue"

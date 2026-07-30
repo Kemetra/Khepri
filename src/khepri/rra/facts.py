@@ -133,6 +133,7 @@ class FactSeries:
     metric: str
     measure: str
     precision: int
+    unit_kind: str
     series: Series
     caveats: tuple[str, ...]
 
@@ -143,6 +144,7 @@ class FactSeries:
             "metric": self.metric,
             "measure": self.measure,
             "precision": self.precision,
+            "unit_kind": self.unit_kind,
             "caveats": list(self.caveats),
             **self.series.as_document(precision=self.precision),
         }
@@ -155,6 +157,7 @@ class FactComparison:
     metric: str
     measure: str
     precision: int
+    unit_kind: str
     comparison: Comparison
     caveats: tuple[str, ...]
 
@@ -165,6 +168,7 @@ class FactComparison:
             "metric": self.metric,
             "measure": self.measure,
             "precision": self.precision,
+            "unit_kind": self.unit_kind,
             "caveats": list(self.caveats),
             **self.comparison.as_document(precision=self.precision),
         }
@@ -268,6 +272,7 @@ class _Aggregated:
     values: list[Decimal | None]
     total: Decimal | None
     precision: int
+    unit_kind: str
 
 
 def build_fact_package(
@@ -445,12 +450,14 @@ def _build(
             values=measures.revenue,
             total=revenue_total,
             precision=money,
+            unit_kind=UNIT_MONETARY,
         ),
         _Aggregated(
             measure=SEMANTIC_UNITS,
             values=[None if value is None else Decimal(value) for value in measures.units],
             total=None if units_total is None else Decimal(units_total),
             precision=0,
+            unit_kind=UNIT_COUNT,
         ),
     )
     series = _series(
@@ -591,6 +598,7 @@ def _series(
                 metric=metric,
                 measure=entry.measure,
                 precision=entry.precision,
+                unit_kind=entry.unit_kind,
                 series=series,
                 caveats=tuple(entry_caveats),
             )
@@ -653,6 +661,7 @@ def _comparisons(
                     metric=metric,
                     measure=entry.measure,
                     precision=entry.precision,
+                    unit_kind=entry.unit_kind,
                     comparison=comparison,
                     caveats=tuple(entry_caveats),
                 )
