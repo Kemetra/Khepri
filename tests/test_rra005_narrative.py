@@ -41,6 +41,7 @@ from khepri.rra.narrative import (
     NarrativeService,
     NarrativeUnavailable,
     ProviderRefused,
+    _normalize_digits,
     validate,
 )
 from khepri.rra.profiling import build_profile, canonical_json
@@ -444,7 +445,7 @@ def test_arabic_indic_digits_ground_against_the_same_value() -> None:
 
     validate(
         draft(
-            arabic=(section("الإيرادات ٥٠٠٫٠٠ جنيه.", cited=(fact_id,)),),
+            arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
             english=(section("Revenue 500.00.", cited=(fact_id,)),),
         ),
         request=request,
@@ -1256,6 +1257,256 @@ def test_an_ordinary_short_word_is_not_read_as_a_currency_code(tail: str) -> Non
         ),
         request=request,
     )
+
+
+@pytest.mark.parametrize(
+    ("claim_ar", "claim_en"),
+    [
+        ("الإيرادات ٥٠٠٫٠٠ جنيه.", "Revenue was 500.00 dollars."),
+        ("الإيرادات ٥٠٠٫٠٠ دولار.", "Revenue was 500.00 pounds."),
+        ("الإيرادات ٥٠٠٫٠٠ ريال.", "Revenue was 500.00 euros."),
+    ],
+)
+def test_a_currency_named_in_words_is_refused_beside_a_figure(
+    claim_ar: str,
+    claim_en: str,
+) -> None:
+    # A package that raises `currency_not_declared` does so because it does not
+    # know one, so naming a currency in prose invents it exactly as `$500.00`
+    # does. The symbol half was a Unicode property; this half is a vocabulary.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim_ar, cited=(fact_id,)),),
+                english=(section(claim_en, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+@pytest.mark.parametrize("lead", ["USD:", "EGP -", "dollars:", "USD;"])
+def test_a_currency_separated_by_punctuation_still_qualifies_the_figure(
+    lead: str,
+) -> None:
+    # `USD: 500.00` gives the figure a currency through punctuation rather than
+    # beside it. Punctuation is no more a boundary than the space in `500.00 %`.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = f"{lead} 500.00 was the total."
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_a_scale_word_in_the_previous_sentence_does_not_reach_the_figure() -> None:
+    # The punctuation reach is currency-only and one-sided on purpose. Applying
+    # it to the scale words would make an ordinary pair of sentences unwritable.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = "Units are counted in thousands. 500.00 was the revenue."
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
+            english=(section(claim, cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+@pytest.mark.parametrize(
+    ("sign", "name"),
+    [
+        ("-", "hyphen-minus U+002D"),
+        ("−", "minus sign U+2212"),
+        ("－", "fullwidth hyphen-minus U+FF0D"),
+    ],
+)
+def test_a_minus_spaced_away_from_its_digits_still_reverses_the_figure(
+    sign: str,
+    name: str,
+) -> None:
+    # The space between a sign and its digits is typography, not a boundary —
+    # the same reading that binds `500.00 %` to its percent sign.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = f"Revenue was {sign} 500.00."
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER, name
+
+
+@pytest.mark.parametrize(
+    ("dash", "name"),
+    [
+        ("–", "en dash U+2013"),
+        ("—", "em dash U+2014"),
+        ("‒", "figure dash U+2012"),
+    ],
+)
+def test_a_prose_dash_set_off_from_a_figure_is_punctuation_not_a_sign(
+    dash: str,
+    name: str,
+) -> None:
+    # Attached, every dash is a minus and stays refused. Standing alone between
+    # spaces an em dash is how both governed languages punctuate a clause, and
+    # Unicode names it `EM DASH` rather than a minus.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = f"The period closed well {dash} 500.00 was the total."
+
+    validate(
+        draft(
+            arabic=(section(f"أُغلقت الفترة {dash} ٥٠٠٫٠٠ إجمالاً.", cited=(fact_id,)),),
+            english=(section(claim, cited=(fact_id,)),),
+        ),
+        request=request,
+    ), name
+
+
+def test_a_sentence_ending_after_a_figure_ends_what_can_qualify_it() -> None:
+    # `500.00. Thousands of units shipped.` states no magnitude: the full stop
+    # closed the sentence. A comma closes nothing, so `500.00, USD` still does.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٥٠٠٫٠٠. شُحنت آلاف الوحدات.", cited=(fact_id,)),),
+            english=(
+                section("Revenue was 500.00. Thousands of units shipped.", cited=(fact_id,)),
+            ),
+        ),
+        request=request,
+    )
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("الإيرادات ٥٠٠٫٠٠، بالدولار.", cited=(fact_id,)),),
+                english=(section("Revenue was 500.00, USD.", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_normalizing_a_narrative_never_changes_where_its_characters_sit() -> None:
+    # `_detached_sign` reads the original character at an offset it found in the
+    # normalized text, which only holds while normalization is one-for-one.
+    for sample in (
+        "الإيرادات ٥٠٠٫٠٠ — ٩٠٪ من الهدف.",
+        "Revenue was ９９９.99, ６６.67％ of target − 500.00.",
+        "Mixed ٥٠٠٫٠٠ and 500.00 and ５００.００.",
+    ):
+        assert len(_normalize_digits(sample)) == len(sample)
+
+
+def test_a_spaced_plus_states_the_figure_it_precedes_and_is_grounded() -> None:
+    # Reading the sign rather than refusing the character means `+ 500.00`
+    # asserts exactly 500.00, and a supplied 500.00 grounds it.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
+            english=(section("Revenue was + 500.00.", cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+def test_a_dash_between_two_figures_is_a_range_not_a_sign() -> None:
+    # `90.00 - 284.50` reads as a span over two supplied points. Both operands
+    # are grounded on their own, so the dash asserts nothing new, and treating
+    # it as a sign would make every range in either language unwritable.
+    request = request_for()
+    series = request.document["series"][0]
+    fact_id = str(series["fact_id"])
+    claim = "Daily revenue ran 90.00 - 284.50 across the period."
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٩٠٫٠٠ - ٢٨٤٫٥٠.", cited=(fact_id,)),),
+            english=(section(claim, cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["customer Cairo record 12345", "", "Revenue was 500.00", "v1", "x" * 200],
+)
+def test_an_adapter_version_that_is_not_shaped_like_one_is_not_recorded(
+    version: str,
+) -> None:
+    # `adapter_version` is provider-controlled text that reaches the attempt
+    # record, so it is the same hole the refusal reasons were.
+    class OddlyNamedAdapter:
+        @property
+        def adapter_version(self) -> str:
+            return version
+
+        def draft(self, request: NarrativeRequest, *, timeout_seconds: Decimal) -> NarrativeDraft:
+            raise NarrativeUnavailable
+
+    times = iter([1000, 1250])
+    composed = NarrativeService(
+        adapter=OddlyNamedAdapter(),
+        monotonic_ms=lambda: next(times),
+    ).compose(package())
+
+    assert composed.attempt.adapter_version == "unknown"
+
+
+def test_a_provider_sentence_offered_as_a_version_reaches_no_part_of_the_record() -> None:
+    leaked = "customer Cairo record 12345"
+
+    class LeakyAdapter:
+        @property
+        def adapter_version(self) -> str:
+            return leaked
+
+        def draft(self, request: NarrativeRequest, *, timeout_seconds: Decimal) -> NarrativeDraft:
+            raise NarrativeUnavailable
+
+    times = iter([1000, 1250])
+    composed = NarrativeService(
+        adapter=LeakyAdapter(),
+        monotonic_ms=lambda: next(times),
+    ).compose(package())
+
+    assert leaked not in canonical_json(composed.attempt.as_document())
+
+
+def test_an_adapter_version_in_the_governed_shape_is_recorded_as_given() -> None:
+    request = NarrativeRequest.of(package(), adapter_version="vendor.model-2.v7")
+
+    assert request.document["adapter_version"] == "vendor.model-2.v7"
 
 
 @pytest.mark.parametrize(

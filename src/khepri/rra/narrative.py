@@ -234,7 +234,7 @@ class NarrativeRequest:
         source = package.as_document()
         document = {
             "narrative_version": NARRATIVE_VERSION,
-            "adapter_version": adapter_version,
+            "adapter_version": _governed_version(adapter_version),
             "package_version": source["package_version"],
             "formula_version": source["formula_version"],
             "mapping_version": source["mapping_version"],
@@ -513,8 +513,10 @@ class NarrativeService:
         requested = tuple(languages)
         try:
             # Reading the version is already the adapter's code running, so it
-            # is inside the failure policy rather than in front of it.
-            adapter_version = self._adapter.adapter_version
+            # is inside the failure policy rather than in front of it. What it
+            # returns is provider-controlled text and is recorded, so it is
+            # checked for shape before it is believed.
+            adapter_version = _governed_version(self._adapter.adapter_version)
         except Exception:  # noqa: BLE001 - a misconfigured provider is a refusal
             return self._refuse(
                 started,
@@ -691,11 +693,23 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
             # `500k` and `INV-1`: digits fused to letters mean something the
             # number alone does not say.
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
-        _assert_unmodified(normalized[: match.start()], tail)
+        head, sign = _detached_sign(normalized[: match.start()], text[: match.start()])
         # A trailing full stop or comma ends a sentence rather than the number.
         trimmed = candidate.rstrip(".,")
+        # A full stop the candidate swallowed closes the sentence, so what
+        # follows begins a new one and qualifies nothing: `500.00. Thousands of
+        # units shipped.` states no magnitude. A comma does not close anything,
+        # so `500.00, USD` still gives the figure a currency.
+        suffix = "" if candidate[len(trimmed) :].startswith(".") else tail
+        _assert_unmodified(head, suffix)
         if trimmed in allowed.labels:
             continue
+        # A sign the writer spaced away from its digits is still the sign of
+        # those digits, for the same reason the space in `500.00 %` does not
+        # detach the percent: typography is not a boundary. Reading `- 500.00`
+        # as positive is the sign hole in its fourth form, after `-500.00`,
+        # `−500.00` and the other dash code points.
+        trimmed = sign + trimmed
         if not _COMPLETE_NUMBER.fullmatch(trimmed):
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
         value = _parse_number(trimmed)
@@ -708,7 +722,7 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
         # The space in `500.00 %` is typography, not a boundary: reading the
         # suffix only when it is flush against the digits would let the most
         # ordinary way of writing a percentage escape the check entirely.
-        stated = allowed.percents if _states_percent(tail) else allowed.numbers
+        stated = allowed.percents if _states_percent(suffix) else allowed.numbers
         if value not in stated:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
 
@@ -760,8 +774,87 @@ def _assert_unmodified(before: str, after: str) -> None:
     if _is_operator(leading[-1:]) or _is_operator(trailing[:1]):
         raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
     for word in (_last_word(leading), _first_word(trailing)):
-        if word and (word.casefold() in _SCALE_WORDS or _is_currency_code(word)):
+        if word and (word.casefold() in _SCALE_WORDS or _names_currency(word)):
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+    # `USD: 500.00` gives a figure a currency through punctuation instead of
+    # beside it, and punctuation is no more a boundary here than space was.
+    # The reach is deliberately one-sided and currency-only: reading past
+    # punctuation on the trailing side would make `500.00. Thousands of units
+    # shipped.` unwritable, and doing it for the scale words would refuse
+    # `Units are in thousands. 500.00 was revenue.` — both are ordinary prose
+    # that says nothing about the figure.
+    if _names_currency(_last_word(_before_punctuation(leading))):
+        raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+
+
+def _detached_sign(head: str, original: str) -> tuple[str, str]:
+    """Split a sign the writer spaced away from its digits off the text before it.
+
+    A sign is a sign when a figure follows it and nothing numeric precedes it:
+    `Revenue was - 500.00` asserts a negative, and reading it as positive is
+    the sign hole in its fourth form, after `-500.00`, `−500.00` and the dash
+    code points that were enumerated rather than asked about. Between two
+    figures — `300.00 - 500.00` — it is a range or a subtraction; both operands
+    are grounded on their own, so it is left alone.
+
+    *Detached* is where the code point matters again. `_normalize_digits`
+    collapses every dash onto `-` because a dash **attached** to digits is a
+    sign whatever it is; standing alone between spaces it is usually
+    punctuation, and `closed well — 500.00` is ordinary prose in both governed
+    languages. So the original character is consulted, and Unicode is asked for
+    it: a minus is a character whose *name* says minus. That admits
+    `HYPHEN-MINUS`, `MINUS SIGN` and their width variants while leaving `EM
+    DASH`, `EN DASH` and `FIGURE DASH` as the punctuation they are, without
+    listing a single code point — names are immutable under Unicode's stability
+    policy, so this stays a property lookup rather than the enumeration that
+    has failed repeatedly here.
+
+    What it does not do is read intent: a hyphen-minus used as a separator,
+    `Beverages - 500.00`, is still taken for a negative and refused. That
+    direction is chosen deliberately — it cannot silently reverse a figure.
+    """
+    trimmed = head.rstrip(_INLINE_SPACE)
+    if trimmed == head or not trimmed or trimmed[-1] not in "+-":
+        # No space was stripped, so any sign is flush against the digits and
+        # the candidate already contains it.
+        return head, ""
+    sign = trimmed[-1]
+    # Normalization is character-for-character, so the same index addresses the
+    # character the writer actually typed.
+    if sign == "-" and not _is_minus(original[len(trimmed) - 1]):
+        return head, ""
+    before = trimmed[:-1].rstrip(_INLINE_SPACE)
+    if before[-1:].isdigit():
+        return head, ""
+    return before, sign
+
+
+def _is_minus(character: str) -> bool:
+    return "MINUS" in unicodedata.name(character, "")
+
+
+def _before_punctuation(text: str) -> str:
+    trimmed = text.rstrip(_INLINE_SPACE)
+    while trimmed and unicodedata.category(trimmed[-1]).startswith("P"):
+        trimmed = trimmed[:-1].rstrip(_INLINE_SPACE)
+    return trimmed
+
+
+def _names_currency(word: str) -> bool:
+    """Whether a word beside a figure gives it a currency, by code or by name.
+
+    A package that raises `currency_not_declared` does so because it does not
+    know one, so `500.00 dollars` and `500.00 جنيه` invent a currency exactly
+    as `$500.00` and `USD 500.00` do. The codes are half shape and half list;
+    the names are a plain vocabulary, the fourth on this pull request after the
+    scale words, the percent words and the code exclusions.
+
+    It costs the non-monetary senses of these words — `500 pounds` of anything
+    is refused — and it misses any currency name outside the list. Both are
+    accepted: a sentence lost is cheaper than a currency invented on a figure
+    the package refused to attach one to.
+    """
+    return bool(word) and (_is_currency_code(word) or word.casefold() in _CURRENCY_WORDS)
 
 
 def _is_currency_code(word: str) -> bool:
@@ -777,6 +870,30 @@ def _is_currency_code(word: str) -> bool:
     if _ISO_CURRENCY_CODE.fullmatch(word):
         return True
     return word.casefold() in _UNAMBIGUOUS_CURRENCY_CODES
+
+
+def _governed_version(value: object) -> str:
+    """The adapter's version if it is shaped like one, `unknown` otherwise.
+
+    `adapter_version` is provider-controlled text that is copied into
+    `NarrativeAttempt` and serialized, so it is the same hole the refusal
+    reasons were: an adapter returning `customer Cairo record 12345` instead of
+    raising put that string verbatim into a record documented as content-free.
+    Reasons are gated against a closed list; a version cannot be, because the
+    whole point is that adapters this module has never heard of can name
+    themselves.
+
+    So this gates on *format* rather than membership: dotted lowercase segments
+    ending in `.v<n>`, the convention every governed version in this codebase
+    already follows. That is a shape, not a proof — `cairo.v1` is shaped like a
+    version and would be taken at its word. What it does guarantee is that no
+    text carrying spaces, capitals, or sentence punctuation can be recorded,
+    and the length bound stops a version-shaped string from being long enough
+    to carry a payload.
+    """
+    if not isinstance(value, str) or len(value) > _MAX_VERSION_LENGTH:
+        return _UNKNOWN_ADAPTER
+    return value if _GOVERNED_VERSION.fullmatch(value) else _UNKNOWN_ADAPTER
 
 
 def _is_currency(character: str) -> bool:
@@ -911,6 +1028,11 @@ def _normalize_digits(text: str) -> str:
     fullwidth `９９９` unrecognized, so it produced no candidate and escaped
     grounding entirely — a scanner that silently sees nothing is worse than one
     that refuses, because it reports success.
+
+    Every branch of `_normalized` returns exactly one character, so the result
+    is the same length as the input and an offset into it addresses the same
+    character in the original. `_detached_sign` relies on that to ask what the
+    writer actually typed; a test holds the invariant so the two cannot drift.
     """
     return "".join(_normalized(character) for character in text)
 
@@ -1000,6 +1122,67 @@ _UNAMBIGUOUS_CURRENCY_CODES = frozenset(
         "zmw", "zwl",
     }
 )
+
+# Currency names for the two governed languages — a vocabulary, with the same
+# bound as the scale words. `500.00 dollars` invents a currency exactly as
+# `$500.00` does, and no character property distinguishes a currency name from
+# any other noun.
+_CURRENCY_WORDS = frozenset(
+    {
+        "dollar",
+        "dollars",
+        "euro",
+        "euros",
+        "pound",
+        "pounds",
+        "sterling",
+        "riyal",
+        "riyals",
+        "rial",
+        "rials",
+        "dirham",
+        "dirhams",
+        "dinar",
+        "dinars",
+        "shekel",
+        "shekels",
+        "lira",
+        "yen",
+        "yuan",
+        "rupee",
+        "rupees",
+        "cent",
+        "cents",
+        "piastre",
+        "piastres",
+        "pence",
+        "franc",
+        "francs",
+        "\u062c\u0646\u064a\u0647",  # pound
+        "\u062c\u0646\u064a\u0647\u0627\u062a",  # pounds
+        "\u062f\u0648\u0644\u0627\u0631",  # dollar
+        "\u062f\u0648\u0644\u0627\u0631\u0627\u062a",  # dollars
+        "\u064a\u0648\u0631\u0648",  # euro
+        "\u0631\u064a\u0627\u0644",  # riyal
+        "\u0631\u064a\u0627\u0644\u0627\u062a",  # riyals
+        "\u062f\u0631\u0647\u0645",  # dirham
+        "\u062f\u0631\u0627\u0647\u0645",  # dirhams
+        "\u062f\u064a\u0646\u0627\u0631",  # dinar
+        "\u062f\u0646\u0627\u0646\u064a\u0631",  # dinars
+        "\u0644\u064a\u0631\u0629",  # lira
+        "\u0644\u064a\u0631\u0627\u062a",  # liras
+        "\u0642\u0631\u0634",  # piastre
+        "\u0642\u0631\u0648\u0634",  # piastres
+        "\u0634\u064a\u0643\u0644",  # shekel
+        "\u0631\u0648\u0628\u064a\u0629",  # rupee
+    }
+)
+
+# The shape a governed version is written in: dotted lowercase segments ending
+# in `.v<n>`. Provider-controlled text that does not match cannot be recorded.
+_VERSION_SEGMENT = r"[a-z0-9]+(?:[-_][a-z0-9]+)*"
+_GOVERNED_VERSION = re.compile(rf"{_VERSION_SEGMENT}(?:\.{_VERSION_SEGMENT})*\.v\d+")
+_MAX_VERSION_LENGTH = 64
 
 # Words that turn a figure into a rate. A vocabulary, like the scale words.
 _PERCENT_WORDS = frozenset(
