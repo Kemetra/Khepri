@@ -14,29 +14,44 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.sql import Select
 
 from khepri.rra.jobs import (
-    JOB_FAILED,
+    ATTEMPT_LEASE_RECLAIMED,
+    ATTEMPT_RETRIES_EXHAUSTED,
+    ATTEMPT_RETRY_SCHEDULED,
+    DEAD_LETTER_CONTENT_DELETED,
+    DEAD_LETTER_RETRIES_EXHAUSTED,
+    JOB_DEAD_LETTERED,
     JOB_QUEUED,
     JOB_RETRYABLE,
     JOB_RUNNING,
     JOB_SUCCEEDED,
     EnqueueJob,
     FailureRequest,
+    JobAttempt,
     LeaseAction,
     LeaseLost,
     LeaseRequest,
     ReportJob,
+    orphanable,
 )
-from khepri.rra.persistence import Base, _utc, session_scope_for_update_statement
-from khepri.rra.sessions import CrossSessionAccessDenied
+from khepri.rra.persistence import (
+    Base,
+    BetaSessionRow,
+    _utc,
+    session_scope_for_update_statement,
+)
+from khepri.rra.sessions import CrossSessionAccessDenied, SessionScope
 
 
 class ReportJobRow(Base):
     __tablename__ = "rra_report_jobs"
     __table_args__ = (
         CheckConstraint(
-            "state IN ('queued', 'running', 'retryable', 'succeeded', 'failed')",
+            "state IN ("
+            "'queued', 'running', 'retryable', 'succeeded', 'dead_lettered'"
+            ")",
             name="ck_report_job_state",
         ),
         CheckConstraint("attempt_count >= 0", name="ck_report_job_attempt_count"),
@@ -59,8 +74,18 @@ class ReportJobRow(Base):
             name="ck_report_job_lease",
         ),
         CheckConstraint(
-            "(state IN ('succeeded', 'failed')) = (completed_at IS NOT NULL)",
+            "(state IN ('succeeded', 'dead_lettered')) = (completed_at IS NOT NULL)",
             name="ck_report_job_completion",
+        ),
+        CheckConstraint(
+            "(state = 'dead_lettered') = (dead_letter_reason IS NOT NULL)",
+            name="ck_report_job_dead_letter",
+        ),
+        CheckConstraint(
+            "dead_letter_reason IS NULL OR dead_letter_reason IN ("
+            "'retries_exhausted', 'content_deleted'"
+            ")",
+            name="ck_report_job_dead_letter_reason",
         ),
         UniqueConstraint(
             "session_id",
@@ -80,6 +105,7 @@ class ReportJobRow(Base):
         ),
         Index("ix_report_job_available", "state", "available_at"),
         Index("ix_report_job_lease_expiry", "lease_expires_at"),
+        Index("ix_report_job_session_state", "session_id", "state"),
     )
 
     job_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -99,6 +125,40 @@ class ReportJobRow(Base):
         DateTime(timezone=True),
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dead_letter_reason: Mapped[str | None] = mapped_column(String)
+
+
+class ReportJobAttemptRow(Base):
+    __tablename__ = "rra_report_job_attempts"
+    __table_args__ = (
+        CheckConstraint("attempt_number > 0", name="ck_job_attempt_number"),
+        CheckConstraint(
+            "disposition IN ("
+            "'retry_scheduled', 'lease_reclaimed', 'retries_exhausted'"
+            ")",
+            name="ck_job_attempt_disposition",
+        ),
+        CheckConstraint(
+            "(disposition = 'retries_exhausted') = (available_at IS NULL)",
+            name="ck_job_attempt_availability",
+        ),
+        ForeignKeyConstraint(
+            ["job_id", "session_id"],
+            ["rra_report_jobs.job_id", "rra_report_jobs.session_id"],
+            name="fk_job_attempt_job_scope",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    job_id: Mapped[str] = mapped_column(String, primary_key=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
+    released_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    disposition: Mapped[str] = mapped_column(String, nullable=False)
+    available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SqlReportJobRepository:
@@ -152,23 +212,70 @@ class SqlReportJobRepository:
         with self._factory.begin() as database:
             rows = list(database.scalars(statement))
             for row in rows:
-                self._recover(row, now=now)
+                self._reclaim(database, row, now=now)
             database.flush()
             return tuple(_report_job_from_row(row) for row in rows)
+
+    def recover_orphans(self, *, now: datetime) -> tuple[ReportJob, ...]:
+        """Dead-letter unfinished jobs whose session content is already deleted."""
+        statement = (
+            select(ReportJobRow)
+            .where(
+                ReportJobRow.session_id.in_(_deleted_content_sessions()),
+                ReportJobRow.state.not_in((JOB_SUCCEEDED, JOB_DEAD_LETTERED)),
+            )
+            .order_by(ReportJobRow.queued_at, ReportJobRow.job_id)
+            .with_for_update(skip_locked=True)
+        )
+        with self._factory.begin() as database:
+            candidates = list(database.scalars(statement))
+            orphans = [row for row in candidates if orphanable(row.state)]
+            for row in orphans:
+                self._orphan(row, now=now)
+            database.flush()
+            return tuple(_report_job_from_row(row) for row in orphans)
+
+    def list_attempts(
+        self,
+        *,
+        scope: SessionScope,
+        job_id: str,
+    ) -> tuple[JobAttempt, ...]:
+        statement = (
+            select(ReportJobAttemptRow)
+            .where(ReportJobAttemptRow.job_id == job_id)
+            .order_by(ReportJobAttemptRow.attempt_number)
+        )
+        with self._factory() as database:
+            job = database.scalar(
+                select(ReportJobRow).where(
+                    ReportJobRow.job_id == job_id,
+                    ReportJobRow.owner_id == scope.owner_id,
+                    ReportJobRow.session_id == scope.session_id,
+                )
+            )
+            if job is None:
+                raise CrossSessionAccessDenied("Resource is unavailable.")
+            return tuple(
+                _attempt_from_row(row) for row in database.scalars(statement)
+            )
 
     def fail(self, request: FailureRequest) -> ReportJob:
         with self._factory.begin() as database:
             row = self._active_lease(database, request.lease)
+            released_at = request.lease.now
             if row.attempt_count >= row.max_attempts:
-                row.state = JOB_FAILED
-                row.completed_at = request.lease.now
+                outcome = self._exhaust(row, now=released_at)
+            elif request.retry_at <= released_at:
+                raise ValueError("Retry time must be in the future.")
             else:
-                if request.retry_at <= request.lease.now:
-                    raise ValueError("Retry time must be in the future.")
-                row.state = JOB_RETRYABLE
-                row.available_at = request.retry_at
-                row.completed_at = None
+                outcome = self._reschedule(
+                    row,
+                    available_at=request.retry_at,
+                    disposition=ATTEMPT_RETRY_SCHEDULED,
+                )
             self._release(row)
+            self._record_attempt(database, row, released_at=released_at, outcome=outcome)
             database.flush()
             return _report_job_from_row(row)
 
@@ -241,15 +348,68 @@ class SqlReportJobRepository:
         if request.max_attempts <= 0:
             raise ValueError("Maximum attempts must be positive.")
 
-    @staticmethod
-    def _recover(row: ReportJobRow, *, now: datetime) -> None:
+    def _reclaim(
+        self,
+        database: Session,
+        row: ReportJobRow,
+        *,
+        now: datetime,
+    ) -> None:
         if row.attempt_count >= row.max_attempts:
-            row.state = JOB_FAILED
-            row.completed_at = now
+            outcome = self._exhaust(row, now=now)
         else:
-            row.state = JOB_RETRYABLE
-            row.available_at = now
-        SqlReportJobRepository._release(row)
+            outcome = self._reschedule(
+                row,
+                available_at=now,
+                disposition=ATTEMPT_LEASE_RECLAIMED,
+            )
+        self._release(row)
+        self._record_attempt(database, row, released_at=now, outcome=outcome)
+
+    @staticmethod
+    def _exhaust(row: ReportJobRow, *, now: datetime) -> tuple[str, None]:
+        row.state = JOB_DEAD_LETTERED
+        row.dead_letter_reason = DEAD_LETTER_RETRIES_EXHAUSTED
+        row.completed_at = now
+        return ATTEMPT_RETRIES_EXHAUSTED, None
+
+    @staticmethod
+    def _reschedule(
+        row: ReportJobRow,
+        *,
+        available_at: datetime,
+        disposition: str,
+    ) -> tuple[str, datetime]:
+        row.state = JOB_RETRYABLE
+        row.available_at = available_at
+        row.completed_at = None
+        return disposition, available_at
+
+    @staticmethod
+    def _record_attempt(
+        database: Session,
+        row: ReportJobRow,
+        *,
+        released_at: datetime,
+        outcome: tuple[str, datetime | None],
+    ) -> None:
+        disposition, available_at = outcome
+        database.add(
+            ReportJobAttemptRow(
+                job_id=row.job_id,
+                session_id=row.session_id,
+                attempt_number=row.attempt_count,
+                released_at=released_at,
+                disposition=disposition,
+                available_at=available_at,
+            )
+        )
+
+    def _orphan(self, row: ReportJobRow, *, now: datetime) -> None:
+        row.state = JOB_DEAD_LETTERED
+        row.dead_letter_reason = DEAD_LETTER_CONTENT_DELETED
+        row.completed_at = now
+        self._release(row)
 
     @staticmethod
     def _release(row: ReportJobRow) -> None:
@@ -271,6 +431,24 @@ def _new_job_row(request: EnqueueJob) -> ReportJobRow:
         lease_owner=None,
         lease_expires_at=None,
         completed_at=None,
+        dead_letter_reason=None,
+    )
+
+
+def _deleted_content_sessions() -> Select[tuple[str]]:
+    return select(BetaSessionRow.session_id).where(
+        BetaSessionRow.content_deleted_at.is_not(None)
+    )
+
+
+def _attempt_from_row(row: ReportJobAttemptRow) -> JobAttempt:
+    return JobAttempt(
+        job_id=row.job_id,
+        session_id=row.session_id,
+        attempt_number=row.attempt_number,
+        released_at=_utc(row.released_at),
+        disposition=row.disposition,
+        available_at=_utc(row.available_at),
     )
 
 
@@ -288,6 +466,7 @@ def _report_job_from_row(row: ReportJobRow) -> ReportJob:
         lease_owner=row.lease_owner,
         lease_expires_at=_utc(row.lease_expires_at),
         completed_at=_utc(row.completed_at),
+        dead_letter_reason=row.dead_letter_reason,
     )
 
 

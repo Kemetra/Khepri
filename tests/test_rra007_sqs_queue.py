@@ -6,6 +6,7 @@ from khepri.rra.sqs_queue import QueueMessageRejected, SqsReportQueue
 from khepri.rra.worker import ReportJobMessage
 
 QUEUE_URL = "https://sqs.me-central-1.amazonaws.com/123/report-jobs"
+DEAD_LETTER_URL = "https://sqs.me-central-1.amazonaws.com/123/report-jobs-dead-letter"
 
 
 class SqsClientStub:
@@ -37,7 +38,23 @@ def queue(client: SqsClientStub) -> SqsReportQueue:
     return SqsReportQueue(
         client=client,
         queue_url=QUEUE_URL,
+        dead_letter_queue_url=DEAD_LETTER_URL,
         visibility_timeout_seconds=120,
+    )
+
+
+def one_delivery() -> SqsClientStub:
+    return SqsClientStub(
+        [
+            {
+                "Messages": [
+                    {
+                        "Body": '{"job_id":"job_alpha"}',
+                        "ReceiptHandle": "receipt_alpha",
+                    }
+                ]
+            }
+        ]
     )
 
 
@@ -56,18 +73,7 @@ def test_publish_sends_only_the_opaque_job_identifier() -> None:
 
 
 def test_receive_is_bounded_and_delivery_can_be_renewed_then_acknowledged() -> None:
-    client = SqsClientStub(
-        [
-            {
-                "Messages": [
-                    {
-                        "Body": '{"job_id":"job_alpha"}',
-                        "ReceiptHandle": "receipt_alpha",
-                    }
-                ]
-            }
-        ]
-    )
+    client = one_delivery()
     report_queue = queue(client)
 
     delivery = report_queue.receive()
@@ -130,5 +136,46 @@ def test_visibility_timeout_must_stay_within_sqs_bounds(
         SqsReportQueue(
             client=SqsClientStub(),
             queue_url=QUEUE_URL,
+            dead_letter_queue_url=DEAD_LETTER_URL,
             visibility_timeout_seconds=visibility_timeout_seconds,
+        )
+
+
+def test_dead_letter_sends_only_the_opaque_identifier_then_drops_the_source() -> None:
+    client = one_delivery()
+    report_queue = queue(client)
+    delivery = report_queue.receive()
+    assert delivery is not None
+
+    message_id = report_queue.dead_letter(delivery)
+
+    assert message_id == "msg_alpha"
+    assert client.sent == [
+        {
+            "QueueUrl": DEAD_LETTER_URL,
+            "MessageBody": '{"job_id":"job_alpha"}',
+        }
+    ]
+    assert client.deleted == [
+        {
+            "QueueUrl": QUEUE_URL,
+            "ReceiptHandle": "receipt_alpha",
+        }
+    ]
+
+
+def test_dead_letter_destination_must_be_a_distinct_opaque_queue() -> None:
+    with pytest.raises(QueueMessageRejected):
+        SqsReportQueue(
+            client=SqsClientStub(),
+            queue_url=QUEUE_URL,
+            dead_letter_queue_url="   ",
+            visibility_timeout_seconds=120,
+        )
+    with pytest.raises(ValueError, match="dead_letter_queue_url"):
+        SqsReportQueue(
+            client=SqsClientStub(),
+            queue_url=QUEUE_URL,
+            dead_letter_queue_url=QUEUE_URL,
+            visibility_timeout_seconds=120,
         )
