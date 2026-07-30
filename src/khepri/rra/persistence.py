@@ -555,11 +555,20 @@ class SqlFactPackageRepository:
             row = database.scalar(statement)
             return None if row is None else _package_from_row(row)
 
-    def get_package_for_session(self, session_id: str) -> FactPackageRecord | None:
-        """The current package for a session: the most recently published one."""
+    def get_package_for_session(
+        self,
+        session_id: str,
+        versions: PackageVersions,
+    ) -> FactPackageRecord | None:
+        """The session's package under the given governed versions, latest first."""
         statement = (
             select(FactPackageRow)
-            .where(FactPackageRow.session_id == session_id)
+            .where(
+                FactPackageRow.session_id == session_id,
+                FactPackageRow.package_version == versions.package_version,
+                FactPackageRow.formula_version == versions.formula_version,
+                FactPackageRow.mapping_version == versions.mapping_version,
+            )
             .order_by(
                 FactPackageRow.created_at.desc(),
                 FactPackageRow.package_id.desc(),

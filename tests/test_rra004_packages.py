@@ -401,8 +401,9 @@ def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
     assert stored.package_id == "fct_next"
     with test.factory() as database:
         assert len(list(database.scalars(select(FactPackageRow)))) == 2
-    # The session reads the most recent publication.
-    assert test.client.get("/api/v1/beta/facts").json()["package_id"] == "fct_next"
+    # Both survive, and the session still reads the one this build publishes
+    # rather than the newer row under a formula version it does not produce.
+    assert test.client.get("/api/v1/beta/facts").json()["package_id"] == "fct_1"
 
 
 def test_a_profile_mapped_under_superseded_rules_refuses_the_package() -> None:
@@ -477,11 +478,32 @@ def test_a_package_contradicting_its_own_document_is_refused() -> None:
     assert test.client.get("/api/v1/beta/facts").status_code == 503
 
 
+def test_a_package_under_any_superseded_governed_version_is_not_current() -> None:
+    # Not only the mapping: whichever of the three governed versions moved, a
+    # package the current builder would not publish is not this session's.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+    _republish_under(test, formula_version="rra004.formula.v0")
+
+    assert test.client.get("/api/v1/beta/facts").status_code == 404
+
+
+def _republish_under(test: Harness, *, formula_version: str) -> None:
+    """Rewrite the stored package as a self-consistent publication under a version."""
+    with test.factory.begin() as database:
+        row = database.scalar(select(FactPackageRow))
+        document = dict(row.document)
+        document["formula_version"] = formula_version
+        row.document = document
+        row.formula_version = formula_version
+        row.package_digest = _digest_of(document)
+
+
 def test_reading_never_serves_a_package_publishing_would_refuse() -> None:
     # A package published under superseded mapping rules is a valid historical
-    # publication, but it is not this session's current one, and handing it back
-    # with 200 while POST refuses to produce it would be two answers to one
-    # question.
+    # publication, but it is not this session's current one. Reading reports
+    # that none is available; publishing explains why it cannot make one. The
+    # one thing neither may do is hand back the superseded figures.
     test = prepared()
     assert test.client.post("/api/v1/beta/facts").status_code == 201
     _publish_under_superseded_mapping(test)
@@ -489,8 +511,9 @@ def test_reading_never_serves_a_package_publishing_would_refuse() -> None:
     read = test.client.get("/api/v1/beta/facts")
     written = test.client.post("/api/v1/beta/facts")
 
-    assert read.status_code == 409
+    assert read.status_code == 404
     assert written.status_code == 409
+    assert "superseded" in written.json()["detail"]
 
 
 def test_a_tampered_profile_provenance_is_refused_on_both_paths() -> None:

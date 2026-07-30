@@ -115,6 +115,23 @@ class PackageVersions:
     formula_version: str
     mapping_version: str
 
+    @classmethod
+    def current(cls) -> PackageVersions:
+        """The versions this build of the service publishes under."""
+        return cls(
+            package_version=PACKAGE_VERSION,
+            formula_version=FORMULA_VERSION,
+            mapping_version=MAPPING_VERSION,
+        )
+
+    @classmethod
+    def of(cls, record: FactPackageRecord) -> PackageVersions:
+        return cls(
+            package_version=record.package_version,
+            formula_version=record.formula_version,
+            mapping_version=record.mapping_version,
+        )
+
 
 class FactPackageRepository(Protocol):
     def add_package(self, record: FactPackageRecord) -> FactPackageRecord: ...
@@ -126,7 +143,11 @@ class FactPackageRepository(Protocol):
         scope: SessionScope,
     ) -> FactPackageRecord | None: ...
 
-    def get_package_for_session(self, session_id: str) -> FactPackageRecord | None: ...
+    def get_package_for_session(
+        self,
+        session_id: str,
+        versions: PackageVersions,
+    ) -> FactPackageRecord | None: ...
 
 
 class FactPackageService:
@@ -190,11 +211,7 @@ class FactPackageService:
         # Keyed by the versions the stored row will actually carry. Keying the
         # lookup on anything else lets the check miss a row the insert then
         # collides with.
-        versions = PackageVersions(
-            package_version=PACKAGE_VERSION,
-            formula_version=FORMULA_VERSION,
-            mapping_version=MAPPING_VERSION,
-        )
+        versions = PackageVersions.current()
         existing = self._packages.get_package_for_versions(
             profile_record.profile_id,
             versions,
@@ -270,7 +287,13 @@ class FactPackageService:
         if session is None:
             raise SessionExpired("Session content has expired.")
         require_upload_consent(session, now=now)
-        record = self._packages.get_package_for_session(session_id)
+        # Selected by the versions this build publishes under, so a session
+        # holding an older publication reads as having none rather than being
+        # handed figures the current builder would not produce.
+        record = self._packages.get_package_for_session(
+            session_id,
+            PackageVersions.current(),
+        )
         if record is not None:
             self._assert_current(record)
         return record
@@ -300,9 +323,14 @@ class FactPackageService:
             raise PackageCorrupted(
                 "Stored fact package does not match the profile it cites."
             )
-        if record.mapping_version != MAPPING_VERSION:
+        # Every governed version, not only the mapping: a package the current
+        # builder would not publish must not be served as the current one,
+        # whichever of the three moved. The repository is a Protocol, so this
+        # stays the service's own invariant rather than relying on any
+        # particular store to have filtered correctly.
+        if PackageVersions.of(record) != PackageVersions.current():
             raise PackageRefused(
-                "Stored package was published under a superseded mapping version."
+                "Stored package was published under a superseded governed version."
             )
 
 
