@@ -102,6 +102,7 @@ def job(job_id: str = "job_alpha") -> ReportJob:
         lease_owner="worker_alpha",
         lease_expires_at=NOW + timedelta(minutes=5),
         completed_at=None,
+        dead_letter_reason=None,
     )
 
 
