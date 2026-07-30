@@ -201,6 +201,7 @@ class FactPackageService:
             scope,
         )
         if existing is not None:
+            self._assert_current(existing, profile_record)
             return existing, False
 
         upload = self._uploads.get_upload_for_session(session_id)
@@ -269,7 +270,40 @@ class FactPackageService:
         if session is None:
             raise SessionExpired("Session content has expired.")
         require_upload_consent(session, now=now)
-        return self._packages.get_package_for_session(session_id)
+        record = self._packages.get_package_for_session(session_id)
+        if record is not None:
+            self._assert_current(record)
+        return record
+
+    def _assert_current(
+        self,
+        record: FactPackageRecord,
+        profile_record: DatasetProfileRecord | None = None,
+    ) -> None:
+        """Check a stored package before it is served as the session's current one.
+
+        Publication and reading are the same claim made twice, so a package the
+        service would refuse to publish today must not be handed back as current
+        merely because it was published earlier.
+        """
+        profile = profile_record or self._profiles.get_profile_for_session(
+            record.session_id
+        )
+        # The profile document digest is stored beside the package rather than
+        # inside it, so it is outside the package's own content address and has
+        # to be checked against the profile it names.
+        if (
+            profile is None
+            or profile.profile_id != record.profile_id
+            or profile.profile_digest != record.profile_document_digest
+        ):
+            raise PackageCorrupted(
+                "Stored fact package does not match the profile it cites."
+            )
+        if record.mapping_version != MAPPING_VERSION:
+            raise PackageRefused(
+                "Stored package was published under a superseded mapping version."
+            )
 
 
 def _requested_by(record: DatasetProfileRecord) -> ReportRequest:

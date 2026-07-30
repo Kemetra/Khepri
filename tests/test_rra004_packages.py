@@ -477,6 +477,46 @@ def test_a_package_contradicting_its_own_document_is_refused() -> None:
     assert test.client.get("/api/v1/beta/facts").status_code == 503
 
 
+def test_reading_never_serves_a_package_publishing_would_refuse() -> None:
+    # A package published under superseded mapping rules is a valid historical
+    # publication, but it is not this session's current one, and handing it back
+    # with 200 while POST refuses to produce it would be two answers to one
+    # question.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+    _publish_under_superseded_mapping(test)
+
+    read = test.client.get("/api/v1/beta/facts")
+    written = test.client.post("/api/v1/beta/facts")
+
+    assert read.status_code == 409
+    assert written.status_code == 409
+
+
+def test_a_tampered_profile_provenance_is_refused_on_both_paths() -> None:
+    # The profile document digest sits beside the package rather than inside
+    # it, so the package's own content address cannot vouch for it.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+    with test.factory.begin() as database:
+        database.scalar(select(FactPackageRow)).profile_document_digest = "c" * 64
+
+    assert test.client.get("/api/v1/beta/facts").status_code == 503
+    assert test.client.post("/api/v1/beta/facts").status_code == 503
+
+
+def _publish_under_superseded_mapping(test: Harness) -> None:
+    """Rewrite the stored package as a self-consistent publication under v1."""
+    with test.factory.begin() as database:
+        row = database.scalar(select(FactPackageRow))
+        document = dict(row.document)
+        document["mapping_version"] = "rra003.mapping.v1"
+        row.document = document
+        row.mapping_version = "rra003.mapping.v1"
+        row.package_digest = _digest_of(document)
+        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
+
+
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
     first = prepared().client.post("/api/v1/beta/facts").json()
     second = prepared().client.post("/api/v1/beta/facts").json()
