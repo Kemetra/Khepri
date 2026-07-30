@@ -22,6 +22,7 @@ from sqlalchemy.sql import Select
 from khepri.rra.datasets import DatasetProfileRecord
 from khepri.rra.deletion import DeletionEvidence, DeletionJob
 from khepri.rra.intake import UploadMetadata
+from khepri.rra.packages import FactPackageRecord
 from khepri.rra.sessions import (
     BetaSession,
     CrossSessionAccessDenied,
@@ -156,6 +157,47 @@ class DatasetProfileRow(Base):
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
     column_count: Mapped[int] = mapped_column(Integer, nullable=False)
     admissible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    document: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+
+class FactPackageRow(Base):
+    __tablename__ = "rra_fact_packages"
+    __table_args__ = (
+        CheckConstraint("row_count >= 0", name="ck_package_row_count"),
+        CheckConstraint(
+            "length(source_sha256_hex) = 64",
+            name="ck_package_source_digest",
+        ),
+        CheckConstraint("length(profile_digest) = 64", name="ck_package_profile_digest"),
+        CheckConstraint("length(package_digest) = 64", name="ck_package_digest"),
+        UniqueConstraint("profile_id", name="uq_package_profile"),
+        UniqueConstraint("session_id", name="uq_package_session"),
+        ForeignKeyConstraint(
+            ["profile_id"],
+            ["rra_dataset_profiles.profile_id"],
+            name="fk_package_profile",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "session_id"],
+            ["rra_beta_sessions.owner_id", "rra_beta_sessions.session_id"],
+            name="fk_package_session_scope",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    package_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
+    profile_id: Mapped[str] = mapped_column(String, nullable=False)
+    package_version: Mapped[str] = mapped_column(String, nullable=False)
+    formula_version: Mapped[str] = mapped_column(String, nullable=False)
+    mapping_version: Mapped[str] = mapped_column(String, nullable=False)
+    profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)
+    package_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     document: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
 
@@ -443,6 +485,60 @@ class SqlProfileRepository:
             return None if row is None else _profile_from_row(row)
 
 
+class SqlFactPackageRepository:
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self._factory = factory
+
+    def add_package(self, record: FactPackageRecord) -> FactPackageRecord:
+        try:
+            with self._factory.begin() as database:
+                database.add(
+                    FactPackageRow(
+                        package_id=record.package_id,
+                        owner_id=record.owner_id,
+                        session_id=record.session_id,
+                        profile_id=record.profile_id,
+                        package_version=record.package_version,
+                        formula_version=record.formula_version,
+                        mapping_version=record.mapping_version,
+                        profile_digest=record.profile_digest,
+                        source_sha256_hex=record.source_sha256_hex,
+                        package_digest=record.package_digest,
+                        row_count=record.row_count,
+                        created_at=record.created_at,
+                        document=record.document,
+                    )
+                )
+            return record
+        except IntegrityError:
+            existing = self.get_package_for_profile(record.profile_id, record.scope)
+            if existing is None:
+                raise
+            return existing
+
+    def get_package_for_profile(
+        self,
+        profile_id: str,
+        scope: SessionScope,
+    ) -> FactPackageRecord | None:
+        statement = select(FactPackageRow).where(
+            FactPackageRow.profile_id == profile_id,
+            FactPackageRow.owner_id == scope.owner_id,
+            FactPackageRow.session_id == scope.session_id,
+        )
+        with self._factory() as database:
+            row = database.scalar(statement)
+            return None if row is None else _package_from_row(row)
+
+    def get_package_for_session(self, session_id: str) -> FactPackageRecord | None:
+        statement = select(FactPackageRow).where(
+            FactPackageRow.session_id == session_id
+        )
+        with self._factory() as database:
+            row = database.scalar(statement)
+            return None if row is None else _package_from_row(row)
+
+
 class SqlDeletionRepository:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
@@ -514,6 +610,13 @@ class SqlDeletionRepository:
             )
             if evidence is None and upload is not None:
                 raise ValueError("Deletion evidence is required for an existing target.")
+            # The package references the profile, so it goes first.
+            database.execute(
+                delete(FactPackageRow).where(
+                    FactPackageRow.owner_id == row.owner_id,
+                    FactPackageRow.session_id == row.session_id,
+                )
+            )
             database.execute(
                 delete(DatasetProfileRow).where(
                     DatasetProfileRow.owner_id == row.owner_id,
@@ -661,6 +764,24 @@ def _profile_from_row(row: DatasetProfileRow) -> DatasetProfileRecord:
         row_count=row.row_count,
         column_count=row.column_count,
         admissible=row.admissible,
+        created_at=_utc(row.created_at),
+        document=dict(row.document),
+    )
+
+
+def _package_from_row(row: FactPackageRow) -> FactPackageRecord:
+    return FactPackageRecord(
+        package_id=row.package_id,
+        owner_id=row.owner_id,
+        session_id=row.session_id,
+        profile_id=row.profile_id,
+        package_version=row.package_version,
+        formula_version=row.formula_version,
+        mapping_version=row.mapping_version,
+        profile_digest=row.profile_digest,
+        source_sha256_hex=row.source_sha256_hex,
+        package_digest=row.package_digest,
+        row_count=row.row_count,
         created_at=_utc(row.created_at),
         document=dict(row.document),
     )

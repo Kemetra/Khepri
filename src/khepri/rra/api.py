@@ -23,6 +23,12 @@ from khepri.rra.intake import (
     UploadTooLarge,
 )
 from khepri.rra.mapping import KNOWN_SEMANTICS
+from khepri.rra.packages import (
+    FactPackageRecord,
+    FactPackageService,
+    PackageRefused,
+    ProfileNotFound,
+)
 from khepri.rra.profiling import ProfileRejected
 from khepri.rra.sessions import (
     ConsentRequired,
@@ -114,6 +120,49 @@ class ProfileResponse(BaseModel):
     mappings: list[ProfileMappingResponse]
 
 
+class FactResponse(BaseModel):
+    metric: str
+    value: str
+    precision: int
+    unit_kind: str
+    inputs: list[str]
+    caveats: list[str]
+    citation_id: str
+
+
+class FactAggregateResponse(BaseModel):
+    metric: str
+    measure: str
+    unit_kind: str
+    precision: int
+    scope: str
+    citation_id: str
+    caveats: list[str]
+    buckets: list[dict[str, object]]
+
+
+class FactRefusalResponse(BaseModel):
+    metric: str
+    reason: str
+
+
+class FactPackageResponse(BaseModel):
+    package_id: str
+    package_version: str
+    formula_version: str
+    mapping_version: str
+    profile_digest: str
+    package_digest: str
+    source_sha256_hex: str
+    row_count: int
+    monetary_precision: int
+    caveats: list[str]
+    facts: list[FactResponse]
+    series: list[FactAggregateResponse]
+    comparisons: list[FactAggregateResponse]
+    refusals: list[FactRefusalResponse]
+
+
 def create_app(
     *,
     service: InvitationService,
@@ -121,6 +170,7 @@ def create_app(
     intake_service: IntakeService | None = None,
     deletion_service: DeletionService | None = None,
     profiling_service: ProfilingService | None = None,
+    package_service: FactPackageService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
 
@@ -277,6 +327,76 @@ def create_app(
                 )
             return _profile_response(record)
 
+    if package_service is not None:
+
+        @app.post(
+            "/api/v1/beta/facts",
+            response_model=FactPackageResponse,
+            status_code=status.HTTP_201_CREATED,
+        )
+        def build_retail_facts(
+            payload: ProfileRequestBody,
+            response: Response,
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> FactPackageResponse:
+            if session_id is None:
+                raise _session_unavailable()
+            requested = set(payload.requested_semantics)
+            if not requested <= KNOWN_SEMANTICS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Requested retail semantics are not governed.",
+                )
+            try:
+                record, created = package_service.build_session_package(
+                    session_id=session_id,
+                    now=clock(),
+                    request=ReportRequest(requested_semantics=frozenset(requested)),
+                )
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except ConsentRequired as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except CrossSessionAccessDenied as error:
+                raise _session_unavailable() from error
+            except ProfileNotFound as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except PackageRefused as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            except StoragePolicyViolation as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Upload storage is unavailable.",
+                ) from error
+            if not created:
+                response.status_code = status.HTTP_200_OK
+            return _package_response(record)
+
+        @app.get(
+            "/api/v1/beta/facts",
+            response_model=FactPackageResponse,
+        )
+        def read_retail_facts(
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> FactPackageResponse:
+            if session_id is None:
+                raise _session_unavailable()
+            try:
+                record = package_service.get_session_package(
+                    session_id=session_id,
+                    now=clock(),
+                )
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except ConsentRequired as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            if record is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No fact package is available for this session.",
+                )
+            return _package_response(record)
+
     if deletion_service is not None:
 
         @app.delete(
@@ -383,6 +503,57 @@ def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:
             )
             for entry in mapping["mappings"]
         ],
+    )
+
+
+def _package_response(record: FactPackageRecord) -> FactPackageResponse:
+    document = record.document
+    return FactPackageResponse(
+        package_id=record.package_id,
+        package_version=record.package_version,
+        formula_version=record.formula_version,
+        mapping_version=record.mapping_version,
+        profile_digest=record.profile_digest,
+        package_digest=record.package_digest,
+        source_sha256_hex=record.source_sha256_hex,
+        row_count=record.row_count,
+        monetary_precision=int(document["monetary_precision"]),
+        caveats=list(document["caveats"]),
+        facts=[
+            FactResponse(
+                metric=fact["metric"],
+                value=fact["value"],
+                precision=fact["precision"],
+                unit_kind=fact["unit_kind"],
+                inputs=list(fact["inputs"]),
+                caveats=list(fact["caveats"]),
+                citation_id=fact["citation_id"],
+            )
+            for fact in document["facts"]
+        ],
+        series=[_aggregate_response(entry, "granularity") for entry in document["series"]],
+        comparisons=[
+            _aggregate_response(entry, "dimension") for entry in document["comparisons"]
+        ],
+        refusals=[
+            FactRefusalResponse(metric=refusal["metric"], reason=refusal["reason"])
+            for refusal in document["refusals"]
+        ],
+    )
+
+
+def _aggregate_response(entry: dict[str, object], scope_key: str) -> FactAggregateResponse:
+    """Render a series or a comparison, which differ only in what scopes them."""
+    buckets = entry["points"] if scope_key == "granularity" else entry["buckets"]
+    return FactAggregateResponse(
+        metric=str(entry["metric"]),
+        measure=str(entry["measure"]),
+        unit_kind=str(entry["unit_kind"]),
+        precision=int(entry["precision"]),
+        scope=str(entry[scope_key]),
+        citation_id=str(entry["citation_id"]),
+        caveats=list(entry["caveats"]),
+        buckets=list(buckets),
     )
 
 
