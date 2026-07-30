@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import datetime
 
 from sqlalchemy import (
@@ -203,39 +204,20 @@ class SqlOperationalEventRepository:
         )
 
 
+_EVENT_FIELDS = tuple(field.name for field in fields(OperationalEvent))
+
+
+def _event_values(
+    source: OperationalEvent | OperationalEventRow,
+) -> dict[str, object]:
+    return {name: getattr(source, name) for name in _EVENT_FIELDS}
+
+
 def _event_row(event: OperationalEvent) -> OperationalEventRow:
-    return OperationalEventRow(
-        event_id=event.event_id,
-        session_id=event.session_id,
-        job_id=event.job_id,
-        fact_package_id=event.fact_package_id,
-        report_bundle_id=event.report_bundle_id,
-        stage=event.stage,
-        transition=event.transition,
-        attempt_number=event.attempt_number,
-        recorded_at=event.recorded_at,
-        duration_ms=event.duration_ms,
-        queue_time_ms=event.queue_time_ms,
-        provider_latency_ms=event.provider_latency_ms,
-        dataset_size_band=event.dataset_size_band,
-        output_size_bytes=event.output_size_bytes,
-    )
+    return OperationalEventRow(**_event_values(event))
 
 
 def _event_from_row(row: OperationalEventRow) -> OperationalEvent:
-    return OperationalEvent(
-        event_id=row.event_id,
-        session_id=row.session_id,
-        job_id=row.job_id,
-        fact_package_id=row.fact_package_id,
-        report_bundle_id=row.report_bundle_id,
-        stage=row.stage,
-        transition=row.transition,
-        attempt_number=row.attempt_number,
-        recorded_at=_utc(row.recorded_at),
-        duration_ms=row.duration_ms,
-        queue_time_ms=row.queue_time_ms,
-        provider_latency_ms=row.provider_latency_ms,
-        dataset_size_band=row.dataset_size_band,
-        output_size_bytes=row.output_size_bytes,
-    )
+    values = _event_values(row)
+    values["recorded_at"] = _utc(row.recorded_at)
+    return OperationalEvent(**values)  # type: ignore[arg-type]

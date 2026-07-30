@@ -63,16 +63,21 @@ class OperationalEvent:
         return self.attempt_number - 1
 
     def __post_init__(self) -> None:
+        self._validate_vocabulary()
+        self._validate_measurements()
+        self._validate_data_boundaries()
+        self._validate_duration()
+
+    def _validate_vocabulary(self) -> None:
         if self.stage not in STAGES:
             raise ValueError("Unknown telemetry stage.")
         if self.transition not in TRANSITIONS:
             raise ValueError("Unknown telemetry transition.")
-        self._validate_measurements()
-        self._validate_data_boundaries()
-        if self.transition == TRANSITION_STARTED:
-            if self.duration_ms is not None:
-                raise ValueError("A started transition cannot have a duration.")
-        elif self.duration_ms is None:
+
+    def _validate_duration(self) -> None:
+        if self.transition == TRANSITION_STARTED and self.duration_ms is not None:
+            raise ValueError("A started transition cannot have a duration.")
+        if self.transition != TRANSITION_STARTED and self.duration_ms is None:
             raise ValueError("A terminal transition requires a measured duration.")
 
     def _validate_measurements(self) -> None:
