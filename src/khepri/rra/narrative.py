@@ -37,6 +37,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Callable, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
@@ -155,6 +156,18 @@ class NarrativeRequest:
     def languages(self) -> tuple[str, ...]:
         return tuple(self.document["languages"])
 
+    def for_provider(self) -> NarrativeRequest:
+        """A copy to cross the adapter boundary, so the authority cannot.
+
+        `frozen=True` freezes the dataclass shell; the document and the lists
+        inside it stay mutable, and an adapter handed the authority could edit
+        a supplied value to whatever its prose was going to claim. The ground
+        is built from the request afterwards, so that edit would rewrite the
+        standard the answer is judged against — the provider would be marking
+        its own paper.
+        """
+        return NarrativeRequest(document=deepcopy(self.document))
+
     @classmethod
     def of(
         cls,
@@ -222,20 +235,22 @@ class NarrativeGround:
     def identifiers(self) -> frozenset[str]:
         return frozenset(self.entries)
 
-    def stateable(self, cited: Sequence[str]) -> frozenset[Decimal]:
-        """The numbers a section citing exactly these facts may state.
+    def stateable(self, cited: Sequence[str]) -> GroundedEntry:
+        """What a section citing exactly these facts may state.
 
         Raises rather than returning a default when a citation resolves to
         nothing, so an unknown citation cannot quietly narrow the permitted set
         to the package-wide scalars and look like a grounding failure instead.
         """
-        allowed = set(self.package_numbers)
+        numbers = set(self.package_numbers)
+        labels: set[str] = set()
         for identifier in cited:
             entry = self.entries.get(identifier)
             if entry is None:
                 raise NarrativeRefused(REASON_UNKNOWN_CITATION)
-            allowed |= entry.numbers
-        return frozenset(allowed)
+            numbers |= entry.numbers
+            labels |= entry.labels
+        return GroundedEntry(numbers=frozenset(numbers), labels=frozenset(labels))
 
     @classmethod
     def of(cls, request: NarrativeRequest) -> NarrativeGround:
@@ -255,7 +270,10 @@ class NarrativeGround:
                     numbers.add(Decimal(int(entry[key])))
             for bucket in (*entry.get("points", ()), *entry.get("buckets", ())):
                 label = str(bucket["label"])
-                labels.add(label)
+                # Stored in the form prose will be compared in, so a label is
+                # matched by what a reader sees rather than by which script it
+                # was written in.
+                labels.add(_normalize_digits(label))
                 # A label is supplied whole, so the numbers inside it are
                 # supplied too. Without this, prose could name the period it is
                 # describing only by quoting `2026-01-05` in full — "in 2026"
@@ -397,7 +415,12 @@ class NarrativeService:
                 adapter_version=adapter_version,
                 languages=requested,
             )
-            draft = self._adapter.draft(request, timeout_seconds=self._timeout_seconds)
+            # The adapter is given a copy; `request` stays the authority that
+            # `validate` grounds against.
+            draft = self._adapter.draft(
+                request.for_provider(),
+                timeout_seconds=self._timeout_seconds,
+            )
             validate(draft, request=request)
         except NarrativeRefused as refusal:
             return self._refuse(started, adapter_version, package, requested, refusal.reason)
@@ -497,26 +520,46 @@ def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> Non
         _assert_grounded_numbers(section.text, ground.stateable(section.cited_fact_ids))
 
 
-def _assert_grounded_numbers(text: str, allowed: frozenset[Decimal]) -> None:
-    """Refuse any number in the prose the cited facts did not carry.
+def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
+    """Refuse any numeric claim the cited facts did not carry.
 
-    A number is carried if it was given as a value or occurs inside a label
-    that was given, so a period label such as `2026-01-05` grounds both the
-    whole label and the year a sentence names on its own.
+    The unit checked is the whole *candidate* — a maximal run of digits and the
+    characters that can belong to a number — not whatever a pattern happens to
+    match inside it. Matching a pattern leaves everything it fails to recognize
+    unexamined, which is a hole shaped exactly like the forms nobody thought
+    of: `.5` yields no match at all, and `500k` yields a `500` that grounds
+    while the sentence claims five hundred thousand. A candidate must be
+    recognized *entirely* or it is refused.
 
-    The sign is part of the value. `-500.00` where `500.00` was supplied
-    reverses a governed figure, so it must not ground; a hyphen between digits
-    is a separator rather than a sign, which is what keeps `2026-01-05` from
-    reading as a negative month.
+    A candidate is carried if it is a supplied label, or if it is a complete
+    number whose value a cited fact supplied. So `2026-01-05` passes as the
+    label it is, `2026` passes as a number that label contains, and `500k`,
+    `.5`, `500.00x`, and `-500.00` do not pass at all.
     """
-    for token in _NUMBER_TOKEN.findall(_normalize_digits(text)):
-        value = _parse_number(token)
-        if value is None or value not in allowed:
+    normalized = _normalize_digits(text)
+    for match in _NUMERIC_CANDIDATE.finditer(normalized):
+        candidate = match.group()
+        before = normalized[match.start() - 1] if match.start() else ""
+        after = normalized[match.end() : match.end() + 1]
+        if before.isalpha() or after.isalpha():
+            # `500k` and `INV-1`: digits fused to letters mean something the
+            # number alone does not say.
+            raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+        # A trailing full stop or comma ends a sentence rather than the number.
+        trimmed = candidate.rstrip(".,")
+        if trimmed in allowed.labels:
+            continue
+        if not _COMPLETE_NUMBER.fullmatch(trimmed):
+            raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+        value = _parse_number(trimmed)
+        if value is None or value not in allowed.numbers:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
 
 
 def _numbers_within(label: str) -> tuple[Decimal, ...]:
-    found = (_parse_number(token) for token in _NUMBER_TOKEN.findall(_normalize_digits(label)))
+    found = (
+        _parse_number(token) for token in _LABEL_NUMBER.findall(_normalize_digits(label))
+    )
     return tuple(value for value in found if value is not None)
 
 
@@ -636,10 +679,19 @@ def _provider_reason(error: Exception) -> str:
 
 _UNIT_RATIO = "ratio"
 _FORMULA_PREFIXES = frozenset({"=", "+", "-", "@"})
-# A sign counts only where one could be meant. After a word character it is a
-# separator — the hyphens in `2026-01-05` — and consuming it there would read a
-# date as a run of negative numbers.
-_NUMBER_TOKEN = re.compile(r"(?<![\w.])[+-]?\d[\d,]*(?:\.\d+)?")
+# A maximal run of digits and the characters that can belong to a number. The
+# run is the unit checked, so nothing numeric-looking escapes by falling
+# outside a narrower pattern.
+_NUMERIC_CANDIDATE = re.compile(r"[0-9.,+\-]*[0-9][0-9.,+\-]*")
+
+# The complete forms a value may take. Grouping must be in threes, so an
+# ambiguous `500,00` is refused rather than read as one convention or the other.
+_COMPLETE_NUMBER = re.compile(r"[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?")
+
+# Inside a label the question is which numbers it contains, not whether the
+# label as a whole is a number: `2026-01-05` contains 2026, and a sentence may
+# name the year without quoting the whole label.
+_LABEL_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _DIGIT_TABLE: dict[int, int] = {
     # Arabic-Indic (U+0660) and Extended Arabic-Indic (U+06F0) digit blocks,
     # plus the Arabic decimal and thousands separators.

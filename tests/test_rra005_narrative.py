@@ -303,7 +303,7 @@ def test_the_ground_is_derived_from_the_request_that_was_sent() -> None:
     ground = NarrativeGround.of(request)
 
     assert revenue_fact_id(request) in ground.identifiers
-    assert Decimal("500.00") in ground.stateable((revenue_fact_id(request),))
+    assert Decimal("500.00") in ground.stateable((revenue_fact_id(request),)).numbers
     assert "currency_not_declared" in ground.caveats
 
 
@@ -568,6 +568,166 @@ def test_a_period_a_section_never_cited_is_not_grounded_by_another_fact() -> Non
         )
 
     assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Margin grew .5 points.",  # no leading digit: previously matched nothing
+        "Revenue was 500k.",  # digits fused to a letter mean more than the digits
+        "Revenue was 500,000.",  # a supplied 500 does not carry five hundred thousand
+        "Revenue 500.00x",  # a trailing letter is not a boundary
+        "Revenue was 500,00.",  # grouping that is neither convention
+    ],
+)
+def test_a_numeric_form_that_is_not_wholly_recognized_is_refused(claim: str) -> None:
+    # The unit checked is the whole candidate, not whatever a pattern matches
+    # inside it. Matching leaves everything unrecognized unexamined, which is a
+    # hole shaped exactly like the forms nobody thought of.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_an_ambiguous_grouping_is_refused_even_when_it_parses_to_a_supplied_value() -> None:
+    # `500,00` is neither convention's way of writing 50000: read as grouping
+    # it is malformed, read as a decimal comma it is five hundred. Stripping
+    # the separator and comparing the value would accept it here, because this
+    # dataset really does total 50000.00 — so the form has to be rejected on
+    # its shape, before its value is consulted.
+    content = (
+        b"date,revenue,units,invoice_no\n"
+        b"2026-01-05,20000.00,2,INV-1\n"
+        b"2026-01-06,30000.00,4,INV-2\n"
+    )
+    request = request_for(content)
+    revenue = next(
+        fact for fact in request.document["facts"] if fact["metric"] == "revenue"
+    )
+    assert revenue["value"] == "50000.00"
+    fact_id = str(revenue["fact_id"])
+    claim = "Revenue was 500,00."
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            NarrativeDraft(
+                adapter_version=ADAPTER_VERSION,
+                package_version=request.package_version,
+                languages=(
+                    LanguageNarrative(
+                        language=LANGUAGE_ARABIC,
+                        sections=(section(claim, cited=(fact_id,)),),
+                    ),
+                    LanguageNarrative(
+                        language=LANGUAGE_ENGLISH,
+                        sections=(section(claim, cited=(fact_id,)),),
+                    ),
+                ),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_a_grouped_figure_in_the_usual_form_is_still_writable() -> None:
+    content = (
+        b"date,revenue,units,invoice_no\n"
+        b"2026-01-05,20000.00,2,INV-1\n"
+        b"2026-01-06,30000.00,4,INV-2\n"
+    )
+    request = request_for(content)
+    fact_id = str(
+        next(fact for fact in request.document["facts"] if fact["metric"] == "revenue")[
+            "fact_id"
+        ]
+    )
+    claim = "Revenue was 50,000.00."
+
+    validate(
+        NarrativeDraft(
+            adapter_version=ADAPTER_VERSION,
+            package_version=request.package_version,
+            languages=(
+                LanguageNarrative(
+                    language=LANGUAGE_ARABIC,
+                    sections=(section(claim, cited=(fact_id,)),),
+                ),
+                LanguageNarrative(
+                    language=LANGUAGE_ENGLISH,
+                    sections=(section(claim, cited=(fact_id,)),),
+                ),
+            ),
+        ),
+        request=request,
+    )
+
+
+def test_ordinary_punctuation_around_a_figure_still_reads_as_punctuation() -> None:
+    # The tightening above must not cost the ways a figure is ordinarily
+    # written: a closing bracket and a sentence-ending stop are not part of it.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(section("بلغت الإيرادات ٥٠٠٫٠٠ (نهائي).", cited=(fact_id,)),),
+            english=(section("Revenue was 500.00 (final).", cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+def test_an_adapter_cannot_edit_the_request_it_will_be_judged_against() -> None:
+    # frozen=True freezes the dataclass shell, not the document inside it. An
+    # adapter handed the authority could raise a supplied 500.00 to 999.00 and
+    # then state 999.00 — marking its own paper.
+    class Tampering:
+        adapter_version = ADAPTER_VERSION
+
+        def draft(
+            self,
+            request: NarrativeRequest,
+            *,
+            timeout_seconds: Decimal,
+        ) -> NarrativeDraft:
+            for fact in request.document["facts"]:
+                if fact["metric"] == "revenue":
+                    fact["value"] = "999.00"
+            fact_id = revenue_fact_id(request)
+            return draft(
+                arabic=(section("الإيرادات ٩٩٩٫٠٠.", cited=(fact_id,)),),
+                english=(section("Revenue was 999.00.", cited=(fact_id,)),),
+            )
+
+    times = iter([0, 4])
+    result = NarrativeService(
+        adapter=Tampering(),
+        monotonic_ms=lambda: next(times),
+    ).compose(package())
+
+    assert result.refused is True
+    assert result.attempt.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_the_copy_handed_to_the_adapter_carries_the_same_request() -> None:
+    # The copy is a defence, not a different request: what the provider is
+    # asked must still be exactly what the authority says.
+    request = request_for()
+
+    assert canonical_json(request.for_provider().document) == canonical_json(
+        request.document
+    )
 
 
 def test_a_citation_that_resolves_to_nothing_is_refused() -> None:
