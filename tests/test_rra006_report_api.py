@@ -222,15 +222,18 @@ class Harness:
     bundles: FakeBundleService
 
 
-def harness() -> Harness:
+def invitation_service() -> InvitationService:
     engine = create_engine(
         "sqlite+pysqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    factory = sessionmaker(engine, expire_on_commit=False)
-    invitations = InvitationService(SqlSessionStore(factory))
+    return InvitationService(SqlSessionStore(sessionmaker(engine, expire_on_commit=False)))
+
+
+def harness() -> Harness:
+    invitations = invitation_service()
     reports = FakeReportService()
     bundles = FakeBundleService()
     app = create_app(
@@ -276,6 +279,27 @@ def test_every_report_route_requires_a_beta_session(method: str, path: str) -> N
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Session is unavailable."}
+
+
+def test_the_report_routes_are_absent_without_their_collaborators() -> None:
+    """An unconfigured deployment exposes no report surface at all.
+
+    Not merely a surface that refuses: an unregistered path, which is why the
+    detail asserted here is the framework's own rather than one of ours.
+    """
+    client = TestClient(
+        create_app(service=invitation_service(), clock=lambda: NOW),
+        base_url="https://testserver",
+    )
+
+    answers = [
+        client.post("/api/v1/beta/reports", json={}),
+        client.get(POLL.format(job_id="job_alpha")),
+        client.get(BUNDLE.format(job_id="job_alpha")),
+    ]
+
+    assert [answer.status_code for answer in answers] == [404, 404, 404]
+    assert [answer.json() for answer in answers] == [{"detail": "Not Found"}] * 3
 
 
 def test_requesting_a_report_enqueues_a_job_for_the_published_package() -> None:
