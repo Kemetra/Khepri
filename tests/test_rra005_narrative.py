@@ -20,6 +20,7 @@ from khepri.rra.narrative import (
     REASON_CAVEAT_COVERAGE_DIFFERS,
     REASON_EMPTY_NARRATIVE,
     REASON_FACT_COVERAGE_DIFFERS,
+    REASON_LABEL_COVERAGE_DIFFERS,
     REASON_MISSING_LANGUAGE,
     REASON_PROVIDER_FAILED,
     REASON_PROVIDER_REFUSED,
@@ -1177,6 +1178,110 @@ def test_every_reason_this_module_defines_is_recordable() -> None:
     }
 
     assert defined == set(GOVERNED_REASONS)
+
+
+def test_each_language_must_name_the_same_labels() -> None:
+    # Declared labels are machine-readable claims, so Cairo in one language and
+    # Giza in the other is two different leaders told to two readers — a
+    # contradiction this can see, unlike the ones buried in prose.
+    request = request_for()
+    store = next(
+        entry for entry in request.document["comparisons"] if entry["dimension"] == "store"
+    )
+    fact_id = str(store["fact_id"])
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("تصدرت Cairo.", cited=(fact_id,), labels=("Cairo",)),),
+                english=(section("Giza led.", cited=(fact_id,), labels=("Giza",)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_LABEL_COVERAGE_DIFFERS
+
+
+def test_accounting_parentheses_are_a_sign_not_an_aside() -> None:
+    # `(500.00)` is how finance writes a negative amount.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("الإيرادات (٥٠٠٫٠٠).", cited=(fact_id,)),),
+                english=(section("Revenue was (500.00).", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+@pytest.mark.parametrize("code", ["usd", "USD", "XYZ", "egp"])
+def test_a_currency_code_in_any_case_is_refused_beside_a_figure(code: str) -> None:
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = f"Revenue was 500.00 {code}."
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+@pytest.mark.parametrize(
+    "tail",
+    ["per store", "for Cairo", "all told", "and rising", "was steady"],
+)
+def test_an_ordinary_short_word_is_not_read_as_a_currency_code(tail: str) -> None:
+    # Matching three letters case-insensitively would refuse `per`, `for` and
+    # `all`, which is why real ISO codes that are also everyday words are left
+    # out of the case-insensitive set deliberately.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = f"Revenue was 500.00 {tail}."
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
+            english=(section(claim, cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+@pytest.mark.parametrize(
+    ("claim_ar", "claim_en"),
+    [
+        ("الإيرادات ٥٠٠٫٠٠ بالمئة.", "Revenue was 500.00 percent."),
+        ("الإيرادات ٥٠٠٫٠٠ بالمائة.", "Revenue was 500.00 pct."),
+    ],
+)
+def test_a_percentage_written_as_a_word_is_still_a_percentage(
+    claim_ar: str,
+    claim_en: str,
+) -> None:
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim_ar, cited=(fact_id,)),),
+                english=(section(claim_en, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
 
 
 def test_a_label_the_cited_fact_did_supply_is_accepted() -> None:

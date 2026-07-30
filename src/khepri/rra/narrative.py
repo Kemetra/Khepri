@@ -63,6 +63,7 @@ REASON_UNKNOWN_CITATION = "unknown_citation"
 REASON_UNCITED_SECTION = "uncited_section"
 REASON_UNKNOWN_CAVEAT = "unknown_caveat"
 REASON_UNKNOWN_LABEL = "unknown_label"
+REASON_LABEL_COVERAGE_DIFFERS = "label_coverage_differs_by_language"
 REASON_UNSAFE_TEXT = "unsafe_text"
 REASON_FACT_COVERAGE_DIFFERS = "fact_coverage_differs_by_language"
 REASON_CAVEAT_COVERAGE_DIFFERS = "caveat_coverage_differs_by_language"
@@ -86,6 +87,7 @@ GOVERNED_REASONS = frozenset(
         REASON_UNCITED_SECTION,
         REASON_UNKNOWN_CAVEAT,
         REASON_UNKNOWN_LABEL,
+        REASON_LABEL_COVERAGE_DIFFERS,
         REASON_UNSAFE_TEXT,
         REASON_FACT_COVERAGE_DIFFERS,
         REASON_CAVEAT_COVERAGE_DIFFERS,
@@ -413,6 +415,12 @@ class LanguageNarrative:
     def covered_caveats(self) -> frozenset[str]:
         return frozenset(caveat for section in self.sections for caveat in section.caveats)
 
+    @property
+    def declared_labels(self) -> frozenset[str]:
+        return frozenset(
+            _normalize_digits(label) for section in self.sections for label in section.labels
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class NarrativeDraft:
@@ -625,6 +633,12 @@ def validate(draft: NarrativeDraft, *, request: NarrativeRequest) -> None:
             raise NarrativeRefused(REASON_FACT_COVERAGE_DIFFERS)
         if other.covered_caveats != first.covered_caveats:
             raise NarrativeRefused(REASON_CAVEAT_COVERAGE_DIFFERS)
+        # Declared labels are machine-readable claims, so naming Cairo in one
+        # language and Giza in the other is two different leaders asserted to
+        # two readers — a contradiction this can actually see, unlike the ones
+        # buried in prose.
+        if other.declared_labels != first.declared_labels:
+            raise NarrativeRefused(REASON_LABEL_COVERAGE_DIFFERS)
 
 
 def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> None:
@@ -694,9 +708,23 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
         # The space in `500.00 %` is typography, not a boundary: reading the
         # suffix only when it is flush against the digits would let the most
         # ordinary way of writing a percentage escape the check entirely.
-        stated = allowed.percents if tail.lstrip(_INLINE_SPACE)[:1] == "%" else allowed.numbers
+        stated = allowed.percents if _states_percent(tail) else allowed.numbers
         if value not in stated:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+
+
+def _states_percent(tail: str) -> bool:
+    """Whether what follows a figure turns it into a rate.
+
+    The sign is a property — `%` and its script variants normalize to one
+    character. The words are a vocabulary, with the same bound as the scale
+    words: `percent` and `بالمئة` are covered, a phrasing outside the list is
+    not.
+    """
+    rest = tail.lstrip(_INLINE_SPACE)
+    if rest[:1] == "%":
+        return True
+    return _first_word(rest).casefold() in _PERCENT_WORDS
 
 
 def _assert_unmodified(before: str, after: str) -> None:
@@ -718,6 +746,12 @@ def _assert_unmodified(before: str, after: str) -> None:
     """
     leading = before.rstrip(_INLINE_SPACE)
     trailing = after.lstrip(_INLINE_SPACE)
+    # `(500.00)` is accounting notation for a negative amount. Parentheses
+    # *enclosing* a figure are a sign; a parenthetical after one — `500.00
+    # (final)` — is an aside, and the two are told apart by whether the
+    # bracket closes immediately after the digits.
+    if leading[-1:] == "(" and trailing[:1] == ")":
+        raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
     if _is_currency(leading[-1:]) or _is_currency(trailing[:1]):
         raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
     # `<500.00` and `≠500.00` contradict the very figure they quote. A maths
@@ -726,8 +760,23 @@ def _assert_unmodified(before: str, after: str) -> None:
     if _is_operator(leading[-1:]) or _is_operator(trailing[:1]):
         raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
     for word in (_last_word(leading), _first_word(trailing)):
-        if word and (word.casefold() in _SCALE_WORDS or _ISO_CURRENCY_CODE.fullmatch(word)):
+        if word and (word.casefold() in _SCALE_WORDS or _is_currency_code(word)):
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+
+
+def _is_currency_code(word: str) -> bool:
+    """Whether a word beside a figure names a currency.
+
+    Two tests, because neither alone works. Three capitals is the *shape* a
+    currency code is written in, so `XYZ` is refused without being listed. And
+    a real ISO 4217 code is refused whatever its case, so `usd` does not slip
+    past the shape test — but only codes that are not ordinary words, because
+    `ALL`, `TRY` and `CUP` are currencies *and* everyday English, and refusing
+    `500.00 all told` would cost far more than it protects.
+    """
+    if _ISO_CURRENCY_CODE.fullmatch(word):
+        return True
+    return word.casefold() in _UNAMBIGUOUS_CURRENCY_CODES
 
 
 def _is_currency(character: str) -> bool:
@@ -928,6 +977,42 @@ _WORD = re.compile(r"\w+")
 # It costs the odd three-letter acronym next to a number; that costs a
 # sentence, where inventing a currency costs a governed figure.
 _ISO_CURRENCY_CODE = re.compile(r"[A-Z]{3}")
+
+# Real ISO 4217 codes, matched case-insensitively so `usd` cannot slip past the
+# shape test above. Codes that are also ordinary words in the governed
+# languages are deliberately absent — ALL, TRY, TOP, CUP, MAD, BAM, SOS, LAK —
+# because refusing `500.00 all told` costs a sentence to catch a currency
+# nobody writes in lower case anyway.
+_UNAMBIGUOUS_CURRENCY_CODES = frozenset(
+    {
+        "aed", "afn", "amd", "ang", "aoa", "aud", "awg", "azn", "bbd", "bdt", "bgn", "bhd",
+        "bif", "bmd", "bnd", "bob", "brl", "bsd", "btn", "bwp", "byn", "bzd", "cad", "cdf",
+        "chf", "clp", "cny", "cop", "crc", "cuc", "cve", "czk", "djf", "dkk", "dop", "dzd",
+        "egp", "ern", "etb", "eur", "fjd", "fkp", "gbp", "gel", "ghs", "gip", "gmd", "gnf",
+        "gtq", "gyd", "hkd", "hnl", "hrk", "htg", "huf", "idr", "ils", "inr", "iqd", "irr",
+        "isk", "jmd", "jod", "jpy", "kgs", "khr", "kmf", "kpw", "krw", "kwd", "kyd", "kzt",
+        "lbp", "lkr", "lrd", "lsl", "lyd", "mdl", "mga", "mkd", "mmk", "mnt", "mop", "mru",
+        "mur", "mvr", "mwk", "mxn", "myr", "mzn", "nad", "ngn", "nio", "nok", "npr", "nzd",
+        "omr", "pab", "pen", "pgk", "php", "pkr", "pln", "pyg", "qar", "ron", "rsd", "rub",
+        "rwf", "sbd", "scr", "sdg", "sek", "sgd", "shp", "sll", "srd", "ssp", "stn", "svc",
+        "syp", "szl", "thb", "tjs", "tmt", "tnd", "ttd", "twd", "tzs", "uah", "ugx", "usd",
+        "uyu", "uzs", "ves", "vnd", "vuv", "wst", "xaf", "xcd", "xof", "xpf", "yer", "zar",
+        "zmw", "zwl",
+    }
+)
+
+# Words that turn a figure into a rate. A vocabulary, like the scale words.
+_PERCENT_WORDS = frozenset(
+    {
+        "percent",
+        "percentage",
+        "pct",
+        "\u0628\u0627\u0644\u0645\u0626\u0629",
+        "\u0628\u0627\u0644\u0645\u0627\u0626\u0629",
+        "\u0627\u0644\u0645\u0626\u0629",
+        "\u0627\u0644\u0645\u0627\u0626\u0629",
+    }
+)
 
 # Magnitude words for the two governed languages. Unlike everything else in
 # this module this is a vocabulary rather than a property — see the note in
