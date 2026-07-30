@@ -39,9 +39,11 @@ REQUIREMENT_REQUIRED = "required"
 REQUIREMENT_CORE_MEASURE = "core_measure"
 REQUIREMENT_OPTIONAL = "optional"
 
-# A per-unit, average, or rate column is not a row-level measure. Matching is
-# token-level, plus a leading prefix and an unambiguous compound, so a compact
-# header like "unitcost" is caught without refusing "opportunity_cost" or
+# A governed measure must be an actual, row-level figure. A per-unit, average,
+# or rate column is not row-level, and a forecast, target, budget, or plan is
+# not actual — RRA-004 excludes forecasting outright. Matching is token-level,
+# plus a leading prefix and an unambiguous compound, so a compact header like
+# "unitcost" is caught without refusing "opportunity_cost" or
 # "supermarket_sales" the way a bare substring test would.
 _PER_UNIT_TOKENS = frozenset(
     {
@@ -63,9 +65,51 @@ _PER_UNIT_TOKENS = frozenset(
         "معدل",
         "نسبه",
         "مئويه",
+        # Not an actual figure.
+        "forecast",
+        "forecasted",
+        "target",
+        "targeted",
+        "budget",
+        "budgeted",
+        "plan",
+        "planned",
+        "projected",
+        "projection",
+        "estimate",
+        "estimated",
+        "expected",
+        # Normalized Arabic: forecast / expected / target / budget / plan.
+        "توقع",
+        "توقعات",
+        "متوقع",
+        "متوقعه",
+        "مستهدف",
+        "مستهدفه",
+        "هدف",
+        "ميزانيه",
+        "موازنه",
+        "خطه",
+        "مخطط",
+        "مخططه",
+        "تقدير",
+        "مقدر",
+        "مقدره",
     }
 )
-_PER_UNIT_PREFIXES = ("unit", "per", "average", "avg")
+_PER_UNIT_PREFIXES = (
+    "unit",
+    "per",
+    "average",
+    "avg",
+    "forecast",
+    "target",
+    "budget",
+    "planned",
+    "projected",
+    "estimated",
+    "expected",
+)
 _PER_UNIT_COMPOUNDS = frozenset(
     {
         "perunit",

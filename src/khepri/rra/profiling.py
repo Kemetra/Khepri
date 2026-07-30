@@ -34,6 +34,7 @@ _DECIMAL = re.compile(r"[+-]?(?:\d+\.\d*|\.\d+)")
 _PHONE = re.compile(r"\+?\d[\d .\-()/]{7,18}\d")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
+_FRAGMENT_SEPARATORS = re.compile(r"[\s<>,;:()\[\]{}\"'|]+")
 
 _DATE_FORMATS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("iso_date", ("%Y-%m-%d", "%Y/%m/%d")),
@@ -415,16 +416,33 @@ def personal_value_shapes(value: str) -> tuple[str, ...]:
     text = _normalized_value(value)
     if not text:
         return ()
+    # An identifier is checked wherever it sits, not only when it is the whole
+    # value: a display name, a note, or a bracketed address would otherwise
+    # carry it to a published label intact.
+    candidates = (text, *_fragments(text))
     shapes: list[str] = []
-    if _is_email(text):
+    if any(_is_email(part) for part in candidates):
         shapes.append("value_email")
-    if _is_phone(text):
+    if any(_is_phone(part) for part in candidates):
         shapes.append("value_phone")
-    if _is_iban(text):
+    # An IBAN and a card number carry grouping spaces as part of the format, so
+    # splitting on whitespace would destroy them. Both are also sought in the
+    # value stripped of separators.
+    if any(_is_iban(part) for part in candidates) or _IBAN.search(_alphanumeric(text)):
         shapes.append("value_iban")
-    if _is_payment_card(text):
+    if any(_is_payment_card(part) for part in candidates) or _is_payment_card(
+        "".join(character for character in text if character.isdigit())
+    ):
         shapes.append("value_payment_card")
     return tuple(shapes)
+
+
+def _alphanumeric(text: str) -> str:
+    return "".join(character for character in text if character.isalnum()).upper()
+
+
+def _fragments(text: str) -> tuple[str, ...]:
+    return tuple(part for part in _FRAGMENT_SEPARATORS.split(text) if part)
 
 
 def is_personal_value(value: str) -> bool:

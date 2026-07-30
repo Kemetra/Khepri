@@ -396,3 +396,18 @@ def test_a_compact_per_denominator_label_is_refused() -> None:
     for header in (b"salesperkg", b"sales_per_kg", b"salesperitem"):
         content = b"date," + header + b",units\n2026-01-05,10.00,2\n"
         assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_forecast_and_target_measures_are_refused() -> None:
+    for header in (b"forecast_sales", b"target_revenue", b"budget_sales", b"forecastsales"):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+    planned = b"date,revenue,planned_units\n2026-01-05,10.00,2\n"
+    assert mapped(planned).state_of(SEMANTIC_UNITS) == STATE_UNAVAILABLE
+
+
+def test_arabic_forecast_measures_are_refused() -> None:
+    for header in ("مبيعات متوقعة", "مبيعات مستهدفة"):
+        content = f"date,{header},store\n2026-01-05,10.00,Cairo\n".encode()
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header

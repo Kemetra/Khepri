@@ -751,3 +751,55 @@ def test_a_dotted_phone_number_is_redacted() -> None:
     labels = [bucket.label for bucket in comparison.buckets]
     assert not any("212" in label for label in labels)
     assert comparison.redacted_values == 1
+
+
+def test_a_forecast_column_never_becomes_governed_revenue() -> None:
+    content = (
+        b"date,forecast_sales,units\n"
+        b"2026-01-05,10.00,2\n"
+        b"2026-01-06,20.00,3\n"
+    )
+
+    result = package(content)
+
+    assert result.fact(METRIC_REVENUE) is None
+    assert result.refusal(METRIC_REVENUE).reason == REASON_INPUT_UNAVAILABLE
+    assert result.value(METRIC_UNITS) == "5"
+
+
+def test_an_identifier_embedded_in_a_larger_value_is_redacted() -> None:
+    embedded = (
+        "Jane Doe <buyer@example.com>",
+        "IBAN: GB82 WEST 1234 5698 7654 32",
+        "call 212.555.1212 now",
+    )
+    for value in embedded:
+        content = (
+            "date,revenue,category\n"
+            "2026-01-05,10.00,Beverages\n"
+            "2026-01-06,20.00,Snacks\n"
+            "2026-01-07,30.00,Bakery\n"
+            f"2026-01-08,40.00,{value}\n"
+        ).encode()
+
+        comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+        labels = [bucket.label for bucket in comparison.buckets]
+        assert comparison.redacted_values == 1, value
+        assert all("Jane" not in label and "212" not in label for label in labels), value
+        assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
+
+
+def test_ordinary_multiword_labels_are_not_redacted() -> None:
+    content = (
+        b"date,revenue,branch\n"
+        b"2026-01-05,10.00,Cairo Downtown 2026\n"
+        b"2026-01-06,20.00,Store 12\n"
+    )
+
+    comparison = package(content).comparison(SEMANTIC_STORE).comparison
+
+    assert comparison.redacted_values == 0
+    assert sorted(bucket.label for bucket in comparison.buckets) == [
+        "Cairo Downtown 2026",
+        "Store 12",
+    ]
