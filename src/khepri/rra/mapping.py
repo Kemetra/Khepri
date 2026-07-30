@@ -574,14 +574,57 @@ def build_mapping(profile: DatasetProfile) -> RetailMapping:
         for column in profile.columns
         if not column.personal_data_risk and column.inferred_type != TYPE_EMPTY
     ]
-    mappings = _refuse_shared_columns(
-        tuple(_resolve(rule, admissible_columns) for rule in SEMANTIC_RULES)
-    )
+    mappings = _refuse_shared_columns(_award_shared_columns(admissible_columns))
     return RetailMapping(
         mapping_version=MAPPING_VERSION,
         mappings=mappings,
         excluded_positions=excluded,
     )
+
+
+def _award_shared_columns(columns: list[ColumnProfile]) -> tuple[SemanticMapping, ...]:
+    """Give a contested column to the semantic that claims it most strongly.
+
+    Two semantics can reach the same column with very different evidence: a
+    numeric `items` column is exact, type-confirmed units vocabulary, and only
+    incidentally a product through the weaker `item` substring. Refusing both
+    would cost the dataset its core measure. The strongest claim wins outright
+    and every other semantic re-resolves without that column, which may find it
+    a second-best one. Only a genuine tie is left for refusal.
+    """
+    surrendered: dict[str, set[int]] = {}
+    while True:
+        mappings = tuple(
+            _resolve(rule, columns, frozenset(surrendered.get(rule.semantic, ())))
+            for rule in SEMANTIC_RULES
+        )
+        awarded = False
+        for claims in _shared_claims(mappings):
+            strongest = max(Decimal(mapping.confidence) for mapping in claims)
+            winners = [
+                mapping
+                for mapping in claims
+                if Decimal(mapping.confidence) == strongest
+            ]
+            if len(winners) != 1:
+                continue
+            position = winners[0].column.position
+            for loser in claims:
+                if loser.semantic != winners[0].semantic:
+                    surrendered.setdefault(loser.semantic, set()).add(position)
+                    awarded = True
+        if not awarded:
+            return mappings
+
+
+def _shared_claims(
+    mappings: tuple[SemanticMapping, ...],
+) -> list[list[SemanticMapping]]:
+    owners: dict[int, list[SemanticMapping]] = {}
+    for mapping in mappings:
+        if mapping.column is not None:
+            owners.setdefault(mapping.column.position, []).append(mapping)
+    return [claims for claims in owners.values() if len(claims) > 1]
 
 
 def _refuse_shared_columns(
@@ -590,7 +633,8 @@ def _refuse_shared_columns(
     """Refuse a column that answers more than one governed semantic.
 
     A header carrying vocabulary for two measures, such as `sales quantity`,
-    would otherwise let one set of values stand as both money and a count.
+    would otherwise let one set of values stand as both money and a count. By
+    this point the claims are equally strong, so there is nothing to arbitrate.
     """
     owners: dict[int, int] = {}
     for mapping in mappings:
@@ -612,10 +656,15 @@ def requirement_of(semantic: str) -> str:
     return _RULES_BY_SEMANTIC[semantic].requirement
 
 
-def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMapping:
+def _resolve(
+    rule: SemanticRule,
+    columns: list[ColumnProfile],
+    surrendered: frozenset[int] = frozenset(),
+) -> SemanticMapping:
+    available = [column for column in columns if column.position not in surrendered]
     candidates = [
         candidate
-        for candidate in (_candidate(rule, column) for column in columns)
+        for candidate in (_candidate(rule, column) for column in available)
         if candidate is not None
     ]
     if not candidates and rule.type_only:
@@ -627,7 +676,7 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
                 evidence=("type_only",),
                 type_compatible=True,
             )
-            for column in columns
+            for column in available
             if column.inferred_type in rule.accepted_types
         ]
 

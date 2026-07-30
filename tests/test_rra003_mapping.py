@@ -77,6 +77,41 @@ def test_full_retail_schema_maps_every_governed_semantic() -> None:
     }
 
 
+def test_a_contested_column_goes_to_its_strongest_claimant() -> None:
+    # "items" is exact units vocabulary and only incidentally a product through
+    # the weaker "item" substring. Refusing both would cost the core measure.
+    content = b"date,items\n2026-01-05,3\n2026-01-06,2\n"
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_PRODUCT) == STATE_UNAVAILABLE
+
+    profile = _profile(content)
+    assert assess_admissibility(profile, build_mapping(profile)).admissible is True
+
+
+def test_a_displaced_semantic_re_resolves_to_its_next_best_column() -> None:
+    content = b"date,items,sku,revenue\n2026-01-05,3,SKU-1,10.00\n"
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_MAPPED
+    assert mapping.for_semantic(SEMANTIC_UNITS).column.safe_label == "items"
+    assert mapping.state_of(SEMANTIC_PRODUCT) == STATE_MAPPED
+    assert mapping.for_semantic(SEMANTIC_PRODUCT).column.safe_label == "sku"
+
+
+def test_equally_strong_claims_on_one_column_are_still_refused() -> None:
+    # "sales quantity" answers revenue and units with the same evidence. There
+    # is nothing to arbitrate, so neither may stand.
+    content = b"date,sales quantity,store\n2026-01-05,5,Cairo\n"
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_REVENUE) == STATE_CONFLICTING
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_CONFLICTING
+
+
 def test_tax_fee_and_commission_columns_are_never_revenue() -> None:
     # Money collected beside a sale is not the seller's revenue.
     for header in (

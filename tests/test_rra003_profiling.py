@@ -196,6 +196,27 @@ def test_a_customer_uuid_column_is_an_identifier_like_any_other() -> None:
     assert "label_customer_identifier" in column.personal_data_signals
 
 
+def test_a_customer_identifier_buried_in_a_compound_label_is_found() -> None:
+    # A fully compact label cannot be tokenized, so the party and identifier
+    # words have to be recognized inside the compound.
+    for header in (b"productcustomeruuid", b"subaccountid", b"clientaccountid"):
+        content = b"date,store," + header + b"\n2026-01-05,Cairo,alpha\n2026-01-06,Giza,beta\n"
+
+        column = profile(content).columns[2]
+
+        assert column.personal_data_risk is True, header
+        assert "label_customer_identifier" in column.personal_data_signals, header
+
+
+def test_ordinary_code_labels_are_not_read_as_customer_identifiers() -> None:
+    content = b"date,productcode,barcode\n2026-01-05,SKU-1,999\n"
+
+    _, product_code, barcode = profile(content).columns
+
+    assert product_code.personal_data_risk is False
+    assert barcode.personal_data_risk is False
+
+
 def test_a_label_naming_customers_without_an_identifier_stays_answerable() -> None:
     # The pair is required: an ordinary measure that mentions customers is not
     # itself an identifier, and excluding it would cost a governed figure.

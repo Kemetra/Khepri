@@ -482,12 +482,15 @@ def _names_a_customer_identifier(tokens: tuple[str, ...]) -> bool:
     separated = set(tokens)
     if _CUSTOMER_TOKENS & separated and _IDENTIFIER_TOKENS & separated:
         return True
-    # The same pair written without a separator, as in "customerid".
+    # The same pair written without a separator, and possibly buried in a longer
+    # compound: "customerid", "productcustomeruuid", "subaccountid".
     return any(
-        token[: len(token) - len(suffix)] in _CUSTOMER_TOKENS
+        stem.endswith(party)
         for token in tokens
         for suffix in _IDENTIFIER_TOKENS
         if token.endswith(suffix) and len(token) > len(suffix)
+        for stem in [token[: len(token) - len(suffix)]]
+        for party in _CUSTOMER_TOKENS
     )
 
 
