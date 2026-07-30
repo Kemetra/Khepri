@@ -394,7 +394,7 @@ def _personal_data_signals(safe_label: str, values: list[str]) -> list[str]:
         shapes = {
             "value_email": sum(1 for value in values if _EMAIL.fullmatch(value)),
             "value_phone": sum(1 for value in values if _is_phone(value)),
-            "value_iban": sum(1 for value in values if _IBAN.fullmatch(value.replace(" ", ""))),
+            "value_iban": sum(1 for value in values if _is_iban(value)),
             "value_payment_card": sum(1 for value in values if _is_payment_card(value)),
         }
         total = Decimal(len(values))
@@ -417,9 +417,14 @@ def is_personal_value(value: str) -> bool:
     return bool(
         _EMAIL.fullmatch(stripped)
         or _is_phone(stripped)
-        or _IBAN.fullmatch(stripped.replace(" ", ""))
+        or _is_iban(stripped)
         or _is_payment_card(stripped)
     )
+
+
+def _is_iban(value: str) -> bool:
+    """Match an IBAN regardless of case or grouping spaces."""
+    return bool(_IBAN.fullmatch(value.replace(" ", "").upper()))
 
 
 def _is_phone(value: str) -> bool:

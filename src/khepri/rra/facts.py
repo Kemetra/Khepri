@@ -4,7 +4,7 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, InvalidOperation, localcontext
 
 import polars as pl
 
@@ -80,10 +80,14 @@ CAVEAT_UNDATED_ROWS_EXCLUDED = "rows_without_time_field_excluded"
 CAVEAT_BUCKETS_TRUNCATED = "comparison_buckets_truncated"
 CAVEAT_PERSONAL_VALUES_REDACTED = "personal_values_redacted"
 CAVEAT_DISCOUNT_AS_AMOUNT = "discount_interpreted_as_amount"
+CAVEAT_RETURNS_AS_AMOUNT = "returns_interpreted_as_amount"
 
 RATIO_PRECISION = 4
 MIN_MONETARY_PRECISION = 2
 MAX_MONETARY_PRECISION = 6
+# Bounded so a governed total stays exact under the serializing context too.
+MAX_MONETARY_DIGITS = 18
+ARITHMETIC_PRECISION = 60
 
 COMPARISON_DIMENSIONS = (
     SEMANTIC_PRODUCT,
@@ -274,6 +278,26 @@ def build_fact_package(
     decision: AdmissibilityDecision,
     formula_version: str = FORMULA_VERSION,
 ) -> FactPackage:
+    with localcontext(Context(prec=ARITHMETIC_PRECISION)):
+        return _build(
+            content=content,
+            media_type=media_type,
+            profile=profile,
+            mapping=mapping,
+            decision=decision,
+            formula_version=formula_version,
+        )
+
+
+def _build(
+    *,
+    content: bytes,
+    media_type: str,
+    profile: DatasetProfile,
+    mapping: RetailMapping,
+    decision: AdmissibilityDecision,
+    formula_version: str,
+) -> FactPackage:
     if formula_version != FORMULA_VERSION:
         raise FactsRefused("Formula version is not implemented by this package builder.")
     _assert_derived_from_profile(content, media_type, profile, mapping, decision)
@@ -455,6 +479,7 @@ def build_fact_package(
         caveats.append(CAVEAT_NEGATIVE_REVENUE)
     if returns_total is not None:
         caveats.append(CAVEAT_RETURNS_NOT_NETTED)
+        caveats.append(CAVEAT_RETURNS_AS_AMOUNT)
     if discount_total is not None:
         caveats.append(CAVEAT_DISCOUNT_AS_AMOUNT)
     if row_count and int(frame.is_duplicated().sum()):
@@ -814,6 +839,8 @@ def _decimal_values(frame: pl.DataFrame, position: int) -> tuple[list[Decimal | 
             value = Decimal(raw)
         except InvalidOperation as error:
             raise FactsRefused("Governed measure contains an unparsable value.") from error
+        if len(value.as_tuple().digits) > MAX_MONETARY_DIGITS:
+            raise FactsRefused("Monetary input magnitude exceeds the governed maximum.")
         exponent = value.as_tuple().exponent
         scale = max(scale, -int(exponent)) if isinstance(exponent, int) else scale
         values.append(value)

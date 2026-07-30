@@ -15,6 +15,7 @@ from khepri.rra.facts import (
     CAVEAT_NEGATIVE_REVENUE,
     CAVEAT_NULL_MEASURE_INPUTS,
     CAVEAT_PERSONAL_VALUES_REDACTED,
+    CAVEAT_RETURNS_AS_AMOUNT,
     CAVEAT_RETURNS_NOT_NETTED,
     CAVEAT_UNDATED_ROWS_EXCLUDED,
     FORMULA_VERSION,
@@ -599,3 +600,51 @@ def test_a_discount_rate_column_is_never_summed_as_money() -> None:
 
     assert result.fact(METRIC_DISCOUNT) is None
     assert result.refusal(METRIC_DISCOUNT).reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_a_lowercase_iban_is_redacted_like_an_uppercase_one() -> None:
+    content = (
+        b"date,revenue,category\n"
+        b"2026-01-05,10.00,Beverages\n"
+        b"2026-01-06,20.00,Snacks\n"
+        b"2026-01-07,30.00,Bakery\n"
+        b"2026-01-08,40.00,gb82 west 1234 5698 7654 32\n"
+    )
+
+    comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert not any("gb82" in label.lower() for label in labels)
+    assert comparison.redacted_values == 1
+
+
+def test_large_monetary_totals_are_summed_without_silent_rounding() -> None:
+    content = (
+        b"date,revenue,units\n"
+        b"2026-01-05,1234567890123456.78,1\n"
+        b"2026-01-06,0.10,1\n"
+    )
+
+    result = package(content)
+
+    assert result.value(METRIC_REVENUE) == "1234567890123456.88"
+
+
+def test_monetary_magnitude_beyond_the_governed_maximum_is_refused() -> None:
+    content = (
+        b"date,revenue,units\n"
+        b"2026-01-05,1234567890123456789012345678.90,1\n"
+        b"2026-01-06,0.10,1\n"
+    )
+
+    with pytest.raises(FactsRefused):
+        package(content)
+
+
+def test_an_emitted_returns_total_declares_its_interpretation() -> None:
+    content = b"date,revenue,refunds\n2026-01-05,100.00,2\n2026-01-06,200.00,3\n"
+
+    result = package(content)
+
+    assert result.value(METRIC_RETURNS) == "5.00"
+    assert CAVEAT_RETURNS_AS_AMOUNT in result.caveats

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -17,6 +18,10 @@ RESERVED_LABELS = frozenset(
 # A display function returns this to mark a value as unpublishable. Label
 # sanitizing strips control characters, so no source value can produce it.
 REDACTION_SENTINEL = "\x00redacted"
+
+# The whole generated redaction namespace is reserved, not just the bare word,
+# so a source value spelled "redacted 1" cannot collide with a redacted bucket.
+_GENERATED_REDACTION = re.compile(rf"{REDACTED_BUCKET_LABEL}(?: \d+)?")
 
 GRANULARITY_DAY = "day"
 GRANULARITY_MONTH = "month"
@@ -187,35 +192,69 @@ def _labels(
     keys: list[str | None],
     display: Callable[[str], str] | None,
 ) -> dict[str | None, str]:
+    redacted = {
+        key: index + 1
+        for index, key in enumerate(
+            sorted(
+                key
+                for key in keys
+                if key is not None
+                and display is not None
+                and display(key) == REDACTION_SENTINEL
+            )
+        )
+    }
+
     rendered: dict[str | None, str] = {}
-    redacted = sorted(
-        key
-        for key in keys
-        if key is not None and display is not None and display(key) == REDACTION_SENTINEL
-    )
     for key in keys:
         if key is None:
             rendered[key] = UNLABELLED_BUCKET_LABEL
             continue
-        label = display(key) if display is not None else key
-        if label == REDACTION_SENTINEL:
+        if key in redacted:
             # Positional, never a digest: a short digest of an email or phone
             # number is trivially reversible by enumeration.
-            rendered[key] = f"{REDACTED_BUCKET_LABEL} {redacted.index(key) + 1}"
+            rendered[key] = f"{REDACTED_BUCKET_LABEL} {redacted[key]}"
             continue
-        # A source value may never occupy a label reserved for a synthetic
-        # bucket, so it yields the reserved text before collisions are counted.
+        label = display(key) if display is not None else key
+        # A source value may never occupy a label reserved for a synthetic or
+        # generated bucket, so it yields that text before collisions are counted.
         rendered[key] = (
-            f"{label} ({_discriminator(key)})" if label in RESERVED_LABELS else label
+            f"{label} ({_discriminator(key)})"
+            if label in RESERVED_LABELS or _GENERATED_REDACTION.fullmatch(label)
+            else label
         )
 
+    return _disambiguate(rendered, protected=set(redacted))
+
+
+def _disambiguate(
+    rendered: dict[str | None, str],
+    *,
+    protected: set[str],
+) -> dict[str | None, str]:
+    """Give every bucket a distinct label without ever hashing a protected key.
+
+    A digest is only a hint, not a guarantee: six hex characters do collide.
+    Whatever survives the digest pass is separated by a deterministic index.
+    """
     counts: dict[str, int] = {}
     for label in rendered.values():
         counts[label] = counts.get(label, 0) + 1
-    return {
-        key: label if counts[label] == 1 else f"{label} ({_discriminator(key)})"
+
+    suffixed = {
+        key: label
+        if counts[label] == 1 or key in protected
+        else f"{label} ({_discriminator(key)})"
         for key, label in rendered.items()
     }
+
+    seen: dict[str, int] = {}
+    final: dict[str | None, str] = {}
+    for key, label in suffixed.items():
+        occurrence = seen.get(label, 0) + 1
+        seen[label] = occurrence
+        final[key] = label if occurrence == 1 else f"{label} #{occurrence}"
+    return final
 
 
 def _discriminator(key: str | None) -> str:

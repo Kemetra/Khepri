@@ -8,6 +8,7 @@ from khepri.rra.aggregates import (
     GRANULARITY_MONTH,
     MAX_COMPARISON_BUCKETS,
     OTHER_BUCKET_LABEL,
+    REDACTION_SENTINEL,
     UNLABELLED_BUCKET_LABEL,
     Bucket,
     build_comparison,
@@ -183,3 +184,36 @@ def test_a_truncated_remainder_is_distinguishable_from_a_source_named_other() ->
     assert labels[0].startswith(f"{OTHER_BUCKET_LABEL} (")
     assert len(set(labels)) == len(labels)
     assert sum(bucket.value for bucket in comparison.buckets) == sum(values)
+
+
+def test_a_redacted_bucket_never_yields_its_label_to_a_source_value() -> None:
+    comparison = build_comparison(
+        dimension="category",
+        keys=["buyer@example.com", "redacted 1"],
+        values=[Decimal("1.00"), Decimal("2.00")],
+        display=lambda value: (
+            REDACTION_SENTINEL if "@" in value else value
+        ),
+    )
+
+    labels = {bucket.value: bucket.label for bucket in comparison.buckets}
+    # The personal value keeps the plain generated label; the ordinary source
+    # value spelled the same way is the one pushed aside.
+    assert labels[Decimal("1.00")] == "redacted 1"
+    assert labels[Decimal("2.00")].startswith("redacted 1 (")
+    assert len(set(labels.values())) == 2
+
+
+def test_colliding_discriminators_still_produce_distinct_labels() -> None:
+    # Both sanitize to "Online" and share the six-hex discriminator 93f4f2.
+    comparison = build_comparison(
+        dimension="channel",
+        keys=["Online*<@", "Online~\\>"],
+        values=[Decimal("1.00"), Decimal("2.00")],
+        display=lambda value: "Online",
+    )
+
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert comparison.distinct_values == 2
+    assert len(set(labels)) == 2
+    assert sum(bucket.value for bucket in comparison.buckets) == Decimal("3.00")
