@@ -16,6 +16,7 @@ from khepri.rra.worker import (
     ReportExecutionFailed,
     ReportJobMessage,
     ReportWorker,
+    WorkerExecution,
     WorkerPolicy,
 )
 
@@ -36,11 +37,21 @@ class Handler:
         self.failures = failures
         self.jobs: list[ReportJob] = []
 
-    def __call__(self, job: ReportJob) -> None:
-        self.jobs.append(job)
+    def __call__(self, execution: WorkerExecution) -> None:
+        self.jobs.append(execution.job)
         if self.failures:
             self.failures -= 1
             raise RuntimeError("customer content must not escape the handler")
+
+
+class HeartbeatHandler(Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.heartbeats: list[ReportJob] = []
+
+    def __call__(self, execution: WorkerExecution) -> None:
+        self.jobs.append(execution.job)
+        self.heartbeats.append(execution.heartbeat())
 
 
 class Harness:
@@ -181,6 +192,50 @@ def test_stale_worker_cannot_complete_after_its_lease_expires() -> None:
         report_worker.process(ReportJobMessage(job_id=test.queued.job_id))
 
     recovered = test.jobs.recover_expired(now=NOW + timedelta(minutes=2))
+    assert len(recovered) == 1
+    assert recovered[0].state == "retryable"
+
+
+def test_timely_heartbeat_extends_a_long_running_worker_lease() -> None:
+    test = Harness()
+    handler = HeartbeatHandler()
+    policy = WorkerPolicy(
+        worker_id="worker_alpha",
+        lease_for=timedelta(minutes=1),
+        retry_delay=timedelta(minutes=1),
+    )
+    report_worker = worker(
+        test,
+        handler,
+        Clock(NOW, NOW + timedelta(seconds=50), NOW + timedelta(seconds=90)),
+        policy,
+    )
+
+    completed = report_worker.process(ReportJobMessage(job_id=test.queued.job_id))
+
+    assert completed is not None
+    assert completed.state == "succeeded"
+    assert handler.heartbeats[0].lease_expires_at == NOW + timedelta(seconds=110)
+
+
+def test_late_heartbeat_cannot_revive_an_expired_lease() -> None:
+    test = Harness()
+    handler = HeartbeatHandler()
+    report_worker = worker(
+        test,
+        handler,
+        Clock(NOW, NOW + timedelta(minutes=1)),
+        WorkerPolicy(
+            worker_id="worker_alpha",
+            lease_for=timedelta(minutes=1),
+            retry_delay=timedelta(minutes=1),
+        ),
+    )
+
+    with pytest.raises(LeaseLost):
+        report_worker.process(ReportJobMessage(job_id=test.queued.job_id))
+
+    recovered = test.jobs.recover_expired(now=NOW + timedelta(minutes=1))
     assert len(recovered) == 1
     assert recovered[0].state == "retryable"
 
