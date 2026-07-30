@@ -36,9 +36,13 @@ _PHONE = re.compile(r"\+?\d[\d .\-()/]{7,18}\d")
 # located inside surrounding prose without matching part of a longer run of
 # digits or letters. The guard is written to let an underscore act as a border.
 _PHONE_SPAN = re.compile(r"(?<![^\W_])\+?\d[\d .\-()/]{7,18}\d(?![^\W_])")
+# A card carries its grouping in spaces or hyphens, and concatenating every
+# digit in the value loses it as soon as any other number sits nearby.
+_CARD_SPAN = re.compile(r"(?<![^\W_])\d[\d \-]{11,25}\d(?![^\W_])")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
 _FRAGMENT_SEPARATORS = re.compile(r"[\s<>,;:()\[\]{}\"'|]+")
+_TRAILING_PUNCTUATION = ".,;:!?-"
 # A mailbox written against a bracketed address literal is split apart by the
 # fragment separators, so it is also sought as a span whose bracketed host is
 # kept whole.
@@ -438,8 +442,10 @@ def personal_value_shapes(value: str) -> tuple[str, ...]:
     # value stripped of separators.
     if any(_is_iban(part) for part in candidates) or _IBAN.search(_alphanumeric(text)):
         shapes.append("value_iban")
-    if any(_is_payment_card(part) for part in candidates) or _is_payment_card(
-        "".join(character for character in text if character.isdigit())
+    if (
+        any(_is_payment_card(part) for part in candidates)
+        or _contains_payment_card(text)
+        or _is_payment_card("".join(character for character in text if character.isdigit()))
     ):
         shapes.append("value_payment_card")
     return tuple(shapes)
@@ -494,7 +500,20 @@ def _is_email(value: str) -> bool:
 
 
 def _contains_email(text: str) -> bool:
-    return any(_is_email(match.group()) for match in _EMAIL_CANDIDATE.finditer(text))
+    """Locate a mailbox in surrounding prose.
+
+    The candidate pattern is greedy on the host, so a sentence that ends in the
+    address hands back a trailing stop that no domain can carry. Terminal
+    punctuation is trimmed before the span is judged.
+    """
+    return any(
+        _is_email(match.group()) or _is_email(match.group().rstrip(_TRAILING_PUNCTUATION))
+        for match in _EMAIL_CANDIDATE.finditer(text)
+    )
+
+
+def _contains_payment_card(text: str) -> bool:
+    return any(_is_payment_card(match.group()) for match in _CARD_SPAN.finditer(text))
 
 
 def _is_address_literal(text: str) -> bool:

@@ -862,6 +862,48 @@ def test_a_grouped_phone_number_inside_a_larger_value_is_redacted() -> None:
         assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
 
 
+def test_an_identifier_stays_recognized_when_other_numbers_sit_beside_it() -> None:
+    # Concatenating every digit in the value loses a card as soon as any other
+    # number is nearby, and splitting on whitespace loses its grouping.
+    for value in (
+        "4111 1111 1111 1111 exp 1230",
+        "Card 4111 1111 1111 1111 expires 12/30",
+        "4111 1111 1111 1111 / 5",
+    ):
+        content = (
+            "date,revenue,category\n"
+            "2026-01-05,10.00,Beverages\n"
+            "2026-01-06,20.00,Snacks\n"
+            "2026-01-07,30.00,Bakery\n"
+            f"2026-01-08,40.00,{value}\n"
+        ).encode()
+
+        comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+        labels = [bucket.label for bucket in comparison.buckets]
+        assert comparison.redacted_values == 1, value
+        assert all("4111" not in label for label in labels), value
+        assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
+
+
+def test_a_mailbox_ending_a_sentence_is_redacted() -> None:
+    # The candidate span is greedy on the host, so a sentence-final stop makes
+    # the last domain label empty and the address fails validation intact.
+    for value in ("Contact buyer@example.com.", "see buyer@example.com!"):
+        content = (
+            "date,revenue,category\n"
+            "2026-01-05,10.00,Beverages\n"
+            "2026-01-06,20.00,Snacks\n"
+            "2026-01-07,30.00,Bakery\n"
+            f"2026-01-08,40.00,{value}\n"
+        ).encode()
+
+        comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+        labels = [bucket.label for bucket in comparison.buckets]
+        assert comparison.redacted_values == 1, value
+        assert all("buyer" not in label and "example" not in label for label in labels), value
+        assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
+
+
 def test_ordinary_multiword_labels_are_not_redacted() -> None:
     content = (
         b"date,revenue,branch\n"

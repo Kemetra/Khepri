@@ -81,7 +81,9 @@ _PER_UNIT_TOKENS = frozenset(
         "projection",
         "estimate",
         "estimated",
+        "expect",
         "expected",
+        "project",
         # Normalized Arabic: forecast / expected / target / budget / plan.
         "توقع",
         "توقعات",
@@ -128,27 +130,13 @@ _PER_UNIT_COMPOUNDS = frozenset(
     }
 )
 _PLURAL_REMAINDERS = frozenset({"", "s", "es"})
-# A leading-prefix test only recognizes the inflected qualifiers, so a compact
-# header built from a base form -- "plansales", "estimatesales" -- slipped past
-# it and published a projection as a governed figure. A qualifier is therefore
-# also recognized structurally: strip a vocabulary term off either end of a
-# compact label and what remains must not be a qualifier on its own. Requiring
-# the remainder to be the whole qualifier keeps "plantsales" and
-# "projectorsales" answerable, which a prefix test could not.
-_QUALIFIER_AFFIXES = _PER_UNIT_TOKENS | frozenset(
-    {
-        "project",
-        "projects",
-        "projections",
-        "expect",
-        "expects",
-        "forecasts",
-        "estimates",
-        "plans",
-        "targets",
-        "budgets",
-    }
-)
+# A qualifier is also recognized structurally, in two ways that enumeration kept
+# failing at. Strip a vocabulary term off either end of a compact label and what
+# remains must not be a qualifier -- which refuses "plansales" while keeping
+# "plantsales" and "projectorsales" answerable, as a prefix test could not. And
+# a stem stands for its ordinary inflections, so refusing "percent" refuses
+# "percentage" without anyone having to have listed it.
+_QUALIFIER_SUFFIXES = ("", "s", "es", "age", "ages")
 # A compact label cannot be tokenized, so a "per" sitting between two parts is
 # read as a denominator. Any separator avoids this, which is the documented way
 # to express a row-level measure whose name happens to contain the sequence.
@@ -618,7 +606,7 @@ def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -
         return True
     if not rule.rejects_per_unit or collapsed in rule.vocabulary:
         return False
-    if _PER_UNIT_TOKENS.intersection(unclaimed):
+    if any(_is_qualifier(token) for token in unclaimed):
         return True
     if any(compound in collapsed for compound in _PER_UNIT_COMPOUNDS):
         return True
@@ -636,9 +624,24 @@ def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -
 def _qualified_by_affix(rule: SemanticRule, collapsed: str) -> bool:
     """Whether a compact label is a vocabulary term carrying a qualifier."""
     return any(
-        (collapsed.endswith(term) and collapsed[: -len(term)] in _QUALIFIER_AFFIXES)
-        or (collapsed.startswith(term) and collapsed[len(term) :] in _QUALIFIER_AFFIXES)
+        (collapsed.endswith(term) and _is_qualifier(collapsed[: -len(term)]))
+        or (collapsed.startswith(term) and _is_qualifier(collapsed[len(term) :]))
         for term in rule.vocabulary
+    )
+
+
+def _is_qualifier(token: str) -> bool:
+    """Whether a word is a qualifier, in any of its ordinary inflections.
+
+    Enumerating written forms is what let "percentage" through after "percent"
+    was already refused, and "plansales" through after "planned" was. The
+    inflection is derived from the stem instead.
+    """
+    return any(
+        stem in _PER_UNIT_TOKENS
+        for suffix in _QUALIFIER_SUFFIXES
+        for stem in [token[: len(token) - len(suffix)] if suffix else token]
+        if token.endswith(suffix) and stem
     )
 
 

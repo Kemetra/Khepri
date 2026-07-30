@@ -422,6 +422,21 @@ def test_compact_non_actual_headers_are_refused_like_separated_ones() -> None:
         assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
 
 
+def test_a_qualifier_is_refused_in_its_inflected_forms_too() -> None:
+    # "percent" was already refused while "percentage" was not, so the
+    # inflection is derived from the stem rather than enumerated.
+    for header in (
+        b"sales_percentage",
+        b"sales_percentages",
+        b"revenue_percentage",
+        b"sales_rates",
+        b"sales_ratios",
+        b"sales_shares",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
 def test_a_compact_label_that_merely_ends_in_a_qualifier_word_still_maps() -> None:
     # "plant" and "projector" are retail nouns that begin with a qualifier. Only
     # a label whose whole remainder is the qualifier may be refused.
