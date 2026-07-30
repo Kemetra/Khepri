@@ -10,7 +10,9 @@ before making changes.
   non-authoritative reference material.
 - Do not copy Seshat catalogs, specifications, proposals, ledgers, governance records, or
   application code.
-- Do not add product application code during the foundation phase.
+- Add product application code only in specification-linked, independently verifiable slices, as
+  authorized by `governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md`. Never implement
+  ahead of an approved specification, and never widen a slice beyond its stated boundary.
 - Work in small, independently verifiable slices and fail closed on ambiguity.
 - Do not claim or record human approval unless the named authority supplied explicit,
   traceable evidence.
