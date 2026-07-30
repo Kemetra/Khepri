@@ -8,6 +8,7 @@ from typing import Protocol
 from khepri.rra.jobs import (
     FailureRequest,
     LeaseAction,
+    LeaseLost,
     LeaseRequest,
     ReportJob,
 )
@@ -20,6 +21,12 @@ class ReportExecutionFailed(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class ReportJobMessage:
     job_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerExecution:
+    job: ReportJob
+    heartbeat: Callable[[], ReportJob]
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +45,8 @@ class WorkerPolicy:
 class ReportJobStore(Protocol):
     def lease(self, request: LeaseRequest) -> ReportJob | None: ...
 
+    def heartbeat(self, request: LeaseRequest) -> ReportJob: ...
+
     def complete(self, request: LeaseAction) -> ReportJob: ...
 
     def fail(self, request: FailureRequest) -> ReportJob: ...
@@ -48,7 +57,7 @@ class ReportWorker:
         self,
         *,
         jobs: ReportJobStore,
-        handler: Callable[[ReportJob], None],
+        handler: Callable[[WorkerExecution], None],
         clock: Callable[[], datetime],
         policy: WorkerPolicy,
     ) -> None:
@@ -68,12 +77,31 @@ class ReportWorker:
         )
         if leased is None:
             return None
-        try:
-            self._handler(leased)
-        except Exception:
-            self._record_failure(leased)
-            raise ReportExecutionFailed("Report job execution failed.") from None
+
+        self._execute(leased)
         return self._jobs.complete(self._lease_action(leased))
+
+    def _execute(self, job: ReportJob) -> None:
+        try:
+            self._handler(self._execution(job))
+        except LeaseLost:
+            raise
+        except Exception:
+            self._record_failure(job)
+            raise ReportExecutionFailed("Report job execution failed.") from None
+
+    def _execution(self, job: ReportJob) -> WorkerExecution:
+        return WorkerExecution(job=job, heartbeat=lambda: self._heartbeat(job))
+
+    def _heartbeat(self, job: ReportJob) -> ReportJob:
+        return self._jobs.heartbeat(
+            LeaseRequest(
+                job_id=job.job_id,
+                worker_id=self._policy.worker_id,
+                now=self._clock(),
+                lease_for=self._policy.lease_for,
+            )
+        )
 
     def _record_failure(self, job: ReportJob) -> None:
         failed_at = self._clock()
