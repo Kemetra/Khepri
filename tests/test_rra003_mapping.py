@@ -344,3 +344,29 @@ def test_a_disqualifier_never_overrides_an_exact_vocabulary_term() -> None:
     content = b"date,revenue,unit\n2026-01-05,10.00,2\n2026-01-06,20.00,3\n"
 
     assert mapped(content).for_semantic(SEMANTIC_UNITS).column.safe_label == "unit"
+
+
+def test_arabic_per_unit_labels_are_refused_like_english_ones() -> None:
+    for header in ("مبيعات لكل وحدة", "متوسط المبيعات"):
+        content = f"date,{header},units\n2026-01-05,10.00,2\n".encode()
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+    cost = "date,revenue,تكلفة الوحدة\n2026-01-05,10.00,4.00\n".encode()
+    assert mapped(cost).state_of(SEMANTIC_COST) == STATE_UNAVAILABLE
+
+
+def test_arabic_row_level_measures_still_map() -> None:
+    content = "التاريخ,المبيعات,الكمية,التكلفة\n2026-01-05,125.50,3,80.00\n".encode()
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_TRANSACTION_DATE) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_REVENUE) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_COST) == STATE_MAPPED
+
+
+def test_the_arabic_singular_unit_still_answers_units() -> None:
+    content = "date,revenue,وحدة\n2026-01-05,10.00,2\n2026-01-06,20.00,3\n".encode()
+
+    assert mapped(content).for_semantic(SEMANTIC_UNITS).column.safe_label == "وحدة"

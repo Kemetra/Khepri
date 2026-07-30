@@ -30,7 +30,7 @@ NUMERIC_TYPES = frozenset({TYPE_INTEGER, TYPE_DECIMAL})
 
 _INTEGER = re.compile(r"[+-]?\d+")
 _DECIMAL = re.compile(r"[+-]?(?:\d+\.\d*|\.\d+)")
-_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}")
+
 _PHONE = re.compile(r"\+?\d[\d \-()]{7,18}\d")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
@@ -416,7 +416,7 @@ def personal_value_shapes(value: str) -> tuple[str, ...]:
     if not text:
         return ()
     shapes: list[str] = []
-    if _EMAIL.fullmatch(text):
+    if _is_email(text):
         shapes.append("value_email")
     if _is_phone(text):
         shapes.append("value_phone")
@@ -442,6 +442,32 @@ def _normalized_value(value: str) -> str:
     return "".join(
         " " if character.isspace() else character for character in normalized
     ).strip()
+
+
+def _is_email(value: str) -> bool:
+    """Match an address structurally rather than by an ASCII suffix pattern.
+
+    Requiring an ASCII-letter suffix missed internationalized addresses in both
+    punycode and Unicode form, publishing nearly the whole identifier once the
+    label sanitizer stripped the separators.
+    """
+    local, separator, domain = value.partition("@")
+    if not separator or not local or "@" in domain or " " in value:
+        return False
+    labels = domain.split(".")
+    if len(labels) < 2 or not all(_is_domain_label(label) for label in labels):
+        return False
+    suffix = labels[-1]
+    return len(suffix) >= 2 and any(character.isalpha() for character in suffix)
+
+
+def _is_domain_label(label: str) -> bool:
+    return (
+        bool(label)
+        and not label.startswith("-")
+        and not label.endswith("-")
+        and all(character.isalnum() or character == "-" for character in label)
+    )
 
 
 def _is_iban(value: str) -> bool:

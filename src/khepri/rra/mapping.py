@@ -44,7 +44,26 @@ REQUIREMENT_OPTIONAL = "optional"
 # header like "unitcost" is caught without refusing "opportunity_cost" or
 # "supermarket_sales" the way a bare substring test would.
 _PER_UNIT_TOKENS = frozenset(
-    {"unit", "per", "each", "average", "avg", "rate", "percent", "pct", "ratio", "share"}
+    {
+        "unit",
+        "per",
+        "each",
+        "average",
+        "avg",
+        "rate",
+        "percent",
+        "pct",
+        "ratio",
+        "share",
+        # Normalized Arabic: per / the unit / unit / average / rate / ratio.
+        "لكل",
+        "الوحده",
+        "وحده",
+        "متوسط",
+        "معدل",
+        "نسبه",
+        "مئويه",
+    }
 )
 _PER_UNIT_PREFIXES = ("unit", "per", "average", "avg")
 _PER_UNIT_COMPOUNDS = frozenset(
@@ -156,6 +175,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "كميه",
                 "عدد",
                 "وحدات",
+                "وحده",
             }
         ),
         disqualifiers=frozenset({"price", "cost", "value", "amount", "قيمه", "تكلفه"}),

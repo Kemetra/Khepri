@@ -687,3 +687,32 @@ def test_unicode_grouping_spaces_cannot_carry_an_iban_past_redaction() -> None:
     labels = [bucket.label for bucket in comparison.buckets]
     assert not any("GB82" in label for label in labels)
     assert comparison.redacted_values == 1
+
+
+def test_an_internationalized_email_is_redacted_like_an_ascii_one() -> None:
+    for address in ("buyer@xn--mgbh0fb.xn--wgbh1c", "buyer@مثال.مصر"):
+        content = (
+            "date,revenue,category\n"
+            "2026-01-05,10.00,Beverages\n"
+            "2026-01-06,20.00,Snacks\n"
+            "2026-01-07,30.00,Bakery\n"
+            f"2026-01-08,40.00,{address}\n"
+        ).encode()
+
+        comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+        labels = [bucket.label for bucket in comparison.buckets]
+        assert not any("buyer" in label for label in labels), address
+        assert comparison.redacted_values == 1, address
+
+
+def test_ordinary_text_is_not_mistaken_for_an_email() -> None:
+    content = (
+        b"date,revenue,category\n"
+        b"2026-01-05,10.00,Beverages\n"
+        b"2026-01-06,20.00,Snacks\n"
+    )
+
+    comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+
+    assert comparison.redacted_values == 0
+    assert sorted(bucket.label for bucket in comparison.buckets) == ["Beverages", "Snacks"]
