@@ -200,14 +200,7 @@ class FactPackageService:
         # two disagree, so the package inherits the decision rather than
         # re-taking it.
         request = _requested_by(profile_record)
-        # A package cites the profile it was published against, so the two must
-        # have been decided under the same mapping rules. Publishing under newer
-        # rules than the profile was mapped with would attribute this package's
-        # figures to an admissibility decision taken under the old ones.
-        if profile_record.mapping_version != MAPPING_VERSION:
-            raise PackageRefused(
-                "Stored profile was mapped under a superseded mapping version."
-            )
+        _assert_profile_current(profile_record)
         # Keyed by the versions the stored row will actually carry. Keying the
         # lookup on anything else lets the check miss a row the insert then
         # collides with.
@@ -303,26 +296,31 @@ class FactPackageService:
         record: FactPackageRecord,
         profile_record: DatasetProfileRecord | None = None,
     ) -> None:
-        """Check a stored package before it is served as the session's current one.
+        """The single test of whether a stored package may be served as current.
 
-        Publication and reading are the same claim made twice, so a package the
-        service would refuse to publish today must not be handed back as current
-        merely because it was published earlier.
+        Publication and reading are the same claim made twice, so both paths ask
+        this one question rather than each keeping its own list of checks --
+        which is how the read path came to be missing several of them.
         """
         profile = profile_record or self._profiles.get_profile_for_session(
             record.session_id
         )
-        # The profile document digest is stored beside the package rather than
-        # inside it, so it is outside the package's own content address and has
-        # to be checked against the profile it names.
+        if profile is None or profile.profile_id != record.profile_id:
+            raise PackageCorrupted(
+                "Stored fact package does not match the profile it cites."
+            )
+        # Both digests the package claims about its profile, checked against
+        # that profile. Neither is covered by the package's own content address:
+        # one is stored beside it, and the other is inside a document whose
+        # digest can be recomputed after tampering.
         if (
-            profile is None
-            or profile.profile_id != record.profile_id
-            or profile.profile_digest != record.profile_document_digest
+            profile.profile_digest != record.profile_document_digest
+            or _profile_digest_of(profile) != record.profile_digest
         ):
             raise PackageCorrupted(
                 "Stored fact package does not match the profile it cites."
             )
+        _assert_profile_current(profile)
         # Every governed version, not only the mapping: a package the current
         # builder would not publish must not be served as the current one,
         # whichever of the three moved. The repository is a Protocol, so this
@@ -332,6 +330,25 @@ class FactPackageService:
             raise PackageRefused(
                 "Stored package was published under a superseded governed version."
             )
+
+
+def _assert_profile_current(record: DatasetProfileRecord) -> None:
+    """A package cites the profile it was published against, so the two must
+    have been decided under the same mapping rules. Serving or publishing under
+    newer rules than the profile was mapped with would attribute the package's
+    figures to an admissibility decision taken under the old ones.
+    """
+    if record.mapping_version != MAPPING_VERSION:
+        raise PackageRefused(
+            "Stored profile was mapped under a superseded mapping version."
+        )
+
+
+def _profile_digest_of(record: DatasetProfileRecord) -> str:
+    """The digest of the profile alone, as the package document records it."""
+    return hashlib.sha256(
+        canonical_json(record.document["profile"]).encode()
+    ).hexdigest()
 
 
 def _requested_by(record: DatasetProfileRecord) -> ReportRequest:

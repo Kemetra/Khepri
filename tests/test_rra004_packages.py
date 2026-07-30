@@ -540,6 +540,33 @@ def _publish_under_superseded_mapping(test: Harness) -> None:
         database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
 
 
+def test_a_stale_profile_stops_the_read_path_as_well_as_publication() -> None:
+    # The package row is entirely current; the profile behind it is not.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+    with test.factory.begin() as database:
+        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
+
+    assert test.client.get("/api/v1/beta/facts").status_code == 409
+    assert test.client.post("/api/v1/beta/facts").status_code == 409
+
+
+def test_the_inner_profile_digest_is_bound_to_the_cited_profile() -> None:
+    # Recomputing package_digest after tampering makes the package
+    # self-consistent, so only the profile it names can contradict it.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+    with test.factory.begin() as database:
+        row = database.scalar(select(FactPackageRow))
+        document = dict(row.document)
+        document["profile_digest"] = "d" * 64
+        row.document = document
+        row.package_digest = _digest_of(document)
+
+    assert test.client.get("/api/v1/beta/facts").status_code == 503
+    assert test.client.post("/api/v1/beta/facts").status_code == 503
+
+
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
     first = prepared().client.post("/api/v1/beta/facts").json()
     second = prepared().client.post("/api/v1/beta/facts").json()
