@@ -55,3 +55,40 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - run: uv run pytest
+
+  # RRA-007 requires CI to fail when an approved performance tolerance is
+  # exceeded. This job is that gate. It is NOT evidence that the objective is
+  # met, and a green run of it must never be read as evidence:
+  #
+  #   * No approved benchmark workload exists. With the variables below unset --
+  #     which is every run today -- the job reports "NOT CERTIFIED", measures no
+  #     sample, tests no objective, and succeeds without asserting anything.
+  #   * The variables are read from repository configuration, never from this
+  #     file. A benchmark identifier, workload digest, environment digest, or
+  #     approval reference written here would fabricate approval evidence.
+  #   * Once they are supplied, the job BLOCKS until a benchmark runner for the
+  #     approved environment is wired in. An approved objective nobody measured
+  #     must not read as an objective that held; that failure is Constitution V
+  #     working, not a regression.
+  #   * A declaration that is partly supplied, blank, or unreadable also blocks.
+  benchmark:
+    name: benchmark (certifies nothing without an approved workload)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      KHEPRI_BENCHMARK_ID: ${{ vars.KHEPRI_BENCHMARK_ID }}
+      KHEPRI_BENCHMARK_WORKLOAD_DIGEST: ${{ vars.KHEPRI_BENCHMARK_WORKLOAD_DIGEST }}
+      KHEPRI_BENCHMARK_ENVIRONMENT_DIGEST: ${{ vars.KHEPRI_BENCHMARK_ENVIRONMENT_DIGEST }}
+      KHEPRI_BENCHMARK_APPROVAL_REF: ${{ vars.KHEPRI_BENCHMARK_APPROVAL_REF }}
+      KHEPRI_BENCHMARK_SAMPLE_COUNT: ${{ vars.KHEPRI_BENCHMARK_SAMPLE_COUNT }}
+      KHEPRI_BENCHMARK_DATASET_ROWS: ${{ vars.KHEPRI_BENCHMARK_DATASET_ROWS }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.10.11"
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: enforce the approved completion objective, or certify nothing
+        run: uv run python -m khepri.rra.benchmark_gate
