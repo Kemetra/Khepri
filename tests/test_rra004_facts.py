@@ -44,10 +44,11 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import (
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
+    SEMANTIC_PRODUCT,
     SEMANTIC_STORE,
     build_mapping,
 )
-from khepri.rra.profiling import build_profile
+from khepri.rra.profiling import build_profile, canonical_json
 
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -906,6 +907,22 @@ def test_a_mailbox_ending_a_sentence_is_redacted() -> None:
         assert comparison.redacted_values == 1, value
         assert all("buyer" not in label and "example" not in label for label in labels), value
         assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
+
+
+def test_a_customer_identifier_column_never_becomes_a_published_dimension() -> None:
+    # The label mentions "product", so the column mapped to the product
+    # dimension and published customer identifiers verbatim as bucket labels.
+    content = (
+        b"date,revenue,product_customer_id\n"
+        b"2026-01-05,10.00,CUST-001\n"
+        b"2026-01-06,20.00,CUST-002\n"
+    )
+
+    built = package(content)
+
+    assert built.comparison(SEMANTIC_PRODUCT) is None
+    assert built.refusal("revenue_by_product").reason == REASON_INPUT_UNAVAILABLE
+    assert "CUST" not in canonical_json(built.as_document())
 
 
 def test_ordinary_multiword_labels_are_not_redacted() -> None:

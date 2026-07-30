@@ -171,13 +171,27 @@ def test_payment_card_shape_is_detected_without_a_matching_label() -> None:
     assert "value_payment_card" in reference.personal_data_signals
 
 
-def test_store_and_customer_id_labels_are_not_treated_as_personal_data() -> None:
+def test_a_customer_identifier_is_personal_data_even_without_a_shape() -> None:
+    # "c-1" carries no recognizable shape, but it is a pseudonym for one person,
+    # and a label naming a party plus an identifier says so.
     content = b"date,store,customer_id\n2026-01-05,Cairo,c-1\n2026-01-06,Giza,c-2\n"
 
     _, store, customer_id = profile(content).columns
 
     assert store.personal_data_risk is False
-    assert customer_id.personal_data_risk is False
+    assert customer_id.personal_data_risk is True
+    assert "label_customer_identifier" in customer_id.personal_data_signals
+
+
+def test_a_label_naming_customers_without_an_identifier_stays_answerable() -> None:
+    # The pair is required: an ordinary measure that mentions customers is not
+    # itself an identifier, and excluding it would cost a governed figure.
+    content = b"date,customer_sales,product_code\n2026-01-05,100,SKU-1\n"
+
+    _, customer_sales, product_code = profile(content).columns
+
+    assert customer_sales.personal_data_risk is False
+    assert product_code.personal_data_risk is False
 
 
 def test_arabic_headers_survive_safe_label_normalization() -> None:

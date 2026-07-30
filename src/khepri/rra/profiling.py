@@ -88,6 +88,58 @@ _PERSONAL_DATA_LABEL_TOKENS: dict[str, frozenset[str]] = {
     "date_of_birth": frozenset({"dob", "birthdate", "dateofbirth", "ميلاد"}),
 }
 
+# A customer identifier is personal data even when it carries no recognizable
+# shape: "CUST-001" is a pseudonym for one person. The pair is required rather
+# than the party word alone, so an identifier column is excluded while an
+# ordinary measure that merely mentions customers stays answerable.
+_CUSTOMER_TOKENS = frozenset(
+    {
+        "customer",
+        "customers",
+        "cust",
+        "client",
+        "clients",
+        "buyer",
+        "buyers",
+        "shopper",
+        "shoppers",
+        "member",
+        "members",
+        "subscriber",
+        "subscribers",
+        "account",
+        "accounts",
+        "loyalty",
+        "cardholder",
+        "عميل",
+        "العميل",
+        "عملاء",
+        "زبون",
+        "الزبون",
+        "حساب",
+        "عضويه",
+    }
+)
+_IDENTIFIER_TOKENS = frozenset(
+    {
+        "id",
+        "ids",
+        "no",
+        "num",
+        "number",
+        "code",
+        "ref",
+        "reference",
+        "key",
+        "uid",
+        "guid",
+        "identifier",
+        "رقم",
+        "معرف",
+        "كود",
+    }
+)
+
 _LABEL_UNSAFE_PREFIX = frozenset({"=", "+", "-", "@", "\t", "\r", "\n"})
 _LABEL_ALLOWED_PUNCTUATION = frozenset(" _-()/%.&#:")
 
@@ -405,6 +457,8 @@ def _personal_data_signals(safe_label: str, values: list[str]) -> list[str]:
     for signal, vocabulary in _PERSONAL_DATA_LABEL_TOKENS.items():
         if vocabulary & set(tokens) or collapsed in vocabulary:
             signals.append(f"label_{signal}")
+    if _names_a_customer_identifier(tokens):
+        signals.append("label_customer_identifier")
 
     if values:
         counts: dict[str, int] = {}
@@ -418,6 +472,20 @@ def _personal_data_signals(safe_label: str, values: list[str]) -> list[str]:
             if Decimal(matched) / total >= PERSONAL_DATA_SHAPE_RATE
         )
     return sorted(set(signals))
+
+
+def _names_a_customer_identifier(tokens: tuple[str, ...]) -> bool:
+    """Whether a label names an identifier for a party rather than a thing."""
+    separated = set(tokens)
+    if _CUSTOMER_TOKENS & separated and _IDENTIFIER_TOKENS & separated:
+        return True
+    # The same pair written without a separator, as in "customerid".
+    return any(
+        token[: len(token) - len(suffix)] in _CUSTOMER_TOKENS
+        for token in tokens
+        for suffix in _IDENTIFIER_TOKENS
+        if token.endswith(suffix) and len(token) > len(suffix)
+    )
 
 
 def personal_value_shapes(value: str) -> tuple[str, ...]:

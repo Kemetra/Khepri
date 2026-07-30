@@ -438,6 +438,20 @@ def test_running_total_measures_are_refused() -> None:
         assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
 
 
+def test_composite_running_total_labels_are_refused() -> None:
+    # A qualifier followed by two vocabulary terms: stripping one term off one
+    # end only ever saw two pieces, so the label read as ordinary revenue.
+    for header in (
+        b"running_total_sales",
+        b"runningtotalsales",
+        b"cumulative_total_sales",
+        b"ytd_total_sales",
+        b"rolling_total_revenue",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,100,Cairo\n2026-01-06,150,Giza\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
 def test_a_product_word_that_reads_as_a_qualifier_alone_still_maps() -> None:
     # "running_sales" is a running total; "running_shoe_sales" is footwear.
     content = b"date,running_shoe_sales,store\n2026-01-05,100,Cairo\n"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from functools import cache
 
 from khepri.rra.profiling import (
     TYPE_DATE,
@@ -641,12 +642,32 @@ def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -
 
 
 def _qualified_by_affix(rule: SemanticRule, collapsed: str) -> bool:
-    """Whether a compact label is a vocabulary term carrying a qualifier."""
-    return any(
-        (collapsed.endswith(term) and _is_affix_qualifier(collapsed[: -len(term)]))
-        or (collapsed.startswith(term) and _is_affix_qualifier(collapsed[len(term) :]))
-        for term in rule.vocabulary
-    )
+    """Whether a compact label reads as governed vocabulary carrying a qualifier.
+
+    Stripping one vocabulary term off one end only ever saw two pieces, so
+    "runningtotalsales" -- a qualifier followed by two vocabulary terms -- read
+    as ordinary revenue. The label is decomposed into governed pieces instead,
+    and refused when some complete decomposition contains a qualifier. Requiring
+    the decomposition to be complete is what keeps "plantsales" and
+    "runningshoesales" answerable: neither leaves a governed remainder.
+    """
+    return _decomposes(collapsed, rule.vocabulary, carries_qualifier=False)
+
+
+@cache
+def _decomposes(text: str, vocabulary: frozenset[str], *, carries_qualifier: bool) -> bool:
+    if not text:
+        return carries_qualifier
+    for end in range(1, len(text) + 1):
+        piece = text[:end]
+        if piece in vocabulary:
+            if _decomposes(text[end:], vocabulary, carries_qualifier=carries_qualifier):
+                return True
+        elif _is_affix_qualifier(piece) and _decomposes(
+            text[end:], vocabulary, carries_qualifier=True
+        ):
+            return True
+    return False
 
 
 def _is_qualifier(token: str) -> bool:
