@@ -33,6 +33,16 @@ from khepri.rra.packages import (
     ProfileNotFound,
 )
 from khepri.rra.profiling import ProfileRejected
+from khepri.rra.reports import (
+    DeliveredBundle,
+    DeliveryWithheld,
+    JobEvidenceContradicted,
+    ReportJobView,
+    ReportPackageMissing,
+    ReportServices,
+    job_outcome,
+    reconcile_delivery,
+)
 from khepri.rra.sessions import (
     ConsentRequired,
     CrossSessionAccessDenied,
@@ -42,7 +52,14 @@ from khepri.rra.sessions import (
 )
 
 SESSION_COOKIE = "khepri_beta_session"
+_SESSION_UNAVAILABLE = "Session is unavailable."
 ConsentVersion = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+]
+# An opaque job identifier, bounded so an unbounded path segment never reaches a
+# store as a lookup key.
+JobIdentifier = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
 ]
@@ -140,6 +157,52 @@ class FactPackageResponse(BaseModel):
     document: dict[str, object]
 
 
+class ReportRequestBody(BaseModel):
+    """A report request carries no request of its own.
+
+    Which figures a report contains was decided when the dataset was profiled
+    and fixed when the fact package was published. A field here -- a template, a
+    title, a set of semantics -- would be a second decision able to disagree
+    with the first, so the model exists to refuse one rather than to carry one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReportJobResponse(BaseModel):
+    """One job's governed state, and for a finished job what it produced.
+
+    Content-free by construction: an opaque job identifier, a state from the
+    governed vocabulary, two timestamps, a bundle content address, and a
+    governed reason code. There is no field a label, a figure, a filename, or a
+    provider sentence could occupy.
+    """
+
+    job_id: str
+    state: str
+    queued_at: datetime
+    completed_at: datetime | None
+    bundle_id: str | None
+    reason: str | None
+
+
+class ReportBundleResponse(BaseModel):
+    """The delivered report as a manifest of what was published, not as content.
+
+    Deliberately no figures, no caveats, no narrative, no filenames, and no
+    download location or credential of any kind. What a caller is owed here is
+    that one whole report exists and what it is bound to: the bundle's content
+    address, the fact-package version behind every surface of it, whether
+    commentary was included, and which surfaces were delivered.
+    """
+
+    job_id: str
+    bundle_id: str
+    package_version: str
+    narrative_state: str
+    surfaces: list[str]
+
+
 def create_app(
     *,
     service: InvitationService,
@@ -148,6 +211,7 @@ def create_app(
     deletion_service: DeletionService | None = None,
     profiling_service: ProfilingService | None = None,
     package_service: FactPackageService | None = None,
+    report_services: ReportServices | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
 
@@ -393,6 +457,57 @@ def create_app(
                 )
             return _package_response(record)
 
+    if report_services is not None:
+
+        @app.post(
+            "/api/v1/beta/reports",
+            response_model=ReportJobResponse,
+            status_code=status.HTTP_201_CREATED,
+        )
+        def request_retail_report(
+            payload: ReportRequestBody,
+            response: Response,
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> ReportJobResponse:
+            # `payload` is declared and unused on purpose: it is the guard that
+            # refuses a caller who invents a field. See `ReportRequestBody`.
+            return _requested_report(
+                report_services,
+                response=response,
+                session_id=_require_session(session_id),
+                now=clock(),
+            )
+
+        @app.get(
+            "/api/v1/beta/reports/{job_id}",
+            response_model=ReportJobResponse,
+        )
+        def read_retail_report_job(
+            job_id: JobIdentifier,
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> ReportJobResponse:
+            return _report_job(
+                report_services,
+                session_id=_require_session(session_id),
+                job_id=job_id,
+                now=clock(),
+            )
+
+        @app.get(
+            "/api/v1/beta/reports/{job_id}/bundle",
+            response_model=ReportBundleResponse,
+        )
+        def read_retail_report_bundle(
+            job_id: JobIdentifier,
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> ReportBundleResponse:
+            return _report_bundle(
+                report_services,
+                session_id=_require_session(session_id),
+                job_id=job_id,
+                now=clock(),
+            )
+
     if deletion_service is not None:
 
         @app.delete(
@@ -431,7 +546,42 @@ def create_app(
 
 
 def _session_unavailable() -> HTTPException:
-    return HTTPException(status_code=401, detail="Session is unavailable.")
+    return HTTPException(status_code=401, detail=_SESSION_UNAVAILABLE)
+
+
+# How a governed refusal reaches a caller. A table rather than a chain of
+# `except` clauses inside each route: the report routes refuse for the same
+# reasons, and three copies of one mapping is three places for them to drift.
+# `None` for the detail means the exception's own message is already governed
+# text -- every one of those is a fixed sentence written in this package.
+_REPORT_REFUSALS: tuple[tuple[type[Exception], int, str | None], ...] = (
+    (SessionExpired, 401, _SESSION_UNAVAILABLE),
+    (CrossSessionAccessDenied, 401, _SESSION_UNAVAILABLE),
+    (ConsentRequired, 403, None),
+    (ReportPackageMissing, 404, None),
+    (PackageRefused, 409, None),
+    (PackageCorrupted, 503, "Stored fact package is unavailable."),
+    (ProfileCorrupted, 503, "Stored fact package is unavailable."),
+)
+
+
+def _refusal_for(error: Exception) -> HTTPException:
+    """The status one governed refusal reaches a caller as.
+
+    An error this table does not recognize is re-raised rather than reported as
+    a refusal, so an unmapped failure fails closed as a server error instead of
+    being described to a caller in words nothing here governs.
+    """
+    for kind, code, detail in _REPORT_REFUSALS:
+        if isinstance(error, kind):
+            return HTTPException(status_code=code, detail=detail or str(error))
+    raise error
+
+
+def _require_session(session_id: str | None) -> str:
+    if session_id is None:
+        raise _session_unavailable()
+    return session_id
 
 
 def _declared_size(request: Request) -> int | None:
@@ -499,6 +649,137 @@ def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:
             )
             for entry in mapping["mappings"]
         ],
+    )
+
+
+def _requested_report(
+    services: ReportServices,
+    *,
+    response: Response,
+    session_id: str,
+    now: datetime,
+) -> ReportJobResponse:
+    """Ask for this caller's report, and say whether this call is what asked.
+
+    Held outside `create_app` rather than written into the route, so the branches
+    a refusal needs do not accumulate in the one function every route group in
+    this module already shares.
+    """
+    try:
+        view, created = services.jobs.request_session_report(
+            session_id=session_id,
+            now=now,
+        )
+    except Exception as error:
+        raise _refusal_for(error) from error
+    if not created:
+        # The same request, so the same job. A second identifier here would be a
+        # second report built from one package, and RRA-007 requires the
+        # background job be idempotent rather than merely repeatable.
+        response.status_code = status.HTTP_200_OK
+    return _job_response(view)
+
+
+def _report_job(
+    services: ReportServices,
+    *,
+    session_id: str,
+    job_id: str,
+    now: datetime,
+) -> ReportJobResponse:
+    try:
+        view = services.jobs.get_session_job(
+            session_id=session_id,
+            job_id=job_id,
+            now=now,
+        )
+    except Exception as error:
+        raise _refusal_for(error) from error
+    if view is None:
+        # Identical to the answer another caller's job gets, because the store is
+        # asked for this caller's job and nothing else. A distinguishable
+        # refusal would confirm that another caller's job exists.
+        raise HTTPException(
+            status_code=404,
+            detail="No report job is available for this session.",
+        )
+    return _job_response(view)
+
+
+def _report_bundle(
+    services: ReportServices,
+    *,
+    session_id: str,
+    job_id: str,
+    now: datetime,
+) -> ReportBundleResponse:
+    try:
+        bundle = services.bundles.get_session_bundle(
+            session_id=session_id,
+            job_id=job_id,
+            now=now,
+        )
+    except Exception as error:
+        raise _refusal_for(error) from error
+    if bundle is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No delivered report is available for this session.",
+        )
+    return _bundle_response(bundle, job_id=job_id)
+
+
+def _job_response(view: ReportJobView) -> ReportJobResponse:
+    """One job as a caller sees it, or a refusal to describe it at all.
+
+    What may be said is decided in `reports.job_outcome`, which owns the
+    governed vocabularies. All that happens here is the mapping onto a status.
+    """
+    try:
+        outcome = job_outcome(view)
+    except JobEvidenceContradicted as error:
+        # Deliberately indistinguishable between an ungoverned state, a missing
+        # delivery record, and a record naming another job. Which invariant a
+        # store broke is an operator's question, and answering it here would
+        # describe stored state to a caller who cannot act on it.
+        raise HTTPException(
+            status_code=503,
+            detail="Report job state is unavailable.",
+        ) from error
+    return ReportJobResponse(
+        job_id=view.job.job_id,
+        state=outcome.state,
+        queued_at=view.job.queued_at,
+        completed_at=view.job.completed_at,
+        bundle_id=outcome.bundle_id,
+        reason=outcome.reason,
+    )
+
+
+def _bundle_response(bundle: DeliveredBundle, *, job_id: str) -> ReportBundleResponse:
+    """The manifest of one whole report, or nothing.
+
+    Every field is taken from the delivery record rather than from the stored
+    surfaces, and the record has already refused to name fewer than every
+    required surface. The surfaces are what the record is checked against.
+    """
+    try:
+        reconcile_delivery(bundle, job_id=job_id)
+    except DeliveryWithheld as withheld:
+        # The governed reason stays on the exception. Which invariant a store
+        # broke is an operator's question; a caller is told only that no whole
+        # report can be served, which is the answer RRA-006 requires.
+        raise HTTPException(
+            status_code=503,
+            detail="Report bundle is unavailable.",
+        ) from withheld
+    record = bundle.record
+    return ReportBundleResponse(
+        job_id=record.job_id,
+        bundle_id=record.bundle_id,
+        package_version=record.package_version,
+        narrative_state=record.narrative_state,
+        surfaces=list(record.surfaces),
     )
 
 
