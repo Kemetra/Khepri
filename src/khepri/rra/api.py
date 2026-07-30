@@ -122,50 +122,21 @@ class ProfileResponse(BaseModel):
     mappings: list[ProfileMappingResponse]
 
 
-class FactResponse(BaseModel):
-    fact_id: str
-    metric: str
-    value: str
-    precision: int
-    unit_kind: str
-    inputs: list[str]
-    caveats: list[str]
-    citation_id: str
-
-
-class FactAggregateResponse(BaseModel):
-    fact_id: str
-    metric: str
-    measure: str
-    unit_kind: str
-    precision: int
-    scope: str
-    citation_id: str
-    caveats: list[str]
-    buckets: list[dict[str, object]]
-
-
-class FactRefusalResponse(BaseModel):
-    metric: str
-    reason: str
-
-
 class FactPackageResponse(BaseModel):
+    """The published package, served as the document its digest addresses.
+
+    The canonical document is nested verbatim rather than reshaped into
+    per-entry models. A consumer given `package_digest` can only check it
+    against the bytes it was computed over, and renaming or dropping fields on
+    the way out -- as an earlier revision did with the truncation and redaction
+    counts -- makes the digest unverifiable and hides how much a comparison
+    left out.
+    """
+
     package_id: str
-    package_version: str
-    formula_version: str
-    mapping_version: str
-    profile_digest: str
-    profile_document_digest: str
     package_digest: str
-    source_sha256_hex: str
-    row_count: int
-    monetary_precision: int
-    caveats: list[str]
-    facts: list[FactResponse]
-    series: list[FactAggregateResponse]
-    comparisons: list[FactAggregateResponse]
-    refusals: list[FactRefusalResponse]
+    profile_document_digest: str
+    document: dict[str, object]
 
 
 def create_app(
@@ -529,56 +500,11 @@ def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:
 
 
 def _package_response(record: FactPackageRecord) -> FactPackageResponse:
-    document = record.document
     return FactPackageResponse(
         package_id=record.package_id,
-        package_version=record.package_version,
-        formula_version=record.formula_version,
-        mapping_version=record.mapping_version,
-        profile_digest=record.profile_digest,
-        profile_document_digest=record.profile_document_digest,
         package_digest=record.package_digest,
-        source_sha256_hex=record.source_sha256_hex,
-        row_count=record.row_count,
-        monetary_precision=int(document["monetary_precision"]),
-        caveats=list(document["caveats"]),
-        facts=[
-            FactResponse(
-                fact_id=fact["fact_id"],
-                metric=fact["metric"],
-                value=fact["value"],
-                precision=fact["precision"],
-                unit_kind=fact["unit_kind"],
-                inputs=list(fact["inputs"]),
-                caveats=list(fact["caveats"]),
-                citation_id=fact["citation_id"],
-            )
-            for fact in document["facts"]
-        ],
-        series=[_aggregate_response(entry, "granularity") for entry in document["series"]],
-        comparisons=[
-            _aggregate_response(entry, "dimension") for entry in document["comparisons"]
-        ],
-        refusals=[
-            FactRefusalResponse(metric=refusal["metric"], reason=refusal["reason"])
-            for refusal in document["refusals"]
-        ],
-    )
-
-
-def _aggregate_response(entry: dict[str, object], scope_key: str) -> FactAggregateResponse:
-    """Render a series or a comparison, which differ only in what scopes them."""
-    buckets = entry["points"] if scope_key == "granularity" else entry["buckets"]
-    return FactAggregateResponse(
-        fact_id=str(entry["fact_id"]),
-        metric=str(entry["metric"]),
-        measure=str(entry["measure"]),
-        unit_kind=str(entry["unit_kind"]),
-        precision=int(entry["precision"]),
-        scope=str(entry[scope_key]),
-        citation_id=str(entry["citation_id"]),
-        caveats=list(entry["caveats"]),
-        buckets=list(buckets),
+        profile_document_digest=record.profile_document_digest,
+        document=record.document,
     )
 
 

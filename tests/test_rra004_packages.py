@@ -201,53 +201,68 @@ def test_a_golden_dataset_publishes_its_governed_figures() -> None:
 
     assert response.status_code == 201
     body = response.json()
+    document = body["document"]
     assert body["package_id"] == "fct_1"
-    assert body["package_version"] == PACKAGE_VERSION
-    assert body["formula_version"] == FORMULA_VERSION
-    assert body["row_count"] == 4
-    assert len(body["package_digest"]) == 64
-    assert body["source_sha256_hex"] == hashlib.sha256(GOLDEN_CSV).hexdigest()
+    assert document["package_version"] == PACKAGE_VERSION
+    assert document["formula_version"] == FORMULA_VERSION
+    assert document["row_count"] == 4
+    assert body["package_digest"] == _digest_of(document)
+    assert document["source_sha256_hex"] == hashlib.sha256(GOLDEN_CSV).hexdigest()
 
-    figures = {fact["metric"]: fact["value"] for fact in body["facts"]}
+    figures = {fact["metric"]: fact["value"] for fact in document["facts"]}
     assert figures["revenue"] == "500.00"
     assert figures["units"] == "11"
     assert figures["transactions"] == "3"
     assert figures["average_order_value"] == "166.67"
 
 
-def test_aggregates_carry_their_scope_unit_and_citation() -> None:
-    body = prepared().client.post("/api/v1/beta/facts").json()
+def test_aggregates_are_served_in_their_canonical_shape() -> None:
+    document = prepared().client.post("/api/v1/beta/facts").json()["document"]
 
     revenue_trend = next(
-        entry for entry in body["series"] if entry["measure"] == "revenue"
+        entry for entry in document["series"] if entry["measure"] == "revenue"
     )
-    assert revenue_trend["scope"] == "day"
+    assert revenue_trend["granularity"] == "day"
     assert revenue_trend["unit_kind"] == "monetary"
     assert revenue_trend["citation_id"].startswith("cit_")
-    assert sum(float(point["value"]) for point in revenue_trend["buckets"]) == 500.00
+    assert sum(float(point["value"]) for point in revenue_trend["points"]) == 500.00
 
     category = next(
         entry
-        for entry in body["comparisons"]
-        if entry["scope"] == "category" and entry["measure"] == "revenue"
+        for entry in document["comparisons"]
+        if entry["dimension"] == "category" and entry["measure"] == "revenue"
     )
     assert [bucket["label"] for bucket in category["buckets"]] == [
         "Beverages",
         "Snacks",
     ]
+    # The completeness counts a caveat refers to must survive to the consumer.
+    assert category["distinct_values"] == 2
+    assert category["truncated_values"] == 0
+    assert category["redacted_values"] == 0
 
-    citations = [entry["citation_id"] for entry in body["series"] + body["comparisons"]]
-    citations += [fact["citation_id"] for fact in body["facts"]]
+    citations = [
+        entry["citation_id"] for entry in document["series"] + document["comparisons"]
+    ]
+    citations += [fact["citation_id"] for fact in document["facts"]]
     assert len(set(citations)) == len(citations)
+
+
+def test_the_served_package_reconstructs_the_digest_it_is_addressed_by() -> None:
+    body = prepared().client.post("/api/v1/beta/facts").json()
+
+    assert _digest_of(body["document"]) == body["package_digest"]
 
 
 def test_refusals_are_published_rather_than_omitted() -> None:
     body = prepared().client.post("/api/v1/beta/facts").json()
 
-    refusals = {entry["metric"]: entry["reason"] for entry in body["refusals"]}
+    refusals = {
+        entry["metric"]: entry["reason"] for entry in body["document"]["refusals"]
+    }
     assert refusals["cost"] == "required_input_unavailable"
     assert refusals["gross_margin"] == "required_input_unavailable"
-    assert "cost" not in {fact["metric"] for fact in body["facts"]}
+    assert "cost" not in {fact["metric"] for fact in body["document"]["facts"]}
 
 
 def test_a_package_is_published_once_and_then_returned_unchanged() -> None:
@@ -341,7 +356,8 @@ def test_every_published_figure_carries_its_stable_fact_id() -> None:
     # figure by one if the served package actually carries it.
     body = prepared().client.post("/api/v1/beta/facts").json()
 
-    published = body["facts"] + body["series"] + body["comparisons"]
+    document = body["document"]
+    published = document["facts"] + document["series"] + document["comparisons"]
     identifiers = [entry["fact_id"] for entry in published]
 
     assert all(identifier.startswith("fct_") for identifier in identifiers)
@@ -462,11 +478,11 @@ def test_the_two_provenance_digests_are_named_apart_and_both_served() -> None:
     test = prepared()
     body = test.client.post("/api/v1/beta/facts").json()
 
-    assert body["profile_digest"] != body["profile_document_digest"]
+    assert body["document"]["profile_digest"] != body["profile_document_digest"]
     with test.factory() as database:
         row = database.scalar(select(FactPackageRow))
         assert row.profile_document_digest == body["profile_document_digest"]
-        assert row.document["profile_digest"] == body["profile_digest"]
+        assert row.document["profile_digest"] == body["document"]["profile_digest"]
         profile = database.scalar(select(DatasetProfileRow))
         assert row.profile_document_digest == profile.profile_digest
 
