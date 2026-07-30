@@ -13,7 +13,7 @@ import polars as pl
 
 from khepri.rra.intake import CSV_MEDIA_TYPE, XLSX_MEDIA_TYPE
 
-PROFILE_VERSION = "rra003.profile.v1"
+PROFILE_VERSION = "rra003.profile.v2"
 
 MAX_PROFILED_COLUMNS = 512
 MAX_SAFE_LABEL_LENGTH = 64
@@ -30,10 +30,26 @@ NUMERIC_TYPES = frozenset({TYPE_INTEGER, TYPE_DECIMAL})
 
 _INTEGER = re.compile(r"[+-]?\d+")
 _DECIMAL = re.compile(r"[+-]?(?:\d+\.\d*|\.\d+)")
-_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}")
-_PHONE = re.compile(r"\+?\d[\d \-()]{7,18}\d")
+
+_PHONE = re.compile(r"\+?\d[\d .\-()/]{7,18}\d")
+# The same shape, bounded by anything that is not alphanumeric, so it can be
+# located inside surrounding prose without matching part of a longer run of
+# digits or letters. The guard is written to let an underscore act as a border.
+_PHONE_SPAN = re.compile(r"(?<![^\W_])\+?\d[\d .\-()/]{7,18}\d(?![^\W_])")
+# A card carries its grouping in punctuation, and concatenating every digit in
+# the value loses it as soon as any other number sits nearby. The span admits
+# the punctuation that groups digits, and the digits are then extracted from
+# whatever it matched -- one list rather than two that have to agree, which is
+# what let a dot-grouped card through when only spaces and hyphens were removed.
+_CARD_SPAN = re.compile(r"(?<![^\W_])\d[\d .,\-/]{11,25}\d(?![^\W_])")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
+_FRAGMENT_SEPARATORS = re.compile(r"[\s<>,;:()\[\]{}\"'|]+")
+_TRAILING_PUNCTUATION = ".,;:!?-"
+# A mailbox written against a bracketed address literal is split apart by the
+# fragment separators, so it is also sought as a span whose bracketed host is
+# kept whole.
+_EMAIL_CANDIDATE = re.compile(r"[^\s<>,;:()\[\]{}\"'|]+@(?:\[[^\]\s]*\]|[^\s<>,;:()\[\]{}\"'|]+)")
 
 _DATE_FORMATS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("iso_date", ("%Y-%m-%d", "%Y/%m/%d")),
@@ -71,6 +87,61 @@ _PERSONAL_DATA_LABEL_TOKENS: dict[str, frozenset[str]] = {
     "financial_instrument": frozenset({"iban", "pan", "cardnumber", "creditcard", "ايبان"}),
     "date_of_birth": frozenset({"dob", "birthdate", "dateofbirth", "ميلاد"}),
 }
+
+# A customer identifier is personal data even when it carries no recognizable
+# shape: "CUST-001" is a pseudonym for one person. The pair is required rather
+# than the party word alone, so an identifier column is excluded while an
+# ordinary measure that merely mentions customers stays answerable.
+_CUSTOMER_TOKENS = frozenset(
+    {
+        "customer",
+        "customers",
+        "cust",
+        "client",
+        "clients",
+        "buyer",
+        "buyers",
+        "shopper",
+        "shoppers",
+        "member",
+        "members",
+        "subscriber",
+        "subscribers",
+        "account",
+        "accounts",
+        "loyalty",
+        "cardholder",
+        "عميل",
+        "العميل",
+        "عملاء",
+        "زبون",
+        "الزبون",
+        "حساب",
+        "عضويه",
+    }
+)
+_IDENTIFIER_TOKENS = frozenset(
+    {
+        "id",
+        "ids",
+        "no",
+        "num",
+        "number",
+        "code",
+        "ref",
+        "reference",
+        "key",
+        "uid",
+        "uuid",
+        "uuids",
+        "guid",
+        "ulid",
+        "identifier",
+        "رقم",
+        "معرف",
+        "كود",
+    }
+)
 
 _LABEL_UNSAFE_PREFIX = frozenset({"=", "+", "-", "@", "\t", "\r", "\n"})
 _LABEL_ALLOWED_PUNCTUATION = frozenset(" _-()/%.&#:")
@@ -167,7 +238,7 @@ def build_profile(
     media_type: str,
     source_sha256_hex: str,
 ) -> DatasetProfile:
-    frame = _materialize(content, media_type)
+    frame = materialize(content, media_type)
     if frame.width == 0:
         raise ProfileRejected("Upload content is invalid or unsupported.")
     if frame.width > MAX_PROFILED_COLUMNS:
@@ -208,7 +279,8 @@ def build_profile(
     )
 
 
-def _materialize(content: bytes, media_type: str) -> pl.DataFrame:
+def materialize(content: bytes, media_type: str) -> pl.DataFrame:
+    """Read governed CSV/XLSX content with every column held as text."""
     try:
         if media_type == CSV_MEDIA_TYPE:
             return pl.read_csv(
@@ -328,6 +400,19 @@ def _resolve_date_format(values: list[str]) -> tuple[str | None, bool]:
     return None, True
 
 
+def parse_date(value: str, date_format: str) -> date | None:
+    """Parse one value under an already-resolved column date format."""
+    for name, patterns in _DATE_FORMATS:
+        if name != date_format:
+            continue
+        for pattern in patterns:
+            try:
+                return datetime.strptime(value, pattern).date()
+            except ValueError:
+                continue
+    return None
+
+
 def _parse_all(values: list[str], pattern: str) -> list[date] | None:
     parsed: list[date] = []
     for value in values:
@@ -375,31 +460,210 @@ def _personal_data_signals(safe_label: str, values: list[str]) -> list[str]:
     for signal, vocabulary in _PERSONAL_DATA_LABEL_TOKENS.items():
         if vocabulary & set(tokens) or collapsed in vocabulary:
             signals.append(f"label_{signal}")
+    if _names_a_customer_identifier(tokens):
+        signals.append("label_customer_identifier")
 
     if values:
-        shapes = {
-            "value_email": sum(1 for value in values if _EMAIL.fullmatch(value)),
-            "value_phone": sum(1 for value in values if _is_phone(value)),
-            "value_iban": sum(1 for value in values if _IBAN.fullmatch(value.replace(" ", ""))),
-            "value_payment_card": sum(1 for value in values if _is_payment_card(value)),
-        }
+        counts: dict[str, int] = {}
+        for value in values:
+            for shape in personal_value_shapes(value):
+                counts[shape] = counts.get(shape, 0) + 1
         total = Decimal(len(values))
-        for signal, matched in shapes.items():
-            if matched and Decimal(matched) / total >= PERSONAL_DATA_SHAPE_RATE:
-                signals.append(signal)
+        signals.extend(
+            signal
+            for signal, matched in counts.items()
+            if Decimal(matched) / total >= PERSONAL_DATA_SHAPE_RATE
+        )
     return sorted(set(signals))
+
+
+def _names_a_customer_identifier(tokens: tuple[str, ...]) -> bool:
+    """Whether a label names an identifier for a party rather than a thing."""
+    separated = set(tokens)
+    if _CUSTOMER_TOKENS & separated and _IDENTIFIER_TOKENS & separated:
+        return True
+    # The same pair written without a separator, and possibly buried in a longer
+    # compound: "customerid", "productcustomeruuid", "subaccountid".
+    return any(
+        stem.endswith(party)
+        for token in tokens
+        for suffix in _IDENTIFIER_TOKENS
+        if token.endswith(suffix) and len(token) > len(suffix)
+        for stem in [token[: len(token) - len(suffix)]]
+        for party in _CUSTOMER_TOKENS
+    )
+
+
+def personal_value_shapes(value: str) -> tuple[str, ...]:
+    """The personal-data shapes one value carries, if any.
+
+    Values are normalized first, so a representation difference — Unicode
+    grouping spaces, compatibility digits, or letter case — cannot carry an
+    identifier past detection when display sanitizing would later normalize it
+    back into a recognizable form.
+    """
+    text = _normalized_value(value)
+    if not text:
+        return ()
+    # An identifier is checked wherever it sits, not only when it is the whole
+    # value: a display name, a note, or a bracketed address would otherwise
+    # carry it to a published label intact.
+    candidates = (text, *_fragments(text))
+    shapes: list[str] = []
+    if any(_is_email(part) for part in candidates) or _contains_email(text):
+        shapes.append("value_email")
+    if any(_is_phone(part) for part in candidates) or _contains_phone(text):
+        shapes.append("value_phone")
+    # An IBAN and a card number carry grouping spaces as part of the format, so
+    # splitting on whitespace would destroy them. Both are also sought in the
+    # value stripped of separators.
+    if any(_is_iban(part) for part in candidates) or _IBAN.search(_alphanumeric(text)):
+        shapes.append("value_iban")
+    if any(_is_payment_card(part) for part in candidates) or _contains_payment_card(text):
+        shapes.append("value_payment_card")
+    return tuple(shapes)
+
+
+def _alphanumeric(text: str) -> str:
+    return "".join(character for character in text if character.isalnum()).upper()
+
+
+def _fragments(text: str) -> tuple[str, ...]:
+    return tuple(part for part in _FRAGMENT_SEPARATORS.split(text) if part)
+
+
+def is_personal_value(value: str) -> bool:
+    """Whether one value carries a recognized personal-data shape.
+
+    Column-level detection needs a majority of values to agree before it
+    excludes a column, so an individual value must still be checked before it
+    is published as a label.
+    """
+    return bool(personal_value_shapes(value))
+
+
+def _normalized_value(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value)
+    return "".join(
+        " " if character.isspace() else character for character in normalized
+    ).strip()
+
+
+def _is_email(value: str) -> bool:
+    """Match an address structurally rather than by an ASCII suffix pattern.
+
+    Requiring an ASCII-letter suffix missed internationalized addresses in both
+    punycode and Unicode form, publishing nearly the whole identifier once the
+    label sanitizer stripped the separators.
+    """
+    local, separator, domain = value.partition("@")
+    if not separator or not local or "@" in domain or " " in value:
+        return False
+    # A mailbox may name its host by address instead of by domain, in which case
+    # there are no labels to check and no alphabetic suffix to require.
+    if domain.startswith("[") and domain.endswith("]"):
+        return _is_address_literal(domain[1:-1])
+    labels = domain.split(".")
+    if len(labels) < 2 or not all(_is_domain_label(label) for label in labels):
+        return False
+    if _is_ipv4(domain):
+        return True
+    suffix = labels[-1]
+    return len(suffix) >= 2 and any(character.isalpha() for character in suffix)
+
+
+def _contains_email(text: str) -> bool:
+    """Locate a mailbox in surrounding prose.
+
+    The candidate pattern is greedy on the host, so a sentence that ends in the
+    address hands back a trailing stop that no domain can carry. Terminal
+    punctuation is trimmed before the span is judged.
+    """
+    return any(
+        _is_email(match.group()) or _is_email(match.group().rstrip(_TRAILING_PUNCTUATION))
+        for match in _EMAIL_CANDIDATE.finditer(text)
+    )
+
+
+def _contains_payment_card(text: str) -> bool:
+    """Find a card inside a larger value.
+
+    A greedy span pulls an unrelated number in behind the card whenever one is
+    separated by grouping punctuation, so every contiguous run of the span's
+    digit groups is tried rather than the span taken as a whole.
+    """
+    for match in _CARD_SPAN.finditer(text):
+        groups = _DIGITS_ONLY.findall(match.group())
+        for start in range(len(groups)):
+            digits = ""
+            for group in groups[start:]:
+                digits += group
+                if len(digits) > 19:
+                    break
+                if _is_card_number(digits):
+                    return True
+    return False
+
+
+def _is_address_literal(text: str) -> bool:
+    candidate = text[5:] if text[:5].casefold() == "ipv6:" else text
+    if _is_ipv4(candidate):
+        return True
+    return ":" in candidate and all(
+        character in "0123456789abcdefABCDEF:." for character in candidate
+    )
+
+
+def _is_ipv4(text: str) -> bool:
+    parts = text.split(".")
+    return len(parts) == 4 and all(
+        part.isdigit() and len(part) <= 3 and int(part) <= 255 for part in parts
+    )
+
+
+def _is_domain_label(label: str) -> bool:
+    return (
+        bool(label)
+        and not label.startswith("-")
+        and not label.endswith("-")
+        and all(character.isalnum() or character == "-" for character in label)
+    )
+
+
+def _is_iban(value: str) -> bool:
+    """Match an IBAN regardless of case or grouping whitespace."""
+    return bool(_IBAN.fullmatch(value.replace(" ", "").upper()))
 
 
 def _is_phone(value: str) -> bool:
     if not _PHONE.fullmatch(value):
         return False
+    return _dialable(value)
+
+
+def _contains_phone(text: str) -> bool:
+    """Find a phone-shaped span inside a larger value.
+
+    A phone number carries its grouping in whitespace, so splitting a value into
+    fragments destroys the very shape being looked for and leaves a recognizable
+    number to be published intact. The span is therefore sought in the text as
+    it stands, bounded so that a slice of a longer identifier is never read as a
+    number.
+    """
+    return any(_dialable(match.group()) for match in _PHONE_SPAN.finditer(text))
+
+
+def _dialable(value: str) -> bool:
     digits = "".join(character for character in value if character.isdigit())
     return 9 <= len(digits) <= 15
 
 
 def _is_payment_card(value: str) -> bool:
-    digits = value.replace(" ", "").replace("-", "")
-    if not _DIGITS_ONLY.fullmatch(digits) or not 13 <= len(digits) <= 19:
+    return _is_card_number("".join(c for c in value if c.isdigit()))
+
+
+def _is_card_number(digits: str) -> bool:
+    if not 13 <= len(digits) <= 19:
         return False
     total = 0
     for index, character in enumerate(reversed(digits)):
@@ -429,7 +693,16 @@ def normalize_label(label: str) -> str:
     return normalized.replace("ى", "ي").replace("ة", "ه")
 
 
+def safe_value_label(source: str, *, fallback: str) -> str:
+    """Reduce a customer-derived value to a safe display label."""
+    return _sanitize(source) or fallback
+
+
 def _safe_label(source: str, position: int) -> str:
+    return _sanitize(source) or f"column_{position + 1}"
+
+
+def _sanitize(source: str) -> str:
     normalized = unicodedata.normalize("NFKC", source)
     while normalized[:1] in _LABEL_UNSAFE_PREFIX:
         normalized = normalized[1:]
@@ -439,8 +712,7 @@ def _safe_label(source: str, position: int) -> str:
         if unicodedata.category(character)[0] in {"L", "N", "M"}
         or character in _LABEL_ALLOWED_PUNCTUATION
     ]
-    collapsed = " ".join("".join(kept).split())[:MAX_SAFE_LABEL_LENGTH].strip()
-    return collapsed or f"column_{position + 1}"
+    return " ".join("".join(kept).split())[:MAX_SAFE_LABEL_LENGTH].strip()
 
 
 def _rate(count: int, total: int) -> str:

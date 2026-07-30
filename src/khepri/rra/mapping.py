@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
+from functools import cache
 
 from khepri.rra.profiling import (
     TYPE_DATE,
@@ -14,7 +15,10 @@ from khepri.rra.profiling import (
     label_tokens,
 )
 
-MAPPING_VERSION = "rra003.mapping.v1"
+# v2 publishes the measure-kind disqualifiers and the shared-column refusal. The
+# same profiled input can map differently under v1, so a recorded mapping
+# version has to distinguish them for replay to mean anything.
+MAPPING_VERSION = "rra003.mapping.v2"
 
 SEMANTIC_TRANSACTION_DATE = "transaction_date"
 SEMANTIC_REVENUE = "revenue"
@@ -39,6 +43,180 @@ REQUIREMENT_REQUIRED = "required"
 REQUIREMENT_CORE_MEASURE = "core_measure"
 REQUIREMENT_OPTIONAL = "optional"
 
+# A governed measure must be an actual, row-level figure. A per-unit, average,
+# or rate column is not row-level, and a forecast, target, budget, or plan is
+# not actual — RRA-004 excludes forecasting outright. Matching is token-level,
+# plus a leading prefix and an unambiguous compound, so a compact header like
+# "unitcost" is caught without refusing "opportunity_cost" or
+# "supermarket_sales" the way a bare substring test would.
+_PER_UNIT_TOKENS = frozenset(
+    {
+        "unit",
+        "per",
+        "each",
+        "average",
+        "avg",
+        "rate",
+        "percent",
+        "pct",
+        "ratio",
+        "share",
+        # Normalized Arabic: per / the unit / unit / average / rate / ratio.
+        "لكل",
+        "الوحده",
+        "وحده",
+        "متوسط",
+        "معدل",
+        "نسبه",
+        "مئويه",
+        # A running total is not additive: summing successive snapshots of
+        # year-to-date sales publishes a figure no row ever held.
+        "cumulative",
+        "cumul",
+        "ytd",
+        "mtd",
+        "qtd",
+        "wtd",
+        "todate",
+        "yeartodate",
+        "monthtodate",
+        "rolling",
+        "تراكمي",
+        "تراكميه",
+        "التراكمي",
+        # Not an actual figure.
+        "forecast",
+        "forecasted",
+        "target",
+        "targeted",
+        "budget",
+        "budgeted",
+        "plan",
+        "planned",
+        "projected",
+        "projection",
+        "estimate",
+        "estimated",
+        "expect",
+        "expected",
+        "project",
+        # Normalized Arabic: forecast / expected / target / budget / plan.
+        "توقع",
+        "توقعات",
+        "متوقع",
+        "متوقعه",
+        "مستهدف",
+        "مستهدفه",
+        "هدف",
+        "ميزانيه",
+        "موازنه",
+        "خطه",
+        "مخطط",
+        "مخططه",
+        "تقدير",
+        "مقدر",
+        "مقدره",
+    }
+)
+_PER_UNIT_PREFIXES = (
+    "unit",
+    "per",
+    "average",
+    "avg",
+    "forecast",
+    "target",
+    "budget",
+    "planned",
+    "projected",
+    "estimated",
+    "expected",
+)
+_PER_UNIT_COMPOUNDS = frozenset(
+    {
+        "perunit",
+        "peritem",
+        "perorder",
+        "pertransaction",
+        "unitprice",
+        "unitcost",
+        "unitvalue",
+        "averageprice",
+        "averagesales",
+        "averagevalue",
+    }
+)
+_PLURAL_REMAINDERS = frozenset({"", "s", "es"})
+# A qualifier is also recognized structurally, in two ways that enumeration kept
+# failing at. Strip a vocabulary term off either end of a compact label and what
+# remains must not be a qualifier -- which refuses "plansales" while keeping
+# "plantsales" and "projectorsales" answerable, as a prefix test could not. And
+# a stem stands for its ordinary inflections, so refusing "percent" refuses
+# "percentage" without anyone having to have listed it.
+_QUALIFIER_SUFFIXES = ("", "s", "es", "age", "ages")
+# A word that qualifies a measure in one reading and names a product in another
+# is only read as a qualifier when it accounts for the whole of the rest of the
+# label: "running_sales" is a running total, "running_shoe_sales" is footwear.
+_AFFIX_ONLY_QUALIFIERS = frozenset({"running", "cumulated", "accumulated"})
+# A compact label cannot be tokenized, so a "per" sitting between two parts is
+# read as a denominator. Any separator avoids this, which is the documented way
+# to express a row-level measure whose name happens to contain the sequence.
+_PER_INFIXES = ("per", "لكل")
+# A tax, fee, commission, or tip sits beside a sale without being one. Summing a
+# "sales_tax" column as revenue publishes somebody else's money as the seller's.
+_NON_REVENUE_COMPONENTS = frozenset(
+    {
+        "tax",
+        "taxes",
+        "vat",
+        "gst",
+        "duty",
+        "duties",
+        "levy",
+        "excise",
+        "commission",
+        "commissions",
+        "fee",
+        "fees",
+        "surcharge",
+        "tip",
+        "tips",
+        "gratuity",
+        "freight",
+        "shipping",
+        "ضريبه",
+        "الضريبه",
+        "ضرايب",
+        "عموله",
+        "العموله",
+        "رسوم",
+        "الرسوم",
+        "شحن",
+        "الشحن",
+    }
+)
+# A bare "discount" or "returns" column of plain integers is indistinguishable
+# between an amount, a percentage, and a count, and summing it as currency
+# publishes an authoritative figure from a guess. Such a semantic is answered
+# only where the label itself declares the measure to be an amount.
+_AMOUNT_TOKENS = frozenset(
+    {
+        "amount",
+        "amounts",
+        "value",
+        "values",
+        "total",
+        "totals",
+        "money",
+        "currency",
+        "قيمه",
+        "القيمه",
+        "مبلغ",
+        "المبلغ",
+        "اجمالي",
+        "الاجمالي",
+    }
+)
+
 _CONFIDENCE_EXACT = Decimal("0.95")
 _CONFIDENCE_TOKEN = Decimal("0.80")
 _CONFIDENCE_SUBSTRING = Decimal("0.60")
@@ -54,6 +232,9 @@ class SemanticRule:
     accepted_types: frozenset[str]
     vocabulary: frozenset[str]
     type_only: bool = False
+    disqualifiers: frozenset[str] = frozenset()
+    rejects_per_unit: bool = False
+    requires_amount_evidence: bool = False
 
 
 SEMANTIC_RULES: tuple[SemanticRule, ...] = (
@@ -110,6 +291,8 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "القيمه",
             }
         ),
+        disqualifiers=_NON_REVENUE_COMPONENTS,
+        rejects_per_unit=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_UNITS,
@@ -129,8 +312,11 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "كميه",
                 "عدد",
                 "وحدات",
+                "وحده",
             }
         ),
+        disqualifiers=frozenset({"price", "cost", "value", "amount", "قيمه", "تكلفه"}),
+        rejects_per_unit=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_TRANSACTION_ID,
@@ -246,13 +432,13 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "cost",
                 "costs",
                 "cogs",
-                "unitcost",
                 "costofgoods",
-                "purchaseprice",
+                "totalcost",
                 "تكلفه",
                 "التكلفه",
             }
         ),
+        rejects_per_unit=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_DISCOUNT,
@@ -271,6 +457,8 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "تخفيض",
             }
         ),
+        rejects_per_unit=True,
+        requires_amount_evidence=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_RETURNS,
@@ -290,6 +478,8 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "استرداد",
             }
         ),
+        rejects_per_unit=True,
+        requires_amount_evidence=True,
     ),
 )
 
@@ -384,9 +574,7 @@ def build_mapping(profile: DatasetProfile) -> RetailMapping:
         for column in profile.columns
         if not column.personal_data_risk and column.inferred_type != TYPE_EMPTY
     ]
-    mappings = tuple(
-        _resolve(rule, admissible_columns) for rule in SEMANTIC_RULES
-    )
+    mappings = _refuse_shared_columns(_award_shared_columns(admissible_columns))
     return RetailMapping(
         mapping_version=MAPPING_VERSION,
         mappings=mappings,
@@ -394,14 +582,89 @@ def build_mapping(profile: DatasetProfile) -> RetailMapping:
     )
 
 
+def _award_shared_columns(columns: list[ColumnProfile]) -> tuple[SemanticMapping, ...]:
+    """Give a contested column to the semantic that claims it most strongly.
+
+    Two semantics can reach the same column with very different evidence: a
+    numeric `items` column is exact, type-confirmed units vocabulary, and only
+    incidentally a product through the weaker `item` substring. Refusing both
+    would cost the dataset its core measure. The strongest claim wins outright
+    and every other semantic re-resolves without that column, which may find it
+    a second-best one. Only a genuine tie is left for refusal.
+    """
+    surrendered: dict[str, set[int]] = {}
+    while True:
+        mappings = tuple(
+            _resolve(rule, columns, frozenset(surrendered.get(rule.semantic, ())))
+            for rule in SEMANTIC_RULES
+        )
+        awarded = False
+        for claims in _shared_claims(mappings):
+            strongest = max(Decimal(mapping.confidence) for mapping in claims)
+            winners = [
+                mapping
+                for mapping in claims
+                if Decimal(mapping.confidence) == strongest
+            ]
+            if len(winners) != 1:
+                continue
+            position = winners[0].column.position
+            for loser in claims:
+                if loser.semantic != winners[0].semantic:
+                    surrendered.setdefault(loser.semantic, set()).add(position)
+                    awarded = True
+        if not awarded:
+            return mappings
+
+
+def _shared_claims(
+    mappings: tuple[SemanticMapping, ...],
+) -> list[list[SemanticMapping]]:
+    owners: dict[int, list[SemanticMapping]] = {}
+    for mapping in mappings:
+        if mapping.column is not None:
+            owners.setdefault(mapping.column.position, []).append(mapping)
+    return [claims for claims in owners.values() if len(claims) > 1]
+
+
+def _refuse_shared_columns(
+    mappings: tuple[SemanticMapping, ...],
+) -> tuple[SemanticMapping, ...]:
+    """Refuse a column that answers more than one governed semantic.
+
+    A header carrying vocabulary for two measures, such as `sales quantity`,
+    would otherwise let one set of values stand as both money and a count. By
+    this point the claims are equally strong, so there is nothing to arbitrate.
+    """
+    owners: dict[int, int] = {}
+    for mapping in mappings:
+        column = mapping.column
+        if column is not None:
+            owners[column.position] = owners.get(column.position, 0) + 1
+    shared = {position for position, count in owners.items() if count > 1}
+    if not shared:
+        return mappings
+    return tuple(
+        replace(mapping, state=STATE_CONFLICTING)
+        if mapping.column is not None and mapping.column.position in shared
+        else mapping
+        for mapping in mappings
+    )
+
+
 def requirement_of(semantic: str) -> str:
     return _RULES_BY_SEMANTIC[semantic].requirement
 
 
-def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMapping:
+def _resolve(
+    rule: SemanticRule,
+    columns: list[ColumnProfile],
+    surrendered: frozenset[int] = frozenset(),
+) -> SemanticMapping:
+    available = [column for column in columns if column.position not in surrendered]
     candidates = [
         candidate
-        for candidate in (_candidate(rule, column) for column in columns)
+        for candidate in (_candidate(rule, column) for column in available)
         if candidate is not None
     ]
     if not candidates and rule.type_only:
@@ -413,9 +676,25 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
                 evidence=("type_only",),
                 type_compatible=True,
             )
-            for column in columns
+            for column in available
             if column.inferred_type in rule.accepted_types
         ]
+
+    if rule.requires_amount_evidence:
+        undeclared = [
+            candidate for candidate in candidates if not _declares_amount(candidate.safe_label)
+        ]
+        if undeclared:
+            # The column is found and named, but its measure kind is not stated,
+            # so it is reported unresolved rather than summed as currency.
+            return SemanticMapping(
+                semantic=rule.semantic,
+                requirement=rule.requirement,
+                state=STATE_AMBIGUOUS,
+                candidates=tuple(
+                    sorted(candidates, key=lambda candidate: candidate.position)
+                ),
+            )
 
     compatible = sorted(
         (candidate for candidate in candidates if candidate.type_compatible),
@@ -459,11 +738,106 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
     )
 
 
+def _declares_amount(safe_label: str) -> bool:
+    """Whether a label states that its measure is money rather than a rate or count."""
+    tokens = label_tokens(safe_label)
+    if _AMOUNT_TOKENS & set(tokens):
+        return True
+    collapsed = "".join(tokens)
+    return any(term in collapsed for term in _AMOUNT_TOKENS)
+
+
+def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -> bool:
+    """Whether a label describes something other than this row-level measure.
+
+    A disqualifier never overrides an exact vocabulary term, so a column named
+    `unit` still answers `units` while `unit_cost` and `unitcost` answer neither
+    `cost` nor `units`.
+    """
+    unclaimed = [token for token in tokens if token not in rule.vocabulary]
+    if rule.disqualifiers.intersection(unclaimed):
+        return True
+    if not rule.rejects_per_unit or collapsed in rule.vocabulary:
+        return False
+    if any(_is_qualifier(token) for token in unclaimed):
+        return True
+    if any(compound in collapsed for compound in _PER_UNIT_COMPOUNDS):
+        return True
+    if len(tokens) == 1 and _has_per_infix(collapsed):
+        return True
+    if _qualified_by_affix(rule, collapsed):
+        return True
+    return any(
+        collapsed.startswith(prefix)
+        and collapsed[len(prefix) :] not in _PLURAL_REMAINDERS
+        for prefix in _PER_UNIT_PREFIXES
+    )
+
+
+def _qualified_by_affix(rule: SemanticRule, collapsed: str) -> bool:
+    """Whether a compact label reads as governed vocabulary carrying a qualifier.
+
+    Stripping one vocabulary term off one end only ever saw two pieces, so
+    "runningtotalsales" -- a qualifier followed by two vocabulary terms -- read
+    as ordinary revenue. The label is decomposed into governed pieces instead,
+    and refused when some complete decomposition contains a qualifier. Requiring
+    the decomposition to be complete is what keeps "plantsales" and
+    "runningshoesales" answerable: neither leaves a governed remainder.
+    """
+    return _decomposes(collapsed, rule.vocabulary, carries_qualifier=False)
+
+
+@cache
+def _decomposes(text: str, vocabulary: frozenset[str], *, carries_qualifier: bool) -> bool:
+    if not text:
+        return carries_qualifier
+    for end in range(1, len(text) + 1):
+        piece = text[:end]
+        if piece in vocabulary:
+            if _decomposes(text[end:], vocabulary, carries_qualifier=carries_qualifier):
+                return True
+        elif _is_affix_qualifier(piece) and _decomposes(
+            text[end:], vocabulary, carries_qualifier=True
+        ):
+            return True
+    return False
+
+
+def _is_qualifier(token: str) -> bool:
+    """Whether a word is a qualifier, in any of its ordinary inflections.
+
+    Enumerating written forms is what let "percentage" through after "percent"
+    was already refused, and "plansales" through after "planned" was. The
+    inflection is derived from the stem instead.
+    """
+    return any(
+        stem in _PER_UNIT_TOKENS
+        for suffix in _QUALIFIER_SUFFIXES
+        for stem in [token[: len(token) - len(suffix)] if suffix else token]
+        if token.endswith(suffix) and stem
+    )
+
+
+def _is_affix_qualifier(remainder: str) -> bool:
+    return remainder in _AFFIX_ONLY_QUALIFIERS or _is_qualifier(remainder)
+
+
+def _has_per_infix(collapsed: str) -> bool:
+    return any(
+        0 < position < len(collapsed) - len(infix)
+        for infix in _PER_INFIXES
+        for position in [collapsed.find(infix)]
+        if position != -1
+    )
+
+
 def _candidate(rule: SemanticRule, column: ColumnProfile) -> MappingCandidate | None:
     tokens = label_tokens(column.safe_label)
     if not tokens:
         return None
     collapsed = "".join(tokens)
+    if _disqualified(rule, tokens, collapsed):
+        return None
 
     confidence: Decimal | None = None
     evidence: list[str] = []

@@ -54,9 +54,9 @@ def _profile(content: bytes):
 def test_full_retail_schema_maps_every_governed_semantic() -> None:
     content = (
         b"date,revenue,units,invoice_no,sku,category,branch,channel,"
-        b"unit_cost,discount,refunds\n"
-        b"2026-01-05,125.50,3,INV-1,SKU-1,Beverages,Cairo,online,80.00,5.00,1\n"
-        b"2026-01-06,90.00,2,INV-2,SKU-2,Snacks,Giza,retail,60.00,0.00,0\n"
+        b"cogs,discount_amount,refund_amount\n"
+        b"2026-01-05,125.50,3,INV-1,SKU-1,Beverages,Cairo,online,80.00,5.00,1.00\n"
+        b"2026-01-06,90.00,2,INV-2,SKU-2,Snacks,Giza,retail,60.00,0.00,0.00\n"
     )
 
     mapping = mapped(content)
@@ -75,6 +75,101 @@ def test_full_retail_schema_maps_every_governed_semantic() -> None:
         SEMANTIC_DISCOUNT,
         SEMANTIC_RETURNS,
     }
+
+
+def test_a_contested_column_goes_to_its_strongest_claimant() -> None:
+    # "items" is exact units vocabulary and only incidentally a product through
+    # the weaker "item" substring. Refusing both would cost the core measure.
+    content = b"date,items\n2026-01-05,3\n2026-01-06,2\n"
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_PRODUCT) == STATE_UNAVAILABLE
+
+    profile = _profile(content)
+    assert assess_admissibility(profile, build_mapping(profile)).admissible is True
+
+
+def test_a_displaced_semantic_re_resolves_to_its_next_best_column() -> None:
+    content = b"date,items,sku,revenue\n2026-01-05,3,SKU-1,10.00\n"
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_MAPPED
+    assert mapping.for_semantic(SEMANTIC_UNITS).column.safe_label == "items"
+    assert mapping.state_of(SEMANTIC_PRODUCT) == STATE_MAPPED
+    assert mapping.for_semantic(SEMANTIC_PRODUCT).column.safe_label == "sku"
+
+
+def test_equally_strong_claims_on_one_column_are_still_refused() -> None:
+    # "sales quantity" answers revenue and units with the same evidence. There
+    # is nothing to arbitrate, so neither may stand.
+    content = b"date,sales quantity,store\n2026-01-05,5,Cairo\n"
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_REVENUE) == STATE_CONFLICTING
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_CONFLICTING
+
+
+def test_tax_fee_and_commission_columns_are_never_revenue() -> None:
+    # Money collected beside a sale is not the seller's revenue.
+    for header in (
+        b"sales_tax",
+        b"sales_commission",
+        b"sales_fee",
+        b"tax_amount",
+        b"total_vat",
+        b"sales_tips",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+    arabic = "date,ضريبة المبيعات,store\n2026-01-05,10.00,Cairo\n".encode()
+    assert mapped(arabic).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE
+
+
+def test_a_bare_discount_or_returns_column_stays_unresolved() -> None:
+    # Nothing in the label says whether the numbers are money, a percentage, or
+    # a count, so the semantic is reported unresolved rather than guessed.
+    for header, semantic in (
+        (b"discount", SEMANTIC_DISCOUNT),
+        (b"promo", SEMANTIC_DISCOUNT),
+        (b"refunds", SEMANTIC_RETURNS),
+        (b"returns", SEMANTIC_RETURNS),
+    ):
+        content = b"date,revenue," + header + b"\n2026-01-05,100.00,10\n"
+        mapping = mapped(content)
+
+        assert mapping.state_of(semantic) == STATE_AMBIGUOUS, header
+        # The column is still reported: it was found, not missing.
+        assert mapping.for_semantic(semantic).candidates != (), header
+
+
+def test_an_amount_declaring_label_resolves_discount_and_returns() -> None:
+    for header, semantic in (
+        (b"discount_amount", SEMANTIC_DISCOUNT),
+        (b"discount_value", SEMANTIC_DISCOUNT),
+        (b"total_discount", SEMANTIC_DISCOUNT),
+        (b"refund_amount", SEMANTIC_RETURNS),
+        (b"returns_value", SEMANTIC_RETURNS),
+    ):
+        content = b"date,revenue," + header + b"\n2026-01-05,100.00,10.00\n"
+
+        assert mapped(content).state_of(semantic) == STATE_MAPPED, header
+
+    arabic = "date,revenue,مبلغ الخصم\n2026-01-05,100.00,10.00\n".encode()
+    assert mapped(arabic).state_of(SEMANTIC_DISCOUNT) == STATE_MAPPED
+
+
+def test_an_unresolved_optional_semantic_leaves_the_dataset_admissible() -> None:
+    # The ambiguity costs the discount metric, not the whole report.
+    content = b"date,revenue,discount\n2026-01-05,100.00,10\n2026-01-06,200.00,20\n"
+    profile = _profile(content)
+
+    decision = assess_admissibility(profile, build_mapping(profile))
+
+    assert decision.admissible is True
 
 
 def test_requirements_are_distinguished_per_semantic() -> None:
@@ -285,7 +380,7 @@ def test_header_only_dataset_is_inadmissible() -> None:
 
 
 def test_optional_semantics_do_not_block_admissibility() -> None:
-    content = b"date,revenue,unit_cost\n2026-01-05,125.50,eighty\n"
+    content = b"date,revenue,cogs\n2026-01-05,125.50,eighty\n"
     profile = _profile(content)
     mapping = build_mapping(profile)
 
@@ -293,3 +388,196 @@ def test_optional_semantics_do_not_block_admissibility() -> None:
     assert mapping.state_of(SEMANTIC_DISCOUNT) == STATE_UNAVAILABLE
     assert mapping.state_of(SEMANTIC_RETURNS) == STATE_UNAVAILABLE
     assert assess_admissibility(profile, mapping).admissible is True
+
+
+def test_per_unit_money_columns_are_not_mapped_as_row_measures() -> None:
+    content = (
+        b"date,revenue,units,unit_cost,price_per_item\n"
+        b"2026-01-05,200.00,4,120.00,50.00\n"
+        b"2026-01-06,300.00,6,180.00,50.00\n"
+    )
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_COST) == STATE_UNAVAILABLE
+    assert mapping.for_semantic(SEMANTIC_UNITS).column.safe_label == "units"
+
+
+def test_an_integer_unit_price_is_never_absorbed_into_units() -> None:
+    content = b"date,revenue,unit_price\n2026-01-05,200.00,50\n2026-01-06,300.00,50\n"
+
+    assert mapped(content).state_of(SEMANTIC_UNITS) == STATE_UNAVAILABLE
+
+
+def test_total_cost_synonyms_still_map() -> None:
+    content = b"date,revenue,total_cost\n2026-01-05,200.00,120.00\n"
+
+    assert mapped(content).state_of(SEMANTIC_COST) == STATE_MAPPED
+
+
+def test_per_unit_and_average_revenue_labels_are_refused() -> None:
+    for header in (b"sales_per_unit", b"average_sales", b"salesperunit"):
+        content = (
+            b"date," + header + b",units\n"
+            b"2026-01-05,10.00,2\n"
+            b"2026-01-06,20.00,3\n"
+        )
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_ordinary_labels_containing_a_disqualifier_substring_still_map() -> None:
+    # "supermarket" contains "per"; "opportunity" contains "unit". Neither is a
+    # per-unit measure, and a bare substring test would refuse both.
+    sales = b"date,supermarket_sales,units\n2026-01-05,10.00,2\n"
+    assert mapped(sales).state_of(SEMANTIC_REVENUE) == STATE_MAPPED
+
+    cost = b"date,revenue,opportunity_cost\n2026-01-05,10.00,4.00\n"
+    assert mapped(cost).state_of(SEMANTIC_COST) == STATE_MAPPED
+
+
+def test_a_disqualifier_never_overrides_an_exact_vocabulary_term() -> None:
+    content = b"date,revenue,unit\n2026-01-05,10.00,2\n2026-01-06,20.00,3\n"
+
+    assert mapped(content).for_semantic(SEMANTIC_UNITS).column.safe_label == "unit"
+
+
+def test_arabic_per_unit_labels_are_refused_like_english_ones() -> None:
+    for header in ("مبيعات لكل وحدة", "متوسط المبيعات"):
+        content = f"date,{header},units\n2026-01-05,10.00,2\n".encode()
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+    cost = "date,revenue,تكلفة الوحدة\n2026-01-05,10.00,4.00\n".encode()
+    assert mapped(cost).state_of(SEMANTIC_COST) == STATE_UNAVAILABLE
+
+
+def test_arabic_row_level_measures_still_map() -> None:
+    content = "التاريخ,المبيعات,الكمية,التكلفة\n2026-01-05,125.50,3,80.00\n".encode()
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_TRANSACTION_DATE) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_REVENUE) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_MAPPED
+    assert mapping.state_of(SEMANTIC_COST) == STATE_MAPPED
+
+
+def test_the_arabic_singular_unit_still_answers_units() -> None:
+    content = "date,revenue,وحدة\n2026-01-05,10.00,2\n2026-01-06,20.00,3\n".encode()
+
+    assert mapped(content).for_semantic(SEMANTIC_UNITS).column.safe_label == "وحدة"
+
+
+def test_one_column_may_not_answer_two_governed_measures() -> None:
+    content = b"date,sales quantity\n2026-01-05,10\n2026-01-06,20\n"
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_REVENUE) == STATE_CONFLICTING
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_CONFLICTING
+
+
+def test_a_shared_column_makes_the_dataset_inadmissible() -> None:
+    content = b"date,sales quantity\n2026-01-05,10\n2026-01-06,20\n"
+    profile = _profile(content)
+
+    decision = assess_admissibility(profile, build_mapping(profile))
+
+    assert decision.admissible is False
+    assert REASON_NO_CORE_MEASURE in decision.reasons
+    assert REASON_IRRECONCILABLE_TYPES in decision.reasons
+
+
+def test_a_compact_per_denominator_label_is_refused() -> None:
+    for header in (b"salesperkg", b"sales_per_kg", b"salesperitem"):
+        content = b"date," + header + b",units\n2026-01-05,10.00,2\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_forecast_and_target_measures_are_refused() -> None:
+    for header in (b"forecast_sales", b"target_revenue", b"budget_sales", b"forecastsales"):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+    planned = b"date,revenue,planned_units\n2026-01-05,10.00,2\n"
+    assert mapped(planned).state_of(SEMANTIC_UNITS) == STATE_UNAVAILABLE
+
+
+def test_compact_non_actual_headers_are_refused_like_separated_ones() -> None:
+    # A base form carries no inflection to anchor a prefix test, so "plansales"
+    # has to be recognized by stripping the vocabulary term instead.
+    for header in (
+        b"plansales",
+        b"estimatesales",
+        b"projectionsales",
+        b"projectsales",
+        b"planrevenue",
+        b"expectrevenue",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_running_total_measures_are_refused() -> None:
+    # Successive snapshots of a year-to-date figure are not additive: summing
+    # 100 and 150 would publish 250 for a period that reached 150.
+    for header in (
+        b"cumulative_sales",
+        b"ytd_sales",
+        b"mtd_revenue",
+        b"running_sales",
+        b"rolling_sales",
+        b"sales_to_date",
+        b"cumulativesales",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,100,Cairo\n2026-01-06,150,Giza\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_composite_running_total_labels_are_refused() -> None:
+    # A qualifier followed by two vocabulary terms: stripping one term off one
+    # end only ever saw two pieces, so the label read as ordinary revenue.
+    for header in (
+        b"running_total_sales",
+        b"runningtotalsales",
+        b"cumulative_total_sales",
+        b"ytd_total_sales",
+        b"rolling_total_revenue",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,100,Cairo\n2026-01-06,150,Giza\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_a_product_word_that_reads_as_a_qualifier_alone_still_maps() -> None:
+    # "running_sales" is a running total; "running_shoe_sales" is footwear.
+    content = b"date,running_shoe_sales,store\n2026-01-05,100,Cairo\n"
+
+    assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_MAPPED
+
+
+def test_a_qualifier_is_refused_in_its_inflected_forms_too() -> None:
+    # "percent" was already refused while "percentage" was not, so the
+    # inflection is derived from the stem rather than enumerated.
+    for header in (
+        b"sales_percentage",
+        b"sales_percentages",
+        b"revenue_percentage",
+        b"sales_rates",
+        b"sales_ratios",
+        b"sales_shares",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_a_compact_label_that_merely_ends_in_a_qualifier_word_still_maps() -> None:
+    # "plant" and "projector" are retail nouns that begin with a qualifier. Only
+    # a label whose whole remainder is the qualifier may be refused.
+    for header in (b"plantsales", b"projectorsales"):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_MAPPED, header
+
+
+def test_arabic_forecast_measures_are_refused() -> None:
+    for header in ("مبيعات متوقعة", "مبيعات مستهدفة"):
+        content = f"date,{header},store\n2026-01-05,10.00,Cairo\n".encode()
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
