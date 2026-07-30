@@ -6,3 +6,23 @@ the assembler can refuse a surface that presents anything else.
 """
 
 from __future__ import annotations
+
+from khepri.rra.rendering.excel import (
+    ExcelSurfaceRenderer,
+    WorkbookUnavailable,
+)
+from khepri.rra.rendering.html import (
+    HtmlReportRenderer,
+    HtmlSurface,
+    SurfaceRenderFailed,
+    build_environment,
+)
+
+__all__ = [
+    "ExcelSurfaceRenderer",
+    "HtmlReportRenderer",
+    "HtmlSurface",
+    "SurfaceRenderFailed",
+    "WorkbookUnavailable",
+    "build_environment",
+]

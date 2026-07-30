@@ -35,23 +35,25 @@ class SqsReportQueue:
         *,
         client: SqsClient,
         queue_url: str,
+        dead_letter_queue_url: str,
         visibility_timeout_seconds: int,
     ) -> None:
         self._client = client
         self._queue_url = _required_text(queue_url)
+        self._dead_letter_queue_url = _distinct_destination(
+            _required_text(dead_letter_queue_url),
+            self._queue_url,
+        )
         self._visibility_timeout = _visibility_timeout(visibility_timeout_seconds)
 
     def publish(self, message: ReportJobMessage) -> str:
-        job_id = _required_text(message.job_id)
-        response = self._client.send_message(
-            QueueUrl=self._queue_url,
-            MessageBody=json.dumps(
-                {"job_id": job_id},
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-        )
-        return _message_id(response)
+        return self._send(self._queue_url, message)
+
+    def dead_letter(self, delivery: QueueDelivery) -> str:
+        """Route an exhausted delivery to the dead-letter queue and drop the source."""
+        message_id = self._send(self._dead_letter_queue_url, delivery.message)
+        self._client.delete_message(**self._routing(delivery))
+        return message_id
 
     def receive(self) -> QueueDelivery | None:
         response = self._client.receive_message(
@@ -77,6 +79,17 @@ class SqsReportQueue:
             "QueueUrl": self._queue_url,
             "ReceiptHandle": delivery.receipt_handle,
         }
+
+    def _send(self, queue_url: str, message: ReportJobMessage) -> str:
+        response = self._client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(
+                {"job_id": _required_text(message.job_id)},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
+        return _message_id(response)
 
 
 def _single_message(response: dict[str, object]) -> dict[str, object] | None:
@@ -139,6 +152,12 @@ def _required_text(value: object) -> str:
     if not value.strip():
         raise QueueMessageRejected("Required opaque queue metadata is unavailable.")
     return value
+
+
+def _distinct_destination(dead_letter_queue_url: str, queue_url: str) -> str:
+    if dead_letter_queue_url == queue_url:
+        raise ValueError("dead_letter_queue_url must differ from queue_url.")
+    return dead_letter_queue_url
 
 
 def _visibility_timeout(value: int) -> int:
