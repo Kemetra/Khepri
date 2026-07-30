@@ -68,6 +68,10 @@ REASON_ADAPTER_MISMATCH = "adapter_response_mismatch"
 OUTCOME_NARRATED = "narrated"
 OUTCOME_REFUSED = "refused"
 
+# Recorded when the adapter could not even say which build it is, so the
+# attempt still has a version field rather than a hole.
+_UNKNOWN_ADAPTER = "unknown"
+
 
 class NarrativeRefused(ValueError):
     """The narrative could not be produced or could not be trusted.
@@ -434,8 +438,20 @@ class NarrativeService:
         something this service may invent on a provider's behalf.
         """
         started = self._monotonic_ms()
-        adapter_version = self._adapter.adapter_version
         requested = tuple(languages)
+        try:
+            # Reading the version is already the adapter's code running, so it
+            # is inside the failure policy rather than in front of it.
+            adapter_version = self._adapter.adapter_version
+        except Exception:  # noqa: BLE001 - a misconfigured provider is a refusal
+            return self._refuse(
+                started,
+                _UNKNOWN_ADAPTER,
+                package,
+                requested,
+                REASON_PROVIDER_FAILED,
+            )
+
         try:
             request = NarrativeRequest.of(
                 package,
@@ -588,6 +604,7 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
             # `500k` and `INV-1`: digits fused to letters mean something the
             # number alone does not say.
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+        _assert_unmodified(normalized[: match.start()], tail)
         # A trailing full stop or comma ends a sentence rather than the number.
         trimmed = candidate.rstrip(".,")
         if trimmed in allowed.labels:
@@ -607,6 +624,45 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
         stated = allowed.percents if tail.lstrip(_INLINE_SPACE)[:1] == "%" else allowed.numbers
         if value not in stated:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+
+
+def _assert_unmodified(before: str, after: str) -> None:
+    """Refuse a figure standing next to something that changes what it asserts.
+
+    `500 thousand` is not the supplied `500`, and `$500.00` names a currency
+    this package never declares — it raises `currency_not_declared` precisely
+    because it does not know one. Both were accepted because the modifier sits
+    outside the candidate, which is where `%` was too.
+
+    **The guarantee here is not uniform, and the difference matters.** Currency
+    symbols are recognized by Unicode category, so that half is a property and
+    is complete. Scale words are a *vocabulary* for the two governed languages,
+    so a word outside the list would pass — this is a bound, not a proof, and
+    it is the kind of enumeration that has already failed three times on this
+    branch for dashes and digits. It is here because natural-language
+    magnitude words have no character property to ask about, and refusing the
+    common ones is better than refusing none.
+    """
+    leading = before.rstrip(_INLINE_SPACE)
+    trailing = after.lstrip(_INLINE_SPACE)
+    if _is_currency(leading[-1:]) or _is_currency(trailing[:1]):
+        raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+    for word in (_last_word(leading), _first_word(trailing)):
+        if word and (word.casefold() in _SCALE_WORDS or _ISO_CURRENCY_CODE.fullmatch(word)):
+            raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+
+
+def _is_currency(character: str) -> bool:
+    return bool(character) and unicodedata.category(character) == "Sc"
+
+
+def _first_word(text: str) -> str:
+    return _WORD.match(text).group() if _WORD.match(text) else ""
+
+
+def _last_word(text: str) -> str:
+    found = _WORD.search(text[::-1])
+    return found.group()[::-1] if found and found.start() == 0 else ""
 
 
 def _numbers_within(label: str) -> tuple[Decimal, ...]:
@@ -734,6 +790,12 @@ def _normalized(character: str) -> str:
         return replacement
     if character.isdecimal():
         return str(unicodedata.decimal(character))
+    if unicodedata.category(character) == "Pd":
+        # Every dash punctuation there is, asked of Unicode rather than listed.
+        # Listing them is what let U+2212 through, and then U+2012, U+2010, and
+        # U+2011 after that: the third time the same enumeration failed. A dash
+        # attached to digits is a sign whatever its code point.
+        return "-"
     return character
 
 
@@ -777,6 +839,40 @@ _COMPLETE_NUMBER = re.compile(r"[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?")
 # name the year without quoting the whole label.
 _LABEL_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _INLINE_SPACE = " \t  "
+_WORD = re.compile(r"\w+")
+
+# An ISO 4217 code is exactly three capitals, which is a shape rather than a
+# list, so `EGP` and `USD` are refused beside a figure without naming either.
+# It costs the odd three-letter acronym next to a number; that costs a
+# sentence, where inventing a currency costs a governed figure.
+_ISO_CURRENCY_CODE = re.compile(r"[A-Z]{3}")
+
+# Magnitude words for the two governed languages. Unlike everything else in
+# this module this is a vocabulary rather than a property — see the note in
+# `_assert_unmodified` about what that does and does not buy.
+_SCALE_WORDS = frozenset(
+    {
+        "thousand",
+        "thousands",
+        "million",
+        "millions",
+        "billion",
+        "billions",
+        "trillion",
+        "trillions",
+        "k",
+        "m",
+        "bn",
+        "\u0623\u0644\u0641",
+        "\u0627\u0644\u0641",
+        "\u0622\u0644\u0627\u0641",
+        "\u0645\u0644\u064a\u0648\u0646",
+        "\u0645\u0644\u0627\u064a\u064a\u0646",
+        "\u0645\u0644\u064a\u0627\u0631",
+        "\u0645\u0644\u064a\u0627\u0631\u0627\u062a",
+        "\u062a\u0631\u064a\u0644\u064a\u0648\u0646",
+    }
+)
 
 # Characters that are not digits but carry numeric meaning. Digits themselves
 # are handled by asking Unicode, not by listing blocks.
@@ -788,12 +884,9 @@ _PUNCTUATION_TABLE: dict[int, str] = {
     # would let `−500.00` (U+2212) validate as positive `500.00`, which is the
     # sign hole reopened under a different code point. A dash attached to
     # digits is a sign; one standing alone between spaces still is not.
+    # U+2212 is the one minus that is a maths symbol rather than dash
+    # punctuation, so the category test in `_normalized` does not reach it.
     0x2212: "-",
-    0x2013: "-",
-    0x2014: "-",
-    0xFE58: "-",
-    0xFE63: "-",
-    0xFF0D: "-",
     # Percent signs, for the same reason: the suffix carries the claim.
     0x066A: "%",
     0xFF05: "%",

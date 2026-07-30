@@ -572,10 +572,15 @@ def test_a_formatting_precision_is_not_stateable_as_a_figure() -> None:
 @pytest.mark.parametrize(
     ("dash", "name"),
     [
-        ("−", "minus sign"),
-        ("–", "en dash"),
-        ("—", "em dash"),
-        ("－", "fullwidth hyphen-minus"),
+        ("−", "minus sign U+2212"),
+        ("–", "en dash U+2013"),
+        ("—", "em dash U+2014"),
+        ("－", "fullwidth hyphen-minus U+FF0D"),
+        ("‒", "figure dash U+2012"),
+        ("‐", "hyphen U+2010"),
+        ("‑", "non-breaking hyphen U+2011"),
+        ("﹘", "small em dash U+FE58"),
+        ("־", "hebrew maqaf U+05BE"),
     ],
 )
 def test_any_dash_a_reader_would_take_for_a_minus_reverses_the_figure(
@@ -640,6 +645,55 @@ def test_a_supplied_figure_written_in_another_script_still_grounds() -> None:
         draft(
             arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
             english=(section("Revenue was ５００.００.", cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+@pytest.mark.parametrize(
+    ("claim_ar", "claim_en", "name"),
+    [
+        ("الإيرادات ٥٠٠ ألف.", "Revenue was 500 thousand.", "scale word"),
+        ("الإيرادات ٥٠٠ مليون.", "Revenue was 500 million.", "larger scale word"),
+        ("الإيرادات ‏$٥٠٠٫٠٠.", "Revenue was $500.00.", "currency symbol"),
+        ("الإيرادات ﷼٥٠٠٫٠٠.", "Revenue was ﷼500.00.", "another currency symbol"),
+        ("الإيرادات ٥٠٠٫٠٠ EGP.", "Revenue was 500.00 EGP.", "currency code after"),
+        ("الإيرادات USD ٥٠٠٫٠٠.", "Revenue was USD 500.00.", "currency code before"),
+    ],
+)
+def test_a_marker_that_changes_the_claim_is_refused_with_it(
+    claim_ar: str,
+    claim_en: str,
+    name: str,
+) -> None:
+    # `500 thousand` is not the supplied `500`, and `$500.00` names a currency
+    # this package raises `currency_not_declared` about precisely because it
+    # does not know one. Both modifiers sit outside the candidate, where `%`
+    # was too.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim_ar, cited=(fact_id,)),),
+                english=(section(claim_en, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER, name
+
+
+def test_an_ordinary_word_beside_a_figure_is_not_a_modifier() -> None:
+    # The refusal above must not become a ban on writing sentences.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(section("بلغت الإيرادات ٥٠٠٫٠٠ إجمالا.", cited=(fact_id,)),),
+            english=(section("Revenue was 500.00 overall.", cited=(fact_id,)),),
         ),
         request=request,
     )
@@ -1343,6 +1397,33 @@ def test_an_unanticipated_provider_failure_is_still_a_refusal(
 
     assert result.refused is True
     assert result.attempt.reason == REASON_PROVIDER_FAILED
+
+
+def test_an_adapter_that_cannot_name_its_own_build_is_a_refusal() -> None:
+    # Reading the version is already the adapter's code running, so it belongs
+    # inside the failure policy rather than in front of it.
+    class Misconfigured:
+        @property
+        def adapter_version(self) -> str:
+            raise RuntimeError("no configuration")
+
+        def draft(
+            self,
+            request: NarrativeRequest,
+            *,
+            timeout_seconds: Decimal,
+        ) -> NarrativeDraft:
+            raise AssertionError("never reached")
+
+    times = iter([0, 3])
+    result = NarrativeService(
+        adapter=Misconfigured(),
+        monotonic_ms=lambda: next(times),
+    ).compose(package())
+
+    assert result.refused is True
+    assert result.attempt.reason == REASON_PROVIDER_FAILED
+    assert result.attempt.adapter_version == "unknown"
 
 
 def test_a_malformed_draft_is_a_refusal_rather_than_a_crash() -> None:
