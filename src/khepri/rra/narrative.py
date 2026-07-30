@@ -20,10 +20,26 @@ provider saw.
 **What this validator does and does not check.** It checks that every number
 stated is a value that was supplied, that every citation resolves to a supplied
 identifier, that no section makes a claim without citing anything, that no text
-smuggles a spreadsheet formula through a label, and that Arabic and English
-cover the same facts and the same caveats. It does not check that the prose
-*means* what the facts say. Semantic entailment is not decidable here, so the
-guarantee offered is grounding and coverage, not truth of paraphrase.
+smuggles a spreadsheet formula through a label, that no figure is spelled out
+in words where the scanner cannot see it, and that Arabic and English cover the
+same facts, the same caveats, the same labels, the same figures, and the same
+movement claims. It does not check that the prose *means* what the facts say.
+Semantic entailment is not decidable here, so the guarantee offered is
+grounding and coverage, not truth of paraphrase.
+
+**Declared claims.** Some things a section asserts leave no trace a scanner
+could find. A bucket label is an ordinary word, and a direction lives in a
+verb, so prose naming a store that is not in the data, or telling one reader
+revenue rose and the other that it fell, reads exactly like prose that does
+neither. `labels` and `direction` are therefore *declared* on the section and
+checked against the request — the direction against the movement the cited
+series actually made, first supplied point to last.
+
+The remaining gap is the inverse, and it is not closed: a section can write
+something in its prose that it did not declare. Closing that means deriving the
+prose from the claims rather than checking it against them, which would make
+the provider a template filler and fix the shape of the rendering RRA-006 has
+yet to design. That is a decision for the specification, not for this module.
 
 **Percentages.** A ratio is supplied both as its exact decimal and as an exact
 percent rendering computed here with `Decimal`. The provider therefore never
@@ -68,6 +84,19 @@ REASON_UNSAFE_TEXT = "unsafe_text"
 REASON_FACT_COVERAGE_DIFFERS = "fact_coverage_differs_by_language"
 REASON_CAVEAT_COVERAGE_DIFFERS = "caveat_coverage_differs_by_language"
 REASON_ADAPTER_MISMATCH = "adapter_response_mismatch"
+REASON_UNKNOWN_DIRECTION = "unknown_direction"
+REASON_UNGROUNDED_DIRECTION = "ungrounded_direction"
+REASON_DIRECTION_DIFFERS = "direction_differs_by_language"
+REASON_FIGURES_DIFFER = "figures_differ_by_language"
+REASON_WORDED_QUANTITY = "worded_quantity"
+
+# A section may declare which way its facts moved. Movement is the claim most
+# likely to contradict itself between two languages — `ارتفعت` against `fell`
+# is a straight reversal — and prose is where that contradiction is invisible.
+DIRECTION_ROSE = "rose"
+DIRECTION_FELL = "fell"
+DIRECTION_UNCHANGED = "unchanged"
+GOVERNED_DIRECTIONS = frozenset({DIRECTION_ROSE, DIRECTION_FELL, DIRECTION_UNCHANGED})
 
 # The whole set of reasons that may be recorded. A refusal reaching the attempt
 # record has to be one of these: `NarrativeRefused` is a public exception, so an
@@ -92,6 +121,11 @@ GOVERNED_REASONS = frozenset(
         REASON_FACT_COVERAGE_DIFFERS,
         REASON_CAVEAT_COVERAGE_DIFFERS,
         REASON_ADAPTER_MISMATCH,
+        REASON_UNKNOWN_DIRECTION,
+        REASON_UNGROUNDED_DIRECTION,
+        REASON_DIRECTION_DIFFERS,
+        REASON_FIGURES_DIFFER,
+        REASON_WORDED_QUANTITY,
     }
 )
 
@@ -268,6 +302,11 @@ class GroundedEntry:
     numbers: frozenset[Decimal]
     percents: frozenset[Decimal]
     labels: frozenset[str]
+    # Which way each cited fact actually moved, first supplied point to last.
+    # A set rather than a value because a section may cite several facts, and
+    # two of them moving opposite ways is precisely when a single declared
+    # direction is a claim about neither.
+    movements: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,6 +349,7 @@ class NarrativeGround:
         numbers: set[Decimal] = set()
         percents: set[Decimal] = set()
         labels: set[str] = set()
+        movements: set[str] = set()
         for identifier in cited:
             entry = self.entries.get(identifier)
             if entry is None:
@@ -317,10 +357,12 @@ class NarrativeGround:
             numbers |= entry.numbers
             percents |= entry.percents
             labels |= entry.labels
+            movements |= entry.movements
         return GroundedEntry(
             numbers=frozenset(numbers),
             percents=frozenset(percents),
             labels=frozenset(labels),
+            movements=frozenset(movements),
         )
 
     @classmethod
@@ -363,6 +405,7 @@ class NarrativeGround:
                 numbers=frozenset(numbers),
                 percents=frozenset(percents),
                 labels=frozenset(labels),
+                movements=_movement(entry.get("points", ())),
             )
             # A fact is citable by either identifier, and both must reach the
             # same permitted set — otherwise which name a provider happened to
@@ -391,6 +434,17 @@ class NarrativeSection:
     scanner could find, and a narrative could name a store that appears nowhere
     in the data. Declaring them turns "which places does this sentence talk
     about" into a question with an answer.
+
+    `direction` is the same idea applied to movement, and for a sharper reason.
+    Arabic prose saying `ارتفعت` beside English saying `fell` tells two readers
+    opposite things about the same fact, and no scanner can see it: both
+    sentences ground perfectly, cite the same fact, and carry the same figures.
+    Declared, the contradiction becomes a set comparison.
+
+    Neither declaration binds the prose. A section can declare `Cairo` and
+    write `Giza`, or declare `rose` and write that revenue collapsed. What
+    declarations catch is drift between two independently written languages,
+    which is the realistic failure, not an adapter setting out to lie.
     """
 
     section_id: str
@@ -398,6 +452,7 @@ class NarrativeSection:
     cited_fact_ids: tuple[str, ...]
     caveats: tuple[str, ...]
     labels: tuple[str, ...] = ()
+    direction: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,6 +474,21 @@ class LanguageNarrative:
     def declared_labels(self) -> frozenset[str]:
         return frozenset(
             _normalize_digits(label) for section in self.sections for label in section.labels
+        )
+
+    @property
+    def declared_directions(self) -> frozenset[tuple[str, str]]:
+        """Movement claims paired with the section making them.
+
+        Paired, not pooled: two sections declaring `rose` and `fell` are a
+        perfectly ordinary narrative, and a bare set of directions could not
+        tell that apart from one language reversing the other. The pairing is
+        by `section_id`, which is the only name both languages share.
+        """
+        return frozenset(
+            (section.section_id, section.direction)
+            for section in self.sections
+            if section.direction is not None
         )
 
 
@@ -621,12 +691,17 @@ def validate(draft: NarrativeDraft, *, request: NarrativeRequest) -> None:
     if set(seen) != set(request.languages):
         raise NarrativeRefused(REASON_MISSING_LANGUAGE)
 
-    for entry in seen.values():
-        _validate_language(entry, ground)
+    stated = {language: _validate_language(entry, ground) for language, entry in seen.items()}
 
     coverage = [seen[language] for language in sorted(seen)]
     first = coverage[0]
     for other in coverage[1:]:
+        if stated[other.language] != stated[first.language]:
+            # Both languages may ground perfectly and still quote different
+            # supplied figures at the same reader — `500.00` to one and `90.00`
+            # to the other, each of them a value the cited fact carried.
+            # Grounding is per language and cannot see that; this can.
+            raise NarrativeRefused(REASON_FIGURES_DIFFER)
         # Wording may differ between languages; what may not differ is which
         # facts a reader is told and which caveats they are warned about. The
         # comparison is on the facts, not on which of a fact's two accepted
@@ -641,11 +716,19 @@ def validate(draft: NarrativeDraft, *, request: NarrativeRequest) -> None:
         # buried in prose.
         if other.declared_labels != first.declared_labels:
             raise NarrativeRefused(REASON_LABEL_COVERAGE_DIFFERS)
+        # `ارتفعت` in one language against `fell` in the other is the flat
+        # contradiction free prose hides best: both sentences ground, cite the
+        # same fact, and carry the same figures. Declared, it is a set that
+        # differs.
+        if other.declared_directions != first.declared_directions:
+            raise NarrativeRefused(REASON_DIRECTION_DIFFERS)
 
 
-def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> None:
+def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> frozenset[Decimal]:
+    """Check one language, and return the figures its prose actually stated."""
     if not entry.sections:
         raise NarrativeRefused(REASON_EMPTY_NARRATIVE)
+    stated: set[Decimal] = set()
     for section in entry.sections:
         if not section.text.strip():
             raise NarrativeRefused(REASON_EMPTY_NARRATIVE)
@@ -659,15 +742,41 @@ def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> Non
         for label in section.labels:
             if _normalize_digits(label) not in stateable.labels:
                 raise NarrativeRefused(REASON_UNKNOWN_LABEL)
+        _assert_declared_direction(section.direction, stateable)
         _assert_safe(section.text)
+        _assert_no_worded_quantity(section.text)
         # `stateable` resolves the citations and derives the permitted numbers
         # in one step, so a sentence is measured against what it cites rather
         # than against everything the package happens to contain.
-        _assert_grounded_numbers(section.text, stateable)
+        stated |= _assert_grounded_numbers(section.text, stateable)
+    return frozenset(stated)
 
 
-def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
-    """Refuse any numeric claim the cited facts did not carry.
+def _assert_declared_direction(direction: str | None, allowed: GroundedEntry) -> None:
+    """Refuse a movement claim the cited facts do not exhibit.
+
+    The declared direction has to be the *only* movement among the facts the
+    section cites. A section citing nothing that moves has no movement to
+    describe, and one citing two series that moved opposite ways is making a
+    claim about neither — so `{rose}` is the sole shape that passes, and
+    `{}` and `{rose, fell}` both refuse.
+    """
+    if direction is None:
+        return
+    if direction not in GOVERNED_DIRECTIONS:
+        raise NarrativeRefused(REASON_UNKNOWN_DIRECTION)
+    if allowed.movements != {direction}:
+        raise NarrativeRefused(REASON_UNGROUNDED_DIRECTION)
+
+
+def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> frozenset[Decimal]:
+    """Refuse any numeric claim the cited facts did not carry, and return them.
+
+    The figures it returns are the ones the prose *stated* — supplied labels
+    quoted verbatim are not among them, because quoting a period name is not
+    stating a figure, and requiring both languages to quote the same labels
+    would refuse a draft that writes `2026-01-05` in one and `the period` in
+    the other.
 
     The unit checked is the whole *candidate* — a maximal run of digits and the
     characters that can belong to a number — not whatever a pattern happens to
@@ -684,6 +793,7 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
     """
     normalized = _normalize_digits(text)
     _assert_no_unreadable_numerals(normalized)
+    stated: set[Decimal] = set()
     for match in _NUMERIC_CANDIDATE.finditer(normalized):
         candidate = match.group()
         before = normalized[match.start() - 1] if match.start() else ""
@@ -722,9 +832,67 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
         # The space in `500.00 %` is typography, not a boundary: reading the
         # suffix only when it is flush against the digits would let the most
         # ordinary way of writing a percentage escape the check entirely.
-        stated = allowed.percents if _states_percent(suffix) else allowed.numbers
-        if value not in stated:
+        supplied = allowed.percents if _states_percent(suffix) else allowed.numbers
+        if value not in supplied:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+        stated.add(value)
+    return frozenset(stated)
+
+
+def _assert_no_worded_quantity(text: str) -> None:
+    """Refuse a quantity spelled out in words, which the digit scanner cannot see.
+
+    `nine hundred ninety-nine` produces no numeric candidate at all, so every
+    check in this module runs over it and finds nothing. A scanner that
+    silently sees nothing is the worst failure available here, because it
+    reports success.
+
+    The discriminator is a *run*: two or more numeral words with nothing but
+    space or a hyphen between them. One numeral word is ordinary prose — `one
+    of the two branches`, `صدارة فرع واحد` — and refusing it would cost far
+    more than it protects. A chain of them is a composed figure, and there is
+    no reason for a grounded narrative to spell a figure out when the package
+    supplied it in digits.
+
+    It is refused rather than parsed. Reading `تسعمائة وتسعة وتسعون` into a
+    value means implementing two natural-language numeral grammars inside a
+    validator, and getting one of them subtly wrong would admit exactly the
+    claims this is here to stop. **The vocabulary is the fifth on this module,
+    and carries the same bound as the others**: a numeral word outside the list
+    is not seen, so this narrows the hole rather than closing it.
+    """
+    normalized = _normalize_digits(text)
+    run = 0
+    end = -1
+    for match in _WORD.finditer(normalized):
+        word = _numeral_form(match.group())
+        if word in _COMPOSED_NUMERALS:
+            # `تسعمائة` fuses nine and hundred into one token, so it is a whole
+            # composed figure on its own and never forms a run.
+            raise NarrativeRefused(REASON_WORDED_QUANTITY)
+        if word not in _NUMERAL_WORDS:
+            run = 0
+            continue
+        # Only space and hyphen join a numeral to the next one. A full stop
+        # between them is two sentences — `Only one. Two branches led.` — and
+        # reading across it would refuse ordinary prose.
+        joined = end == match.start() or set(normalized[end : match.start()]) <= _NUMERAL_JOIN
+        run = run + 1 if joined and run else 1
+        end = match.end()
+        if run >= 2:
+            raise NarrativeRefused(REASON_WORDED_QUANTITY)
+
+
+def _numeral_form(word: str) -> str:
+    """A word as the numeral vocabularies spell it.
+
+    Arabic joins the parts of a figure with a `و` prefixed straight onto the
+    next numeral — `تسعمائة وتسعة وتسعون` is three tokens, two of them carrying
+    the conjunction — so the bare numeral is what has to be matched.
+    """
+    folded = word.casefold()
+    stripped = folded[1:] if folded[:1] == "و" else folded
+    return stripped if stripped in _NUMERAL_WORDS or stripped in _COMPOSED_NUMERALS else folded
 
 
 def _states_percent(tail: str) -> bool:
@@ -1001,6 +1169,36 @@ def _assert_only(entry: dict[str, Any], schema: tuple[Any, ...]) -> None:
             _assert_only(item, inner)
 
 
+def _movement(points: Sequence[Any]) -> frozenset[str]:
+    """Which way a supplied series went, first supplied value to last.
+
+    **This is a definition, and the specification does not make it.** A series
+    that dips and recovers `rose` under this reading and `fell` under a
+    peak-to-trough one. First-to-last is chosen because it is the comparison a
+    reader makes when told a period's figures, and because it compares two
+    values the package supplied rather than deriving a third — a validator that
+    computes a new figure to check a claim against has become the thing it is
+    checking.
+
+    Only `points` produce a movement. A comparison's buckets are ranked, not
+    ordered in time, so `rose` says nothing about them.
+    """
+    values = [
+        parsed
+        for point in points
+        if (parsed := _parse_number(str(point.get("value")))) is not None
+    ]
+    if len(values) < 2:
+        # One point, or none, is not a movement — and a series whose values
+        # were all withheld must not read as `unchanged`.
+        return frozenset()
+    if values[-1] > values[0]:
+        return frozenset({DIRECTION_ROSE})
+    if values[-1] < values[0]:
+        return frozenset({DIRECTION_FELL})
+    return frozenset({DIRECTION_UNCHANGED})
+
+
 def _as_numbers(value: object) -> tuple[Decimal, ...]:
     if not isinstance(value, str):
         return ()
@@ -1120,6 +1318,122 @@ _UNAMBIGUOUS_CURRENCY_CODES = frozenset(
         "syp", "szl", "thb", "tjs", "tmt", "tnd", "ttd", "twd", "tzs", "uah", "ugx", "usd",
         "uyu", "uzs", "ves", "vnd", "vuv", "wst", "xaf", "xcd", "xof", "xpf", "yer", "zar",
         "zmw", "zwl",
+    }
+)
+
+# What may stand between two numeral words and still be one figure. A full
+# stop may not: `Only one. Two branches led.` is two sentences.
+_NUMERAL_JOIN = frozenset(_INLINE_SPACE + "-")
+
+# Numeral words for the two governed languages. A run of two or more is a
+# figure spelled out; one on its own is ordinary prose. The fifth vocabulary in
+# this module, and bounded like the rest — a numeral word outside it is unseen.
+_NUMERAL_WORDS = frozenset(
+    {
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
+        "twenty",
+        "thirty",
+        "forty",
+        "fifty",
+        "sixty",
+        "seventy",
+        "eighty",
+        "ninety",
+        "hundred",
+        "thousand",
+        "million",
+        "billion",
+        "trillion",
+        "صفر",  # zero
+        "واحد",  # one
+        "واحدة",  # one, feminine
+        "اثنان",  # two
+        "اثنين",  # two, oblique
+        "اثنتان",  # two, feminine
+        "ثلاثة",  # three
+        "ثلاث",  # three, feminine
+        "أربعة",  # four
+        "أربع",  # four, feminine
+        "خمسة",  # five
+        "خمس",  # five, feminine
+        "ستة",  # six
+        "ست",  # six, feminine
+        "سبعة",  # seven
+        "سبع",  # seven, feminine
+        "ثمانية",  # eight
+        "ثماني",  # eight, feminine
+        "تسعة",  # nine
+        "تسع",  # nine, feminine
+        "عشرة",  # ten
+        "عشر",  # ten, feminine
+        "عشرون",  # twenty
+        "عشرين",  # twenty, oblique
+        "ثلاثون",  # thirty
+        "ثلاثين",  # thirty, oblique
+        "أربعون",  # forty
+        "أربعين",  # forty, oblique
+        "خمسون",  # fifty
+        "خمسين",  # fifty, oblique
+        "ستون",  # sixty
+        "ستين",  # sixty, oblique
+        "سبعون",  # seventy
+        "سبعين",  # seventy, oblique
+        "ثمانون",  # eighty
+        "ثمانين",  # eighty, oblique
+        "تسعون",  # ninety
+        "تسعين",  # ninety, oblique
+        "مئة",  # hundred
+        "مائة",  # hundred, variant spelling
+        "ألف",  # thousand
+        "الف",  # thousand, undotted alif
+        "آلاف",  # thousands
+        "مليون",  # million
+        "ملايين",  # millions
+        "مليار",  # billion
+    }
+)
+
+# Arabic fuses a unit onto `hundred` in one token, so these are whole figures
+# standing alone and never need a run to be a quantity.
+_COMPOSED_NUMERALS = frozenset(
+    {
+        "مئتان",  # two hundred
+        "مئتين",  # two hundred, oblique
+        "مائتان",  # two hundred, variant
+        "مائتين",  # two hundred, variant oblique
+        "ثلاثمائة",  # three hundred
+        "ثلاثمئة",  # three hundred, variant
+        "أربعمائة",  # four hundred
+        "أربعمئة",  # four hundred, variant
+        "خمسمائة",  # five hundred
+        "خمسمئة",  # five hundred, variant
+        "ستمائة",  # six hundred
+        "ستمئة",  # six hundred, variant
+        "سبعمائة",  # seven hundred
+        "سبعمئة",  # seven hundred, variant
+        "ثمانمائة",  # eight hundred
+        "ثمانمئة",  # eight hundred, variant
+        "تسعمائة",  # nine hundred
+        "تسعمئة",  # nine hundred, variant
     }
 )
 

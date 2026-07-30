@@ -5,11 +5,13 @@ from decimal import Decimal
 
 import pytest
 
+from khepri.rra import narrative
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.facts import FactPackage, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import (
+    GOVERNED_DIRECTIONS,
     GOVERNED_REASONS,
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -18,20 +20,25 @@ from khepri.rra.narrative import (
     OUTCOME_REFUSED,
     REASON_ADAPTER_MISMATCH,
     REASON_CAVEAT_COVERAGE_DIFFERS,
+    REASON_DIRECTION_DIFFERS,
     REASON_EMPTY_NARRATIVE,
     REASON_FACT_COVERAGE_DIFFERS,
+    REASON_FIGURES_DIFFER,
     REASON_LABEL_COVERAGE_DIFFERS,
     REASON_MISSING_LANGUAGE,
     REASON_PROVIDER_FAILED,
     REASON_PROVIDER_REFUSED,
     REASON_PROVIDER_TIMEOUT,
     REASON_UNCITED_SECTION,
+    REASON_UNGROUNDED_DIRECTION,
     REASON_UNGROUNDED_NUMBER,
     REASON_UNKNOWN_CAVEAT,
     REASON_UNKNOWN_CITATION,
+    REASON_UNKNOWN_DIRECTION,
     REASON_UNKNOWN_LABEL,
     REASON_UNKNOWN_LANGUAGE,
     REASON_UNSAFE_TEXT,
+    REASON_WORDED_QUANTITY,
     LanguageNarrative,
     NarrativeDraft,
     NarrativeGround,
@@ -90,6 +97,7 @@ def section(
     caveats: tuple[str, ...] = (),
     section_id: str = "summary",
     labels: tuple[str, ...] = (),
+    direction: str | None = None,
 ) -> NarrativeSection:
     return NarrativeSection(
         section_id=section_id,
@@ -97,6 +105,7 @@ def section(
         cited_fact_ids=cited,
         caveats=caveats,
         labels=labels,
+        direction=direction,
     )
 
 
@@ -2034,3 +2043,242 @@ def test_a_provider_is_replaceable_without_changing_the_contract() -> None:
 
     assert result.refused is False
     assert result.attempt.adapter_version == "other.adapter.v9"
+
+
+# --- worded quantities ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Revenue was nine hundred ninety-nine.",
+        "Revenue was five thousand.",
+        "Revenue was twenty-five.",
+        "Revenue was one hundred.",
+    ],
+)
+def test_a_quantity_spelled_out_in_english_is_refused(claim: str) -> None:
+    # A figure in words produces no numeric candidate, so every check in the
+    # module runs over it and finds nothing. Silently seeing nothing is worse
+    # than refusing, because it reports success.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("بلغت الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_WORDED_QUANTITY
+
+
+@pytest.mark.parametrize(
+    ("claim", "name"),
+    [
+        ("بلغت الإيرادات تسعمائة وتسعة وتسعون.", "nine hundred ninety-nine, joined by و"),
+        ("بلغت الإيرادات تسعة وتسعون.", "ninety-nine — a run only the و strip can see"),
+        ("بلغت الإيرادات خمسمائة.", "five hundred fused into one token"),
+        ("بلغت الإيرادات خمسة آلاف.", "five thousand"),
+    ],
+)
+def test_a_quantity_spelled_out_in_arabic_is_refused(claim: str, name: str) -> None:
+    # Arabic prefixes the conjunction onto the next numeral and fuses a unit
+    # onto `hundred`, so neither a bare word match nor a run alone would see it.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section("Revenue was 500.00.", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_WORDED_QUANTITY, name
+
+
+@pytest.mark.parametrize(
+    ("claim_ar", "claim_en"),
+    [
+        ("بلغت الإيرادات ٥٠٠٫٠٠ في فرع واحد.", "Revenue was 500.00 across one branch."),
+        (
+            "بلغت الإيرادات ٥٠٠٫٠٠.",
+            "Revenue was 500.00; one of the two branches led.",
+        ),
+        (
+            "بلغت الإيرادات ٥٠٠٫٠٠. تصدر فرع واحد.",
+            "Revenue was 500.00. Only one. Two branches were open.",
+        ),
+    ],
+)
+def test_a_single_numeral_word_is_ordinary_prose(claim_ar: str, claim_en: str) -> None:
+    # One numeral word is how both languages count things in a sentence.
+    # Refusing it would cost far more than it protects, and a full stop between
+    # two of them is two sentences rather than one figure.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(section(claim_ar, cited=(fact_id,)),),
+            english=(section(claim_en, cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+# --- declared direction ---------------------------------------------------
+
+
+def series_fact_id(request: NarrativeRequest) -> str:
+    return str(request.document["series"][0]["fact_id"])
+
+
+def test_the_governed_directions_are_the_directions_the_module_defines() -> None:
+    defined = {
+        value
+        for name, value in vars(narrative).items()
+        if name.startswith("DIRECTION_") and isinstance(value, str)
+    }
+
+    assert defined == set(GOVERNED_DIRECTIONS)
+
+
+def test_a_direction_the_cited_series_actually_took_is_grounded() -> None:
+    # Revenue runs 125.50, 90.00, 284.50 — first to last, it rose.
+    request = request_for()
+    fact_id = series_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(
+                section("ارتفعت الإيرادات إلى ٢٨٤٫٥٠.", cited=(fact_id,), direction="rose"),
+            ),
+            english=(section("Revenue rose to 284.50.", cited=(fact_id,), direction="rose"),),
+        ),
+        request=request,
+    )
+
+
+def test_a_direction_the_cited_series_contradicts_is_refused() -> None:
+    request = request_for()
+    fact_id = series_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(
+                    section("تراجعت الإيرادات إلى ٢٨٤٫٥٠.", cited=(fact_id,), direction="fell"),
+                ),
+                english=(
+                    section("Revenue fell to 284.50.", cited=(fact_id,), direction="fell"),
+                ),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_DIRECTION
+
+
+def test_a_direction_on_a_fact_that_never_moved_is_refused() -> None:
+    # A scalar total has no movement to describe, so `rose` is a claim about
+    # nothing rather than a claim that happens to be true.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(
+                    section("ارتفعت الإيرادات إلى ٥٠٠٫٠٠.", cited=(fact_id,), direction="rose"),
+                ),
+                english=(section("Revenue rose to 500.00.", cited=(fact_id,), direction="rose"),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_DIRECTION
+
+
+def test_a_direction_outside_the_governed_vocabulary_is_refused() -> None:
+    request = request_for()
+    fact_id = series_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(
+                    section("ارتفعت الإيرادات إلى ٢٨٤٫٥٠.", cited=(fact_id,), direction="soared"),
+                ),
+                english=(
+                    section("Revenue soared to 284.50.", cited=(fact_id,), direction="soared"),
+                ),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNKNOWN_DIRECTION
+
+
+def test_a_direction_told_to_one_reader_and_not_the_other_is_refused() -> None:
+    # Grounding pins a direction to the one the data took, so two languages
+    # that both declare must agree. What it cannot see is one language making
+    # the claim and the other staying silent, which is a coverage difference.
+    request = request_for()
+    fact_id = series_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(
+                    section("ارتفعت الإيرادات إلى ٢٨٤٫٥٠.", cited=(fact_id,), direction="rose"),
+                ),
+                english=(section("Revenue reached 284.50.", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_DIRECTION_DIFFERS
+
+
+# --- figure parity --------------------------------------------------------
+
+
+def test_two_languages_quoting_different_supplied_figures_are_refused() -> None:
+    # Both figures are values the cited series carried, so both languages
+    # ground perfectly on their own. What differs is what each reader is told.
+    request = request_for()
+    fact_id = series_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("بلغت الإيرادات ٩٠٫٠٠.", cited=(fact_id,)),),
+                english=(section("Revenue was 284.50.", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_FIGURES_DIFFER
+
+
+def test_a_supplied_label_quoted_in_one_language_only_is_not_a_figure() -> None:
+    # Naming the period is not stating a figure. Counting a quoted label would
+    # refuse a draft that writes the date in one language and `the period` in
+    # the other, which is ordinary translation rather than a contradiction.
+    request = request_for()
+    fact_id = series_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(section("بلغت الإيرادات ٩٠٫٠٠ في ٢٠٢٦-٠١-٠٦.", cited=(fact_id,)),),
+            english=(section("Revenue was 90.00 for the period.", cited=(fact_id,)),),
+        ),
+        request=request,
+    )
