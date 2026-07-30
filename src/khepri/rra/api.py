@@ -33,6 +33,9 @@ from khepri.rra.packages import (
     ProfileNotFound,
 )
 from khepri.rra.profiling import ProfileRejected
+from khepri.rra.report_api import add_report_routes
+from khepri.rra.reports import ReportServices
+from khepri.rra.session_cookie import SESSION_COOKIE, SESSION_UNAVAILABLE
 from khepri.rra.sessions import (
     ConsentRequired,
     CrossSessionAccessDenied,
@@ -41,7 +44,6 @@ from khepri.rra.sessions import (
     SessionExpired,
 )
 
-SESSION_COOKIE = "khepri_beta_session"
 ConsentVersion = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
@@ -148,6 +150,7 @@ def create_app(
     deletion_service: DeletionService | None = None,
     profiling_service: ProfilingService | None = None,
     package_service: FactPackageService | None = None,
+    report_services: ReportServices | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
 
@@ -393,6 +396,11 @@ def create_app(
                 )
             return _package_response(record)
 
+    # Declared by their own module, which registers them only when the
+    # collaborators were supplied. Same conditional contract as every group
+    # above, one function deeper -- see `report_api.add_report_routes`.
+    add_report_routes(app, services=report_services, clock=clock)
+
     if deletion_service is not None:
 
         @app.delete(
@@ -431,7 +439,7 @@ def create_app(
 
 
 def _session_unavailable() -> HTTPException:
-    return HTTPException(status_code=401, detail="Session is unavailable.")
+    return HTTPException(status_code=401, detail=SESSION_UNAVAILABLE)
 
 
 def _declared_size(request: Request) -> int | None:
