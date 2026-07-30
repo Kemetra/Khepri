@@ -442,6 +442,10 @@ class NarrativeService:
                 adapter_version=adapter_version,
                 languages=requested,
             )
+        except NarrativeRefused as refusal:
+            return self._refuse(started, adapter_version, package, requested, refusal.reason)
+
+        try:
             # The adapter is given a copy; `request` stays the authority that
             # `validate` grounds against.
             draft = self._adapter.draft(
@@ -451,7 +455,15 @@ class NarrativeService:
             validate(draft, request=request)
         except NarrativeRefused as refusal:
             return self._refuse(started, adapter_version, package, requested, refusal.reason)
-        except (TimeoutError, NarrativeUnavailable, ProviderRefused) as error:
+        except Exception as error:  # noqa: BLE001 - see below
+            # Everything from here out is a refusal, deliberately including
+            # exceptions nobody anticipated. A provider raising `ConnectionError`
+            # or returning an object malformed enough to break `validate` is
+            # still just a provider that did not answer, and the narrative is
+            # the optional part of the report — letting it propagate would take
+            # down a delivery that the deterministic facts could have carried.
+            # The reason code is coarse on purpose: it says only that the
+            # provider failed, so nothing the provider produced is echoed.
             return self._refuse(
                 started,
                 adapter_version,
@@ -566,10 +578,12 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
     `.5`, `500.00x`, and `-500.00` do not pass at all.
     """
     normalized = _normalize_digits(text)
+    _assert_no_unreadable_numerals(normalized)
     for match in _NUMERIC_CANDIDATE.finditer(normalized):
         candidate = match.group()
         before = normalized[match.start() - 1] if match.start() else ""
-        after = normalized[match.end() : match.end() + 1]
+        tail = normalized[match.end() :]
+        after = tail[:1]
         if before.isalpha() or after.isalpha():
             # `500k` and `INV-1`: digits fused to letters mean something the
             # number alone does not say.
@@ -587,7 +601,10 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
         # claim rather than decoration after it. `500.00%` is not the revenue
         # `500.00`, and `0.6000%` is not the margin `0.6000` however close it
         # looks — each has to match a rendering that was actually supplied.
-        stated = allowed.percents if after == "%" else allowed.numbers
+        # The space in `500.00 %` is typography, not a boundary: reading the
+        # suffix only when it is flush against the digits would let the most
+        # ordinary way of writing a percentage escape the check entirely.
+        stated = allowed.percents if tail.lstrip(_INLINE_SPACE)[:1] == "%" else allowed.numbers
         if value not in stated:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
 
@@ -696,13 +713,44 @@ def _parse_number(token: str) -> Decimal | None:
 
 
 def _normalize_digits(text: str) -> str:
-    """Map Arabic-Indic digits and separators onto their ASCII equivalents.
+    """Map every decimal digit and numeric separator onto its ASCII equivalent.
 
     An Arabic narrative writes `٥٠٠٫٠٠` for the same figure an English one
     writes `500.00`. Comparing the rendered forms would make grounding depend
     on the script; comparing the values does not.
+
+    Unicode is asked which characters are decimal digits rather than a table
+    naming the blocks this module happens to know about. Enumerating them left
+    fullwidth `９９９` unrecognized, so it produced no candidate and escaped
+    grounding entirely — a scanner that silently sees nothing is worse than one
+    that refuses, because it reports success.
     """
-    return text.translate(_DIGIT_TABLE)
+    return "".join(_normalized(character) for character in text)
+
+
+def _normalized(character: str) -> str:
+    replacement = _PUNCTUATION_TABLE.get(ord(character))
+    if replacement is not None:
+        return replacement
+    if character.isdecimal():
+        return str(unicodedata.decimal(character))
+    return character
+
+
+def _assert_no_unreadable_numerals(text: str) -> None:
+    """Refuse numeric characters that are not digits and carry a value anyway.
+
+    `½`, `²`, and `Ⅳ` state quantities while forming no part of any candidate,
+    so leaving them alone would let a figure travel in prose the scanner never
+    examines. There is no supplied rendering they could match, so refusing is
+    the only answer available.
+    """
+    for character in text:
+        if character.isdecimal():
+            # Already an ASCII digit by this point, and part of a candidate.
+            continue
+        if unicodedata.numeric(character, None) is not None:
+            raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
 
 
 def _provider_reason(error: Exception) -> str:
@@ -728,24 +776,25 @@ _COMPLETE_NUMBER = re.compile(r"[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?")
 # label as a whole is a number: `2026-01-05` contains 2026, and a sentence may
 # name the year without quoting the whole label.
 _LABEL_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
-_DIGIT_TABLE: dict[int, int] = {
-    # Arabic-Indic (U+0660) and Extended Arabic-Indic (U+06F0) digit blocks,
-    # plus the Arabic decimal and thousands separators.
-    **{0x0660 + offset: ord("0") + offset for offset in range(10)},
-    **{0x06F0 + offset: ord("0") + offset for offset in range(10)},
-    0x066B: ord("."),
-    0x066C: ord(","),
+_INLINE_SPACE = " \t  "
+
+# Characters that are not digits but carry numeric meaning. Digits themselves
+# are handled by asking Unicode, not by listing blocks.
+_PUNCTUATION_TABLE: dict[int, str] = {
+    # Arabic decimal and thousands separators.
+    0x066B: ".",
+    0x066C: ",",
     # Every dash a reader would take for a minus. Recognizing only ASCII `-`
     # would let `−500.00` (U+2212) validate as positive `500.00`, which is the
     # sign hole reopened under a different code point. A dash attached to
     # digits is a sign; one standing alone between spaces still is not.
-    0x2212: ord("-"),
-    0x2013: ord("-"),
-    0x2014: ord("-"),
-    0xFE58: ord("-"),
-    0xFE63: ord("-"),
-    0xFF0D: ord("-"),
+    0x2212: "-",
+    0x2013: "-",
+    0x2014: "-",
+    0xFE58: "-",
+    0xFE63: "-",
+    0xFF0D: "-",
     # Percent signs, for the same reason: the suffix carries the claim.
-    0x066A: ord("%"),
-    0xFF05: ord("%"),
+    0x066A: "%",
+    0xFF05: "%",
 }

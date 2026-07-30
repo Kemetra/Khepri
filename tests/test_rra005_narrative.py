@@ -600,6 +600,123 @@ def test_any_dash_a_reader_would_take_for_a_minus_reverses_the_figure(
     assert refusal.value.reason == REASON_UNGROUNDED_NUMBER, name
 
 
+@pytest.mark.parametrize(
+    ("claim", "name"),
+    [
+        ("Revenue was ９９９.００.", "fullwidth digits"),
+        ("Revenue was ٩٩٩٫٠٠.", "arabic-indic digits"),
+        ("Revenue was ۹۹۹.۰۰.", "extended arabic-indic digits"),
+    ],
+)
+def test_a_figure_in_any_decimal_script_is_read_rather_than_skipped(
+    claim: str,
+    name: str,
+) -> None:
+    # A scanner that silently sees nothing is worse than one that refuses,
+    # because it reports success. Unicode is asked which characters are digits
+    # instead of a table naming the blocks this module happens to know about.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER, name
+
+
+def test_a_supplied_figure_written_in_another_script_still_grounds() -> None:
+    # The same normalization has to admit as well as refuse, or it would be a
+    # ban on scripts rather than a check on values.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
+            english=(section("Revenue was ５００.００.", cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+@pytest.mark.parametrize("numeral", ["½", "²", "Ⅳ"])
+def test_a_numeral_that_forms_no_candidate_is_refused_rather_than_ignored(
+    numeral: str,
+) -> None:
+    # These state quantities while falling outside every candidate, so leaving
+    # them alone would let a figure travel in prose the scanner never examines.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = f"Revenue was 500.00 and {numeral} more."
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_a_percent_sign_separated_by_a_space_is_still_part_of_the_claim() -> None:
+    # `500.00 %` is the most ordinary way of writing a percentage. Reading the
+    # suffix only when flush against the digits let it escape the check
+    # entirely — and I previously recorded the spaced form as refused without
+    # running it, which it was not.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("الإيرادات ٥٠٠٫٠٠ ٪.", cited=(fact_id,)),),
+                english=(section("Revenue was 500.00 %.", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_a_supplied_percent_written_with_a_space_is_accepted() -> None:
+    request = NarrativeRequest.of(package(WITH_COST), adapter_version=ADAPTER_VERSION)
+    fact_id = str(
+        next(
+            fact
+            for fact in request.document["facts"]
+            if fact["metric"] == "gross_margin"
+        )["fact_id"]
+    )
+    claim = "Margin was 60.0000 %."
+
+    validate(
+        NarrativeDraft(
+            adapter_version=ADAPTER_VERSION,
+            package_version=request.package_version,
+            languages=(
+                LanguageNarrative(
+                    language=LANGUAGE_ARABIC,
+                    sections=(section(claim, cited=(fact_id,)),),
+                ),
+                LanguageNarrative(
+                    language=LANGUAGE_ENGLISH,
+                    sections=(section(claim, cited=(fact_id,)),),
+                ),
+            ),
+        ),
+        request=request,
+    )
+
+
 def test_a_percent_suffix_is_part_of_the_claim_not_decoration_after_it() -> None:
     # `500.00%` is not the revenue `500.00`; the suffix changes what the digits
     # assert, so a monetary figure cannot wear one.
@@ -1210,6 +1327,31 @@ def test_a_provider_that_does_not_answer_produces_a_refusal(
     assert result.narrative is None
     assert result.attempt.outcome == OUTCOME_REFUSED
     assert result.attempt.reason == reason
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [ConnectionError("upstream down"), ValueError("bad json"), KeyError("missing")],
+)
+def test_an_unanticipated_provider_failure_is_still_a_refusal(
+    failure: Exception,
+) -> None:
+    # The narrative is the optional part of the report. Letting a provider's
+    # exception propagate would take down a delivery the deterministic facts
+    # could have carried on their own.
+    result = service(failure).compose(package())
+
+    assert result.refused is True
+    assert result.attempt.reason == REASON_PROVIDER_FAILED
+
+
+def test_a_malformed_draft_is_a_refusal_rather_than_a_crash() -> None:
+    # An adapter can return an object that breaks `validate` before any guard
+    # runs. That is still a provider that did not answer.
+    result = service(lambda request: object()).compose(package())
+
+    assert result.refused is True
+    assert result.attempt.reason == REASON_PROVIDER_FAILED
 
 
 def test_nothing_is_written_in_place_of_a_narrative_that_failed_validation() -> None:
