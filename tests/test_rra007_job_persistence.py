@@ -7,8 +7,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from khepri.rra.jobs import LeaseLost
-from khepri.rra.persistence import Base, SqlReportJobRepository, SqlSessionStore
+from khepri.rra.job_persistence import SqlReportJobRepository
+from khepri.rra.jobs import (
+    EnqueueJob,
+    FailureRequest,
+    LeaseAction,
+    LeaseLost,
+    LeaseRequest,
+)
+from khepri.rra.persistence import Base, SqlSessionStore
 from khepri.rra.sessions import InvitationService, SessionScope
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
@@ -44,18 +51,22 @@ def test_duplicate_enqueue_returns_the_original_job() -> None:
     jobs, scope, _ = repositories()
 
     original = jobs.enqueue(
-        scope=scope,
-        job_id="job_original",
-        idempotency_key=IDEMPOTENCY_KEY,
-        queued_at=NOW,
-        max_attempts=3,
+        EnqueueJob(
+            scope=scope,
+            job_id="job_original",
+            idempotency_key=IDEMPOTENCY_KEY,
+            queued_at=NOW,
+            max_attempts=3,
+        )
     )
     duplicate = jobs.enqueue(
-        scope=scope,
-        job_id="job_duplicate",
-        idempotency_key=IDEMPOTENCY_KEY,
-        queued_at=NOW + timedelta(minutes=1),
-        max_attempts=5,
+        EnqueueJob(
+            scope=scope,
+            job_id="job_duplicate",
+            idempotency_key=IDEMPOTENCY_KEY,
+            queued_at=NOW + timedelta(minutes=1),
+            max_attempts=5,
+        )
     )
 
     assert duplicate == original
@@ -68,24 +79,30 @@ def test_duplicate_enqueue_returns_the_original_job() -> None:
 def test_only_one_worker_can_hold_an_unexpired_lease() -> None:
     jobs, scope, _ = repositories()
     queued = jobs.enqueue(
-        scope=scope,
-        job_id="job_alpha",
-        idempotency_key=IDEMPOTENCY_KEY,
-        queued_at=NOW,
-        max_attempts=3,
+        EnqueueJob(
+            scope=scope,
+            job_id="job_alpha",
+            idempotency_key=IDEMPOTENCY_KEY,
+            queued_at=NOW,
+            max_attempts=3,
+        )
     )
 
     leased = jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_alpha",
-        now=NOW,
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_alpha",
+            now=NOW,
+            lease_for=timedelta(minutes=2),
+        )
     )
     competing = jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_beta",
-        now=NOW + timedelta(minutes=1),
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_beta",
+            now=NOW + timedelta(minutes=1),
+            lease_for=timedelta(minutes=2),
+        )
     )
 
     assert leased is not None
@@ -99,26 +116,32 @@ def test_only_one_worker_can_hold_an_unexpired_lease() -> None:
 def test_a_restarted_worker_recovers_and_releases_an_expired_lease() -> None:
     jobs, scope, factory = repositories()
     queued = jobs.enqueue(
-        scope=scope,
-        job_id="job_alpha",
-        idempotency_key=IDEMPOTENCY_KEY,
-        queued_at=NOW,
-        max_attempts=3,
+        EnqueueJob(
+            scope=scope,
+            job_id="job_alpha",
+            idempotency_key=IDEMPOTENCY_KEY,
+            queued_at=NOW,
+            max_attempts=3,
+        )
     )
     jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_stopped",
-        now=NOW,
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_stopped",
+            now=NOW,
+            lease_for=timedelta(minutes=2),
+        )
     )
 
     restarted = SqlReportJobRepository(factory)
     recovered = restarted.recover_expired(now=NOW + timedelta(minutes=2))
     leased_again = restarted.lease(
-        job_id=queued.job_id,
-        worker_id="worker_restarted",
-        now=NOW + timedelta(minutes=2),
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_restarted",
+            now=NOW + timedelta(minutes=2),
+            lease_for=timedelta(minutes=2),
+        )
     )
 
     assert len(recovered) == 1
@@ -134,44 +157,60 @@ def test_a_restarted_worker_recovers_and_releases_an_expired_lease() -> None:
 def test_failures_stop_after_the_configured_attempt_limit() -> None:
     jobs, scope, _ = repositories()
     queued = jobs.enqueue(
-        scope=scope,
-        job_id="job_alpha",
-        idempotency_key=IDEMPOTENCY_KEY,
-        queued_at=NOW,
-        max_attempts=2,
+        EnqueueJob(
+            scope=scope,
+            job_id="job_alpha",
+            idempotency_key=IDEMPOTENCY_KEY,
+            queued_at=NOW,
+            max_attempts=2,
+        )
     )
     first = jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_alpha",
-        now=NOW,
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_alpha",
+            now=NOW,
+            lease_for=timedelta(minutes=2),
+        )
     )
     assert first is not None
 
     retryable = jobs.fail(
-        job_id=first.job_id,
-        worker_id="worker_alpha",
-        now=NOW + timedelta(seconds=30),
-        retry_at=NOW + timedelta(minutes=1),
+        FailureRequest(
+            lease=LeaseAction(
+                job_id=first.job_id,
+                worker_id="worker_alpha",
+                now=NOW + timedelta(seconds=30),
+            ),
+            retry_at=NOW + timedelta(minutes=1),
+        )
     )
     second = jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_beta",
-        now=NOW + timedelta(minutes=1),
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_beta",
+            now=NOW + timedelta(minutes=1),
+            lease_for=timedelta(minutes=2),
+        )
     )
     assert second is not None
     exhausted = jobs.fail(
-        job_id=second.job_id,
-        worker_id="worker_beta",
-        now=NOW + timedelta(minutes=1, seconds=30),
-        retry_at=NOW + timedelta(minutes=2),
+        FailureRequest(
+            lease=LeaseAction(
+                job_id=second.job_id,
+                worker_id="worker_beta",
+                now=NOW + timedelta(minutes=1, seconds=30),
+            ),
+            retry_at=NOW + timedelta(minutes=2),
+        )
     )
     impossible_retry = jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_gamma",
-        now=NOW + timedelta(minutes=2),
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_gamma",
+            now=NOW + timedelta(minutes=2),
+            lease_for=timedelta(minutes=2),
+        )
     )
 
     assert retryable.state == "retryable"
@@ -185,30 +224,38 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
 def test_only_the_current_lease_holder_can_complete_a_job() -> None:
     jobs, scope, _ = repositories()
     queued = jobs.enqueue(
-        scope=scope,
-        job_id="job_alpha",
-        idempotency_key=IDEMPOTENCY_KEY,
-        queued_at=NOW,
-        max_attempts=3,
+        EnqueueJob(
+            scope=scope,
+            job_id="job_alpha",
+            idempotency_key=IDEMPOTENCY_KEY,
+            queued_at=NOW,
+            max_attempts=3,
+        )
     )
     leased = jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_alpha",
-        now=NOW,
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_alpha",
+            now=NOW,
+            lease_for=timedelta(minutes=2),
+        )
     )
     assert leased is not None
 
     with pytest.raises(LeaseLost):
         jobs.complete(
-            job_id=leased.job_id,
-            worker_id="worker_stale",
-            now=NOW + timedelta(minutes=1),
+            LeaseAction(
+                job_id=leased.job_id,
+                worker_id="worker_stale",
+                now=NOW + timedelta(minutes=1),
+            )
         )
     completed = jobs.complete(
-        job_id=leased.job_id,
-        worker_id="worker_alpha",
-        now=NOW + timedelta(minutes=1),
+        LeaseAction(
+            job_id=leased.job_id,
+            worker_id="worker_alpha",
+            now=NOW + timedelta(minutes=1),
+        )
     )
 
     assert completed.state == "succeeded"
@@ -220,25 +267,31 @@ def test_only_the_current_lease_holder_can_complete_a_job() -> None:
 def test_a_heartbeat_keeps_an_active_job_out_of_orphan_recovery() -> None:
     jobs, scope, _ = repositories()
     queued = jobs.enqueue(
-        scope=scope,
-        job_id="job_alpha",
-        idempotency_key=IDEMPOTENCY_KEY,
-        queued_at=NOW,
-        max_attempts=3,
+        EnqueueJob(
+            scope=scope,
+            job_id="job_alpha",
+            idempotency_key=IDEMPOTENCY_KEY,
+            queued_at=NOW,
+            max_attempts=3,
+        )
     )
     leased = jobs.lease(
-        job_id=queued.job_id,
-        worker_id="worker_alpha",
-        now=NOW,
-        lease_for=timedelta(minutes=2),
+        LeaseRequest(
+            job_id=queued.job_id,
+            worker_id="worker_alpha",
+            now=NOW,
+            lease_for=timedelta(minutes=2),
+        )
     )
     assert leased is not None
 
     extended = jobs.heartbeat(
-        job_id=leased.job_id,
-        worker_id="worker_alpha",
-        now=NOW + timedelta(minutes=1),
-        lease_for=timedelta(minutes=3),
+        LeaseRequest(
+            job_id=leased.job_id,
+            worker_id="worker_alpha",
+            now=NOW + timedelta(minutes=1),
+            lease_for=timedelta(minutes=3),
+        )
     )
     recovered = jobs.recover_expired(now=NOW + timedelta(minutes=2))
 
