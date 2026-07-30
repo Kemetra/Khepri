@@ -1,0 +1,40 @@
+{#
+  The print-ready form of the canonical bilingual report.
+
+  This is the same page, not a second one. KHEPRI-DEC-005 consolidates bilingual
+  rendering into one template so that Arabic and English parity has one place to
+  be correct; a forked copy would be a second place for it to drift. So this
+  template extends `report.html.j2` and fills the two blocks that template left
+  empty -- nothing else. Every heading, figure, caveat, citation and disclosure
+  on the printed page comes from the parent, unchanged and in the same order.
+
+  Nothing here is marked safe. Font payloads are base64, which uses none of the
+  characters HTML escaping touches, so they reach the document byte-identical
+  through the same autoescaping environment the web surface renders in. The
+  print stylesheet is included as template *source*, exactly as the parent
+  includes the screen stylesheet, which is what removes the last reason anyone
+  would reach for an exemption.
+#}
+{% extends "report.html.j2" %}
+{% block embedded_fonts %}
+<style>
+{% for font in fonts %}
+@font-face {
+  font-family: "{{ font.family }}";
+  font-style: normal;
+  font-weight: 400;
+  /* `block` rather than `swap`: the payload is already in this document, so
+     there is nothing to wait for, and a swap would let a first paint use a
+     fallback face that the printed page then captures. */
+  font-display: block;
+  src: url({{ font.data_uri }}) format("{{ font.font_format }}");
+  unicode-range: {{ font.unicode_range }};
+}
+{% endfor %}
+</style>
+{% endblock %}
+{% block print_stylesheet %}
+<style>
+{% include print_stylesheet_name %}
+</style>
+{% endblock %}

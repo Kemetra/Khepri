@@ -1,0 +1,151 @@
+/*
+ * Print stylesheet for the canonical bilingual report.
+ *
+ * This sheet is layered onto `report.css` through the template's
+ * `print_stylesheet` block; it does not replace it. Everything about how the
+ * report reads -- the logical box properties, the font stack, the table
+ * structure -- is already correct there and is inherited unchanged. What is
+ * added here is only what a *page* needs and a scrolling viewport does not: a
+ * page box, break behaviour that keeps a table legible across a page boundary,
+ * and a palette that does not depend on the machine doing the printing.
+ *
+ * Every inline offset here is a logical property, on the same terms as the
+ * screen sheet and held by the same kind of test. The right-to-left Arabic page
+ * and the left-to-right English one are printed from these same declarations.
+ */
+
+@media print {
+  /*
+   * The screen sheet inverts its palette under `prefers-color-scheme: dark`.
+   * A worker container that reports a dark preference would otherwise print
+   * white text on a black page -- ink that is both unreadable and not what
+   * anybody asked for. The printed palette is therefore stated outright rather
+   * than inherited, and stated *after* the screen sheet so it wins on order.
+   */
+  :root {
+    --report-ink: #16191d;
+    --report-muted: #4a5560;
+    --report-paper: #ffffff;
+    --report-rule: #b9c0c9;
+    --report-accent: #0f4c81;
+  }
+
+  /*
+   * The page box, not the body, carries the margins. `prefer_css_page_size` is
+   * on in the renderer so this size is the one Chromium uses.
+   */
+  @page {
+    size: A4;
+    margin: 18mm 16mm;
+  }
+
+  html {
+    /* Print at a size that survives being read on paper. */
+    font-size: 10.5pt;
+    background: var(--report-paper);
+    color: var(--report-ink);
+  }
+
+  body {
+    /* The page box already provides the measure and the margins. */
+    max-width: none;
+    margin-block: 0;
+    margin-inline: 0;
+    padding-block: 0;
+    padding-inline: 0;
+  }
+
+  /* A screen affordance that prints as a stray line of text. */
+  .skip {
+    display: none;
+  }
+
+  /*
+   * On screen a wide table scrolls inside its own box. On paper there is
+   * nothing to scroll, and `overflow-x: auto` clips every column past the
+   * edge -- silently, which is the worst way for a figure to go missing.
+   */
+  .scroller {
+    overflow: visible;
+  }
+
+  /*
+   * A table taller than one page must repeat its header, or every page after
+   * the first is a grid of unlabelled numbers. Rows and figures are kept whole;
+   * the table itself is allowed to break, because forbidding that on a long
+   * table produces one overflowing page instead of several readable ones.
+   */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr,
+  .provenance div,
+  article,
+  li {
+    break-inside: avoid;
+  }
+
+  table,
+  section {
+    break-inside: auto;
+  }
+
+  /* A heading stranded at the foot of a page labels nothing. */
+  h1,
+  h2 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
+  caption {
+    break-after: avoid;
+  }
+
+  /*
+   * The disclosure is the sentence RRA-006 requires the reader to see. Its
+   * background is a screen nicety; on paper the rule beside it carries the
+   * emphasis, so nothing depends on the printer honouring background graphics.
+   */
+  .disclosure {
+    background: transparent;
+    border-inline-start: 3pt solid var(--report-accent);
+    break-inside: avoid;
+  }
+
+  /*
+   * Links keep their underline -- it survives being printed, a colour may not
+   * -- and take the body ink so a monochrome print does not turn every citation
+   * into pale grey.
+   */
+  a {
+    color: var(--report-ink);
+    text-decoration: underline;
+  }
+
+  /*
+   * Identifiers, digests and citation keys are set in the embedded family
+   * rather than a monospace stack. A printed report should not depend on the
+   * host having a monospace face any more than it depends on the host having an
+   * Arabic one, and every character in these strings is covered by the Latin
+   * subset this package embeds.
+   */
+  code {
+    font-family: inherit;
+    font-size: 0.95em;
+  }
+
+  /* Figures stay on one line: a wrapped number reads as two numbers. */
+  td.figure {
+    white-space: nowrap;
+  }
+
+  .provenance {
+    /* Long digests need the full measure on paper. */
+    grid-template-columns: minmax(14rem, auto) 1fr;
+  }
+}
