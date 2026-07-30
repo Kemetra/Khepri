@@ -8,6 +8,7 @@ from sqlalchemy import engine_from_config, pool
 
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base
+from khepri.rra.telemetry_persistence import OperationalEventRow
 
 config = context.config
 if config.config_file_name is not None:
@@ -20,6 +21,8 @@ if database_url:
 target_metadata = Base.metadata
 if ReportJobRow.metadata is not target_metadata:
     raise RuntimeError("Report job metadata is not registered with the RRA base.")
+if OperationalEventRow.metadata is not target_metadata:
+    raise RuntimeError("Operational event metadata is not registered with the RRA base.")
 
 
 def run_migrations_offline() -> None:
