@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -14,6 +15,7 @@ from khepri.rra.jobs import (
     LeaseAction,
     LeaseLost,
     LeaseRequest,
+    ReportJob,
 )
 from khepri.rra.persistence import Base, SqlSessionStore
 from khepri.rra.sessions import InvitationService, SessionScope
@@ -22,11 +24,47 @@ NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 IDEMPOTENCY_KEY = "8f99c79c1c79c892c1a30a74fcc1b536b04e409ee4562acfb82d8d76fb750d7d"
 
 
-def repositories() -> tuple[
-    SqlReportJobRepository,
-    SessionScope,
-    sessionmaker,
-]:
+@dataclass(frozen=True, slots=True)
+class Harness:
+    jobs: SqlReportJobRepository
+    scope: SessionScope
+    factory: sessionmaker
+
+    def enqueue(
+        self,
+        *,
+        job_id: str = "job_alpha",
+        queued_at: datetime = NOW,
+        max_attempts: int = 3,
+    ) -> ReportJob:
+        return self.jobs.enqueue(
+            EnqueueJob(
+                scope=self.scope,
+                job_id=job_id,
+                idempotency_key=IDEMPOTENCY_KEY,
+                queued_at=queued_at,
+                max_attempts=max_attempts,
+            )
+        )
+
+    def lease(
+        self,
+        job_id: str,
+        worker_id: str,
+        *,
+        now: datetime = NOW,
+    ) -> ReportJob | None:
+        return self.jobs.lease(
+            LeaseRequest(
+                job_id=job_id,
+                worker_id=worker_id,
+                now=now,
+                lease_for=timedelta(minutes=2),
+            )
+        )
+
+
+def harness() -> Harness:
     engine = create_engine(
         "sqlite+pysqlite://",
         connect_args={"check_same_thread": False},
@@ -44,29 +82,21 @@ def repositories() -> tuple[
         owner_id=beta_session.owner_id,
         session_id=beta_session.session_id,
     )
-    return SqlReportJobRepository(factory), scope, factory
+    return Harness(
+        jobs=SqlReportJobRepository(factory),
+        scope=scope,
+        factory=factory,
+    )
 
 
 def test_duplicate_enqueue_returns_the_original_job() -> None:
-    jobs, scope, _ = repositories()
+    test = harness()
 
-    original = jobs.enqueue(
-        EnqueueJob(
-            scope=scope,
-            job_id="job_original",
-            idempotency_key=IDEMPOTENCY_KEY,
-            queued_at=NOW,
-            max_attempts=3,
-        )
-    )
-    duplicate = jobs.enqueue(
-        EnqueueJob(
-            scope=scope,
-            job_id="job_duplicate",
-            idempotency_key=IDEMPOTENCY_KEY,
-            queued_at=NOW + timedelta(minutes=1),
-            max_attempts=5,
-        )
+    original = test.enqueue(job_id="job_original")
+    duplicate = test.enqueue(
+        job_id="job_duplicate",
+        queued_at=NOW + timedelta(minutes=1),
+        max_attempts=5,
     )
 
     assert duplicate == original
@@ -77,32 +107,14 @@ def test_duplicate_enqueue_returns_the_original_job() -> None:
 
 
 def test_only_one_worker_can_hold_an_unexpired_lease() -> None:
-    jobs, scope, _ = repositories()
-    queued = jobs.enqueue(
-        EnqueueJob(
-            scope=scope,
-            job_id="job_alpha",
-            idempotency_key=IDEMPOTENCY_KEY,
-            queued_at=NOW,
-            max_attempts=3,
-        )
-    )
+    test = harness()
+    queued = test.enqueue()
 
-    leased = jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_alpha",
-            now=NOW,
-            lease_for=timedelta(minutes=2),
-        )
-    )
-    competing = jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_beta",
-            now=NOW + timedelta(minutes=1),
-            lease_for=timedelta(minutes=2),
-        )
+    leased = test.lease(queued.job_id, "worker_alpha")
+    competing = test.lease(
+        queued.job_id,
+        "worker_beta",
+        now=NOW + timedelta(minutes=1),
     )
 
     assert leased is not None
@@ -114,34 +126,20 @@ def test_only_one_worker_can_hold_an_unexpired_lease() -> None:
 
 
 def test_a_restarted_worker_recovers_and_releases_an_expired_lease() -> None:
-    jobs, scope, factory = repositories()
-    queued = jobs.enqueue(
-        EnqueueJob(
-            scope=scope,
-            job_id="job_alpha",
-            idempotency_key=IDEMPOTENCY_KEY,
-            queued_at=NOW,
-            max_attempts=3,
-        )
-    )
-    jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_stopped",
-            now=NOW,
-            lease_for=timedelta(minutes=2),
-        )
-    )
+    test = harness()
+    queued = test.enqueue()
+    test.lease(queued.job_id, "worker_stopped")
 
-    restarted = SqlReportJobRepository(factory)
-    recovered = restarted.recover_expired(now=NOW + timedelta(minutes=2))
+    restarted = Harness(
+        jobs=SqlReportJobRepository(test.factory),
+        scope=test.scope,
+        factory=test.factory,
+    )
+    recovered = restarted.jobs.recover_expired(now=NOW + timedelta(minutes=2))
     leased_again = restarted.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_restarted",
-            now=NOW + timedelta(minutes=2),
-            lease_for=timedelta(minutes=2),
-        )
+        queued.job_id,
+        "worker_restarted",
+        now=NOW + timedelta(minutes=2),
     )
 
     assert len(recovered) == 1
@@ -155,27 +153,12 @@ def test_a_restarted_worker_recovers_and_releases_an_expired_lease() -> None:
 
 
 def test_failures_stop_after_the_configured_attempt_limit() -> None:
-    jobs, scope, _ = repositories()
-    queued = jobs.enqueue(
-        EnqueueJob(
-            scope=scope,
-            job_id="job_alpha",
-            idempotency_key=IDEMPOTENCY_KEY,
-            queued_at=NOW,
-            max_attempts=2,
-        )
-    )
-    first = jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_alpha",
-            now=NOW,
-            lease_for=timedelta(minutes=2),
-        )
-    )
+    test = harness()
+    queued = test.enqueue(max_attempts=2)
+    first = test.lease(queued.job_id, "worker_alpha")
     assert first is not None
 
-    retryable = jobs.fail(
+    retryable = test.jobs.fail(
         FailureRequest(
             lease=LeaseAction(
                 job_id=first.job_id,
@@ -185,16 +168,13 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
             retry_at=NOW + timedelta(minutes=1),
         )
     )
-    second = jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_beta",
-            now=NOW + timedelta(minutes=1),
-            lease_for=timedelta(minutes=2),
-        )
+    second = test.lease(
+        queued.job_id,
+        "worker_beta",
+        now=NOW + timedelta(minutes=1),
     )
     assert second is not None
-    exhausted = jobs.fail(
+    exhausted = test.jobs.fail(
         FailureRequest(
             lease=LeaseAction(
                 job_id=second.job_id,
@@ -204,13 +184,10 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
             retry_at=NOW + timedelta(minutes=2),
         )
     )
-    impossible_retry = jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_gamma",
-            now=NOW + timedelta(minutes=2),
-            lease_for=timedelta(minutes=2),
-        )
+    impossible_retry = test.lease(
+        queued.job_id,
+        "worker_gamma",
+        now=NOW + timedelta(minutes=2),
     )
 
     assert retryable.state == "retryable"
@@ -222,35 +199,20 @@ def test_failures_stop_after_the_configured_attempt_limit() -> None:
 
 
 def test_only_the_current_lease_holder_can_complete_a_job() -> None:
-    jobs, scope, _ = repositories()
-    queued = jobs.enqueue(
-        EnqueueJob(
-            scope=scope,
-            job_id="job_alpha",
-            idempotency_key=IDEMPOTENCY_KEY,
-            queued_at=NOW,
-            max_attempts=3,
-        )
-    )
-    leased = jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_alpha",
-            now=NOW,
-            lease_for=timedelta(minutes=2),
-        )
-    )
+    test = harness()
+    queued = test.enqueue()
+    leased = test.lease(queued.job_id, "worker_alpha")
     assert leased is not None
 
     with pytest.raises(LeaseLost):
-        jobs.complete(
+        test.jobs.complete(
             LeaseAction(
                 job_id=leased.job_id,
                 worker_id="worker_stale",
                 now=NOW + timedelta(minutes=1),
             )
         )
-    completed = jobs.complete(
+    completed = test.jobs.complete(
         LeaseAction(
             job_id=leased.job_id,
             worker_id="worker_alpha",
@@ -265,27 +227,12 @@ def test_only_the_current_lease_holder_can_complete_a_job() -> None:
 
 
 def test_a_heartbeat_keeps_an_active_job_out_of_orphan_recovery() -> None:
-    jobs, scope, _ = repositories()
-    queued = jobs.enqueue(
-        EnqueueJob(
-            scope=scope,
-            job_id="job_alpha",
-            idempotency_key=IDEMPOTENCY_KEY,
-            queued_at=NOW,
-            max_attempts=3,
-        )
-    )
-    leased = jobs.lease(
-        LeaseRequest(
-            job_id=queued.job_id,
-            worker_id="worker_alpha",
-            now=NOW,
-            lease_for=timedelta(minutes=2),
-        )
-    )
+    test = harness()
+    queued = test.enqueue()
+    leased = test.lease(queued.job_id, "worker_alpha")
     assert leased is not None
 
-    extended = jobs.heartbeat(
+    extended = test.jobs.heartbeat(
         LeaseRequest(
             job_id=leased.job_id,
             worker_id="worker_alpha",
@@ -293,7 +240,7 @@ def test_a_heartbeat_keeps_an_active_job_out_of_orphan_recovery() -> None:
             lease_for=timedelta(minutes=3),
         )
     )
-    recovered = jobs.recover_expired(now=NOW + timedelta(minutes=2))
+    recovered = test.jobs.recover_expired(now=NOW + timedelta(minutes=2))
 
     assert extended.lease_expires_at == NOW + timedelta(minutes=4)
     assert recovered == ()
