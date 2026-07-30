@@ -216,6 +216,28 @@ class PipelineOutcome:
     delivered: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ReportPipelinePorts:
+    """Every replaceable collaborator one pipeline runs against.
+
+    Grouped rather than passed one by one. Each of these is a boundary this
+    module deliberately does not implement — where the package comes from, who
+    writes the prose, who draws the surfaces, where the report is kept — so
+    they belong together as the set of things a deployment chooses.
+
+    Nothing is validated here. There is no invariant available at construction
+    that is not better enforced where it bites: an incomplete set of renderers
+    is `REASON_MISSING_SURFACE` at assembly, which refuses the whole attempt
+    and is proven by a test. Refusing it earlier would only move the same
+    answer to a place that cannot say which surface was missing.
+    """
+
+    packages: FactPackageSource
+    adapter: NarrativeAdapter
+    renderers: Sequence[SurfaceRenderer]
+    deliveries: DeliveryStore
+
+
 class ReportPipeline:
     """Run the report stages for one leased job, or deliver nothing.
 
@@ -226,20 +248,21 @@ class ReportPipeline:
     def __init__(
         self,
         *,
-        packages: FactPackageSource,
-        adapter: NarrativeAdapter,
-        renderers: Sequence[SurfaceRenderer],
-        deliveries: DeliveryStore,
+        ports: ReportPipelinePorts,
         monotonic_ms: Callable[[], int],
     ) -> None:
-        self._packages = packages
+        self._packages = ports.packages
         # Constructed here rather than injected: both services own a policy
         # this module must not restate — the narrative service owns provider
         # timeouts and refusals, the assembler owns reconciliation and the
-        # all-or-nothing rule. The replaceable parts are the two Protocols.
-        self._narrative = NarrativeService(adapter=adapter, monotonic_ms=monotonic_ms)
-        self._assembler = BundleAssembler(renderers=renderers)
-        self._deliveries = deliveries
+        # all-or-nothing rule. The replaceable parts are the two Protocols,
+        # which arrive on `ports` and are handed straight through.
+        self._narrative = NarrativeService(
+            adapter=ports.adapter,
+            monotonic_ms=monotonic_ms,
+        )
+        self._assembler = BundleAssembler(renderers=ports.renderers)
+        self._deliveries = ports.deliveries
 
     def __call__(self, execution: WorkerExecution) -> None:
         self.run(execution)
@@ -357,4 +380,5 @@ __all__ = [
     "ReportDelivery",
     "ReportPipeline",
     "ReportPipelineFailed",
+    "ReportPipelinePorts",
 ]

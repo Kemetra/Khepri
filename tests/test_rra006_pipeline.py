@@ -55,6 +55,7 @@ from khepri.rra.pipeline import (
     ReportDelivery,
     ReportPipeline,
     ReportPipelineFailed,
+    ReportPipelinePorts,
 )
 from khepri.rra.profiling import build_profile
 from khepri.rra.worker import ReportExecutionFailed, ReportJobMessage, ReportWorker, WorkerPolicy
@@ -322,10 +323,12 @@ def harness(
     store = deliveries or Deliveries()
     return Harness(
         pipeline=ReportPipeline(
-            packages=source,
-            adapter=provider,
-            renderers=surfaces,
-            deliveries=store,
+            ports=ReportPipelinePorts(
+                packages=source,
+                adapter=provider,
+                renderers=surfaces,
+                deliveries=store,
+            ),
             monotonic_ms=lambda: 0,
         ),
         packages=source,
