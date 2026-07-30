@@ -21,10 +21,12 @@ from khepri.rra.bundle import (
     SURFACE_PDF,
     SURFACE_WEB,
 )
+from khepri.rra.datasets import ProfileCorrupted
 from khepri.rra.facts import PACKAGE_VERSION
 from khepri.rra.jobs import (
     JOB_FAILED,
     JOB_QUEUED,
+    JOB_RETRYABLE,
     JOB_RUNNING,
     JOB_SUCCEEDED,
     ReportJob,
@@ -329,6 +331,11 @@ def test_unknown_report_request_fields_are_refused() -> None:
             (503, {"detail": "Stored fact package is unavailable."}),
             id="corrupt-package",
         ),
+        pytest.param(
+            ProfileCorrupted("Stored dataset profile does not match its digest."),
+            (503, {"detail": "Stored fact package is unavailable."}),
+            id="corrupt-profile",
+        ),
     ],
 )
 def test_a_refusal_reaches_every_report_route_as_the_same_status(
@@ -434,6 +441,15 @@ def test_a_second_session_cannot_reach_another_callers_report(template: str) -> 
             ),
             {"reason": None, "bundle_id": None, "completed_at": None},
             id="unfinished-withholds-a-finished-jobs-detail",
+        ),
+        pytest.param(
+            ReportJobView(
+                job=report_job(state=JOB_RETRYABLE),
+                reason=REASON_PACKAGE_MISSING,
+                delivery=delivery(),
+            ),
+            {"reason": None, "bundle_id": None, "completed_at": None},
+            id="retrying-is-not-a-verdict-already-reached",
         ),
         pytest.param(
             ReportJobView(
