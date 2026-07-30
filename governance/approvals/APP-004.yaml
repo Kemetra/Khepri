@@ -12,10 +12,10 @@ exclusions:
   - Any claim that the approved completion objective has been met
   - Beta launch authorization
   - Any claim that technical review or automation is human approval
-manifest_digest: sha256:b7253ee22fa97c29adef27af6798be8e072d4d9491fedd9c2991eede6d2ca825
+manifest_digest: sha256:0830a354ce8e5069747b749dff1e2b2532cc43753108be1e4a30b9fc60a19f3a
 artifacts:
   - id: KHEPRI-DEC-006
     document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
-    document_sha256: sha256:b062387dc3e9d846fcf170effbb4b5b9a92afcb6984aecbab310ba30134f6bbe
+    document_sha256: sha256:1cdada78eb6c7b0166dfa11dc4c43fd80efdc76c89eb584d8fb6454ece01f077
     from_state: proposed
     to_state: accepted
