@@ -404,6 +404,24 @@ def _personal_data_signals(safe_label: str, values: list[str]) -> list[str]:
     return sorted(set(signals))
 
 
+def is_personal_value(value: str) -> bool:
+    """Whether one value carries a recognized personal-data shape.
+
+    Column-level detection needs a majority of values to agree before it
+    excludes a column, so an individual value must still be checked before it
+    is published as a label.
+    """
+    stripped = value.strip()
+    if not stripped:
+        return False
+    return bool(
+        _EMAIL.fullmatch(stripped)
+        or _is_phone(stripped)
+        or _IBAN.fullmatch(stripped.replace(" ", ""))
+        or _is_payment_card(stripped)
+    )
+
+
 def _is_phone(value: str) -> bool:
     if not _PHONE.fullmatch(value):
         return False

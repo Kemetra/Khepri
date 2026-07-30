@@ -9,7 +9,14 @@ from decimal import Decimal
 MAX_COMPARISON_BUCKETS = 20
 OTHER_BUCKET_LABEL = "other"
 UNLABELLED_BUCKET_LABEL = "unlabelled"
-RESERVED_LABELS = frozenset({OTHER_BUCKET_LABEL, UNLABELLED_BUCKET_LABEL})
+REDACTED_BUCKET_LABEL = "redacted"
+RESERVED_LABELS = frozenset(
+    {OTHER_BUCKET_LABEL, UNLABELLED_BUCKET_LABEL, REDACTED_BUCKET_LABEL}
+)
+
+# A display function returns this to mark a value as unpublishable. Label
+# sanitizing strips control characters, so no source value can produce it.
+REDACTION_SENTINEL = "\x00redacted"
 
 GRANULARITY_DAY = "day"
 GRANULARITY_MONTH = "month"
@@ -50,12 +57,14 @@ class Comparison:
     buckets: tuple[Bucket, ...]
     distinct_values: int
     truncated_values: int
+    redacted_values: int = 0
 
     def as_document(self, *, precision: int) -> dict[str, object]:
         return {
             "dimension": self.dimension,
             "distinct_values": self.distinct_values,
             "truncated_values": self.truncated_values,
+            "redacted_values": self.redacted_values,
             "buckets": [bucket.as_document(precision=precision) for bucket in self.buckets],
         }
 
@@ -152,6 +161,11 @@ def build_comparison(
         buckets=tuple(buckets),
         distinct_values=len(accumulators),
         truncated_values=len(dropped),
+        redacted_values=sum(
+            1
+            for key in accumulators
+            if key is not None and display is not None and display(key) == REDACTION_SENTINEL
+        ),
     )
 
 
@@ -174,11 +188,21 @@ def _labels(
     display: Callable[[str], str] | None,
 ) -> dict[str | None, str]:
     rendered: dict[str | None, str] = {}
+    redacted = sorted(
+        key
+        for key in keys
+        if key is not None and display is not None and display(key) == REDACTION_SENTINEL
+    )
     for key in keys:
         if key is None:
             rendered[key] = UNLABELLED_BUCKET_LABEL
             continue
         label = display(key) if display is not None else key
+        if label == REDACTION_SENTINEL:
+            # Positional, never a digest: a short digest of an email or phone
+            # number is trivially reversible by enumeration.
+            rendered[key] = f"{REDACTED_BUCKET_LABEL} {redacted.index(key) + 1}"
+            continue
         # A source value may never occupy a label reserved for a synthetic
         # bucket, so it yields the reserved text before collisions are counted.
         rendered[key] = (

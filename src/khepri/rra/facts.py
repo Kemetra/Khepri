@@ -14,6 +14,7 @@ from khepri.rra.admissibility import (
     assess_admissibility,
 )
 from khepri.rra.aggregates import (
+    REDACTION_SENTINEL,
     UNLABELLED_BUCKET_LABEL,
     Comparison,
     Series,
@@ -39,7 +40,9 @@ from khepri.rra.mapping import (
 )
 from khepri.rra.profiling import (
     DatasetProfile,
+    build_profile,
     canonical_json,
+    is_personal_value,
     materialize,
     parse_date,
     safe_value_label,
@@ -75,6 +78,8 @@ CAVEAT_RETURNS_NOT_NETTED = "returns_not_netted"
 CAVEAT_NULL_MEASURE_INPUTS = "null_measure_inputs"
 CAVEAT_UNDATED_ROWS_EXCLUDED = "rows_without_time_field_excluded"
 CAVEAT_BUCKETS_TRUNCATED = "comparison_buckets_truncated"
+CAVEAT_PERSONAL_VALUES_REDACTED = "personal_values_redacted"
+CAVEAT_DISCOUNT_AS_AMOUNT = "discount_interpreted_as_amount"
 
 RATIO_PRECISION = 4
 MIN_MONETARY_PRECISION = 2
@@ -269,12 +274,16 @@ def build_fact_package(
     decision: AdmissibilityDecision,
     formula_version: str = FORMULA_VERSION,
 ) -> FactPackage:
-    _assert_derived_from_profile(content, profile, mapping, decision)
+    if formula_version != FORMULA_VERSION:
+        raise FactsRefused("Formula version is not implemented by this package builder.")
+    _assert_derived_from_profile(content, media_type, profile, mapping, decision)
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
 
     frame = materialize(content, media_type)
     measures = _measures(frame, profile, mapping)
+    if measures.monetary_precision > MAX_MONETARY_PRECISION:
+        raise FactsRefused("Monetary input precision exceeds the governed maximum.")
     row_count = frame.height
 
     facts: list[Fact] = []
@@ -446,6 +455,8 @@ def build_fact_package(
         caveats.append(CAVEAT_NEGATIVE_REVENUE)
     if returns_total is not None:
         caveats.append(CAVEAT_RETURNS_NOT_NETTED)
+    if discount_total is not None:
+        caveats.append(CAVEAT_DISCOUNT_AS_AMOUNT)
     if row_count and int(frame.is_duplicated().sum()):
         caveats.append(CAVEAT_DUPLICATE_ROWS)
 
@@ -467,18 +478,27 @@ def build_fact_package(
 
 def _assert_derived_from_profile(
     content: bytes,
+    media_type: str,
     profile: DatasetProfile,
     mapping: RetailMapping,
     decision: AdmissibilityDecision,
 ) -> None:
     """Refuse artifacts that were not derived from this exact input.
 
-    Mapping and admissibility are deterministic functions of the profile, so
-    they are rebuilt and compared in full rather than spot-checked. That binds
-    states, inferred types, and personal-data exclusions too, not just labels.
+    Profile, mapping, and admissibility are all deterministic functions of the
+    bytes, so each is rebuilt and compared in full rather than spot-checked. A
+    digest check alone would accept a profile that carries the right source
+    hash while misstating labels, inferred types, or personal-data risk.
     """
-    if hashlib.sha256(content).hexdigest() != profile.source_sha256_hex:
+    digest = hashlib.sha256(content).hexdigest()
+    if digest != profile.source_sha256_hex:
         raise FactsRefused("Content does not match the profile it is attributed to.")
+    if build_profile(
+        content=content,
+        media_type=media_type,
+        source_sha256_hex=digest,
+    ) != profile:
+        raise FactsRefused("Profile does not describe the supplied content.")
     if build_mapping(profile) != mapping:
         raise FactsRefused("Mapping was not derived from the supplied profile.")
     expected = assess_admissibility(
@@ -587,6 +607,9 @@ def _comparisons(
             if comparison.truncated_values:
                 entry_caveats.append(CAVEAT_BUCKETS_TRUNCATED)
                 caveats.append(CAVEAT_BUCKETS_TRUNCATED)
+            if comparison.redacted_values:
+                entry_caveats.append(CAVEAT_PERSONAL_VALUES_REDACTED)
+                caveats.append(CAVEAT_PERSONAL_VALUES_REDACTED)
             fact_id, citation_id = _identity(
                 metric=metric,
                 scope=(dimension,),
@@ -607,6 +630,8 @@ def _comparisons(
 
 
 def _display_label(value: str) -> str:
+    if is_personal_value(value):
+        return REDACTION_SENTINEL
     return safe_value_label(value, fallback=UNLABELLED_BUCKET_LABEL)
 
 
@@ -666,7 +691,7 @@ def _measures(
         cost=cost,
         discount=discount,
         returns=returns,
-        monetary_precision=min(monetary_scale, MAX_MONETARY_PRECISION),
+        monetary_precision=monetary_scale,
         null_measure_inputs=null_inputs,
         transaction_identifiers_complete=(
             transaction_column is None

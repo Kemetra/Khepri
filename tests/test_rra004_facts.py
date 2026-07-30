@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
+from decimal import Decimal
 
 import pytest
 
@@ -8,9 +10,11 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import MAX_COMPARISON_BUCKETS, OTHER_BUCKET_LABEL
 from khepri.rra.facts import (
     CAVEAT_CURRENCY_NOT_DECLARED,
+    CAVEAT_DISCOUNT_AS_AMOUNT,
     CAVEAT_DUPLICATE_ROWS,
     CAVEAT_NEGATIVE_REVENUE,
     CAVEAT_NULL_MEASURE_INPUTS,
+    CAVEAT_PERSONAL_VALUES_REDACTED,
     CAVEAT_RETURNS_NOT_NETTED,
     CAVEAT_UNDATED_ROWS_EXCLUDED,
     FORMULA_VERSION,
@@ -454,3 +458,144 @@ def test_complete_transaction_identifiers_still_produce_the_metrics() -> None:
 
     assert result.value(METRIC_TRANSACTIONS) == "2"
     assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "75.00"
+
+
+def test_compact_per_unit_headers_are_refused_like_separated_ones() -> None:
+    content = (
+        b"date,revenue,units,unitcost\n"
+        b"2026-01-05,200.00,4,120.00\n"
+        b"2026-01-06,300.00,6,180.00\n"
+    )
+
+    result = package(content)
+
+    assert result.fact(METRIC_COST) is None
+    assert result.refusal(METRIC_COST).reason == REASON_INPUT_UNAVAILABLE
+    assert result.refusal(METRIC_GROSS_PROFIT).reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_a_profile_that_misstates_the_content_is_refused() -> None:
+    profile = build_profile(
+        content=GOLDEN,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(GOLDEN).hexdigest(),
+    )
+    columns = list(profile.columns)
+    columns[1] = replace(columns[1], safe_label="units")
+    tampered = replace(profile, columns=tuple(columns))
+    assert tampered.source_sha256_hex == profile.source_sha256_hex
+    assert tampered != profile
+
+    with pytest.raises(FactsRefused):
+        build_fact_package(
+            content=GOLDEN,
+            media_type=CSV_MEDIA_TYPE,
+            profile=tampered,
+            mapping=build_mapping(tampered),
+            decision=assess_admissibility(tampered, build_mapping(tampered)),
+        )
+
+
+def test_an_unimplemented_formula_version_is_refused() -> None:
+    profile = build_profile(
+        content=GOLDEN,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(GOLDEN).hexdigest(),
+    )
+    mapping = build_mapping(profile)
+
+    with pytest.raises(FactsRefused):
+        build_fact_package(
+            content=GOLDEN,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            formula_version="rra004.formula.v99",
+        )
+
+
+def test_a_minority_personal_value_is_redacted_from_dimension_labels() -> None:
+    content = (
+        b"date,revenue,category\n"
+        b"2026-01-05,10.00,Beverages\n"
+        b"2026-01-06,20.00,Snacks\n"
+        b"2026-01-07,30.00,buyer@example.com\n"
+    )
+
+    result = package(content)
+    comparison = result.comparison(SEMANTIC_CATEGORY).comparison
+
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert "buyer@example.com" not in labels
+    assert "redacted 1" in labels
+    assert comparison.redacted_values == 1
+    assert CAVEAT_PERSONAL_VALUES_REDACTED in result.caveats
+    assert sum(bucket.value for bucket in comparison.buckets) == Decimal("60.00")
+
+
+def test_redacted_labels_never_carry_a_digest_of_the_source_value() -> None:
+    content = (
+        b"date,revenue,category\n"
+        b"2026-01-05,10.00,Beverages\n"
+        b"2026-01-06,20.00,Snacks\n"
+        b"2026-01-07,30.00,Bakery\n"
+        b"2026-01-08,40.00,buyer.one@example.com\n"
+        b"2026-01-09,50.00,buyer.two@example.com\n"
+    )
+
+    comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+
+    labels = sorted(bucket.label for bucket in comparison.buckets)
+    assert comparison.redacted_values == 2
+    assert labels == ["Bakery", "Beverages", "Snacks", "redacted 1", "redacted 2"]
+
+
+def test_monetary_precision_beyond_the_governed_maximum_is_refused() -> None:
+    content = b"date,revenue,units\n2026-01-05,0.0000004,1\n2026-01-06,0.0000004,1\n"
+
+    with pytest.raises(FactsRefused):
+        package(content)
+
+
+def test_serialized_aggregates_reconcile_at_the_declared_precision() -> None:
+    content = b"date,revenue,units\n2026-01-05,0.000004,1\n2026-01-06,0.000004,1\n"
+
+    result = package(content)
+    document = result.as_document()
+
+    assert result.monetary_precision == 6
+    total = Decimal(document["facts"][0]["value"])
+    points = [
+        Decimal(point["value"])
+        for entry in document["series"]
+        if entry["measure"] == METRIC_REVENUE
+        for point in entry["points"]
+    ]
+    assert sum(points) == total
+
+
+def test_a_discount_amount_declares_its_interpretation() -> None:
+    content = (
+        b"date,revenue,discount\n"
+        b"2026-01-05,100.00,10.00\n"
+        b"2026-01-06,200.00,20.00\n"
+    )
+
+    result = package(content)
+
+    assert result.value(METRIC_DISCOUNT) == "30.00"
+    assert CAVEAT_DISCOUNT_AS_AMOUNT in result.caveats
+
+
+def test_a_discount_rate_column_is_never_summed_as_money() -> None:
+    content = (
+        b"date,revenue,discount_rate\n"
+        b"2026-01-05,100.00,10\n"
+        b"2026-01-06,200.00,20\n"
+    )
+
+    result = package(content)
+
+    assert result.fact(METRIC_DISCOUNT) is None
+    assert result.refusal(METRIC_DISCOUNT).reason == REASON_INPUT_UNAVAILABLE

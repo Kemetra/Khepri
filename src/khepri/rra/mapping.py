@@ -273,6 +273,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "تخفيض",
             }
         ),
+        disqualifiers=frozenset({"rate", "percent", "pct", "ratio", "share"}),
     ),
     SemanticRule(
         semantic=SEMANTIC_RETURNS,
@@ -292,6 +293,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "استرداد",
             }
         ),
+        disqualifiers=frozenset({"rate", "percent", "pct", "ratio", "share"}),
     ),
 )
 
@@ -463,9 +465,13 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
 
 def _candidate(rule: SemanticRule, column: ColumnProfile) -> MappingCandidate | None:
     tokens = label_tokens(column.safe_label)
-    if not tokens or rule.disqualifiers & set(tokens):
+    if not tokens:
         return None
     collapsed = "".join(tokens)
+    if rule.disqualifiers & set(tokens) or any(
+        term in collapsed for term in rule.disqualifiers
+    ):
+        return None
 
     confidence: Decimal | None = None
     evidence: list[str] = []
