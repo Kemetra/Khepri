@@ -77,6 +77,23 @@ def test_full_retail_schema_maps_every_governed_semantic() -> None:
     }
 
 
+def test_tax_fee_and_commission_columns_are_never_revenue() -> None:
+    # Money collected beside a sale is not the seller's revenue.
+    for header in (
+        b"sales_tax",
+        b"sales_commission",
+        b"sales_fee",
+        b"tax_amount",
+        b"total_vat",
+        b"sales_tips",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+    arabic = "date,ضريبة المبيعات,store\n2026-01-05,10.00,Cairo\n".encode()
+    assert mapped(arabic).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE
+
+
 def test_a_bare_discount_or_returns_column_stays_unresolved() -> None:
     # Nothing in the label says whether the numbers are money, a percentage, or
     # a count, so the semantic is reported unresolved rather than guessed.

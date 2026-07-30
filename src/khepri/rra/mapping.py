@@ -161,6 +161,39 @@ _AFFIX_ONLY_QUALIFIERS = frozenset({"running", "cumulated", "accumulated"})
 # read as a denominator. Any separator avoids this, which is the documented way
 # to express a row-level measure whose name happens to contain the sequence.
 _PER_INFIXES = ("per", "لكل")
+# A tax, fee, commission, or tip sits beside a sale without being one. Summing a
+# "sales_tax" column as revenue publishes somebody else's money as the seller's.
+_NON_REVENUE_COMPONENTS = frozenset(
+    {
+        "tax",
+        "taxes",
+        "vat",
+        "gst",
+        "duty",
+        "duties",
+        "levy",
+        "excise",
+        "commission",
+        "commissions",
+        "fee",
+        "fees",
+        "surcharge",
+        "tip",
+        "tips",
+        "gratuity",
+        "freight",
+        "shipping",
+        "ضريبه",
+        "الضريبه",
+        "ضرايب",
+        "عموله",
+        "العموله",
+        "رسوم",
+        "الرسوم",
+        "شحن",
+        "الشحن",
+    }
+)
 # A bare "discount" or "returns" column of plain integers is indistinguishable
 # between an amount, a percentage, and a count, and summing it as currency
 # publishes an authoritative figure from a guess. Such a semantic is answered
@@ -258,6 +291,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "القيمه",
             }
         ),
+        disqualifiers=_NON_REVENUE_COMPONENTS,
         rejects_per_unit=True,
     ),
     SemanticRule(

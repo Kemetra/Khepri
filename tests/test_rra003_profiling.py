@@ -183,6 +183,19 @@ def test_a_customer_identifier_is_personal_data_even_without_a_shape() -> None:
     assert "label_customer_identifier" in customer_id.personal_data_signals
 
 
+def test_a_customer_uuid_column_is_an_identifier_like_any_other() -> None:
+    content = (
+        b"date,store,product_customer_uuid\n"
+        b"2026-01-05,Cairo,alpha\n"
+        b"2026-01-06,Giza,beta\n"
+    )
+
+    _, _, column = profile(content).columns
+
+    assert column.personal_data_risk is True
+    assert "label_customer_identifier" in column.personal_data_signals
+
+
 def test_a_label_naming_customers_without_an_identifier_stays_answerable() -> None:
     # The pair is required: an ordinary measure that mentions customers is not
     # itself an identifier, and excluding it would cost a governed figure.

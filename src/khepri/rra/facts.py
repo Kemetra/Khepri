@@ -81,6 +81,7 @@ CAVEAT_NULL_MEASURE_INPUTS = "null_measure_inputs"
 CAVEAT_UNDATED_ROWS_EXCLUDED = "rows_without_time_field_excluded"
 CAVEAT_BUCKETS_TRUNCATED = "comparison_buckets_truncated"
 CAVEAT_PERSONAL_VALUES_REDACTED = "personal_values_redacted"
+CAVEAT_DERIVED_OVER_MATCHED_ROWS = "derived_metrics_use_matched_rows"
 
 RATIO_PRECISION = 4
 MIN_MONETARY_PRECISION = 2
@@ -406,11 +407,20 @@ def _build(
         reason=_unavailable_reason(mapping, SEMANTIC_RETURNS),
     )
 
+    # A metric combining two measures is computed over the rows that carry both.
+    # Dividing a revenue total drawn from one set of rows by a count drawn from
+    # another publishes an average of a population that never existed.
+    orders = _matched(measures.revenue, measures.transactions)
+    selling = _matched(measures.revenue, measures.units)
+    margin = _matched(measures.revenue, measures.cost)
+    if any(pairing.partial for pairing in (orders, selling, margin)):
+        caveats.append(CAVEAT_DERIVED_OVER_MATCHED_ROWS)
+
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_ORDER_VALUE,
-        numerator=revenue_total,
-        denominator=transactions_total,
+        numerator=_sum_decimal(orders.left) if measures.transaction_identifiers_complete else None,
+        denominator=_distinct(orders.right) if measures.transaction_identifiers_complete else None,
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_ID),
@@ -419,15 +429,17 @@ def _build(
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_SELLING_PRICE,
-        numerator=revenue_total,
-        denominator=units_total,
+        numerator=_sum_decimal(selling.left),
+        denominator=_sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),
     )
 
+    margin_revenue = _sum_decimal(margin.left)
+    margin_cost = _sum_decimal(margin.right)
     gross_profit = (
-        None if revenue_total is None or cost_total is None else revenue_total - cost_total
+        None if margin_revenue is None or margin_cost is None else margin_revenue - margin_cost
     )
     add(
         METRIC_GROSS_PROFIT,
@@ -440,7 +452,7 @@ def _build(
         add,
         metric=METRIC_GROSS_MARGIN,
         numerator=gross_profit,
-        denominator=revenue_total,
+        denominator=margin_revenue,
         unit_kind=UNIT_RATIO,
         precision=RATIO_PRECISION,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
@@ -505,6 +517,33 @@ def _build(
         comparisons=tuple(comparisons),
         refusals=tuple(sorted(refusals, key=lambda refusal: refusal.metric)),
         caveats=tuple(sorted(set(caveats))),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Matched:
+    left: list
+    right: list
+    partial: bool
+
+
+def _matched(left: list, right: list) -> _Matched:
+    """Keep only the rows where both measures are present.
+
+    `partial` says whether that cost a row one of the two measures would
+    otherwise have contributed, so the package can disclose it. A measure that
+    is absent altogether is not a partial pairing -- the metric is refused.
+    """
+    kept = [
+        index
+        for index in range(len(left))
+        if left[index] is not None and right[index] is not None
+    ]
+    populated = [sum(1 for value in side if value is not None) for side in (left, right)]
+    return _Matched(
+        left=[left[index] for index in kept],
+        right=[right[index] for index in kept],
+        partial=min(populated) > 0 and len(kept) != max(populated),
     )
 
 

@@ -10,6 +10,7 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import MAX_COMPARISON_BUCKETS, OTHER_BUCKET_LABEL
 from khepri.rra.facts import (
     CAVEAT_CURRENCY_NOT_DECLARED,
+    CAVEAT_DERIVED_OVER_MATCHED_ROWS,
     CAVEAT_DUPLICATE_ROWS,
     CAVEAT_NEGATIVE_REVENUE,
     CAVEAT_NULL_MEASURE_INPUTS,
@@ -124,6 +125,41 @@ def test_conditional_metrics_appear_when_their_inputs_exist() -> None:
     assert result.value(METRIC_DISCOUNT) == "15.00"
     assert result.value(METRIC_RETURNS) == "3.00"
     assert CAVEAT_RETURNS_NOT_NETTED in result.caveats
+
+
+def test_an_average_never_mixes_two_row_populations() -> None:
+    # The second row has an invoice but no revenue. Dividing all revenue by all
+    # invoices would publish 50.00 for an order that took 100.00.
+    content = b"date,revenue,invoice_no\n2026-01-05,100.00,INV-1\n2026-01-06,,INV-2\n"
+
+    result = package(content)
+
+    assert result.value(METRIC_REVENUE) == "100.00"
+    assert result.value(METRIC_TRANSACTIONS) == "2"
+    assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "100.00"
+    assert CAVEAT_DERIVED_OVER_MATCHED_ROWS in result.caveats
+
+
+def test_selling_price_and_margin_use_the_same_rows_as_their_pair() -> None:
+    selling = package(b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,,3\n")
+    assert selling.value(METRIC_UNITS) == "5"
+    assert selling.value(METRIC_AVERAGE_SELLING_PRICE) == "50.00"
+
+    margin = package(
+        b"date,revenue,units,cogs\n2026-01-05,100.00,2,60.00\n2026-01-06,50.00,1,\n"
+    )
+    assert margin.value(METRIC_REVENUE) == "150.00"
+    assert margin.value(METRIC_GROSS_PROFIT) == "40.00"
+    assert margin.value(METRIC_GROSS_MARGIN) == "0.4000"
+    assert CAVEAT_DERIVED_OVER_MATCHED_ROWS in margin.caveats
+
+
+def test_a_measure_absent_altogether_is_not_a_partial_pairing() -> None:
+    # No cost column at all refuses the margin; it does not disclose a pairing.
+    result = package(b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,50.00,3\n")
+
+    assert result.fact(METRIC_GROSS_PROFIT) is None
+    assert CAVEAT_DERIVED_OVER_MATCHED_ROWS not in result.caveats
 
 
 def test_precision_follows_the_governed_input_scale() -> None:
