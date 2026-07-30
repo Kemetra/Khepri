@@ -789,6 +789,31 @@ def test_an_identifier_embedded_in_a_larger_value_is_redacted() -> None:
         assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
 
 
+def test_a_grouped_phone_number_inside_a_larger_value_is_redacted() -> None:
+    # Splitting the value on whitespace breaks the grouping the number is
+    # written in, leaving fragments too short to recognize.
+    grouped = (
+        "tel 212 555 1212 ext 4",
+        "ring me on 020 7946 0958",
+        "contact: 0100 123 4567",
+    )
+    for value in grouped:
+        content = (
+            "date,revenue,category\n"
+            "2026-01-05,10.00,Beverages\n"
+            "2026-01-06,20.00,Snacks\n"
+            "2026-01-07,30.00,Bakery\n"
+            f"2026-01-08,40.00,{value}\n"
+        ).encode()
+
+        comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+        labels = [bucket.label for bucket in comparison.buckets]
+        assert comparison.redacted_values == 1, value
+        assert all("555" not in label and "7946" not in label for label in labels), value
+        assert all("4567" not in label for label in labels), value
+        assert sum(bucket.value for bucket in comparison.buckets) == Decimal("100.00")
+
+
 def test_ordinary_multiword_labels_are_not_redacted() -> None:
     content = (
         b"date,revenue,branch\n"

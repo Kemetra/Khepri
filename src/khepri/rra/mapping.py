@@ -125,6 +125,27 @@ _PER_UNIT_COMPOUNDS = frozenset(
     }
 )
 _PLURAL_REMAINDERS = frozenset({"", "s", "es"})
+# A leading-prefix test only recognizes the inflected qualifiers, so a compact
+# header built from a base form -- "plansales", "estimatesales" -- slipped past
+# it and published a projection as a governed figure. A qualifier is therefore
+# also recognized structurally: strip a vocabulary term off either end of a
+# compact label and what remains must not be a qualifier on its own. Requiring
+# the remainder to be the whole qualifier keeps "plantsales" and
+# "projectorsales" answerable, which a prefix test could not.
+_QUALIFIER_AFFIXES = _PER_UNIT_TOKENS | frozenset(
+    {
+        "project",
+        "projects",
+        "projections",
+        "expect",
+        "expects",
+        "forecasts",
+        "estimates",
+        "plans",
+        "targets",
+        "budgets",
+    }
+)
 # A compact label cannot be tokenized, so a "per" sitting between two parts is
 # read as a denominator. Any separator avoids this, which is the documented way
 # to express a row-level measure whose name happens to contain the sequence.
@@ -600,10 +621,21 @@ def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -
         return True
     if len(tokens) == 1 and _has_per_infix(collapsed):
         return True
+    if _qualified_by_affix(rule, collapsed):
+        return True
     return any(
         collapsed.startswith(prefix)
         and collapsed[len(prefix) :] not in _PLURAL_REMAINDERS
         for prefix in _PER_UNIT_PREFIXES
+    )
+
+
+def _qualified_by_affix(rule: SemanticRule, collapsed: str) -> bool:
+    """Whether a compact label is a vocabulary term carrying a qualifier."""
+    return any(
+        (collapsed.endswith(term) and collapsed[: -len(term)] in _QUALIFIER_AFFIXES)
+        or (collapsed.startswith(term) and collapsed[len(term) :] in _QUALIFIER_AFFIXES)
+        for term in rule.vocabulary
     )
 
 

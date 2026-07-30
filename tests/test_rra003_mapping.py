@@ -407,6 +407,29 @@ def test_forecast_and_target_measures_are_refused() -> None:
     assert mapped(planned).state_of(SEMANTIC_UNITS) == STATE_UNAVAILABLE
 
 
+def test_compact_non_actual_headers_are_refused_like_separated_ones() -> None:
+    # A base form carries no inflection to anchor a prefix test, so "plansales"
+    # has to be recognized by stripping the vocabulary term instead.
+    for header in (
+        b"plansales",
+        b"estimatesales",
+        b"projectionsales",
+        b"projectsales",
+        b"planrevenue",
+        b"expectrevenue",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_a_compact_label_that_merely_ends_in_a_qualifier_word_still_maps() -> None:
+    # "plant" and "projector" are retail nouns that begin with a qualifier. Only
+    # a label whose whole remainder is the qualifier may be refused.
+    for header in (b"plantsales", b"projectorsales"):
+        content = b"date," + header + b",store\n2026-01-05,10.00,Cairo\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_MAPPED, header
+
+
 def test_arabic_forecast_measures_are_refused() -> None:
     for header in ("مبيعات متوقعة", "مبيعات مستهدفة"):
         content = f"date,{header},store\n2026-01-05,10.00,Cairo\n".encode()

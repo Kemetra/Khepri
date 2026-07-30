@@ -32,6 +32,10 @@ _INTEGER = re.compile(r"[+-]?\d+")
 _DECIMAL = re.compile(r"[+-]?(?:\d+\.\d*|\.\d+)")
 
 _PHONE = re.compile(r"\+?\d[\d .\-()/]{7,18}\d")
+# The same shape, bounded by anything that is not alphanumeric, so it can be
+# located inside surrounding prose without matching part of a longer run of
+# digits or letters. The guard is written to let an underscore act as a border.
+_PHONE_SPAN = re.compile(r"(?<![^\W_])\+?\d[\d .\-()/]{7,18}\d(?![^\W_])")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
 _FRAGMENT_SEPARATORS = re.compile(r"[\s<>,;:()\[\]{}\"'|]+")
@@ -423,7 +427,7 @@ def personal_value_shapes(value: str) -> tuple[str, ...]:
     shapes: list[str] = []
     if any(_is_email(part) for part in candidates):
         shapes.append("value_email")
-    if any(_is_phone(part) for part in candidates):
+    if any(_is_phone(part) for part in candidates) or _contains_phone(text):
         shapes.append("value_phone")
     # An IBAN and a card number carry grouping spaces as part of the format, so
     # splitting on whitespace would destroy them. Both are also sought in the
@@ -496,6 +500,22 @@ def _is_iban(value: str) -> bool:
 def _is_phone(value: str) -> bool:
     if not _PHONE.fullmatch(value):
         return False
+    return _dialable(value)
+
+
+def _contains_phone(text: str) -> bool:
+    """Find a phone-shaped span inside a larger value.
+
+    A phone number carries its grouping in whitespace, so splitting a value into
+    fragments destroys the very shape being looked for and leaves a recognizable
+    number to be published intact. The span is therefore sought in the text as
+    it stands, bounded so that a slice of a longer identifier is never read as a
+    number.
+    """
+    return any(_dialable(match.group()) for match in _PHONE_SPAN.finditer(text))
+
+
+def _dialable(value: str) -> bool:
     digits = "".join(character for character in value if character.isdigit())
     return 9 <= len(digits) <= 15
 
