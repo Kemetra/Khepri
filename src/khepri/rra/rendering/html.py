@@ -112,7 +112,7 @@ _CHROME: dict[str, dict[str, str]] = {
 
 
 class SurfaceRenderFailed(RuntimeError):
-    """The web surface could not be produced from the bundle as supplied."""
+    """A surface could not be produced from the bundle as supplied."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,12 +194,12 @@ class HtmlReportRenderer:
     def render_html(self, bundle: ReportBundle) -> HtmlSurface:
         """Render both documents, and the claim about what they present."""
         template = self._environment.get_template(TEMPLATE_NAME)
-        cells = {language: _cells(bundle, language) for language in REQUIRED_LANGUAGES}
+        cells = {language: build_cells(bundle, language) for language in REQUIRED_LANGUAGES}
         documents = {
-            language: template.render(_context(bundle, language, cells[language]))
+            language: template.render(build_context(bundle, language, cells[language]))
             for language in REQUIRED_LANGUAGES
         }
-        return HtmlSurface(content=_content(bundle, cells), documents=documents)
+        return HtmlSurface(content=build_content(bundle, cells), documents=documents)
 
 
 def build_environment() -> Environment:
@@ -223,12 +223,21 @@ def build_environment() -> Environment:
     )
 
 
-def _content(
+def build_content(
     bundle: ReportBundle,
     cells: dict[str, tuple[FigureCell, ...]],
+    *,
+    surface: str = SURFACE_WEB,
 ) -> SurfaceContent:
+    """The claim `bundle.reconcile` will judge, for whichever surface made it.
+
+    Public, and parameterised by surface name, because the print surface is the
+    *same* pass over the bundle rendered through the same template. A second
+    implementation of this would be a second chance to disagree about what the
+    report says, which is the failure `bundle` exists to prevent.
+    """
     return SurfaceContent(
-        surface=SURFACE_WEB,
+        surface=surface,
         bundle_id=bundle.bundle_id,
         languages=tuple(
             SurfaceLanguage(
@@ -246,7 +255,8 @@ def _content(
     )
 
 
-def _cells(bundle: ReportBundle, language: str) -> tuple[FigureCell, ...]:
+def build_cells(bundle: ReportBundle, language: str) -> tuple[FigureCell, ...]:
+    """Every figure of one language as the supplied text, and nothing else."""
     return tuple(_cell(figure, language) for figure in bundle.figures)
 
 
@@ -267,11 +277,25 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
     )
 
 
-def _context(
+def build_context(
     bundle: ReportBundle,
     language: str,
     cells: tuple[FigureCell, ...],
+    *,
+    extra_provenance: dict[str, str] | None = None,
 ) -> dict[str, object]:
+    """The one context both the screen and the print template are rendered from.
+
+    A surface that needs more than this -- the print surface needs font payloads
+    and a print stylesheet name -- adds keys to what this returns rather than
+    building its own, so neither surface can quietly disagree with the other
+    about a figure, a caveat, or the disclosure.
+
+    `extra_provenance` is how a surface names *itself* in the provenance table a
+    reader checks the report against. It is restricted to strings for the same
+    reason the table is: everything in it has to be a governed version, a digest,
+    or a count, and never anything derived from customer data.
+    """
     return {
         "language": language,
         "direction": LANGUAGE_DIRECTION[language],
@@ -283,7 +307,7 @@ def _context(
         "cells": list(cells),
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
-        "provenance": _provenance(bundle),
+        "provenance": _provenance(bundle, extra_provenance or {}),
     }
 
 
@@ -312,7 +336,10 @@ def _passages(
     )
 
 
-def _provenance(bundle: ReportBundle) -> tuple[tuple[str, str], ...]:
+def _provenance(
+    bundle: ReportBundle,
+    extra: dict[str, str],
+) -> tuple[tuple[str, str], ...]:
     """The version strings and digests a reader can check this report against.
 
     Machine-readable, identical in both languages, and content-free by
@@ -323,6 +350,7 @@ def _provenance(bundle: ReportBundle) -> tuple[tuple[str, str], ...]:
     entries = {**{name: str(value) for name, value in document.items()}}
     entries["bundle_id"] = bundle.bundle_id
     entries["html_surface_version"] = HTML_SURFACE_VERSION
+    entries.update(extra)
     return tuple(sorted(entries.items()))
 
 

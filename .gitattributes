@@ -1,1 +1,7 @@
 * text=auto eol=lf
+
+# Font programs are checked against an audited sha256 at load time, so a line
+# ending "normalised" anywhere in one is a face this package refuses to embed.
+# `text=auto` gets this right by content heuristic; saying it outright means the
+# guarantee does not depend on that heuristic continuing to guess correctly.
+*.woff2 binary
