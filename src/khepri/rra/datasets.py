@@ -31,6 +31,10 @@ class UploadNotFound(LookupError):
     pass
 
 
+class ProfileCorrupted(ValueError):
+    """A stored profile no longer matches the digest it is addressed by."""
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetProfileRecord:
     profile_id: str
@@ -50,6 +54,35 @@ class DatasetProfileRecord:
     @property
     def scope(self) -> SessionScope:
         return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
+
+    def verify(self) -> None:
+        """Refuse a stored profile that no longer matches its own digest.
+
+        Everything downstream cites this document as the decision a report was
+        admitted under, so a mapping or admissibility section altered after
+        storage would let a package claim provenance it does not have.
+        """
+        if document_digest(self.document) != self.profile_digest:
+            raise ProfileCorrupted("Stored dataset profile does not match its digest.")
+        profile = self.document["profile"]
+        recorded = (
+            self.profile_version,
+            self.mapping_version,
+            self.source_sha256_hex,
+            self.row_count,
+            self.column_count,
+            self.admissible,
+        )
+        described = (
+            profile["profile_version"],
+            self.document["mapping"]["mapping_version"],
+            profile["source_sha256_hex"],
+            profile["row_count"],
+            profile["column_count"],
+            self.document["admissibility"]["admissible"],
+        )
+        if recorded != described:
+            raise ProfileCorrupted("Stored dataset profile contradicts its own document.")
 
 
 class ProfileRepository(Protocol):

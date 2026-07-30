@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 from khepri.rra.admissibility import ReportRequest
 from khepri.rra.datasets import (
     DatasetProfileRecord,
+    ProfileCorrupted,
     ProfilingService,
     UploadNotFound,
 )
@@ -297,6 +298,11 @@ def create_app(
                 raise HTTPException(status_code=404, detail=str(error)) from error
             except ProfileRejected as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
+            except ProfileCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored dataset profile is unavailable.",
+                ) from error
             except StoragePolicyViolation as error:
                 raise HTTPException(
                     status_code=503,
@@ -324,6 +330,11 @@ def create_app(
                 raise _session_unavailable() from error
             except ConsentRequired as error:
                 raise HTTPException(status_code=403, detail=str(error)) from error
+            except ProfileCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored dataset profile is unavailable.",
+                ) from error
             if record is None:
                 raise HTTPException(
                     status_code=404,
@@ -362,7 +373,7 @@ def create_app(
                 raise HTTPException(status_code=404, detail=str(error)) from error
             except PackageRefused as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
-            except PackageCorrupted as error:
+            except (PackageCorrupted, ProfileCorrupted) as error:
                 raise HTTPException(
                     status_code=503,
                     detail="Stored fact package is unavailable.",
@@ -396,7 +407,7 @@ def create_app(
                 raise HTTPException(status_code=403, detail=str(error)) from error
             except PackageRefused as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
-            except PackageCorrupted as error:
+            except (PackageCorrupted, ProfileCorrupted) as error:
                 raise HTTPException(
                     status_code=503,
                     detail="Stored fact package is unavailable.",

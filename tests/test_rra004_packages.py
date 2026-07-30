@@ -10,8 +10,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from khepri.rra import packages
 from khepri.rra.api import create_app
-from khepri.rra.datasets import ProfilingService
+from khepri.rra.datasets import ProfilingService, document_digest
 from khepri.rra.deletion import DeletionService
 from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
 from khepri.rra.intake import IntakeService, StoredObject
@@ -297,11 +298,19 @@ def test_a_package_is_bound_to_the_profile_it_was_published_against() -> None:
 
 
 def test_a_stale_profile_refuses_the_package_rather_than_publishing_against_it() -> None:
+    # The stored profile is internally consistent but no longer describes what
+    # the current bytes and rules produce, which the rebuild comparison catches.
     test = prepared()
 
     with test.factory.begin() as database:
         stored = database.scalar(select(DatasetProfileRow))
-        stored.profile_digest = "0" * 64
+        document = dict(stored.document)
+        profile = dict(document["profile"])
+        profile["row_count"] = 99
+        document["profile"] = profile
+        stored.document = document
+        stored.row_count = 99
+        stored.profile_digest = document_digest(document)
 
     with pytest.raises(PackageRefused):
         test.service.build_session_package(session_id=_session(test), now=NOW)
@@ -406,12 +415,13 @@ def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
     assert test.client.get("/api/v1/beta/facts").json()["package_id"] == "fct_1"
 
 
-def test_a_profile_mapped_under_superseded_rules_refuses_the_package() -> None:
-    # The package cites the profile it is published against, so the two must
-    # have been decided under the same mapping rules.
+def test_a_profile_produced_under_superseded_rules_refuses_the_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Supersession is a deployment moving on, so the stored rows stay exactly as
+    # they were written and the governed constants advance instead.
     test = prepared()
-    with test.factory.begin() as database:
-        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
+    monkeypatch.setattr(packages, "MAPPING_VERSION", "rra003.mapping.v9")
 
     response = test.client.post("/api/v1/beta/facts")
 
@@ -421,13 +431,25 @@ def test_a_profile_mapped_under_superseded_rules_refuses_the_package() -> None:
         assert database.scalar(select(FactPackageRow)) is None
 
 
-def test_a_superseded_profile_never_serves_an_older_package_as_current() -> None:
-    # With a package already published, the stale profile must refuse rather
-    # than hand back the earlier publication as though it were current.
+def test_a_profile_produced_under_a_superseded_profile_version_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Type inference, personal-data detection, and admissibility live in the
+    # profiling rules, so that version can move while the mapping stays put.
+    test = prepared()
+    monkeypatch.setattr(packages, "PROFILE_VERSION", "rra003.profile.v9")
+
+    assert test.client.post("/api/v1/beta/facts").status_code == 409
+
+
+def test_a_superseded_profile_never_serves_an_older_package_as_current(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With a package already published, the superseded profile must refuse
+    # rather than hand back the earlier publication as though it were current.
     test = prepared()
     assert test.client.post("/api/v1/beta/facts").status_code == 201
-    with test.factory.begin() as database:
-        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
+    monkeypatch.setattr(packages, "MAPPING_VERSION", "rra003.mapping.v9")
 
     assert test.client.post("/api/v1/beta/facts").status_code == 409
 
@@ -499,14 +521,16 @@ def _republish_under(test: Harness, *, formula_version: str) -> None:
         row.package_digest = _digest_of(document)
 
 
-def test_reading_never_serves_a_package_publishing_would_refuse() -> None:
-    # A package published under superseded mapping rules is a valid historical
+def test_reading_never_serves_a_package_publishing_would_refuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A package published under superseded rules is a valid historical
     # publication, but it is not this session's current one. Reading reports
     # that none is available; publishing explains why it cannot make one. The
     # one thing neither may do is hand back the superseded figures.
     test = prepared()
     assert test.client.post("/api/v1/beta/facts").status_code == 201
-    _publish_under_superseded_mapping(test)
+    monkeypatch.setattr(packages, "MAPPING_VERSION", "rra003.mapping.v9")
 
     read = test.client.get("/api/v1/beta/facts")
     written = test.client.post("/api/v1/beta/facts")
@@ -528,27 +552,21 @@ def test_a_tampered_profile_provenance_is_refused_on_both_paths() -> None:
     assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
-def _publish_under_superseded_mapping(test: Harness) -> None:
-    """Rewrite the stored package as a self-consistent publication under v1."""
-    with test.factory.begin() as database:
-        row = database.scalar(select(FactPackageRow))
-        document = dict(row.document)
-        document["mapping_version"] = "rra003.mapping.v1"
-        row.document = document
-        row.mapping_version = "rra003.mapping.v1"
-        row.package_digest = _digest_of(document)
-        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
-
-
-def test_a_stale_profile_stops_the_read_path_as_well_as_publication() -> None:
-    # The package row is entirely current; the profile behind it is not.
+def test_a_tampered_profile_document_is_refused_on_both_paths() -> None:
+    # The profile's own document is what every later claim cites, so altering
+    # its admissibility section must not pass unnoticed.
     test = prepared()
     assert test.client.post("/api/v1/beta/facts").status_code == 201
     with test.factory.begin() as database:
-        database.scalar(select(DatasetProfileRow)).mapping_version = "rra003.mapping.v1"
+        row = database.scalar(select(DatasetProfileRow))
+        document = dict(row.document)
+        admissibility = dict(document["admissibility"])
+        admissibility["admissible"] = False
+        document["admissibility"] = admissibility
+        row.document = document
 
-    assert test.client.get("/api/v1/beta/facts").status_code == 409
-    assert test.client.post("/api/v1/beta/facts").status_code == 409
+    assert test.client.get("/api/v1/beta/facts").status_code == 503
+    assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
 def test_the_inner_profile_digest_is_bound_to_the_cited_profile() -> None:

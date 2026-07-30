@@ -792,7 +792,8 @@ def _upload_from_row(row: UploadRow) -> UploadMetadata:
 
 
 def _profile_from_row(row: DatasetProfileRow) -> DatasetProfileRecord:
-    return DatasetProfileRecord(
+    """Hydrate a stored profile, refusing one that no longer matches its digest."""
+    record = DatasetProfileRecord(
         profile_id=row.profile_id,
         owner_id=row.owner_id,
         session_id=row.session_id,
@@ -807,6 +808,8 @@ def _profile_from_row(row: DatasetProfileRow) -> DatasetProfileRecord:
         created_at=_utc(row.created_at),
         document=dict(row.document),
     )
+    record.verify()
+    return record
 
 
 def _package_from_row(row: FactPackageRow) -> FactPackageRecord:

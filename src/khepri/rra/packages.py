@@ -23,7 +23,7 @@ from khepri.rra.facts import (
 )
 from khepri.rra.intake import SessionReader, StoragePolicyViolation, UploadRepository
 from khepri.rra.mapping import MAPPING_VERSION, build_mapping
-from khepri.rra.profiling import build_profile, canonical_json
+from khepri.rra.profiling import PROFILE_VERSION, build_profile, canonical_json
 from khepri.rra.sessions import (
     SessionExpired,
     SessionScope,
@@ -338,9 +338,15 @@ def _assert_profile_current(record: DatasetProfileRecord) -> None:
     newer rules than the profile was mapped with would attribute the package's
     figures to an admissibility decision taken under the old ones.
     """
-    if record.mapping_version != MAPPING_VERSION:
+    # Both governed versions the profile was produced under. Type inference,
+    # personal-data detection, and admissibility all live in the profiling
+    # rules, so a profile version can move while the mapping version does not.
+    if (record.profile_version, record.mapping_version) != (
+        PROFILE_VERSION,
+        MAPPING_VERSION,
+    ):
         raise PackageRefused(
-            "Stored profile was mapped under a superseded mapping version."
+            "Stored profile was produced under superseded governed versions."
         )
 
 
