@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -22,7 +23,7 @@ from sqlalchemy.sql import Select
 from khepri.rra.datasets import DatasetProfileRecord
 from khepri.rra.deletion import DeletionEvidence, DeletionJob
 from khepri.rra.intake import UploadMetadata
-from khepri.rra.packages import FactPackageRecord
+from khepri.rra.packages import FactPackageRecord, PackageVersions
 from khepri.rra.sessions import (
     BetaSession,
     CrossSessionAccessDenied,
@@ -171,8 +172,17 @@ class FactPackageRow(Base):
         ),
         CheckConstraint("length(profile_digest) = 64", name="ck_package_profile_digest"),
         CheckConstraint("length(package_digest) = 64", name="ck_package_digest"),
-        UniqueConstraint("profile_id", name="uq_package_profile"),
-        UniqueConstraint("session_id", name="uq_package_session"),
+        # A new formula, mapping, or correction is a new version rather than a
+        # replacement, so the governed versions are part of the identity. One
+        # publication per profile per version triple; history is kept.
+        UniqueConstraint(
+            "profile_id",
+            "package_version",
+            "formula_version",
+            "mapping_version",
+            name="uq_package_profile_versions",
+        ),
+        Index("ix_package_session", "session_id"),
         ForeignKeyConstraint(
             ["profile_id"],
             ["rra_dataset_profiles.profile_id"],
@@ -511,18 +521,30 @@ class SqlFactPackageRepository:
                 )
             return record
         except IntegrityError:
-            existing = self.get_package_for_profile(record.profile_id, record.scope)
+            existing = self.get_package_for_versions(
+                record.profile_id,
+                PackageVersions(
+                    package_version=record.package_version,
+                    formula_version=record.formula_version,
+                    mapping_version=record.mapping_version,
+                ),
+                record.scope,
+            )
             if existing is None:
                 raise
             return existing
 
-    def get_package_for_profile(
+    def get_package_for_versions(
         self,
         profile_id: str,
+        versions: PackageVersions,
         scope: SessionScope,
     ) -> FactPackageRecord | None:
         statement = select(FactPackageRow).where(
             FactPackageRow.profile_id == profile_id,
+            FactPackageRow.package_version == versions.package_version,
+            FactPackageRow.formula_version == versions.formula_version,
+            FactPackageRow.mapping_version == versions.mapping_version,
             FactPackageRow.owner_id == scope.owner_id,
             FactPackageRow.session_id == scope.session_id,
         )
@@ -531,8 +553,14 @@ class SqlFactPackageRepository:
             return None if row is None else _package_from_row(row)
 
     def get_package_for_session(self, session_id: str) -> FactPackageRecord | None:
-        statement = select(FactPackageRow).where(
-            FactPackageRow.session_id == session_id
+        """The current package for a session: the most recently published one."""
+        statement = (
+            select(FactPackageRow)
+            .where(FactPackageRow.session_id == session_id)
+            .order_by(
+                FactPackageRow.created_at.desc(),
+                FactPackageRow.package_id.desc(),
+            )
         )
         with self._factory() as database:
             row = database.scalar(statement)

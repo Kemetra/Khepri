@@ -50,10 +50,17 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("package_id"),
-        sa.UniqueConstraint("profile_id", name="uq_package_profile"),
-        sa.UniqueConstraint("session_id", name="uq_package_session"),
+        sa.UniqueConstraint(
+            "profile_id",
+            "package_version",
+            "formula_version",
+            "mapping_version",
+            name="uq_package_profile_versions",
+        ),
     )
+    op.create_index("ix_package_session", "rra_fact_packages", ["session_id"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_package_session", table_name="rra_fact_packages")
     op.drop_table("rra_fact_packages")

@@ -7,11 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from khepri.rra.admissibility import (
-    DEFAULT_REPORT_REQUEST,
-    ReportRequest,
-    assess_admissibility,
-)
+from khepri.rra.admissibility import ReportRequest, assess_admissibility
 from khepri.rra.datasets import (
     DatasetProfileRecord,
     ProfileObjectReader,
@@ -19,7 +15,12 @@ from khepri.rra.datasets import (
     build_document,
     document_digest,
 )
-from khepri.rra.facts import FactsRefused, build_fact_package
+from khepri.rra.facts import (
+    FORMULA_VERSION,
+    PACKAGE_VERSION,
+    FactsRefused,
+    build_fact_package,
+)
 from khepri.rra.intake import SessionReader, StoragePolicyViolation, UploadRepository
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
@@ -60,12 +61,27 @@ class FactPackageRecord:
         return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
 
 
+@dataclass(frozen=True, slots=True)
+class PackageVersions:
+    """The governed versions a package is published under.
+
+    RRA-004 makes a new input, mapping, formula, or correction a new *version*
+    rather than a replacement, so these travel together as the identity of a
+    publication and not merely as recorded metadata.
+    """
+
+    package_version: str
+    formula_version: str
+    mapping_version: str
+
+
 class FactPackageRepository(Protocol):
     def add_package(self, record: FactPackageRecord) -> FactPackageRecord: ...
 
-    def get_package_for_profile(
+    def get_package_for_versions(
         self,
         profile_id: str,
+        versions: PackageVersions,
         scope: SessionScope,
     ) -> FactPackageRecord | None: ...
 
@@ -105,7 +121,6 @@ class FactPackageService:
         *,
         session_id: str,
         now: datetime,
-        request: ReportRequest = DEFAULT_REPORT_REQUEST,
     ) -> tuple[FactPackageRecord, bool]:
         session = self._sessions.get_session(session_id)
         if session is None:
@@ -118,8 +133,19 @@ class FactPackageService:
             raise ProfileNotFound("No dataset profile is available for this session.")
         assert_same_scope(scope, profile_record.scope)
 
-        existing = self._packages.get_package_for_profile(
+        # The profile decided which semantics were required and whether the
+        # dataset answers them. Accepting that request again here would let the
+        # two disagree, so the package inherits the decision rather than
+        # re-taking it.
+        request = _requested_by(profile_record)
+        versions = PackageVersions(
+            package_version=PACKAGE_VERSION,
+            formula_version=FORMULA_VERSION,
+            mapping_version=profile_record.mapping_version,
+        )
+        existing = self._packages.get_package_for_versions(
             profile_record.profile_id,
+            versions,
             scope,
         )
         if existing is not None:
@@ -194,11 +220,19 @@ class FactPackageService:
         return self._packages.get_package_for_session(session_id)
 
 
+def _requested_by(record: DatasetProfileRecord) -> ReportRequest:
+    admissibility = record.document["admissibility"]
+    return ReportRequest(
+        requested_semantics=frozenset(admissibility["requested_semantics"])
+    )
+
+
 __all__ = [
     "DatasetProfileRecord",
     "FactPackageRecord",
     "FactPackageRepository",
     "FactPackageService",
     "PackageRefused",
+    "PackageVersions",
     "ProfileNotFound",
 ]

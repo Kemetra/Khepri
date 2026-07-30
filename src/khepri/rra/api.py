@@ -121,6 +121,7 @@ class ProfileResponse(BaseModel):
 
 
 class FactResponse(BaseModel):
+    fact_id: str
     metric: str
     value: str
     precision: int
@@ -131,6 +132,7 @@ class FactResponse(BaseModel):
 
 
 class FactAggregateResponse(BaseModel):
+    fact_id: str
     metric: str
     measure: str
     unit_kind: str
@@ -335,23 +337,18 @@ def create_app(
             status_code=status.HTTP_201_CREATED,
         )
         def build_retail_facts(
-            payload: ProfileRequestBody,
             response: Response,
             session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
         ) -> FactPackageResponse:
+            # The package carries no request of its own. Which semantics are
+            # required was decided when the dataset was profiled, and letting
+            # this endpoint ask again would let the two answers disagree.
             if session_id is None:
                 raise _session_unavailable()
-            requested = set(payload.requested_semantics)
-            if not requested <= KNOWN_SEMANTICS:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Requested retail semantics are not governed.",
-                )
             try:
                 record, created = package_service.build_session_package(
                     session_id=session_id,
                     now=clock(),
-                    request=ReportRequest(requested_semantics=frozenset(requested)),
                 )
             except SessionExpired as error:
                 raise _session_unavailable() from error
@@ -521,6 +518,7 @@ def _package_response(record: FactPackageRecord) -> FactPackageResponse:
         caveats=list(document["caveats"]),
         facts=[
             FactResponse(
+                fact_id=fact["fact_id"],
                 metric=fact["metric"],
                 value=fact["value"],
                 precision=fact["precision"],
@@ -546,6 +544,7 @@ def _aggregate_response(entry: dict[str, object], scope_key: str) -> FactAggrega
     """Render a series or a comparison, which differ only in what scopes them."""
     buckets = entry["points"] if scope_key == "granularity" else entry["buckets"]
     return FactAggregateResponse(
+        fact_id=str(entry["fact_id"]),
         metric=str(entry["metric"]),
         measure=str(entry["measure"]),
         unit_kind=str(entry["unit_kind"]),

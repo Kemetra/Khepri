@@ -15,7 +15,12 @@ from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
 from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
 from khepri.rra.intake import IntakeService, StoredObject
-from khepri.rra.packages import FactPackageService, PackageRefused, ProfileNotFound
+from khepri.rra.packages import (
+    FactPackageRecord,
+    FactPackageService,
+    PackageRefused,
+    ProfileNotFound,
+)
 from khepri.rra.persistence import (
     Base,
     DatasetProfileRow,
@@ -165,7 +170,7 @@ def prepared(content: bytes = GOLDEN_CSV) -> Harness:
 def test_facts_require_a_beta_session() -> None:
     test = harness()
 
-    assert test.client.post("/api/v1/beta/facts", json={}).status_code == 401
+    assert test.client.post("/api/v1/beta/facts").status_code == 401
 
 
 def test_facts_require_consent() -> None:
@@ -173,7 +178,7 @@ def test_facts_require_consent() -> None:
     token = test.invitations.issue_invitation(expires_at=NOW + timedelta(hours=1))
     test.client.post("/api/v1/beta/sessions/redeem", json={"token": token})
 
-    assert test.client.post("/api/v1/beta/facts", json={}).status_code == 403
+    assert test.client.post("/api/v1/beta/facts").status_code == 403
 
 
 def test_facts_require_a_profile_first() -> None:
@@ -181,7 +186,7 @@ def test_facts_require_a_profile_first() -> None:
     redeem_and_consent(test)
     test.client.post("/api/v1/beta/uploads", content=GOLDEN_CSV)
 
-    response = test.client.post("/api/v1/beta/facts", json={})
+    response = test.client.post("/api/v1/beta/facts")
 
     assert response.status_code == 404
     assert "profile" in response.json()["detail"]
@@ -190,7 +195,7 @@ def test_facts_require_a_profile_first() -> None:
 def test_a_golden_dataset_publishes_its_governed_figures() -> None:
     test = prepared()
 
-    response = test.client.post("/api/v1/beta/facts", json={})
+    response = test.client.post("/api/v1/beta/facts")
 
     assert response.status_code == 201
     body = response.json()
@@ -209,7 +214,7 @@ def test_a_golden_dataset_publishes_its_governed_figures() -> None:
 
 
 def test_aggregates_carry_their_scope_unit_and_citation() -> None:
-    body = prepared().client.post("/api/v1/beta/facts", json={}).json()
+    body = prepared().client.post("/api/v1/beta/facts").json()
 
     revenue_trend = next(
         entry for entry in body["series"] if entry["measure"] == "revenue"
@@ -235,7 +240,7 @@ def test_aggregates_carry_their_scope_unit_and_citation() -> None:
 
 
 def test_refusals_are_published_rather_than_omitted() -> None:
-    body = prepared().client.post("/api/v1/beta/facts", json={}).json()
+    body = prepared().client.post("/api/v1/beta/facts").json()
 
     refusals = {entry["metric"]: entry["reason"] for entry in body["refusals"]}
     assert refusals["cost"] == "required_input_unavailable"
@@ -246,8 +251,8 @@ def test_refusals_are_published_rather_than_omitted() -> None:
 def test_a_package_is_published_once_and_then_returned_unchanged() -> None:
     test = prepared()
 
-    first = test.client.post("/api/v1/beta/facts", json={})
-    second = test.client.post("/api/v1/beta/facts", json={})
+    first = test.client.post("/api/v1/beta/facts")
+    second = test.client.post("/api/v1/beta/facts")
 
     assert first.status_code == 201
     assert second.status_code == 200
@@ -270,7 +275,7 @@ def test_reading_before_publication_is_a_refusal_not_an_empty_package() -> None:
 def test_an_inadmissible_dataset_is_refused_with_a_reason() -> None:
     test = prepared(NO_MEASURE_CSV)
 
-    response = test.client.post("/api/v1/beta/facts", json={})
+    response = test.client.post("/api/v1/beta/facts")
 
     assert response.status_code == 409
     assert "admissible" in response.json()["detail"]
@@ -280,7 +285,7 @@ def test_an_inadmissible_dataset_is_refused_with_a_reason() -> None:
 
 def test_a_package_is_bound_to_the_profile_it_was_published_against() -> None:
     test = prepared()
-    test.client.post("/api/v1/beta/facts", json={})
+    test.client.post("/api/v1/beta/facts")
 
     with test.factory() as database:
         row = database.scalar(select(FactPackageRow))
@@ -312,7 +317,7 @@ def test_a_missing_profile_refuses_the_package() -> None:
 
 def test_deleting_session_content_removes_the_package_with_the_profile() -> None:
     test = prepared()
-    assert test.client.post("/api/v1/beta/facts", json={}).status_code == 201
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
 
     assert test.client.delete("/api/v1/beta/content").status_code == 204
 
@@ -321,9 +326,85 @@ def test_deleting_session_content_removes_the_package_with_the_profile() -> None
         assert database.scalar(select(DatasetProfileRow)) is None
 
 
+def test_every_published_figure_carries_its_stable_fact_id() -> None:
+    # RRA-004 requires stable fact identifiers; a consumer can only address a
+    # figure by one if the served package actually carries it.
+    body = prepared().client.post("/api/v1/beta/facts").json()
+
+    published = body["facts"] + body["series"] + body["comparisons"]
+    identifiers = [entry["fact_id"] for entry in published]
+
+    assert all(identifier.startswith("fct_") for identifier in identifiers)
+    assert len(set(identifiers)) == len(identifiers)
+
+
+def test_the_package_inherits_the_semantics_the_profile_was_decided_under() -> None:
+    # Requesting a semantic the profile cannot answer must refuse the dataset,
+    # and it does so at the profile, which is where admissibility is decided.
+    test = harness()
+    redeem_and_consent(test)
+    test.client.post("/api/v1/beta/uploads", content=NO_MEASURE_CSV)
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json={"requested_semantics": ["store"]},
+    )
+    assert profiled.status_code == 201
+    assert profiled.json()["admissible"] is False
+
+    response = test.client.post("/api/v1/beta/facts")
+
+    assert response.status_code == 409
+
+
+def test_a_second_publication_cannot_be_asked_for_under_other_semantics() -> None:
+    # The facts endpoint takes no request of its own, so the semantics a
+    # package was published under cannot drift from the profile's.
+    test = prepared()
+    first = test.client.post("/api/v1/beta/facts")
+
+    second = test.client.post("/api/v1/beta/facts", json={"requested_semantics": ["store"]})
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json() == first.json()
+
+
+def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
+    # RRA-004 makes a new formula a new version, not a replacement, so the
+    # store must admit both rather than resolving back to the first.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+
+    with test.factory() as database:
+        original = database.scalar(select(FactPackageRow))
+        successor = FactPackageRecord(
+            package_id="fct_next",
+            owner_id=original.owner_id,
+            session_id=original.session_id,
+            profile_id=original.profile_id,
+            package_version=original.package_version,
+            formula_version="rra004.formula.v2",
+            mapping_version=original.mapping_version,
+            profile_digest=original.profile_digest,
+            source_sha256_hex=original.source_sha256_hex,
+            package_digest="b" * 64,
+            row_count=original.row_count,
+            created_at=NOW + timedelta(minutes=1),
+            document=dict(original.document),
+        )
+
+    stored = test.packages.add_package(successor)
+
+    assert stored.package_id == "fct_next"
+    with test.factory() as database:
+        assert len(list(database.scalars(select(FactPackageRow)))) == 2
+    # The session reads the most recent publication.
+    assert test.client.get("/api/v1/beta/facts").json()["package_id"] == "fct_next"
+
+
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
-    first = prepared().client.post("/api/v1/beta/facts", json={}).json()
-    second = prepared().client.post("/api/v1/beta/facts", json={}).json()
+    first = prepared().client.post("/api/v1/beta/facts").json()
+    second = prepared().client.post("/api/v1/beta/facts").json()
 
     assert first["package_digest"] == second["package_digest"]
 
