@@ -27,6 +27,7 @@ from khepri.rra.narrative import (
     REASON_UNGROUNDED_NUMBER,
     REASON_UNKNOWN_CAVEAT,
     REASON_UNKNOWN_CITATION,
+    REASON_UNKNOWN_LABEL,
     REASON_UNKNOWN_LANGUAGE,
     REASON_UNSAFE_TEXT,
     LanguageNarrative,
@@ -85,12 +86,14 @@ def section(
     cited: tuple[str, ...],
     caveats: tuple[str, ...] = (),
     section_id: str = "summary",
+    labels: tuple[str, ...] = (),
 ) -> NarrativeSection:
     return NarrativeSection(
         section_id=section_id,
         text=text,
         cited_fact_ids=cited,
         caveats=caveats,
+        labels=labels,
     )
 
 
@@ -98,12 +101,12 @@ def draft(
     *,
     arabic: tuple[NarrativeSection, ...],
     english: tuple[NarrativeSection, ...],
-    package_version: str | None = None,
+    request_digest: str | None = None,
     adapter_version: str = ADAPTER_VERSION,
 ) -> NarrativeDraft:
     return NarrativeDraft(
         adapter_version=adapter_version,
-        package_version=package_version or package().package_version,
+        request_digest=request_digest or request_for().digest,
         languages=(
             LanguageNarrative(language=LANGUAGE_ARABIC, sections=arabic),
             LanguageNarrative(language=LANGUAGE_ENGLISH, sections=english),
@@ -398,7 +401,7 @@ def test_a_duplicated_language_is_refused_before_it_can_be_collapsed() -> None:
         validate(
             NarrativeDraft(
                 adapter_version=ADAPTER_VERSION,
-                package_version=request.package_version,
+                request_digest=request.digest,
                 languages=(
                     LanguageNarrative(
                         language=LANGUAGE_ARABIC,
@@ -503,7 +506,7 @@ def test_a_percent_rendering_the_request_supplied_is_grounded() -> None:
     validate(
         NarrativeDraft(
             adapter_version=ADAPTER_VERSION,
-            package_version=request.package_version,
+            request_digest=request.digest,
             languages=(
                 LanguageNarrative(
                     language=LANGUAGE_ARABIC,
@@ -755,7 +758,7 @@ def test_a_supplied_percent_written_with_a_space_is_accepted() -> None:
     validate(
         NarrativeDraft(
             adapter_version=ADAPTER_VERSION,
-            package_version=request.package_version,
+            request_digest=request.digest,
             languages=(
                 LanguageNarrative(
                     language=LANGUAGE_ARABIC,
@@ -815,7 +818,7 @@ def test_a_ratio_must_be_stated_in_a_rendering_that_was_supplied(
         validate(
             NarrativeDraft(
                 adapter_version=ADAPTER_VERSION,
-                package_version=request.package_version,
+                request_digest=request.digest,
                 languages=(
                     LanguageNarrative(
                         language=LANGUAGE_ARABIC,
@@ -921,7 +924,7 @@ def test_an_ambiguous_grouping_is_refused_even_when_it_parses_to_a_supplied_valu
         validate(
             NarrativeDraft(
                 adapter_version=ADAPTER_VERSION,
-                package_version=request.package_version,
+                request_digest=request.digest,
                 languages=(
                     LanguageNarrative(
                         language=LANGUAGE_ARABIC,
@@ -956,7 +959,7 @@ def test_a_grouped_figure_in_the_usual_form_is_still_writable() -> None:
     validate(
         NarrativeDraft(
             adapter_version=ADAPTER_VERSION,
-            package_version=request.package_version,
+            request_digest=request.digest,
             languages=(
                 LanguageNarrative(
                     language=LANGUAGE_ARABIC,
@@ -1026,6 +1029,96 @@ def test_the_copy_handed_to_the_adapter_carries_the_same_request() -> None:
 
     assert canonical_json(request.for_provider().document) == canonical_json(
         request.document
+    )
+
+
+def test_a_narrative_written_for_another_package_is_refused() -> None:
+    # `package_version` names the schema, and a fact identifier is derived from
+    # metric, scope and formula version — so two different datasets produce
+    # identical identifiers, and neither distinguishes one request from
+    # another. A cached or misrouted answer satisfied both.
+    other = request_for(
+        b"date,revenue,units,invoice_no\n"
+        b"2026-02-05,999.00,9,INV-9\n"
+        b"2026-02-06,111.00,1,INV-8\n"
+    )
+    request = request_for()
+    assert other.package_version == request.package_version
+    assert revenue_fact_id(other) == revenue_fact_id(request)
+    assert other.digest != request.digest
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("أداء الفترة.", cited=(revenue_fact_id(request),)),),
+                english=(
+                    section("Performance.", cited=(revenue_fact_id(request),)),
+                ),
+                request_digest=other.digest,
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_ADAPTER_MISMATCH
+
+
+def test_a_label_the_cited_fact_never_supplied_is_refused() -> None:
+    # A bucket label is an ordinary word, so prose naming a store that appears
+    # nowhere in the data carries no marker a scanner could find. Declaring
+    # them makes the claim answerable.
+    request = request_for()
+    store = next(
+        entry for entry in request.document["comparisons"] if entry["dimension"] == "store"
+    )
+    fact_id = str(store["fact_id"])
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("تصدرت الإسكندرية.", cited=(fact_id,), labels=("Alexandria",)),),
+                english=(
+                    section("Alexandria led.", cited=(fact_id,), labels=("Alexandria",)),
+                ),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNKNOWN_LABEL
+
+
+def test_a_label_belonging_to_a_fact_the_section_did_not_cite_is_refused() -> None:
+    # Unlike an invented label this one is detectable: the package supplied it,
+    # just not to the fact this sentence points at.
+    request = request_for()
+    store = next(
+        entry for entry in request.document["comparisons"] if entry["dimension"] == "store"
+    )
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("تصدرت Beverages.", cited=(str(store["fact_id"]),)),),
+                english=(section("Beverages led.", cited=(str(store["fact_id"]),)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNKNOWN_LABEL
+
+
+def test_a_label_the_cited_fact_did_supply_is_accepted() -> None:
+    request = request_for()
+    category = next(
+        entry for entry in request.document["comparisons"] if entry["dimension"] == "category"
+    )
+    fact_id = str(category["fact_id"])
+
+    validate(
+        draft(
+            arabic=(section("تصدرت Beverages.", cited=(fact_id,), labels=("Beverages",)),),
+            english=(section("Beverages led.", cited=(fact_id,), labels=("Beverages",)),),
+        ),
+        request=request,
     )
 
 
@@ -1268,7 +1361,7 @@ def test_a_missing_language_in_the_response_is_refused() -> None:
         validate(
             NarrativeDraft(
                 adapter_version=ADAPTER_VERSION,
-                package_version=request.package_version,
+                request_digest=request.digest,
                 languages=(
                     LanguageNarrative(
                         language=LANGUAGE_ENGLISH,
@@ -1290,7 +1383,7 @@ def test_a_language_nobody_asked_for_is_refused() -> None:
         validate(
             NarrativeDraft(
                 adapter_version=ADAPTER_VERSION,
-                package_version=request.package_version,
+                request_digest=request.digest,
                 languages=(
                     LanguageNarrative(
                         language=LANGUAGE_ARABIC,
@@ -1324,7 +1417,7 @@ def test_a_draft_answering_a_different_package_is_refused() -> None:
             draft(
                 arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
                 english=(section("Revenue 500.00.", cited=(fact_id,)),),
-                package_version="rra004.package.v0",
+                request_digest="0" * 64,
             ),
             request=request,
         )
@@ -1491,7 +1584,7 @@ def test_a_provider_is_replaceable_without_changing_the_contract() -> None:
     adapter = OtherAdapter(
         lambda request: NarrativeDraft(
             adapter_version="other.adapter.v9",
-            package_version=request.package_version,
+            request_digest=request.digest,
             languages=(
                 LanguageNarrative(
                     language=LANGUAGE_ARABIC,

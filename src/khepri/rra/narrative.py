@@ -34,6 +34,7 @@ validator instead would have let it accept a number the request never carried.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from collections.abc import Callable, Sequence
@@ -43,6 +44,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 from khepri.rra.facts import FactPackage
+from khepri.rra.profiling import canonical_json
 
 NARRATIVE_VERSION = "rra005.narrative.v1"
 
@@ -60,6 +62,7 @@ REASON_UNGROUNDED_NUMBER = "ungrounded_number"
 REASON_UNKNOWN_CITATION = "unknown_citation"
 REASON_UNCITED_SECTION = "uncited_section"
 REASON_UNKNOWN_CAVEAT = "unknown_caveat"
+REASON_UNKNOWN_LABEL = "unknown_label"
 REASON_UNSAFE_TEXT = "unsafe_text"
 REASON_FACT_COVERAGE_DIFFERS = "fact_coverage_differs_by_language"
 REASON_CAVEAT_COVERAGE_DIFFERS = "caveat_coverage_differs_by_language"
@@ -160,6 +163,19 @@ class NarrativeRequest:
     def languages(self) -> tuple[str, ...]:
         return tuple(self.document["languages"])
 
+    @property
+    def digest(self) -> str:
+        """Identity of *this* request, content and all.
+
+        `package_version` names the schema — every package built by this
+        release carries the same string — and a fact identifier is derived from
+        metric, scope and formula version, so two different datasets produce
+        identical identifiers. Neither distinguishes one request from another,
+        which means a cached or misrouted answer written for somebody else's
+        figures satisfied both. A digest over the whole document does.
+        """
+        return hashlib.sha256(canonical_json(self.document).encode()).hexdigest()
+
     def for_provider(self) -> NarrativeRequest:
         """A copy to cross the adapter boundary, so the authority cannot.
 
@@ -241,6 +257,7 @@ class NarrativeGround:
     entries: dict[str, GroundedEntry]
     identities: dict[str, str]
     caveats: frozenset[str]
+    labels: frozenset[str]
 
     @property
     def identifiers(self) -> frozenset[str]:
@@ -328,15 +345,32 @@ class NarrativeGround:
                 entries[name] = grounded
                 identities[name] = fact_id
 
-        return cls(entries=entries, identities=identities, caveats=frozenset(caveats))
+        return cls(
+            entries=entries,
+            identities=identities,
+            caveats=frozenset(caveats),
+            labels=frozenset(
+                label for grounded in entries.values() for label in grounded.labels
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class NarrativeSection:
+    """One passage, and the structured claims it says it is making.
+
+    `labels` is declared rather than inferred. A bucket label is an ordinary
+    word — `Cairo`, `Beverages` — so prose naming one carries no marker a
+    scanner could find, and a narrative could name a store that appears nowhere
+    in the data. Declaring them turns "which places does this sentence talk
+    about" into a question with an answer.
+    """
+
     section_id: str
     text: str
     cited_fact_ids: tuple[str, ...]
     caveats: tuple[str, ...]
+    labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,10 +391,15 @@ class LanguageNarrative:
 
 @dataclass(frozen=True, slots=True)
 class NarrativeDraft:
-    """What an adapter returns. Untrusted until `validate` has accepted it."""
+    """What an adapter returns. Untrusted until `validate` has accepted it.
+
+    It echoes the digest of the request it answers rather than a version
+    string. A version names the schema; the digest names this request, so an
+    answer written for another package cannot satisfy it.
+    """
 
     adapter_version: str
-    package_version: str
+    request_digest: str
     languages: tuple[LanguageNarrative, ...]
 
 
@@ -524,7 +563,9 @@ class NarrativeService:
 
 def validate(draft: NarrativeDraft, *, request: NarrativeRequest) -> None:
     """Refuse a draft that states anything the request did not supply."""
-    if draft.package_version != request.package_version:
+    if draft.request_digest != request.digest:
+        # One question, and it subsumes the version: the digest covers every
+        # byte of the request, `package_version` among them.
         raise NarrativeRefused(REASON_ADAPTER_MISMATCH)
     if draft.adapter_version != str(request.document["adapter_version"]):
         raise NarrativeRefused(REASON_ADAPTER_MISMATCH)
@@ -570,11 +611,21 @@ def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> Non
         for caveat in section.caveats:
             if caveat not in ground.caveats:
                 raise NarrativeRefused(REASON_UNKNOWN_CAVEAT)
+        stateable = ground.stateable(section.cited_fact_ids)
+        for label in section.labels:
+            if _normalize_digits(label) not in stateable.labels:
+                raise NarrativeRefused(REASON_UNKNOWN_LABEL)
+        # A label belonging to a fact this section did not cite is a claim
+        # about data the sentence never pointed at, and unlike an invented
+        # label it is detectable: the package supplied it, just not here.
+        for label in ground.labels - stateable.labels:
+            if label and label in _normalize_digits(section.text):
+                raise NarrativeRefused(REASON_UNKNOWN_LABEL)
         _assert_safe(section.text)
         # `stateable` resolves the citations and derives the permitted numbers
         # in one step, so a sentence is measured against what it cites rather
         # than against everything the package happens to contain.
-        _assert_grounded_numbers(section.text, ground.stateable(section.cited_fact_ids))
+        _assert_grounded_numbers(section.text, stateable)
 
 
 def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
