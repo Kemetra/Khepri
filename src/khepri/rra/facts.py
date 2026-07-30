@@ -8,8 +8,13 @@ from decimal import Decimal, InvalidOperation
 
 import polars as pl
 
-from khepri.rra.admissibility import AdmissibilityDecision
+from khepri.rra.admissibility import (
+    AdmissibilityDecision,
+    ReportRequest,
+    assess_admissibility,
+)
 from khepri.rra.aggregates import (
+    UNLABELLED_BUCKET_LABEL,
     Comparison,
     Series,
     build_comparison,
@@ -30,6 +35,7 @@ from khepri.rra.mapping import (
     SEMANTIC_TRANSACTION_ID,
     SEMANTIC_UNITS,
     RetailMapping,
+    build_mapping,
 )
 from khepri.rra.profiling import (
     DatasetProfile,
@@ -115,16 +121,20 @@ class FactSeries:
     fact_id: str
     citation_id: str
     metric: str
+    measure: str
+    precision: int
     series: Series
     caveats: tuple[str, ...]
 
-    def as_document(self, *, revenue_precision: int) -> dict[str, object]:
+    def as_document(self) -> dict[str, object]:
         return {
             "fact_id": self.fact_id,
             "citation_id": self.citation_id,
             "metric": self.metric,
+            "measure": self.measure,
+            "precision": self.precision,
             "caveats": list(self.caveats),
-            **self.series.as_document(revenue_precision=revenue_precision),
+            **self.series.as_document(precision=self.precision),
         }
 
 
@@ -133,16 +143,20 @@ class FactComparison:
     fact_id: str
     citation_id: str
     metric: str
+    measure: str
+    precision: int
     comparison: Comparison
     caveats: tuple[str, ...]
 
-    def as_document(self, *, revenue_precision: int) -> dict[str, object]:
+    def as_document(self) -> dict[str, object]:
         return {
             "fact_id": self.fact_id,
             "citation_id": self.citation_id,
             "metric": self.metric,
+            "measure": self.measure,
+            "precision": self.precision,
             "caveats": list(self.caveats),
-            **self.comparison.as_document(revenue_precision=revenue_precision),
+            **self.comparison.as_document(precision=self.precision),
         }
 
 
@@ -183,15 +197,18 @@ class FactPackage:
             None,
         )
 
-    def comparison(self, dimension: str) -> FactComparison | None:
+    def comparison(self, dimension: str, measure: str = METRIC_REVENUE) -> FactComparison | None:
         return next(
             (
                 entry
                 for entry in self.comparisons
-                if entry.comparison.dimension == dimension
+                if entry.comparison.dimension == dimension and entry.measure == measure
             ),
             None,
         )
+
+    def trend(self, measure: str = METRIC_REVENUE) -> FactSeries | None:
+        return next((entry for entry in self.series if entry.measure == measure), None)
 
     @property
     def citation_ids(self) -> tuple[str, ...]:
@@ -210,14 +227,8 @@ class FactPackage:
             "row_count": self.row_count,
             "monetary_precision": self.monetary_precision,
             "facts": [fact.as_document() for fact in self.facts],
-            "series": [
-                entry.as_document(revenue_precision=self.monetary_precision)
-                for entry in self.series
-            ],
-            "comparisons": [
-                entry.as_document(revenue_precision=self.monetary_precision)
-                for entry in self.comparisons
-            ],
+            "series": [entry.as_document() for entry in self.series],
+            "comparisons": [entry.as_document() for entry in self.comparisons],
             "refusals": [refusal.as_document() for refusal in self.refusals],
             "caveats": list(self.caveats),
         }
@@ -241,6 +252,14 @@ class _Measures:
     transaction_identifiers_complete: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _Aggregated:
+    measure: str
+    values: list[Decimal | None]
+    total: Decimal | None
+    precision: int
+
+
 def build_fact_package(
     *,
     content: bytes,
@@ -250,10 +269,9 @@ def build_fact_package(
     decision: AdmissibilityDecision,
     formula_version: str = FORMULA_VERSION,
 ) -> FactPackage:
+    _assert_derived_from_profile(content, profile, mapping, decision)
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
-    _assert_content_matches_profile(content, profile)
-    _assert_mapping_matches_profile(mapping, profile)
 
     frame = materialize(content, media_type)
     measures = _measures(frame, profile, mapping)
@@ -387,16 +405,23 @@ def build_fact_package(
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
     )
 
-    primary = (
-        SEMANTIC_REVENUE
-        if revenue_total is not None
-        else SEMANTIC_UNITS
-        if units_total is not None
-        else None
+    aggregated = (
+        _Aggregated(
+            measure=SEMANTIC_REVENUE,
+            values=measures.revenue,
+            total=revenue_total,
+            precision=money,
+        ),
+        _Aggregated(
+            measure=SEMANTIC_UNITS,
+            values=[None if value is None else Decimal(value) for value in measures.units],
+            total=None if units_total is None else Decimal(units_total),
+            precision=0,
+        ),
     )
     series = _series(
         measures,
-        primary=primary,
+        aggregated,
         formula_version=formula_version,
         refusals=refusals,
         caveats=caveats,
@@ -404,10 +429,7 @@ def build_fact_package(
     comparisons = _comparisons(
         frame,
         mapping,
-        measures,
-        primary=primary,
-        revenue_total=revenue_total,
-        units_total=units_total,
+        aggregated,
         row_count=row_count,
         formula_version=formula_version,
         refusals=refusals,
@@ -443,101 +465,93 @@ def build_fact_package(
     )
 
 
-def _assert_content_matches_profile(content: bytes, profile: DatasetProfile) -> None:
+def _assert_derived_from_profile(
+    content: bytes,
+    profile: DatasetProfile,
+    mapping: RetailMapping,
+    decision: AdmissibilityDecision,
+) -> None:
+    """Refuse artifacts that were not derived from this exact input.
+
+    Mapping and admissibility are deterministic functions of the profile, so
+    they are rebuilt and compared in full rather than spot-checked. That binds
+    states, inferred types, and personal-data exclusions too, not just labels.
+    """
     if hashlib.sha256(content).hexdigest() != profile.source_sha256_hex:
         raise FactsRefused("Content does not match the profile it is attributed to.")
-
-
-def _assert_mapping_matches_profile(mapping: RetailMapping, profile: DatasetProfile) -> None:
-    for entry in mapping.mappings:
-        for candidate in entry.candidates:
-            if candidate.position >= len(profile.columns):
-                raise FactsRefused("Mapping references a column outside the profile.")
-            if profile.column_at(candidate.position).safe_label != candidate.safe_label:
-                raise FactsRefused("Mapping does not describe the profiled schema.")
+    if build_mapping(profile) != mapping:
+        raise FactsRefused("Mapping was not derived from the supplied profile.")
+    expected = assess_admissibility(
+        profile,
+        mapping,
+        request=ReportRequest(requested_semantics=frozenset(decision.requested_semantics)),
+    )
+    if expected != decision:
+        raise FactsRefused("Admissibility was not decided for the supplied artifacts.")
 
 
 def _series(
     measures: _Measures,
+    aggregated: tuple[_Aggregated, ...],
     *,
-    primary: str | None,
     formula_version: str,
     refusals: list[RefusedResult],
     caveats: list[str],
 ) -> list[FactSeries]:
-    unavailable = [
-        f"{measure}_by_period"
-        for measure in (SEMANTIC_REVENUE, SEMANTIC_UNITS)
-        if measure != primary
-    ]
     dated = [value for value in measures.dates if value is not None]
-    if primary is None or not dated:
-        refusals.extend(
-            RefusedResult(metric=f"{measure}_by_period", reason=REASON_INPUT_UNAVAILABLE)
-            for measure in (SEMANTIC_REVENUE, SEMANTIC_UNITS)
-        )
-        return []
-    metric = f"{primary}_by_period"
-    refusals.extend(
-        RefusedResult(metric=name, reason=REASON_INPUT_UNAVAILABLE)
-        for name in unavailable
-    )
-
-    granularity = granularity_for(dated)
-    series = build_series(
-        dates=measures.dates,
-        revenues=measures.revenue,
-        units=measures.units,
-        granularity=granularity,
-    )
-
-    covered = [
-        (value, revenue, unit)
-        for value, revenue, unit in zip(
-            measures.dates, measures.revenue, measures.units, strict=True
-        )
-        if value is not None
-    ]
+    covered = [index for index, value in enumerate(measures.dates) if value is not None]
     entry_caveats: list[str] = []
-    if len(covered) != len(measures.dates):
+    if dated and len(covered) != len(measures.dates):
         entry_caveats.append(CAVEAT_UNDATED_ROWS_EXCLUDED)
         caveats.append(CAVEAT_UNDATED_ROWS_EXCLUDED)
 
-    if not reconciles(
-        series.buckets,
-        revenue_total=_sum_decimal([revenue for _, revenue, _ in covered]),
-        units_total=_sum_integer([unit for _, _, unit in covered]),
-        rows_total=len(covered),
-    ):
-        refusals.append(
-            RefusedResult(metric=metric, reason=REASON_RECONCILIATION_FAILED)
+    granularity = granularity_for(dated)
+    results: list[FactSeries] = []
+    for entry in aggregated:
+        metric = f"{entry.measure}_by_period"
+        if not dated or entry.total is None:
+            refusals.append(
+                RefusedResult(metric=metric, reason=REASON_INPUT_UNAVAILABLE)
+            )
+            continue
+        series = build_series(
+            dates=measures.dates,
+            values=entry.values,
+            granularity=granularity,
         )
-        return []
-
-    fact_id, citation_id = _identity(
-        metric=metric,
-        scope=(granularity,),
-        formula_version=formula_version,
-    )
-    return [
-        FactSeries(
-            fact_id=fact_id,
-            citation_id=citation_id,
+        if not reconciles(
+            series.buckets,
+            total=_sum_decimal([entry.values[index] for index in covered]),
+            rows_total=len(covered),
+        ):
+            refusals.append(
+                RefusedResult(metric=metric, reason=REASON_RECONCILIATION_FAILED)
+            )
+            continue
+        fact_id, citation_id = _identity(
             metric=metric,
-            series=series,
-            caveats=tuple(entry_caveats),
+            scope=(granularity,),
+            formula_version=formula_version,
         )
-    ]
+        results.append(
+            FactSeries(
+                fact_id=fact_id,
+                citation_id=citation_id,
+                metric=metric,
+                measure=entry.measure,
+                precision=entry.precision,
+                series=series,
+                caveats=tuple(entry_caveats),
+            )
+        )
+    return results
 
 
 def _comparisons(
     frame: pl.DataFrame,
     mapping: RetailMapping,
-    measures: _Measures,
+    aggregated: tuple[_Aggregated, ...],
     *,
-    primary: str | None,
-    revenue_total: Decimal | None,
-    units_total: int | None,
     row_count: int,
     formula_version: str,
     refusals: list[RefusedResult],
@@ -546,54 +560,54 @@ def _comparisons(
     results: list[FactComparison] = []
     for dimension in COMPARISON_DIMENSIONS:
         column = mapping.for_semantic(dimension).column
-        unavailable = [
-            f"{measure}_by_{dimension}"
-            for measure in (SEMANTIC_REVENUE, SEMANTIC_UNITS)
-            if measure != primary or column is None
-        ]
-        refusals.extend(
-            RefusedResult(metric=name, reason=REASON_INPUT_UNAVAILABLE)
-            for name in unavailable
-        )
-        if column is None or primary is None:
-            continue
-        metric = f"{primary}_by_{dimension}"
-        comparison = build_comparison(
-            dimension=dimension,
-            values=_raw_values(frame, column.position),
-            revenues=measures.revenue,
-            units=measures.units,
-            display=lambda value: safe_value_label(value, fallback="unlabelled"),
-        )
-        if not reconciles(
-            comparison.buckets,
-            revenue_total=revenue_total,
-            units_total=units_total,
-            rows_total=row_count,
-        ):
-            refusals.append(
-                RefusedResult(metric=metric, reason=REASON_RECONCILIATION_FAILED)
+        keys = None if column is None else _raw_values(frame, column.position)
+        for entry in aggregated:
+            metric = f"{entry.measure}_by_{dimension}"
+            if keys is None or entry.total is None:
+                refusals.append(
+                    RefusedResult(metric=metric, reason=REASON_INPUT_UNAVAILABLE)
+                )
+                continue
+            comparison = build_comparison(
+                dimension=dimension,
+                keys=keys,
+                values=entry.values,
+                display=_display_label,
             )
-            continue
-        entry_caveats: list[str] = []
-        if comparison.truncated_values:
-            entry_caveats.append(CAVEAT_BUCKETS_TRUNCATED)
-            caveats.append(CAVEAT_BUCKETS_TRUNCATED)
-        fact_id, citation_id = _identity(
-            metric=metric,
-            scope=(dimension,),
-            formula_version=formula_version,
-        )
-        results.append(
-            FactComparison(
-                fact_id=fact_id,
-                citation_id=citation_id,
+            if not reconciles(
+                comparison.buckets,
+                total=entry.total,
+                rows_total=row_count,
+            ):
+                refusals.append(
+                    RefusedResult(metric=metric, reason=REASON_RECONCILIATION_FAILED)
+                )
+                continue
+            entry_caveats: list[str] = []
+            if comparison.truncated_values:
+                entry_caveats.append(CAVEAT_BUCKETS_TRUNCATED)
+                caveats.append(CAVEAT_BUCKETS_TRUNCATED)
+            fact_id, citation_id = _identity(
                 metric=metric,
-                comparison=comparison,
-                caveats=tuple(entry_caveats),
+                scope=(dimension,),
+                formula_version=formula_version,
             )
-        )
+            results.append(
+                FactComparison(
+                    fact_id=fact_id,
+                    citation_id=citation_id,
+                    metric=metric,
+                    measure=entry.measure,
+                    precision=entry.precision,
+                    comparison=comparison,
+                    caveats=tuple(entry_caveats),
+                )
+            )
     return results
+
+
+def _display_label(value: str) -> str:
+    return safe_value_label(value, fallback=UNLABELLED_BUCKET_LABEL)
 
 
 def _measures(

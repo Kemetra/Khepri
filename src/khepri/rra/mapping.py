@@ -54,6 +54,7 @@ class SemanticRule:
     accepted_types: frozenset[str]
     vocabulary: frozenset[str]
     type_only: bool = False
+    disqualifiers: frozenset[str] = frozenset()
 
 
 SEMANTIC_RULES: tuple[SemanticRule, ...] = (
@@ -131,6 +132,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "وحدات",
             }
         ),
+        disqualifiers=frozenset({"price", "cost", "value", "amount", "قيمه", "تكلفه"}),
     ),
     SemanticRule(
         semantic=SEMANTIC_TRANSACTION_ID,
@@ -246,13 +248,13 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "cost",
                 "costs",
                 "cogs",
-                "unitcost",
                 "costofgoods",
-                "purchaseprice",
+                "totalcost",
                 "تكلفه",
                 "التكلفه",
             }
         ),
+        disqualifiers=frozenset({"unit", "per", "each", "average", "avg", "rate"}),
     ),
     SemanticRule(
         semantic=SEMANTIC_DISCOUNT,
@@ -461,7 +463,7 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
 
 def _candidate(rule: SemanticRule, column: ColumnProfile) -> MappingCandidate | None:
     tokens = label_tokens(column.safe_label)
-    if not tokens:
+    if not tokens or rule.disqualifiers & set(tokens):
         return None
     collapsed = "".join(tokens)
 

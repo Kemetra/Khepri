@@ -9,6 +9,7 @@ from decimal import Decimal
 MAX_COMPARISON_BUCKETS = 20
 OTHER_BUCKET_LABEL = "other"
 UNLABELLED_BUCKET_LABEL = "unlabelled"
+RESERVED_LABELS = frozenset({OTHER_BUCKET_LABEL, UNLABELLED_BUCKET_LABEL})
 
 GRANULARITY_DAY = "day"
 GRANULARITY_MONTH = "month"
@@ -17,16 +18,16 @@ GRANULARITY_DAY_SPAN = 92
 
 @dataclass(frozen=True, slots=True)
 class Bucket:
+    """One aggregated group carrying exactly one governed measure."""
+
     label: str
-    revenue: Decimal | None
-    units: int | None
+    value: Decimal | None
     rows: int
 
-    def as_document(self, *, revenue_precision: int) -> dict[str, object]:
+    def as_document(self, *, precision: int) -> dict[str, object]:
         return {
             "label": self.label,
-            "revenue": _decimal_text(self.revenue, revenue_precision),
-            "units": self.units,
+            "value": None if self.value is None else _text(self.value, precision),
             "rows": self.rows,
         }
 
@@ -36,13 +37,10 @@ class Series:
     granularity: str
     buckets: tuple[Bucket, ...]
 
-    def as_document(self, *, revenue_precision: int) -> dict[str, object]:
+    def as_document(self, *, precision: int) -> dict[str, object]:
         return {
             "granularity": self.granularity,
-            "points": [
-                bucket.as_document(revenue_precision=revenue_precision)
-                for bucket in self.buckets
-            ],
+            "points": [bucket.as_document(precision=precision) for bucket in self.buckets],
         }
 
 
@@ -53,47 +51,36 @@ class Comparison:
     distinct_values: int
     truncated_values: int
 
-    def as_document(self, *, revenue_precision: int) -> dict[str, object]:
+    def as_document(self, *, precision: int) -> dict[str, object]:
         return {
             "dimension": self.dimension,
             "distinct_values": self.distinct_values,
             "truncated_values": self.truncated_values,
-            "buckets": [
-                bucket.as_document(revenue_precision=revenue_precision)
-                for bucket in self.buckets
-            ],
+            "buckets": [bucket.as_document(precision=precision) for bucket in self.buckets],
         }
 
 
 @dataclass
 class _Accumulator:
-    revenue: Decimal = Decimal(0)
-    units: int = 0
+    total: Decimal = Decimal(0)
     rows: int = 0
-    has_revenue: bool = False
-    has_units: bool = False
+    present: bool = False
 
-    def add(self, revenue: Decimal | None, units: int | None) -> None:
+    def add(self, value: Decimal | None) -> None:
         self.rows += 1
-        if revenue is not None:
-            self.revenue += revenue
-            self.has_revenue = True
-        if units is not None:
-            self.units += units
-            self.has_units = True
+        if value is not None:
+            self.total += value
+            self.present = True
 
     def merge(self, other: _Accumulator) -> None:
-        self.revenue += other.revenue
-        self.units += other.units
+        self.total += other.total
         self.rows += other.rows
-        self.has_revenue = self.has_revenue or other.has_revenue
-        self.has_units = self.has_units or other.has_units
+        self.present = self.present or other.present
 
     def bucket(self, label: str) -> Bucket:
         return Bucket(
             label=label,
-            revenue=self.revenue if self.has_revenue else None,
-            units=self.units if self.has_units else None,
+            value=self.total if self.present else None,
             rows=self.rows,
         )
 
@@ -114,58 +101,51 @@ def period_label(value: date, granularity: str) -> str:
 def build_series(
     *,
     dates: list[date | None],
-    revenues: list[Decimal | None],
-    units: list[int | None],
+    values: list[Decimal | None],
     granularity: str,
 ) -> Series:
     accumulators: dict[str, _Accumulator] = {}
-    for value, revenue, unit in zip(dates, revenues, units, strict=True):
-        if value is None:
+    for moment, value in zip(dates, values, strict=True):
+        if moment is None:
             continue
-        label = period_label(value, granularity)
-        accumulators.setdefault(label, _Accumulator()).add(revenue, unit)
+        label = period_label(moment, granularity)
+        accumulators.setdefault(label, _Accumulator()).add(value)
     return Series(
         granularity=granularity,
-        buckets=tuple(
-            accumulators[label].bucket(label) for label in sorted(accumulators)
-        ),
+        buckets=tuple(accumulators[label].bucket(label) for label in sorted(accumulators)),
     )
 
 
 def build_comparison(
     *,
     dimension: str,
-    values: list[str | None],
-    revenues: list[Decimal | None],
-    units: list[int | None],
+    keys: list[str | None],
+    values: list[Decimal | None],
     display: Callable[[str], str] | None = None,
     limit: int = MAX_COMPARISON_BUCKETS,
 ) -> Comparison:
     """Group by the source value; sanitize only the label that is displayed.
 
     Grouping never merges two distinct source values, even when they reduce to
-    the same display text. Colliding labels are disambiguated by a stable digest
-    of the source value so each bucket stays individually identifiable.
+    the same display text. Colliding labels, and any label that would shadow a
+    reserved synthetic bucket, are disambiguated by a stable digest of the
+    source value so every bucket stays individually identifiable.
     """
     accumulators: dict[str | None, _Accumulator] = {}
-    for value, revenue, unit in zip(values, revenues, units, strict=True):
-        accumulators.setdefault(value, _Accumulator()).add(revenue, unit)
+    for key, value in zip(keys, values, strict=True):
+        accumulators.setdefault(key, _Accumulator()).add(value)
 
     labels = _labels(list(accumulators), display)
     ordered = sorted(
         accumulators,
-        key=lambda value: (
-            -accumulators[value].revenue,
-            -accumulators[value].units,
-            labels[value],
-        ),
+        key=lambda key: (-accumulators[key].total, labels[key]),
     )
     kept, dropped = ordered[:limit], ordered[limit:]
-    buckets = [accumulators[value].bucket(labels[value]) for value in kept]
+    buckets = [accumulators[key].bucket(labels[key]) for key in kept]
     if dropped:
         remainder = _Accumulator()
-        for value in dropped:
-            remainder.merge(accumulators[value])
+        for key in dropped:
+            remainder.merge(accumulators[key])
         buckets.append(remainder.bucket(OTHER_BUCKET_LABEL))
     return Comparison(
         dimension=dimension,
@@ -175,51 +155,48 @@ def build_comparison(
     )
 
 
-def _labels(
-    values: list[str | None],
-    display: Callable[[str], str] | None,
-) -> dict[str | None, str]:
-    rendered = {
-        value: UNLABELLED_BUCKET_LABEL
-        if value is None
-        else (display(value) if display is not None else value)
-        for value in values
-    }
-    counts: dict[str, int] = {}
-    for label in rendered.values():
-        counts[label] = counts.get(label, 0) + 1
-    return {
-        value: label if counts[label] == 1 else f"{label} ({_discriminator(value)})"
-        for value, label in rendered.items()
-    }
-
-
-def _discriminator(value: str | None) -> str:
-    source = "" if value is None else value
-    return hashlib.sha256(source.encode()).hexdigest()[:6]
-
-
 def reconciles(
     buckets: tuple[Bucket, ...],
     *,
-    revenue_total: Decimal | None,
-    units_total: int | None,
+    total: Decimal | None,
     rows_total: int,
 ) -> bool:
     if sum(bucket.rows for bucket in buckets) != rows_total:
         return False
-    if revenue_total is not None:
-        parts = [bucket.revenue for bucket in buckets if bucket.revenue is not None]
-        if sum(parts, Decimal(0)) != revenue_total:
-            return False
-    if units_total is not None:
-        counted = [bucket.units for bucket in buckets if bucket.units is not None]
-        if sum(counted) != units_total:
-            return False
-    return True
+    if total is None:
+        return all(bucket.value is None for bucket in buckets)
+    parts = [bucket.value for bucket in buckets if bucket.value is not None]
+    return sum(parts, Decimal(0)) == total
 
 
-def _decimal_text(value: Decimal | None, precision: int) -> str | None:
-    if value is None:
-        return None
+def _labels(
+    keys: list[str | None],
+    display: Callable[[str], str] | None,
+) -> dict[str | None, str]:
+    rendered: dict[str | None, str] = {}
+    for key in keys:
+        if key is None:
+            rendered[key] = UNLABELLED_BUCKET_LABEL
+            continue
+        label = display(key) if display is not None else key
+        # A source value may never occupy a label reserved for a synthetic
+        # bucket, so it yields the reserved text before collisions are counted.
+        rendered[key] = (
+            f"{label} ({_discriminator(key)})" if label in RESERVED_LABELS else label
+        )
+
+    counts: dict[str, int] = {}
+    for label in rendered.values():
+        counts[label] = counts.get(label, 0) + 1
+    return {
+        key: label if counts[label] == 1 else f"{label} ({_discriminator(key)})"
+        for key, label in rendered.items()
+    }
+
+
+def _discriminator(key: str | None) -> str:
+    return hashlib.sha256(("" if key is None else key).encode()).hexdigest()[:6]
+
+
+def _text(value: Decimal, precision: int) -> str:
     return str(value.quantize(Decimal(1).scaleb(-precision)))

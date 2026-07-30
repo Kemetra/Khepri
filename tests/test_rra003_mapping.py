@@ -54,7 +54,7 @@ def _profile(content: bytes):
 def test_full_retail_schema_maps_every_governed_semantic() -> None:
     content = (
         b"date,revenue,units,invoice_no,sku,category,branch,channel,"
-        b"unit_cost,discount,refunds\n"
+        b"cogs,discount,refunds\n"
         b"2026-01-05,125.50,3,INV-1,SKU-1,Beverages,Cairo,online,80.00,5.00,1\n"
         b"2026-01-06,90.00,2,INV-2,SKU-2,Snacks,Giza,retail,60.00,0.00,0\n"
     )
@@ -285,7 +285,7 @@ def test_header_only_dataset_is_inadmissible() -> None:
 
 
 def test_optional_semantics_do_not_block_admissibility() -> None:
-    content = b"date,revenue,unit_cost\n2026-01-05,125.50,eighty\n"
+    content = b"date,revenue,cogs\n2026-01-05,125.50,eighty\n"
     profile = _profile(content)
     mapping = build_mapping(profile)
 
@@ -293,3 +293,28 @@ def test_optional_semantics_do_not_block_admissibility() -> None:
     assert mapping.state_of(SEMANTIC_DISCOUNT) == STATE_UNAVAILABLE
     assert mapping.state_of(SEMANTIC_RETURNS) == STATE_UNAVAILABLE
     assert assess_admissibility(profile, mapping).admissible is True
+
+
+def test_per_unit_money_columns_are_not_mapped_as_row_measures() -> None:
+    content = (
+        b"date,revenue,units,unit_cost,price_per_item\n"
+        b"2026-01-05,200.00,4,120.00,50.00\n"
+        b"2026-01-06,300.00,6,180.00,50.00\n"
+    )
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_COST) == STATE_UNAVAILABLE
+    assert mapping.for_semantic(SEMANTIC_UNITS).column.safe_label == "units"
+
+
+def test_an_integer_unit_price_is_never_absorbed_into_units() -> None:
+    content = b"date,revenue,unit_price\n2026-01-05,200.00,50\n2026-01-06,300.00,50\n"
+
+    assert mapped(content).state_of(SEMANTIC_UNITS) == STATE_UNAVAILABLE
+
+
+def test_total_cost_synonyms_still_map() -> None:
+    content = b"date,revenue,total_cost\n2026-01-05,200.00,120.00\n"
+
+    assert mapped(content).state_of(SEMANTIC_COST) == STATE_MAPPED

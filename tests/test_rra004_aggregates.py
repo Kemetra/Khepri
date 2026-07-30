@@ -35,21 +35,19 @@ def test_period_labels_are_stable_for_each_granularity() -> None:
 def test_series_orders_periods_and_sums_exactly() -> None:
     series = build_series(
         dates=[date(2026, 1, 6), date(2026, 1, 5), date(2026, 1, 6)],
-        revenues=[Decimal("1.10"), Decimal("2.20"), Decimal("3.30")],
-        units=[1, 2, 3],
+        values=[Decimal("1.10"), Decimal("2.20"), Decimal("3.30")],
         granularity=GRANULARITY_DAY,
     )
 
     assert [bucket.label for bucket in series.buckets] == ["2026-01-05", "2026-01-06"]
-    assert [str(bucket.revenue) for bucket in series.buckets] == ["2.20", "4.40"]
-    assert [bucket.units for bucket in series.buckets] == [2, 4]
+    assert [str(bucket.value) for bucket in series.buckets] == ["2.20", "4.40"]
+    assert [bucket.rows for bucket in series.buckets] == [1, 2]
 
 
 def test_series_skips_rows_without_a_date() -> None:
     series = build_series(
         dates=[date(2026, 1, 5), None],
-        revenues=[Decimal("1.00"), Decimal("9.00")],
-        units=[1, 9],
+        values=[Decimal("1.00"), Decimal("9.00")],
         granularity=GRANULARITY_DAY,
     )
 
@@ -57,12 +55,11 @@ def test_series_skips_rows_without_a_date() -> None:
     assert series.buckets[0].rows == 1
 
 
-def test_comparison_ranks_by_revenue_then_units_then_label() -> None:
+def test_comparison_ranks_by_measure_then_label() -> None:
     comparison = build_comparison(
         dimension="store",
-        values=["Giza", "Cairo", "Giza"],
-        revenues=[Decimal("1.00"), Decimal("5.00"), Decimal("2.00")],
-        units=[1, 5, 2],
+        keys=["Giza", "Cairo", "Giza"],
+        values=[Decimal("1.00"), Decimal("5.00"), Decimal("2.00")],
     )
 
     assert [bucket.label for bucket in comparison.buckets] == ["Cairo", "Giza"]
@@ -73,22 +70,19 @@ def test_comparison_ranks_by_revenue_then_units_then_label() -> None:
 def test_comparison_gives_unlabelled_rows_their_own_bucket() -> None:
     comparison = build_comparison(
         dimension="store",
-        values=["Cairo", None],
-        revenues=[Decimal("1.00"), Decimal("2.00")],
-        units=[1, 2],
+        keys=["Cairo", None],
+        values=[Decimal("1.00"), Decimal("2.00")],
     )
 
-    labels = [bucket.label for bucket in comparison.buckets]
-    assert UNLABELLED_BUCKET_LABEL in labels
+    assert UNLABELLED_BUCKET_LABEL in [bucket.label for bucket in comparison.buckets]
 
 
 def test_comparison_folds_the_tail_into_one_disclosed_bucket() -> None:
     size = MAX_COMPARISON_BUCKETS + 3
     comparison = build_comparison(
         dimension="category",
-        values=[f"c{index:02d}" for index in range(size)],
-        revenues=[Decimal(index + 1) for index in range(size)],
-        units=[1] * size,
+        keys=[f"c{index:02d}" for index in range(size)],
+        values=[Decimal(index + 1) for index in range(size)],
     )
 
     assert len(comparison.buckets) == MAX_COMPARISON_BUCKETS + 1
@@ -97,71 +91,55 @@ def test_comparison_folds_the_tail_into_one_disclosed_bucket() -> None:
     assert comparison.buckets[-1].rows == 3
 
 
-def test_measures_absent_from_every_row_stay_absent() -> None:
+def test_a_measure_absent_from_every_row_stays_absent() -> None:
     comparison = build_comparison(
         dimension="store",
-        values=["Cairo"],
-        revenues=[None],
-        units=[None],
+        keys=["Cairo"],
+        values=[None],
     )
 
-    assert comparison.buckets[0].revenue is None
-    assert comparison.buckets[0].units is None
+    assert comparison.buckets[0].value is None
     assert comparison.buckets[0].rows == 1
 
 
 def test_reconciliation_accepts_matching_totals() -> None:
     buckets = (
-        Bucket(label="a", revenue=Decimal("1.50"), units=1, rows=1),
-        Bucket(label="b", revenue=Decimal("2.50"), units=3, rows=2),
+        Bucket(label="a", value=Decimal("1.50"), rows=1),
+        Bucket(label="b", value=Decimal("2.50"), rows=2),
     )
 
-    assert reconciles(
-        buckets,
-        revenue_total=Decimal("4.00"),
-        units_total=4,
-        rows_total=3,
-    )
+    assert reconciles(buckets, total=Decimal("4.00"), rows_total=3)
 
 
 def test_reconciliation_rejects_a_drifted_measure_or_row_count() -> None:
     buckets = (
-        Bucket(label="a", revenue=Decimal("1.50"), units=1, rows=1),
-        Bucket(label="b", revenue=Decimal("2.50"), units=3, rows=2),
+        Bucket(label="a", value=Decimal("1.50"), rows=1),
+        Bucket(label="b", value=Decimal("2.50"), rows=2),
     )
 
-    assert not reconciles(
-        buckets,
-        revenue_total=Decimal("4.01"),
-        units_total=4,
-        rows_total=3,
-    )
-    assert not reconciles(
-        buckets,
-        revenue_total=Decimal("4.00"),
-        units_total=5,
-        rows_total=3,
-    )
-    assert not reconciles(
-        buckets,
-        revenue_total=Decimal("4.00"),
-        units_total=4,
-        rows_total=4,
-    )
+    assert not reconciles(buckets, total=Decimal("4.01"), rows_total=3)
+    assert not reconciles(buckets, total=Decimal("4.00"), rows_total=4)
+
+
+def test_reconciliation_rejects_values_that_should_be_absent() -> None:
+    present = (Bucket(label="a", value=Decimal("1.50"), rows=1),)
+    absent = (Bucket(label="a", value=None, rows=1),)
+
+    assert not reconciles(present, total=None, rows_total=1)
+    assert reconciles(absent, total=None, rows_total=1)
 
 
 def test_distinct_values_that_share_a_display_label_are_never_merged() -> None:
     comparison = build_comparison(
         dimension="channel",
-        values=["=Online", "Online"],
-        revenues=[Decimal("1.00"), Decimal("2.00")],
-        units=[1, 2],
+        keys=["=Online", "Online"],
+        values=[Decimal("1.00"), Decimal("2.00")],
         display=lambda value: value.lstrip("="),
     )
 
     assert comparison.distinct_values == 2
     assert len(comparison.buckets) == 2
-    assert sum(bucket.revenue for bucket in comparison.buckets) == Decimal("3.00")
+    assert sum(bucket.value for bucket in comparison.buckets) == Decimal("3.00")
     labels = [bucket.label for bucket in comparison.buckets]
     assert len(set(labels)) == 2
     assert all(label.startswith("Online (") for label in labels)
@@ -170,22 +148,38 @@ def test_distinct_values_that_share_a_display_label_are_never_merged() -> None:
 def test_labels_that_do_not_collide_keep_their_plain_display_text() -> None:
     comparison = build_comparison(
         dimension="channel",
-        values=["=Online", "Retail"],
-        revenues=[Decimal("1.00"), Decimal("2.00")],
-        units=[1, 2],
+        keys=["=Online", "Retail"],
+        values=[Decimal("1.00"), Decimal("2.00")],
         display=lambda value: value.lstrip("="),
     )
 
     assert sorted(bucket.label for bucket in comparison.buckets) == ["Online", "Retail"]
 
 
-def test_a_source_value_matching_the_unlabelled_text_stays_separate() -> None:
+def test_a_source_value_never_occupies_a_reserved_bucket_label() -> None:
     comparison = build_comparison(
         dimension="store",
-        values=[UNLABELLED_BUCKET_LABEL, None],
-        revenues=[Decimal("1.00"), Decimal("2.00")],
-        units=[1, 2],
+        keys=[OTHER_BUCKET_LABEL, UNLABELLED_BUCKET_LABEL, None],
+        values=[Decimal("1.00"), Decimal("2.00"), Decimal("3.00")],
     )
 
-    assert comparison.distinct_values == 2
-    assert len({bucket.label for bucket in comparison.buckets}) == 2
+    labels = {bucket.label for bucket in comparison.buckets}
+    assert comparison.distinct_values == 3
+    assert len(labels) == 3
+    assert UNLABELLED_BUCKET_LABEL in labels
+    assert OTHER_BUCKET_LABEL not in labels
+
+
+def test_a_truncated_remainder_is_distinguishable_from_a_source_named_other() -> None:
+    size = MAX_COMPARISON_BUCKETS + 2
+    keys = [OTHER_BUCKET_LABEL, *(f"c{index:02d}" for index in range(size))]
+    values = [Decimal(1000), *(Decimal(index + 1) for index in range(size))]
+
+    comparison = build_comparison(dimension="category", keys=keys, values=values)
+
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert labels.count(OTHER_BUCKET_LABEL) == 1
+    assert comparison.buckets[-1].label == OTHER_BUCKET_LABEL
+    assert labels[0].startswith(f"{OTHER_BUCKET_LABEL} (")
+    assert len(set(labels)) == len(labels)
+    assert sum(bucket.value for bucket in comparison.buckets) == sum(values)

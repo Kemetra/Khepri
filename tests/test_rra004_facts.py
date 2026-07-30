@@ -105,7 +105,7 @@ def test_conditional_metrics_are_refused_when_inputs_are_absent() -> None:
 
 def test_conditional_metrics_appear_when_their_inputs_exist() -> None:
     content = (
-        b"date,revenue,units,unit_cost,discount,refunds\n"
+        b"date,revenue,units,cogs,discount,refunds\n"
         b"2026-01-05,200.00,4,120.00,10.00,1.00\n"
         b"2026-01-06,300.00,6,180.00,5.00,2.00\n"
     )
@@ -181,19 +181,20 @@ def test_currency_is_declared_as_unknown_while_no_currency_is_mapped() -> None:
 def test_time_series_reconciles_to_the_revenue_total() -> None:
     result = package(GOLDEN)
 
-    series = result.series[0]
-    assert series.series.granularity == "day"
-    assert [bucket.label for bucket in series.series.buckets] == [
+    revenue = result.trend()
+    assert revenue.series.granularity == "day"
+    assert [bucket.label for bucket in revenue.series.buckets] == [
         "2026-01-05",
         "2026-01-06",
         "2026-01-07",
     ]
-    assert [str(bucket.revenue) for bucket in series.series.buckets] == [
+    assert [str(bucket.value) for bucket in revenue.series.buckets] == [
         "125.50",
         "90.00",
         "284.50",
     ]
-    assert sum(bucket.units for bucket in series.series.buckets) == 11
+    units = result.trend(METRIC_UNITS)
+    assert sum(bucket.value for bucket in units.series.buckets) == 11
 
 
 def test_long_spans_roll_up_to_months() -> None:
@@ -202,7 +203,7 @@ def test_long_spans_roll_up_to_months() -> None:
         rows.append(f"2026-{month:02d}-05,100.00,1".encode())
     content = b"\n".join(rows) + b"\n"
 
-    series = package(content).series[0].series
+    series = package(content).trend().series
 
     assert series.granularity == "month"
     assert [bucket.label for bucket in series.buckets] == [
@@ -223,15 +224,15 @@ def test_dimension_comparisons_reconcile_to_the_total() -> None:
         "Beverages",
         "Snacks",
     ]
-    assert [str(bucket.revenue) for bucket in category.comparison.buckets] == [
+    assert [str(bucket.value) for bucket in category.comparison.buckets] == [
         "335.75",
         "164.25",
     ]
 
     store = result.comparison(SEMANTIC_STORE)
     assert sum(
-        bucket.revenue for bucket in store.comparison.buckets
-    ) == sum(bucket.revenue for bucket in category.comparison.buckets)
+        bucket.value for bucket in store.comparison.buckets
+    ) == sum(bucket.value for bucket in category.comparison.buckets)
 
 
 def test_unavailable_dimensions_are_refused_not_invented() -> None:
@@ -253,7 +254,7 @@ def test_comparison_truncation_is_disclosed_and_still_reconciles() -> None:
     assert comparison.distinct_values == MAX_COMPARISON_BUCKETS + 5
     assert comparison.truncated_values == 5
     assert comparison.buckets[-1].label == OTHER_BUCKET_LABEL
-    assert sum(bucket.revenue for bucket in comparison.buckets) == sum(
+    assert sum(bucket.value for bucket in comparison.buckets) == sum(
         range(1, MAX_COMPARISON_BUCKETS + 6)
     )
 
@@ -279,9 +280,9 @@ def test_rows_without_a_date_are_excluded_from_the_series_and_disclosed() -> Non
     result = package(content)
 
     assert result.value(METRIC_REVENUE) == "150.00"
-    assert str(result.series[0].series.buckets[0].revenue) == "100.00"
+    assert str(result.trend().series.buckets[0].value) == "100.00"
     assert CAVEAT_UNDATED_ROWS_EXCLUDED in result.caveats
-    assert CAVEAT_UNDATED_ROWS_EXCLUDED in result.series[0].caveats
+    assert CAVEAT_UNDATED_ROWS_EXCLUDED in result.trend().caveats
 
 
 def test_reruns_are_byte_equivalent() -> None:
@@ -401,18 +402,27 @@ def test_a_units_only_dataset_never_emits_a_revenue_series() -> None:
     result = package(content)
 
     assert result.fact(METRIC_REVENUE) is None
-    assert result.series[0].metric == "units_by_period"
+    assert result.trend() is None
+    assert result.trend(METRIC_UNITS).metric == "units_by_period"
     assert result.refusal("revenue_by_period").reason == REASON_INPUT_UNAVAILABLE
-    assert result.comparison(SEMANTIC_CATEGORY).metric == "units_by_category"
+    assert result.comparison(SEMANTIC_CATEGORY) is None
+    assert result.comparison(SEMANTIC_CATEGORY, METRIC_UNITS).metric == "units_by_category"
     assert result.refusal("revenue_by_category").reason == REASON_INPUT_UNAVAILABLE
 
 
-def test_a_revenue_dataset_still_names_its_aggregates_by_revenue() -> None:
+def test_each_available_measure_gets_its_own_cited_aggregate() -> None:
     result = package(GOLDEN)
 
-    assert result.series[0].metric == "revenue_by_period"
+    assert {entry.metric for entry in result.series} == {
+        "revenue_by_period",
+        "units_by_period",
+    }
     assert result.comparison(SEMANTIC_CATEGORY).metric == "revenue_by_category"
-    assert result.refusal("units_by_period").reason == REASON_INPUT_UNAVAILABLE
+    assert result.comparison(SEMANTIC_CATEGORY, METRIC_UNITS).metric == "units_by_category"
+    assert result.refusal("units_by_period") is None
+    assert result.refusal("units_by_category") is None
+    citations = result.citation_ids
+    assert len(citations) == len(set(citations))
 
 
 def test_incomplete_transaction_identifiers_refuse_the_affected_metrics() -> None:
