@@ -196,29 +196,57 @@ class NarrativeRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class NarrativeGround:
-    """Everything a narrative is permitted to state, taken from the request."""
+class GroundedEntry:
+    """The numbers one cited fact makes available to a sentence that cites it."""
 
-    fact_ids: frozenset[str]
-    citation_ids: frozenset[str]
     numbers: frozenset[Decimal]
     labels: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class NarrativeGround:
+    """Everything a narrative is permitted to state, taken from the request.
+
+    Numbers are held *per cited fact* rather than in one pool. A pool answers
+    "did this number appear anywhere in the package", which is not the question
+    a reader needs answered: it accepts a sentence citing revenue while stating
+    the units count, and the resulting report is cited and wrong. The question
+    asked here is "did the fact this sentence cites carry this number".
+    """
+
+    entries: dict[str, GroundedEntry]
     caveats: frozenset[str]
+    package_numbers: frozenset[Decimal]
+
+    @property
+    def identifiers(self) -> frozenset[str]:
+        return frozenset(self.entries)
+
+    def stateable(self, cited: Sequence[str]) -> frozenset[Decimal]:
+        """The numbers a section citing exactly these facts may state.
+
+        Raises rather than returning a default when a citation resolves to
+        nothing, so an unknown citation cannot quietly narrow the permitted set
+        to the package-wide scalars and look like a grounding failure instead.
+        """
+        allowed = set(self.package_numbers)
+        for identifier in cited:
+            entry = self.entries.get(identifier)
+            if entry is None:
+                raise NarrativeRefused(REASON_UNKNOWN_CITATION)
+            allowed |= entry.numbers
+        return frozenset(allowed)
 
     @classmethod
     def of(cls, request: NarrativeRequest) -> NarrativeGround:
         document = request.document
-        fact_ids: set[str] = set()
-        citation_ids: set[str] = set()
-        numbers: set[Decimal] = set()
-        labels: set[str] = set()
+        entries: dict[str, GroundedEntry] = {}
         caveats: set[str] = set(document["caveats"])
 
-        entries = (*document["facts"], *document["series"], *document["comparisons"])
-        for entry in entries:
-            fact_ids.add(str(entry["fact_id"]))
-            citation_ids.add(str(entry["citation_id"]))
+        for entry in (*document["facts"], *document["series"], *document["comparisons"]):
             caveats.update(entry.get("caveats", ()))
+            numbers: set[Decimal] = set()
+            labels: set[str] = set()
             for key in ("value", "value_percent"):
                 numbers.update(_as_numbers(entry.get(key)))
             numbers.add(Decimal(int(entry["precision"])))
@@ -238,13 +266,19 @@ class NarrativeGround:
                 numbers.update(_as_numbers(bucket.get("value")))
                 numbers.add(Decimal(int(bucket["rows"])))
 
-        numbers.add(Decimal(int(document["monetary_precision"])))
+            grounded = GroundedEntry(numbers=frozenset(numbers), labels=frozenset(labels))
+            # A fact is citable by either identifier, and both must reach the
+            # same permitted set — otherwise which name a provider happened to
+            # use would decide what it is allowed to say.
+            entries[str(entry["fact_id"])] = grounded
+            entries[str(entry["citation_id"])] = grounded
+
         return cls(
-            fact_ids=frozenset(fact_ids),
-            citation_ids=frozenset(citation_ids),
-            numbers=frozenset(numbers),
-            labels=frozenset(labels),
+            entries=entries,
             caveats=frozenset(caveats),
+            # A formatting precision is a property of the package rather than a
+            # figure about the business, so it is stateable beside any fact.
+            package_numbers=frozenset({Decimal(int(document["monetary_precision"]))}),
         )
 
 
@@ -418,6 +452,12 @@ def validate(draft: NarrativeDraft, *, request: NarrativeRequest) -> None:
         raise NarrativeRefused(REASON_ADAPTER_MISMATCH)
 
     ground = NarrativeGround.of(request)
+    offered = [entry.language for entry in draft.languages]
+    if len(set(offered)) != len(offered):
+        # Collapsing duplicates into a mapping would validate the last entry
+        # and hand back the draft still carrying the others, so a second copy
+        # of a language could smuggle through anything at all.
+        raise NarrativeRefused(REASON_ADAPTER_MISMATCH)
     seen = {entry.language: entry for entry in draft.languages}
     if set(seen) - set(request.languages):
         raise NarrativeRefused(REASON_UNKNOWN_LANGUAGE)
@@ -447,27 +487,31 @@ def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> Non
         if not section.cited_fact_ids:
             # Prose with no citation is an uncited claim whatever it says.
             raise NarrativeRefused(REASON_UNCITED_SECTION)
-        for fact_id in section.cited_fact_ids:
-            if fact_id not in ground.fact_ids and fact_id not in ground.citation_ids:
-                raise NarrativeRefused(REASON_UNKNOWN_CITATION)
         for caveat in section.caveats:
             if caveat not in ground.caveats:
                 raise NarrativeRefused(REASON_UNKNOWN_CAVEAT)
         _assert_safe(section.text)
-        _assert_grounded_numbers(section.text, ground)
+        # `stateable` resolves the citations and derives the permitted numbers
+        # in one step, so a sentence is measured against what it cites rather
+        # than against everything the package happens to contain.
+        _assert_grounded_numbers(section.text, ground.stateable(section.cited_fact_ids))
 
 
-def _assert_grounded_numbers(text: str, ground: NarrativeGround) -> None:
-    """Refuse any number in the prose that was not one of the supplied values.
+def _assert_grounded_numbers(text: str, allowed: frozenset[Decimal]) -> None:
+    """Refuse any number in the prose the cited facts did not carry.
 
-    A number is supplied if it was given as a value or occurs inside a label
+    A number is carried if it was given as a value or occurs inside a label
     that was given, so a period label such as `2026-01-05` grounds both the
-    whole label and the year a sentence names on its own. One question, asked
-    once: was this number in the request?
+    whole label and the year a sentence names on its own.
+
+    The sign is part of the value. `-500.00` where `500.00` was supplied
+    reverses a governed figure, so it must not ground; a hyphen between digits
+    is a separator rather than a sign, which is what keeps `2026-01-05` from
+    reading as a negative month.
     """
     for token in _NUMBER_TOKEN.findall(_normalize_digits(text)):
         value = _parse_number(token)
-        if value is None or value not in ground.numbers:
+        if value is None or value not in allowed:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
 
 
@@ -592,7 +636,10 @@ def _provider_reason(error: Exception) -> str:
 
 _UNIT_RATIO = "ratio"
 _FORMULA_PREFIXES = frozenset({"=", "+", "-", "@"})
-_NUMBER_TOKEN = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# A sign counts only where one could be meant. After a word character it is a
+# separator — the hyphens in `2026-01-05` — and consuming it there would read a
+# date as a run of negative numbers.
+_NUMBER_TOKEN = re.compile(r"(?<![\w.])[+-]?\d[\d,]*(?:\.\d+)?")
 _DIGIT_TABLE: dict[int, int] = {
     # Arabic-Indic (U+0660) and Extended Arabic-Indic (U+06F0) digit blocks,
     # plus the Arabic decimal and thousands separators.

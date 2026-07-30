@@ -302,10 +302,124 @@ def test_the_ground_is_derived_from_the_request_that_was_sent() -> None:
 
     ground = NarrativeGround.of(request)
 
-    assert revenue_fact_id(request) in ground.fact_ids
-    assert Decimal("500.00") in ground.numbers
-    assert "Beverages" in ground.labels
+    assert revenue_fact_id(request) in ground.identifiers
+    assert Decimal("500.00") in ground.stateable((revenue_fact_id(request),))
     assert "currency_not_declared" in ground.caveats
+
+
+def test_a_fact_is_reachable_by_either_of_its_identifiers() -> None:
+    # Which name a provider happens to cite must not decide what it may say.
+    request = request_for()
+    entry = next(
+        fact for fact in request.document["facts"] if fact["metric"] == "revenue"
+    )
+
+    ground = NarrativeGround.of(request)
+
+    assert ground.stateable((str(entry["fact_id"]),)) == ground.stateable(
+        (str(entry["citation_id"]),)
+    )
+
+
+def test_a_number_belonging_to_a_fact_the_section_did_not_cite_is_refused() -> None:
+    # Citing revenue and stating the units count produces a report that is
+    # cited and wrong. The number exists in the package, which is why a single
+    # pool of supplied numbers cannot answer the question a reader needs.
+    request = request_for()
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("الإيرادات ١١.", cited=(revenue_fact_id(request),)),),
+                english=(section("Revenue was 11.", cited=(revenue_fact_id(request),)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_citing_both_facts_permits_stating_both_figures() -> None:
+    request = request_for()
+    revenue = revenue_fact_id(request)
+    units = str(
+        next(fact for fact in request.document["facts"] if fact["metric"] == "units")[
+            "fact_id"
+        ]
+    )
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٥٠٠٫٠٠ عبر ١١ وحدة.", cited=(revenue, units)),),
+            english=(section("Revenue 500.00 over 11 units.", cited=(revenue, units)),),
+        ),
+        request=request,
+    )
+
+
+def test_a_sign_reverses_a_figure_and_is_not_grounded_by_its_positive() -> None:
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("الإيرادات -٥٠٠٫٠٠.", cited=(fact_id,)),),
+                english=(section("Revenue was -500.00.", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_a_hyphen_between_digits_stays_a_separator() -> None:
+    # Reading the hyphens in 2026-01-05 as signs would turn a supplied label
+    # into a run of negative numbers nobody supplied.
+    request = request_for()
+    fact_id = str(request.document["series"][0]["fact_id"])
+
+    validate(
+        draft(
+            arabic=(section("في 2026-01-05 ارتفعت المبيعات.", cited=(fact_id,)),),
+            english=(section("On 2026-01-05 sales rose.", cited=(fact_id,)),),
+        ),
+        request=request,
+    )
+
+
+def test_a_duplicated_language_is_refused_before_it_can_be_collapsed() -> None:
+    # A mapping keeps the last entry, so the earlier copy would go unvalidated
+    # while the service still handed back the draft containing it.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            NarrativeDraft(
+                adapter_version=ADAPTER_VERSION,
+                package_version=request.package_version,
+                languages=(
+                    LanguageNarrative(
+                        language=LANGUAGE_ARABIC,
+                        sections=(section("الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
+                    ),
+                    LanguageNarrative(
+                        language=LANGUAGE_ENGLISH,
+                        sections=(
+                            section("Revenue 99999 =cmd|calc", cited=("fct_invented",)),
+                        ),
+                    ),
+                    LanguageNarrative(
+                        language=LANGUAGE_ENGLISH,
+                        sections=(section("Revenue was 500.00.", cited=(fact_id,)),),
+                    ),
+                ),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_ADAPTER_MISMATCH
 
 
 # --- response validation --------------------------------------------------
@@ -420,18 +534,40 @@ def test_a_period_label_is_read_as_a_label_not_as_loose_numbers() -> None:
 
 def test_a_year_named_on_its_own_is_grounded_by_the_labels_that_contain_it() -> None:
     # Refusing "in 2026" would cost a governed figure to protect nothing: the
-    # year was supplied inside every period label. Quoting part of a supplied
-    # string is not a derivation.
+    # year was supplied inside every period label of the series being cited.
+    # Quoting part of a supplied string is not a derivation.
     request = request_for()
-    fact_id = revenue_fact_id(request)
+    revenue = revenue_fact_id(request)
+    trend = str(request.document["series"][0]["fact_id"])
 
     validate(
         draft(
-            arabic=(section("خلال ٢٠٢٦ بلغت الإيرادات ٥٠٠٫٠٠.", cited=(fact_id,)),),
-            english=(section("In January 2026 revenue reached 500.00.", cited=(fact_id,)),),
+            arabic=(section("خلال ٢٠٢٦ بلغت الإيرادات ٥٠٠٫٠٠.", cited=(revenue, trend)),),
+            english=(
+                section("In January 2026 revenue reached 500.00.", cited=(revenue, trend)),
+            ),
         ),
         request=request,
     )
+
+
+def test_a_period_a_section_never_cited_is_not_grounded_by_another_fact() -> None:
+    # The year is supplied by the series, not by the revenue total. A section
+    # that names a period is citing the series whether it says so or not.
+    request = request_for()
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("خلال ٢٠٢٦ الإيرادات ٥٠٠٫٠٠.", cited=(revenue_fact_id(request),)),),
+                english=(
+                    section("In 2026 revenue was 500.00.", cited=(revenue_fact_id(request),)),
+                ),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
 
 
 def test_a_citation_that_resolves_to_nothing_is_refused() -> None:
