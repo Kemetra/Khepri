@@ -77,18 +77,18 @@ class Harness:
 def worker(
     test: Harness,
     handler: Handler,
-    *times: datetime,
-    lease_for: timedelta = timedelta(minutes=2),
-    retry_delay: timedelta = timedelta(minutes=1),
+    clock: Clock,
+    policy: WorkerPolicy | None = None,
 ) -> ReportWorker:
     return ReportWorker(
         jobs=test.jobs,
         handler=handler,
-        clock=Clock(*times),
-        policy=WorkerPolicy(
+        clock=clock,
+        policy=policy
+        or WorkerPolicy(
             worker_id="worker_alpha",
-            lease_for=lease_for,
-            retry_delay=retry_delay,
+            lease_for=timedelta(minutes=2),
+            retry_delay=timedelta(minutes=1),
         ),
     )
 
@@ -96,13 +96,13 @@ def worker(
 def test_successful_delivery_completes_the_leased_job_once() -> None:
     test = Harness()
     handler = Handler()
-    report_worker = worker(test, handler, NOW, NOW + timedelta(seconds=30))
+    report_worker = worker(test, handler, Clock(NOW, NOW + timedelta(seconds=30)))
 
     completed = report_worker.process(ReportJobMessage(job_id=test.queued.job_id))
     duplicate = worker(
         test,
         handler,
-        NOW + timedelta(minutes=1),
+        Clock(NOW + timedelta(minutes=1)),
     ).process(ReportJobMessage(job_id=test.queued.job_id))
 
     assert completed is not None
@@ -116,7 +116,7 @@ def test_successful_delivery_completes_the_leased_job_once() -> None:
 def test_handler_failure_is_sanitized_and_scheduled_for_retry() -> None:
     test = Harness()
     handler = Handler(failures=1)
-    report_worker = worker(test, handler, NOW, NOW + timedelta(seconds=15))
+    report_worker = worker(test, handler, Clock(NOW, NOW + timedelta(seconds=15)))
 
     with pytest.raises(ReportExecutionFailed, match="failed") as captured:
         report_worker.process(ReportJobMessage(job_id=test.queued.job_id))
@@ -126,8 +126,10 @@ def test_handler_failure_is_sanitized_and_scheduled_for_retry() -> None:
     retried = worker(
         test,
         handler,
-        NOW + timedelta(minutes=1, seconds=15),
-        NOW + timedelta(minutes=1, seconds=30),
+        Clock(
+            NOW + timedelta(minutes=1, seconds=15),
+            NOW + timedelta(minutes=1, seconds=30),
+        ),
     ).process(ReportJobMessage(job_id=test.queued.job_id))
     assert retried is not None
     assert retried.state == "succeeded"
@@ -139,15 +141,17 @@ def test_failures_stop_at_the_job_attempt_limit() -> None:
     handler = Handler(failures=2)
 
     with pytest.raises(ReportExecutionFailed):
-        worker(test, handler, NOW, NOW + timedelta(seconds=10)).process(
+        worker(test, handler, Clock(NOW, NOW + timedelta(seconds=10))).process(
             ReportJobMessage(job_id=test.queued.job_id)
         )
     with pytest.raises(ReportExecutionFailed) as exhausted:
         worker(
             test,
             handler,
-            NOW + timedelta(minutes=1, seconds=10),
-            NOW + timedelta(minutes=1, seconds=20),
+            Clock(
+                NOW + timedelta(minutes=1, seconds=10),
+                NOW + timedelta(minutes=1, seconds=20),
+            ),
         ).process(ReportJobMessage(job_id=test.queued.job_id))
 
     assert exhausted.value.__cause__ is None
@@ -155,7 +159,7 @@ def test_failures_stop_at_the_job_attempt_limit() -> None:
     assert worker(
         test,
         handler,
-        NOW + timedelta(minutes=3),
+        Clock(NOW + timedelta(minutes=3)),
     ).process(ReportJobMessage(job_id=test.queued.job_id)) is None
 
 
@@ -165,9 +169,12 @@ def test_stale_worker_cannot_complete_after_its_lease_expires() -> None:
     report_worker = worker(
         test,
         handler,
-        NOW,
-        NOW + timedelta(minutes=2),
-        lease_for=timedelta(minutes=1),
+        Clock(NOW, NOW + timedelta(minutes=2)),
+        WorkerPolicy(
+            worker_id="worker_alpha",
+            lease_for=timedelta(minutes=1),
+            retry_delay=timedelta(minutes=1),
+        ),
     )
 
     with pytest.raises(LeaseLost):
