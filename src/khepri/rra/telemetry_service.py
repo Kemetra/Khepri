@@ -45,6 +45,14 @@ class StageMeasurement:
 
 
 @dataclass(frozen=True, slots=True)
+class StageCompletion:
+    transition: str
+    completed_at: datetime
+    provider_started_at: datetime | None = None
+    output_size_bytes: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _EventMetrics:
     transition: str
     recorded_at: datetime
@@ -96,28 +104,24 @@ class OperationalTelemetryService:
     def finish(
         self,
         measurement: StageMeasurement,
-        *,
-        transition: str,
-        completed_at: datetime,
-        provider_started_at: datetime | None = None,
-        output_size_bytes: int | None = None,
+        completion: StageCompletion,
     ) -> OperationalEvent:
-        if transition not in _TERMINAL_TRANSITIONS:
+        if completion.transition not in _TERMINAL_TRANSITIONS:
             raise ValueError("A terminal telemetry transition is required.")
         provider_latency_ms = self._provider_latency(
             measurement,
-            provider_started_at=provider_started_at,
-            completed_at=completed_at,
+            provider_started_at=completion.provider_started_at,
+            completed_at=completion.completed_at,
         )
         return self._record(
             measurement,
             _EventMetrics(
-                transition=transition,
-                recorded_at=completed_at,
-                duration_ms=_elapsed_ms(measurement.started_at, completed_at),
+                transition=completion.transition,
+                recorded_at=completion.completed_at,
+                duration_ms=_elapsed_ms(measurement.started_at, completion.completed_at),
                 queue_time_ms=None,
                 provider_latency_ms=provider_latency_ms,
-                output_size_bytes=output_size_bytes,
+                output_size_bytes=completion.output_size_bytes,
             ),
         )
 

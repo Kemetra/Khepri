@@ -15,6 +15,7 @@ from khepri.rra.telemetry import (
 )
 from khepri.rra.telemetry_service import (
     OperationalTelemetryService,
+    StageCompletion,
     StageMeasurement,
 )
 
@@ -90,9 +91,11 @@ def test_terminal_stage_records_elapsed_time_and_output_size() -> None:
 
     terminal = telemetry.finish(
         measurement,
-        transition=TRANSITION_SUCCEEDED,
-        completed_at=NOW + timedelta(milliseconds=25),
-        output_size_bytes=2048,
+        StageCompletion(
+            transition=TRANSITION_SUCCEEDED,
+            completed_at=NOW + timedelta(milliseconds=25),
+            output_size_bytes=2048,
+        ),
     )
 
     assert terminal.transition == TRANSITION_SUCCEEDED
@@ -112,8 +115,10 @@ def test_terminal_failures_and_refusals_are_content_free(transition: str) -> Non
 
     terminal = service(writer).finish(
         stage(),
-        transition=transition,
-        completed_at=NOW + timedelta(milliseconds=5),
+        StageCompletion(
+            transition=transition,
+            completed_at=NOW + timedelta(milliseconds=5),
+        ),
     )
 
     assert terminal.transition == transition
@@ -126,9 +131,11 @@ def test_provider_latency_is_derived_only_for_narrative_generation() -> None:
 
     terminal = service(writer).finish(
         stage(stage="narrative_generation"),
-        transition=TRANSITION_SUCCEEDED,
-        completed_at=NOW + timedelta(milliseconds=40),
-        provider_started_at=NOW + timedelta(milliseconds=10),
+        StageCompletion(
+            transition=TRANSITION_SUCCEEDED,
+            completed_at=NOW + timedelta(milliseconds=40),
+            provider_started_at=NOW + timedelta(milliseconds=10),
+        ),
     )
 
     assert terminal.provider_latency_ms == 30
@@ -172,26 +179,36 @@ def test_invalid_terminal_measurements_fail_closed() -> None:
     with pytest.raises(ValueError):
         telemetry.finish(
             stage(),
-            transition=TRANSITION_STARTED,
-            completed_at=NOW + timedelta(milliseconds=1),
+            StageCompletion(
+                transition=TRANSITION_STARTED,
+                completed_at=NOW + timedelta(milliseconds=1),
+            ),
         )
     with pytest.raises(ValueError):
         telemetry.finish(
             stage(),
-            transition=TRANSITION_SUCCEEDED,
-            completed_at=NOW - timedelta(milliseconds=1),
+            StageCompletion(
+                transition=TRANSITION_SUCCEEDED,
+                completed_at=NOW - timedelta(milliseconds=1),
+            ),
         )
     with pytest.raises(ValueError):
         telemetry.finish(
             stage(),
-            transition=TRANSITION_SUCCEEDED,
-            completed_at=NOW + timedelta(milliseconds=1),
-            provider_started_at=NOW,
+            StageCompletion(
+                transition=TRANSITION_SUCCEEDED,
+                completed_at=NOW + timedelta(milliseconds=1),
+                provider_started_at=NOW,
+            ),
         )
 
 
 def test_stage_measurement_has_no_customer_content_fields() -> None:
-    names = {field.name for field in fields(StageMeasurement)}
+    names = {
+        field.name
+        for record_type in (StageMeasurement, StageCompletion)
+        for field in fields(record_type)
+    }
 
     assert {
         "filename",
