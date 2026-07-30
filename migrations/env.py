@@ -6,6 +6,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base
 
 config = context.config
@@ -17,6 +18,8 @@ if database_url:
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
+if ReportJobRow.metadata is not target_metadata:
+    raise RuntimeError("Report job metadata is not registered with the RRA base.")
 
 
 def run_migrations_offline() -> None:
