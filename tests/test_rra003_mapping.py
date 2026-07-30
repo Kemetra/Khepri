@@ -54,9 +54,9 @@ def _profile(content: bytes):
 def test_full_retail_schema_maps_every_governed_semantic() -> None:
     content = (
         b"date,revenue,units,invoice_no,sku,category,branch,channel,"
-        b"cogs,discount,refunds\n"
-        b"2026-01-05,125.50,3,INV-1,SKU-1,Beverages,Cairo,online,80.00,5.00,1\n"
-        b"2026-01-06,90.00,2,INV-2,SKU-2,Snacks,Giza,retail,60.00,0.00,0\n"
+        b"cogs,discount_amount,refund_amount\n"
+        b"2026-01-05,125.50,3,INV-1,SKU-1,Beverages,Cairo,online,80.00,5.00,1.00\n"
+        b"2026-01-06,90.00,2,INV-2,SKU-2,Snacks,Giza,retail,60.00,0.00,0.00\n"
     )
 
     mapping = mapped(content)
@@ -75,6 +75,49 @@ def test_full_retail_schema_maps_every_governed_semantic() -> None:
         SEMANTIC_DISCOUNT,
         SEMANTIC_RETURNS,
     }
+
+
+def test_a_bare_discount_or_returns_column_stays_unresolved() -> None:
+    # Nothing in the label says whether the numbers are money, a percentage, or
+    # a count, so the semantic is reported unresolved rather than guessed.
+    for header, semantic in (
+        (b"discount", SEMANTIC_DISCOUNT),
+        (b"promo", SEMANTIC_DISCOUNT),
+        (b"refunds", SEMANTIC_RETURNS),
+        (b"returns", SEMANTIC_RETURNS),
+    ):
+        content = b"date,revenue," + header + b"\n2026-01-05,100.00,10\n"
+        mapping = mapped(content)
+
+        assert mapping.state_of(semantic) == STATE_AMBIGUOUS, header
+        # The column is still reported: it was found, not missing.
+        assert mapping.for_semantic(semantic).candidates != (), header
+
+
+def test_an_amount_declaring_label_resolves_discount_and_returns() -> None:
+    for header, semantic in (
+        (b"discount_amount", SEMANTIC_DISCOUNT),
+        (b"discount_value", SEMANTIC_DISCOUNT),
+        (b"total_discount", SEMANTIC_DISCOUNT),
+        (b"refund_amount", SEMANTIC_RETURNS),
+        (b"returns_value", SEMANTIC_RETURNS),
+    ):
+        content = b"date,revenue," + header + b"\n2026-01-05,100.00,10.00\n"
+
+        assert mapped(content).state_of(semantic) == STATE_MAPPED, header
+
+    arabic = "date,revenue,مبلغ الخصم\n2026-01-05,100.00,10.00\n".encode()
+    assert mapped(arabic).state_of(SEMANTIC_DISCOUNT) == STATE_MAPPED
+
+
+def test_an_unresolved_optional_semantic_leaves_the_dataset_admissible() -> None:
+    # The ambiguity costs the discount metric, not the whole report.
+    content = b"date,revenue,discount\n2026-01-05,100.00,10\n2026-01-06,200.00,20\n"
+    profile = _profile(content)
+
+    decision = assess_admissibility(profile, build_mapping(profile))
+
+    assert decision.admissible is True
 
 
 def test_requirements_are_distinguished_per_semantic() -> None:

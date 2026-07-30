@@ -35,6 +35,7 @@ from khepri.rra.mapping import (
     SEMANTIC_TRANSACTION_DATE,
     SEMANTIC_TRANSACTION_ID,
     SEMANTIC_UNITS,
+    STATE_AMBIGUOUS,
     RetailMapping,
     build_mapping,
 )
@@ -70,6 +71,7 @@ REASON_INPUT_UNAVAILABLE = "required_input_unavailable"
 REASON_ZERO_DENOMINATOR = "zero_denominator"
 REASON_RECONCILIATION_FAILED = "reconciliation_failed"
 REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
+REASON_AMBIGUOUS_MAPPING = "ambiguous_mapping"
 
 CAVEAT_CURRENCY_NOT_DECLARED = "currency_not_declared"
 CAVEAT_DUPLICATE_ROWS = "duplicate_rows_present"
@@ -79,8 +81,6 @@ CAVEAT_NULL_MEASURE_INPUTS = "null_measure_inputs"
 CAVEAT_UNDATED_ROWS_EXCLUDED = "rows_without_time_field_excluded"
 CAVEAT_BUCKETS_TRUNCATED = "comparison_buckets_truncated"
 CAVEAT_PERSONAL_VALUES_REDACTED = "personal_values_redacted"
-CAVEAT_DISCOUNT_AS_AMOUNT = "discount_interpreted_as_amount"
-CAVEAT_RETURNS_AS_AMOUNT = "returns_interpreted_as_amount"
 
 RATIO_PRECISION = 4
 MIN_MONETARY_PRECISION = 2
@@ -395,6 +395,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_DISCOUNT,),
+        reason=_unavailable_reason(mapping, SEMANTIC_DISCOUNT),
     )
     add(
         METRIC_RETURNS,
@@ -402,6 +403,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_RETURNS,),
+        reason=_unavailable_reason(mapping, SEMANTIC_RETURNS),
     )
 
     _add_ratio(
@@ -487,9 +489,6 @@ def _build(
         caveats.append(CAVEAT_NEGATIVE_REVENUE)
     if returns_total is not None:
         caveats.append(CAVEAT_RETURNS_NOT_NETTED)
-        caveats.append(CAVEAT_RETURNS_AS_AMOUNT)
-    if discount_total is not None:
-        caveats.append(CAVEAT_DISCOUNT_AS_AMOUNT)
     if row_count and int(frame.is_duplicated().sum()):
         caveats.append(CAVEAT_DUPLICATE_ROWS)
 
@@ -507,6 +506,19 @@ def _build(
         refusals=tuple(sorted(refusals, key=lambda refusal: refusal.metric)),
         caveats=tuple(sorted(set(caveats))),
     )
+
+
+def _unavailable_reason(mapping: RetailMapping, semantic: str) -> str:
+    """Say why a measure is absent: never found, or found and unresolved.
+
+    A column named only `discount` states no measure kind, so the mapper leaves
+    it ambiguous rather than letting it be summed as currency. Reporting that as
+    a plain missing input would hide that the data is present and the *label* is
+    what falls short.
+    """
+    if mapping.state_of(semantic) == STATE_AMBIGUOUS:
+        return REASON_AMBIGUOUS_MAPPING
+    return REASON_INPUT_UNAVAILABLE
 
 
 def _assert_derived_from_profile(

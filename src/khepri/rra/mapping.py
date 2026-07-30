@@ -161,6 +161,28 @@ _AFFIX_ONLY_QUALIFIERS = frozenset({"running", "cumulated", "accumulated"})
 # read as a denominator. Any separator avoids this, which is the documented way
 # to express a row-level measure whose name happens to contain the sequence.
 _PER_INFIXES = ("per", "لكل")
+# A bare "discount" or "returns" column of plain integers is indistinguishable
+# between an amount, a percentage, and a count, and summing it as currency
+# publishes an authoritative figure from a guess. Such a semantic is answered
+# only where the label itself declares the measure to be an amount.
+_AMOUNT_TOKENS = frozenset(
+    {
+        "amount",
+        "amounts",
+        "value",
+        "values",
+        "total",
+        "totals",
+        "money",
+        "currency",
+        "قيمه",
+        "القيمه",
+        "مبلغ",
+        "المبلغ",
+        "اجمالي",
+        "الاجمالي",
+    }
+)
 
 _CONFIDENCE_EXACT = Decimal("0.95")
 _CONFIDENCE_TOKEN = Decimal("0.80")
@@ -179,6 +201,7 @@ class SemanticRule:
     type_only: bool = False
     disqualifiers: frozenset[str] = frozenset()
     rejects_per_unit: bool = False
+    requires_amount_evidence: bool = False
 
 
 SEMANTIC_RULES: tuple[SemanticRule, ...] = (
@@ -401,6 +424,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
             }
         ),
         rejects_per_unit=True,
+        requires_amount_evidence=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_RETURNS,
@@ -421,6 +445,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
             }
         ),
         rejects_per_unit=True,
+        requires_amount_evidence=True,
     ),
 )
 
@@ -572,6 +597,22 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
             if column.inferred_type in rule.accepted_types
         ]
 
+    if rule.requires_amount_evidence:
+        undeclared = [
+            candidate for candidate in candidates if not _declares_amount(candidate.safe_label)
+        ]
+        if undeclared:
+            # The column is found and named, but its measure kind is not stated,
+            # so it is reported unresolved rather than summed as currency.
+            return SemanticMapping(
+                semantic=rule.semantic,
+                requirement=rule.requirement,
+                state=STATE_AMBIGUOUS,
+                candidates=tuple(
+                    sorted(candidates, key=lambda candidate: candidate.position)
+                ),
+            )
+
     compatible = sorted(
         (candidate for candidate in candidates if candidate.type_compatible),
         key=lambda candidate: (-Decimal(candidate.confidence), candidate.position),
@@ -612,6 +653,15 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
         state=STATE_UNAVAILABLE,
         candidates=(),
     )
+
+
+def _declares_amount(safe_label: str) -> bool:
+    """Whether a label states that its measure is money rather than a rate or count."""
+    tokens = label_tokens(safe_label)
+    if _AMOUNT_TOKENS & set(tokens):
+        return True
+    collapsed = "".join(tokens)
+    return any(term in collapsed for term in _AMOUNT_TOKENS)
 
 
 def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -> bool:

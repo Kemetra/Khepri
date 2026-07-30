@@ -10,12 +10,10 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import MAX_COMPARISON_BUCKETS, OTHER_BUCKET_LABEL
 from khepri.rra.facts import (
     CAVEAT_CURRENCY_NOT_DECLARED,
-    CAVEAT_DISCOUNT_AS_AMOUNT,
     CAVEAT_DUPLICATE_ROWS,
     CAVEAT_NEGATIVE_REVENUE,
     CAVEAT_NULL_MEASURE_INPUTS,
     CAVEAT_PERSONAL_VALUES_REDACTED,
-    CAVEAT_RETURNS_AS_AMOUNT,
     CAVEAT_RETURNS_NOT_NETTED,
     CAVEAT_UNDATED_ROWS_EXCLUDED,
     FORMULA_VERSION,
@@ -30,6 +28,7 @@ from khepri.rra.facts import (
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
     PACKAGE_VERSION,
+    REASON_AMBIGUOUS_MAPPING,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
     REASON_ZERO_DENOMINATOR,
@@ -111,7 +110,7 @@ def test_conditional_metrics_are_refused_when_inputs_are_absent() -> None:
 
 def test_conditional_metrics_appear_when_their_inputs_exist() -> None:
     content = (
-        b"date,revenue,units,cogs,discount,refunds\n"
+        b"date,revenue,units,cogs,discount_amount,refund_amount\n"
         b"2026-01-05,200.00,4,120.00,10.00,1.00\n"
         b"2026-01-06,300.00,6,180.00,5.00,2.00\n"
     )
@@ -577,7 +576,9 @@ def test_serialized_aggregates_reconcile_at_the_declared_precision() -> None:
     assert sum(points) == total
 
 
-def test_a_discount_amount_declares_its_interpretation() -> None:
+def test_a_bare_discount_column_is_refused_rather_than_summed_as_money() -> None:
+    # 10 and 20 could be currency, percentages, or counts. Nothing in the label
+    # or the values decides, so the figure is not published at all.
     content = (
         b"date,revenue,discount\n"
         b"2026-01-05,100.00,10.00\n"
@@ -586,8 +587,22 @@ def test_a_discount_amount_declares_its_interpretation() -> None:
 
     result = package(content)
 
-    assert result.value(METRIC_DISCOUNT) == "30.00"
-    assert CAVEAT_DISCOUNT_AS_AMOUNT in result.caveats
+    assert result.fact(METRIC_DISCOUNT) is None
+    assert result.refusal(METRIC_DISCOUNT).reason == REASON_AMBIGUOUS_MAPPING
+
+
+def test_a_discount_amount_is_published_when_the_label_declares_it() -> None:
+    for header in (b"discount_amount", b"discount_value", b"total_discount"):
+        content = (
+            b"date,revenue," + header + b"\n"
+            b"2026-01-05,100.00,10.00\n"
+            b"2026-01-06,200.00,20.00\n"
+        )
+
+        result = package(content)
+
+        assert result.value(METRIC_DISCOUNT) == "30.00", header
+        assert result.fact(METRIC_DISCOUNT).unit_kind == UNIT_MONETARY, header
 
 
 def test_a_discount_rate_column_is_never_summed_as_money() -> None:
@@ -642,13 +657,23 @@ def test_monetary_magnitude_beyond_the_governed_maximum_is_refused() -> None:
         package(content)
 
 
-def test_an_emitted_returns_total_declares_its_interpretation() -> None:
+def test_a_bare_returns_column_is_refused_rather_than_summed_as_money() -> None:
+    # 2 and 3 are far more likely returned items than 5.00 of currency.
     content = b"date,revenue,refunds\n2026-01-05,100.00,2\n2026-01-06,200.00,3\n"
 
     result = package(content)
 
+    assert result.fact(METRIC_RETURNS) is None
+    assert result.refusal(METRIC_RETURNS).reason == REASON_AMBIGUOUS_MAPPING
+
+
+def test_a_returns_amount_is_published_when_the_label_declares_it() -> None:
+    content = b"date,revenue,refund_amount\n2026-01-05,100.00,2.00\n2026-01-06,200.00,3.00\n"
+
+    result = package(content)
+
     assert result.value(METRIC_RETURNS) == "5.00"
-    assert CAVEAT_RETURNS_AS_AMOUNT in result.caveats
+    assert CAVEAT_RETURNS_NOT_NETTED in result.caveats
 
 
 def test_count_magnitude_beyond_the_governed_maximum_is_refused() -> None:
