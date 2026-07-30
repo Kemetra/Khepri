@@ -11,6 +11,7 @@ from khepri.rra.admissibility import ReportRequest
 from khepri.rra.datasets import (
     DatasetProfileRecord,
     ProfileCorrupted,
+    ProfileRequestConflict,
     ProfilingService,
     UploadNotFound,
 )
@@ -267,6 +268,8 @@ def create_app(
                 raise _session_unavailable() from error
             except UploadNotFound as error:
                 raise HTTPException(status_code=404, detail=str(error)) from error
+            except ProfileRequestConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
             except ProfileRejected as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
             except ProfileCorrupted as error:

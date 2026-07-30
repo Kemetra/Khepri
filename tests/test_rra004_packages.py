@@ -620,6 +620,41 @@ def test_a_package_claiming_another_input_is_refused() -> None:
     assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
+def test_reprofiling_under_different_semantics_is_refused() -> None:
+    # A caller requiring `store` must not be handed an admissibility decision
+    # taken without that requirement, on a dataset that has no store column.
+    test = harness()
+    redeem_and_consent(test)
+    test.client.post(
+        "/api/v1/beta/uploads",
+        content=b"date,revenue\n2026-01-05,100.00\n2026-01-06,50.00\n",
+    )
+    first = test.client.post("/api/v1/beta/profile", json={})
+    assert first.status_code == 201
+
+    second = test.client.post(
+        "/api/v1/beta/profile",
+        json={"requested_semantics": ["store"]},
+    )
+
+    assert second.status_code == 409
+    assert "different requested semantics" in second.json()["detail"]
+
+
+def test_reprofiling_under_the_same_semantics_is_still_idempotent() -> None:
+    test = harness()
+    redeem_and_consent(test)
+    test.client.post("/api/v1/beta/uploads", content=GOLDEN_CSV)
+    body = {"requested_semantics": ["store"]}
+
+    first = test.client.post("/api/v1/beta/profile", json=body)
+    second = test.client.post("/api/v1/beta/profile", json=body)
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json() == first.json()
+
+
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
     first = prepared().client.post("/api/v1/beta/facts").json()
     second = prepared().client.post("/api/v1/beta/facts").json()

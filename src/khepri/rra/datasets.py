@@ -35,6 +35,10 @@ class ProfileCorrupted(ValueError):
     """A stored profile no longer matches the digest it is addressed by."""
 
 
+class ProfileRequestConflict(ValueError):
+    """The stored profile was decided under different requested semantics."""
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetProfileRecord:
     profile_id: str
@@ -139,6 +143,17 @@ class ProfilingService:
 
         existing = self._profiles.get_profile_for_upload(upload.upload_id, scope)
         if existing is not None:
+            # A profile records the admissibility decision for the semantics it
+            # was asked about, and one is stored per upload. Returning it for a
+            # different request would answer a question nobody asked: a caller
+            # requiring `store` would be told the dataset is admissible on the
+            # strength of a decision taken without that requirement.
+            if _requested_semantics(existing) != tuple(
+                sorted(request.requested_semantics)
+            ):
+                raise ProfileRequestConflict(
+                    "This upload was profiled under different requested semantics."
+                )
             return existing, False
 
         content = self._objects.get(upload.object_key)
@@ -194,6 +209,10 @@ def build_document(
         "mapping": mapping.as_document(),
         "admissibility": decision.as_document(),
     }
+
+
+def _requested_semantics(record: DatasetProfileRecord) -> tuple[str, ...]:
+    return tuple(record.document["admissibility"]["requested_semantics"])
 
 
 def document_digest(document: dict[str, Any]) -> str:
