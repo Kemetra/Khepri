@@ -195,16 +195,9 @@ class ReportDelivery:
     surfaces: tuple[SurfaceContent, ...]
 
     def __post_init__(self) -> None:
-        if tuple(entry.surface for entry in self.surfaces) != REQUIRED_SURFACES:
-            raise ValueError("A delivery carries every required surface exactly once.")
-        if self.record.bundle_id != self.bundle.bundle_id:
-            raise ValueError("The delivery record names another bundle.")
-        for entry in self.surfaces:
-            # Reconciliation already checked this, and it is checked again here
-            # because this is the object a store writes: the last place a
-            # surface from one run could arrive beside a bundle from another.
-            if entry.bundle_id != self.bundle.bundle_id:
-                raise ValueError("A surface was built for another bundle.")
+        _require_every_surface(self.surfaces)
+        _require_named_bundle(self.record, self.bundle)
+        _require_one_bundle_behind_every_surface(self.surfaces, self.bundle)
 
 
 class DeliveryStore(Protocol):
@@ -318,6 +311,38 @@ class ReportPipeline:
 def _require_text(value: str, name: str) -> None:
     if not value:
         raise ValueError(f"{name} is required.")
+
+
+def _require_every_surface(surfaces: tuple[SurfaceContent, ...]) -> None:
+    """Refuse a delivery that is not the whole report.
+
+    Ordered rather than counted, so two copies of the workbook cannot stand in
+    for the PDF that never rendered.
+    """
+    if tuple(entry.surface for entry in surfaces) != REQUIRED_SURFACES:
+        raise ValueError("A delivery carries every required surface exactly once.")
+
+
+def _require_named_bundle(record: DeliveryRecord, bundle: ReportBundle) -> None:
+    """Refuse evidence that names a report other than the one being delivered."""
+    if record.bundle_id != bundle.bundle_id:
+        raise ValueError("The delivery record names another bundle.")
+
+
+def _require_one_bundle_behind_every_surface(
+    surfaces: tuple[SurfaceContent, ...],
+    bundle: ReportBundle,
+) -> None:
+    """Refuse a surface built for some other bundle.
+
+    Deliberately redundant: `bundle.reconcile` already rejected this during
+    assembly. It is checked again because this object is what a store writes,
+    and so is the last place a surface from one run could arrive beside a
+    bundle from another.
+    """
+    for entry in surfaces:
+        if entry.bundle_id != bundle.bundle_id:
+            raise ValueError("A surface was built for another bundle.")
 
 
 __all__ = [

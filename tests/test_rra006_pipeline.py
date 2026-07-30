@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -249,6 +250,25 @@ class DriftingRenderer(Renderer):
         )
 
 
+def delivery_record() -> DeliveryRecord:
+    """A well-formed record. Tests bend one field of it with `replace`."""
+    return DeliveryRecord(
+        job_id="job_alpha",
+        session_id="ses_alpha",
+        bundle_id="a" * 64,
+        package_version="rra004.package.v1",
+        narrative_state=NARRATIVE_INCLUDED,
+        surfaces=REQUIRED_SURFACES,
+    )
+
+
+def renderers_but(failing: Renderer) -> tuple[Renderer, ...]:
+    """Every surface rendered faithfully, except the one a test broke."""
+    return tuple(
+        failing if name == failing.surface else Renderer(name) for name in REQUIRED_SURFACES
+    )
+
+
 class Deliveries:
     """A delivery store, remembering one record per job."""
 
@@ -417,51 +437,43 @@ def test_a_refused_narrative_delivers_nothing() -> None:
     assert built.deliveries.delivered == []
 
 
-def test_a_failed_renderer_delivers_nothing() -> None:
-    built = harness(
-        renderers=(
-            Renderer(SURFACE_WEB),
-            BrokenRenderer(SURFACE_PDF),
-            Renderer(SURFACE_EXCEL),
-        )
-    )
+@pytest.mark.parametrize(
+    ("failing", "surface", "reason"),
+    [
+        pytest.param(
+            BrokenRenderer,
+            SURFACE_PDF,
+            REASON_SURFACE_FAILED,
+            id="a_renderer_that_raised",
+        ),
+        pytest.param(
+            StaleRenderer,
+            SURFACE_EXCEL,
+            REASON_BUNDLE_MISMATCH,
+            id="a_surface_built_for_another_bundle",
+        ),
+        pytest.param(
+            DriftingRenderer,
+            SURFACE_PDF,
+            REASON_FIGURE_NOT_RECONCILED,
+            id="a_surface_that_restated_a_figure",
+        ),
+    ],
+)
+def test_a_surface_that_cannot_be_trusted_delivers_nothing(
+    failing: type[Renderer],
+    surface: str,
+    reason: str,
+) -> None:
+    # RRA-006 calls a partial export an incomplete bundle, so one untrustworthy
+    # surface discards the whole attempt rather than itself — whether it failed
+    # outright, was built for another bundle, or restated a governed figure.
+    built = harness(renderers=renderers_but(failing(surface)))
 
     with pytest.raises(ReportPipelineFailed) as raised:
         built.pipeline.run(Execution())
 
-    assert raised.value.reason == REASON_SURFACE_FAILED
-    assert built.deliveries.delivered == []
-
-
-def test_a_surface_built_for_another_bundle_delivers_nothing() -> None:
-    built = harness(
-        renderers=(
-            Renderer(SURFACE_WEB),
-            Renderer(SURFACE_PDF),
-            StaleRenderer(SURFACE_EXCEL),
-        )
-    )
-
-    with pytest.raises(ReportPipelineFailed) as raised:
-        built.pipeline.run(Execution())
-
-    assert raised.value.reason == REASON_BUNDLE_MISMATCH
-    assert built.deliveries.delivered == []
-
-
-def test_a_surface_that_restated_a_figure_delivers_nothing() -> None:
-    built = harness(
-        renderers=(
-            Renderer(SURFACE_WEB),
-            DriftingRenderer(SURFACE_PDF),
-            Renderer(SURFACE_EXCEL),
-        )
-    )
-
-    with pytest.raises(ReportPipelineFailed) as raised:
-        built.pipeline.run(Execution())
-
-    assert raised.value.reason == REASON_FIGURE_NOT_RECONCILED
+    assert raised.value.reason == reason
     assert built.deliveries.delivered == []
 
 
@@ -479,13 +491,7 @@ def test_a_refusal_records_a_governed_reason_and_nothing_a_renderer_wrote() -> N
     # The reason travels into operational evidence documented as content-free,
     # so it is a code from a closed vocabulary rather than whatever text a
     # renderer or a provider happened to raise.
-    built = harness(
-        renderers=(
-            Renderer(SURFACE_WEB),
-            BrokenRenderer(SURFACE_PDF),
-            Renderer(SURFACE_EXCEL),
-        )
-    )
+    built = harness(renderers=renderers_but(BrokenRenderer(SURFACE_PDF)))
 
     with pytest.raises(ReportPipelineFailed) as raised:
         built.pipeline.run(Execution())
@@ -549,51 +555,44 @@ def test_a_delivered_report_names_the_session_it_belongs_to() -> None:
     assert outcome.record.as_document()["session_id"] == "ses_alpha"
 
 
-def test_a_delivery_record_refuses_an_unnamed_session() -> None:
-    with pytest.raises(ValueError, match="session_id"):
-        DeliveryRecord(
-            job_id="job_alpha",
-            session_id="",
-            bundle_id="a" * 64,
-            package_version="rra004.package.v1",
-            narrative_state=NARRATIVE_INCLUDED,
-            surfaces=REQUIRED_SURFACES,
-        )
-
-
-def test_a_delivery_record_refuses_a_partial_set_of_surfaces() -> None:
-    with pytest.raises(ValueError, match="required surface"):
-        DeliveryRecord(
-            job_id="job_alpha",
-            session_id="ses_alpha",
-            bundle_id="a" * 64,
-            package_version="rra004.package.v1",
-            narrative_state=NARRATIVE_INCLUDED,
-            surfaces=(SURFACE_WEB, SURFACE_PDF),
-        )
-
-
-def test_a_delivery_record_refuses_an_unnamed_job() -> None:
-    with pytest.raises(ValueError, match="job_id"):
-        DeliveryRecord(
-            job_id="",
-            session_id="ses_alpha",
-            bundle_id="a" * 64,
-            package_version="rra004.package.v1",
-            narrative_state=NARRATIVE_INCLUDED,
-            surfaces=REQUIRED_SURFACES,
-        )
+@pytest.mark.parametrize(
+    ("malformed", "message"),
+    [
+        pytest.param(
+            lambda: replace(delivery_record(), job_id=""),
+            "job_id",
+            id="an_unnamed_job",
+        ),
+        pytest.param(
+            lambda: replace(delivery_record(), session_id=""),
+            "session_id",
+            id="an_unnamed_session",
+        ),
+        pytest.param(
+            lambda: replace(delivery_record(), surfaces=(SURFACE_WEB, SURFACE_PDF)),
+            "required surface",
+            id="a_partial_set_of_surfaces",
+        ),
+    ],
+)
+def test_a_delivery_record_refuses_evidence_it_cannot_stand_behind(
+    malformed: Callable[[], DeliveryRecord],
+    message: str,
+) -> None:
+    # The record is what a store writes and what operational evidence is
+    # correlated by, so a missing identifier or a partial export is refused at
+    # construction rather than written and reasoned about later.
+    with pytest.raises(ValueError, match=message):
+        malformed()
 
 
 def test_a_delivery_refuses_a_surface_built_for_another_bundle() -> None:
     bundle = ReportBundle.of(package())
-    record = DeliveryRecord(
-        job_id="job_alpha",
-        session_id="ses_alpha",
+    record = replace(
+        delivery_record(),
         bundle_id=bundle.bundle_id,
         package_version=bundle.identity.package_version,
         narrative_state=bundle.narrative_state,
-        surfaces=REQUIRED_SURFACES,
     )
 
     with pytest.raises(ValueError, match="another bundle"):
