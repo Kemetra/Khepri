@@ -422,6 +422,29 @@ def test_compact_non_actual_headers_are_refused_like_separated_ones() -> None:
         assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
 
 
+def test_running_total_measures_are_refused() -> None:
+    # Successive snapshots of a year-to-date figure are not additive: summing
+    # 100 and 150 would publish 250 for a period that reached 150.
+    for header in (
+        b"cumulative_sales",
+        b"ytd_sales",
+        b"mtd_revenue",
+        b"running_sales",
+        b"rolling_sales",
+        b"sales_to_date",
+        b"cumulativesales",
+    ):
+        content = b"date," + header + b",store\n2026-01-05,100,Cairo\n2026-01-06,150,Giza\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_a_product_word_that_reads_as_a_qualifier_alone_still_maps() -> None:
+    # "running_sales" is a running total; "running_shoe_sales" is footwear.
+    content = b"date,running_shoe_sales,store\n2026-01-05,100,Cairo\n"
+
+    assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_MAPPED
+
+
 def test_a_qualifier_is_refused_in_its_inflected_forms_too() -> None:
     # "percent" was already refused while "percentage" was not, so the
     # inflection is derived from the stem rather than enumerated.

@@ -869,6 +869,10 @@ def test_an_identifier_stays_recognized_when_other_numbers_sit_beside_it() -> No
         "4111 1111 1111 1111 exp 1230",
         "Card 4111 1111 1111 1111 expires 12/30",
         "4111 1111 1111 1111 / 5",
+        # Grouping punctuation the separator list did not name.
+        "Card 4111.1111.1111.1111 expires 12/30",
+        "4111.1111.1111.1111 exp 1230",
+        "4111/1111/1111/1111",
     ):
         content = (
             "date,revenue,category\n"

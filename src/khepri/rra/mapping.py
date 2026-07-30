@@ -68,6 +68,21 @@ _PER_UNIT_TOKENS = frozenset(
         "معدل",
         "نسبه",
         "مئويه",
+        # A running total is not additive: summing successive snapshots of
+        # year-to-date sales publishes a figure no row ever held.
+        "cumulative",
+        "cumul",
+        "ytd",
+        "mtd",
+        "qtd",
+        "wtd",
+        "todate",
+        "yeartodate",
+        "monthtodate",
+        "rolling",
+        "تراكمي",
+        "تراكميه",
+        "التراكمي",
         # Not an actual figure.
         "forecast",
         "forecasted",
@@ -137,6 +152,10 @@ _PLURAL_REMAINDERS = frozenset({"", "s", "es"})
 # a stem stands for its ordinary inflections, so refusing "percent" refuses
 # "percentage" without anyone having to have listed it.
 _QUALIFIER_SUFFIXES = ("", "s", "es", "age", "ages")
+# A word that qualifies a measure in one reading and names a product in another
+# is only read as a qualifier when it accounts for the whole of the rest of the
+# label: "running_sales" is a running total, "running_shoe_sales" is footwear.
+_AFFIX_ONLY_QUALIFIERS = frozenset({"running", "cumulated", "accumulated"})
 # A compact label cannot be tokenized, so a "per" sitting between two parts is
 # read as a denominator. Any separator avoids this, which is the documented way
 # to express a row-level measure whose name happens to contain the sequence.
@@ -624,8 +643,8 @@ def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -
 def _qualified_by_affix(rule: SemanticRule, collapsed: str) -> bool:
     """Whether a compact label is a vocabulary term carrying a qualifier."""
     return any(
-        (collapsed.endswith(term) and _is_qualifier(collapsed[: -len(term)]))
-        or (collapsed.startswith(term) and _is_qualifier(collapsed[len(term) :]))
+        (collapsed.endswith(term) and _is_affix_qualifier(collapsed[: -len(term)]))
+        or (collapsed.startswith(term) and _is_affix_qualifier(collapsed[len(term) :]))
         for term in rule.vocabulary
     )
 
@@ -643,6 +662,10 @@ def _is_qualifier(token: str) -> bool:
         for stem in [token[: len(token) - len(suffix)] if suffix else token]
         if token.endswith(suffix) and stem
     )
+
+
+def _is_affix_qualifier(remainder: str) -> bool:
+    return remainder in _AFFIX_ONLY_QUALIFIERS or _is_qualifier(remainder)
 
 
 def _has_per_infix(collapsed: str) -> bool:

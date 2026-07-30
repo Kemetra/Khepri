@@ -36,9 +36,12 @@ _PHONE = re.compile(r"\+?\d[\d .\-()/]{7,18}\d")
 # located inside surrounding prose without matching part of a longer run of
 # digits or letters. The guard is written to let an underscore act as a border.
 _PHONE_SPAN = re.compile(r"(?<![^\W_])\+?\d[\d .\-()/]{7,18}\d(?![^\W_])")
-# A card carries its grouping in spaces or hyphens, and concatenating every
-# digit in the value loses it as soon as any other number sits nearby.
-_CARD_SPAN = re.compile(r"(?<![^\W_])\d[\d \-]{11,25}\d(?![^\W_])")
+# A card carries its grouping in punctuation, and concatenating every digit in
+# the value loses it as soon as any other number sits nearby. The span admits
+# the punctuation that groups digits, and the digits are then extracted from
+# whatever it matched -- one list rather than two that have to agree, which is
+# what let a dot-grouped card through when only spaces and hyphens were removed.
+_CARD_SPAN = re.compile(r"(?<![^\W_])\d[\d .,\-/]{11,25}\d(?![^\W_])")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
 _FRAGMENT_SEPARATORS = re.compile(r"[\s<>,;:()\[\]{}\"'|]+")
@@ -442,11 +445,7 @@ def personal_value_shapes(value: str) -> tuple[str, ...]:
     # value stripped of separators.
     if any(_is_iban(part) for part in candidates) or _IBAN.search(_alphanumeric(text)):
         shapes.append("value_iban")
-    if (
-        any(_is_payment_card(part) for part in candidates)
-        or _contains_payment_card(text)
-        or _is_payment_card("".join(character for character in text if character.isdigit()))
-    ):
+    if any(_is_payment_card(part) for part in candidates) or _contains_payment_card(text):
         shapes.append("value_payment_card")
     return tuple(shapes)
 
@@ -513,7 +512,23 @@ def _contains_email(text: str) -> bool:
 
 
 def _contains_payment_card(text: str) -> bool:
-    return any(_is_payment_card(match.group()) for match in _CARD_SPAN.finditer(text))
+    """Find a card inside a larger value.
+
+    A greedy span pulls an unrelated number in behind the card whenever one is
+    separated by grouping punctuation, so every contiguous run of the span's
+    digit groups is tried rather than the span taken as a whole.
+    """
+    for match in _CARD_SPAN.finditer(text):
+        groups = _DIGITS_ONLY.findall(match.group())
+        for start in range(len(groups)):
+            digits = ""
+            for group in groups[start:]:
+                digits += group
+                if len(digits) > 19:
+                    break
+                if _is_card_number(digits):
+                    return True
+    return False
 
 
 def _is_address_literal(text: str) -> bool:
@@ -570,8 +585,11 @@ def _dialable(value: str) -> bool:
 
 
 def _is_payment_card(value: str) -> bool:
-    digits = value.replace(" ", "").replace("-", "")
-    if not _DIGITS_ONLY.fullmatch(digits) or not 13 <= len(digits) <= 19:
+    return _is_card_number("".join(c for c in value if c.isdigit()))
+
+
+def _is_card_number(digits: str) -> bool:
+    if not 13 <= len(digits) <= 19:
         return False
     total = 0
     for index, character in enumerate(reversed(digits)):
