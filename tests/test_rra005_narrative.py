@@ -10,6 +10,7 @@ from khepri.rra.facts import FactPackage, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import (
+    GOVERNED_REASONS,
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
     NARRATIVE_VERSION,
@@ -1086,24 +1087,96 @@ def test_a_label_the_cited_fact_never_supplied_is_refused() -> None:
     assert refusal.value.reason == REASON_UNKNOWN_LABEL
 
 
-def test_a_label_belonging_to_a_fact_the_section_did_not_cite_is_refused() -> None:
-    # Unlike an invented label this one is detectable: the package supplied it,
-    # just not to the fact this sentence points at.
+@pytest.mark.parametrize(
+    "operator",
+    ["<", ">", "\u2260", "\u2248", "\u2264", "\u2265"],
+)
+def test_an_operator_beside_a_figure_contradicts_the_figure_it_quotes(
+    operator: str,
+) -> None:
+    # `<500.00` quotes the supplied value and denies it in the same breath.
     request = request_for()
-    store = next(
-        entry for entry in request.document["comparisons"] if entry["dimension"] == "store"
-    )
+    fact_id = revenue_fact_id(request)
+    claim = f"Revenue was {operator}500.00."
 
     with pytest.raises(NarrativeRefused) as refusal:
         validate(
             draft(
-                arabic=(section("تصدرت Beverages.", cited=(str(store["fact_id"]),)),),
-                english=(section("Beverages led.", cited=(str(store["fact_id"]),)),),
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
             ),
             request=request,
         )
 
-    assert refusal.value.reason == REASON_UNKNOWN_LABEL
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_a_word_that_is_also_a_label_elsewhere_does_not_refuse_the_sentence() -> None:
+    # `Total` is a category label in this dataset, and `Total revenue was
+    # 500.00` claims nothing about that category. Scanning prose for label
+    # substrings refused ordinary sentences, which is why that scan is gone:
+    # a section's label claims are the ones it declares.
+    content = (
+        b"date,revenue,units,invoice_no,category\n"
+        b"2026-01-05,125.50,3,INV-1,Total\n"
+        b"2026-01-06,90.00,2,INV-2,Snacks\n"
+        b"2026-01-07,210.25,5,INV-3,Total\n"
+        b"2026-01-07,74.25,1,INV-3,Snacks\n"
+    )
+    request = request_for(content)
+    labels = {
+        bucket["label"]
+        for entry in request.document["comparisons"]
+        for bucket in entry["buckets"]
+    }
+    assert "Total" in labels
+    fact_id = revenue_fact_id(request)
+    claim = "Total revenue was 500.00."
+
+    validate(
+        NarrativeDraft(
+            adapter_version=ADAPTER_VERSION,
+            request_digest=request.digest,
+            languages=(
+                LanguageNarrative(
+                    language=LANGUAGE_ARABIC,
+                    sections=(section(claim, cited=(fact_id,)),),
+                ),
+                LanguageNarrative(
+                    language=LANGUAGE_ENGLISH,
+                    sections=(section(claim, cited=(fact_id,)),),
+                ),
+            ),
+        ),
+        request=request,
+    )
+
+
+def test_an_adapter_cannot_write_its_own_text_into_the_attempt_record() -> None:
+    # `NarrativeRefused` is public, so an adapter can raise it carrying
+    # anything. The record claims to hold no customer content by construction,
+    # and that claim needs a gate rather than a convention.
+    leaked = "customer Cairo record 12345 rejected by provider"
+
+    result = service(NarrativeRefused(leaked)).compose(package())
+
+    assert result.attempt.reason == REASON_PROVIDER_FAILED
+    assert "Cairo" not in canonical_json(result.attempt.as_document())
+
+
+def test_every_reason_this_module_defines_is_recordable() -> None:
+    # The allowlist and the constants must not drift: a reason added without
+    # being listed would be silently rewritten to `provider_failed`, which
+    # would look like a provider failure rather than the refusal it is.
+    from khepri.rra import narrative
+
+    defined = {
+        value
+        for name, value in vars(narrative).items()
+        if name.startswith("REASON_") and isinstance(value, str)
+    }
+
+    assert defined == set(GOVERNED_REASONS)
 
 
 def test_a_label_the_cited_fact_did_supply_is_accepted() -> None:

@@ -68,6 +68,31 @@ REASON_FACT_COVERAGE_DIFFERS = "fact_coverage_differs_by_language"
 REASON_CAVEAT_COVERAGE_DIFFERS = "caveat_coverage_differs_by_language"
 REASON_ADAPTER_MISMATCH = "adapter_response_mismatch"
 
+# The whole set of reasons that may be recorded. A refusal reaching the attempt
+# record has to be one of these: `NarrativeRefused` is a public exception, so an
+# adapter can raise it carrying whatever text it likes, and the record claims to
+# hold no customer content by construction. That claim needs a gate, not a
+# convention.
+GOVERNED_REASONS = frozenset(
+    {
+        REASON_PROVIDER_TIMEOUT,
+        REASON_PROVIDER_FAILED,
+        REASON_PROVIDER_REFUSED,
+        REASON_EMPTY_NARRATIVE,
+        REASON_MISSING_LANGUAGE,
+        REASON_UNKNOWN_LANGUAGE,
+        REASON_UNGROUNDED_NUMBER,
+        REASON_UNKNOWN_CITATION,
+        REASON_UNCITED_SECTION,
+        REASON_UNKNOWN_CAVEAT,
+        REASON_UNKNOWN_LABEL,
+        REASON_UNSAFE_TEXT,
+        REASON_FACT_COVERAGE_DIFFERS,
+        REASON_CAVEAT_COVERAGE_DIFFERS,
+        REASON_ADAPTER_MISMATCH,
+    }
+)
+
 OUTCOME_NARRATED = "narrated"
 OUTCOME_REFUSED = "refused"
 
@@ -555,7 +580,10 @@ class NarrativeService:
                 languages=languages,
                 duration_ms=self._monotonic_ms() - started,
                 outcome=OUTCOME_REFUSED,
-                reason=reason,
+                # Anything not on the governed list is recorded as a provider
+                # failure rather than repeated. The text is discarded, not
+                # truncated: a shortened sentence is still a sentence.
+                reason=reason if reason in GOVERNED_REASONS else REASON_PROVIDER_FAILED,
             ),
             narrative=None,
         )
@@ -614,12 +642,6 @@ def _validate_language(entry: LanguageNarrative, ground: NarrativeGround) -> Non
         stateable = ground.stateable(section.cited_fact_ids)
         for label in section.labels:
             if _normalize_digits(label) not in stateable.labels:
-                raise NarrativeRefused(REASON_UNKNOWN_LABEL)
-        # A label belonging to a fact this section did not cite is a claim
-        # about data the sentence never pointed at, and unlike an invented
-        # label it is detectable: the package supplied it, just not here.
-        for label in ground.labels - stateable.labels:
-            if label and label in _normalize_digits(section.text):
                 raise NarrativeRefused(REASON_UNKNOWN_LABEL)
         _assert_safe(section.text)
         # `stateable` resolves the citations and derives the permitted numbers
@@ -698,6 +720,11 @@ def _assert_unmodified(before: str, after: str) -> None:
     trailing = after.lstrip(_INLINE_SPACE)
     if _is_currency(leading[-1:]) or _is_currency(trailing[:1]):
         raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+    # `<500.00` and `≠500.00` contradict the very figure they quote. A maths
+    # symbol beside a value is an operator on it, not punctuation next to it,
+    # and Unicode already knows which characters those are.
+    if _is_operator(leading[-1:]) or _is_operator(trailing[:1]):
+        raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
     for word in (_last_word(leading), _first_word(trailing)):
         if word and (word.casefold() in _SCALE_WORDS or _ISO_CURRENCY_CODE.fullmatch(word)):
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
@@ -705,6 +732,10 @@ def _assert_unmodified(before: str, after: str) -> None:
 
 def _is_currency(character: str) -> bool:
     return bool(character) and unicodedata.category(character) == "Sc"
+
+
+def _is_operator(character: str) -> bool:
+    return bool(character) and unicodedata.category(character) == "Sm"
 
 
 def _first_word(text: str) -> str:
