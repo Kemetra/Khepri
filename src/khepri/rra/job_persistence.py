@@ -67,6 +67,11 @@ class ReportJobRow(Base):
             "idempotency_key",
             name="uq_report_job_session_idempotency",
         ),
+        UniqueConstraint(
+            "job_id",
+            "session_id",
+            name="uq_report_job_session_scope",
+        ),
         ForeignKeyConstraint(
             ["owner_id", "session_id"],
             ["rra_beta_sessions.owner_id", "rra_beta_sessions.session_id"],
