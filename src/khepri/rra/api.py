@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 from khepri.rra.admissibility import ReportRequest
 from khepri.rra.datasets import (
     DatasetProfileRecord,
+    ProfileCorrupted,
+    ProfileRequestConflict,
     ProfilingService,
     UploadNotFound,
 )
@@ -23,6 +25,13 @@ from khepri.rra.intake import (
     UploadTooLarge,
 )
 from khepri.rra.mapping import KNOWN_SEMANTICS
+from khepri.rra.packages import (
+    FactPackageRecord,
+    FactPackageService,
+    PackageCorrupted,
+    PackageRefused,
+    ProfileNotFound,
+)
 from khepri.rra.profiling import ProfileRejected
 from khepri.rra.sessions import (
     ConsentRequired,
@@ -114,6 +123,23 @@ class ProfileResponse(BaseModel):
     mappings: list[ProfileMappingResponse]
 
 
+class FactPackageResponse(BaseModel):
+    """The published package, served as the document its digest addresses.
+
+    The canonical document is nested verbatim rather than reshaped into
+    per-entry models. A consumer given `package_digest` can only check it
+    against the bytes it was computed over, and renaming or dropping fields on
+    the way out -- as an earlier revision did with the truncation and redaction
+    counts -- makes the digest unverifiable and hides how much a comparison
+    left out.
+    """
+
+    package_id: str
+    package_digest: str
+    profile_document_digest: str
+    document: dict[str, object]
+
+
 def create_app(
     *,
     service: InvitationService,
@@ -121,6 +147,7 @@ def create_app(
     intake_service: IntakeService | None = None,
     deletion_service: DeletionService | None = None,
     profiling_service: ProfilingService | None = None,
+    package_service: FactPackageService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
 
@@ -241,8 +268,15 @@ def create_app(
                 raise _session_unavailable() from error
             except UploadNotFound as error:
                 raise HTTPException(status_code=404, detail=str(error)) from error
+            except ProfileRequestConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
             except ProfileRejected as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
+            except ProfileCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored dataset profile is unavailable.",
+                ) from error
             except StoragePolicyViolation as error:
                 raise HTTPException(
                     status_code=503,
@@ -270,12 +304,94 @@ def create_app(
                 raise _session_unavailable() from error
             except ConsentRequired as error:
                 raise HTTPException(status_code=403, detail=str(error)) from error
+            except ProfileCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored dataset profile is unavailable.",
+                ) from error
             if record is None:
                 raise HTTPException(
                     status_code=404,
                     detail="No dataset profile is available for this session.",
                 )
             return _profile_response(record)
+
+    if package_service is not None:
+
+        @app.post(
+            "/api/v1/beta/facts",
+            response_model=FactPackageResponse,
+            status_code=status.HTTP_201_CREATED,
+        )
+        def build_retail_facts(
+            response: Response,
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> FactPackageResponse:
+            # The package carries no request of its own. Which semantics are
+            # required was decided when the dataset was profiled, and letting
+            # this endpoint ask again would let the two answers disagree.
+            if session_id is None:
+                raise _session_unavailable()
+            try:
+                record, created = package_service.build_session_package(
+                    session_id=session_id,
+                    now=clock(),
+                )
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except ConsentRequired as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except CrossSessionAccessDenied as error:
+                raise _session_unavailable() from error
+            except ProfileNotFound as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except PackageRefused as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            except (PackageCorrupted, ProfileCorrupted) as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored fact package is unavailable.",
+                ) from error
+            except StoragePolicyViolation as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Upload storage is unavailable.",
+                ) from error
+            if not created:
+                response.status_code = status.HTTP_200_OK
+            return _package_response(record)
+
+        @app.get(
+            "/api/v1/beta/facts",
+            response_model=FactPackageResponse,
+        )
+        def read_retail_facts(
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> FactPackageResponse:
+            if session_id is None:
+                raise _session_unavailable()
+            try:
+                record = package_service.get_session_package(
+                    session_id=session_id,
+                    now=clock(),
+                )
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except ConsentRequired as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except PackageRefused as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            except (PackageCorrupted, ProfileCorrupted) as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored fact package is unavailable.",
+                ) from error
+            if record is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No fact package is available for this session.",
+                )
+            return _package_response(record)
 
     if deletion_service is not None:
 
@@ -383,6 +499,15 @@ def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:
             )
             for entry in mapping["mappings"]
         ],
+    )
+
+
+def _package_response(record: FactPackageRecord) -> FactPackageResponse:
+    return FactPackageResponse(
+        package_id=record.package_id,
+        package_digest=record.package_digest,
+        profile_document_digest=record.profile_document_digest,
+        document=record.document,
     )
 
 

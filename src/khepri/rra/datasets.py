@@ -31,6 +31,14 @@ class UploadNotFound(LookupError):
     pass
 
 
+class ProfileCorrupted(ValueError):
+    """A stored profile no longer matches the digest it is addressed by."""
+
+
+class ProfileRequestConflict(ValueError):
+    """The stored profile was decided under different requested semantics."""
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetProfileRecord:
     profile_id: str
@@ -50,6 +58,35 @@ class DatasetProfileRecord:
     @property
     def scope(self) -> SessionScope:
         return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
+
+    def verify(self) -> None:
+        """Refuse a stored profile that no longer matches its own digest.
+
+        Everything downstream cites this document as the decision a report was
+        admitted under, so a mapping or admissibility section altered after
+        storage would let a package claim provenance it does not have.
+        """
+        if document_digest(self.document) != self.profile_digest:
+            raise ProfileCorrupted("Stored dataset profile does not match its digest.")
+        profile = self.document["profile"]
+        recorded = (
+            self.profile_version,
+            self.mapping_version,
+            self.source_sha256_hex,
+            self.row_count,
+            self.column_count,
+            self.admissible,
+        )
+        described = (
+            profile["profile_version"],
+            self.document["mapping"]["mapping_version"],
+            profile["source_sha256_hex"],
+            profile["row_count"],
+            profile["column_count"],
+            self.document["admissibility"]["admissible"],
+        )
+        if recorded != described:
+            raise ProfileCorrupted("Stored dataset profile contradicts its own document.")
 
 
 class ProfileRepository(Protocol):
@@ -106,7 +143,7 @@ class ProfilingService:
 
         existing = self._profiles.get_profile_for_upload(upload.upload_id, scope)
         if existing is not None:
-            return existing, False
+            return _answering(existing, request), False
 
         content = self._objects.get(upload.object_key)
         if hashlib.sha256(content).hexdigest() != upload.sha256_hex:
@@ -134,7 +171,7 @@ class ProfilingService:
             document=document,
         )
         stored = self._profiles.add_profile(candidate)
-        return stored, stored.profile_id == candidate.profile_id
+        return _answering(stored, request), stored.profile_id == candidate.profile_id
 
     def get_session_profile(
         self,
@@ -161,6 +198,35 @@ def build_document(
         "mapping": mapping.as_document(),
         "admissibility": decision.as_document(),
     }
+
+
+def _answering(
+    record: DatasetProfileRecord,
+    request: ReportRequest,
+) -> DatasetProfileRecord:
+    """Return the stored profile only if it answers the question being asked.
+
+    A profile records the admissibility decision for the semantics it was asked
+    about, and one is stored per upload. Handing it back for a different request
+    would answer a question nobody asked: a caller requiring `store` would be
+    told the dataset is admissible on the strength of a decision taken without
+    that requirement.
+
+    Every path that returns a profile somebody else's request produced goes
+    through here — the lookup before insertion, and the record `add_profile`
+    substitutes when a concurrent insert won the uniqueness conflict. Guarding
+    only the first left the second open, because two callers racing on an
+    unprofiled upload both find nothing to check.
+    """
+    if _requested_semantics(record) != tuple(sorted(request.requested_semantics)):
+        raise ProfileRequestConflict(
+            "This upload was profiled under different requested semantics."
+        )
+    return record
+
+
+def _requested_semantics(record: DatasetProfileRecord) -> tuple[str, ...]:
+    return tuple(record.document["admissibility"]["requested_semantics"])
 
 
 def document_digest(document: dict[str, Any]) -> str:

@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from khepri.rra.datasets import DatasetProfileRecord
+from khepri.rra.datasets import DatasetProfileRecord, document_digest
 from khepri.rra.deletion import DeletionEvidence
 from khepri.rra.intake import CSV_MEDIA_TYPE, UploadMetadata
 from khepri.rra.persistence import (
@@ -23,13 +23,20 @@ from khepri.rra.sessions import InvitationService, SessionScope
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 CONTENT_DIGEST = "492d5ea496056f1a6a6592241032fab764c321596317930b4fa0e1e8bc3b7470"
 LOCATION_DIGEST = "83390a61bb59fdbfad2f36666488f781ef73ddcf8042b4bd7315e82a535c1682"
-PROFILE_DIGEST = "3f2b4c1d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
-
+# A stored profile is refused unless it matches its own digest, so the fixture
+# describes itself consistently rather than carrying an arbitrary one.
 DOCUMENT: dict[str, object] = {
-    "profile": {"columns": [{"position": 0, "safe_label": "date"}]},
+    "profile": {
+        "profile_version": "rra003.profile.v1",
+        "source_sha256_hex": CONTENT_DIGEST,
+        "row_count": 3,
+        "column_count": 1,
+        "columns": [{"position": 0, "safe_label": "date"}],
+    },
     "mapping": {"mapping_version": "rra003.mapping.v1", "mappings": []},
     "admissibility": {"admissible": True, "reasons": []},
 }
+PROFILE_DIGEST = document_digest(DOCUMENT)
 
 
 def repositories() -> tuple[
