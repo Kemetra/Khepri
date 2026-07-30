@@ -1,0 +1,121 @@
+{#
+  The canonical bilingual report page. Rendered once per governed language, so
+  the root element states one `lang` and one `dir` and the stylesheet lays both
+  directions out with logical properties.
+
+  No expression here is exempted from autoescaping. Labels, caveats and
+  commentary are customer- or provider-derived text and reach the reader
+  escaped. The stylesheet is included as template source rather than passed in
+  as a variable, which is what removes every reason to exempt anything: a page
+  with one exemption in it has an escaping convention, not a guarantee.
+#}
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ chrome.title }}</title>
+<style>
+{% include stylesheet %}
+</style>
+{# Extension points for the surfaces that layer on this template. Empty here:
+   this slice bundles no print stylesheet and no font binaries. #}
+{% block embedded_fonts %}{% endblock %}
+{% block print_stylesheet %}{% endblock %}
+</head>
+<body>
+<a class="skip" href="#report">{{ chrome.skip }}</a>
+<header>
+<h1>{{ chrome.title }}</h1>
+<p class="disclosure" role="note" data-narrative-state="{{ narrative_state }}">{{ disclosure }}</p>
+</header>
+<nav aria-label="{{ chrome.navigation }}">
+<h2>{{ chrome.navigation }}</h2>
+<ul>
+<li><a href="#figures">{{ chrome.figures }}</a></li>
+<li><a href="#caveats">{{ chrome.caveats }}</a></li>
+{% if passages %}
+<li><a href="#commentary">{{ chrome.commentary }}</a></li>
+{% endif %}
+<li><a href="#citations">{{ chrome.citations }}</a></li>
+<li><a href="#provenance">{{ chrome.provenance }}</a></li>
+</ul>
+</nav>
+<main id="report">
+<section id="figures" aria-labelledby="figures-heading">
+<h2 id="figures-heading">{{ chrome.figures }}</h2>
+<div class="scroller">
+<table>
+<caption>{{ chrome.figures_caption }}</caption>
+<thead>
+<tr>
+<th scope="col">{{ chrome.label }}</th>
+<th scope="col">{{ chrome.metric }}</th>
+<th scope="col">{{ chrome.kind }}</th>
+<th scope="col">{{ chrome.unit }}</th>
+<th scope="col">{{ chrome.value }}</th>
+<th scope="col">{{ chrome.citation }}</th>
+</tr>
+</thead>
+<tbody>
+{% for cell in cells %}
+<tr data-figure-id="{{ cell.figure_id }}">
+<th scope="row">{% if cell.label is none %}{{ chrome.total }}{% else %}{{ cell.label }}{% endif %}</th>
+<td>{{ cell.metric }}</td>
+<td>{{ cell.kind }}</td>
+<td>{{ cell.unit_kind }}</td>
+<td class="figure" data-figure-id="{{ cell.figure_id }}">{{ cell.text }}</td>
+<td><a href="#citation-{{ cell.citation_id }}"><code>{{ cell.citation_id }}</code></a></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+<section id="caveats" aria-labelledby="caveats-heading">
+<h2 id="caveats-heading">{{ chrome.caveats }}</h2>
+{% if caveats %}
+<ul class="caveats">
+{% for caveat in caveats %}
+<li><code>{{ caveat }}</code></li>
+{% endfor %}
+</ul>
+{% else %}
+<p>{{ chrome.none }}</p>
+{% endif %}
+</section>
+{% if passages %}
+<section id="commentary" aria-labelledby="commentary-heading">
+<h2 id="commentary-heading">{{ chrome.commentary }}</h2>
+{% for passage in passages %}
+<article id="passage-{{ passage.section_id }}">
+<p>{{ passage.text }}</p>
+<p class="cites">{{ chrome.cites }}:
+{% for cited in passage.cited_fact_ids %}
+<code>{{ cited }}</code>
+{% endfor %}
+</p>
+</article>
+{% endfor %}
+</section>
+{% endif %}
+<section id="citations" aria-labelledby="citations-heading">
+<h2 id="citations-heading">{{ chrome.citations }}</h2>
+<ul class="citations">
+{% for citation in citations %}
+<li id="citation-{{ citation }}"><code>{{ citation }}</code></li>
+{% endfor %}
+</ul>
+</section>
+<section id="provenance" aria-labelledby="provenance-heading">
+<h2 id="provenance-heading">{{ chrome.provenance }}</h2>
+<dl class="provenance">
+{% for name, value in provenance %}
+<dt><code>{{ name }}</code></dt>
+<dd><code>{{ value }}</code></dd>
+{% endfor %}
+</dl>
+</section>
+</main>
+</body>
+</html>

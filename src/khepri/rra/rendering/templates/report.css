@@ -1,0 +1,207 @@
+/*
+ * Bundled stylesheet for the canonical bilingual report.
+ *
+ * Every box, border, and alignment rule here is written in CSS *logical*
+ * properties -- `margin-inline-start`, `padding-inline`, `border-inline-start`,
+ * `text-align: start` -- so one stylesheet lays out the right-to-left Arabic
+ * document and the left-to-right English one from the same declarations. A
+ * physical inline offset would be correct in one direction and wrong in the
+ * other, and the usual repair is a mirrored copy of the stylesheet that drifts
+ * from the original. There is no mirrored copy because there is nothing to
+ * mirror: the direction comes from the `dir` attribute on the root element.
+ *
+ * A test holds this: it asserts that no physical inline property name appears
+ * anywhere in this file, so the rule cannot be relaxed by one declaration.
+ *
+ * The font stack names Arabic-capable families ahead of the system fallback, so
+ * Arabic figures and prose are shaped by a face that has the glyphs for them.
+ * Binary font embedding belongs to the surface that needs byte-identical
+ * rasterization -- the template exposes an `embedded_fonts` block for it.
+ */
+
+:root {
+  --report-ink: #16191d;
+  --report-muted: #55606d;
+  --report-paper: #ffffff;
+  --report-rule: #d5dae1;
+  --report-accent: #0f4c81;
+  --report-space: 1rem;
+  --report-measure: 68rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: "Noto Sans Arabic", "IBM Plex Sans Arabic", "Cairo", "Amiri",
+    "Noto Naskh Arabic", "Segoe UI", system-ui, sans-serif;
+  font-size: 100%;
+  line-height: 1.6;
+  color: var(--report-ink);
+  background: var(--report-paper);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin-block: 0;
+  margin-inline: auto;
+  padding-block: calc(var(--report-space) * 2);
+  padding-inline: var(--report-space);
+  max-width: var(--report-measure);
+  text-align: start;
+}
+
+h1,
+h2 {
+  line-height: 1.25;
+  margin-block: 0 var(--report-space);
+  text-align: start;
+}
+
+h1 {
+  font-size: 1.75rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  padding-block-end: 0.25rem;
+  border-block-end: 1px solid var(--report-rule);
+}
+
+p {
+  margin-block: 0 var(--report-space);
+}
+
+a {
+  color: var(--report-accent);
+}
+
+a:focus-visible,
+.skip:focus-visible {
+  outline: 3px solid var(--report-accent);
+  outline-offset: 2px;
+}
+
+.skip {
+  position: absolute;
+  inset-block-start: -100vh;
+  inset-inline-start: 0;
+}
+
+.skip:focus {
+  position: static;
+  display: inline-block;
+  margin-block-end: var(--report-space);
+}
+
+.disclosure {
+  padding-block: 0.75rem;
+  padding-inline: var(--report-space);
+  border-inline-start: 4px solid var(--report-accent);
+  background: #f2f6fa;
+}
+
+nav {
+  margin-block-end: calc(var(--report-space) * 1.5);
+}
+
+nav ul {
+  margin-block: 0;
+  padding-inline-start: 1.25rem;
+}
+
+section {
+  margin-block-end: calc(var(--report-space) * 2);
+}
+
+.scroller {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  inline-size: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+caption {
+  text-align: start;
+  color: var(--report-muted);
+  padding-block-end: 0.5rem;
+}
+
+th,
+td {
+  text-align: start;
+  padding-block: 0.4rem;
+  padding-inline: 0.6rem;
+  border-block-end: 1px solid var(--report-rule);
+  vertical-align: top;
+}
+
+thead th {
+  border-block-end: 2px solid var(--report-ink);
+  white-space: nowrap;
+}
+
+td.figure {
+  /* Figures read as numbers in both scripts; the direction of the cell follows
+     the document, and the digits are the ones the bundle supplied. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+  font-size: 0.9em;
+  word-break: break-all;
+}
+
+.caveats,
+.citations {
+  margin-block: 0;
+  padding-inline-start: 1.25rem;
+}
+
+.cites {
+  color: var(--report-muted);
+  font-size: 0.9rem;
+}
+
+article {
+  margin-block-end: var(--report-space);
+  padding-inline-start: var(--report-space);
+  border-inline-start: 2px solid var(--report-rule);
+}
+
+.provenance {
+  display: grid;
+  grid-template-columns: minmax(12rem, auto) 1fr;
+  gap: 0.25rem var(--report-space);
+  margin-block: 0;
+}
+
+.provenance dt {
+  color: var(--report-muted);
+}
+
+.provenance dd {
+  margin-inline: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --report-ink: #eef1f5;
+    --report-muted: #a3aebc;
+    --report-paper: #14171b;
+    --report-rule: #39414c;
+    --report-accent: #8ab4dd;
+  }
+
+  .disclosure {
+    background: #1c232c;
+  }
+}
