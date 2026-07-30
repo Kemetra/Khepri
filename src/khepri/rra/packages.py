@@ -23,7 +23,7 @@ from khepri.rra.facts import (
 )
 from khepri.rra.intake import SessionReader, StoragePolicyViolation, UploadRepository
 from khepri.rra.mapping import MAPPING_VERSION, build_mapping
-from khepri.rra.profiling import build_profile
+from khepri.rra.profiling import build_profile, canonical_json
 from khepri.rra.sessions import (
     SessionExpired,
     SessionScope,
@@ -40,6 +40,10 @@ class PackageRefused(ValueError):
     """The dataset cannot answer a governed fact package."""
 
 
+class PackageCorrupted(ValueError):
+    """A stored package no longer matches the digest it is addressed by."""
+
+
 @dataclass(frozen=True, slots=True)
 class FactPackageRecord:
     package_id: str
@@ -49,7 +53,11 @@ class FactPackageRecord:
     package_version: str
     formula_version: str
     mapping_version: str
-    profile_digest: str
+    # The digest of the whole RRA-003 document -- profile, mapping, and
+    # admissibility -- which is what binds this package to the decision it was
+    # published under. Distinct from the package document's own
+    # `profile_digest`, which covers the profile alone.
+    profile_document_digest: str
     source_sha256_hex: str
     package_digest: str
     row_count: int
@@ -59,6 +67,39 @@ class FactPackageRecord:
     @property
     def scope(self) -> SessionScope:
         return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
+
+    @property
+    def profile_digest(self) -> str:
+        """The profile digest the package itself records."""
+        return str(self.document["profile_digest"])
+
+    def verify(self) -> None:
+        """Refuse a stored package that no longer matches its own digest.
+
+        The package is content-addressed and presented as immutable, so serving
+        a document that does not hash to its recorded address would publish
+        altered figures under an address that vouches for the originals.
+        """
+        if hashlib.sha256(canonical_json(self.document).encode()).hexdigest() != (
+            self.package_digest
+        ):
+            raise PackageCorrupted("Stored fact package does not match its digest.")
+        recorded = (
+            self.package_version,
+            self.formula_version,
+            self.mapping_version,
+            self.source_sha256_hex,
+            self.row_count,
+        )
+        described = (
+            self.document["package_version"],
+            self.document["formula_version"],
+            self.document["mapping_version"],
+            self.document["source_sha256_hex"],
+            self.document["row_count"],
+        )
+        if recorded != described:
+            raise PackageCorrupted("Stored fact package contradicts its own document.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,7 +249,7 @@ class FactPackageService:
             package_version=package.package_version,
             formula_version=package.formula_version,
             mapping_version=package.mapping_version,
-            profile_digest=profile_record.profile_digest,
+            profile_document_digest=profile_record.profile_digest,
             source_sha256_hex=package.source_sha256_hex,
             package_digest=package.digest,
             row_count=package.row_count,
@@ -243,6 +284,7 @@ __all__ = [
     "FactPackageRecord",
     "FactPackageRepository",
     "FactPackageService",
+    "PackageCorrupted",
     "PackageRefused",
     "PackageVersions",
     "ProfileNotFound",

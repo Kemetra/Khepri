@@ -170,7 +170,10 @@ class FactPackageRow(Base):
             "length(source_sha256_hex) = 64",
             name="ck_package_source_digest",
         ),
-        CheckConstraint("length(profile_digest) = 64", name="ck_package_profile_digest"),
+        CheckConstraint(
+            "length(profile_document_digest) = 64",
+            name="ck_package_profile_document_digest",
+        ),
         CheckConstraint("length(package_digest) = 64", name="ck_package_digest"),
         # A new formula, mapping, or correction is a new version rather than a
         # replacement, so the governed versions are part of the identity. One
@@ -204,7 +207,7 @@ class FactPackageRow(Base):
     package_version: Mapped[str] = mapped_column(String, nullable=False)
     formula_version: Mapped[str] = mapped_column(String, nullable=False)
     mapping_version: Mapped[str] = mapped_column(String, nullable=False)
-    profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_document_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     source_sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)
     package_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -511,7 +514,7 @@ class SqlFactPackageRepository:
                         package_version=record.package_version,
                         formula_version=record.formula_version,
                         mapping_version=record.mapping_version,
-                        profile_digest=record.profile_digest,
+                        profile_document_digest=record.profile_document_digest,
                         source_sha256_hex=record.source_sha256_hex,
                         package_digest=record.package_digest,
                         row_count=record.row_count,
@@ -798,7 +801,8 @@ def _profile_from_row(row: DatasetProfileRow) -> DatasetProfileRecord:
 
 
 def _package_from_row(row: FactPackageRow) -> FactPackageRecord:
-    return FactPackageRecord(
+    """Hydrate a stored package, refusing one that no longer matches its digest."""
+    record = FactPackageRecord(
         package_id=row.package_id,
         owner_id=row.owner_id,
         session_id=row.session_id,
@@ -806,13 +810,15 @@ def _package_from_row(row: FactPackageRow) -> FactPackageRecord:
         package_version=row.package_version,
         formula_version=row.formula_version,
         mapping_version=row.mapping_version,
-        profile_digest=row.profile_digest,
+        profile_document_digest=row.profile_document_digest,
         source_sha256_hex=row.source_sha256_hex,
         package_digest=row.package_digest,
         row_count=row.row_count,
         created_at=_utc(row.created_at),
         document=dict(row.document),
     )
+    record.verify()
+    return record
 
 
 def _deletion_from_row(row: DeletionJobRow) -> DeletionJob:

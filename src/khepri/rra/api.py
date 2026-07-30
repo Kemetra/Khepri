@@ -26,6 +26,7 @@ from khepri.rra.mapping import KNOWN_SEMANTICS
 from khepri.rra.packages import (
     FactPackageRecord,
     FactPackageService,
+    PackageCorrupted,
     PackageRefused,
     ProfileNotFound,
 )
@@ -154,6 +155,7 @@ class FactPackageResponse(BaseModel):
     formula_version: str
     mapping_version: str
     profile_digest: str
+    profile_document_digest: str
     package_digest: str
     source_sha256_hex: str
     row_count: int
@@ -360,6 +362,11 @@ def create_app(
                 raise HTTPException(status_code=404, detail=str(error)) from error
             except PackageRefused as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
+            except PackageCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored fact package is unavailable.",
+                ) from error
             except StoragePolicyViolation as error:
                 raise HTTPException(
                     status_code=503,
@@ -387,6 +394,11 @@ def create_app(
                 raise _session_unavailable() from error
             except ConsentRequired as error:
                 raise HTTPException(status_code=403, detail=str(error)) from error
+            except PackageCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored fact package is unavailable.",
+                ) from error
             if record is None:
                 raise HTTPException(
                     status_code=404,
@@ -511,6 +523,7 @@ def _package_response(record: FactPackageRecord) -> FactPackageResponse:
         formula_version=record.formula_version,
         mapping_version=record.mapping_version,
         profile_digest=record.profile_digest,
+        profile_document_digest=record.profile_document_digest,
         package_digest=record.package_digest,
         source_sha256_hex=record.source_sha256_hex,
         row_count=record.row_count,

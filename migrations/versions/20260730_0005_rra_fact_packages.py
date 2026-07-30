@@ -21,7 +21,7 @@ def upgrade() -> None:
         sa.Column("package_version", sa.String(), nullable=False),
         sa.Column("formula_version", sa.String(), nullable=False),
         sa.Column("mapping_version", sa.String(), nullable=False),
-        sa.Column("profile_digest", sa.String(length=64), nullable=False),
+        sa.Column("profile_document_digest", sa.String(length=64), nullable=False),
         sa.Column("source_sha256_hex", sa.String(length=64), nullable=False),
         sa.Column("package_digest", sa.String(length=64), nullable=False),
         sa.Column("row_count", sa.Integer(), nullable=False),
@@ -29,8 +29,8 @@ def upgrade() -> None:
         sa.Column("document", sa.JSON(), nullable=False),
         sa.CheckConstraint("length(package_digest) = 64", name="ck_package_digest"),
         sa.CheckConstraint(
-            "length(profile_digest) = 64",
-            name="ck_package_profile_digest",
+            "length(profile_document_digest) = 64",
+            name="ck_package_profile_document_digest",
         ),
         sa.CheckConstraint("row_count >= 0", name="ck_package_row_count"),
         sa.CheckConstraint(

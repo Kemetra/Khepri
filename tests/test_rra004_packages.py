@@ -31,6 +31,7 @@ from khepri.rra.persistence import (
     SqlSessionStore,
     SqlUploadRepository,
 )
+from khepri.rra.profiling import canonical_json
 from khepri.rra.sessions import InvitationService
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
@@ -291,7 +292,7 @@ def test_a_package_is_bound_to_the_profile_it_was_published_against() -> None:
         row = database.scalar(select(FactPackageRow))
         profile = database.scalar(select(DatasetProfileRow))
         assert row.profile_id == profile.profile_id
-        assert row.profile_digest == profile.profile_digest
+        assert row.profile_document_digest == profile.profile_digest
         assert row.source_sha256_hex == profile.source_sha256_hex
 
 
@@ -377,6 +378,8 @@ def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
 
     with test.factory() as database:
         original = database.scalar(select(FactPackageRow))
+        successor_document = dict(original.document)
+        successor_document["formula_version"] = "rra004.formula.v2"
         successor = FactPackageRecord(
             package_id="fct_next",
             owner_id=original.owner_id,
@@ -385,12 +388,12 @@ def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
             package_version=original.package_version,
             formula_version="rra004.formula.v2",
             mapping_version=original.mapping_version,
-            profile_digest=original.profile_digest,
+            profile_document_digest=original.profile_document_digest,
             source_sha256_hex=original.source_sha256_hex,
-            package_digest="b" * 64,
+            package_digest=_digest_of(successor_document),
             row_count=original.row_count,
             created_at=NOW + timedelta(minutes=1),
-            document=dict(original.document),
+            document=successor_document,
         )
 
     stored = test.packages.add_package(successor)
@@ -428,11 +431,61 @@ def test_a_superseded_profile_never_serves_an_older_package_as_current() -> None
     assert test.client.post("/api/v1/beta/facts").status_code == 409
 
 
+def test_the_two_provenance_digests_are_named_apart_and_both_served() -> None:
+    # One covers the profile alone and is what the package itself records; the
+    # other covers the whole profile, mapping, and admissibility document and is
+    # what binds the package to the decision it was published under. They are
+    # different values and must not share a name.
+    test = prepared()
+    body = test.client.post("/api/v1/beta/facts").json()
+
+    assert body["profile_digest"] != body["profile_document_digest"]
+    with test.factory() as database:
+        row = database.scalar(select(FactPackageRow))
+        assert row.profile_document_digest == body["profile_document_digest"]
+        assert row.document["profile_digest"] == body["profile_digest"]
+        profile = database.scalar(select(DatasetProfileRow))
+        assert row.profile_document_digest == profile.profile_digest
+
+
+def test_a_tampered_package_is_refused_rather_than_served() -> None:
+    # The package is content-addressed and presented as immutable, so an altered
+    # figure must not reach a consumer under the original address.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+
+    with test.factory.begin() as database:
+        row = database.scalar(select(FactPackageRow))
+        document = dict(row.document)
+        facts = [dict(fact) for fact in document["facts"]]
+        facts[0]["value"] = "999999.00"
+        document["facts"] = facts
+        row.document = document
+
+    assert test.client.get("/api/v1/beta/facts").status_code == 503
+    assert test.client.post("/api/v1/beta/facts").status_code == 503
+
+
+def test_a_package_contradicting_its_own_document_is_refused() -> None:
+    # The digest still verifies here; the row's metadata is what drifted.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+
+    with test.factory.begin() as database:
+        database.scalar(select(FactPackageRow)).row_count = 99
+
+    assert test.client.get("/api/v1/beta/facts").status_code == 503
+
+
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
     first = prepared().client.post("/api/v1/beta/facts").json()
     second = prepared().client.post("/api/v1/beta/facts").json()
 
     assert first["package_digest"] == second["package_digest"]
+
+
+def _digest_of(document: dict) -> str:
+    return hashlib.sha256(canonical_json(document).encode()).hexdigest()
 
 
 def _session(test: Harness) -> str:
