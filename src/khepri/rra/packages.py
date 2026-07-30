@@ -133,6 +133,44 @@ class PackageVersions:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class PackageProvenance:
+    """What a package claims about the input and the profile behind it.
+
+    Assembled from the package on one side and from the profile on the other,
+    then compared once. Enumerating the fields at the comparison site is what
+    let the source digest and row count go unchecked while the two profile
+    digests were checked -- a field added to one side now has to be added to
+    the other for this to type-check at all.
+    """
+
+    profile_id: str
+    profile_document_digest: str
+    profile_digest: str
+    source_sha256_hex: str
+    row_count: int
+
+    @classmethod
+    def claimed(cls, record: FactPackageRecord) -> PackageProvenance:
+        return cls(
+            profile_id=record.profile_id,
+            profile_document_digest=record.profile_document_digest,
+            profile_digest=record.profile_digest,
+            source_sha256_hex=record.source_sha256_hex,
+            row_count=record.row_count,
+        )
+
+    @classmethod
+    def expected(cls, record: DatasetProfileRecord) -> PackageProvenance:
+        return cls(
+            profile_id=record.profile_id,
+            profile_document_digest=record.profile_digest,
+            profile_digest=_profile_digest_of(record),
+            source_sha256_hex=record.source_sha256_hex,
+            row_count=record.row_count,
+        )
+
+
 class FactPackageRepository(Protocol):
     def add_package(self, record: FactPackageRecord) -> FactPackageRecord: ...
 
@@ -305,17 +343,12 @@ class FactPackageService:
         profile = profile_record or self._profiles.get_profile_for_session(
             record.session_id
         )
-        if profile is None or profile.profile_id != record.profile_id:
-            raise PackageCorrupted(
-                "Stored fact package does not match the profile it cites."
-            )
-        # Both digests the package claims about its profile, checked against
-        # that profile. Neither is covered by the package's own content address:
-        # one is stored beside it, and the other is inside a document whose
-        # digest can be recomputed after tampering.
-        if (
-            profile.profile_digest != record.profile_document_digest
-            or _profile_digest_of(profile) != record.profile_digest
+        # Everything the package claims about its provenance, checked against
+        # the profile it names. None of it is covered by the package's own
+        # content address: some is stored beside the document, and the rest is
+        # inside a document whose digest can be recomputed after tampering.
+        if profile is None or PackageProvenance.claimed(record) != (
+            PackageProvenance.expected(profile)
         ):
             raise PackageCorrupted(
                 "Stored fact package does not match the profile it cites."

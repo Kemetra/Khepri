@@ -585,6 +585,25 @@ def test_the_inner_profile_digest_is_bound_to_the_cited_profile() -> None:
     assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
+def test_a_package_claiming_another_input_is_refused() -> None:
+    # Self-consistent and citing the real profile, but claiming a different
+    # source digest and row count than that profile describes.
+    test = prepared()
+    assert test.client.post("/api/v1/beta/facts").status_code == 201
+    with test.factory.begin() as database:
+        row = database.scalar(select(FactPackageRow))
+        document = dict(row.document)
+        document["source_sha256_hex"] = "e" * 64
+        document["row_count"] = 999
+        row.document = document
+        row.source_sha256_hex = "e" * 64
+        row.row_count = 999
+        row.package_digest = _digest_of(document)
+
+    assert test.client.get("/api/v1/beta/facts").status_code == 503
+    assert test.client.post("/api/v1/beta/facts").status_code == 503
+
+
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
     first = prepared().client.post("/api/v1/beta/facts").json()
     second = prepared().client.post("/api/v1/beta/facts").json()
