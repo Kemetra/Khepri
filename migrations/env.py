@@ -6,6 +6,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base
 from khepri.rra.telemetry_persistence import OperationalEventRow
@@ -23,6 +24,8 @@ if ReportJobRow.metadata is not target_metadata:
     raise RuntimeError("Report job metadata is not registered with the RRA base.")
 if OperationalEventRow.metadata is not target_metadata:
     raise RuntimeError("Operational event metadata is not registered with the RRA base.")
+if ReportDeliveryRow.metadata is not target_metadata:
+    raise RuntimeError("Report delivery metadata is not registered with the RRA base.")
 
 
 def run_migrations_offline() -> None:
