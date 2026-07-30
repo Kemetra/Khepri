@@ -81,11 +81,16 @@ class ReadWorkbook:
     `parts` is every archive member decoded, so a test can look for a formula
     or a hyperlink relationship anywhere in the package rather than only where
     it expected one. `sheets` and `cells` are keyed by the visible sheet name.
+
+    `size_bytes` is the size of the archive that was opened. It is read from the
+    bytes rather than taken from whoever produced them, so a test can compare a
+    renderer's claim about how large its output was against the file itself.
     """
 
     parts: dict[str, str]
     sheets: dict[str, str]
     cells: dict[str, list[list[str]]]
+    size_bytes: int
 
     @property
     def texts(self) -> list[str]:
@@ -117,6 +122,7 @@ def read(data: bytes) -> ReadWorkbook:
         parts=parts,
         sheets=sheets,
         cells={name: _rows(xml, shared) for name, xml in sheets.items()},
+        size_bytes=len(data),
     )
 
 

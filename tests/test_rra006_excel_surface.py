@@ -39,6 +39,10 @@ from khepri.rra.rendering.excel import (
 )
 from tests import rra_workbooks
 
+# The size the stand-in web and PDF renderers report. They write no file, so
+# the number is arbitrary; only the workbook's own size is measured here.
+STAND_IN_SIZE = 2048
+
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
     b"2026-01-05,125.50,3,INV-1,Beverages,Cairo\n"
@@ -124,6 +128,10 @@ def presented(workbook: rra_workbooks.ReadWorkbook) -> SurfaceContent:
     This is the whole point of opening the file. `reconcile` only inspects the
     object a renderer returns, so a renderer that returned a flawless claim and
     wrote an empty workbook would reconcile perfectly.
+
+    The size comes from the archive that was opened, never from the claim being
+    checked. Taking it from the claim would make every comparison with one
+    self-fulfilling.
     """
     return SurfaceContent(
         surface=SURFACE_EXCEL,
@@ -132,6 +140,7 @@ def presented(workbook: rra_workbooks.ReadWorkbook) -> SurfaceContent:
             _presented_language(workbook, language)
             for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC)
         ),
+        output_size_bytes=workbook.size_bytes,
     )
 
 
@@ -202,10 +211,23 @@ class FaithfulRenderer:
                 )
                 for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
             ),
+            output_size_bytes=STAND_IN_SIZE,
         )
 
 
 # --- the workbook presents what the renderer claims ------------------------
+
+
+def test_the_workbook_surface_reports_the_size_of_the_file_it_wrote(tmp_path: Path) -> None:
+    # RRA-007 records output size per stage. This surface's payload is a file, so
+    # the size is the file's, read back from disk rather than predicted.
+    bundle = ReportBundle.of(package())
+    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+
+    content = renderer.render(bundle)
+
+    assert content.output_size_bytes == len(renderer.path_for(bundle).read_bytes())
+    assert content.output_size_bytes > 0
 
 
 def test_the_workbook_on_disk_presents_exactly_what_the_renderer_claims(tmp_path: Path) -> None:

@@ -224,6 +224,17 @@ def test_each_language_is_printed_as_its_own_document_declaring_how_it_reads() -
         assert f'dir="{page.direction}"' in page.document
 
 
+def test_the_pdf_surface_reports_the_size_of_the_documents_it_printed() -> None:
+    # RRA-007 records output size per stage, and `bytes` is where that number
+    # comes from. Every printed document counts, not merely the first: a surface
+    # reporting one language's file would report half the report.
+    surface = renderer_with().render_pdf(ReportBundle.of(package()))
+
+    printed = sum(len(blob) for blob in surface.documents.values())
+    assert surface.content.output_size_bytes == printed
+    assert printed > 0
+
+
 # --- the renderer computes nothing ----------------------------------------
 
 

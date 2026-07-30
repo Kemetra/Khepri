@@ -176,13 +176,21 @@ class ExcelSurfaceRenderer:
         return self.directory / f"{bundle.bundle_id}{WORKBOOK_SUFFIX}"
 
     def render(self, bundle: ReportBundle) -> SurfaceContent:
+        """Write the workbook, then report what it presents and how large it is.
+
+        The size is read from the closed file rather than accumulated while
+        writing. A workbook is a compressed archive, so the bytes a caller ends
+        up holding are only knowable once the archive has been finished, and any
+        figure taken earlier would describe something that never existed.
+        """
         path = self.path_for(bundle)
         try:
             with xlsxwriter.Workbook(str(path), dict(WORKBOOK_OPTIONS)) as workbook:
                 _write_workbook(workbook, bundle)
+            written = path.stat().st_size
         except OSError as error:
             raise WorkbookUnavailable("The Excel surface could not be written.") from error
-        return _content(bundle)
+        return _content(bundle, written)
 
 
 def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:
@@ -292,11 +300,12 @@ def _write_row(sheet: Worksheet, row: int, values: tuple[str | None, ...]) -> in
     return row + 1
 
 
-def _content(bundle: ReportBundle) -> SurfaceContent:
+def _content(bundle: ReportBundle, output_size_bytes: int) -> SurfaceContent:
     return SurfaceContent(
         surface=SURFACE_EXCEL,
         bundle_id=bundle.bundle_id,
         languages=tuple(_content_language(bundle, language) for language in LANGUAGES),
+        output_size_bytes=output_size_bytes,
     )
 
 

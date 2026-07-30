@@ -10,6 +10,9 @@ from __future__ import annotations
 from khepri.rra.bundle import (
     LANGUAGE_DIRECTION,
     REQUIRED_SURFACES,
+    SURFACE_EXCEL,
+    SURFACE_PDF,
+    SURFACE_WEB,
     ReportBundle,
     StatedFigure,
     SurfaceContent,
@@ -17,6 +20,11 @@ from khepri.rra.bundle import (
     SurfaceUnavailable,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+
+# The size each stand-in surface reports for a payload it never wrote. Distinct,
+# and no two of them summing to a third, so anything adding these up cannot reach
+# a plausible-looking total after dropping a surface or counting one twice.
+SURFACE_BYTES = {SURFACE_WEB: 11, SURFACE_PDF: 222, SURFACE_EXCEL: 3333}
 
 
 class Renderer:
@@ -38,6 +46,7 @@ class Renderer:
             languages=tuple(
                 _language(bundle, language) for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
             ),
+            output_size_bytes=SURFACE_BYTES[self._surface],
         )
 
 

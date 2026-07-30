@@ -199,7 +199,10 @@ class HtmlReportRenderer:
             language: template.render(build_context(bundle, language, cells[language]))
             for language in REQUIRED_LANGUAGES
         }
-        return HtmlSurface(content=build_content(bundle, cells), documents=documents)
+        return HtmlSurface(
+            content=build_content(bundle, cells, output_size_bytes=_document_bytes(documents)),
+            documents=documents,
+        )
 
 
 def build_environment() -> Environment:
@@ -228,6 +231,7 @@ def build_content(
     cells: dict[str, tuple[FigureCell, ...]],
     *,
     surface: str = SURFACE_WEB,
+    output_size_bytes: int,
 ) -> SurfaceContent:
     """The claim `bundle.reconcile` will judge, for whichever surface made it.
 
@@ -235,10 +239,15 @@ def build_content(
     *same* pass over the bundle rendered through the same template. A second
     implementation of this would be a second chance to disagree about what the
     report says, which is the failure `bundle` exists to prevent.
+
+    The size is supplied rather than measured here, because the payload it
+    describes differs per surface — a string for the screen, a printed file for
+    the page — and this function sees neither.
     """
     return SurfaceContent(
         surface=surface,
         bundle_id=bundle.bundle_id,
+        output_size_bytes=output_size_bytes,
         languages=tuple(
             SurfaceLanguage(
                 language=language,
@@ -352,6 +361,16 @@ def _provenance(
     entries["html_surface_version"] = HTML_SURFACE_VERSION
     entries.update(extra)
     return tuple(sorted(entries.items()))
+
+
+def _document_bytes(documents: dict[str, str]) -> int:
+    """How large the rendered documents are, in the encoding they are served in.
+
+    Measured on the encoded form rather than counted in characters: an Arabic
+    page is roughly twice the bytes of its character count, and the number
+    RRA-007 records is a number of bytes.
+    """
+    return sum(len(document.encode("utf-8")) for document in documents.values())
 
 
 def _require_text(value: str, name: str) -> None:

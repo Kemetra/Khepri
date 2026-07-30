@@ -68,6 +68,8 @@ from khepri.rra.sessions import (
 NOW = datetime(2026, 7, 30, 16, 0, tzinfo=UTC)
 ADAPTER_VERSION = "test.adapter.v1"
 IDEMPOTENCY_KEY = "b" * 64
+# The size a stand-in renderer reports. No surface here writes a payload.
+SURFACE_SIZE = 1024
 
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -200,6 +202,7 @@ def surface_of(bundle: ReportBundle, surface: str) -> SurfaceContent:
     return SurfaceContent(
         surface=surface,
         bundle_id=bundle.bundle_id,
+        output_size_bytes=SURFACE_SIZE,
         languages=tuple(
             SurfaceLanguage(
                 language=language,
@@ -667,6 +670,19 @@ def test_every_surface_is_recorded_by_digest_rather_than_by_content() -> None:
         for value in row.__dict__.values()
     )
     assert not [text for text in CONTENT if text in written]
+
+
+def test_a_surface_that_weighed_more_presented_the_same_report() -> None:
+    # The digest is over what a surface presented, and a byte count is a
+    # property of the file rather than of the report. A PDF whose metadata grew
+    # between two runs must still be recognizable as the same presentation, or
+    # deterministic regeneration stops being checkable from the evidence.
+    source = package()
+    content = surface_of(ReportBundle.of(source, narrative=_narrative_for(source)), SURFACE_WEB)
+
+    heavier = replace(content, output_size_bytes=content.output_size_bytes + 1)
+
+    assert surface_digest(heavier) == surface_digest(content)
 
 
 def test_two_runs_over_the_same_report_record_the_same_surface_digests() -> None:

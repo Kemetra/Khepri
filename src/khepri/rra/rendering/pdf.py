@@ -175,7 +175,12 @@ class PdfReportRenderer:
             for language in REQUIRED_LANGUAGES
         }
         return PdfSurface(
-            content=build_content(bundle, cells, surface=SURFACE_PDF),
+            content=build_content(
+                bundle,
+                cells,
+                surface=SURFACE_PDF,
+                output_size_bytes=_printed_bytes(documents),
+            ),
             documents=documents,
         )
 
@@ -194,6 +199,15 @@ class PdfReportRenderer:
         context["print_stylesheet_name"] = PRINT_STYLESHEET_NAME
         context["fonts"] = list(self._fonts)
         return context
+
+
+def _printed_bytes(documents: dict[str, bytes]) -> int:
+    """How large this surface turned out to be: every file it printed, together.
+
+    Both documents, because the surface is both of them. A number covering the
+    English file alone would report half a report and look like a measurement.
+    """
+    return sum(len(blob) for blob in documents.values())
 
 
 def _require_governed_languages(documents: dict[str, bytes]) -> None:

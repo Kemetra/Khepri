@@ -198,8 +198,17 @@ class ProseAdapter(Adapter):
         )
 
 
+# A different size for each surface, and no two of them summing to a third. A
+# stage that recorded one surface's payload, or counted one twice, reaches a
+# total no combination of these can be mistaken for.
+SURFACE_BYTES = {SURFACE_WEB: 11, SURFACE_PDF: 222, SURFACE_EXCEL: 3333}
+RENDERED_BYTES = sum(SURFACE_BYTES.values())
+
+
 def surfaces() -> tuple[Renderer, ...]:
-    return (Renderer(SURFACE_WEB), Renderer(SURFACE_PDF), Renderer(SURFACE_EXCEL))
+    return tuple(
+        Renderer(surface, output_size_bytes=size) for surface, size in SURFACE_BYTES.items()
+    )
 
 
 def monotonic_ms() -> int:
@@ -338,16 +347,41 @@ def test_provider_latency_is_recorded_for_the_narrative_stage_alone() -> None:
     }
 
 
-def test_no_report_stage_claims_a_size_it_cannot_measure() -> None:
-    # No surface on this branch carries bytes: `SurfaceContent` is a structural
-    # claim about what a surface presents, and the source size is known at
-    # intake and not carried into a fact package. Either number would be
-    # invented evidence.
+def test_the_stage_that_rendered_the_surfaces_records_how_large_they_were() -> None:
+    # RRA-007 records output size per stage. Every renderer reports the size of
+    # the payload it produced, so the boundary that produced them is the one
+    # boundary that can name the total -- and it is named once. Recorded again at
+    # delivery, the same bytes would be counted twice by anything aggregating
+    # them. The dictionary is exact: no other stage may invent a size.
     built = Harness()
 
     built.pipeline().run(execution())
 
-    assert built.writer.measured(lambda event: event.output_size_bytes) == {}
+    assert built.writer.measured(lambda event: event.output_size_bytes) == {
+        (STAGE_BUNDLE, TRANSITION_SUCCEEDED): RENDERED_BYTES
+    }
+
+
+def test_a_rendering_stage_that_produced_nothing_records_no_size() -> None:
+    # A refused bundle delivers no surface at all, so there are no bytes to
+    # name. A size recorded here would be a measurement of a run that produced
+    # nothing, which is worse evidence than none.
+    built = Harness(renderers=(Renderer(SURFACE_WEB), BrokenRenderer(SURFACE_PDF)))
+
+    with pytest.raises(ReportPipelineFailed):
+        built.pipeline().run(execution())
+
+    assert built.writer.terminal(STAGE_BUNDLE).output_size_bytes is None
+
+
+def test_no_stage_claims_a_dataset_size_it_was_never_told() -> None:
+    # The source size is known at intake and is not carried into a fact package.
+    # A band derived from anything else -- the report's own weight, a row count
+    # -- would be evidence about something other than the dataset.
+    built = Harness()
+
+    built.pipeline().run(execution())
+
     assert built.writer.measured(lambda event: event.dataset_size_band) == {}
 
 

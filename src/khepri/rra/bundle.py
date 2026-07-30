@@ -38,6 +38,13 @@ genuinely runs right to left on screen, is a property of a renderer and of a
 test that opens its output. What can be checked from here is that the surface
 declares the direction the language actually reads in, and that every figure,
 caveat and disclosure it shows came from the bundle.
+
+**One number about the payload, and never the payload.** A surface also reports
+how many bytes it produced, because RRA-007 records output size per stage and a
+renderer is the only thing that holds both the bytes and the claim about them. A
+count is all that crosses: no document, blob, or path reaches this module, and
+nothing here can be reconstructed from a size. It is the one figure on a surface
+that reconciliation cannot judge, which is stated where it is declared.
 """
 
 from __future__ import annotations
@@ -384,11 +391,29 @@ class SurfaceLanguage:
 
 @dataclass(frozen=True, slots=True)
 class SurfaceContent:
-    """What a renderer says its surface presents. Untrusted until reconciled."""
+    """What a renderer says its surface presents. Untrusted until reconciled.
+
+    `output_size_bytes` is how large the payload behind this claim turned out to
+    be, and it is the only thing this module ever learns about that payload.
+    RRA-007 records output size per stage, and the size is knowable only where
+    the bytes are: a claim carrying structure alone left it unrecordable
+    anywhere. The number travels, the payload does not, and nothing can be
+    reconstructed from a count of bytes.
+
+    It is deliberately *not* reconciled. `reconcile` compares a claim against
+    the bundle, and the bundle carries no payload to compare a size to. Whether
+    the number is the size of what was really written is proven where the
+    artifact exists — each renderer's own tests open its output and measure it —
+    which is the same division of labour as tagging and reading direction.
+    """
 
     surface: str
     bundle_id: str
     languages: tuple[SurfaceLanguage, ...]
+    output_size_bytes: int
+
+    def __post_init__(self) -> None:
+        _require_size(self.output_size_bytes)
 
 
 class SurfaceRenderer(Protocol):
@@ -396,6 +421,11 @@ class SurfaceRenderer(Protocol):
 
     The concrete web, PDF and workbook writers are separate changes; this is
     the contract each of them will satisfy.
+
+    `render` returns the size of the payload beside the claim about it, because
+    a renderer is the only thing that ever holds both. Returning the payload
+    itself would put report bytes on the one path operational evidence is read
+    from, and RRA-007's evidence is content-free.
     """
 
     @property
@@ -717,6 +747,19 @@ def _arabic_character(character: str) -> str:
     if character == ",":
         return _ARABIC_GROUP
     return character
+
+
+def _require_size(value: int) -> None:
+    """Refuse a size no payload could have had.
+
+    Non-negative rather than positive: an empty payload is each renderer's own
+    invariant to refuse, and each of them does, where the emptiness is visible.
+    A negative size is not a small report — it is a broken measurement, and one
+    that `OperationalEvent` would refuse long after the stage it was taken at
+    had finished.
+    """
+    if value < 0:
+        raise ValueError("output_size_bytes must be non-negative.")
 
 
 def _decimal(text: str) -> Decimal | None:
