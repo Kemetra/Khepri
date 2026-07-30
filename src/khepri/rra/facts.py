@@ -527,6 +527,11 @@ def _assert_derived_from_profile(
         raise FactsRefused("Profile does not describe the supplied content.")
     if build_mapping(profile) != mapping:
         raise FactsRefused("Mapping was not derived from the supplied profile.")
+    positions = [
+        entry.column.position for entry in mapping.mappings if entry.column is not None
+    ]
+    if len(positions) != len(set(positions)):
+        raise FactsRefused("Mapping reuses one column for more than one measure.")
     expected = assess_admissibility(
         profile,
         mapping,

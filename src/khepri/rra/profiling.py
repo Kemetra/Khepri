@@ -31,7 +31,7 @@ NUMERIC_TYPES = frozenset({TYPE_INTEGER, TYPE_DECIMAL})
 _INTEGER = re.compile(r"[+-]?\d+")
 _DECIMAL = re.compile(r"[+-]?(?:\d+\.\d*|\.\d+)")
 
-_PHONE = re.compile(r"\+?\d[\d \-()]{7,18}\d")
+_PHONE = re.compile(r"\+?\d[\d .\-()/]{7,18}\d")
 _IBAN = re.compile(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}")
 _DIGITS_ONLY = re.compile(r"\d+")
 

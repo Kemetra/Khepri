@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from khepri.rra.profiling import (
@@ -81,6 +81,10 @@ _PER_UNIT_COMPOUNDS = frozenset(
     }
 )
 _PLURAL_REMAINDERS = frozenset({"", "s", "es"})
+# A compact label cannot be tokenized, so a "per" sitting between two parts is
+# read as a denominator. Any separator avoids this, which is the documented way
+# to express a row-level measure whose name happens to contain the sequence.
+_PER_INFIXES = ("per", "لكل")
 
 _CONFIDENCE_EXACT = Decimal("0.95")
 _CONFIDENCE_TOKEN = Decimal("0.80")
@@ -435,13 +439,37 @@ def build_mapping(profile: DatasetProfile) -> RetailMapping:
         for column in profile.columns
         if not column.personal_data_risk and column.inferred_type != TYPE_EMPTY
     ]
-    mappings = tuple(
-        _resolve(rule, admissible_columns) for rule in SEMANTIC_RULES
+    mappings = _refuse_shared_columns(
+        tuple(_resolve(rule, admissible_columns) for rule in SEMANTIC_RULES)
     )
     return RetailMapping(
         mapping_version=MAPPING_VERSION,
         mappings=mappings,
         excluded_positions=excluded,
+    )
+
+
+def _refuse_shared_columns(
+    mappings: tuple[SemanticMapping, ...],
+) -> tuple[SemanticMapping, ...]:
+    """Refuse a column that answers more than one governed semantic.
+
+    A header carrying vocabulary for two measures, such as `sales quantity`,
+    would otherwise let one set of values stand as both money and a count.
+    """
+    owners: dict[int, int] = {}
+    for mapping in mappings:
+        column = mapping.column
+        if column is not None:
+            owners[column.position] = owners.get(column.position, 0) + 1
+    shared = {position for position, count in owners.items() if count > 1}
+    if not shared:
+        return mappings
+    return tuple(
+        replace(mapping, state=STATE_CONFLICTING)
+        if mapping.column is not None and mapping.column.position in shared
+        else mapping
+        for mapping in mappings
     )
 
 
@@ -526,10 +554,21 @@ def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -
         return True
     if any(compound in collapsed for compound in _PER_UNIT_COMPOUNDS):
         return True
+    if len(tokens) == 1 and _has_per_infix(collapsed):
+        return True
     return any(
         collapsed.startswith(prefix)
         and collapsed[len(prefix) :] not in _PLURAL_REMAINDERS
         for prefix in _PER_UNIT_PREFIXES
+    )
+
+
+def _has_per_infix(collapsed: str) -> bool:
+    return any(
+        0 < position < len(collapsed) - len(infix)
+        for infix in _PER_INFIXES
+        for position in [collapsed.find(infix)]
+        if position != -1
     )
 
 

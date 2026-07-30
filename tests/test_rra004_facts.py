@@ -716,3 +716,38 @@ def test_ordinary_text_is_not_mistaken_for_an_email() -> None:
 
     assert comparison.redacted_values == 0
     assert sorted(bucket.label for bucket in comparison.buckets) == ["Beverages", "Snacks"]
+
+
+def test_a_column_answering_two_measures_never_produces_facts() -> None:
+    content = b"date,sales quantity\n2026-01-05,10\n2026-01-06,20\n"
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile)
+
+    with pytest.raises(FactsRefused):
+        build_fact_package(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+        )
+
+
+def test_a_dotted_phone_number_is_redacted() -> None:
+    content = (
+        b"date,revenue,category\n"
+        b"2026-01-05,10.00,Beverages\n"
+        b"2026-01-06,20.00,Snacks\n"
+        b"2026-01-07,30.00,Bakery\n"
+        b"2026-01-08,40.00,+1.212.555.1212\n"
+    )
+
+    comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert not any("212" in label for label in labels)
+    assert comparison.redacted_values == 1

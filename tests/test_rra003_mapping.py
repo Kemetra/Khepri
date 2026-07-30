@@ -370,3 +370,29 @@ def test_the_arabic_singular_unit_still_answers_units() -> None:
     content = "date,revenue,وحدة\n2026-01-05,10.00,2\n2026-01-06,20.00,3\n".encode()
 
     assert mapped(content).for_semantic(SEMANTIC_UNITS).column.safe_label == "وحدة"
+
+
+def test_one_column_may_not_answer_two_governed_measures() -> None:
+    content = b"date,sales quantity\n2026-01-05,10\n2026-01-06,20\n"
+
+    mapping = mapped(content)
+
+    assert mapping.state_of(SEMANTIC_REVENUE) == STATE_CONFLICTING
+    assert mapping.state_of(SEMANTIC_UNITS) == STATE_CONFLICTING
+
+
+def test_a_shared_column_makes_the_dataset_inadmissible() -> None:
+    content = b"date,sales quantity\n2026-01-05,10\n2026-01-06,20\n"
+    profile = _profile(content)
+
+    decision = assess_admissibility(profile, build_mapping(profile))
+
+    assert decision.admissible is False
+    assert REASON_NO_CORE_MEASURE in decision.reasons
+    assert REASON_IRRECONCILABLE_TYPES in decision.reasons
+
+
+def test_a_compact_per_denominator_label_is_refused() -> None:
+    for header in (b"salesperkg", b"sales_per_kg", b"salesperitem"):
+        content = b"date," + header + b",units\n2026-01-05,10.00,2\n"
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
