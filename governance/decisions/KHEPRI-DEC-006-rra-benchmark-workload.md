@@ -310,6 +310,48 @@ The same commands compute the document digests that the approval package for thi
 its descriptors must carry, and `uv run khepri-gov approval-digest` computes that package's
 manifest digest.
 
+### The existing harness does not yet satisfy this decision
+
+`src/khepri/rra/benchmark_workload.py`, `src/khepri/rra/benchmark.py`, and the CI `benchmark`
+job merged before this decision was written. They are a correct enforcement path for the
+`RRA-007` requirement that CI fail on an exceeded tolerance, and they remain so. They are not an
+implementation of `KHEPRI-BMK-001`, and a run of them certifies nothing about this benchmark.
+Recording that here, rather than adjusting this decision to match them, is deliberate: a
+governed workload is defined by the approved artifact and implemented by code, never the
+reverse.
+
+The two are incompatible at the digest, not merely different in detail. `certify_benchmark`
+compares `approved.workload.digest` against `approved.identity.workload_digest`, and
+`BenchmarkWorkload.digest` returns `WORKLOAD_VERSION` followed by a SHA-256 over the datasets it
+generated — the literal prefix `rra007.workload.v1:`. This decision requires `workload_digest`
+to be the `sha256:`-prefixed document digest of `KHEPRI-BMK-001-workload.yaml`. The two strings
+cannot be equal for any input, so populating the six repository variables from an approved
+record while that comparison stands makes every run raise `BenchmarkTampered`. That is the
+fail-closed rule behaving correctly on a real inconsistency; it is a defect to repair in the
+descriptor slice, not a steady state to leave in place.
+
+The workload the merged builder produces also diverges from the population fixed above, in ways
+that each remove something this decision requires be measured:
+
+| This decision | The merged builder |
+| ------------- | ------------------ |
+| 40 datasets across four byte-size bands, 4/8/12/16 | `sample_count` datasets of one uniform row count |
+| CSV and XLSX, exercising both `KHEPRI-DEC-005` read paths | CSV only; the fastexcel/calamine path is never timed |
+| Core profile of eight columns, extended profile of twelve | Six columns: `date,revenue,units,invoice_no,category,branch` |
+| `customer_email`, so `RRA-003` personal-data detection is inside the measured interval | No personal-data column; that path is untimed |
+| 24 consecutive months, `2024-07-01` to `2026-06-30` | 28 days of a single month |
+| 500 products, 12 categories, 25 stores, 3 channels | 4 categories, 3 branches; no product, store, or channel |
+| `sample_id` `KHEPRI-BMK-001-01` through `-40` | `sample_0000` upward |
+| One `master_seed`, per-dataset seeds from `SHA-256("<master_seed>:<sample_id>")` | Arithmetic derivation from sample and row index |
+| A recorded SHA-256 per generated input file, reproduced byte for byte | No recorded per-file digest to reproduce against |
+
+Reworking those two modules to this population, and replacing the content-address comparison
+with one over the approved descriptor bytes, is an obligation of the slice that adds the
+descriptors. It is not authorized ahead of this decision's approval, and nothing above is
+relaxed to shorten it. Until that slice lands, no `BenchmarkIdentity` for a governed run may be
+constructed — which the absence of an approved record already enforces, because the gate reports
+`NOT CERTIFIED` and measures nothing when the variables are unset.
+
 ### Completion objective, restated and not weakened
 
 At least 95% of the 40 benchmark datasets, none exceeding 52,428,800 bytes, must produce a
@@ -389,8 +431,12 @@ This decision does not authorize:
 - The nine open questions above block a governed benchmark run. Until they are settled and the
   two descriptors exist and are approved, no performance evidence for beta exit can be
   produced, and none may be claimed.
+- The CI gate is already wired to `enforce_performance`, and it reports `NOT CERTIFIED` on every
+  run because no approved record supplies the identity. A green `benchmark` job is therefore not
+  evidence about this or any benchmark, and must never be cited as any.
 - The follow-on obligations created here are: add the two descriptors and the deterministic
-  generator in specification-linked slices, settle the environment sizing under infrastructure
-  authority, and wire the CI gate to `enforce_performance`.
+  generator in specification-linked slices, rework `benchmark_workload.py` and the
+  `certify_benchmark` digest comparison to this population and this digest rule as recorded
+  above, and settle the environment sizing under infrastructure authority.
 
 This decision remains proposed until its registry entry contains explicit approval evidence.

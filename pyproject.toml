@@ -32,6 +32,15 @@ dev = [
     "pytest>=8.3,<9",
     "ruff>=0.9,<1",
 ]
+# KHEPRI-DEC-005 makes AWS CDK v2 the definition of reproducible infrastructure. It is kept out
+# of `project.dependencies` deliberately: the pinned OCI image that decision authorizes runs the
+# web and worker services, and infrastructure tooling has no business inside it.
+infra = [
+    "aws-cdk-lib>=2.262,<3",
+]
+
+[tool.uv]
+default-groups = ["dev", "infra"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/khepri", "src/khepri_gov"]

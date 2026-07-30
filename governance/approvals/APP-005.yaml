@@ -1,0 +1,23 @@
+schema_version: 1
+id: APP-005
+title: RRA private-beta and benchmark infrastructure sizing approval
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-007 exactly as digested, settling KHEPRI-DEC-006 open questions 2 through 6:
+  Fargate task sizing, worker concurrency and queue bounds, the PostgreSQL instance and storage,
+  the pinned Chromium mechanism, and the dedicated benchmark environment.
+exclusions:
+  - Beta deployment, beta launch, client count, and observation period
+  - The AWS CDK definition itself, which this decision authorizes but does not contain
+  - Verification that every selected service and size is available in me-central-1
+  - Any claim that a benchmark run has been performed or certified
+  - Any claim that the approved completion objective has been met
+  - Any claim that technical review or automation is human approval
+manifest_digest: sha256:cb7ced04e3db28e29ec00981dcf6097a64ae42ab6b7ec580b2d54b2741259d28
+artifacts:
+  - id: KHEPRI-DEC-007
+    document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
+    document_sha256: sha256:3dab9d2609f6ea592c38b86be7a2e72352a43546cec73726b403631aaaaa60a7
+    from_state: proposed
+    to_state: accepted

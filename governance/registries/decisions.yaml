@@ -45,3 +45,8 @@ decisions:
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
+  - id: KHEPRI-DEC-007
+    title: RRA private-beta and benchmark infrastructure sizing
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
