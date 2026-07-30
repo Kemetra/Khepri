@@ -551,6 +551,134 @@ def test_a_year_named_on_its_own_is_grounded_by_the_labels_that_contain_it() -> 
     )
 
 
+def test_a_formatting_precision_is_not_stateable_as_a_figure() -> None:
+    # Monetary precision is 2. It says how a figure is written, not what it
+    # is, so it must not pass as the value of the fact beside it.
+    request = request_for()
+    assert request.document["monetary_precision"] == 2
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("الإيرادات ٢.", cited=(revenue_fact_id(request),)),),
+                english=(section("Revenue was 2.", cited=(revenue_fact_id(request),)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+@pytest.mark.parametrize(
+    ("dash", "name"),
+    [
+        ("−", "minus sign"),
+        ("–", "en dash"),
+        ("—", "em dash"),
+        ("－", "fullwidth hyphen-minus"),
+    ],
+)
+def test_any_dash_a_reader_would_take_for_a_minus_reverses_the_figure(
+    dash: str,
+    name: str,
+) -> None:
+    # Recognizing only ASCII `-` would reopen the sign hole under a different
+    # code point, which is the same defect wearing a different character.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+    claim = f"Revenue was {dash}500.00."
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section(claim, cited=(fact_id,)),),
+                english=(section(claim, cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER, name
+
+
+def test_a_percent_suffix_is_part_of_the_claim_not_decoration_after_it() -> None:
+    # `500.00%` is not the revenue `500.00`; the suffix changes what the digits
+    # assert, so a monetary figure cannot wear one.
+    request = request_for()
+    fact_id = revenue_fact_id(request)
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            draft(
+                arabic=(section("الإيرادات ٥٠٠٫٠٠٪.", cited=(fact_id,)),),
+                english=(section("Revenue was 500.00%.", cited=(fact_id,)),),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+@pytest.mark.parametrize(
+    ("claim_ar", "claim_en"),
+    [
+        ("الهامش ٠٫٦٠٠٠٪.", "Margin was 0.6000%."),  # the decimal wearing a percent
+        ("الهامش ٦٠٫٠٠٠٠.", "Margin was 60.0000."),  # the percent without one
+    ],
+)
+def test_a_ratio_must_be_stated_in_a_rendering_that_was_supplied(
+    claim_ar: str,
+    claim_en: str,
+) -> None:
+    # 0.6000 and 60.0000% say the same thing; 0.6000% and 60.0000 say two
+    # different wrong things, and one set of numbers could not tell them apart.
+    request = NarrativeRequest.of(package(WITH_COST), adapter_version=ADAPTER_VERSION)
+    fact_id = str(
+        next(
+            fact
+            for fact in request.document["facts"]
+            if fact["metric"] == "gross_margin"
+        )["fact_id"]
+    )
+
+    with pytest.raises(NarrativeRefused) as refusal:
+        validate(
+            NarrativeDraft(
+                adapter_version=ADAPTER_VERSION,
+                package_version=request.package_version,
+                languages=(
+                    LanguageNarrative(
+                        language=LANGUAGE_ARABIC,
+                        sections=(section(claim_ar, cited=(fact_id,)),),
+                    ),
+                    LanguageNarrative(
+                        language=LANGUAGE_ENGLISH,
+                        sections=(section(claim_en, cited=(fact_id,)),),
+                    ),
+                ),
+            ),
+            request=request,
+        )
+
+    assert refusal.value.reason == REASON_UNGROUNDED_NUMBER
+
+
+def test_each_language_may_cite_a_fact_by_a_different_one_of_its_names() -> None:
+    # Both identifiers are accepted names for the same fact, so comparing the
+    # spellings rather than the facts would refuse an equivalent draft.
+    request = request_for()
+    entry = next(
+        fact for fact in request.document["facts"] if fact["metric"] == "revenue"
+    )
+
+    validate(
+        draft(
+            arabic=(section("الإيرادات ٥٠٠٫٠٠.", cited=(str(entry["fact_id"]),)),),
+            english=(section("Revenue was 500.00.", cited=(str(entry["citation_id"]),)),),
+        ),
+        request=request,
+    )
+
+
 def test_a_period_a_section_never_cited_is_not_grounded_by_another_fact() -> None:
     # The year is supplied by the series, not by the revenue total. A section
     # that names a period is citing the series whether it says so or not.

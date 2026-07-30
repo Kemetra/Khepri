@@ -210,9 +210,16 @@ class NarrativeRequest:
 
 @dataclass(frozen=True, slots=True)
 class GroundedEntry:
-    """The numbers one cited fact makes available to a sentence that cites it."""
+    """What one cited fact makes available to a sentence that cites it.
+
+    Percent renderings are held apart from plain values because the suffix is
+    part of the claim. A ratio supplied as `0.6000` and `60.0000%` says the
+    same thing twice; `0.6000%` and `60.0000` say two different wrong things,
+    and one set could not tell them apart.
+    """
 
     numbers: frozenset[Decimal]
+    percents: frozenset[Decimal]
     labels: frozenset[str]
 
 
@@ -228,43 +235,63 @@ class NarrativeGround:
     """
 
     entries: dict[str, GroundedEntry]
+    identities: dict[str, str]
     caveats: frozenset[str]
-    package_numbers: frozenset[Decimal]
 
     @property
     def identifiers(self) -> frozenset[str]:
         return frozenset(self.entries)
+
+    def identity(self, cited: Sequence[str]) -> frozenset[str]:
+        """The facts these citations name, whichever identifier was used.
+
+        Comparing raw identifiers across languages would refuse a draft that
+        cites the same fact by `fact_id` in one and `citation_id` in the other.
+        Both are accepted names for it, so coverage has to be compared in terms
+        of the fact rather than the spelling.
+        """
+        return frozenset(self.identities[name] for name in cited if name in self.identities)
 
     def stateable(self, cited: Sequence[str]) -> GroundedEntry:
         """What a section citing exactly these facts may state.
 
         Raises rather than returning a default when a citation resolves to
         nothing, so an unknown citation cannot quietly narrow the permitted set
-        to the package-wide scalars and look like a grounding failure instead.
+        and look like a grounding failure instead.
         """
-        numbers = set(self.package_numbers)
+        numbers: set[Decimal] = set()
+        percents: set[Decimal] = set()
         labels: set[str] = set()
         for identifier in cited:
             entry = self.entries.get(identifier)
             if entry is None:
                 raise NarrativeRefused(REASON_UNKNOWN_CITATION)
             numbers |= entry.numbers
+            percents |= entry.percents
             labels |= entry.labels
-        return GroundedEntry(numbers=frozenset(numbers), labels=frozenset(labels))
+        return GroundedEntry(
+            numbers=frozenset(numbers),
+            percents=frozenset(percents),
+            labels=frozenset(labels),
+        )
 
     @classmethod
     def of(cls, request: NarrativeRequest) -> NarrativeGround:
         document = request.document
         entries: dict[str, GroundedEntry] = {}
+        identities: dict[str, str] = {}
         caveats: set[str] = set(document["caveats"])
 
         for entry in (*document["facts"], *document["series"], *document["comparisons"]):
             caveats.update(entry.get("caveats", ()))
             numbers: set[Decimal] = set()
             labels: set[str] = set()
-            for key in ("value", "value_percent"):
-                numbers.update(_as_numbers(entry.get(key)))
-            numbers.add(Decimal(int(entry["precision"])))
+            numbers.update(_as_numbers(entry.get("value")))
+            percents = set(_as_numbers(entry.get("value_percent")))
+            # `precision` is deliberately absent. It says how a figure is
+            # written, not what it is, and admitting it would let a sentence
+            # citing a `500.00` revenue state `Revenue was 2` — a formatting
+            # detail passing as the value of the fact beside it.
             for key in ("distinct_values", "truncated_values", "redacted_values"):
                 if key in entry:
                     numbers.add(Decimal(int(entry[key])))
@@ -284,20 +311,20 @@ class NarrativeGround:
                 numbers.update(_as_numbers(bucket.get("value")))
                 numbers.add(Decimal(int(bucket["rows"])))
 
-            grounded = GroundedEntry(numbers=frozenset(numbers), labels=frozenset(labels))
+            grounded = GroundedEntry(
+                numbers=frozenset(numbers),
+                percents=frozenset(percents),
+                labels=frozenset(labels),
+            )
             # A fact is citable by either identifier, and both must reach the
             # same permitted set — otherwise which name a provider happened to
             # use would decide what it is allowed to say.
-            entries[str(entry["fact_id"])] = grounded
-            entries[str(entry["citation_id"])] = grounded
+            fact_id = str(entry["fact_id"])
+            for name in (fact_id, str(entry["citation_id"])):
+                entries[name] = grounded
+                identities[name] = fact_id
 
-        return cls(
-            entries=entries,
-            caveats=frozenset(caveats),
-            # A formatting precision is a property of the package rather than a
-            # figure about the business, so it is stateable beside any fact.
-            package_numbers=frozenset({Decimal(int(document["monetary_precision"]))}),
-        )
+        return cls(entries=entries, identities=identities, caveats=frozenset(caveats))
 
 
 @dataclass(frozen=True, slots=True)
@@ -494,8 +521,10 @@ def validate(draft: NarrativeDraft, *, request: NarrativeRequest) -> None:
     first = coverage[0]
     for other in coverage[1:]:
         # Wording may differ between languages; what may not differ is which
-        # facts a reader is told and which caveats they are warned about.
-        if other.cited_fact_ids != first.cited_fact_ids:
+        # facts a reader is told and which caveats they are warned about. The
+        # comparison is on the facts, not on which of a fact's two accepted
+        # names each language happened to cite.
+        if ground.identity(other.cited_fact_ids) != ground.identity(first.cited_fact_ids):
             raise NarrativeRefused(REASON_FACT_COVERAGE_DIFFERS)
         if other.covered_caveats != first.covered_caveats:
             raise NarrativeRefused(REASON_CAVEAT_COVERAGE_DIFFERS)
@@ -552,7 +581,14 @@ def _assert_grounded_numbers(text: str, allowed: GroundedEntry) -> None:
         if not _COMPLETE_NUMBER.fullmatch(trimmed):
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
         value = _parse_number(trimmed)
-        if value is None or value not in allowed.numbers:
+        if value is None:
+            raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
+        # A percent sign changes what the digits assert, so it is part of the
+        # claim rather than decoration after it. `500.00%` is not the revenue
+        # `500.00`, and `0.6000%` is not the margin `0.6000` however close it
+        # looks — each has to match a rendering that was actually supplied.
+        stated = allowed.percents if after == "%" else allowed.numbers
+        if value not in stated:
             raise NarrativeRefused(REASON_UNGROUNDED_NUMBER)
 
 
@@ -699,4 +735,17 @@ _DIGIT_TABLE: dict[int, int] = {
     **{0x06F0 + offset: ord("0") + offset for offset in range(10)},
     0x066B: ord("."),
     0x066C: ord(","),
+    # Every dash a reader would take for a minus. Recognizing only ASCII `-`
+    # would let `−500.00` (U+2212) validate as positive `500.00`, which is the
+    # sign hole reopened under a different code point. A dash attached to
+    # digits is a sign; one standing alone between spaces still is not.
+    0x2212: ord("-"),
+    0x2013: ord("-"),
+    0x2014: ord("-"),
+    0xFE58: ord("-"),
+    0xFE63: ord("-"),
+    0xFF0D: ord("-"),
+    # Percent signs, for the same reason: the suffix carries the claim.
+    0x066A: ord("%"),
+    0xFF05: ord("%"),
 }
