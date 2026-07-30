@@ -10,10 +10,19 @@ collaborator contracts live here; `api.py` maps them onto status codes.
 separate persistence slice fills. This module owns no store, no queue, and no
 renderer, so the whole surface is exercisable against hand-written fakes.
 
-**Deriving the state vocabulary rather than restating it.** `GOVERNED_JOB_STATES`
-is built from the constants `jobs` already exports, so a state added there is a
-state this module knows about without an edit -- and an unknown state read out
-of a store is refused rather than echoed to a caller.
+**The state vocabulary is imported, never restated.** `jobs.JOB_STATES` is the
+one authority on which states exist, and the report jobs table constrains its
+`state` column to exactly that set. A second list here would be a second thing
+to forget: when `failed` became `dead_lettered`, a local copy would have gone on
+accepting a state no writer produces and rejecting the one they do.
+
+**Two reason vocabularies, deliberately not merged.** `dead_letter_reason` says
+why the queue stopped retrying a job and is a closed two-value enum written only
+by the job store, so an unrecognized value there means the store is broken and
+fails closed. The stage reason says what the last attempt failed on, reaches this
+module from provider and renderer paths, and is therefore collapsed to
+`stage_failed` when ungoverned rather than refused. Different provenance, so
+different treatment.
 """
 
 from __future__ import annotations
@@ -32,23 +41,17 @@ from khepri.rra.bundle import (
     REQUIRED_SURFACES,
 )
 from khepri.rra.jobs import (
-    JOB_FAILED,
-    JOB_QUEUED,
-    JOB_RETRYABLE,
-    JOB_RUNNING,
+    DEAD_LETTER_REASONS,
+    JOB_DEAD_LETTERED,
+    JOB_STATES,
     JOB_SUCCEEDED,
     ReportJob,
+    UnknownJobState,
 )
 from khepri.rra.pipeline import (
     GOVERNED_REASONS,
     REASON_STAGE_FAILED,
     DeliveryRecord,
-)
-
-# Every state a report job may be reported as. Derived from `jobs` rather than
-# rewritten, because a second list of states is a second thing to forget.
-GOVERNED_JOB_STATES = frozenset(
-    {JOB_QUEUED, JOB_RUNNING, JOB_RETRYABLE, JOB_SUCCEEDED, JOB_FAILED}
 )
 
 
@@ -83,14 +86,16 @@ class JobEvidenceContradicted(RuntimeError):
 class JobOutcome:
     """Everything one job's state entitles a caller to be told.
 
-    Assembled once, so the two ways a job can say too much -- a bundle named
-    before one was delivered, a reason given before the report finished -- are
-    decided in one place rather than at each field.
+    Assembled once, so every way a job can say too much -- a bundle named before
+    one was delivered, a verdict given before the report finished, a dead-letter
+    reason on a job still running -- is decided in one place rather than at each
+    field.
     """
 
     state: str
     bundle_id: str | None
     reason: str | None
+    dead_letter_reason: str | None
 
 
 def job_outcome(view: ReportJobView) -> JobOutcome:
@@ -98,26 +103,49 @@ def job_outcome(view: ReportJobView) -> JobOutcome:
 
     Fails closed rather than reporting a partial answer: a job this release
     cannot govern, or whose evidence contradicts its state, has no outcome to
-    describe, and describing it anyway is how an unfinished or failed run comes
-    to look like a delivered report.
+    describe, and describing it anyway is how an abandoned or unfinished run
+    comes to look like a delivered report.
     """
     _require_governed_state(view)
     return JobOutcome(
         state=view.job.state,
         bundle_id=_delivered_bundle_id(view),
         reason=_failure_reason(view),
+        dead_letter_reason=_dead_letter_reason(view),
     )
 
 
 def _require_governed_state(view: ReportJobView) -> None:
     """A state this release does not govern is not a state to report.
 
-    RRA-007 governs the transitions a report job makes, so a stored state
-    outside that vocabulary is evidence some other writer produced something
-    this surface cannot vouch for.
+    `jobs.JOB_STATES` is the authority, and `UnknownJobState` is the exception
+    `jobs` already raises for exactly this question -- inventing a second one
+    here would mean two names for one refusal.
     """
-    if view.job.state not in GOVERNED_JOB_STATES:
-        raise JobEvidenceContradicted("Report job state is not governed.")
+    if view.job.state not in JOB_STATES:
+        raise UnknownJobState("Report job state is unrecognized.")
+
+
+def _dead_letter_reason(view: ReportJobView) -> str | None:
+    """Why the queue gave up on this job, if it did.
+
+    The report jobs table constrains a dead-letter reason to be present exactly
+    when the state is `dead_lettered`, and to be one of the governed reasons.
+    Both halves are checked again here rather than assumed, because the store is
+    a Protocol: an abandoned job that cannot say why it was abandoned, and a live
+    job carrying an abandonment reason, are each a contradiction rather than an
+    outcome to describe.
+    """
+    reason = view.job.dead_letter_reason
+    if view.job.state != JOB_DEAD_LETTERED:
+        if reason is not None:
+            raise JobEvidenceContradicted("A live report job was given up on.")
+        return None
+    if reason not in DEAD_LETTER_REASONS:
+        # Closed enum, written only by the job store, so an unrecognized value
+        # is a broken writer rather than text that needs collapsing.
+        raise JobEvidenceContradicted("Report job dead-letter reason is not governed.")
+    return reason
 
 
 def _delivered_bundle_id(view: ReportJobView) -> str | None:
@@ -137,17 +165,18 @@ def _delivered_bundle_id(view: ReportJobView) -> str | None:
 
 
 def _failure_reason(view: ReportJobView) -> str | None:
-    """Why a failed job failed, in governed words or none at all.
+    """What the last attempt failed on, in governed words or none at all.
 
     Collapsed rather than passed through, exactly as `ReportPipelineFailed`
     collapses an ungoverned reason: this value reaches a response documented as
     content-free, and no store is trusted to have kept a provider's sentence or
     a customer's label out of the reason it recorded.
 
-    Only a failed job carries one. A retrying job has failed an attempt and not
-    the report, and a reason on it would read as a verdict already reached.
+    Only a dead-lettered job carries one. A retrying job has failed an attempt
+    and not the report, and a reason on it would read as a verdict already
+    reached while the queue is still going to try again.
     """
-    if view.reason is None or view.job.state != JOB_FAILED:
+    if view.reason is None or view.job.state != JOB_DEAD_LETTERED:
         return None
     if view.reason in GOVERNED_REASONS:
         return view.reason
@@ -296,7 +325,6 @@ class ReportServices:
 
 
 __all__ = [
-    "GOVERNED_JOB_STATES",
     "DeliveredBundle",
     "DeliveredBundleReader",
     "DeliveredSurface",

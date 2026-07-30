@@ -24,7 +24,9 @@ from khepri.rra.bundle import (
 from khepri.rra.datasets import ProfileCorrupted
 from khepri.rra.facts import PACKAGE_VERSION
 from khepri.rra.jobs import (
-    JOB_FAILED,
+    DEAD_LETTER_CONTENT_DELETED,
+    DEAD_LETTER_RETRIES_EXHAUSTED,
+    JOB_DEAD_LETTERED,
     JOB_QUEUED,
     JOB_RETRYABLE,
     JOB_RUNNING,
@@ -65,14 +67,14 @@ BUNDLE = "/api/v1/beta/reports/{job_id}/bundle"
 def report_job(
     job_id: str = "job_alpha",
     *,
-    session_id: str = "ses_alpha",
     state: str = JOB_QUEUED,
     completed_at: datetime | None = None,
+    dead_letter_reason: str | None = None,
 ) -> ReportJob:
     return ReportJob(
         job_id=job_id,
         owner_id="own_alpha",
-        session_id=session_id,
+        session_id="ses_alpha",
         idempotency_key="a" * 64,
         state=state,
         queued_at=NOW,
@@ -82,6 +84,28 @@ def report_job(
         lease_owner=None,
         lease_expires_at=None,
         completed_at=completed_at,
+        dead_letter_reason=dead_letter_reason,
+    )
+
+
+def dead_lettered(
+    *,
+    reason: str = DEAD_LETTER_RETRIES_EXHAUSTED,
+    stage_reason: str | None = None,
+) -> ReportJobView:
+    """A job the queue gave up on, as the store would hold it.
+
+    The two reasons answer different questions and the store keeps both: the
+    dead-letter reason says why the queue stopped retrying, the stage reason says
+    what the last attempt failed on.
+    """
+    return ReportJobView(
+        job=report_job(
+            state=JOB_DEAD_LETTERED,
+            completed_at=LATER,
+            dead_letter_reason=reason,
+        ),
+        reason=stage_reason,
     )
 
 
@@ -162,7 +186,7 @@ class FakeReportService:
             return existing, False
         job_id = f"job_{len(self.created) + 1}"
         self.created.append(job_id)
-        view = ReportJobView(job=report_job(job_id, session_id=session_id))
+        view = ReportJobView(job=report_job(job_id))
         self.store.held[(session_id, job_id)] = view
         return view, True
 
@@ -268,6 +292,7 @@ def test_requesting_a_report_enqueues_a_job_for_the_published_package() -> None:
         "completed_at": None,
         "bundle_id": None,
         "reason": None,
+        "dead_letter_reason": None,
     }
     assert test.reports.created == ["job_1"]
     assert set(test.reports.store.held) == {(session_id, "job_1")}
@@ -410,28 +435,27 @@ def test_a_second_session_cannot_reach_another_callers_report(template: str) -> 
     ("view", "expected"),
     [
         pytest.param(
-            ReportJobView(
-                job=report_job(state=JOB_FAILED, completed_at=LATER),
-                reason=REASON_PACKAGE_MISSING,
-            ),
+            dead_lettered(stage_reason=REASON_PACKAGE_MISSING),
             {
                 "reason": REASON_PACKAGE_MISSING,
+                "dead_letter_reason": DEAD_LETTER_RETRIES_EXHAUSTED,
                 "bundle_id": None,
                 "completed_at": COMPLETED_AT,
             },
-            id="failed-explains-itself-in-governed-words",
+            id="dead-lettered-explains-itself-in-governed-words",
         ),
         pytest.param(
-            ReportJobView(
-                job=report_job(state=JOB_FAILED, completed_at=LATER),
-                reason="provider rejected the row for buyer.one@example.com",
+            dead_lettered(
+                reason=DEAD_LETTER_CONTENT_DELETED,
+                stage_reason="provider rejected the row for buyer.one@example.com",
             ),
             {
                 "reason": REASON_STAGE_FAILED,
+                "dead_letter_reason": DEAD_LETTER_CONTENT_DELETED,
                 "bundle_id": None,
                 "completed_at": COMPLETED_AT,
             },
-            id="ungoverned-reason-is-collapsed",
+            id="ungoverned-stage-reason-is-collapsed",
         ),
         pytest.param(
             ReportJobView(
@@ -439,7 +463,12 @@ def test_a_second_session_cannot_reach_another_callers_report(template: str) -> 
                 reason=REASON_PACKAGE_MISSING,
                 delivery=delivery(),
             ),
-            {"reason": None, "bundle_id": None, "completed_at": None},
+            {
+                "reason": None,
+                "dead_letter_reason": None,
+                "bundle_id": None,
+                "completed_at": None,
+            },
             id="unfinished-withholds-a-finished-jobs-detail",
         ),
         pytest.param(
@@ -448,7 +477,12 @@ def test_a_second_session_cannot_reach_another_callers_report(template: str) -> 
                 reason=REASON_PACKAGE_MISSING,
                 delivery=delivery(),
             ),
-            {"reason": None, "bundle_id": None, "completed_at": None},
+            {
+                "reason": None,
+                "dead_letter_reason": None,
+                "bundle_id": None,
+                "completed_at": None,
+            },
             id="retrying-is-not-a-verdict-already-reached",
         ),
         pytest.param(
@@ -458,6 +492,7 @@ def test_a_second_session_cannot_reach_another_callers_report(template: str) -> 
             ),
             {
                 "reason": None,
+                "dead_letter_reason": None,
                 "bundle_id": "bundle_alpha",
                 "completed_at": COMPLETED_AT,
             },
@@ -496,6 +531,26 @@ def test_a_polled_job_reports_only_what_its_state_entitles_it_to(
         pytest.param(
             ReportJobView(job=report_job(state="paused")),
             id="ungoverned-state",
+        ),
+        pytest.param(
+            ReportJobView(
+                job=report_job(state=JOB_DEAD_LETTERED, completed_at=LATER),
+                reason=REASON_PACKAGE_MISSING,
+            ),
+            id="dead-lettered-without-a-dead-letter-reason",
+        ),
+        pytest.param(
+            dead_lettered(reason="gave_up"),
+            id="ungoverned-dead-letter-reason",
+        ),
+        pytest.param(
+            ReportJobView(
+                job=report_job(
+                    state=JOB_RUNNING,
+                    dead_letter_reason=DEAD_LETTER_RETRIES_EXHAUSTED,
+                )
+            ),
+            id="dead-letter-reason-on-a-live-job",
         ),
     ],
 )

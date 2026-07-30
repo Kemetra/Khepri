@@ -24,6 +24,7 @@ from khepri.rra.intake import (
     UploadMetadata,
     UploadTooLarge,
 )
+from khepri.rra.jobs import UnknownJobState
 from khepri.rra.mapping import KNOWN_SEMANTICS
 from khepri.rra.packages import (
     FactPackageRecord,
@@ -173,9 +174,15 @@ class ReportJobResponse(BaseModel):
     """One job's governed state, and for a finished job what it produced.
 
     Content-free by construction: an opaque job identifier, a state from the
-    governed vocabulary, two timestamps, a bundle content address, and a
-    governed reason code. There is no field a label, a figure, a filename, or a
+    governed vocabulary, two timestamps, a bundle content address, and two
+    governed reason codes. There is no field a label, a figure, a filename, or a
     provider sentence could occupy.
+
+    Both reasons are here because they answer different questions about an
+    abandoned job. `dead_letter_reason` says why the queue stopped retrying it;
+    `reason` says what its last attempt failed on. Collapsing them into one field
+    would make a job abandoned because its content was deleted indistinguishable
+    from one abandoned after exhausting retries on a refused narrative.
     """
 
     job_id: str
@@ -184,6 +191,7 @@ class ReportJobResponse(BaseModel):
     completed_at: datetime | None
     bundle_id: str | None
     reason: str | None
+    dead_letter_reason: str | None
 
 
 class ReportBundleResponse(BaseModel):
@@ -737,11 +745,12 @@ def _job_response(view: ReportJobView) -> ReportJobResponse:
     """
     try:
         outcome = job_outcome(view)
-    except JobEvidenceContradicted as error:
+    except (JobEvidenceContradicted, UnknownJobState) as error:
         # Deliberately indistinguishable between an ungoverned state, a missing
-        # delivery record, and a record naming another job. Which invariant a
-        # store broke is an operator's question, and answering it here would
-        # describe stored state to a caller who cannot act on it.
+        # delivery record, a record naming another job, and a dead-letter reason
+        # that contradicts the state. Which invariant a store broke is an
+        # operator's question, and answering it here would describe stored state
+        # to a caller who cannot act on it.
         raise HTTPException(
             status_code=503,
             detail="Report job state is unavailable.",
@@ -753,6 +762,7 @@ def _job_response(view: ReportJobView) -> ReportJobResponse:
         completed_at=view.job.completed_at,
         bundle_id=outcome.bundle_id,
         reason=outcome.reason,
+        dead_letter_reason=outcome.dead_letter_reason,
     )
 
 
