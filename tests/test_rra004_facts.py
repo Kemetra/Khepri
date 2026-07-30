@@ -656,3 +656,34 @@ def test_count_magnitude_beyond_the_governed_maximum_is_refused() -> None:
 
     with pytest.raises(FactsRefused):
         package(content)
+
+
+def test_a_per_unit_revenue_column_never_becomes_a_revenue_total() -> None:
+    content = (
+        b"date,sales_per_unit,units\n"
+        b"2026-01-05,10.00,2\n"
+        b"2026-01-06,20.00,3\n"
+    )
+
+    result = package(content)
+
+    assert result.fact(METRIC_REVENUE) is None
+    assert result.refusal(METRIC_REVENUE).reason == REASON_INPUT_UNAVAILABLE
+    assert result.value(METRIC_UNITS) == "5"
+
+
+def test_unicode_grouping_spaces_cannot_carry_an_iban_past_redaction() -> None:
+    iban = "GB82 WEST 1234 5698 7654 32"
+    content = (
+        "date,revenue,category\n"
+        "2026-01-05,10.00,Beverages\n"
+        "2026-01-06,20.00,Snacks\n"
+        "2026-01-07,30.00,Bakery\n"
+        f"2026-01-08,40.00,{iban}\n"
+    ).encode()
+
+    comparison = package(content).comparison(SEMANTIC_CATEGORY).comparison
+
+    labels = [bucket.label for bucket in comparison.buckets]
+    assert not any("GB82" in label for label in labels)
+    assert comparison.redacted_values == 1

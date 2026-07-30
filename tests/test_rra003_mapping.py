@@ -318,3 +318,29 @@ def test_total_cost_synonyms_still_map() -> None:
     content = b"date,revenue,total_cost\n2026-01-05,200.00,120.00\n"
 
     assert mapped(content).state_of(SEMANTIC_COST) == STATE_MAPPED
+
+
+def test_per_unit_and_average_revenue_labels_are_refused() -> None:
+    for header in (b"sales_per_unit", b"average_sales", b"salesperunit"):
+        content = (
+            b"date," + header + b",units\n"
+            b"2026-01-05,10.00,2\n"
+            b"2026-01-06,20.00,3\n"
+        )
+        assert mapped(content).state_of(SEMANTIC_REVENUE) == STATE_UNAVAILABLE, header
+
+
+def test_ordinary_labels_containing_a_disqualifier_substring_still_map() -> None:
+    # "supermarket" contains "per"; "opportunity" contains "unit". Neither is a
+    # per-unit measure, and a bare substring test would refuse both.
+    sales = b"date,supermarket_sales,units\n2026-01-05,10.00,2\n"
+    assert mapped(sales).state_of(SEMANTIC_REVENUE) == STATE_MAPPED
+
+    cost = b"date,revenue,opportunity_cost\n2026-01-05,10.00,4.00\n"
+    assert mapped(cost).state_of(SEMANTIC_COST) == STATE_MAPPED
+
+
+def test_a_disqualifier_never_overrides_an_exact_vocabulary_term() -> None:
+    content = b"date,revenue,unit\n2026-01-05,10.00,2\n2026-01-06,20.00,3\n"
+
+    assert mapped(content).for_semantic(SEMANTIC_UNITS).column.safe_label == "unit"

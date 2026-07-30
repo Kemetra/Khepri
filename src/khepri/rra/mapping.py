@@ -39,6 +39,30 @@ REQUIREMENT_REQUIRED = "required"
 REQUIREMENT_CORE_MEASURE = "core_measure"
 REQUIREMENT_OPTIONAL = "optional"
 
+# A per-unit, average, or rate column is not a row-level measure. Matching is
+# token-level, plus a leading prefix and an unambiguous compound, so a compact
+# header like "unitcost" is caught without refusing "opportunity_cost" or
+# "supermarket_sales" the way a bare substring test would.
+_PER_UNIT_TOKENS = frozenset(
+    {"unit", "per", "each", "average", "avg", "rate", "percent", "pct", "ratio", "share"}
+)
+_PER_UNIT_PREFIXES = ("unit", "per", "average", "avg")
+_PER_UNIT_COMPOUNDS = frozenset(
+    {
+        "perunit",
+        "peritem",
+        "perorder",
+        "pertransaction",
+        "unitprice",
+        "unitcost",
+        "unitvalue",
+        "averageprice",
+        "averagesales",
+        "averagevalue",
+    }
+)
+_PLURAL_REMAINDERS = frozenset({"", "s", "es"})
+
 _CONFIDENCE_EXACT = Decimal("0.95")
 _CONFIDENCE_TOKEN = Decimal("0.80")
 _CONFIDENCE_SUBSTRING = Decimal("0.60")
@@ -55,6 +79,7 @@ class SemanticRule:
     vocabulary: frozenset[str]
     type_only: bool = False
     disqualifiers: frozenset[str] = frozenset()
+    rejects_per_unit: bool = False
 
 
 SEMANTIC_RULES: tuple[SemanticRule, ...] = (
@@ -111,6 +136,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "القيمه",
             }
         ),
+        rejects_per_unit=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_UNITS,
@@ -133,6 +159,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
             }
         ),
         disqualifiers=frozenset({"price", "cost", "value", "amount", "قيمه", "تكلفه"}),
+        rejects_per_unit=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_TRANSACTION_ID,
@@ -254,7 +281,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "التكلفه",
             }
         ),
-        disqualifiers=frozenset({"unit", "per", "each", "average", "avg", "rate"}),
+        rejects_per_unit=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_DISCOUNT,
@@ -273,7 +300,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "تخفيض",
             }
         ),
-        disqualifiers=frozenset({"rate", "percent", "pct", "ratio", "share"}),
+        rejects_per_unit=True,
     ),
     SemanticRule(
         semantic=SEMANTIC_RETURNS,
@@ -293,7 +320,7 @@ SEMANTIC_RULES: tuple[SemanticRule, ...] = (
                 "استرداد",
             }
         ),
-        disqualifiers=frozenset({"rate", "percent", "pct", "ratio", "share"}),
+        rejects_per_unit=True,
     ),
 )
 
@@ -463,14 +490,35 @@ def _resolve(rule: SemanticRule, columns: list[ColumnProfile]) -> SemanticMappin
     )
 
 
+def _disqualified(rule: SemanticRule, tokens: tuple[str, ...], collapsed: str) -> bool:
+    """Whether a label describes something other than this row-level measure.
+
+    A disqualifier never overrides an exact vocabulary term, so a column named
+    `unit` still answers `units` while `unit_cost` and `unitcost` answer neither
+    `cost` nor `units`.
+    """
+    unclaimed = [token for token in tokens if token not in rule.vocabulary]
+    if rule.disqualifiers.intersection(unclaimed):
+        return True
+    if not rule.rejects_per_unit or collapsed in rule.vocabulary:
+        return False
+    if _PER_UNIT_TOKENS.intersection(unclaimed):
+        return True
+    if any(compound in collapsed for compound in _PER_UNIT_COMPOUNDS):
+        return True
+    return any(
+        collapsed.startswith(prefix)
+        and collapsed[len(prefix) :] not in _PLURAL_REMAINDERS
+        for prefix in _PER_UNIT_PREFIXES
+    )
+
+
 def _candidate(rule: SemanticRule, column: ColumnProfile) -> MappingCandidate | None:
     tokens = label_tokens(column.safe_label)
     if not tokens:
         return None
     collapsed = "".join(tokens)
-    if rule.disqualifiers & set(tokens) or any(
-        term in collapsed for term in rule.disqualifiers
-    ):
+    if _disqualified(rule, tokens, collapsed):
         return None
 
     confidence: Decimal | None = None

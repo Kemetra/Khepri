@@ -391,17 +391,40 @@ def _personal_data_signals(safe_label: str, values: list[str]) -> list[str]:
             signals.append(f"label_{signal}")
 
     if values:
-        shapes = {
-            "value_email": sum(1 for value in values if _EMAIL.fullmatch(value)),
-            "value_phone": sum(1 for value in values if _is_phone(value)),
-            "value_iban": sum(1 for value in values if _is_iban(value)),
-            "value_payment_card": sum(1 for value in values if _is_payment_card(value)),
-        }
+        counts: dict[str, int] = {}
+        for value in values:
+            for shape in personal_value_shapes(value):
+                counts[shape] = counts.get(shape, 0) + 1
         total = Decimal(len(values))
-        for signal, matched in shapes.items():
-            if matched and Decimal(matched) / total >= PERSONAL_DATA_SHAPE_RATE:
-                signals.append(signal)
+        signals.extend(
+            signal
+            for signal, matched in counts.items()
+            if Decimal(matched) / total >= PERSONAL_DATA_SHAPE_RATE
+        )
     return sorted(set(signals))
+
+
+def personal_value_shapes(value: str) -> tuple[str, ...]:
+    """The personal-data shapes one value carries, if any.
+
+    Values are normalized first, so a representation difference — Unicode
+    grouping spaces, compatibility digits, or letter case — cannot carry an
+    identifier past detection when display sanitizing would later normalize it
+    back into a recognizable form.
+    """
+    text = _normalized_value(value)
+    if not text:
+        return ()
+    shapes: list[str] = []
+    if _EMAIL.fullmatch(text):
+        shapes.append("value_email")
+    if _is_phone(text):
+        shapes.append("value_phone")
+    if _is_iban(text):
+        shapes.append("value_iban")
+    if _is_payment_card(text):
+        shapes.append("value_payment_card")
+    return tuple(shapes)
 
 
 def is_personal_value(value: str) -> bool:
@@ -411,19 +434,18 @@ def is_personal_value(value: str) -> bool:
     excludes a column, so an individual value must still be checked before it
     is published as a label.
     """
-    stripped = value.strip()
-    if not stripped:
-        return False
-    return bool(
-        _EMAIL.fullmatch(stripped)
-        or _is_phone(stripped)
-        or _is_iban(stripped)
-        or _is_payment_card(stripped)
-    )
+    return bool(personal_value_shapes(value))
+
+
+def _normalized_value(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value)
+    return "".join(
+        " " if character.isspace() else character for character in normalized
+    ).strip()
 
 
 def _is_iban(value: str) -> bool:
-    """Match an IBAN regardless of case or grouping spaces."""
+    """Match an IBAN regardless of case or grouping whitespace."""
     return bool(_IBAN.fullmatch(value.replace(" ", "").upper()))
 
 
