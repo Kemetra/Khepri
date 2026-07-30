@@ -94,7 +94,7 @@ Khepri is designed around five non-negotiable properties:
 | RRA product family | **Active** | The private-beta family boundary is authorized |
 | RRA-001 through RRA-007 | **Approved** | Invitations, intake, profiling, facts, narrative, reports, and operations are specified |
 | Runtime/provider architecture | **Accepted** | [KHEPRI-DEC-005](governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md) fixes the runtime, provider, and deployment boundary |
-| Product application | **In bounded slices** | RRA-001 through RRA-006 have specification-linked implementations; RRA-007 job recovery, bounded worker coordination with cooperative lease renewal, and content-free telemetry primitives are implemented, while benchmark enforcement remains |
+| Product application | **In bounded slices** | RRA-001 through RRA-006 have specification-linked implementations; RRA-007 recovery, worker coordination, telemetry, and fail-closed benchmark-enforcement primitives are implemented, while approved workload execution remains |
 | Beta launch | **Not authorized** | Client count and observation period require separate human authorization |
 
 The authoritative state is always in
