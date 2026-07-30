@@ -11,8 +11,14 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rra import packages
+from khepri.rra.admissibility import ReportRequest
 from khepri.rra.api import create_app
-from khepri.rra.datasets import ProfilingService, document_digest
+from khepri.rra.datasets import (
+    DatasetProfileRecord,
+    ProfileRequestConflict,
+    ProfilingService,
+    document_digest,
+)
 from khepri.rra.deletion import DeletionService
 from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
 from khepri.rra.intake import IntakeService, StoredObject
@@ -33,7 +39,7 @@ from khepri.rra.persistence import (
     SqlUploadRepository,
 )
 from khepri.rra.profiling import canonical_json
-from khepri.rra.sessions import InvitationService
+from khepri.rra.sessions import InvitationService, SessionScope
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 GOLDEN_CSV = (
@@ -653,6 +659,78 @@ def test_reprofiling_under_the_same_semantics_is_still_idempotent() -> None:
     assert first.status_code == 201
     assert second.status_code == 200
     assert second.json() == first.json()
+
+
+class _BlindToExistingProfiles:
+    """A profile repository whose pre-insert lookup misses, as a race does.
+
+    Two `/profile` requests arriving together on an unprofiled upload both find
+    nothing stored, so both reach the insert. Only the real `add_profile` can
+    resolve that, and it does so by returning the record the winner wrote.
+    """
+
+    def __init__(self, inner: SqlProfileRepository) -> None:
+        self._inner = inner
+
+    def add_profile(self, record: DatasetProfileRecord) -> DatasetProfileRecord:
+        return self._inner.add_profile(record)
+
+    def get_profile_for_upload(
+        self,
+        upload_id: str,
+        scope: SessionScope,
+    ) -> DatasetProfileRecord | None:
+        return None
+
+    def get_profile_for_session(self, session_id: str) -> DatasetProfileRecord | None:
+        return self._inner.get_profile_for_session(session_id)
+
+
+def test_a_profile_race_lost_on_the_uniqueness_conflict_is_still_rechecked() -> None:
+    # The loser of the race is handed the winner's profile by add_profile. That
+    # record answers the winner's question, not this caller's, so it has to face
+    # the same check as one found before insertion.
+    test = harness()
+    redeem_and_consent(test)
+    test.client.post(
+        "/api/v1/beta/uploads",
+        content=b"date,revenue\n2026-01-05,100.00\n2026-01-06,50.00\n",
+    )
+    assert test.client.post("/api/v1/beta/profile", json={}).status_code == 201
+    service = ProfilingService(
+        sessions=SqlSessionStore(test.factory),
+        uploads=SqlUploadRepository(test.factory),
+        objects=test.objects,
+        profiles=_BlindToExistingProfiles(SqlProfileRepository(test.factory)),
+        new_profile_id=lambda: "prf_racer",
+    )
+
+    with pytest.raises(ProfileRequestConflict):
+        service.profile_session_upload(
+            session_id=_session(test),
+            now=NOW,
+            request=ReportRequest(requested_semantics=frozenset({"store"})),
+        )
+
+
+def test_a_profile_race_won_on_the_same_question_still_returns_the_stored_one() -> None:
+    test = harness()
+    redeem_and_consent(test)
+    test.client.post("/api/v1/beta/uploads", content=GOLDEN_CSV)
+    first = test.client.post("/api/v1/beta/profile", json={})
+    assert first.status_code == 201
+    service = ProfilingService(
+        sessions=SqlSessionStore(test.factory),
+        uploads=SqlUploadRepository(test.factory),
+        objects=test.objects,
+        profiles=_BlindToExistingProfiles(SqlProfileRepository(test.factory)),
+        new_profile_id=lambda: "prf_racer",
+    )
+
+    stored, created = service.profile_session_upload(session_id=_session(test), now=NOW)
+
+    assert created is False
+    assert stored.profile_id == first.json()["profile_id"]
 
 
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
