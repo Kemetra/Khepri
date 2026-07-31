@@ -100,26 +100,39 @@ def template() -> Template:
 
 
 def _task_definition(template: Template, container_name: str) -> dict:
-    for task in template.find_resources("AWS::ECS::TaskDefinition").values():
-        names = [c["Name"] for c in task["Properties"]["ContainerDefinitions"]]
-        if container_name in names:
-            return task["Properties"]
-    raise AssertionError(f"No task definition contains a {container_name} container")
+    """The one task definition carrying this container, and it must be exactly one."""
+    tasks = template.find_resources("AWS::ECS::TaskDefinition").values()
+    matching = [task["Properties"] for task in tasks if _carries(task, container_name)]
+
+    assert len(matching) == 1, f"Expected one task definition holding {container_name}"
+    return matching[0]
+
+
+def _carries(task: dict, container_name: str) -> bool:
+    return container_name in [c["Name"] for c in task["Properties"]["ContainerDefinitions"]]
 
 
 def _role_actions(template: Template, role_logical_id: str) -> set[str]:
     """Every action any inline policy grants to one role."""
-    actions: set[str] = set()
-    for policy in template.find_resources("AWS::IAM::Policy").values():
-        roles = json.dumps(policy["Properties"].get("Roles", []))
-        if role_logical_id not in roles:
-            continue
-        for statement in policy["Properties"]["PolicyDocument"]["Statement"]:
-            if statement.get("Effect") != "Allow":
-                continue
-            action = statement.get("Action", [])
-            actions.update([action] if isinstance(action, str) else action)
-    return actions
+    policies = template.find_resources("AWS::IAM::Policy").values()
+    attached = [policy for policy in policies if _targets_role(policy, role_logical_id)]
+    return {action for policy in attached for action in _allowed_actions(policy)}
+
+
+def _targets_role(policy: dict, role_logical_id: str) -> bool:
+    return role_logical_id in json.dumps(policy["Properties"].get("Roles", []))
+
+
+def _allowed_actions(policy: dict) -> set[str]:
+    statements = policy["Properties"]["PolicyDocument"]["Statement"]
+    allowed = [entry for entry in statements if entry.get("Effect") == "Allow"]
+    return {action for entry in allowed for action in _actions_of(entry)}
+
+
+def _actions_of(statement: dict) -> list[str]:
+    """CloudFormation renders a lone action as a string and several as a list."""
+    action = statement.get("Action", [])
+    return [action] if isinstance(action, str) else list(action)
 
 
 def _role_logical_id(template: Template, container_name: str) -> str:
