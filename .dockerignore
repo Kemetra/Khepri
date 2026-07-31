@@ -1,0 +1,46 @@
+# Keep the build context small and free of anything that must not reach an image.
+#
+# This is a security boundary as much as a speed one: the context is uploaded to the daemon, and
+# `COPY . .` in a future edit would carry whatever is here into a layer. Credentials, governance
+# scratch, and virtual environments are excluded so that mistake cannot leak them.
+
+# Secrets and local credentials
+.env
+.env.*
+*.pem
+*.key
+.aws/
+
+# Version control and CI
+.git/
+.github/
+.gitattributes
+.gitignore
+
+# Local environments and caches -- never a source of image bytes
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+.pytest-cache/
+.pytest-tmp/
+.uv-cache/
+.mypy_cache/
+
+# CDK synthesis output
+cdk.out/
+*.cdk.staging/
+
+# Agent and planning scratch
+.superpowers/
+.claude/
+
+# Tests and documentation are not runtime inputs. The image runs the service; the suite runs in CI
+# against the source tree, so shipping it would enlarge the image without making anything verifiable.
+tests/
+docs/
+governance/
+README.md
+LICENSE
