@@ -42,11 +42,17 @@ decisions:
     approval_ref: governance/approvals/APP-003.yaml
   - id: KHEPRI-DEC-006
     title: RRA beta benchmark workload and environment
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-31
+    approval_ref: governance/approvals/APP-004.yaml
   - id: KHEPRI-DEC-007
     title: RRA private-beta and benchmark infrastructure sizing
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-07-31
+    approval_ref: governance/approvals/APP-005.yaml

@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-004
 title: RRA beta benchmark workload and environment approval
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Accept KHEPRI-DEC-006 exactly as digested, fixing the RRA private-beta benchmark workload,
@@ -13,6 +13,11 @@ exclusions:
   - Beta launch authorization
   - Any claim that technical review or automation is human approval
 manifest_digest: sha256:0830a354ce8e5069747b749dff1e2b2532cc43753108be1e4a30b9fc60a19f3a
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-07-31
+  approved_manifest_digest: sha256:0830a354ce8e5069747b749dff1e2b2532cc43753108be1e4a30b9fc60a19f3a
+  evidence_ref: https://github.com/Kemetra/Khepri/issues/43#issuecomment-5143831040
 artifacts:
   - id: KHEPRI-DEC-006
     document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
