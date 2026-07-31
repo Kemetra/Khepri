@@ -4,7 +4,7 @@
 
 **Goal:** Define one AWS CDK v2 application that composes Khepri's five existing infrastructure constructs into a single stack class, instantiated twice to produce the RRA private-beta environment and the dedicated benchmark environment with identical sizing.
 
-**Architecture:** A governed YAML file holds `KHEPRI-DEC-007`'s sizing table verbatim. `sizing_source.py` loads it and hands it to the existing `resolve_sizing`, which refuses anything incomplete. `RraEnvironmentStack` composes `GovernedNetwork`, `GovernedDataResources`, `GovernedDatabase`, `GovernedImageRepository`, and `GovernedCompute` in that order, taking only the five environment-varying values `KHEPRI-DEC-007` permits to differ. `app.py` instantiates the stack twice against the same `InfrastructureSizing` object, both pinned to `me-central-1`.
+**Architecture:** A governed YAML file holds `KHEPRI-DEC-007`'s sizing table verbatim. `sizing_source.py` loads it and hands it to the existing `resolve_sizing`, which refuses anything incomplete. `RraEnvironmentStack` composes `GovernedNetwork`, `GovernedDataResources`, `GovernedDatabase`, `GovernedImageRepository`, and `GovernedCompute` in that order. Of the differences `KHEPRI-DEC-007` permits, only the environment identifier is expressible in this slice: desired count needs an ECS service and deletion protection is fixed in `database.py`, so each arrives with the slice that can enforce it. `app.py` instantiates the stack twice against the same `InfrastructureSizing` object, both pinned to `me-central-1`.
 
 **Tech Stack:** Python 3.13, `uv`, `aws-cdk-lib` v2, `constructs`, `PyYAML`, `pytest`, `aws_cdk.assertions.Template`.
 
@@ -15,7 +15,7 @@
 - Region is `me-central-1`, pinned explicitly on every stack instance. Never inherit an ambient region.
 - The OCI image digest is a descriptor fact, not a sizing value. It is a required constructor prop with no default. It never appears in the sizing YAML.
 - The two environments may differ ONLY in: name, network isolation, service desired count, deletion protection, and the absence of customer content. Every sizing value is identical.
-- Benchmark service desired count is exactly `1`. Beta desired count and autoscaling are NOT set by this slice.
+- Neither environment's service desired count is set by this slice; see the bullet below. `KHEPRI-DEC-007` fixes the benchmark count at exactly `1` and reserves the beta count and autoscaling to the beta-authorization artifact, but nothing here can express either.
 - **Deletion protection is deliberately NOT parameterized by this slice.** `src/khepri/infra/database.py:115` hardcodes `deletion_protection=True` with `removal_policy=RETAIN`. `KHEPRI-DEC-007` permits the two environments to differ here, but changing it means editing a construct this slice does not own, and protecting the benchmark database is the safe direction to be wrong in. State this explicitly in the pull request as a known, bounded deferral rather than leaving a reviewer to notice it.
 - **Service desired count is deliberately NOT parameterized by this slice.** No ECS service is synthesized, so a `desired_count` prop would be accepted and discarded. `KHEPRI-DEC-006` sequential submission and `KHEPRI-DEC-007`'s "exactly 1 task" are enforced by the slice that adds the service, not declared here. State this in the pull request.
 - Type annotations on every function signature. `from __future__ import annotations` at the top of every module. `@dataclass(frozen=True, slots=True)` for DTOs.

@@ -11,3 +11,6 @@ __pycache__/
 tests/.pytest_tmp*/
 dist/
 build/
+
+# Subagent-driven development scratch
+.superpowers/
