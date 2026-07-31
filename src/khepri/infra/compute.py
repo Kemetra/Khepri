@@ -16,7 +16,17 @@ The asymmetry is the point and is asserted by tests:
   re-enqueueing its own work; a worker that could send could construct a job nothing authorized.
 
 Both may read and write the content bucket, because both halves of the pipeline touch stored
-content, and both may read the database credential.
+content. Neither task role may read the database credential: the execution role fetches it at task
+start and injects it, so the running code holds the value without holding a path back to the
+secret.
+
+The bucket grant already carries the key actions a KMS-encrypted bucket needs, so no separate
+`grant_encrypt_decrypt` is made. A second grant would restate what the first one said.
+
+**The image is pinned by digest, not by tag.** A tag is resolved at every task placement, so a
+task definition naming one runs whatever the tag points at then rather than what was approved.
+`PinnedImage` refuses a value that is not a full lowercase `sha256:` digest, on the same principle
+as `sizing.resolve_sizing`: an identity nobody supplied is not one to invent.
 
 **Sizing is injected, never chosen.** Task CPU, memory, and ephemeral storage arrive as a
 `ServiceSizing` that `sizing.resolve_sizing` already refused to invent. No number in this module
@@ -72,6 +82,9 @@ BROWSERS_PATH_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 BROWSERS_PATH = "/opt/pw-browsers"
 SKIP_BROWSER_DOWNLOAD_VARIABLE = "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD"
 
+DIGEST_PREFIX = "sha256:"
+DIGEST_LENGTH = 64
+
 RUNTIME_PLATFORM = ecs.RuntimePlatform(
     cpu_architecture=ecs.CpuArchitecture.X86_64,
     operating_system_family=ecs.OperatingSystemFamily.LINUX,
@@ -94,19 +107,37 @@ class EnvironmentResources:
 
 
 @dataclass(frozen=True, slots=True)
+class PinnedImage:
+    """A repository and the exact digest to run from it, which are useless apart.
+
+    The two travel together because a repository reference alone does not identify an image. A
+    task definition that names a tag resolves it at every task placement, so the image a task runs
+    is whatever the tag points at then -- not what anyone approved. ECR tag immutability does not
+    close that: it refuses to *overwrite* a tag, and `ecr:BatchDeleteImage` followed by a fresh
+    push of the same tag is not an overwrite. A digest cannot be re-pointed at all.
+    """
+
+    repository: ecr.IRepository
+    digest: str
+
+    def __post_init__(self) -> None:
+        _require_digest(self.digest)
+
+
+@dataclass(frozen=True, slots=True)
 class ComputeProps:
     """Everything the task definitions need from the rest of the environment."""
 
     resources: EnvironmentResources
-    repository: ecr.IRepository
+    image: PinnedImage
     sizing: ServiceSizing
 
 
 @dataclass(frozen=True, slots=True)
 class ContainerSpec:
-    """What every container shares: where the image is, where logs go, which secret to read."""
+    """What every container shares: which image to run, where logs go, which secret to read."""
 
-    repository: ecr.IRepository
+    image: PinnedImage
     log_group: logs.LogGroup
     secret: secretsmanager.ISecret
 
@@ -173,10 +204,25 @@ def _spec(scope: Construct, log_id: str, props: ComputeProps) -> ContainerSpec:
     if secret is None:
         raise ValueError("The database must supply a generated credential.")
     return ContainerSpec(
-        repository=props.repository,
+        image=props.image,
         log_group=_log_group(scope, log_id),
         secret=secret,
     )
+
+
+def _require_digest(value: str) -> None:
+    """Refuse anything that is not a full SHA-256 image digest.
+
+    There is no default and no fallback to a tag. A digest nobody supplied would be a tag by
+    another name, and the whole point is that the template, not the registry, decides which image
+    runs. This mirrors `sizing.resolve_sizing`, which refuses rather than inventing a size.
+    """
+    digest = value.strip()
+    if not digest.startswith(DIGEST_PREFIX):
+        raise ValueError("Image digest must be a sha256: digest, never a tag.")
+    hexadecimal = digest.removeprefix(DIGEST_PREFIX)
+    if len(hexadecimal) != DIGEST_LENGTH or not set(hexadecimal) <= set("0123456789abcdef"):
+        raise ValueError("Image digest must be lowercase hexadecimal SHA-256.")
 
 
 def _log_group(scope: Construct, construct_id: str) -> logs.LogGroup:
@@ -193,7 +239,7 @@ def _add_container(
 ) -> ecs.ContainerDefinition:
     return task.add_container(
         name,
-        image=ecs.ContainerImage.from_ecr_repository(spec.repository),
+        image=ecs.EcrImage(spec.image.repository, spec.image.digest),
         logging=ecs.LogDrivers.aws_logs(stream_prefix=name, log_group=spec.log_group),
         environment={
             BROWSERS_PATH_VARIABLE: BROWSERS_PATH,
@@ -207,13 +253,14 @@ def _grant_shared(task: ecs.FargateTaskDefinition, props: ComputeProps) -> None:
     """What both halves of the pipeline legitimately need, and nothing beyond it."""
     data = props.resources.data
     data.bucket.grant_read_write(task.task_role)
-    data.key.grant_encrypt_decrypt(task.task_role)
 
 
 __all__ = [
     "BROWSERS_PATH",
     "BROWSERS_PATH_VARIABLE",
     "DATABASE_SECRET_VARIABLE",
+    "DIGEST_LENGTH",
+    "DIGEST_PREFIX",
     "LOG_RETENTION",
     "RUNTIME_PLATFORM",
     "SKIP_BROWSER_DOWNLOAD_VARIABLE",
@@ -221,6 +268,7 @@ __all__ = [
     "WORKER_CONTAINER_NAME",
     "ComputeProps",
     "ContainerSpec",
+    "PinnedImage",
     "EnvironmentResources",
     "GovernedCompute",
 ]

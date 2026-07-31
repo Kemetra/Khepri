@@ -16,6 +16,7 @@ from khepri.infra.compute import (
     ComputeProps,
     EnvironmentResources,
     GovernedCompute,
+    PinnedImage,
 )
 from khepri.infra.data_resources import GovernedDataResources
 from khepri.infra.database import DatabaseProps, GovernedDatabase
@@ -35,6 +36,10 @@ WEB_MEMORY = 4096
 WORKER_CPU = 4096
 WORKER_MEMORY = 16384
 WORKER_STORAGE = 40
+
+# A syntactically valid digest. It pins nothing real: no approved environment descriptor exists,
+# so this is a fixture, not an identity.
+IMAGE_DIGEST = "sha256:" + "ab" * 32
 
 
 def _service_sizing() -> ServiceSizing:
@@ -82,7 +87,7 @@ def _build() -> Template:
         "Compute",
         ComputeProps(
             resources=EnvironmentResources(network=network, data=data, database=database),
-            repository=image.repository,
+            image=PinnedImage(repository=image.repository, digest=IMAGE_DIGEST),
             sizing=_service_sizing(),
         ),
     )
@@ -185,6 +190,38 @@ class TestContainers:
             images.add(json.dumps(task["ContainerDefinitions"][0]["Image"]))
 
         assert len(images) == 1
+
+    def test_the_image_is_referenced_by_digest_and_never_by_a_tag(
+        self, template: Template
+    ) -> None:
+        """A tag resolves at every task placement, so a tag is not a pin.
+
+        ECR tag immutability refuses to overwrite a tag, but BatchDeleteImage followed by a fresh
+        push of the same tag is not an overwrite. A digest cannot be re-pointed at all.
+        """
+        for name in (WEB_CONTAINER_NAME, WORKER_CONTAINER_NAME):
+            rendered = json.dumps(_task_definition(template, name)["ContainerDefinitions"][0])
+
+            assert IMAGE_DIGEST in rendered
+            assert ":latest" not in rendered
+
+    def test_an_absent_or_tag_shaped_digest_is_refused(self) -> None:
+        stack = Stack(App(), "RefusedImageStack")
+        data = GovernedDataResources(stack, "Data", _queue_sizing())
+        repository = GovernedImageRepository(stack, "Image", data.key).repository
+
+        for value in ("", "   ", "latest", "beta", "sha256:", "sha256:abc", "ab" * 32):
+            with pytest.raises(ValueError):
+                PinnedImage(repository=repository, digest=value)
+
+    def test_an_uppercase_digest_is_refused(self) -> None:
+        """The digest reaches a template verbatim, so case is part of the identity."""
+        stack = Stack(App(), "UppercaseImageStack")
+        data = GovernedDataResources(stack, "Data", _queue_sizing())
+        repository = GovernedImageRepository(stack, "Image", data.key).repository
+
+        with pytest.raises(ValueError):
+            PinnedImage(repository=repository, digest="sha256:" + "AB" * 32)
 
     def test_the_browser_path_is_pinned_and_download_is_refused(
         self, template: Template
@@ -298,10 +335,25 @@ class TestLeastPrivilege:
             assert "iam:PassRole" not in actions
 
     def test_both_roles_may_use_the_environment_key(self, template: Template) -> None:
+        """The bucket grant carries this; no separate key grant is made, and none is needed.
+
+        `grant_read_write` on a KMS-encrypted bucket already emits the key actions, so an explicit
+        `grant_encrypt_decrypt` would be a second statement granting what the first already did.
+        """
         for name in (WEB_CONTAINER_NAME, WORKER_CONTAINER_NAME):
             actions = _role_actions(template, _role_logical_id(template, name))
 
             assert "kms:Decrypt" in actions
+            assert "kms:GenerateDataKey*" in actions
+
+    def test_neither_task_role_may_read_the_database_secret_directly(
+        self, template: Template
+    ) -> None:
+        """The execution role fetches it at task start; the task role has no path to it."""
+        for name in (WEB_CONTAINER_NAME, WORKER_CONTAINER_NAME):
+            actions = _role_actions(template, _role_logical_id(template, name))
+
+            assert "secretsmanager:GetSecretValue" not in actions
 
     def test_the_two_roles_are_distinct(self, template: Template) -> None:
         web = _role_logical_id(template, WEB_CONTAINER_NAME)
@@ -361,7 +413,7 @@ def test_a_resized_declaration_reaches_the_task_definitions() -> None:
         "Compute",
         ComputeProps(
             resources=EnvironmentResources(network=network, data=data, database=database),
-            repository=image.repository,
+            image=PinnedImage(repository=image.repository, digest=IMAGE_DIGEST),
             sizing=ServiceSizing(
                 web=TaskSize(cpu_units=2048, memory_mib=4096, ephemeral_storage_gib=21),
                 worker=TaskSize(cpu_units=8192, memory_mib=32768, ephemeral_storage_gib=60),

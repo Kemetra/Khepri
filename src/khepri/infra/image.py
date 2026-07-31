@@ -1,10 +1,18 @@
 """The one image both services run, and the registry that refuses to let it change.
 
-**Why immutable tags.** `KHEPRI-DEC-007` pins Chromium transitively: the browser is baked into
-the image, the environment descriptor records the image digest, and `environment_digest` covers
-that record. All of that collapses if a tag can be moved. With mutable tags, `:beta` could point
-at one image when the descriptor was written and a different one when the benchmark ran, and both
-runs would cite the same approved identity. Immutability makes the tag as good as the digest.
+**Why immutable tags, and what they do not achieve.** `KHEPRI-DEC-007` pins Chromium transitively:
+the browser is baked into the image, the environment descriptor records the image digest, and
+`environment_digest` covers that record. Immutability protects one step of that: a tag already in
+use cannot be silently repointed by a later push, so a build cannot overwrite the artifact a
+descriptor was written against.
+
+It is not a substitute for the digest, and this module does not pretend otherwise. Immutability
+refuses an *overwrite*; `ecr:BatchDeleteImage` followed by a fresh push of the same tag is not an
+overwrite, so any tag remains rewritable by a principal holding delete. That is why `compute.py`
+references the image by digest and refuses to synthesize without one: the pin lives in the task
+definition, and this repository only makes the pin harder to disturb. It also means the publishing
+role should not hold `ecr:BatchDeleteImage` on this repository, which is a policy this construct
+does not write.
 
 **Why scan on push.** `KHEPRI-DEC-005` requires the pinned OCI image to be scanned before it is
 published. Scanning at push is the only point where that happens without a human remembering to.
