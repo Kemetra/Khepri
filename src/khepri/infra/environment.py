@@ -6,11 +6,12 @@ could diverge, and divergence silently voids the benchmark's meaning: a duration
 hardware sized unlike beta is not evidence about beta, so the ten-minute objective would be met
 somewhere nobody ships. One class makes that impossible rather than merely discouraged.
 
-**Why the props are so few.** `KHEPRI-DEC-007` enumerates what the two environments may differ in,
-and the list is closed: name, network isolation, service desired count, deletion protection, and
-the absence of customer content. Sizing is not on it. So sizing arrives as one resolved
-`InfrastructureSizing` that both instantiations share, and the only per-environment inputs are the
-identifier the scope already carries and the desired count.
+**Why the props are so few.** The only per-environment input today is the identifier the scope
+already carries. `KHEPRI-DEC-007` also permits the two environments to differ in service desired
+count and deletion protection, but neither is expressible yet: no ECS service is synthesized here,
+and `database.py` fixes deletion protection. Each arrives with the slice that can enforce it,
+because a prop the stack accepts and discards would invite the belief that setting it has an
+effect.
 
 **Why the region is explicit.** A stack built without `env` is region-agnostic and deploys wherever
 the ambient profile points. `KHEPRI-DEC-007` requires this definition to fail rather than
@@ -47,16 +48,10 @@ REGION = "me-central-1"
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentProps:
-    """Everything one environment needs that another may legitimately differ in.
-
-    `desired_count` is `None` for the beta environment: `KHEPRI-DEC-007` reserves the beta count
-    and its autoscaling policy to the beta-authorization artifact, and inventing one here would
-    answer a question that decision deliberately left open.
-    """
+    """Everything one environment needs that another may legitimately differ in."""
 
     sizing: InfrastructureSizing
     image_digest: str
-    desired_count: int | None
 
 
 class RraEnvironmentStack(Stack):

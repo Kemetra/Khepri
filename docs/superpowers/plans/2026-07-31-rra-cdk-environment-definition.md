@@ -17,6 +17,7 @@
 - The two environments may differ ONLY in: name, network isolation, service desired count, deletion protection, and the absence of customer content. Every sizing value is identical.
 - Benchmark service desired count is exactly `1`. Beta desired count and autoscaling are NOT set by this slice.
 - **Deletion protection is deliberately NOT parameterized by this slice.** `src/khepri/infra/database.py:115` hardcodes `deletion_protection=True` with `removal_policy=RETAIN`. `KHEPRI-DEC-007` permits the two environments to differ here, but changing it means editing a construct this slice does not own, and protecting the benchmark database is the safe direction to be wrong in. State this explicitly in the pull request as a known, bounded deferral rather than leaving a reviewer to notice it.
+- **Service desired count is deliberately NOT parameterized by this slice.** No ECS service is synthesized, so a `desired_count` prop would be accepted and discarded. `KHEPRI-DEC-006` sequential submission and `KHEPRI-DEC-007`'s "exactly 1 task" are enforced by the slice that adds the service, not declared here. State this in the pull request.
 - Type annotations on every function signature. `from __future__ import annotations` at the top of every module. `@dataclass(frozen=True, slots=True)` for DTOs.
 - Constructors take two or three arguments. CodeScene requires every new file to score 10.00 and it cannot be reproduced locally; keep functions small and single-purpose.
 - Run before handoff: `uv run khepri-gov validate`, `uv run ruff check .`, `uv run pytest`.
@@ -250,21 +251,20 @@ from khepri.infra.sizing_source import load_sizing
 IMAGE_DIGEST = "sha256:" + "ab" * 32
 
 
-def _stack(name: str, *, desired_count: int | None) -> RraEnvironmentStack:
+def _stack(name: str) -> RraEnvironmentStack:
     return RraEnvironmentStack(
         App(),
         name,
         EnvironmentProps(
             sizing=load_sizing(),
             image_digest=IMAGE_DIGEST,
-            desired_count=desired_count,
         ),
     )
 
 
 @pytest.fixture(scope="module")
 def benchmark() -> Template:
-    return Template.from_stack(_stack("Benchmark", desired_count=1))
+    return Template.from_stack(_stack("Benchmark"))
 
 
 class TestItComposesEveryGovernedResource:
@@ -297,7 +297,7 @@ class TestTheRegionIsPinned:
         points, which is substitution by omission.
         """
         assert REGION == "me-central-1"
-        assert _stack("Pinned", desired_count=1).region == REGION
+        assert _stack("Pinned").region == REGION
 
 
 class TestItRefusesRatherThanDefaulting:
@@ -314,7 +314,7 @@ def _stack_with_digest(digest: str) -> RraEnvironmentStack:
     return RraEnvironmentStack(
         App(),
         "Bad",
-        EnvironmentProps(sizing=load_sizing(), image_digest=digest, desired_count=1),
+        EnvironmentProps(sizing=load_sizing(), image_digest=digest),
     )
 ```
 
@@ -336,11 +336,12 @@ could diverge, and divergence silently voids the benchmark's meaning: a duration
 hardware sized unlike beta is not evidence about beta, so the ten-minute objective would be met
 somewhere nobody ships. One class makes that impossible rather than merely discouraged.
 
-**Why the props are so few.** `KHEPRI-DEC-007` enumerates what the two environments may differ in,
-and the list is closed: name, network isolation, service desired count, deletion protection, and
-the absence of customer content. Sizing is not on it. So sizing arrives as one resolved
-`InfrastructureSizing` that both instantiations share, and the only per-environment inputs are the
-identifier the scope already carries and the desired count.
+**Why the props are so few.** The only per-environment input today is the identifier the scope
+already carries. `KHEPRI-DEC-007` also permits the two environments to differ in service desired
+count and deletion protection, but neither is expressible yet: no ECS service is synthesized here,
+and `database.py` fixes deletion protection. Each arrives with the slice that can enforce it,
+because a prop the stack accepts and discards would invite the belief that setting it has an
+effect.
 
 **Why the region is explicit.** A stack built without `env` is region-agnostic and deploys wherever
 the ambient profile points. `KHEPRI-DEC-007` requires this definition to fail rather than
@@ -377,16 +378,10 @@ REGION = "me-central-1"
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentProps:
-    """Everything one environment needs that another may legitimately differ in.
-
-    `desired_count` is `None` for the beta environment: `KHEPRI-DEC-007` reserves the beta count
-    and its autoscaling policy to the beta-authorization artifact, and inventing one here would
-    answer a question that decision deliberately left open.
-    """
+    """Everything one environment needs that another may legitimately differ in."""
 
     sizing: InfrastructureSizing
     image_digest: str
-    desired_count: int | None
 
 
 class RraEnvironmentStack(Stack):
@@ -453,7 +448,7 @@ git -c commit.gpgsign=false commit -m "feat(infra): compose one governed RRA env
 
 **Interfaces:**
 - Consumes: `REGION`, `EnvironmentProps`, `RraEnvironmentStack` from Task 2; `load_sizing` from Task 1.
-- Produces: `BETA_STACK_NAME`, `BENCHMARK_STACK_NAME`, `BENCHMARK_DESIRED_COUNT`, and
+- Produces: `BETA_STACK_NAME`, `BENCHMARK_STACK_NAME`, and
   `build_app(image_digest: str) -> App`.
 
 - [ ] **Step 1: Write the failing parity test**
@@ -574,11 +569,10 @@ the second to be "a second instantiation of the same CDK application in the same
 environment identifier as the only naming input". That is literally what this module is: two
 constructions of `RraEnvironmentStack` against one resolved sizing object.
 
-The benchmark environment runs exactly one task, because `KHEPRI-DEC-006` requires sequential
-submission and `KHEPRI-DEC-007` makes that "true by construction" rather than a property of the
-harness. The beta environment sets no desired count here: that figure and its autoscaling policy
-are reserved to the beta-authorization artifact, and choosing one would answer a question
-`KHEPRI-DEC-007` deliberately left open.
+Service desired count is not set here: no ECS service is synthesized by `RraEnvironmentStack` yet,
+only task definitions, so there is nothing for a desired-count value to govern. `KHEPRI-DEC-006`'s
+sequential submission and `KHEPRI-DEC-007`'s "exactly 1 task" for the benchmark are enforced by the
+slice that adds the service, not declared here.
 
 The image digest is a required argument. Nothing in this module knows a default, because the digest
 is produced by a build and recorded in the environment descriptor, and a template synthesized
@@ -594,7 +588,6 @@ from khepri.infra.sizing_source import load_sizing
 
 BETA_STACK_NAME = "RraBeta"
 BENCHMARK_STACK_NAME = "RraBenchmark"
-BENCHMARK_DESIRED_COUNT = 1
 
 
 def build_app(image_digest: str) -> App:
@@ -604,16 +597,12 @@ def build_app(image_digest: str) -> App:
     RraEnvironmentStack(
         app,
         BETA_STACK_NAME,
-        EnvironmentProps(sizing=sizing, image_digest=image_digest, desired_count=None),
+        EnvironmentProps(sizing=sizing, image_digest=image_digest),
     )
     RraEnvironmentStack(
         app,
         BENCHMARK_STACK_NAME,
-        EnvironmentProps(
-            sizing=sizing,
-            image_digest=image_digest,
-            desired_count=BENCHMARK_DESIRED_COUNT,
-        ),
+        EnvironmentProps(sizing=sizing, image_digest=image_digest),
     )
     return app
 ```

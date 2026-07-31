@@ -10,21 +10,20 @@ from khepri.infra.sizing_source import load_sizing
 IMAGE_DIGEST = "sha256:" + "ab" * 32
 
 
-def _stack(name: str, *, desired_count: int | None) -> RraEnvironmentStack:
+def _stack(name: str) -> RraEnvironmentStack:
     return RraEnvironmentStack(
         App(),
         name,
         EnvironmentProps(
             sizing=load_sizing(),
             image_digest=IMAGE_DIGEST,
-            desired_count=desired_count,
         ),
     )
 
 
 @pytest.fixture(scope="module")
 def benchmark() -> Template:
-    return Template.from_stack(_stack("Benchmark", desired_count=1))
+    return Template.from_stack(_stack("Benchmark"))
 
 
 class TestItComposesEveryGovernedResource:
@@ -57,7 +56,7 @@ class TestTheRegionIsPinned:
         points, which is substitution by omission.
         """
         assert REGION == "me-central-1"
-        assert _stack("Pinned", desired_count=1).region == REGION
+        assert _stack("Pinned").region == REGION
 
 
 class TestItRefusesRatherThanDefaulting:
@@ -74,5 +73,5 @@ def _stack_with_digest(digest: str) -> RraEnvironmentStack:
     return RraEnvironmentStack(
         App(),
         "Bad",
-        EnvironmentProps(sizing=load_sizing(), image_digest=digest, desired_count=1),
+        EnvironmentProps(sizing=load_sizing(), image_digest=digest),
     )
