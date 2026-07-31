@@ -24,8 +24,11 @@ rather than merely discouraged.
 
 The decision enumerates the differences that are permitted, and the list is closed: name, network
 isolation, service desired count, deletion protection, and the total absence of customer content.
-Those five become the stack's only environment-varying props. Any other difference is a governance
-violation, not a configuration choice.
+Of those five, only the identifier is expressible in this slice: desired count needs an ECS service
+that is not synthesized here, and deletion protection is fixed in `database.py`. `EnvironmentProps`
+therefore carries no environment-varying field at all, and each permitted difference arrives with
+the slice that can enforce it. Any other difference is a governance violation, not a configuration
+choice.
 
 ## Components
 
@@ -131,7 +134,9 @@ Also tested:
 - The YAML values equal `KHEPRI-DEC-007`'s table, so editing the decision without the declaration
   fails a test rather than passing silently.
 - Both stacks pin `me-central-1`.
-- The benchmark stack's service desired count is 1; the beta stack does not set one.
+- Neither stack sets a service desired count. No ECS service is synthesized in this slice, so the
+  field was removed rather than accepted and discarded; `KHEPRI-DEC-007`'s benchmark count of
+  exactly one task is enforced by the slice that adds the service.
 - The two environments do not share a KMS key, bucket, database instance, or queue -- which holds
   by construction, because each construct is created inside its own stack instance.
 
