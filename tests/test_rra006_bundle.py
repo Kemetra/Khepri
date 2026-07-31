@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 
 import pytest
 
@@ -56,6 +57,11 @@ from khepri.rra.narrative import (
 from khepri.rra.profiling import build_profile, canonical_json
 
 ADAPTER_VERSION = "test.adapter.v1"
+
+# The size a stand-in renderer reports for a payload no test here holds. This
+# module renders nothing, so the number is arbitrary; that it survives assembly
+# unchanged is not.
+SURFACE_SIZE = 4096
 
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -174,6 +180,7 @@ def surface_of(
             if languages is None
             else languages
         ),
+        output_size_bytes=SURFACE_SIZE,
     )
 
 
@@ -292,6 +299,29 @@ def test_every_figure_is_addressable_on_its_own() -> None:
     bundle = ReportBundle.of(package(COLLIDING))
 
     assert len({entry.figure_id for entry in bundle.figures}) == len(bundle.figures)
+
+
+# --- the payload behind a surface -----------------------------------------
+
+
+def test_the_size_a_surface_reports_reaches_the_delivered_report() -> None:
+    # RRA-007 records the size of what a stage produced, and only a renderer
+    # holds the payload. The port carries the number back so the pipeline can
+    # record it; nothing carries the bytes.
+    result = assembler().assemble(ReportBundle.of(package()))
+
+    assert result.surfaces is not None
+    assert [entry.output_size_bytes for entry in result.surfaces] == [SURFACE_SIZE] * 3
+
+
+def test_a_surface_cannot_report_a_size_no_payload_could_have() -> None:
+    # A negative size is a broken measurement rather than a small report, and
+    # `OperationalEvent` would refuse it long after the stage it was measured
+    # at had finished.
+    faithful = surface_of(ReportBundle.of(package()))
+
+    with pytest.raises(ValueError):
+        replace(faithful, output_size_bytes=-1)
 
 
 # --- reconciliation -------------------------------------------------------

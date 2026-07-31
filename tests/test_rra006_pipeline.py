@@ -63,6 +63,11 @@ from khepri.rra.worker import ReportExecutionFailed, ReportJobMessage, ReportWor
 NOW = datetime(2026, 7, 30, 16, 0, tzinfo=UTC)
 ADAPTER_VERSION = "test.adapter.v1"
 
+# The size a stand-in renderer reports for a payload it never produced. Nothing
+# here writes a file, so the number only has to be one a renderer could have
+# measured; tests that care which surface it came from choose their own.
+SURFACE_SIZE = 1024
+
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
     b"2026-01-05,125.50,3,INV-1,Beverages,Cairo\n"
@@ -176,10 +181,12 @@ def surface_of(
     surface: str,
     *,
     bundle_id: str | None = None,
+    output_size_bytes: int = SURFACE_SIZE,
 ) -> SurfaceContent:
     return SurfaceContent(
         surface=surface,
         bundle_id=bundle.bundle_id if bundle_id is None else bundle_id,
+        output_size_bytes=output_size_bytes,
         languages=tuple(
             SurfaceLanguage(
                 language=language,
@@ -197,10 +204,15 @@ def surface_of(
 
 
 class Renderer:
-    """A faithful renderer, which counts how often it was asked to work."""
+    """A faithful renderer, which counts how often it was asked to work.
 
-    def __init__(self, surface: str) -> None:
+    The size it reports is chosen by whoever builds it, so a test can tell one
+    surface's payload from another's.
+    """
+
+    def __init__(self, surface: str, *, output_size_bytes: int = SURFACE_SIZE) -> None:
         self._surface = surface
+        self._size = output_size_bytes
         self.calls = 0
 
     @property
@@ -209,7 +221,7 @@ class Renderer:
 
     def render(self, bundle: ReportBundle) -> SurfaceContent:
         self.calls += 1
-        return surface_of(bundle, self._surface)
+        return surface_of(bundle, self._surface, output_size_bytes=self._size)
 
 
 class BrokenRenderer(Renderer):
@@ -236,6 +248,7 @@ class DriftingRenderer(Renderer):
         return SurfaceContent(
             surface=content.surface,
             bundle_id=content.bundle_id,
+            output_size_bytes=content.output_size_bytes,
             languages=(
                 SurfaceLanguage(
                     language=first.language,

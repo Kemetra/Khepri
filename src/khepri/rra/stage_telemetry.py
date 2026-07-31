@@ -17,16 +17,27 @@ claims a stage failed because a lease moved. Heartbeats stay where `pipeline`
 put them — strictly between stages, in the inherited `run` — which is also why
 a lost lease can only arrive when no stage is in flight.
 
-**Why the injected renderers are deliberately *not* wrapped.**
+**Why the injected renderers are still deliberately *not* wrapped.**
 `chart_rendering`, `pdf_generation`, and `excel_generation` are three stages in
 the RRA-007 vocabulary and one boundary here, because `BundleAssembler` owns the
 render loop. Timing them individually would mean wrapping each renderer, which
 would put a telemetry write inside the assembler's `except Exception` — and a
 failed write would then be recorded as `surface_failed`, a telemetry fault
-disguised as a bundle refusal. That is exactly the silent corruption this slice
-must not introduce, so the whole boundary is measured once and the split waits
-for renderers that report their own timing. `STAGE_BUNDLE` is one line to
-change when they do.
+disguised as a bundle refusal. That is exactly the silent corruption this module
+must not introduce, so the whole boundary is measured once.
+
+Renderers now report the *size* of what they produced, which is why
+`output_size_bytes` is recordable below. It is not why the split can happen. A
+size arrives on `SurfaceContent`, on the assembler's return, after every
+`except` clause has been passed; a duration would have to be read on both sides
+of a call the assembler makes, and `OperationalEvent` refuses a terminal
+transition with no duration at all. The remaining route — letting the assembler
+time each renderer and report the readings back — would produce per-surface
+events only for surfaces that *succeeded*, since a refused assembly returns no
+readings. `pdf_generation` would then never carry `failed`, and every PDF
+failure would still be recorded as this boundary refusing. Evidence that exists
+only when nothing went wrong is worse than a stage honestly named unreached, so
+both stay in `UNREACHED_STAGES` until a renderer reports its own timing.
 
 **Telemetry fails closed.** A write that fails raises, the stage abandons, and
 the worker fails the job. An unrecorded run is missing evidence, and the
@@ -44,14 +55,19 @@ boundary. Queue time is measured once, at the first boundary, because it is a
 property of the job's wait rather than of each stage; on a retry it is measured
 from the original enqueue and so includes the backoff. Provider latency is
 measured by wrapping the narrative adapter, which is the only honest source for
-it. `output_size_bytes` and `dataset_size_band` are never recorded: no surface
-on this branch carries bytes — `SurfaceContent` is a structural claim about what
-a surface presents — and the source size is known at intake and is not carried
-into a fact package. A number invented from something else would be evidence
-about nothing.
+it. Output size is recorded at the rendering boundary and nowhere else: every
+surface reports how many bytes it produced, and this adds them up once, where
+they were produced. `delivery` hands on those same bytes, so recording a size
+there too would be one payload counted twice by anything aggregating them.
+
+`dataset_size_band` is still never recorded. The source size is known at intake
+and is not carried into a fact package, and a band derived from anything else —
+the report's own weight, a row count — would be evidence about something other
+than the dataset.
 
 **Correlation, without content.** The events carry the opaque session and job
-identifiers, the fact package's content address, and the bundle's. The package
+identifiers, the fact package's content address, the bundle's, and a count of
+bytes. The package
 is named by `FactPackage.digest` because that is the only identifier the
 `FactPackageSource` port returns, and it is the same digest the store records as
 `package_digest`, so the correlation joins. No filename, label, source value,
@@ -67,6 +83,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 
+from khepri.rra.bundle import SurfaceContent
 from khepri.rra.facts import FactPackage
 from khepri.rra.jobs import LeaseLost, ReportJob
 from khepri.rra.narrative import NarrativeAdapter, NarrativeDraft, NarrativeRequest
@@ -100,7 +117,8 @@ from khepri.rra.worker import WorkerExecution
 STAGE_PACKAGE = "fact_calculation"
 STAGE_NARRATIVE = "narrative_generation"
 # One boundary, three vocabulary stages. See the module docstring for why it is
-# not split, and why splitting it needs renderers rather than a wrapper.
+# still not split: the renderers report their size, and splitting needs
+# renderers that report their own timing.
 STAGE_BUNDLE = "chart_rendering"
 # The whole report handed to the store as one unit. `storage` is reserved for a
 # store that writes surface bytes, which nothing does yet.
@@ -108,9 +126,11 @@ STAGE_DELIVERY = "delivery"
 
 RECORDED_STAGES = (STAGE_PACKAGE, STAGE_NARRATIVE, STAGE_BUNDLE, STAGE_DELIVERY)
 
-# Named rather than left out, so a stage cannot be forgotten silently. The
-# first four belong to intake and profiling, which run before a report job
-# exists; the last three need collaborators this pipeline does not yet have.
+# Named rather than left out, so a stage cannot be forgotten silently. The first
+# four belong to intake and profiling, which run before a report job exists.
+# `pdf_generation` and `excel_generation` are measurable in size but not in
+# duration, which is not enough for an event — see the module docstring.
+# `storage` waits for a store that writes surface bytes.
 UNREACHED_STAGES = frozenset(
     {
         "upload_validation",
@@ -161,6 +181,7 @@ class _RunContext:
     queued_at: datetime
     fact_package_id: str | None = None
     report_bundle_id: str | None = None
+    rendered_size_bytes: int | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.job_id, "job_id")
@@ -344,7 +365,7 @@ class InstrumentedReportPipeline(ReportPipeline):
                 transition=transition,
                 completed_at=self._clock(),
                 provider_started_at=self._provider_started(measurement.stage),
-                output_size_bytes=None,
+                output_size_bytes=self._rendered_size(measurement.stage),
             ),
         )
 
@@ -354,6 +375,22 @@ class InstrumentedReportPipeline(ReportPipeline):
             # right to: no other stage calls a provider.
             return None
         return self._provider.called_at
+
+    def _rendered_size(self, stage: str) -> int | None:
+        """How large the surfaces were, for the one stage that produced them.
+
+        Only this boundary, for the same reason provider latency belongs to only
+        one: `delivery` hands on the very bytes this stage produced, and a size
+        recorded at both would be the same payload counted twice by anything
+        that adds them up.
+
+        Nothing to return unless the stage delivered, because the size is
+        learned from the delivery. A boundary that refused or broke leaves the
+        context without one, which is the honest reading: no surface exists.
+        """
+        if stage != STAGE_BUNDLE:
+            return None
+        return self._require_context().rendered_size_bytes
 
     def _correlated(self, measurement: StageMeasurement) -> StageMeasurement:
         """The same measurement, naming what the stage has since identified.
@@ -380,7 +417,22 @@ def _learn_package(context: _RunContext, package: FactPackage) -> _RunContext:
 
 
 def _learn_bundle(context: _RunContext, delivery: ReportDelivery) -> _RunContext:
-    return replace(context, report_bundle_id=delivery.bundle.bundle_id)
+    """Name the bundle, and how many bytes its surfaces came to.
+
+    Read from the delivery *after* the assembler returned it, never from inside
+    the render loop. See the module docstring: a reading taken in there would
+    have to be taken by something the assembler's `except Exception` can catch.
+    """
+    return replace(
+        context,
+        report_bundle_id=delivery.bundle.bundle_id,
+        rendered_size_bytes=_rendered_bytes(delivery.surfaces),
+    )
+
+
+def _rendered_bytes(surfaces: tuple[SurfaceContent, ...]) -> int:
+    """Every surface's payload, added up. Sizes only; no payload is in reach."""
+    return sum(entry.output_size_bytes for entry in surfaces)
 
 
 def _require_text(value: str, name: str) -> None:
