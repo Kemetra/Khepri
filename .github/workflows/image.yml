@@ -1,0 +1,246 @@
+# Build, verify and publish the pinned OCI image.
+#
+# `KHEPRI-DEC-005` assigns this job here: "GitHub Actions validates, builds, scans, and publishes
+# the pinned OCI image." It also states that "deployment to a beta environment requires an explicit
+# protected-environment authorization", which this workflow never performs -- publishing an image is
+# not deploying one.
+#
+# **Building always happens; publishing does not.** Every run builds the image and verifies it as the
+# non-root user that runs the service, because a broken image should cost a build. Publishing needs a
+# registry that does not exist yet: the ECR repository is defined by `GovernedImageRepository` and
+# provisioning it is a separate, authorized action. So the publish job reads its target from
+# repository configuration and reports NOT PUBLISHED when that is absent, rather than inventing a
+# destination or failing a build for a step nobody authorized.
+#
+# **No digest is written into a governed document from here.** `KHEPRI-DEC-007` requires the
+# environment descriptor to record the pushed image digest, and a workflow that wrote one would be
+# recording approval evidence automation is not entitled to produce. This workflow prints the digest
+# as a job summary; a human copies it into the descriptor.
+name: image
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/**"
+      - "scripts/build_image.py"
+      - ".github/workflows/image.yml"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build the image and prove it works as `pwuser`. The Dockerfile already asserts this after its
+  # final `USER` line, so a failure here is a real failure rather than a missing check -- an earlier
+  # revision of that Dockerfile built green and could not start, because every check ran as root.
+  build:
+    name: build and verify the pinned image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      local-digest: ${{ steps.facts.outputs.local-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        with:
+          driver-opts: image=moby/buildkit:v0.27.0
+
+      # Loaded into the local daemon rather than pushed. Publishing is the next job's decision, and
+      # this job must not acquire the ability to make it.
+      - name: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: khepri-rra:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # `KHEPRI-DEC-007` requires the worker to launch Chromium with --disable-dev-shm-usage,
+      # because Fargate fixes /dev/shm at 64 MiB and does not support sharedMemorySize. A browser
+      # launched without it crashes while printing and reports a renderer fault rather than the
+      # memory limit it is, so this asserts the flag reaches the browser in the built image.
+      - name: verify the image as the user that runs it
+        run: |
+          set -euo pipefail
+          docker run --rm khepri-rra:ci python -c "
+          import sys
+          from khepri.rra.rendering.chromium import LAUNCH_ARGS
+          assert sys.version_info[:2] == (3, 13), sys.version
+          assert '--disable-dev-shm-usage' in LAUNCH_ARGS, LAUNCH_ARGS
+          print('python', '.'.join(map(str, sys.version_info[:3])))
+          print('launch args', LAUNCH_ARGS)
+          "
+          docker run --rm khepri-rra:ci python -c "
+          from playwright.sync_api import sync_playwright
+          from khepri.rra.rendering.chromium import LAUNCH_ARGS
+          p = sync_playwright().start()
+          b = p.chromium.launch(headless=True, args=list(LAUNCH_ARGS))
+          print('chromium', b.version)
+          b.close()
+          p.stop()
+          "
+
+      # The facts `KHEPRI-DEC-007` requires the environment descriptor to record, read out of the
+      # image rather than supplied by hand. The image digest here is a LOCAL image ID; the descriptor
+      # needs the pushed registry digest, which only the publish job can produce.
+      - name: read the descriptor facts out of the image
+        id: facts
+        run: |
+          set -euo pipefail
+          uv_lock="sha256:$(sha256sum uv.lock | cut -d' ' -f1)"
+          local_digest="$(docker image inspect khepri-rra:ci --format '{{.Id}}')"
+          python_version="$(docker run --rm khepri-rra:ci python -c "import sys;print('.'.join(map(str, sys.version_info[:3])))")"
+          playwright_version="$(docker run --rm khepri-rra:ci python -c "import importlib.metadata as m;print(m.version('playwright'))")"
+          chromium="$(docker run --rm khepri-rra:ci python -c "
+          import json, pathlib, playwright
+          p = pathlib.Path(playwright.__file__).parent / 'driver' / 'package' / 'browsers.json'
+          b = next(x for x in json.loads(p.read_text())['browsers'] if x['name'] == 'chromium')
+          print(b['revision'], b.get('browserVersion', ''))
+          ")"
+          echo "local-digest=${local_digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Image facts"
+            echo
+            echo "Read out of the built image. **Not** approval evidence, and not a descriptor."
+            echo
+            echo '| Fact | Value |'
+            echo '|---|---|'
+            echo "| local image ID | \`${local_digest}\` |"
+            echo "| uv.lock sha256 | \`${uv_lock}\` |"
+            echo "| python | \`${python_version}\` |"
+            echo "| playwright | \`${playwright_version}\` |"
+            echo "| chromium revision / version | \`${chromium}\` |"
+            echo
+            echo "The local image ID is not the pushed registry digest \`KHEPRI-DEC-007\` requires."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Publish only when a registry has been provisioned and configured. Absent that, this reports and
+  # succeeds: an unprovisioned registry is not a broken build, and failing here would block every
+  # pull request on infrastructure nobody has authorized.
+  publish:
+    name: publish (reports NOT PUBLISHED without a configured registry)
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # OIDC only; no long-lived AWS key is stored for this workflow.
+    env:
+      KHEPRI_ECR_REPOSITORY: ${{ vars.KHEPRI_ECR_REPOSITORY }}
+      KHEPRI_AWS_REGION: ${{ vars.KHEPRI_AWS_REGION }}
+      KHEPRI_PUBLISH_ROLE_ARN: ${{ vars.KHEPRI_PUBLISH_ROLE_ARN }}
+    steps:
+      - name: decide whether a registry is configured
+        id: gate
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${KHEPRI_ECR_REPOSITORY}" ]  || missing="${missing} KHEPRI_ECR_REPOSITORY"
+          [ -n "${KHEPRI_AWS_REGION}" ]      || missing="${missing} KHEPRI_AWS_REGION"
+          [ -n "${KHEPRI_PUBLISH_ROLE_ARN}" ]|| missing="${missing} KHEPRI_PUBLISH_ROLE_ARN"
+          if [ -n "${missing}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### NOT PUBLISHED"
+              echo
+              echo "No registry is configured, so nothing was pushed and no digest exists."
+              echo "Missing repository variables:\`${missing}\`"
+              echo
+              echo "This is not a failure. The ECR repository is defined by"
+              echo "\`GovernedImageRepository\` and provisioning it is a separate authorized action;"
+              echo "\`KHEPRI-DEC-005\` requires an explicit protected-environment authorization for"
+              echo "beta deployment. Publishing cannot precede the registry."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "NOT PUBLISHED: missing${missing}"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: steps.gate.outputs.configured == 'true'
+
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          role-to-assume: ${{ env.KHEPRI_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ env.KHEPRI_AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+        id: ecr
+        if: steps.gate.outputs.configured == 'true'
+
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          driver-opts: image=moby/buildkit:v0.27.0
+
+      # The tag is the commit SHA. The repository is created with IMMUTABLE tags, so a tag cannot be
+      # re-pointed, and a moving tag such as `latest` would defeat the transitive Chromium pin
+      # `KHEPRI-DEC-007` relies on.
+      - name: build and push
+        id: push
+        if: steps.gate.outputs.configured == 'true'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.KHEPRI_ECR_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # `image.py` sets image_scan_on_push=True, so the scan starts on its own. This waits for the
+      # finding counts rather than assuming a push means a clean image.
+      - name: wait for the scan-on-push findings
+        if: steps.gate.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          digest="${{ steps.push.outputs.digest }}"
+          for _ in $(seq 1 40); do
+            status="$(aws ecr describe-image-scan-findings \
+              --repository-name "${KHEPRI_ECR_REPOSITORY}" \
+              --image-id imageDigest="${digest}" \
+              --region "${KHEPRI_AWS_REGION}" \
+              --query 'imageScanStatus.status' --output text 2>/dev/null || echo PENDING)"
+            [ "${status}" = "COMPLETE" ] && break
+            [ "${status}" = "FAILED" ] && { echo "scan FAILED"; exit 1; }
+            sleep 15
+          done
+          aws ecr describe-image-scan-findings \
+            --repository-name "${KHEPRI_ECR_REPOSITORY}" \
+            --image-id imageDigest="${digest}" \
+            --region "${KHEPRI_AWS_REGION}" \
+            --query 'imageScanFindings.findingSeverityCounts' --output json | tee findings.json
+          {
+            echo "### Published"
+            echo
+            echo "| Fact | Value |"
+            echo "|---|---|"
+            echo "| registry digest | \`${digest}\` |"
+            echo "| tag | \`${{ github.sha }}\` |"
+            echo
+            echo "Scan findings by severity:"
+            echo '```json'
+            cat findings.json
+            echo '```'
+            echo
+            echo "The registry digest above is the one \`KHEPRI-DEC-007\` requires the environment"
+            echo "descriptor to record. **A human copies it there.** This workflow does not write"
+            echo "governed documents, and a published image is not an approved environment."
+          } >> "$GITHUB_STEP_SUMMARY"
