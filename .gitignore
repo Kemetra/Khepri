@@ -11,6 +11,8 @@ __pycache__/
 tests/.pytest_tmp*/
 dist/
 build/
+cdk.out/
+*.cdk.staging/
 
 # Subagent-driven development scratch
 .superpowers/

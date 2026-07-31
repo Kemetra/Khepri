@@ -1,0 +1,6 @@
+{
+  "app": "uv run python -c \"import os; from khepri.infra.app import build_app; build_app(os.environ['KHEPRI_IMAGE_DIGEST']).synth()\"",
+  "context": {
+    "@aws-cdk/core:newStyleStackSynthesis": true
+  }
+}

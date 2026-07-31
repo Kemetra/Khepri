@@ -75,3 +75,99 @@ def _stack_with_digest(digest: str) -> RraEnvironmentStack:
         "Bad",
         EnvironmentProps(sizing=load_sizing(), image_digest=digest),
     )
+
+
+class TestTheTwoEnvironmentsAreIdenticallySized:
+    """KHEPRI-DEC-007 requires every sizing value to be identical between the two.
+
+    Comparing the synthesized templates rather than the InfrastructureSizing object is deliberate:
+    the same object can still be applied differently downstream, and it is the template that gets
+    deployed.
+    """
+
+    @staticmethod
+    def _properties(template: Template, resource_type: str) -> list[dict]:
+        return [
+            resource["Properties"]
+            for resource in template.find_resources(resource_type).values()
+        ]
+
+    @pytest.fixture(scope="class")
+    def templates(self) -> tuple[Template, Template]:
+        from khepri.infra.app import build_app
+
+        app = build_app(IMAGE_DIGEST)
+        stacks = [child for child in app.node.children if isinstance(child, RraEnvironmentStack)]
+        assert len(stacks) == 2
+        return tuple(Template.from_stack(stack) for stack in stacks)  # type: ignore[return-value]
+
+    def test_both_task_definitions_agree_on_cpu_memory_and_disk(
+        self, templates: tuple[Template, Template]
+    ) -> None:
+        def sizes(template: Template) -> set[tuple[str, str, str]]:
+            return {
+                (
+                    properties["Cpu"],
+                    properties["Memory"],
+                    str(properties.get("EphemeralStorage", {}).get("SizeInGiB", "default")),
+                )
+                for properties in self._properties(template, "AWS::ECS::TaskDefinition")
+            }
+
+        beta, benchmark = templates
+        assert sizes(beta) == sizes(benchmark)
+
+    def test_both_databases_agree_on_class_storage_and_retention(
+        self, templates: tuple[Template, Template]
+    ) -> None:
+        def store(template: Template) -> set[tuple[object, object, object, object]]:
+            return {
+                (
+                    properties["DBInstanceClass"],
+                    properties["AllocatedStorage"],
+                    properties["StorageType"],
+                    properties["BackupRetentionPeriod"],
+                )
+                for properties in self._properties(template, "AWS::RDS::DBInstance")
+            }
+
+        beta, benchmark = templates
+        assert store(beta) == store(benchmark)
+
+    def test_both_queue_sets_agree_on_timings_and_the_redrive_bound(
+        self, templates: tuple[Template, Template]
+    ) -> None:
+        def queues(template: Template) -> set[tuple[object, object, object, str]]:
+            return {
+                (
+                    properties.get("VisibilityTimeout"),
+                    properties.get("MessageRetentionPeriod"),
+                    properties.get("ReceiveMessageWaitTimeSeconds"),
+                    str(properties.get("RedrivePolicy", {}).get("maxReceiveCount", "none")),
+                )
+                for properties in self._properties(template, "AWS::SQS::Queue")
+            }
+
+        beta, benchmark = templates
+        assert queues(beta) == queues(benchmark)
+
+    def test_both_stacks_pin_the_same_region(self) -> None:
+        from khepri.infra.app import build_app
+
+        app = build_app(IMAGE_DIGEST)
+        stacks = [child for child in app.node.children if isinstance(child, RraEnvironmentStack)]
+        assert {stack.region for stack in stacks} == {REGION}
+
+    def test_they_do_not_share_a_key_bucket_database_or_queue(
+        self, templates: tuple[Template, Template]
+    ) -> None:
+        """KHEPRI-DEC-007 forbids the benchmark sharing beta's key, bucket, instance, or queues."""
+        beta, benchmark = templates
+        for resource_type, expected in (
+            ("AWS::KMS::Key", 1),
+            ("AWS::S3::Bucket", 1),
+            ("AWS::RDS::DBInstance", 1),
+            ("AWS::SQS::Queue", 2),
+        ):
+            beta.resource_count_is(resource_type, expected)
+            benchmark.resource_count_is(resource_type, expected)
