@@ -18,6 +18,12 @@ loudly here instead of silently making the report depend on a network.
 should launch Chromium once; a test wants one browser for a handful of pages.
 Neither is served by a renderer that launches per call, so the adapter takes a
 running browser and `launch_chromium` is the convenience that supplies one.
+
+**Why `launch_chromium` is not merely a convenience.** It is also the one place
+`KHEPRI-DEC-007`'s required launch flag is applied, so a caller that builds its own
+browser owns `LAUNCH_ARGS` itself. On Fargate a browser launched without them
+crashes while printing instead of reporting a memory limit, which is why the flag
+lives beside the print options rather than at a call site.
 """
 
 from __future__ import annotations
@@ -38,6 +44,16 @@ PDF_OPTIONS: dict[str, bool] = {
     "prefer_css_page_size": True,
     "print_background": True,
 }
+
+# `KHEPRI-DEC-007` requires this flag and calls it a correctness requirement rather
+# than a tuning flag. Fargate fixes `/dev/shm` at 64 MiB and does not support
+# `linuxParameters.sharedMemorySize`, which is an EC2-launch-type parameter.
+# Chromium's default shared-memory use exceeds 64 MiB while rendering a paginated
+# document and fails as a renderer crash rather than as a memory limit, so the
+# failure would be diagnosed as anything but the limit it is. The flag moves those
+# allocations onto the task's ephemeral storage, which is why the worker's 40 GiB and
+# this line are one decision: the storage is sized to absorb what the flag displaces.
+LAUNCH_ARGS: tuple[str, ...] = ("--disable-dev-shm-usage",)
 
 
 class ChromiumPagePrinter:
@@ -73,7 +89,7 @@ class ChromiumPagePrinter:
 def launch_chromium(*, headless: bool = True) -> Iterator[ChromiumPagePrinter]:
     """One Chromium, launched and closed around a batch of printing."""
     with sync_playwright() as play:
-        browser = play.chromium.launch(headless=headless)
+        browser = play.chromium.launch(headless=headless, args=list(LAUNCH_ARGS))
         try:
             yield ChromiumPagePrinter(browser=browser)
         finally:
