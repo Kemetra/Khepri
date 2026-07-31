@@ -23,11 +23,21 @@ FROM --platform=linux/amd64 mcr.microsoft.com/playwright/python:v1.61.0-noble
 # Fail the build rather than produce an image whose browser and client disagree.
 ARG EXPECTED_PLAYWRIGHT_VERSION=1.61.0
 
+# `UV_PYTHON_INSTALL_DIR` is a correctness requirement, not a preference.
+#
+# This project requires Python 3.13 and the Playwright `noble` base ships 3.12.3, so uv must
+# download an interpreter -- `UV_PYTHON_DOWNLOADS=never` fails the build outright. By default it
+# lands in `/root/.local/share/uv`, and the venv's `pyvenv.cfg` records that path as `home`. The
+# final `USER pwuser` cannot read `/root`, so every interpreter launch then dies with "Failed to
+# import encodings module": an image that builds green, passes root-run checks, and refuses to start
+# as the user it actually runs as. Installing the interpreter under `/opt` puts it on the same
+# world-readable tree the venv lives on.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_PYTHON_INSTALL_DIR=/opt/khepri/python \
     UV_PROJECT_ENVIRONMENT=/opt/khepri/.venv \
     PATH="/opt/khepri/.venv/bin:${PATH}"
 
@@ -60,21 +70,28 @@ RUN set -eu; \
     python -c "from playwright.sync_api import sync_playwright" ; \
     python -c "import khepri.rra.rendering.chromium"
 
-# Prove the baked browser actually launches, with the flag `KHEPRI-DEC-007` requires. A browser
-# that cannot start is a broken image, and finding that out at build time costs a build; finding it
-# out at run time costs a report.
-RUN python -c "\
+# The browser launch is verified below, after `USER pwuser`, rather than here. Proving it as root
+# would prove the wrong thing.
+
+# The Playwright base image ships a non-root `pwuser`. Nothing in this container needs to write
+# outside the ephemeral storage the task definition grants, so it does not run as root.
+RUN chown -R pwuser:pwuser /opt/khepri
+USER pwuser
+
+# Re-run the checks as the user that actually runs the service. Every check above this line ran as
+# root, which is precisely how an interpreter unreadable by `pwuser` once passed a green build and
+# then failed to start: root could read it and the build never asked whether anyone else could.
+# A container that cannot import its own entry point is a broken image, and this is the last chance
+# to find that out for the price of a build rather than the price of a report.
+RUN python -c "import sys; assert sys.version_info[:2] == (3, 13), sys.version; print(sys.version)" \
+    && python -c "import khepri.rra.rendering.chromium as c; print('launch args', c.LAUNCH_ARGS)" \
+    && python -c "\
 from playwright.sync_api import sync_playwright; \
 from khepri.rra.rendering.chromium import LAUNCH_ARGS; \
 p = sync_playwright().start(); \
 b = p.chromium.launch(headless=True, args=list(LAUNCH_ARGS)); \
 print('chromium', b.version); \
 b.close(); p.stop()"
-
-# The Playwright base image ships a non-root `pwuser`. Nothing in this container needs to write
-# outside the ephemeral storage the task definition grants, so it does not run as root.
-RUN chown -R pwuser:pwuser /opt/khepri
-USER pwuser
 
 # No CMD, deliberately. One image serves both roles, and the containers in
 # `src/khepri/infra/compute.py` are named `web` and `worker` but currently pass no command of their
