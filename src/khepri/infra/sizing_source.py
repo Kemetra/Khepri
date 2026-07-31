@@ -2,8 +2,8 @@
 
 `KHEPRI-DEC-007` fixes every size in this platform and requires that changing one is a governed
 change rather than an operational adjustment. That holds only if the values live in a reviewable
-document whose bytes are covered by a digest, so they live in `governance/benchmarks/` and are read
-from there.
+document whose bytes will be covered by a digest once the environment descriptor exists, so they
+live in `governance/benchmarks/` and are read from there. No digest covers this file today.
 
 `sizing.resolve_sizing` already refuses a missing, blank, or non-integer field. This module adds no
 tolerance of its own: it locates the document, insists it is a mapping of strings, and hands it

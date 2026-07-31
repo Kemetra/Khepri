@@ -13,6 +13,11 @@ slice that adds the service, not declared here.
 The image digest is a required argument. Nothing in this module knows a default, because the digest
 is produced by a build and recorded in the environment descriptor, and a template synthesized
 around an unapproved image is exactly what pinning by digest exists to prevent.
+
+Both stacks are constructed from the SAME `EnvironmentProps` instance, not two separately built
+ones with matching field lists. `EnvironmentProps` is a frozen dataclass, so sharing it is safe, and
+sharing it is the point: identical sizing between beta and benchmark is then guaranteed by
+construction, not by a reviewer noticing that two hand-repeated field lists still agree.
 """
 
 from __future__ import annotations
@@ -29,15 +34,7 @@ BENCHMARK_STACK_NAME = "RraBenchmark"
 def build_app(image_digest: str) -> App:
     """Construct both environments from one sizing declaration and one stack class."""
     app = App()
-    sizing = load_sizing()
-    RraEnvironmentStack(
-        app,
-        BETA_STACK_NAME,
-        EnvironmentProps(sizing=sizing, image_digest=image_digest),
-    )
-    RraEnvironmentStack(
-        app,
-        BENCHMARK_STACK_NAME,
-        EnvironmentProps(sizing=sizing, image_digest=image_digest),
-    )
+    props = EnvironmentProps(sizing=load_sizing(), image_digest=image_digest)
+    RraEnvironmentStack(app, BETA_STACK_NAME, props)
+    RraEnvironmentStack(app, BENCHMARK_STACK_NAME, props)
     return app

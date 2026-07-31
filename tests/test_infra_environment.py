@@ -4,6 +4,7 @@ import pytest
 from aws_cdk import App
 from aws_cdk.assertions import Template
 
+from khepri.infra.compute import WEB_CONTAINER_NAME, WORKER_CONTAINER_NAME
 from khepri.infra.environment import REGION, EnvironmentProps, RraEnvironmentStack
 from khepri.infra.sizing_source import load_sizing
 
@@ -104,15 +105,27 @@ class TestTheTwoEnvironmentsAreIdenticallySized:
     def test_both_task_definitions_agree_on_cpu_memory_and_disk(
         self, templates: tuple[Template, Template]
     ) -> None:
-        def sizes(template: Template) -> set[tuple[str, str, str]]:
-            return {
-                (
+        """Keyed by container name so a web/worker role swap cannot pass as parity.
+
+        A bag of (Cpu, Memory, EphemeralStorage) tuples with no container identity is blind to a
+        benchmark whose web service is sized like beta's worker and vice versa: the same two
+        tuples appear in both sets, so set equality holds despite the roles being swapped. Keying
+        by container name makes the comparison per-role instead.
+        """
+
+        def sizes(template: Template) -> dict[str, tuple[str, str, str]]:
+            result: dict[str, tuple[str, str, str]] = {}
+            for properties in self._properties(template, "AWS::ECS::TaskDefinition"):
+                containers = properties["ContainerDefinitions"]
+                assert len(containers) == 1
+                name = containers[0]["Name"]
+                result[name] = (
                     properties["Cpu"],
                     properties["Memory"],
                     str(properties.get("EphemeralStorage", {}).get("SizeInGiB", "default")),
                 )
-                for properties in self._properties(template, "AWS::ECS::TaskDefinition")
-            }
+            assert set(result) == {WEB_CONTAINER_NAME, WORKER_CONTAINER_NAME}
+            return result
 
         beta, benchmark = templates
         assert sizes(beta) == sizes(benchmark)
@@ -137,16 +150,30 @@ class TestTheTwoEnvironmentsAreIdenticallySized:
     def test_both_queue_sets_agree_on_timings_and_the_redrive_bound(
         self, templates: tuple[Template, Template]
     ) -> None:
-        def queues(template: Template) -> set[tuple[object, object, object, str]]:
-            return {
-                (
+        """Keyed by whether the queue carries a RedrivePolicy, not compared as a bag.
+
+        A bag of (VisibilityTimeout, MessageRetentionPeriod, ReceiveMessageWaitTimeSeconds,
+        maxReceiveCount) tuples has no identity beyond its own values, so the main report queue and
+        its dead-letter queue could exchange settings entirely and set equality would still hold.
+        `data_resources.py` constructs only the report queue with `dead_letter_queue=`, so only that
+        queue's CloudFormation properties carry a `RedrivePolicy` -- the dead-letter queue never
+        redrives anywhere. That makes "has a RedrivePolicy" a stable, role-defining discriminator
+        rather than an incidental setting, unlike the CDK-derived logical ID.
+        """
+
+        def queues(template: Template) -> dict[str, tuple[object, object, object, str]]:
+            result: dict[str, tuple[object, object, object, str]] = {}
+            for properties in self._properties(template, "AWS::SQS::Queue"):
+                has_redrive = "RedrivePolicy" in properties
+                role = "report_queue" if has_redrive else "dead_letter_queue"
+                result[role] = (
                     properties.get("VisibilityTimeout"),
                     properties.get("MessageRetentionPeriod"),
                     properties.get("ReceiveMessageWaitTimeSeconds"),
                     str(properties.get("RedrivePolicy", {}).get("maxReceiveCount", "none")),
                 )
-                for properties in self._properties(template, "AWS::SQS::Queue")
-            }
+            assert set(result) == {"report_queue", "dead_letter_queue"}
+            return result
 
         beta, benchmark = templates
         assert queues(beta) == queues(benchmark)
@@ -168,6 +195,7 @@ class TestTheTwoEnvironmentsAreIdenticallySized:
             ("AWS::S3::Bucket", 1),
             ("AWS::RDS::DBInstance", 1),
             ("AWS::SQS::Queue", 2),
+            ("AWS::ECS::TaskDefinition", 2),
         ):
             beta.resource_count_is(resource_type, expected)
             benchmark.resource_count_is(resource_type, expected)
