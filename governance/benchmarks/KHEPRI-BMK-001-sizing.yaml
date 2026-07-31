@@ -1,0 +1,21 @@
+# KHEPRI-DEC-007 sizing, recorded verbatim so that changing a size is a governed change.
+#
+# Every value below is fixed by governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
+# and is identical between the beta and benchmark environments. Editing one changes this file's
+# digest, which changes the environment_digest once the descriptor exists, which invalidates
+# prior benchmark evidence by the identity check in src/khepri/rra/performance.py.
+schema_version: "1"
+web_cpu_units: "1024"
+web_memory_mib: "4096"
+web_ephemeral_storage_gib: "20"
+worker_cpu_units: "4096"
+worker_memory_mib: "16384"
+worker_ephemeral_storage_gib: "40"
+database_instance_class: "db.m7g.large"
+allocated_storage_gib: "100"
+backup_retention_days: "7"
+visibility_timeout_seconds: "300"
+message_retention_seconds: "1209600"
+receive_wait_seconds: "20"
+max_receive_count: "3"
+max_attempts: "3"
