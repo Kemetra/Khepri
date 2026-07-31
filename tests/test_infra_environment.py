@@ -133,18 +133,28 @@ class TestTheTwoEnvironmentsAreIdenticallySized:
     def test_both_databases_agree_on_class_storage_and_retention(
         self, templates: tuple[Template, Template]
     ) -> None:
-        def store(template: Template) -> set[tuple[object, object, object, object]]:
-            return {
+        """Compared as a list, not a set, so multiplicity is part of the assertion.
+
+        A set would collapse a second identically-sized instance into one member, and it would
+        rely on the count-of-one asserted in a different test to mean anything at all. The
+        environment has exactly one store; comparing sequences says so here rather than borrowing
+        that guarantee from elsewhere.
+        """
+
+        def store(template: Template) -> list[tuple[object, ...]]:
+            return [
                 (
                     properties["DBInstanceClass"],
                     properties["AllocatedStorage"],
                     properties["StorageType"],
                     properties["BackupRetentionPeriod"],
+                    properties.get("MultiAZ"),
                 )
                 for properties in self._properties(template, "AWS::RDS::DBInstance")
-            }
+            ]
 
         beta, benchmark = templates
+        assert len(store(beta)) == 1
         assert store(beta) == store(benchmark)
 
     def test_both_queue_sets_agree_on_timings_and_the_redrive_bound(

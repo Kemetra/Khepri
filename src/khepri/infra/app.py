@@ -38,3 +38,6 @@ def build_app(image_digest: str) -> App:
     RraEnvironmentStack(app, BETA_STACK_NAME, props)
     RraEnvironmentStack(app, BENCHMARK_STACK_NAME, props)
     return app
+
+
+__all__ = ["BENCHMARK_STACK_NAME", "BETA_STACK_NAME", "build_app"]

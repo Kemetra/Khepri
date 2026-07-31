@@ -39,3 +39,6 @@ def _require_mapping(parsed: Any) -> dict[str, str]:
     if not isinstance(parsed, dict):
         raise SizingRefused("A sizing declaration must be a mapping.")
     return {str(key): str(value) for key, value in parsed.items()}
+
+
+__all__ = ["SIZING_DECLARATION", "load_sizing"]
