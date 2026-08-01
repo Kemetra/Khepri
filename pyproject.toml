@@ -44,6 +44,15 @@ default-groups = ["dev", "infra"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/khepri", "src/khepri_gov"]
+# `khepri.local` is development wiring and is kept OUT of the built wheel, which is
+# what the OCI image installs. The Dockerfile passes no CMD deliberately -- "a
+# default here would silently make this image one of those two roles" -- and
+# shipping a module exposing `khepri.local.app:app` and a `khepri-local` command
+# would hand the image exactly the two entry points that discipline withholds. It
+# also carries local database credentials, which have no business in a published
+# artifact. An editable install of the checkout still has it, so local development
+# is unaffected.
+exclude = ["src/khepri/local"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -51,6 +60,7 @@ addopts = "--basetemp=.pytest-tmp"
 cache_dir = ".pytest-cache"
 markers = [
     "browser: exercises a real pinned Chromium; skipped when it is not installed (deselect with -m 'not browser')",
+    "local_stack: exercises the docker-compose.local.yml stack; skipped when it is not running (deselect with -m 'not local_stack')",
 ]
 
 [tool.ruff]

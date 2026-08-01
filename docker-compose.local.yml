@@ -1,0 +1,73 @@
+# The local development stack. Not a deployment, and not the CDK definition.
+#
+# `KHEPRI-DEC-005` selects the services and `khepri.infra` defines the real ones as
+# an AWS CDK application. This file is neither: it stands up PostgreSQL and an
+# S3-compatible endpoint on a developer's machine so the journey can be run. It is
+# named `.local` so it can never be mistaken for the environment `KHEPRI-DEC-007`
+# sizes, and nothing it produces is benchmark or approval evidence.
+#
+# **LocalStack is pinned to v3.8.1 for two reasons.** `:latest` and `:stable` both now
+# require a paid licence and exit with code 55 ("License activation failed"), and
+# v3 is the last line whose KMS is available without one. The pin is exact rather
+# than floating because a licence gate appearing in a patch release would break the
+# journey with an error that looks nothing like its cause.
+#
+# **Why LocalStack rather than MinIO.** `S3EncryptedObjectStore` verifies that the
+# PutObject response *proves* the storage policy: matching checksum, `aws:kms`
+# encryption, the exact configured key ARN, `BucketKeyEnabled`, and no `VersionId`.
+# MinIO's SSE-KMS is real but rewrites the key id to `arn:aws:kms:<keyname>`, which
+# carries neither region nor account, and never returns `BucketKeyEnabled=True`.
+# LocalStack's KMS issues genuine `me-central-1` ARNs, so the unmodified production
+# store passes all five proofs because they are true.
+#
+# **Docker-in-WSL note (Windows).** A container started from a one-shot
+# `wsl -- bash -lc ...` receives SIGTERM when that WSL session ends, because WSL
+# stops the distribution once its last process exits. Keep a long-lived WSL process
+# open, or start the stack from a shell that stays open.
+#
+#   docker compose -f docker-compose.local.yml up -d
+#   uv run alembic upgrade head
+#   uv run python -m khepri.local.cli invite
+#   uv run uvicorn khepri.local.app:app --reload
+#   uv run python -m khepri.local.cli work
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    container_name: khepri-local-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: khepri
+      POSTGRES_PASSWORD: khepri
+      POSTGRES_DB: khepri
+    ports:
+      - "15432:5432"
+    volumes:
+      - khepri-local-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U khepri -d khepri"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # S3 + KMS only. Every other service is off: this stack exists to satisfy the
+  # object store, not to emulate an account.
+  localstack:
+    image: localstack/localstack:3.8.1
+    container_name: khepri-local-localstack
+    restart: unless-stopped
+    environment:
+      SERVICES: s3,kms
+    ports:
+      - "14566:4566"
+    volumes:
+      - khepri-local-lsdata:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  khepri-local-pgdata:
+  khepri-local-lsdata:

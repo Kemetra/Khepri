@@ -14,5 +14,9 @@ build/
 cdk.out/
 *.cdk.staging/
 
+# Workbooks written by a local report run. Customer content by construction, so
+# it must never reach a commit -- see docker-compose.local.yml.
+.local-workbooks/
+
 # Subagent-driven development scratch
 .superpowers/
