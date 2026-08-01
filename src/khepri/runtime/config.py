@@ -48,6 +48,15 @@ class _DatabaseSecret(TypedDict):
     dbname: str
 
 
+class _RuntimeCoordinates(TypedDict):
+    region: str
+    bucket: str
+    kms_key_arn: str
+    expected_bucket_owner: str
+    queue_url: str
+    dead_letter_queue_url: str
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeSettings:
     database_url: URL
@@ -63,35 +72,64 @@ class RuntimeSettings:
         cls,
         environment: Mapping[str, str] | None = None,
     ) -> RuntimeSettings:
-        source = os.environ if environment is None else environment
-        region = _required(source, REGION_VARIABLE)
-        if region != REGION:
-            raise RuntimeConfigurationError(f"{REGION_VARIABLE} must be {REGION}.")
-        kms_key_arn = _required(source, KMS_KEY_ARN_VARIABLE)
-        if _KMS_KEY_ARN.fullmatch(kms_key_arn) is None:
-            raise RuntimeConfigurationError(
-                f"{KMS_KEY_ARN_VARIABLE} must be a KMS key ARN in {REGION}."
-            )
-        owner = _required(source, BUCKET_OWNER_VARIABLE)
-        if _ACCOUNT_ID.fullmatch(owner) is None:
-            raise RuntimeConfigurationError(
-                f"{BUCKET_OWNER_VARIABLE} must be a 12-digit account ID."
-            )
-        queue_url = _required(source, QUEUE_URL_VARIABLE)
-        dead_letter_url = _required(source, DEAD_LETTER_QUEUE_URL_VARIABLE)
-        if dead_letter_url == queue_url:
-            raise RuntimeConfigurationError(
-                f"{DEAD_LETTER_QUEUE_URL_VARIABLE} must differ from {QUEUE_URL_VARIABLE}."
-            )
+        source = _environment_source(environment)
         return cls(
             database_url=_database_url(_required(source, DATABASE_SECRET_VARIABLE)),
-            region=region,
-            bucket=_required(source, BUCKET_VARIABLE),
-            kms_key_arn=kms_key_arn,
-            expected_bucket_owner=owner,
-            queue_url=queue_url,
-            dead_letter_queue_url=dead_letter_url,
+            **_runtime_coordinates(source),
         )
+
+
+def _environment_source(
+    environment: Mapping[str, str] | None,
+) -> Mapping[str, str]:
+    return os.environ if environment is None else environment
+
+
+def _runtime_coordinates(environment: Mapping[str, str]) -> _RuntimeCoordinates:
+    queue_url, dead_letter_url = _queue_urls(environment)
+    return _RuntimeCoordinates(
+        region=_region(environment),
+        bucket=_required(environment, BUCKET_VARIABLE),
+        kms_key_arn=_kms_key_arn(environment),
+        expected_bucket_owner=_bucket_owner(environment),
+        queue_url=queue_url,
+        dead_letter_queue_url=dead_letter_url,
+    )
+
+
+def _region(environment: Mapping[str, str]) -> str:
+    region = _required(environment, REGION_VARIABLE)
+    if region != REGION:
+        raise RuntimeConfigurationError(f"{REGION_VARIABLE} must be {REGION}.")
+    return region
+
+
+def _kms_key_arn(environment: Mapping[str, str]) -> str:
+    key_arn = _required(environment, KMS_KEY_ARN_VARIABLE)
+    if _KMS_KEY_ARN.fullmatch(key_arn) is None:
+        raise RuntimeConfigurationError(
+            f"{KMS_KEY_ARN_VARIABLE} must be a KMS key ARN in {REGION}."
+        )
+    return key_arn
+
+
+def _bucket_owner(environment: Mapping[str, str]) -> str:
+    owner = _required(environment, BUCKET_OWNER_VARIABLE)
+    if _ACCOUNT_ID.fullmatch(owner) is None:
+        raise RuntimeConfigurationError(
+            f"{BUCKET_OWNER_VARIABLE} must be a 12-digit account ID."
+        )
+    return owner
+
+
+def _queue_urls(environment: Mapping[str, str]) -> tuple[str, str]:
+    queue_url = _required(environment, QUEUE_URL_VARIABLE)
+    dead_letter_url = _required(environment, DEAD_LETTER_QUEUE_URL_VARIABLE)
+    if dead_letter_url == queue_url:
+        raise RuntimeConfigurationError(
+            f"{DEAD_LETTER_QUEUE_URL_VARIABLE} must differ from {QUEUE_URL_VARIABLE}."
+        )
+    return queue_url, dead_letter_url
 
 
 def _required(environment: Mapping[str, str], name: str) -> str:
