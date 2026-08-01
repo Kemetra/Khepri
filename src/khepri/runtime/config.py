@@ -196,7 +196,11 @@ def _exact_secret_text(
 
 def _secret_port(document: Mapping[str, object]) -> int:
     port = document["port"]
-    if isinstance(port, bool) or not isinstance(port, int) or not 0 < port <= 65535:
+    if isinstance(port, bool):
+        raise _invalid_database_secret()
+    if not isinstance(port, int):
+        raise _invalid_database_secret()
+    if port not in range(1, 65536):
         raise _invalid_database_secret()
     return port
 
