@@ -99,11 +99,18 @@ class LocalReportWorker:
         return processed
 
 
+@dataclass(frozen=True, slots=True)
+class LocalWorkerPorts:
+    """The persistent collaborators behind one local worker."""
+
+    jobs: SqlReportJobRepository
+    factory: sessionmaker[Session]
+    handler: Callable[..., None]
+
+
 def build_local_worker(
+    ports: LocalWorkerPorts,
     *,
-    jobs: SqlReportJobRepository,
-    factory: sessionmaker[Session],
-    handler: Callable[..., None],
     clock: Callable[[], datetime],
     worker_id: str = "local-worker",
 ) -> LocalReportWorker:
@@ -112,8 +119,8 @@ def build_local_worker(
 
     return LocalReportWorker(
         worker=ReportWorker(
-            jobs=jobs,
-            handler=handler,
+            jobs=ports.jobs,
+            handler=ports.handler,
             clock=clock,
             policy=WorkerPolicy(
                 worker_id=worker_id,
@@ -121,7 +128,7 @@ def build_local_worker(
                 retry_delay=RETRY_DELAY,
             ),
         ),
-        poller=ClaimablePoller(factory=factory),
+        poller=ClaimablePoller(factory=ports.factory),
         clock=clock,
     )
 
@@ -131,5 +138,6 @@ __all__ = [
     "RETRY_DELAY",
     "ClaimablePoller",
     "LocalReportWorker",
+    "LocalWorkerPorts",
     "build_local_worker",
 ]

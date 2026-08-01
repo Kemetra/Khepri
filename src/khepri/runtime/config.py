@@ -12,6 +12,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TypedDict
 
 from sqlalchemy import URL
 
@@ -36,6 +37,15 @@ _SECRET_FIELDS = frozenset({"username", "password", "engine", "host", "port", "d
 
 class RuntimeConfigurationError(ValueError):
     """A required runtime coordinate is absent or outside the approved boundary."""
+
+
+class _DatabaseSecret(TypedDict):
+    username: str
+    password: str
+    engine: str
+    host: str
+    port: int
+    dbname: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,22 +114,53 @@ def _database_url(encoded: str) -> URL:
     )
 
 
-def _database_secret(encoded: str) -> dict[str, object]:
+def _database_secret(encoded: str) -> _DatabaseSecret:
+    document = _decoded_database_secret(encoded)
+    if not set(document) >= _SECRET_FIELDS:
+        raise _invalid_database_secret()
+    return _DatabaseSecret(
+        username=_secret_text(document, "username"),
+        password=_secret_text(document, "password"),
+        engine=_exact_secret_text(document, "engine", "postgres"),
+        host=_secret_text(document, "host"),
+        port=_secret_port(document),
+        dbname=_exact_secret_text(document, "dbname", DATABASE_NAME),
+    )
+
+
+def _decoded_database_secret(encoded: str) -> dict[str, object]:
     try:
         value = json.loads(encoded)
     except (TypeError, ValueError) as error:
         raise _invalid_database_secret() from error
-    if not isinstance(value, dict) or not set(value) >= _SECRET_FIELDS:
-        raise _invalid_database_secret()
-    for name in ("username", "password", "engine", "host", "dbname"):
-        if not isinstance(value[name], str) or not value[name].strip():
-            raise _invalid_database_secret()
-    port = value["port"]
-    if isinstance(port, bool) or not isinstance(port, int) or not 0 < port <= 65535:
-        raise _invalid_database_secret()
-    if value["engine"] != "postgres" or value["dbname"] != DATABASE_NAME:
+    if not isinstance(value, dict):
         raise _invalid_database_secret()
     return value
+
+
+def _secret_text(document: Mapping[str, object], name: str) -> str:
+    value = document[name]
+    if not isinstance(value, str) or not value.strip():
+        raise _invalid_database_secret()
+    return value
+
+
+def _exact_secret_text(
+    document: Mapping[str, object],
+    name: str,
+    expected: str,
+) -> str:
+    value = _secret_text(document, name)
+    if value != expected:
+        raise _invalid_database_secret()
+    return value
+
+
+def _secret_port(document: Mapping[str, object]) -> int:
+    port = document["port"]
+    if isinstance(port, bool) or not isinstance(port, int) or not 0 < port <= 65535:
+        raise _invalid_database_secret()
+    return port
 
 
 def _invalid_database_secret() -> RuntimeConfigurationError:

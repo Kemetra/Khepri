@@ -30,7 +30,7 @@ from khepri.local.config import LocalSettings
 from khepri.local.packages import build_package_source
 from khepri.local.storage import build_local_object_store
 from khepri.local.sweeper import LocalSweeper, build_local_sweeper
-from khepri.local.worker import LocalReportWorker, build_local_worker
+from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
 from khepri.rra.api import create_app
 from khepri.rra.bundle import SurfaceRenderer
 from khepri.rra.datasets import ProfilingService
@@ -260,9 +260,11 @@ def build_worker_stack(
     workbooks.mkdir(parents=True, exist_ok=True)
     return WorkerStack(
         worker=build_local_worker(
-            jobs=stack.reports.jobs,
-            factory=stack.factory,
-            handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
+            LocalWorkerPorts(
+                jobs=stack.reports.jobs,
+                factory=stack.factory,
+                handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
+            ),
             clock=stack.clock,
         ),
         sweeper=build_local_sweeper(
