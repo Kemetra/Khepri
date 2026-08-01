@@ -55,7 +55,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from aws_cdk import RemovalPolicy
+from aws_cdk import Aws, RemovalPolicy
 from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_logs as logs
@@ -66,9 +66,30 @@ from khepri.infra.data_resources import GovernedDataResources
 from khepri.infra.database import GovernedDatabase
 from khepri.infra.network import GovernedNetwork
 from khepri.infra.sizing import MIN_EPHEMERAL_STORAGE_GIB, ServiceSizing, TaskSize
+from khepri.runtime.config import (
+    BUCKET_OWNER_VARIABLE,
+    BUCKET_VARIABLE,
+    DEAD_LETTER_QUEUE_URL_VARIABLE,
+    KMS_KEY_ARN_VARIABLE,
+    QUEUE_URL_VARIABLE,
+    REGION,
+    REGION_VARIABLE,
+)
 
 WEB_CONTAINER_NAME = "web"
 WORKER_CONTAINER_NAME = "worker"
+WEB_PORT = 8080
+
+WEB_COMMAND = (
+    "uvicorn",
+    "khepri.runtime.web:app",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    str(WEB_PORT),
+    "--no-access-log",
+)
+WORKER_COMMAND = ("python", "-m", "khepri.runtime.worker")
 
 LOG_RETENTION = logs.RetentionDays.ONE_MONTH
 
@@ -139,7 +160,24 @@ class ContainerSpec:
 
     image: PinnedImage
     log_group: logs.LogGroup
-    secret: secretsmanager.ISecret
+    runtime: RuntimeSpec
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSpec:
+    """The secret and non-secret coordinates a process needs at start."""
+
+    database_secret: secretsmanager.ISecret
+    environment: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchSpec:
+    """One role's exact process command and optional listening port."""
+
+    name: str
+    command: tuple[str, ...]
+    port: int | None = None
 
 
 class GovernedCompute(Construct):
@@ -158,7 +196,11 @@ def _cluster(scope: Construct, network: GovernedNetwork) -> ecs.Cluster:
 
 def _web_task(scope: Construct, props: ComputeProps) -> ecs.FargateTaskDefinition:
     task = _task_definition(scope, "WebTask", props.sizing.web)
-    _add_container(task, _spec(scope, "WebLogs", props), WEB_CONTAINER_NAME)
+    _add_container(
+        task,
+        _spec(scope, "WebLogs", props),
+        LaunchSpec(name=WEB_CONTAINER_NAME, command=WEB_COMMAND, port=WEB_PORT),
+    )
     _grant_shared(task, props)
     props.resources.data.queue.grant_send_messages(task.task_role)
     return task
@@ -166,7 +208,11 @@ def _web_task(scope: Construct, props: ComputeProps) -> ecs.FargateTaskDefinitio
 
 def _worker_task(scope: Construct, props: ComputeProps) -> ecs.FargateTaskDefinition:
     task = _task_definition(scope, "WorkerTask", props.sizing.worker)
-    _add_container(task, _spec(scope, "WorkerLogs", props), WORKER_CONTAINER_NAME)
+    _add_container(
+        task,
+        _spec(scope, "WorkerLogs", props),
+        LaunchSpec(name=WORKER_CONTAINER_NAME, command=WORKER_COMMAND),
+    )
     _grant_shared(task, props)
     props.resources.data.queue.grant_consume_messages(task.task_role)
     return task
@@ -206,8 +252,22 @@ def _spec(scope: Construct, log_id: str, props: ComputeProps) -> ContainerSpec:
     return ContainerSpec(
         image=props.image,
         log_group=_log_group(scope, log_id),
-        secret=secret,
+        runtime=RuntimeSpec(
+            database_secret=secret,
+            environment=_runtime_environment(props.resources.data),
+        ),
     )
+
+
+def _runtime_environment(data: GovernedDataResources) -> dict[str, str]:
+    return {
+        REGION_VARIABLE: REGION,
+        BUCKET_VARIABLE: data.bucket.bucket_name,
+        KMS_KEY_ARN_VARIABLE: data.key.key_arn,
+        BUCKET_OWNER_VARIABLE: Aws.ACCOUNT_ID,
+        QUEUE_URL_VARIABLE: data.queue.queue_url,
+        DEAD_LETTER_QUEUE_URL_VARIABLE: data.dead_letter_queue.queue_url,
+    }
 
 
 def _require_digest(value: str) -> None:
@@ -235,18 +295,34 @@ def _log_group(scope: Construct, construct_id: str) -> logs.LogGroup:
 
 
 def _add_container(
-    task: ecs.FargateTaskDefinition, spec: ContainerSpec, name: str
+    task: ecs.FargateTaskDefinition,
+    spec: ContainerSpec,
+    launch: LaunchSpec,
 ) -> ecs.ContainerDefinition:
-    return task.add_container(
-        name,
+    container = task.add_container(
+        launch.name,
         image=ecs.EcrImage(spec.image.repository, spec.image.digest),
-        logging=ecs.LogDrivers.aws_logs(stream_prefix=name, log_group=spec.log_group),
+        command=list(launch.command),
+        logging=ecs.LogDrivers.aws_logs(
+            stream_prefix=launch.name,
+            log_group=spec.log_group,
+        ),
         environment={
             BROWSERS_PATH_VARIABLE: BROWSERS_PATH,
             SKIP_BROWSER_DOWNLOAD_VARIABLE: "1",
+            **spec.runtime.environment,
         },
-        secrets={DATABASE_SECRET_VARIABLE: ecs.Secret.from_secrets_manager(spec.secret)},
+        secrets={
+            DATABASE_SECRET_VARIABLE: ecs.Secret.from_secrets_manager(
+                spec.runtime.database_secret
+            )
+        },
     )
+    if launch.port is not None:
+        container.add_port_mappings(
+            ecs.PortMapping(container_port=launch.port, protocol=ecs.Protocol.TCP)
+        )
+    return container
 
 
 def _grant_shared(task: ecs.FargateTaskDefinition, props: ComputeProps) -> None:
@@ -262,9 +338,14 @@ __all__ = [
     "DIGEST_LENGTH",
     "DIGEST_PREFIX",
     "LOG_RETENTION",
+    "LaunchSpec",
     "RUNTIME_PLATFORM",
+    "RuntimeSpec",
     "SKIP_BROWSER_DOWNLOAD_VARIABLE",
     "WEB_CONTAINER_NAME",
+    "WEB_COMMAND",
+    "WEB_PORT",
+    "WORKER_COMMAND",
     "WORKER_CONTAINER_NAME",
     "ComputeProps",
     "ContainerSpec",

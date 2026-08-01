@@ -13,8 +13,12 @@ from decimal import Decimal
 
 import pytest
 
-from khepri.local.narrator import ADAPTER_VERSION, MAX_SECTIONS, DeterministicNarrator
 from khepri.rra.admissibility import assess_admissibility
+from khepri.rra.deterministic_narrative import (
+    ADAPTER_VERSION,
+    MAX_SECTIONS,
+    DeterministicNarrator,
+)
 from khepri.rra.facts import FactPackage, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
@@ -93,7 +97,7 @@ class TestTheDraftSurvivesTheRealValidator:
         _, draft = draft_for(package())
 
         assert draft.adapter_version == ADAPTER_VERSION
-        assert "local" in ADAPTER_VERSION
+        assert ADAPTER_VERSION == "rra005.deterministic.v1"
 
 
 class TestBothLanguagesAreProduced:

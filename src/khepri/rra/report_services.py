@@ -75,7 +75,7 @@ class JobReader:
         return None if job is None or job.session_id != session_id else job
 
 
-class LocalReportRequestService:
+class ReportRequestAdapter:
     """Ask for this session's report, or read one back, scoped to the caller."""
 
     def __init__(
@@ -136,7 +136,7 @@ class LocalReportRequestService:
         return ReportJobView(job=job, delivery=self._deliveries.find_delivery(job.job_id))
 
 
-class LocalDeliveredBundleReader:
+class DeliveredBundleAdapter:
     """Read one delivered report back, scoped to the caller's own session."""
 
     def __init__(self, *, deliveries: SqlDeliveryStore, reader: JobReader) -> None:
@@ -189,7 +189,7 @@ def _job_from_row(row: ReportJobRow) -> ReportJob:
 __all__ = [
     "MAX_ATTEMPTS",
     "JobReader",
-    "LocalDeliveredBundleReader",
-    "LocalReportRequestService",
+    "DeliveredBundleAdapter",
+    "ReportRequestAdapter",
     "SessionPackages",
 ]

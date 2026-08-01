@@ -5,7 +5,7 @@ is refused, so no report bundle can be produced without a `NarrativeAdapter` who
 draft survives `narrative.validate`. No concrete adapter exists in this repository
 — only a test stub — and `KHEPRI-DEC-005` reserves provider selection to its own
 architecture decision. This composes prose from the fact package itself instead, so
-the local journey reaches a bundle without pre-empting that decision.
+a report reaches a bundle without pre-empting that decision.
 
 **It is not a stand-in for a provider.** It writes flat, mechanical sentences and
 makes no interpretive claim whatsoever. Its `adapter_version` says so, so any
@@ -57,7 +57,7 @@ from khepri.rra.narrative import (
     NarrativeSection,
 )
 
-ADAPTER_VERSION = "rra005.local-deterministic.v1"
+ADAPTER_VERSION = "rra005.deterministic.v1"
 
 # Kept well inside the section budget a fact package can produce. A narrative is
 # a summary; quoting every fact would be a transcript.
@@ -83,8 +83,7 @@ class DeterministicNarrator:
     """Compose grounded Arabic and English prose directly from the request.
 
     Satisfies `NarrativeAdapter` structurally: an `adapter_version` property and
-    a `draft` method. It is registered nowhere and selected by nothing; a local
-    composition root passes it explicitly.
+    a `draft` method. A composition root must select it explicitly.
     """
 
     @property

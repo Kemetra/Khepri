@@ -196,6 +196,46 @@ class TestTaskDefinitions:
 
 
 class TestContainers:
+    def test_each_role_has_one_exact_launch_command(self, template: Template) -> None:
+        web = _task_definition(template, WEB_CONTAINER_NAME)["ContainerDefinitions"][0]
+        worker = _task_definition(template, WORKER_CONTAINER_NAME)["ContainerDefinitions"][0]
+
+        assert web["Command"] == [
+            "uvicorn",
+            "khepri.runtime.web:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8080",
+            "--no-access-log",
+        ]
+        assert worker["Command"] == ["python", "-m", "khepri.runtime.worker"]
+
+    def test_only_the_web_role_exposes_tcp_8080(self, template: Template) -> None:
+        web = _task_definition(template, WEB_CONTAINER_NAME)["ContainerDefinitions"][0]
+        worker = _task_definition(template, WORKER_CONTAINER_NAME)["ContainerDefinitions"][0]
+
+        assert web["PortMappings"] == [{"ContainerPort": 8080, "Protocol": "tcp"}]
+        assert "PortMappings" not in worker
+
+    def test_both_roles_receive_every_non_secret_runtime_coordinate(
+        self, template: Template
+    ) -> None:
+        required = {
+            "KHEPRI_AWS_REGION",
+            "KHEPRI_BUCKET",
+            "KHEPRI_KMS_KEY_ARN",
+            "KHEPRI_EXPECTED_BUCKET_OWNER",
+            "KHEPRI_QUEUE_URL",
+            "KHEPRI_DLQ_URL",
+        }
+        for name in (WEB_CONTAINER_NAME, WORKER_CONTAINER_NAME):
+            container = _task_definition(template, name)["ContainerDefinitions"][0]
+            environment = {entry["Name"]: entry["Value"] for entry in container["Environment"]}
+
+            assert required <= set(environment)
+            assert all(environment[key] for key in required)
+
     def test_both_containers_run_the_same_repository_image(self, template: Template) -> None:
         images = set()
         for name in (WEB_CONTAINER_NAME, WORKER_CONTAINER_NAME):
@@ -401,6 +441,16 @@ class TestImageRepository:
         policy = json.loads(properties["LifecyclePolicy"]["LifecyclePolicyText"])
 
         assert policy["rules"][0]["selection"]["tagStatus"] == "untagged"
+
+
+class TestDeploymentBoundary:
+    def test_task_contracts_do_not_create_services_or_public_ingress(
+        self, template: Template
+    ) -> None:
+        template.resource_count_is("AWS::ECS::Service", 0)
+        template.resource_count_is("AWS::ElasticLoadBalancingV2::LoadBalancer", 0)
+        template.resource_count_is("AWS::ApplicationAutoScaling::ScalableTarget", 0)
+        template.resource_count_is("AWS::ApplicationAutoScaling::ScalingPolicy", 0)
 
 
 def test_a_resized_declaration_reaches_the_task_definitions() -> None:

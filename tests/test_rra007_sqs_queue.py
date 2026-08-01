@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from khepri.rra.sqs_queue import QueueMessageRejected, SqsReportQueue
+from khepri.rra.sqs_queue import (
+    QueueMessageRejected,
+    SqsReportPublisher,
+    SqsReportQueue,
+)
 from khepri.rra.worker import ReportJobMessage
 
 QUEUE_URL = "https://sqs.me-central-1.amazonaws.com/123/report-jobs"
@@ -62,6 +66,22 @@ def test_publish_sends_only_the_opaque_job_identifier() -> None:
     client = SqsClientStub()
 
     message_id = queue(client).publish(ReportJobMessage(job_id="job_alpha"))
+
+    assert message_id == "msg_alpha"
+    assert client.sent == [
+        {
+            "QueueUrl": QUEUE_URL,
+            "MessageBody": '{"job_id":"job_alpha"}',
+        }
+    ]
+
+
+def test_source_only_publisher_needs_no_dead_letter_destination() -> None:
+    client = SqsClientStub()
+
+    message_id = SqsReportPublisher(client=client, queue_url=QUEUE_URL).publish(
+        ReportJobMessage(job_id="job_alpha")
+    )
 
     assert message_id == "msg_alpha"
     assert client.sent == [

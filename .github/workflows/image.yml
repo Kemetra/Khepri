@@ -80,6 +80,9 @@ jobs:
           docker run --rm khepri-rra:ci python -c "
           import sys
           from khepri.rra.rendering.chromium import LAUNCH_ARGS
+          import khepri.runtime.config
+          import khepri.runtime.wiring
+          import khepri.runtime.worker
           assert sys.version_info[:2] == (3, 13), sys.version
           assert '--disable-dev-shm-usage' in LAUNCH_ARGS, LAUNCH_ARGS
           print('python', '.'.join(map(str, sys.version_info[:3])))

@@ -6,7 +6,7 @@
 # named `.local` so it can never be mistaken for the environment `KHEPRI-DEC-007`
 # sizes, and nothing it produces is benchmark or approval evidence.
 #
-# **LocalStack is pinned to v3 for two reasons.** `:latest` and `:stable` both now
+# **LocalStack is pinned to v3.8.1 for two reasons.** `:latest` and `:stable` both now
 # require a paid licence and exit with code 55 ("License activation failed"), and
 # v3 is the last line whose KMS is available without one. The pin is exact rather
 # than floating because a licence gate appearing in a patch release would break the
@@ -27,9 +27,9 @@
 #
 #   docker compose -f docker-compose.local.yml up -d
 #   uv run alembic upgrade head
-#   uv run khepri-local invite
+#   uv run python -m khepri.local.cli invite
 #   uv run uvicorn khepri.local.app:app --reload
-#   uv run khepri-local work
+#   uv run python -m khepri.local.cli work
 
 services:
   postgres:
@@ -53,7 +53,7 @@ services:
   # S3 + KMS only. Every other service is off: this stack exists to satisfy the
   # object store, not to emulate an account.
   localstack:
-    image: localstack/localstack:3
+    image: localstack/localstack:3.8.1
     container_name: khepri-local-localstack
     restart: unless-stopped
     environment:

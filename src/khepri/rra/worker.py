@@ -66,7 +66,12 @@ class ReportWorker:
         self._clock = clock
         self._policy = policy
 
-    def process(self, message: ReportJobMessage) -> ReportJob | None:
+    def process(
+        self,
+        message: ReportJobMessage,
+        *,
+        heartbeat: Callable[[], None] | None = None,
+    ) -> ReportJob | None:
         leased = self._jobs.lease(
             LeaseRequest(
                 job_id=message.job_id,
@@ -78,20 +83,43 @@ class ReportWorker:
         if leased is None:
             return None
 
-        self._execute(leased)
+        self._execute(leased, heartbeat=heartbeat)
         return self._jobs.complete(self._lease_action(leased))
 
-    def _execute(self, job: ReportJob) -> None:
+    def _execute(
+        self,
+        job: ReportJob,
+        *,
+        heartbeat: Callable[[], None] | None,
+    ) -> None:
         try:
-            self._handler(self._execution(job))
+            self._handler(self._execution(job, heartbeat=heartbeat))
         except LeaseLost:
             raise
         except Exception:
             self._record_failure(job)
             raise ReportExecutionFailed("Report job execution failed.") from None
 
-    def _execution(self, job: ReportJob) -> WorkerExecution:
-        return WorkerExecution(job=job, heartbeat=lambda: self._heartbeat(job))
+    def _execution(
+        self,
+        job: ReportJob,
+        *,
+        heartbeat: Callable[[], None] | None,
+    ) -> WorkerExecution:
+        return WorkerExecution(
+            job=job,
+            heartbeat=lambda: self._heartbeat_delivery(job, heartbeat),
+        )
+
+    def _heartbeat_delivery(
+        self,
+        job: ReportJob,
+        delivery_heartbeat: Callable[[], None] | None,
+    ) -> ReportJob:
+        renewed = self._heartbeat(job)
+        if delivery_heartbeat is not None:
+            delivery_heartbeat()
+        return renewed
 
     def _heartbeat(self, job: ReportJob) -> ReportJob:
         return self._jobs.heartbeat(

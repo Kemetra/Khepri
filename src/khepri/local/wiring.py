@@ -27,13 +27,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.local.config import LocalSettings
-from khepri.local.narrator import DeterministicNarrator
 from khepri.local.packages import build_package_source
-from khepri.local.reports import (
-    JobReader,
-    LocalDeliveredBundleReader,
-    LocalReportRequestService,
-)
 from khepri.local.storage import build_local_object_store
 from khepri.local.sweeper import LocalSweeper, build_local_sweeper
 from khepri.local.worker import LocalReportWorker, build_local_worker
@@ -42,6 +36,7 @@ from khepri.rra.bundle import SurfaceRenderer
 from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
 from khepri.rra.delivery_persistence import SqlDeliveryStore
+from khepri.rra.deterministic_narrative import DeterministicNarrator
 from khepri.rra.intake import IntakeService
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.packages import FactPackageService
@@ -57,6 +52,11 @@ from khepri.rra.rendering.chromium import launch_chromium
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.pdf import PagePrinter, PdfReportRenderer
+from khepri.rra.report_services import (
+    DeliveredBundleAdapter,
+    JobReader,
+    ReportRequestAdapter,
+)
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
 
@@ -222,18 +222,18 @@ def build_report_services(stack: LocalStack) -> ReportServices:
     """The two session-scoped adapters the report routes require.
 
     Neither store satisfies those Protocols on its own -- see
-    `khepri.local.reports` for why that gap is real rather than local.
+    `khepri.rra.report_services` for why that gap is real rather than local.
     """
     reader = JobReader(stack.factory)
     deliveries = stack.reports.deliveries
     return ReportServices(
-        jobs=LocalReportRequestService(
+        jobs=ReportRequestAdapter(
             jobs=stack.reports.jobs,
             reader=reader,
             packages=stack.services.packages,
             deliveries=deliveries,
         ),
-        bundles=LocalDeliveredBundleReader(deliveries=deliveries, reader=reader),
+        bundles=DeliveredBundleAdapter(deliveries=deliveries, reader=reader),
     )
 
 

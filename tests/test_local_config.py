@@ -8,7 +8,12 @@ all.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
+import yaml
+from alembic.config import Config
 
 from khepri.local.config import (
     DEFAULT_BUCKET,
@@ -17,6 +22,8 @@ from khepri.local.config import (
     DEFAULT_S3_ENDPOINT,
     LocalSettings,
 )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestDefaults:
@@ -66,3 +73,21 @@ class TestOverrides:
 
         with pytest.raises(AttributeError):
             settings.bucket = "changed"  # type: ignore[misc]
+
+
+class TestComposeContract:
+    def test_localstack_uses_an_exact_patch_release(self) -> None:
+        compose = yaml.safe_load(
+            (REPOSITORY_ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+        )
+
+        image = compose["services"]["localstack"]["image"]
+        _, tag = image.rsplit(":", maxsplit=1)
+        assert re.fullmatch(r"\d+\.\d+\.\d+", tag)
+
+
+class TestMigrationContract:
+    def test_default_migrations_target_the_local_runtime_database(self) -> None:
+        config = Config(REPOSITORY_ROOT / "alembic.ini")
+
+        assert config.get_main_option("sqlalchemy.url") == DEFAULT_DATABASE_URL

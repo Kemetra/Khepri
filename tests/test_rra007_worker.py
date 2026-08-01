@@ -218,6 +218,29 @@ def test_timely_heartbeat_extends_a_long_running_worker_lease() -> None:
     assert handler.heartbeats[0].lease_expires_at == NOW + timedelta(seconds=110)
 
 
+def test_database_heartbeat_precedes_the_delivery_visibility_heartbeat() -> None:
+    test = Harness()
+    observed: list[str] = []
+
+    class OrderedHeartbeatHandler(Handler):
+        def __call__(self, execution: WorkerExecution) -> None:
+            execution.heartbeat()
+            observed.append("handler-returned")
+
+    report_worker = worker(
+        test,
+        OrderedHeartbeatHandler(),
+        Clock(NOW, NOW + timedelta(seconds=50), NOW + timedelta(seconds=90)),
+    )
+
+    report_worker.process(
+        ReportJobMessage(job_id=test.queued.job_id),
+        heartbeat=lambda: observed.append("delivery-visible"),
+    )
+
+    assert observed == ["delivery-visible", "handler-returned"]
+
+
 def test_late_heartbeat_cannot_revive_an_expired_lease() -> None:
     test = Harness()
     handler = HeartbeatHandler()

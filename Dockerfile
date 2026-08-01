@@ -68,7 +68,8 @@ RUN set -eu; \
         exit 1; \
     fi; \
     python -c "from playwright.sync_api import sync_playwright" ; \
-    python -c "import khepri.rra.rendering.chromium"
+    python -c "import khepri.rra.rendering.chromium" ; \
+    python -c "import khepri.runtime.config, khepri.runtime.wiring, khepri.runtime.worker"
 
 # The browser launch is verified below, after `USER pwuser`, rather than here. Proving it as root
 # would prove the wrong thing.
@@ -93,8 +94,7 @@ b = p.chromium.launch(headless=True, args=list(LAUNCH_ARGS)); \
 print('chromium', b.version); \
 b.close(); p.stop()"
 
-# No CMD, deliberately. One image serves both roles, and the containers in
-# `src/khepri/infra/compute.py` are named `web` and `worker` but currently pass no command of their
-# own. A default here would silently make this image one of those two roles, so the entry point
-# arrives with the slice that gives each container its command -- the same reason no size and no
-# image digest is defaulted anywhere else in this repository.
+# No CMD, deliberately. One image serves both roles, and `src/khepri/infra/compute.py` now gives
+# each task definition its exact command: Uvicorn for `khepri.runtime.web:app`, and
+# `python -m khepri.runtime.worker` for the bounded worker. A default here would silently turn an
+# omitted task command into one role, defeating that explicit distinction.
