@@ -16,6 +16,7 @@ from khepri.rra.benchmark_population import (
     EXTENDED_COLUMNS,
     PROFILE_CORE,
     PROFILE_EXTENDED,
+    SIZE_BANDS,
 )
 from khepri.rra.benchmark_rows import (
     CATEGORY_COUNT,
@@ -23,12 +24,15 @@ from khepri.rra.benchmark_rows import (
     CURRENCY,
     FIRST_DAY,
     LAST_DAY,
+    LINE_BYTE_RANGE,
     MAX_UNITS,
     PRODUCT_COUNT,
     STORE_COUNT,
     RowsRefused,
     build_rows,
     csv_document,
+    csv_document_of_exact_size,
+    plan_exact_row_count,
 )
 
 SEED = 0x0123456789ABCDEF
@@ -180,3 +184,64 @@ def test_a_non_positive_transaction_size_is_refused(size: int) -> None:
 def test_an_ungoverned_profile_is_refused() -> None:
     with pytest.raises(RowsRefused):
         build_rows(SEED, 10, "everything", ROWS_PER_TRANSACTION)
+
+
+def test_declared_line_ranges_bound_what_is_actually_generated() -> None:
+    """A drift guard: exact byte targeting is only solvable inside these bounds."""
+    for profile in (PROFILE_CORE, PROFILE_EXTENDED):
+        smallest, largest = LINE_BYTE_RANGE[profile]
+        for seed in range(4):
+            for row in build_rows(seed, 1500, profile, 4):
+                assert smallest <= len(",".join(row)) + 1 <= largest
+
+
+@pytest.mark.parametrize("target", [5_000, 40_001, 1_048_576])
+def test_a_csv_document_hits_the_target_size_exactly(target: int) -> None:
+    document = csv_document_of_exact_size(SEED, target, PROFILE_CORE, ROWS_PER_TRANSACTION)
+    assert len(document) == target
+
+
+def test_exact_sizing_works_for_the_extended_profile_too() -> None:
+    document = csv_document_of_exact_size(SEED, 60_000, PROFILE_EXTENDED, ROWS_PER_TRANSACTION)
+    assert len(document) == 60_000
+
+
+def test_every_band_upper_edge_is_reachable_for_the_anchor_profile() -> None:
+    """Each band needs one CSV dataset whose stored size equals its upper edge exactly."""
+    for band in SIZE_BANDS:
+        assert plan_exact_row_count(band.upper_bytes, PROFILE_CORE) > 0
+
+
+def test_exact_sizing_is_deterministic() -> None:
+    first = csv_document_of_exact_size(SEED, 9_000, PROFILE_CORE, ROWS_PER_TRANSACTION)
+    second = csv_document_of_exact_size(SEED, 9_000, PROFILE_CORE, ROWS_PER_TRANSACTION)
+    assert first == second
+
+
+def test_an_exact_document_is_still_a_valid_csv_of_the_profile() -> None:
+    document = csv_document_of_exact_size(SEED, 9_000, PROFILE_CORE, ROWS_PER_TRANSACTION)
+    lines = document.rstrip(b"\n").split(b"\n")
+    assert lines[0] == ",".join(column for column, _ in CORE_COLUMNS).encode()
+    assert document.endswith(b"\n")
+    assert b"\r\n" not in document
+    for line in lines[1:]:
+        assert len(line.split(b",")) == len(CORE_COLUMNS)
+
+
+def test_a_target_too_small_for_a_header_and_one_row_is_refused() -> None:
+    with pytest.raises(RowsRefused):
+        csv_document_of_exact_size(SEED, 80, PROFILE_CORE, ROWS_PER_TRANSACTION)
+
+
+def test_selection_rows_are_no_longer_than_natural_rows() -> None:
+    """The reserved index space must not change row width.
+
+    `transaction_id` is `TXN-%08d` over `index // rows_per_transaction`. A reserved index
+    big enough to need nine digits makes every selected row one byte longer than any
+    natural row, which removes the lengths the search depends on and surfaces as an
+    unsatisfiable budget far from its cause.
+    """
+    smallest, largest = LINE_BYTE_RANGE[PROFILE_CORE]
+    document = csv_document_of_exact_size(SEED, 200_000, PROFILE_CORE, ROWS_PER_TRANSACTION)
+    for line in document.rstrip(b"\n").split(b"\n")[1:]:
+        assert smallest <= len(line) + 1 <= largest
