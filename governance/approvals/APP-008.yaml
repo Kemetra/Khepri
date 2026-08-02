@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-008
 title: Governed lifecycle transitions implementation
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Record FND-002 as implemented after its closed lifecycle transition matrix,
@@ -15,6 +15,11 @@ exclusions:
   - Any claim that automation or passing technical checks constitute human approval
   - Any claim that the CodeScene server-side gate has passed before CI reports it
 manifest_digest: sha256:7dc5af76dd36f141d40aae211c98e456e2260276cf3c0e70faca59a3a084f45b
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-02
+  approved_manifest_digest: sha256:7dc5af76dd36f141d40aae211c98e456e2260276cf3c0e70faca59a3a084f45b
+  evidence_ref: https://github.com/Kemetra/Khepri/issues/43#issuecomment-5159010103
 artifacts:
   - id: FND-002
     document: governance/specifications/FND-002.md
