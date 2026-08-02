@@ -63,11 +63,17 @@ decisions:
     document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
   - id: KHEPRI-DEC-009
     title: Standing authorization for specification milestone transitions
-    state: proposed
+    state: rejected
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-009-standing-authorization.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-02
+    approval_ref: governance/approvals/APP-010.yaml
   - id: KHEPRI-DEC-010
     title: Spoken delegation to a named non-human authority
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-010-spoken-delegation.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-02
+    approval_ref: governance/approvals/APP-010.yaml
