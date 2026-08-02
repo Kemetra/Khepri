@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-006
 title: Comparative and concentration retail analysis approval
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Approve RRA-008 exactly as digested, adding period comparison, concentration, growth
@@ -16,6 +16,11 @@ exclusions:
   - Any claim that the four analyses have been implemented, measured, or benchmarked
   - Any claim that technical review or automation is human approval
 manifest_digest: sha256:21e5423212912bbb3658a0304a5d7f5221b417bf3b1b3d5557f27d067d66cfd6
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-02
+  approved_manifest_digest: sha256:21e5423212912bbb3658a0304a5d7f5221b417bf3b1b3d5557f27d067d66cfd6
+  evidence_ref: https://github.com/Kemetra/Khepri/issues/43#issuecomment-5157125230
 artifacts:
   - id: RRA-008
     document: governance/specifications/RRA-008.md

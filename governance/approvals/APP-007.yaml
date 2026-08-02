@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-007
 title: Governed lifecycle transitions approval
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Approve FND-002 exactly as digested, admitting a closed set of lifecycle transitions per
@@ -16,6 +16,11 @@ exclusions:
   - Any claim that the transitions FND-002 describes have been implemented
   - Any claim that technical review or automation is human approval
 manifest_digest: sha256:4743142ff3928e2eb69f2b2fa84be10570905b4f96decaefb07dbfad65585675
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-02
+  approved_manifest_digest: sha256:4743142ff3928e2eb69f2b2fa84be10570905b4f96decaefb07dbfad65585675
+  evidence_ref: https://github.com/Kemetra/Khepri/issues/43#issuecomment-5157125230
 artifacts:
   - id: FND-002
     document: governance/specifications/FND-002.md

@@ -12,12 +12,15 @@ specifications:
     approval_ref: governance/approvals/APP-001-bootstrap.md
   - id: FND-002
     title: Governed Lifecycle Transitions
-    state: draft
+    state: approved
     family: FND
     owner: AHMED-SHAABAN
     document: governance/specifications/FND-002.md
     depends_on:
       - FND-001
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-02
+    approval_ref: governance/approvals/APP-007.yaml
   - id: RRA-001
     title: Beta Invitations and Isolated Sessions
     state: approved
@@ -102,9 +105,12 @@ specifications:
     approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-008
     title: Comparative and Concentration Retail Analysis
-    state: draft
+    state: approved
     family: RRA
     owner: AHMED-SHAABAN
     document: governance/specifications/RRA-008.md
     depends_on:
       - RRA-004
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-02
+    approval_ref: governance/approvals/APP-006.yaml
