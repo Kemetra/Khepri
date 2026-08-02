@@ -65,7 +65,12 @@ from khepri.rra.narrative import (
 )
 from khepri.rra.profiling import canonical_json
 
-BUNDLE_VERSION = "rra006.bundle.v1"
+# v2 carries `sections` in the bundle document. That document is hashed to name
+# a bundle, so the shape change moved every bundle id -- including for a bundle
+# whose sections are empty. Two bundles built from identical inputs on either
+# side of it must not claim one schema version while having different
+# identities, or stored evidence cannot tell the two document contracts apart.
+BUNDLE_VERSION = "rra006.bundle.v2"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -97,6 +102,142 @@ GOVERNED_NARRATIVE_STATES = frozenset(
 
 OUTCOME_DELIVERED = "delivered"
 OUTCOME_INCOMPLETE = "incomplete"
+
+# The figure-bearing analysis sections, in governed order. Order is data rather
+# than a renderer's choice: a renderer permitted to choose it would let the PDF
+# and the workbook disagree about what a reader sees first, and both would still
+# reconcile, because reconciliation compares strings and not sequence.
+#
+# This covers analysis sections only. The template's caveats, commentary,
+# citations and provenance sections hold no `CitedFigure`, so they are not
+# `Section`s and keep their present place on every surface.
+SECTION_OVERVIEW = "overview"
+SECTION_COMPARISON = "comparison"
+SECTION_CONCENTRATION = "concentration"
+SECTION_GROWTH = "growth"
+SECTION_BASKET = "basket"
+ORDERED_SECTIONS = (
+    SECTION_OVERVIEW,
+    SECTION_COMPARISON,
+    SECTION_CONCENTRATION,
+    SECTION_GROWTH,
+    SECTION_BASKET,
+)
+
+SECTION_PRESENT = "present"
+SECTION_REFUSED = "refused"
+GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
+
+# Why a governed analysis refused, and the whole vocabulary a surface has to be
+# able to translate. Every surface renders a refused section by looking its
+# reason up in a per-language table, so a code outside this set reaches a reader
+# as a blank or untranslated refusal while the bundle stays valid -- the same
+# hazard `GOVERNED_REASONS` exists to close for bundle refusals, and the same
+# reason a reason code may never carry customer-derived text.
+#
+# Adding a code is deliberate: a family that needs a new one adds it here in the
+# slice that introduces it, rather than passing a string through.
+SECTION_REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+SECTION_REASON_AGGREGATE_UNAVAILABLE = "aggregate_unavailable"
+SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
+SECTION_REASON_UNITS_ABSENT = "units_absent"
+SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE = "decomposition_not_additive"
+SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
+
+# Which reasons may refuse an entire section. That is a narrower question than
+# "which reasons can this family produce", and the two come apart wherever a
+# family has more than one metric: `RRA-008` refuses "the affected result", so a
+# family losing one of its metrics keeps the section present and carrying the
+# other. A code that can only kill one metric therefore belongs on that result,
+# beside the figures, and never on the section state -- a refused section carries
+# no figures at all, so putting it here would suppress a figure that survived.
+#
+# A governed code is also not a licence to use it on any section: a growth
+# section explaining itself with basket analysis's missing transaction identifier
+# is a contextually impossible refusal, and it would be hashed into the bundle
+# and rendered to a reader as authoritative.
+#
+#   period comparison  no prior-window coverage for either governed mode
+#   concentration      the full distinct set cannot be computed, or its
+#                      aggregate is unavailable -- both take the whole family
+#   growth             zero units, or a non-additive decomposition
+#   basket             no mapped transaction identifier, which `RRA-008`
+#                      requires for *both* basket metrics
+#
+# Basket is the case that shows the distinction. `RRA-008` requires an admissible
+# dimension for attach rate only, and the merged plan gates attach rate alone on
+# the pending `RRA-004` amendment, so `dimension_absent` and
+# `aggregate_unavailable` each kill attach rate while items per transaction --
+# `METRIC_UNITS / METRIC_TRANSACTIONS`, both already governed facts -- survives.
+# Neither may refuse the section. `dimension_absent` is not defined in this
+# module at all: it can never be a section state, so it belongs with the fact
+# package's result-level reasons, which is where the basket slice will put it.
+#
+# `SECTION_OVERVIEW` states no reason. It carries `RRA-004` headline figures
+# rather than an `RRA-008` family, and `RRA-004` refuses individual metrics
+# inside the package instead of an analysis section. A slice that finds the
+# overview genuinely needs a governed refusal adds it here, with its authority.
+#
+# One deliberate omission to save the next reader the deduction: growth is a
+# two-period computation, so an absent prior window looks like it should refuse
+# it. `RRA-008` does not say so -- it names only zero units and non-additivity
+# for growth -- so it is not asserted here. The growth slice adds it if the
+# implementation proves it necessary, which is a one-line change in the obvious
+# place, and is a better outcome than this table quietly claiming authority the
+# specification does not give it.
+SECTION_REASONS: dict[str, frozenset[str]] = {
+    SECTION_OVERVIEW: frozenset(),
+    SECTION_COMPARISON: frozenset({SECTION_REASON_PRIOR_WINDOW_ABSENT}),
+    SECTION_CONCENTRATION: frozenset(
+        {
+            SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE,
+            SECTION_REASON_AGGREGATE_UNAVAILABLE,
+        }
+    ),
+    SECTION_GROWTH: frozenset(
+        {
+            SECTION_REASON_UNITS_ABSENT,
+            SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE,
+        }
+    ),
+    SECTION_BASKET: frozenset({SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT}),
+}
+
+# Derived, never maintained alongside the table, so the two cannot disagree
+# about what a governed reason is.
+GOVERNED_SECTION_REASONS = frozenset().union(*SECTION_REASONS.values())
+
+CHART_BAR = "bar"
+CHART_GROUPED_BAR = "grouped_bar"
+CHART_LINE = "line"
+# Three kinds, deliberately. A fourth adds a branch to every dispatching
+# function in the chart module, and Code Health scores overall complexity as the
+# mean per function. Growth decomposition is conceptually a waterfall and is
+# drawn as a grouped bar; the two effects shown beside the total carry the same
+# statement.
+GOVERNED_CHART_KINDS = frozenset({CHART_BAR, CHART_GROUPED_BAR, CHART_LINE})
+
+# Which kind each section is drawn as. One kind per section, so a globally valid
+# kind is not usable anywhere: a surface handed a bar chart where the design
+# fixes a line renders the wrong visualization faithfully and reconciles
+# perfectly, because reconciliation compares the text beside a chart and never
+# the chart.
+#
+# The authority behind these rows differs, and the difference matters here.
+# Concentration is fixed by specification: `RRA-008` requires the "cumulative
+# share curve", and a cumulative curve drawn as bars misstates a governed
+# requirement rather than merely looking wrong. The other four are design
+# decisions recorded in the merged design document -- `RRA-006` requires charts
+# rendered from the fact package and names no kinds, and `RRA-008` names only
+# the curve. A later design revision may move those four; moving concentration
+# would need `RRA-008` to change first.
+SECTION_CHART_KINDS: dict[str, str] = {
+    SECTION_OVERVIEW: CHART_BAR,
+    SECTION_COMPARISON: CHART_GROUPED_BAR,
+    SECTION_CONCENTRATION: CHART_LINE,
+    SECTION_GROWTH: CHART_GROUPED_BAR,
+    SECTION_BASKET: CHART_BAR,
+}
 
 REASON_UNKNOWN_SURFACE = "unknown_surface"
 REASON_MISSING_SURFACE = "missing_surface"
@@ -253,6 +394,175 @@ class BundleIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class ChartSpec:
+    """What a chart plots, named in figure identifiers and nothing else.
+
+    A spec carries no geometry and no values. It says which governed figures a
+    chart is drawn from, so the chart inherits the text reconciliation those
+    figures already have instead of needing a parallel mechanism of its own.
+    """
+
+    kind: str
+    figure_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.kind not in GOVERNED_CHART_KINDS:
+            raise ValueError("unknown chart kind")
+        if not self.figure_ids:
+            raise ValueError("chart plots no figure")
+        _require_distinct_figures(self.figure_ids, "chart")
+
+    def as_document(self) -> dict[str, object]:
+        return {"kind": self.kind, "figure_ids": list(self.figure_ids)}
+
+
+@dataclass(frozen=True, slots=True)
+class Section:
+    """One governed section of a report: its figures, and its chart if it has one.
+
+    A refused section carries no figures and still exists. `RRA-008` refuses the
+    affected analysis rather than the report, and a reader cannot tell "there was
+    nothing to show" from "we could not show it" unless the heading and the reason
+    are both present. Absence is never the disclosure — which is also why section
+    coverage can never be inferred from figure rows.
+    """
+
+    section_id: str
+    state: str
+    reason: str | None
+    figure_ids: tuple[str, ...]
+    chart: ChartSpec | None
+
+    def __post_init__(self) -> None:
+        # `_require_section` runs first, so everything after it may index the
+        # per-section tables by `section_id` without re-checking membership.
+        _require_section(self.section_id)
+        _require_section_state(self.state)
+        _require_section_reason(self.section_id, self.state, self.reason)
+        _require_distinct_figures(self.figure_ids, "section")
+        _require_chart_within(self.chart, self.figure_ids)
+        _require_chart_kind(self.section_id, self.chart)
+        _require_refusal_is_bare(self.state, self.figure_ids, self.chart)
+        _require_presence_is_populated(self.state, self.figure_ids)
+
+    def as_document(self) -> dict[str, object]:
+        return {
+            "section_id": self.section_id,
+            "state": self.state,
+            "reason": self.reason,
+            "figure_ids": list(self.figure_ids),
+            "chart": None if self.chart is None else self.chart.as_document(),
+        }
+
+
+def _require_section(section_id: str) -> None:
+    if section_id not in ORDERED_SECTIONS:
+        raise ValueError("unknown section")
+
+
+def _require_section_state(state: str) -> None:
+    # Membership, checked before any rule that constrains the valid states. A
+    # state outside the set satisfies all of those by never matching any -- so
+    # `pending` with no reason would construct, and a renderer branching on
+    # `state == SECTION_REFUSED` would draw it as a present section.
+    if state not in GOVERNED_SECTION_STATES:
+        raise ValueError("unknown section state")
+
+
+def _require_section_reason(section_id: str, state: str, reason: str | None) -> None:
+    """A refusal states a reason its own analysis can produce; presence states none.
+
+    Checked against the section rather than against the whole vocabulary. A
+    globally governed code is not a licence to use it anywhere: growth analysis
+    cannot fail for want of a transaction identifier, so a growth section
+    stating that reason is explaining itself with another family's condition,
+    and the explanation is hashed into the bundle and rendered as authoritative.
+
+    `None` is a member of no section's set, so this covers a refusal that states
+    no reason at all, one that invents a code, and one that borrows a governed
+    code from another analysis -- three failures with one comparison.
+    """
+    if state == SECTION_PRESENT and reason is not None:
+        raise ValueError("present section states a reason")
+    if state != SECTION_REFUSED:
+        return
+    if reason not in SECTION_REASONS[section_id]:
+        raise ValueError("section states no reason its own analysis can produce")
+
+
+def _require_distinct_figures(figure_ids: tuple[str, ...], subject: str) -> None:
+    """No figure appears twice, checked before anything compares sets.
+
+    `_require_chart_within` compares `frozenset`s, and a set comparison cannot
+    see multiplicity: a chart plotting `("F-1", "F-1")` is a subset of a section
+    holding `("F-1",)`, so it passes and serializes unchanged. A renderer then
+    iterates the tuple and draws one governed value as two marks, which states a
+    second data point that does not exist. The same duplicate in a section's own
+    figures prints the same row twice.
+    """
+    if len(set(figure_ids)) != len(figure_ids):
+        raise ValueError(f"{subject} repeats a figure")
+
+
+def _require_chart_within(chart: ChartSpec | None, figure_ids: tuple[str, ...]) -> None:
+    if chart is None:
+        return
+    if not frozenset(chart.figure_ids) <= frozenset(figure_ids):
+        raise ValueError("chart plots a figure outside its section")
+
+
+def _require_chart_kind(section_id: str, chart: ChartSpec | None) -> None:
+    """A section is drawn as its own kind, not as any governed kind.
+
+    Reconciliation compares the text beside a chart and never the chart, so a
+    section handed the wrong kind renders faithfully and reconciles perfectly
+    while showing the reader the wrong visualization. Concentration is the case
+    that matters most: `RRA-008` requires a cumulative share *curve*, and bars
+    drawn over cumulative shares misstate a governed requirement.
+    """
+    if chart is None:
+        return
+    if chart.kind != SECTION_CHART_KINDS[section_id]:
+        raise ValueError("chart kind is not the kind this section is drawn as")
+
+
+def _require_refusal_is_bare(
+    state: str,
+    figure_ids: tuple[str, ...],
+    chart: ChartSpec | None,
+) -> None:
+    """A refused section carries nothing, and that is enforced rather than said.
+
+    The surfaces render a refused section as a heading and a reason with no
+    table, so figures declared here would be content the bundle authorized and
+    no surface presents. A chart is worse than unused: chart reconciliation
+    requires every plotted figure to appear in what the surface stated, and a
+    refused section states none, so it would refuse the whole bundle over a
+    chart that should never have existed.
+    """
+    if state != SECTION_REFUSED:
+        return
+    if figure_ids or chart is not None:
+        raise ValueError("refused section states figures or a chart")
+
+
+def _require_presence_is_populated(state: str, figure_ids: tuple[str, ...]) -> None:
+    """A present section presents something.
+
+    The state model has exactly two members, so a present section holding no
+    figures is a third state wearing the first one's name: it claims an analysis
+    succeeded while showing nothing, and carries no reason because present
+    sections may not. A reader then cannot tell it from a populated section that
+    happens to look sparse, which is the distinction the refusal path exists to
+    preserve. An analysis that produced nothing refuses.
+    """
+    if state != SECTION_PRESENT:
+        return
+    if not figure_ids:
+        raise ValueError("present section states no figure")
+
+
+@dataclass(frozen=True, slots=True)
 class CitedFigure:
     """One figure, already rendered for every language that will show it.
 
@@ -296,7 +606,23 @@ class ReportBundle:
     figures: tuple[CitedFigure, ...]
     caveats: tuple[str, ...]
     narrative_state: str
+    sections: tuple[Section, ...] = ()
     narrative: NarrativeDraft | None = None
+
+    def __post_init__(self) -> None:
+        _require_governed_section_order(self.sections)
+
+    @property
+    def section_ids(self) -> tuple[str, ...]:
+        """The ordered sections this bundle declares.
+
+        What a surface's own section claim is reconciled against. Deriving that
+        claim from the figures a surface stated would make a refused section
+        invisible -- it carries none -- and would let a section dropped from
+        every language reconcile, because the surfaces would agree with each
+        other while disagreeing with the report that was assembled.
+        """
+        return tuple(entry.section_id for entry in self.sections)
 
     @property
     def bundle_id(self) -> str:
@@ -326,6 +652,7 @@ class ReportBundle:
             "figures": [entry.as_document() for entry in self.figures],
             "caveats": list(self.caveats),
             "narrative_state": self.narrative_state,
+            "sections": [entry.as_document() for entry in self.sections],
             "narrative": _narrative_document(self.narrative),
             "disclosure": {
                 language: self.disclosure(language) for language in sorted(REQUIRED_LANGUAGES)
@@ -366,6 +693,26 @@ class ReportBundle:
             narrative_state=state,
             narrative=narrative,
         )
+
+
+def _require_governed_section_order(sections: tuple[Section, ...]) -> None:
+    """The bundle may not choose its own section order, and neither may a caller.
+
+    `section_ids` is the authority every surface's section claim is reconciled
+    against, so an order assembled wrongly here is an order every surface
+    follows and then reconciles against perfectly. Validating each `Section`
+    individually is not enough: five valid sections in the wrong sequence are
+    five valid sections.
+
+    A subset is allowed and a reordering is not, so the comparison is against
+    `ORDERED_SECTIONS` filtered to what was claimed rather than against the
+    whole tuple.
+    """
+    claimed = [entry.section_id for entry in sections]
+    if len(set(claimed)) != len(claimed):
+        raise ValueError("bundle repeats a section")
+    if claimed != [entry for entry in ORDERED_SECTIONS if entry in set(claimed)]:
+        raise ValueError("bundle states sections out of governed order")
 
 
 @dataclass(frozen=True, slots=True)
