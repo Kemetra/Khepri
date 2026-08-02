@@ -144,17 +144,61 @@ SECTION_REASON_UNITS_ABSENT = "units_absent"
 SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE = "decomposition_not_additive"
 SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
 SECTION_REASON_DIMENSION_ABSENT = "dimension_absent"
-GOVERNED_SECTION_REASONS = frozenset(
-    {
-        SECTION_REASON_PRIOR_WINDOW_ABSENT,
-        SECTION_REASON_AGGREGATE_UNAVAILABLE,
-        SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE,
-        SECTION_REASON_UNITS_ABSENT,
-        SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE,
-        SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT,
-        SECTION_REASON_DIMENSION_ABSENT,
-    }
-)
+
+# Which reasons each section may state, taken from `RRA-008`'s own per-family
+# requirements rather than composed here. A governed code is not a licence to
+# use it anywhere: a growth section explaining itself with basket analysis's
+# missing transaction identifier is a contextually impossible refusal, and it
+# would be hashed into the bundle and rendered to a reader as authoritative.
+#
+#   period comparison  refuses when the prior window has no coverage
+#   concentration      refuses when the full distinct set cannot be computed
+#   growth             refuses on zero units, and on non-additive decomposition
+#   basket             refuses on an absent transaction identifier or dimension
+#
+# `aggregate_unavailable` is the exception that belongs to two families, and it
+# is not from `RRA-008`: the merged plan introduces it for the pending `RRA-004`
+# amendment, which gates concentration entirely and basket's attach rate.
+#
+# `SECTION_OVERVIEW` states no reason. It carries `RRA-004` headline figures
+# rather than an `RRA-008` family, and `RRA-004` refuses individual metrics
+# inside the package instead of an analysis section. A slice that finds the
+# overview genuinely needs a governed refusal adds it here, with its authority.
+#
+# One deliberate omission to save the next reader the deduction: growth is a
+# two-period computation, so an absent prior window looks like it should refuse
+# it. `RRA-008` does not say so -- it names only zero units and non-additivity
+# for growth -- so it is not asserted here. The growth slice adds it if the
+# implementation proves it necessary, which is a one-line change in the obvious
+# place, and is a better outcome than this table quietly claiming authority the
+# specification does not give it.
+SECTION_REASONS: dict[str, frozenset[str]] = {
+    SECTION_OVERVIEW: frozenset(),
+    SECTION_COMPARISON: frozenset({SECTION_REASON_PRIOR_WINDOW_ABSENT}),
+    SECTION_CONCENTRATION: frozenset(
+        {
+            SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE,
+            SECTION_REASON_AGGREGATE_UNAVAILABLE,
+        }
+    ),
+    SECTION_GROWTH: frozenset(
+        {
+            SECTION_REASON_UNITS_ABSENT,
+            SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE,
+        }
+    ),
+    SECTION_BASKET: frozenset(
+        {
+            SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT,
+            SECTION_REASON_DIMENSION_ABSENT,
+            SECTION_REASON_AGGREGATE_UNAVAILABLE,
+        }
+    ),
+}
+
+# Derived, never maintained alongside the table, so the two cannot disagree
+# about what a governed reason is.
+GOVERNED_SECTION_REASONS = frozenset().union(*SECTION_REASONS.values())
 
 CHART_BAR = "bar"
 CHART_GROUPED_BAR = "grouped_bar"
@@ -360,8 +404,11 @@ class Section:
     chart: ChartSpec | None
 
     def __post_init__(self) -> None:
+        # `_require_section` runs first, so everything after it may index the
+        # per-section tables by `section_id` without re-checking membership.
         _require_section(self.section_id)
-        _require_section_state(self.state, self.reason)
+        _require_section_state(self.state)
+        _require_section_reason(self.section_id, self.state, self.reason)
         _require_chart_within(self.chart, self.figure_ids)
         _require_refusal_is_bare(self.state, self.figure_ids, self.chart)
         _require_presence_is_populated(self.state, self.figure_ids)
@@ -381,31 +428,34 @@ def _require_section(section_id: str) -> None:
         raise ValueError("unknown section")
 
 
-def _require_section_state(state: str, reason: str | None) -> None:
-    # Membership first. The reason rules constrain the *valid* states, and a
-    # state outside the set satisfies all of them by never matching any -- so
+def _require_section_state(state: str) -> None:
+    # Membership, checked before any rule that constrains the valid states. A
+    # state outside the set satisfies all of those by never matching any -- so
     # `pending` with no reason would construct, and a renderer branching on
     # `state == SECTION_REFUSED` would draw it as a present section.
     if state not in GOVERNED_SECTION_STATES:
         raise ValueError("unknown section state")
-    _require_reason_matches_state(state, reason)
 
 
-def _require_reason_matches_state(state: str, reason: str | None) -> None:
-    """A refusal states a governed reason; a present section states none.
+def _require_section_reason(section_id: str, state: str, reason: str | None) -> None:
+    """A refusal states a reason its own analysis can produce; presence states none.
 
-    Checking only that a refusal's reason is not `None` would let a typo, or any
-    customer-derived string, through and into the hashed bundle. Every surface
-    renders a refusal by looking the code up in a per-language table, so an
-    ungoverned one arrives as a blank refusal in front of a reader.
+    Checked against the section rather than against the whole vocabulary. A
+    globally governed code is not a licence to use it anywhere: growth analysis
+    cannot fail for want of a transaction identifier, so a growth section
+    stating that reason is explaining itself with another family's condition,
+    and the explanation is hashed into the bundle and rendered as authoritative.
 
-    `None` is not a member of the governed set, so the membership test covers a
-    refusal that states no reason at all as well as one that invents a code.
+    `None` is a member of no section's set, so this covers a refusal that states
+    no reason at all, one that invents a code, and one that borrows a governed
+    code from another analysis -- three failures with one comparison.
     """
     if state == SECTION_PRESENT and reason is not None:
         raise ValueError("present section states a reason")
-    if state == SECTION_REFUSED and reason not in GOVERNED_SECTION_REASONS:
-        raise ValueError("refused section states no governed reason")
+    if state != SECTION_REFUSED:
+        return
+    if reason not in SECTION_REASONS[section_id]:
+        raise ValueError("section states no reason its own analysis can produce")
 
 
 def _require_chart_within(chart: ChartSpec | None, figure_ids: tuple[str, ...]) -> None:

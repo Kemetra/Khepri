@@ -18,6 +18,7 @@ from khepri.rra.bundle import (
     SECTION_GROWTH,
     SECTION_OVERVIEW,
     SECTION_PRESENT,
+    SECTION_REASONS,
     SECTION_REFUSED,
     BundleIdentity,
     ChartSpec,
@@ -270,16 +271,68 @@ def test_a_refusal_reason_may_not_carry_arbitrary_text() -> None:
         )
 
 
-def test_every_governed_reason_constructs_a_refused_section() -> None:
-    for reason in GOVERNED_SECTION_REASONS:
-        section = Section(
-            section_id=SECTION_COMPARISON,
+def test_every_governed_reason_constructs_under_its_own_section() -> None:
+    for section_id, reasons in SECTION_REASONS.items():
+        for reason in reasons:
+            section = Section(
+                section_id=section_id,
+                state=SECTION_REFUSED,
+                reason=reason,
+                figure_ids=(),
+                chart=None,
+            )
+            assert section.reason == reason
+
+
+def test_a_section_may_not_borrow_another_analysis_reason() -> None:
+    # Growth analysis cannot fail for want of a transaction identifier. A
+    # globally governed code is not a licence to use it anywhere, and this
+    # explanation would be hashed into the bundle and rendered as authoritative.
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_GROWTH,
             state=SECTION_REFUSED,
-            reason=reason,
+            reason="transaction_identifier_absent",
             figure_ids=(),
             chart=None,
         )
-        assert section.reason == reason
+
+
+def test_the_overview_states_no_governed_refusal_reason() -> None:
+    # It carries RRA-004 headline figures rather than an RRA-008 family, and
+    # RRA-004 refuses individual metrics inside the package instead.
+    assert SECTION_REASONS[SECTION_OVERVIEW] == frozenset()
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_OVERVIEW,
+            state=SECTION_REFUSED,
+            reason="units_absent",
+            figure_ids=(),
+            chart=None,
+        )
+
+
+def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
+    # Taken from RRA-008's per-family requirements, not composed here.
+    # `aggregate_unavailable` is the exception, and is not from RRA-008: the
+    # merged plan introduces it for the pending RRA-004 amendment, which gates
+    # concentration entirely and basket's attach rate.
+    assert SECTION_REASONS[SECTION_COMPARISON] == frozenset({"prior_window_absent"})
+    assert SECTION_REASONS[SECTION_CONCENTRATION] == frozenset(
+        {"distinct_set_uncomputable", "aggregate_unavailable"}
+    )
+    assert SECTION_REASONS[SECTION_GROWTH] == frozenset(
+        {"units_absent", "decomposition_not_additive"}
+    )
+    assert SECTION_REASONS[SECTION_BASKET] == frozenset(
+        {"transaction_identifier_absent", "dimension_absent", "aggregate_unavailable"}
+    )
+
+
+def test_the_governed_vocabulary_is_the_union_of_the_families() -> None:
+    # Derived rather than maintained beside the table, so the two cannot
+    # disagree about what a governed reason is.
+    assert frozenset().union(*SECTION_REASONS.values()) == GOVERNED_SECTION_REASONS
 
 
 def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
