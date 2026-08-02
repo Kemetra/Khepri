@@ -56,3 +56,8 @@ decisions:
     approved_by: AHMED-SHAABAN
     approved_at: 2026-07-31
     approval_ref: governance/approvals/APP-005.yaml
+  - id: KHEPRI-DEC-008
+    title: RRA private-beta portable runtime and target selection
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
