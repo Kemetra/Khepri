@@ -1,8 +1,10 @@
 # Khepri Constitution
 
-Version: 1.0.0
+Version: 1.1.0
 
 Ratified: 2026-07-29
+
+Amended: 2026-08-02 (KHEPRI-DEC-011)
 
 Authority: Ahmed Shaaban, Product Owner
 
@@ -14,8 +16,10 @@ dependencies, and approval evidence; explanatory documents cannot override them.
 
 ## II. Named human authority
 
-Every governed artifact has a known human owner. Only a named, active authority can approve
-an artifact. Automation validates and reports; it never grants approval.
+Every governed artifact has a known human owner. Only a named, active authority can approve an
+artifact, and only a named, active human authority can approve a change within the reserved set
+defined in Article VIII. Automation validates and reports; it grants approval only as a named
+delegate, only within a recorded delegation, and never under a human authority's identifier.
 
 ## III. Reference is not authority
 
@@ -44,6 +48,32 @@ supersession is explicit and never rewrites prior authority.
 
 Khepri defaults to collecting, retaining, exposing, and processing the least data necessary.
 New data use requires an explicit purpose, owner, boundary, retention decision, and approval.
+
+## VIII. Delegation
+
+A named, active human authority may delegate approval to a named, active non-human authority. A
+delegation is created by an explicit instruction from the human authority and recorded by the
+delegate as a delegation record stating the instruction verbatim, the date it was given, the
+session in which it was given, the scope granted, and an expiry date. A delegation record is the
+delegate's attestation of an instruction; it is not proof of one, and the authority's approval of
+this article is its acceptance of that attestation as sufficient.
+
+An approval performed under a delegation records the delegate's identifier as its approver, in the
+approval package and in every registry entry it materialises. It never records a human authority's
+identifier. Human and delegated approvals remain distinguishable by inspection.
+
+The reserved set is this constitution; the authorities registry, including a delegate's own record,
+role, and active flag; every delegation record, including its creation, extension, and renewal; and
+the acceptance of any decision that alters the reserved set. No delegation reaches the reserved set,
+and an authority that could widen its own authority is unbounded however narrowly it begins.
+
+A delegation granted without an explicit duration covers only the session in which it was given. A
+standing delegation expires no later than ninety days after it is recorded and does not renew
+itself. The human authority may revoke any delegation at any time by any means, with immediate
+effect, and a delegate may not resist, defer, or condition a revocation. Revocation does not
+invalidate transitions already recorded; it stops further ones.
+
+Validation fails closed on every condition in this article.
 
 ## Lifecycle vocabularies
 

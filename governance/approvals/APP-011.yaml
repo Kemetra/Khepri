@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-011
 title: Delegation machinery
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Accept KHEPRI-DEC-011, stating the complete replacement text of constitution
@@ -20,6 +20,11 @@ exclusions:
   - Any claim that a delegation record is cryptographic proof of an instruction
   - Any claim that FND-003 is implemented or verified rather than approved
 manifest_digest: sha256:6e9b48e435db6df23483dfd20a6af054fb92fa014e4352de43f8f3a3ad652b3e
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-02
+  approved_manifest_digest: sha256:6e9b48e435db6df23483dfd20a6af054fb92fa014e4352de43f8f3a3ad652b3e
+  evidence_ref: https://github.com/Kemetra/Khepri/pull/68#issuecomment-5159505818
 artifacts:
   - id: KHEPRI-DEC-011
     document: governance/decisions/KHEPRI-DEC-011-constitution-delegation-articles.md
