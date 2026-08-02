@@ -1,0 +1,24 @@
+schema_version: 1
+id: APP-007
+title: Governed lifecycle transitions approval
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Approve FND-002 exactly as digested, admitting a closed set of lifecycle transitions per
+  registry, requiring every authority-ending transition to cite the approval it supersedes,
+  and recording supersession in the authoritative registry rather than in prose.
+exclusions:
+  - Any product application code, product family, or product specification
+  - Any new lifecycle state; every state FND-002 names is already defined and merely unreachable
+  - Any judgement about which artifacts ought to be superseded or retired
+  - Any grant of authority to automation to approve, propose, or decide a supersession
+  - Materialization of KHEPRI-DEC-008, which requires its own package once this one is implemented
+  - Any claim that the transitions FND-002 describes have been implemented
+  - Any claim that technical review or automation is human approval
+manifest_digest: sha256:4743142ff3928e2eb69f2b2fa84be10570905b4f96decaefb07dbfad65585675
+artifacts:
+  - id: FND-002
+    document: governance/specifications/FND-002.md
+    document_sha256: sha256:6e3d5e4846f0a2f99b21a9dcefba4a4d84ddd8ae567f0670e58f11c7190a9bd9
+    from_state: draft
+    to_state: approved
