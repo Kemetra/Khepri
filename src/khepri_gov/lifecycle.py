@@ -35,6 +35,11 @@ SUCCESSOR_STATES = {
     **APPROVED_OR_LATER,
     "decisions": {"accepted", "superseded"},
 }
+AUTHORITY_END_STATES = {
+    "decisions": "superseded",
+    "families": "retired",
+    "specifications": "retired",
+}
 AUTHORITY_ENDING_FIELDS = ("superseded_by", "retirement_reason")
 REGISTRY_NAMES = ("decisions", "families", "specifications")
 
@@ -43,24 +48,29 @@ Registries = Mapping[str, list[Artifact]]
 
 
 def normalize_iso_date(value: Any) -> str | None:
-    if isinstance(value, datetime):
-        return value.isoformat()
     if isinstance(value, date):
         return value.isoformat()
-    if not isinstance(value, str) or not value:
-        return None
+    if isinstance(value, str):
+        return _parse_iso_text(value)
+    return None
+
+
+def _parse_iso_text(text: str) -> str | None:
+    parse = datetime.fromisoformat if "T" in text else date.fromisoformat
     try:
-        if "T" in value:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
-        return date.fromisoformat(value).isoformat()
+        return parse(text.replace("Z", "+00:00")).isoformat()
     except ValueError:
         return None
 
 
 def ends_authority(registry: str, to_state: str) -> bool:
-    if registry == "decisions":
-        return to_state == "superseded"
-    return registry in {"families", "specifications"} and to_state == "retired"
+    return AUTHORITY_END_STATES.get(registry) == to_state
+
+
+def _identified(registries: Registries, registry: str) -> list[Artifact]:
+    return [
+        item for item in registries.get(registry, []) if isinstance(item.get("id"), str)
+    ]
 
 
 @dataclass(frozen=True)
@@ -80,14 +90,12 @@ class LifecycleGraph:
         known = {
             item["id"]: (registry, item)
             for registry in REGISTRY_NAMES
-            for item in registries.get(registry, [])
-            if isinstance(item.get("id"), str)
+            for item in _identified(registries, registry)
         }
         states = {
             registry: {
                 item["id"]: item.get("state")
-                for item in registries.get(registry, [])
-                if isinstance(item.get("id"), str)
+                for item in _identified(registries, registry)
             }
             for registry in REGISTRY_NAMES
         }
@@ -95,26 +103,32 @@ class LifecycleGraph:
 
     def reset_package_sources(self, entries: list[object]) -> None:
         for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            artifact_id = entry.get("id")
-            known = self.known_artifacts.get(artifact_id)
-            from_state = entry.get("from_state")
-            if known is not None and isinstance(from_state, str):
-                self.states[known[0]][artifact_id] = from_state
+            if isinstance(entry, dict):
+                self._reset_source(entry)
+
+    def _reset_source(self, entry: Mapping[str, Any]) -> None:
+        artifact_id = entry.get("id")
+        known = self.known_artifacts.get(artifact_id)
+        if known is None:
+            return
+        from_state = entry.get("from_state")
+        if isinstance(from_state, str):
+            self.states[known[0]][artifact_id] = from_state
 
     def advance(self, ref: ArtifactRef, to_state: str) -> None:
         self.states[ref.registry][ref.artifact_id] = to_state
 
     def successor_errors(self, ref: ArtifactRef, successor_id: object) -> list[str]:
-        if not isinstance(successor_id, str) or not successor_id:
-            return [f"{ref.label}: superseded_by must be a non-empty artifact id"]
-        if successor_id == ref.artifact_id:
-            return [f"{ref.label}: artifact cannot supersede itself"]
+        identity_error = _successor_identity_error(ref, successor_id)
+        if identity_error is not None:
+            return [identity_error]
+        return self._successor_state_errors(ref, str(successor_id))
+
+    def _successor_state_errors(self, ref: ArtifactRef, successor_id: str) -> list[str]:
         successor = self.known_artifacts.get(successor_id)
         if successor is None:
             return [f"{ref.label}: unknown successor {successor_id!r}"]
-        successor_registry, _ = successor
+        successor_registry = successor[0]
         if successor_registry != ref.registry:
             return [
                 f"{ref.label}: successor {successor_id!r} belongs to "
@@ -134,35 +148,56 @@ class LifecycleGraph:
         entry: Mapping[str, Any],
     ) -> list[str]:
         errors: list[str] = []
-        successor_supplied = "superseded_by" in entry
-        reason_supplied = "retirement_reason" in entry
-        if successor_supplied:
+        if "superseded_by" in entry:
             errors.extend(self.successor_errors(ref, entry.get("superseded_by")))
-        reason = entry.get("retirement_reason")
-        if reason_supplied and (not isinstance(reason, str) or not reason.strip()):
-            errors.append(f"{ref.label}: retirement_reason must be a non-empty string")
-        if ref.registry == "decisions" and not successor_supplied:
-            errors.append(f"{ref.label}: {ref.artifact_id} must name superseded_by")
-        elif not successor_supplied and not reason_supplied:
-            errors.append(
-                f"{ref.label}: {ref.artifact_id} must name a successor or "
-                "retirement_reason"
-            )
+        errors.extend(_retirement_reason_errors(ref, entry))
+        errors.extend(_missing_authority_errors(ref, entry))
         return errors
+
+
+def _successor_identity_error(ref: ArtifactRef, successor_id: object) -> str | None:
+    if not isinstance(successor_id, str) or not successor_id:
+        return f"{ref.label}: superseded_by must be a non-empty artifact id"
+    if successor_id == ref.artifact_id:
+        return f"{ref.label}: artifact cannot supersede itself"
+    return None
+
+
+def _retirement_reason_errors(ref: ArtifactRef, entry: Mapping[str, Any]) -> list[str]:
+    if "retirement_reason" not in entry:
+        return []
+    reason = entry.get("retirement_reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return [f"{ref.label}: retirement_reason must be a non-empty string"]
+    return []
+
+
+def _missing_authority_errors(ref: ArtifactRef, entry: Mapping[str, Any]) -> list[str]:
+    if "superseded_by" in entry:
+        return []
+    if ref.registry == "decisions":
+        return [f"{ref.label}: {ref.artifact_id} must name superseded_by"]
+    if "retirement_reason" in entry:
+        return []
+    return [
+        f"{ref.label}: {ref.artifact_id} must name a successor or retirement_reason"
+    ]
 
 
 def decision_supersession_errors(registries: Registries) -> list[str]:
     graph = LifecycleGraph.from_registries(registries)
     errors: list[str] = []
     for index, decision in enumerate(registries.get("decisions", [])):
-        artifact_id = decision.get("id")
-        label = (
-            f"decisions:{artifact_id}"
-            if isinstance(artifact_id, str) and artifact_id
-            else f"decisions:entry-{index + 1}"
-        )
+        label = _decision_label(index, decision)
         errors.extend(_decision_linkage_errors(graph, label, decision))
     return errors
+
+
+def _decision_label(index: int, decision: Artifact) -> str:
+    artifact_id = decision.get("id")
+    if isinstance(artifact_id, str) and artifact_id:
+        return f"decisions:{artifact_id}"
+    return f"decisions:entry-{index + 1}"
 
 
 def _decision_linkage_errors(
@@ -170,20 +205,31 @@ def _decision_linkage_errors(
     label: str,
     decision: Artifact,
 ) -> list[str]:
-    state = decision.get("state")
+    if decision.get("state") != "superseded":
+        return _unsuperseded_decision_errors(label, decision)
+    return _superseded_decision_errors(graph, label, decision)
+
+
+def _unsuperseded_decision_errors(label: str, decision: Artifact) -> list[str]:
+    if "superseded_by" in decision:
+        return [f"{label}: superseded_by is only valid for a superseded decision"]
+    return []
+
+
+def _superseded_decision_errors(
+    graph: LifecycleGraph,
+    label: str,
+    decision: Artifact,
+) -> list[str]:
     successor_id = decision.get("superseded_by")
-    if state != "superseded":
-        if "superseded_by" in decision:
-            return [f"{label}: superseded_by is only valid for a superseded decision"]
-        return []
     if not isinstance(successor_id, str) or not successor_id:
         return [f"{label}: superseded decision must name superseded_by"]
     artifact_id = decision.get("id")
     if not isinstance(artifact_id, str):
         return []
     ref = ArtifactRef(label, artifact_id, "decisions")
-    errors = graph.successor_errors(ref, successor_id)
-    unavailable = (
-        f"{label}: successor {successor_id!r} must be accepted or superseded"
-    )
-    return [unavailable if "is not approved before" in error else error for error in errors]
+    unavailable = f"{label}: successor {successor_id!r} must be accepted or superseded"
+    return [
+        unavailable if "is not approved before" in error else error
+        for error in graph.successor_errors(ref, successor_id)
+    ]

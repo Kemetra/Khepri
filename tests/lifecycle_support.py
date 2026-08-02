@@ -48,16 +48,11 @@ class LifecycleRepo:
         transition: Transition,
     ) -> tuple[Path, dict[str, object]]:
         _, artifact = self.artifact(transition.artifact_id)
-        document = str(artifact["document"])
-        entry: dict[str, object] = {
-            "id": transition.artifact_id,
-            "document": document,
-            "document_sha256": document_digest(self.root / document),
-            "from_state": artifact["state"],
-            "to_state": transition.to_state,
-            "supersedes_approval_ref": artifact["approval_ref"],
+        entry = self._transition_entry(
+            artifact,
+            transition.to_state,
             **transition.extra,
-        }
+        )
         package = self._package(package_id, [entry])
         path = self.root / "governance/approvals" / f"{package_id}.yaml"
         write_yaml(path, package)
@@ -163,6 +158,21 @@ class LifecycleRepo:
         write_yaml(self._registry_path("decisions"), data)
         return successor
 
+    def _entry(
+        self,
+        artifact: dict[str, object],
+        from_state: object,
+        to_state: str,
+    ) -> dict[str, object]:
+        document = str(artifact["document"])
+        return {
+            "id": artifact["id"],
+            "document": document,
+            "document_sha256": document_digest(self.root / document),
+            "from_state": from_state,
+            "to_state": to_state,
+        }
+
     def _initial_entry(
         self,
         artifact: dict[str, object],
@@ -170,27 +180,18 @@ class LifecycleRepo:
     ) -> dict[str, object]:
         document = str(artifact["document"])
         registry = next(name for name in REGISTRIES if name in document)
-        return {
-            "id": artifact["id"],
-            "document": document,
-            "document_sha256": document_digest(self.root / document),
-            "from_state": INITIAL_STATES[registry][0],
-            "to_state": to_state,
-        }
+        return self._entry(artifact, INITIAL_STATES[registry][0], to_state)
 
     def _transition_entry(
         self,
         artifact: dict[str, object],
         to_state: str,
+        **extra: object,
     ) -> dict[str, object]:
-        document = str(artifact["document"])
         return {
-            "id": artifact["id"],
-            "document": document,
-            "document_sha256": document_digest(self.root / document),
-            "from_state": artifact["state"],
-            "to_state": to_state,
+            **self._entry(artifact, artifact["state"], to_state),
             "supersedes_approval_ref": artifact["approval_ref"],
+            **extra,
         }
 
     @staticmethod
