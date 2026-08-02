@@ -92,3 +92,11 @@ specifications:
     approved_by: AHMED-SHAABAN
     approved_at: 2026-07-29
     approval_ref: governance/approvals/APP-002.yaml
+  - id: RRA-008
+    title: Comparative and Concentration Retail Analysis
+    state: draft
+    family: RRA
+    owner: AHMED-SHAABAN
+    document: governance/specifications/RRA-008.md
+    depends_on:
+      - RRA-004
