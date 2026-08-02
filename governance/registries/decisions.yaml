@@ -66,3 +66,8 @@ decisions:
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-009-standing-authorization.md
+  - id: KHEPRI-DEC-010
+    title: Spoken delegation to a named non-human authority
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-010-spoken-delegation.md
