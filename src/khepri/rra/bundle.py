@@ -98,6 +98,41 @@ GOVERNED_NARRATIVE_STATES = frozenset(
 OUTCOME_DELIVERED = "delivered"
 OUTCOME_INCOMPLETE = "incomplete"
 
+# The figure-bearing analysis sections, in governed order. Order is data rather
+# than a renderer's choice: a renderer permitted to choose it would let the PDF
+# and the workbook disagree about what a reader sees first, and both would still
+# reconcile, because reconciliation compares strings and not sequence.
+#
+# This covers analysis sections only. The template's caveats, commentary,
+# citations and provenance sections hold no `CitedFigure`, so they are not
+# `Section`s and keep their present place on every surface.
+SECTION_OVERVIEW = "overview"
+SECTION_COMPARISON = "comparison"
+SECTION_CONCENTRATION = "concentration"
+SECTION_GROWTH = "growth"
+SECTION_BASKET = "basket"
+ORDERED_SECTIONS = (
+    SECTION_OVERVIEW,
+    SECTION_COMPARISON,
+    SECTION_CONCENTRATION,
+    SECTION_GROWTH,
+    SECTION_BASKET,
+)
+
+SECTION_PRESENT = "present"
+SECTION_REFUSED = "refused"
+GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
+
+CHART_BAR = "bar"
+CHART_GROUPED_BAR = "grouped_bar"
+CHART_LINE = "line"
+# Three kinds, deliberately. A fourth adds a branch to every dispatching
+# function in the chart module, and Code Health scores overall complexity as the
+# mean per function. Growth decomposition is conceptually a waterfall and is
+# drawn as a grouped bar; the two effects shown beside the total carry the same
+# statement.
+GOVERNED_CHART_KINDS = frozenset({CHART_BAR, CHART_GROUPED_BAR, CHART_LINE})
+
 REASON_UNKNOWN_SURFACE = "unknown_surface"
 REASON_MISSING_SURFACE = "missing_surface"
 REASON_DUPLICATE_SURFACE = "duplicate_surface"
@@ -253,6 +288,85 @@ class BundleIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class ChartSpec:
+    """What a chart plots, named in figure identifiers and nothing else.
+
+    A spec carries no geometry and no values. It says which governed figures a
+    chart is drawn from, so the chart inherits the text reconciliation those
+    figures already have instead of needing a parallel mechanism of its own.
+    """
+
+    kind: str
+    figure_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.kind not in GOVERNED_CHART_KINDS:
+            raise ValueError("unknown chart kind")
+        if not self.figure_ids:
+            raise ValueError("chart plots no figure")
+
+    def as_document(self) -> dict[str, object]:
+        return {"kind": self.kind, "figure_ids": list(self.figure_ids)}
+
+
+@dataclass(frozen=True, slots=True)
+class Section:
+    """One governed section of a report: its figures, and its chart if it has one.
+
+    A refused section carries no figures and still exists. `RRA-008` refuses the
+    affected analysis rather than the report, and a reader cannot tell "there was
+    nothing to show" from "we could not show it" unless the heading and the reason
+    are both present. Absence is never the disclosure — which is also why section
+    coverage can never be inferred from figure rows.
+    """
+
+    section_id: str
+    state: str
+    reason: str | None
+    figure_ids: tuple[str, ...]
+    chart: ChartSpec | None
+
+    def __post_init__(self) -> None:
+        _require_section(self.section_id)
+        _require_section_state(self.state, self.reason)
+        _require_chart_within(self.chart, self.figure_ids)
+
+    def as_document(self) -> dict[str, object]:
+        return {
+            "section_id": self.section_id,
+            "state": self.state,
+            "reason": self.reason,
+            "figure_ids": list(self.figure_ids),
+            "chart": None if self.chart is None else self.chart.as_document(),
+        }
+
+
+def _require_section(section_id: str) -> None:
+    if section_id not in ORDERED_SECTIONS:
+        raise ValueError("unknown section")
+
+
+def _require_section_state(state: str, reason: str | None) -> None:
+    # Membership first. The two rules below constrain the *valid* states, and a
+    # state outside the set satisfies both of them by never matching either --
+    # so `pending` with no reason would construct, and a renderer branching on
+    # `state == SECTION_REFUSED` would draw it as a present section.
+    if state not in GOVERNED_SECTION_STATES:
+        raise ValueError("unknown section state")
+    if state == SECTION_REFUSED and reason is None:
+        raise ValueError("refused section states no reason")
+    if state == SECTION_PRESENT and reason is not None:
+        raise ValueError("present section states a reason")
+
+
+def _require_chart_within(chart: ChartSpec | None, figure_ids: tuple[str, ...]) -> None:
+    if chart is None:
+        return
+    if not frozenset(chart.figure_ids) <= frozenset(figure_ids):
+        raise ValueError("chart plots a figure outside its section")
+
+
+@dataclass(frozen=True, slots=True)
 class CitedFigure:
     """One figure, already rendered for every language that will show it.
 
@@ -296,7 +410,20 @@ class ReportBundle:
     figures: tuple[CitedFigure, ...]
     caveats: tuple[str, ...]
     narrative_state: str
+    sections: tuple[Section, ...] = ()
     narrative: NarrativeDraft | None = None
+
+    @property
+    def section_ids(self) -> tuple[str, ...]:
+        """The ordered sections this bundle declares.
+
+        What a surface's own section claim is reconciled against. Deriving that
+        claim from the figures a surface stated would make a refused section
+        invisible -- it carries none -- and would let a section dropped from
+        every language reconcile, because the surfaces would agree with each
+        other while disagreeing with the report that was assembled.
+        """
+        return tuple(entry.section_id for entry in self.sections)
 
     @property
     def bundle_id(self) -> str:
@@ -326,6 +453,7 @@ class ReportBundle:
             "figures": [entry.as_document() for entry in self.figures],
             "caveats": list(self.caveats),
             "narrative_state": self.narrative_state,
+            "sections": [entry.as_document() for entry in self.sections],
             "narrative": _narrative_document(self.narrative),
             "disclosure": {
                 language: self.disclosure(language) for language in sorted(REQUIRED_LANGUAGES)
