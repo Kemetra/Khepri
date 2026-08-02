@@ -210,6 +210,28 @@ CHART_LINE = "line"
 # statement.
 GOVERNED_CHART_KINDS = frozenset({CHART_BAR, CHART_GROUPED_BAR, CHART_LINE})
 
+# Which kind each section is drawn as. One kind per section, so a globally valid
+# kind is not usable anywhere: a surface handed a bar chart where the design
+# fixes a line renders the wrong visualization faithfully and reconciles
+# perfectly, because reconciliation compares the text beside a chart and never
+# the chart.
+#
+# The authority behind these rows differs, and the difference matters here.
+# Concentration is fixed by specification: `RRA-008` requires the "cumulative
+# share curve", and a cumulative curve drawn as bars misstates a governed
+# requirement rather than merely looking wrong. The other four are design
+# decisions recorded in the merged design document -- `RRA-006` requires charts
+# rendered from the fact package and names no kinds, and `RRA-008` names only
+# the curve. A later design revision may move those four; moving concentration
+# would need `RRA-008` to change first.
+SECTION_CHART_KINDS: dict[str, str] = {
+    SECTION_OVERVIEW: CHART_BAR,
+    SECTION_COMPARISON: CHART_GROUPED_BAR,
+    SECTION_CONCENTRATION: CHART_LINE,
+    SECTION_GROWTH: CHART_GROUPED_BAR,
+    SECTION_BASKET: CHART_BAR,
+}
+
 REASON_UNKNOWN_SURFACE = "unknown_surface"
 REASON_MISSING_SURFACE = "missing_surface"
 REASON_DUPLICATE_SURFACE = "duplicate_surface"
@@ -381,6 +403,7 @@ class ChartSpec:
             raise ValueError("unknown chart kind")
         if not self.figure_ids:
             raise ValueError("chart plots no figure")
+        _require_distinct_figures(self.figure_ids, "chart")
 
     def as_document(self) -> dict[str, object]:
         return {"kind": self.kind, "figure_ids": list(self.figure_ids)}
@@ -409,7 +432,9 @@ class Section:
         _require_section(self.section_id)
         _require_section_state(self.state)
         _require_section_reason(self.section_id, self.state, self.reason)
+        _require_distinct_figures(self.figure_ids, "section")
         _require_chart_within(self.chart, self.figure_ids)
+        _require_chart_kind(self.section_id, self.chart)
         _require_refusal_is_bare(self.state, self.figure_ids, self.chart)
         _require_presence_is_populated(self.state, self.figure_ids)
 
@@ -458,11 +483,40 @@ def _require_section_reason(section_id: str, state: str, reason: str | None) -> 
         raise ValueError("section states no reason its own analysis can produce")
 
 
+def _require_distinct_figures(figure_ids: tuple[str, ...], subject: str) -> None:
+    """No figure appears twice, checked before anything compares sets.
+
+    `_require_chart_within` compares `frozenset`s, and a set comparison cannot
+    see multiplicity: a chart plotting `("F-1", "F-1")` is a subset of a section
+    holding `("F-1",)`, so it passes and serializes unchanged. A renderer then
+    iterates the tuple and draws one governed value as two marks, which states a
+    second data point that does not exist. The same duplicate in a section's own
+    figures prints the same row twice.
+    """
+    if len(set(figure_ids)) != len(figure_ids):
+        raise ValueError(f"{subject} repeats a figure")
+
+
 def _require_chart_within(chart: ChartSpec | None, figure_ids: tuple[str, ...]) -> None:
     if chart is None:
         return
     if not frozenset(chart.figure_ids) <= frozenset(figure_ids):
         raise ValueError("chart plots a figure outside its section")
+
+
+def _require_chart_kind(section_id: str, chart: ChartSpec | None) -> None:
+    """A section is drawn as its own kind, not as any governed kind.
+
+    Reconciliation compares the text beside a chart and never the chart, so a
+    section handed the wrong kind renders faithfully and reconciles perfectly
+    while showing the reader the wrong visualization. Concentration is the case
+    that matters most: `RRA-008` requires a cumulative share *curve*, and bars
+    drawn over cumulative shares misstate a governed requirement.
+    """
+    if chart is None:
+        return
+    if chart.kind != SECTION_CHART_KINDS[section_id]:
+        raise ValueError("chart kind is not the kind this section is drawn as")
 
 
 def _require_refusal_is_bare(

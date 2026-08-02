@@ -13,6 +13,7 @@ from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
     ORDERED_SECTIONS,
     SECTION_BASKET,
+    SECTION_CHART_KINDS,
     SECTION_COMPARISON,
     SECTION_CONCENTRATION,
     SECTION_GROWTH,
@@ -227,7 +228,7 @@ def test_a_refused_section_may_not_authorize_a_chart() -> None:
             state=SECTION_REFUSED,
             reason="prior_window_absent",
             figure_ids=("F-1",),
-            chart=ChartSpec(kind=CHART_BAR, figure_ids=("F-1",)),
+            chart=ChartSpec(kind=CHART_GROUPED_BAR, figure_ids=("F-1",)),
         )
 
 
@@ -358,15 +359,82 @@ def test_section_document_is_serializable_for_the_bundle_digest() -> None:
         state=SECTION_PRESENT,
         reason=None,
         figure_ids=("F-9",),
-        chart=ChartSpec(kind=CHART_GROUPED_BAR, figure_ids=("F-9",)),
+        chart=ChartSpec(kind=CHART_BAR, figure_ids=("F-9",)),
     )
     assert section.as_document() == {
         "section_id": SECTION_BASKET,
         "state": SECTION_PRESENT,
         "reason": None,
         "figure_ids": ["F-9"],
-        "chart": {"kind": CHART_GROUPED_BAR, "figure_ids": ["F-9"]},
+        "chart": {"kind": CHART_BAR, "figure_ids": ["F-9"]},
     }
+
+
+def test_a_chart_may_not_repeat_a_figure() -> None:
+    # `_require_chart_within` compares frozensets, and a set comparison cannot
+    # see multiplicity: ("F-1", "F-1") is a subset of ("F-1",). A renderer
+    # iterating the tuple would draw one governed value as two marks, stating a
+    # second data point that does not exist.
+    with pytest.raises(ValueError):
+        ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-1"))
+
+
+def test_a_section_may_not_repeat_a_figure() -> None:
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_OVERVIEW,
+            state=SECTION_PRESENT,
+            reason=None,
+            figure_ids=("F-1", "F-1"),
+            chart=None,
+        )
+
+
+def test_each_section_is_drawn_as_its_own_kind() -> None:
+    for section_id, kind in SECTION_CHART_KINDS.items():
+        section = Section(
+            section_id=section_id,
+            state=SECTION_PRESENT,
+            reason=None,
+            figure_ids=("F-1", "F-2"),
+            chart=ChartSpec(kind=kind, figure_ids=("F-1", "F-2")),
+        )
+        assert section.chart is not None
+        assert section.chart.kind == kind
+
+
+def test_a_governed_kind_is_not_usable_on_any_section() -> None:
+    # Reconciliation compares the text beside a chart and never the chart, so a
+    # section handed the wrong kind renders faithfully and reconciles perfectly
+    # while showing the reader the wrong visualization.
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_OVERVIEW,
+            state=SECTION_PRESENT,
+            reason=None,
+            figure_ids=("F-1", "F-2"),
+            chart=ChartSpec(kind=CHART_LINE, figure_ids=("F-1", "F-2")),
+        )
+
+
+def test_concentration_is_a_curve_because_rra008_says_curve() -> None:
+    # The one row of the mapping fixed by specification rather than by design:
+    # RRA-008 requires the "cumulative share curve", and bars drawn over
+    # cumulative shares misstate a governed requirement.
+    assert SECTION_CHART_KINDS[SECTION_CONCENTRATION] == CHART_LINE
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_CONCENTRATION,
+            state=SECTION_PRESENT,
+            reason=None,
+            figure_ids=("F-1", "F-2"),
+            chart=ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2")),
+        )
+
+
+def test_every_section_has_exactly_one_governed_chart_kind() -> None:
+    assert set(SECTION_CHART_KINDS) == set(ORDERED_SECTIONS)
+    assert set(SECTION_CHART_KINDS.values()) <= GOVERNED_CHART_KINDS
 
 
 def test_a_bundle_declaring_the_governed_order_is_accepted() -> None:
