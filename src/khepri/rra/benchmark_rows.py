@@ -58,10 +58,56 @@ MAX_UNITS = 20
 DISCOUNT_RATE_PERCENT = 30
 REFUND_RATE_PERCENT = 5
 
+# The shortest and longest a rendered line can be, newline included.
+#
+# Core: 54 bytes of fixed-width identifiers, dates and labels, plus 7 commas, plus units
+# at 1 to 2 digits, plus revenue at 4 to 7 characters -- 66 to 70, so 67 to 71 with the
+# newline. Extended adds 4 commas, three amounts of 4 to 7 characters each, and a
+# 32-byte address: 114 to 127, so 115 to 128.
+#
+# Both ranges are contiguous, which is what makes exact byte targeting always solvable
+# rather than a search that can fail. A drift guard in the tests asserts generated rows
+# stay inside them.
+LINE_BYTE_RANGE: dict[str, tuple[int, int]] = {
+    PROFILE_CORE: (67, 71),
+    PROFILE_EXTENDED: (115, 128),
+}
+
+# The window exact sizing may select from, which is narrower than what is possible.
+#
+# Length frequency is badly skewed, because it is driven by decimal digit counts. A core
+# line of 67 bytes needs both a single-digit unit count and a revenue under ten, and
+# occurs in about one row in eight hundred; 68 occurs in one in forty. Planning against
+# the full range therefore starves the search near the end of a document, where the
+# remaining budget has to be met exactly. Every length below occurs in at least six per
+# cent of rows, so each is findable within a bounded number of attempts.
+#
+# This is deliberately a property of the *planner*, not of the generator: rows outside
+# this window are still generated normally and are still valid. Only the exact-size path
+# declines to depend on a length it cannot reliably obtain.
+_SELECTABLE_LINE_RANGE: dict[str, tuple[int, int]] = {
+    PROFILE_CORE: (69, 71),
+    PROFILE_EXTENDED: (119, 124),
+}
+
 _UNIT_PRICE_MINOR_FLOOR = 250
 _UNIT_PRICE_MINOR_SPAN = 49_750
 _COST_SHARE_FLOOR_PERCENT = 45
 _COST_SHARE_SPAN_PERCENT = 35
+
+# Row indices reserved for length selection: above any natural row index, so a chosen
+# filler cannot coincide with a row the sequence would have produced anyway, and below
+# the point where the transaction ordinal stops fitting `TXN-%08d`.
+#
+# That ceiling is not cosmetic. The ordinal is `index // rows_per_transaction`, so an
+# index large enough to need nine digits makes every filler row exactly one byte longer
+# than any natural row -- which silently removes the very lengths the search needs, and
+# presents as an unsatisfiable budget far from its cause. The bound below holds even at
+# one row per transaction, the worst case.
+_FILLER_INDEX_BASE = 20_000_000
+_FILLER_INDEX_STRIDE = 300_007
+_MAX_LENGTH_ATTEMPTS = 256
+_MAX_TRANSACTION_ORDINAL = 100_000_000
 
 
 class RowsRefused(ValueError):
@@ -95,6 +141,96 @@ def csv_document(column_profile: str, rows: list[tuple[str, ...]]) -> bytes:
     header = ",".join(column for column, _ in columns_for(column_profile))
     lines = [header, *(",".join(row) for row in rows)]
     return ("\n".join(lines) + "\n").encode()
+
+
+def plan_exact_row_count(target_bytes: int, column_profile: str) -> int:
+    """How many rows can sum, with the header, to exactly `target_bytes`.
+
+    Because the achievable line lengths are contiguous, any budget between `n` shortest
+    lines and `n` longest lines is reachable with exactly `n` rows: lengthening one row
+    by one byte is always available until the budget is met.
+
+    The count is chosen so the *average* row sits mid-range rather than at either edge.
+    The fewest feasible rows would be the fastest to generate, and is the wrong choice:
+    it demands that almost every row come out at its maximum length, which the length
+    distribution supplies only occasionally, so the selection search starves near the
+    end. A mid-range target leaves slack in both directions at every step.
+    """
+    _require_profile(column_profile)
+    smallest, largest = _SELECTABLE_LINE_RANGE[column_profile]
+    budget = target_bytes - _header_bytes(column_profile)
+    if budget < smallest:
+        raise RowsRefused("Target is too small for a header and one row.")
+    fewest = -(-budget // largest)
+    most = budget // smallest
+    if fewest > most:
+        raise RowsRefused("No row count sums to the target exactly.")
+    balanced = round(budget / ((smallest + largest) / 2))
+    return max(fewest, min(most, balanced))
+
+
+def csv_document_of_exact_size(
+    seed: int,
+    target_bytes: int,
+    column_profile: str,
+    rows_per_transaction: int,
+) -> bytes:
+    """A CSV dataset whose stored size equals `target_bytes` exactly.
+
+    `KHEPRI-DEC-006` requires each band to contain at least one CSV dataset sitting
+    exactly on the band's upper edge. Sizes are hit by selecting each row's length as it
+    is placed, never by padding: a padded field would not be a retail value, and the
+    dataset has to remain one `RRA-003` admits.
+    """
+    _require_positive(rows_per_transaction, "rows_per_transaction")
+    row_count = plan_exact_row_count(target_bytes, column_profile)
+    plan = _ExactPlan(seed, column_profile, rows_per_transaction)
+    budget = target_bytes - _header_bytes(column_profile)
+    lines: list[str] = []
+    for position in range(row_count):
+        line = plan.choose(position, budget, row_count - position - 1)
+        lines.append(line)
+        budget -= len(line) + 1
+    header = ",".join(column for column, _ in columns_for(column_profile))
+    return ("\n".join([header, *lines]) + "\n").encode()
+
+
+def _header_bytes(column_profile: str) -> int:
+    header = ",".join(column for column, _ in columns_for(column_profile))
+    return len(header.encode()) + 1
+
+
+@dataclass(frozen=True, slots=True)
+class _ExactPlan:
+    """The fixed inputs of one exactly-sized document, so helpers stay narrow."""
+
+    seed: int
+    column_profile: str
+    rows_per_transaction: int
+
+    def line_at(self, index: int) -> str:
+        row = _row(self.seed, index, self.column_profile, self.rows_per_transaction)
+        return ",".join(row)
+
+    def choose(self, position: int, budget: int, remaining: int) -> str:
+        """A row whose length leaves a budget the remaining rows can still hit exactly."""
+        smallest, largest = _SELECTABLE_LINE_RANGE[self.column_profile]
+        for attempt in range(_MAX_LENGTH_ATTEMPTS):
+            line = self.line_at(_candidate_index(position, attempt))
+            rest = budget - (len(line) + 1)
+            if remaining * smallest <= rest <= remaining * largest:
+                return line
+        raise RowsRefused("No row length fits the remaining budget.")
+
+
+def _candidate_index(position: int, attempt: int) -> int:
+    """The natural row first, then a reserved index space that cannot collide with it."""
+    if attempt == 0:
+        return position
+    index = _FILLER_INDEX_BASE + attempt * _FILLER_INDEX_STRIDE + position
+    if index >= _MAX_TRANSACTION_ORDINAL:
+        raise RowsRefused("Document is too large for the reserved selection indices.")
+    return index
 
 
 def _row(
@@ -201,6 +337,7 @@ __all__ = [
     "DISCOUNT_RATE_PERCENT",
     "FIRST_DAY",
     "LAST_DAY",
+    "LINE_BYTE_RANGE",
     "MAX_UNITS",
     "PRODUCT_COUNT",
     "REFUND_RATE_PERCENT",
@@ -208,4 +345,6 @@ __all__ = [
     "RowsRefused",
     "build_rows",
     "csv_document",
+    "csv_document_of_exact_size",
+    "plan_exact_row_count",
 ]
