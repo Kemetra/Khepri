@@ -32,7 +32,7 @@ APPROVED_STATES = {
     "specifications": {"approved", "implemented", "verified", "retired"},
 }
 REQUIRED_FIELDS = {
-    "authorities": {"id", "name", "roles", "active", "document"},
+    "authorities": {"id", "name", "roles", "active", "document", "human"},
     "decisions": {"id", "title", "state", "owner", "document"},
     "families": {"id", "name", "state", "owner", "document", "depends_on"},
     "specifications": {
@@ -117,6 +117,8 @@ def _validate_shape(
         if registry == "authorities":
             if not isinstance(artifact.get("active"), bool):
                 errors.append(f"{label}: active must be a boolean")
+            if not isinstance(artifact.get("human"), bool):
+                errors.append(f"{label}: human must be a boolean")
             roles = artifact.get("roles")
             if not isinstance(roles, list) or not roles or not all(
                 isinstance(role, str) and role for role in roles

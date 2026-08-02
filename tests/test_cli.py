@@ -51,6 +51,7 @@ def valid_repository(root: Path) -> None:
                     "name": "Ahmed Shaaban",
                     "roles": ["product_owner"],
                     "active": True,
+                    "human": True,
                     "document": documents[0],
                 }
             ],

@@ -533,6 +533,7 @@ def test_package_owner_and_approver_must_match(tmp_path: Path) -> None:
             "name": "Other",
             "roles": ["product_owner"],
             "active": True,
+            "human": True,
             "document": authority_document,
         }
     )
