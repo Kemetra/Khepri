@@ -8,6 +8,7 @@ from khepri.rra.bundle import (
     CHART_GROUPED_BAR,
     CHART_LINE,
     GOVERNED_CHART_KINDS,
+    GOVERNED_SECTION_REASONS,
     GOVERNED_SECTION_STATES,
     NARRATIVE_OMITTED,
     ORDERED_SECTIONS,
@@ -30,7 +31,7 @@ def _present(section_id: str) -> Section:
         section_id=section_id,
         state=SECTION_PRESENT,
         reason=None,
-        figure_ids=(),
+        figure_ids=(f"F-{section_id}",),
         chart=None,
     )
 
@@ -140,7 +141,7 @@ def test_an_unknown_section_id_is_rejected() -> None:
             section_id="invented",
             state=SECTION_PRESENT,
             reason=None,
-            figure_ids=(),
+            figure_ids=("F-1",),
             chart=None,
         )
 
@@ -227,6 +228,75 @@ def test_a_refused_section_may_not_authorize_a_chart() -> None:
             figure_ids=("F-1",),
             chart=ChartSpec(kind=CHART_BAR, figure_ids=("F-1",)),
         )
+
+
+def test_a_present_section_must_present_something() -> None:
+    # The state model has two members, so a present section holding no figures
+    # is a third state wearing the first one's name: it claims the analysis
+    # succeeded, shows nothing, and carries no reason because present sections
+    # may not. An analysis that produced nothing refuses instead.
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_OVERVIEW,
+            state=SECTION_PRESENT,
+            reason=None,
+            figure_ids=(),
+            chart=None,
+        )
+
+
+def test_a_refused_section_may_not_invent_a_reason_code() -> None:
+    # Every surface renders a refusal by looking the code up in a per-language
+    # table, so an ungoverned one arrives as a blank refusal in front of a
+    # reader while the bundle stays valid.
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_COMPARISON,
+            state=SECTION_REFUSED,
+            reason="prior_window_absnet",
+            figure_ids=(),
+            chart=None,
+        )
+
+
+def test_a_refusal_reason_may_not_carry_arbitrary_text() -> None:
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_COMPARISON,
+            state=SECTION_REFUSED,
+            reason="no data for Acme Retail Ltd",
+            figure_ids=(),
+            chart=None,
+        )
+
+
+def test_every_governed_reason_constructs_a_refused_section() -> None:
+    for reason in GOVERNED_SECTION_REASONS:
+        section = Section(
+            section_id=SECTION_COMPARISON,
+            state=SECTION_REFUSED,
+            reason=reason,
+            figure_ids=(),
+            chart=None,
+        )
+        assert section.reason == reason
+
+
+def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
+    # Each code is named by the merged design or plan for a specific family.
+    # Adding one is a deliberate act in the slice that introduces it, rather
+    # than a string passed through from an analysis module.
+    assert frozenset(
+        {
+            "prior_window_absent",
+            "aggregate_unavailable",
+            "distinct_set_uncomputable",
+            "units_absent",
+            "decomposition_not_additive",
+            "transaction_identifier_absent",
+            "dimension_absent",
+        }
+    ) == GOVERNED_SECTION_REASONS
 
 
 def test_section_document_is_serializable_for_the_bundle_digest() -> None:

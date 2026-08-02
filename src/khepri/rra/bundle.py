@@ -128,6 +128,34 @@ SECTION_PRESENT = "present"
 SECTION_REFUSED = "refused"
 GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
 
+# Why a governed analysis refused, and the whole vocabulary a surface has to be
+# able to translate. Every surface renders a refused section by looking its
+# reason up in a per-language table, so a code outside this set reaches a reader
+# as a blank or untranslated refusal while the bundle stays valid -- the same
+# hazard `GOVERNED_REASONS` exists to close for bundle refusals, and the same
+# reason a reason code may never carry customer-derived text.
+#
+# Adding a code is deliberate: a family that needs a new one adds it here in the
+# slice that introduces it, rather than passing a string through.
+SECTION_REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+SECTION_REASON_AGGREGATE_UNAVAILABLE = "aggregate_unavailable"
+SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
+SECTION_REASON_UNITS_ABSENT = "units_absent"
+SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE = "decomposition_not_additive"
+SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
+SECTION_REASON_DIMENSION_ABSENT = "dimension_absent"
+GOVERNED_SECTION_REASONS = frozenset(
+    {
+        SECTION_REASON_PRIOR_WINDOW_ABSENT,
+        SECTION_REASON_AGGREGATE_UNAVAILABLE,
+        SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE,
+        SECTION_REASON_UNITS_ABSENT,
+        SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE,
+        SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT,
+        SECTION_REASON_DIMENSION_ABSENT,
+    }
+)
+
 CHART_BAR = "bar"
 CHART_GROUPED_BAR = "grouped_bar"
 CHART_LINE = "line"
@@ -336,6 +364,7 @@ class Section:
         _require_section_state(self.state, self.reason)
         _require_chart_within(self.chart, self.figure_ids)
         _require_refusal_is_bare(self.state, self.figure_ids, self.chart)
+        _require_presence_is_populated(self.state, self.figure_ids)
 
     def as_document(self) -> dict[str, object]:
         return {
@@ -353,16 +382,30 @@ def _require_section(section_id: str) -> None:
 
 
 def _require_section_state(state: str, reason: str | None) -> None:
-    # Membership first. The two rules below constrain the *valid* states, and a
-    # state outside the set satisfies both of them by never matching either --
-    # so `pending` with no reason would construct, and a renderer branching on
+    # Membership first. The reason rules constrain the *valid* states, and a
+    # state outside the set satisfies all of them by never matching any -- so
+    # `pending` with no reason would construct, and a renderer branching on
     # `state == SECTION_REFUSED` would draw it as a present section.
     if state not in GOVERNED_SECTION_STATES:
         raise ValueError("unknown section state")
-    if state == SECTION_REFUSED and reason is None:
-        raise ValueError("refused section states no reason")
+    _require_reason_matches_state(state, reason)
+
+
+def _require_reason_matches_state(state: str, reason: str | None) -> None:
+    """A refusal states a governed reason; a present section states none.
+
+    Checking only that a refusal's reason is not `None` would let a typo, or any
+    customer-derived string, through and into the hashed bundle. Every surface
+    renders a refusal by looking the code up in a per-language table, so an
+    ungoverned one arrives as a blank refusal in front of a reader.
+
+    `None` is not a member of the governed set, so the membership test covers a
+    refusal that states no reason at all as well as one that invents a code.
+    """
     if state == SECTION_PRESENT and reason is not None:
         raise ValueError("present section states a reason")
+    if state == SECTION_REFUSED and reason not in GOVERNED_SECTION_REASONS:
+        raise ValueError("refused section states no governed reason")
 
 
 def _require_chart_within(chart: ChartSpec | None, figure_ids: tuple[str, ...]) -> None:
@@ -390,6 +433,22 @@ def _require_refusal_is_bare(
         return
     if figure_ids or chart is not None:
         raise ValueError("refused section states figures or a chart")
+
+
+def _require_presence_is_populated(state: str, figure_ids: tuple[str, ...]) -> None:
+    """A present section presents something.
+
+    The state model has exactly two members, so a present section holding no
+    figures is a third state wearing the first one's name: it claims an analysis
+    succeeded while showing nothing, and carries no reason because present
+    sections may not. A reader then cannot tell it from a populated section that
+    happens to look sparse, which is the distinction the refusal path exists to
+    preserve. An analysis that produced nothing refuses.
+    """
+    if state != SECTION_PRESENT:
+        return
+    if not figure_ids:
+        raise ValueError("present section states no figure")
 
 
 @dataclass(frozen=True, slots=True)
