@@ -98,7 +98,7 @@ governance model exists to reject.
 | RRA product family | **Active** | The private-beta family boundary is authorized |
 | RRA-001 through RRA-007 | **Approved** | Invitations, intake, profiling, facts, narrative, reports, and operations are specified |
 | Product application | **In bounded slices** | Every approved specification has implementation slices, wired into the two governed runtime roles and exercised end to end on the local stack |
-| Infrastructure definition | **Defined, not deployed** | [`src/khepri/infra/`](src/khepri/infra/) defines the beta and benchmark environments as one CDK application under [KHEPRI-DEC-007](governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md); nothing is provisioned |
+| Infrastructure definition | **Defined, not deployed** | [`src/khepri/infra/`](src/khepri/infra/) defines the beta and benchmark environments as one CDK application under [KHEPRI-DEC-007](governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md); nothing is provisioned, and [KHEPRI-DEC-008](governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md) proposes freezing this path |
 | Pinned OCI image | **Built, not published** | Every relevant change builds the image and verifies it as the non-root user that runs it; publishing reports `NOT PUBLISHED` until a registry is configured |
 | Benchmark evidence | **Not certified** | [KHEPRI-DEC-006](governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md) is accepted, but no approved workload has been executed and the CI gate certifies nothing |
 | Beta launch | **Not authorized** | Client count and observation period require separate human authorization |
@@ -130,6 +130,13 @@ The authoritative state is always in
 | [KHEPRI-DEC-005](governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md) | Runtime, provider, and deployment boundary |
 | [KHEPRI-DEC-006](governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md) | The beta benchmark workload and its environment |
 | [KHEPRI-DEC-007](governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md) | Private-beta and benchmark infrastructure sizing |
+
+[KHEPRI-DEC-008](governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md) is
+**proposed**, not accepted, and is listed separately for that reason. It would supersede
+KHEPRI-DEC-005 and KHEPRI-DEC-007, replacing the provider-specific deployment path with a target
+capability contract and freezing [`src/khepri/infra/`](src/khepri/infra/) as reference. Its
+registry entry carries no approval evidence, so it grants no authority and nothing in the table
+above changes until it does.
 
 ## Repository map
 
