@@ -1,0 +1,33 @@
+schema_version: 1
+id: APP-011
+title: Delegation machinery
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-011, stating the complete replacement text of constitution
+  articles II and VIII and the authorities registry change, and approve FND-003,
+  specifying the delegation record schema, mandatory delegate attribution,
+  reserved-set enforcement, and fail-closed validation that KHEPRI-DEC-010
+  requires.
+exclusions:
+  - Any edit to governance/CONSTITUTION.md, which this package authorizes but does not perform
+  - Any edit to governance/registries/authorities.yaml or creation of the KHEPRI-AGENT document
+  - Any validator implementation, which FND-003 specifies and does not build
+  - Any delegation record, which requires a human instruction that has not been given
+  - Any approval performed under delegation, which no delegation yet permits
+  - Any grant of authority to KHEPRI-AGENT, since registration alone grants nothing
+  - Any transition or approval of KHEPRI-DEC-008
+  - Any claim that a delegation record is cryptographic proof of an instruction
+  - Any claim that FND-003 is implemented or verified rather than approved
+manifest_digest: sha256:6e9b48e435db6df23483dfd20a6af054fb92fa014e4352de43f8f3a3ad652b3e
+artifacts:
+  - id: KHEPRI-DEC-011
+    document: governance/decisions/KHEPRI-DEC-011-constitution-delegation-articles.md
+    document_sha256: sha256:e2392e3fbe98818a4b5b49c1b127a5ed2d497b6032dea136865e8615972c0e65
+    from_state: proposed
+    to_state: accepted
+  - id: FND-003
+    document: governance/specifications/FND-003.md
+    document_sha256: sha256:22aa6397adfc1154e03f8d7955ddbd28ea734ccfcfd7f20cb6eaf45143a127ab
+    from_state: draft
+    to_state: approved
