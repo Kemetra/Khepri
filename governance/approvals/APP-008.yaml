@@ -1,0 +1,24 @@
+schema_version: 1
+id: APP-008
+title: Governed lifecycle transitions implementation
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Record FND-002 as implemented after its closed lifecycle transition matrix,
+  authority-ending evidence preservation, successor linkage, and fail-closed
+  validation requirements pass the repository verification gates.
+exclusions:
+  - Any change to the approved FND-002 document or its implementation boundary
+  - Any product application code, product family, or product specification
+  - Any transition or approval of KHEPRI-DEC-008, KHEPRI-DEC-005, or KHEPRI-DEC-007
+  - Any claim that FND-002 is verified rather than implemented
+  - Any claim that automation or passing technical checks constitute human approval
+  - Any claim that the CodeScene server-side gate has passed before CI reports it
+manifest_digest: sha256:7dc5af76dd36f141d40aae211c98e456e2260276cf3c0e70faca59a3a084f45b
+artifacts:
+  - id: FND-002
+    document: governance/specifications/FND-002.md
+    document_sha256: sha256:6e3d5e4846f0a2f99b21a9dcefba4a4d84ddd8ae567f0670e58f11c7190a9bd9
+    from_state: approved
+    to_state: implemented
+    supersedes_approval_ref: governance/approvals/APP-007.yaml
