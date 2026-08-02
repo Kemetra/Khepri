@@ -1,0 +1,24 @@
+schema_version: 1
+id: APP-006
+title: Comparative and concentration retail analysis approval
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Approve RRA-008 exactly as digested, adding period comparison, concentration, growth
+  decomposition, and basket structure to the governed fact package as deterministic derived
+  facts over the RRA-004 aggregates.
+exclusions:
+  - Any change to RRA-003 profiling, RRA-004 facts, or the RRA family boundary
+  - Forecasting, customer-defined metrics, and generic non-retail analysis
+  - Cohort, retention, and repeat-purchase analysis, which the governed mapping cannot express
+  - Breakdowns crossing two dimensions simultaneously
+  - Runtime, provider, and deployment selection, which KHEPRI-DEC-008 carries separately
+  - Any claim that the four analyses have been implemented, measured, or benchmarked
+  - Any claim that technical review or automation is human approval
+manifest_digest: sha256:21e5423212912bbb3658a0304a5d7f5221b417bf3b1b3d5557f27d067d66cfd6
+artifacts:
+  - id: RRA-008
+    document: governance/specifications/RRA-008.md
+    document_sha256: sha256:ee30fd07f07f79bf7ced86598ece1151a0017b837ab7020bb7f687f4c0b77338
+    from_state: draft
+    to_state: approved
