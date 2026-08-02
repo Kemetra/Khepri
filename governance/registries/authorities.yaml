@@ -5,4 +5,12 @@ authorities:
     roles:
       - product_owner
     active: true
+    human: true
     document: governance/authorities/ahmed-shaaban.md
+  - id: KHEPRI-AGENT
+    name: Khepri governance delegate
+    roles:
+      - delegate
+    active: true
+    human: false
+    document: governance/authorities/khepri-agent.md

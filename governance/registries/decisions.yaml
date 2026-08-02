@@ -79,6 +79,9 @@ decisions:
     approval_ref: governance/approvals/APP-010.yaml
   - id: KHEPRI-DEC-011
     title: Constitution 1.1.0, delegation articles
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-011-constitution-delegation-articles.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-02
+    approval_ref: governance/approvals/APP-011.yaml
