@@ -30,116 +30,31 @@ def write_document(root: Path, relative_path: str) -> None:
     path.write_text(f"# {path.stem}\n", encoding="utf-8")
 
 
-def _write_authorities(registry: Path, document: str) -> None:
-    write_yaml(
-        registry / "authorities.yaml",
-        {
-            "schema_version": 1,
-            "authorities": [
-                {
-                    "id": "AHMED-SHAABAN",
-                    "name": "Ahmed Shaaban",
-                    "roles": ["product_owner"],
-                    "active": True,
-                    "human": True,
-                    "document": document,
-                }
-            ],
-        },
-    )
+APPROVAL_EVIDENCE = {
+    "approved_by": "AHMED-SHAABAN",
+    "approved_at": "2026-07-29",
+    "approval_ref": "https://github.com/Kemetra/Khepri/pull/1",
+}
 
 
-def _write_decisions(registry: Path, document: str) -> None:
-    write_yaml(
-        registry / "decisions.yaml",
-        {
-            "schema_version": 1,
-            "decisions": [
-                {
-                    "id": "KHEPRI-DEC-001",
-                    "title": "Successor policy",
-                    "state": "accepted",
-                    "owner": "AHMED-SHAABAN",
-                    "document": document,
-                    "approved_by": "AHMED-SHAABAN",
-                    "approved_at": "2026-07-29",
-                    "approval_ref": "https://github.com/Kemetra/Khepri/pull/1",
-                }
-            ],
-        },
-    )
+def _write_registry(registry: Path, name: str, payload: dict[str, object]) -> None:
+    write_yaml(registry / f"{name}.yaml", {"schema_version": 1, **payload})
 
 
-def _write_families(registry: Path, document: str) -> None:
-    write_yaml(
-        registry / "families.yaml",
-        {
-            "schema_version": 1,
-            "families": [
-                {
-                    "id": "FND",
-                    "name": "Platform Foundation",
-                    "state": "active",
-                    "owner": "AHMED-SHAABAN",
-                    "document": document,
-                    "depends_on": [],
-                    "approved_by": "AHMED-SHAABAN",
-                    "approved_at": "2026-07-29",
-                    "approval_ref": "https://github.com/Kemetra/Khepri/pull/1",
-                }
-            ],
-        },
-    )
-
-
-def _write_specifications(registry: Path, document: str) -> None:
-    write_yaml(
-        registry / "specifications.yaml",
-        {
-            "schema_version": 1,
-            "specifications": [
-                {
-                    "id": "FND-001",
-                    "title": "Governance Kernel and Repository Controls",
-                    "state": "approved",
-                    "family": "FND",
-                    "owner": "AHMED-SHAABAN",
-                    "document": document,
-                    "depends_on": [],
-                    "approved_by": "AHMED-SHAABAN",
-                    "approved_at": "2026-07-29",
-                    "approval_ref": "https://github.com/Kemetra/Khepri/pull/1",
-                }
-            ],
-        },
-    )
-
-
-def _write_reference_assessments(registry: Path) -> None:
-    write_yaml(
-        registry / "reference-assessments.yaml",
-        {
-            "schema_version": 1,
-            "source_repository": "Kemetra/Seshat-Platform",
-            "source_commit": REFERENCE_COMMIT,
-            "assessments": [
-                {
-                    "source_id": f"SESHAT-SPEC-{index:03d}",
-                    "sources": [
-                        {
-                            "path": f"specs/{index:03d}-capability/spec.md",
-                            "blob_id": f"{index:040x}",
-                        }
-                    ],
-                    "review_state": "pending",
-                    "disposition": "candidate",
-                    "rationale": "Awaiting bounded Khepri review.",
-                    "target_artifact_ids": [],
-                }
-                for index in range(1, 43)
-            ],
-        },
-    )
+def _assessment(index: int) -> dict[str, object]:
+    return {
+        "source_id": f"SESHAT-SPEC-{index:03d}",
+        "sources": [
+            {
+                "path": f"specs/{index:03d}-capability/spec.md",
+                "blob_id": f"{index:040x}",
+            }
+        ],
+        "review_state": "pending",
+        "disposition": "candidate",
+        "rationale": "Awaiting bounded Khepri review.",
+        "target_artifact_ids": [],
+    }
 
 
 def valid_repository(root: Path) -> None:
@@ -153,11 +68,48 @@ def valid_repository(root: Path) -> None:
         write_document(root, document)
 
     registry = root / "governance" / "registries"
-    _write_authorities(registry, documents[0])
-    _write_decisions(registry, documents[1])
-    _write_families(registry, documents[2])
-    _write_specifications(registry, documents[3])
-    _write_reference_assessments(registry)
+    _write_registry(registry, "authorities", {"authorities": [{
+        "id": "AHMED-SHAABAN",
+        "name": "Ahmed Shaaban",
+        "roles": ["product_owner"],
+        "active": True,
+        "human": True,
+        "document": documents[0],
+    }]})
+    _write_registry(registry, "decisions", {"decisions": [{
+        "id": "KHEPRI-DEC-001",
+        "title": "Successor policy",
+        "state": "accepted",
+        "owner": "AHMED-SHAABAN",
+        "document": documents[1],
+        **APPROVAL_EVIDENCE,
+    }]})
+    _write_registry(registry, "families", {"families": [{
+        "id": "FND",
+        "name": "Platform Foundation",
+        "state": "active",
+        "owner": "AHMED-SHAABAN",
+        "document": documents[2],
+        "depends_on": [],
+        **APPROVAL_EVIDENCE,
+    }]})
+    _write_registry(registry, "specifications", {"specifications": [{
+        "id": "FND-001",
+        "title": "Governance Kernel and Repository Controls",
+        "state": "approved",
+        "family": "FND",
+        "owner": "AHMED-SHAABAN",
+        "document": documents[3],
+        "depends_on": [],
+        **APPROVAL_EVIDENCE,
+    }]})
+    _write_registry(registry, "reference-assessments", {
+        "source_repository": "Kemetra/Seshat-Platform",
+        "source_commit": REFERENCE_COMMIT,
+        "assessments": [_assessment(index) for index in range(1, 43)],
+    })
+
+
 
 def run_cli(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
