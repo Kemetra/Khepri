@@ -17,10 +17,10 @@ exclusions:
   - Any transition or approval of KHEPRI-DEC-008
   - Any claim that accepting this decision grants automation the power to approve
   - Any claim that the drafting automation is a neutral judge of its own boundary
-manifest_digest: sha256:25663ad9d89b57966bb158e3a2da8e833219cefc4790cc9d7c943c15469dfdbd
+manifest_digest: sha256:3ea81fa3b66b3626494608d96ab4768964bbafa2dbcb5c80292dd721a265afb3
 artifacts:
   - id: KHEPRI-DEC-009
     document: governance/decisions/KHEPRI-DEC-009-standing-authorization.md
-    document_sha256: sha256:9b3db5f3449b2e5cfc06a9fb4357f5626679ae512c406e7a31c26648bb6147d7
+    document_sha256: sha256:583fab13f69b225c0741ed788221c7acf2a65f12bb18ce9bf66a709cc308a98c
     from_state: proposed
     to_state: accepted

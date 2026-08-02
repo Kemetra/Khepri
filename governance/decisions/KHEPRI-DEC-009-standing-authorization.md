@@ -2,9 +2,11 @@
 
 ## Context
 
-Eight approval packages exist. Each required the named authority to read a manifest digest and
-write a digest-bound sentence to a durable location before the transition it carries could be
-recorded. On 2026-08-02 that pattern cost a measurable delay: the implementation of `FND-002`
+Seven structured approval packages have been approved, `APP-002` through `APP-008`. Each required
+the named authority to read a manifest digest and write a digest-bound sentence to a durable
+location before the transition it carries could be recorded. `APP-001` predates the mechanism: it
+is unstructured bootstrap evidence carrying no manifest digest, permitted by the validator as the
+sole exception by name. On 2026-08-02 the pattern cost a measurable delay: the implementation of `FND-002`
 merged at 15:30 UTC, the approval sentence for `APP-008` was posted at 15:52 UTC, and the
 transition was recorded after that. Nothing failed. Work serialized on one human act whose
 content was mechanical.
@@ -45,10 +47,12 @@ repository's gates answer more reliably than a human reading a digest: `khepri-g
 `pytest`, `ruff`, and the CodeScene review inspect the artifact, whereas a human approving a
 milestone is largely trusting the same gates at one remove.
 
-One datum cuts against acting on this now, and it belongs here rather than in a footnote. Of the
-eight packages to date, exactly one — `APP-008` — carried a progress transition. The class this
-decision would pre-authorize has occurred once in the repository's history, so the friction
-measured above is a sample of one. The case for acting is prospective: ten specifications exist,
+One datum cuts against acting on this now, and it belongs here rather than in a footnote. Those
+seven packages recorded seventeen artifact transitions between them. Exactly one was a progress
+transition: `FND-002` from `approved` to `implemented`, under `APP-008`. The other sixteen were
+entry, eleven of them in `APP-002` alone. The class this decision would pre-authorize has occurred
+once in the repository's history, so the friction measured above is a sample of one, and the ratio
+is worse than the package count suggests. The case for acting is prospective: ten specifications exist,
 each admitting up to two progress transitions, against an entry cost already largely paid. If the
 roadmap stalls or shrinks, this instrument will have bought little, and rejecting this decision on
 those grounds is reasonable.
