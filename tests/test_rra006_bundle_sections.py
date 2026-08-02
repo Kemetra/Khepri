@@ -326,8 +326,64 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
         {"units_absent", "decomposition_not_additive"}
     )
     assert SECTION_REASONS[SECTION_BASKET] == frozenset(
-        {"transaction_identifier_absent", "dimension_absent", "aggregate_unavailable"}
+        {"transaction_identifier_absent"}
     )
+
+
+def test_basket_survives_the_loss_of_attach_rate_alone() -> None:
+    # RRA-008 requires a transaction identifier for *both* basket metrics but an
+    # admissible dimension for attach rate only, so losing the dimension -- or
+    # the pending membership aggregate -- kills attach rate while items per
+    # transaction survives. The section stays present and carries it.
+    section = Section(
+        section_id=SECTION_BASKET,
+        state=SECTION_PRESENT,
+        reason=None,
+        figure_ids=("F-items-per-transaction",),
+        chart=None,
+    )
+    assert section.state == SECTION_PRESENT
+
+
+def test_a_reason_that_kills_one_metric_may_not_refuse_the_whole_section() -> None:
+    # A refused section carries no figures, so admitting these as section states
+    # would suppress the figure that survived. They belong on the attach-rate
+    # result, beside the figures, not on the section.
+    for reason in ("dimension_absent", "aggregate_unavailable"):
+        with pytest.raises(ValueError):
+            Section(
+                section_id=SECTION_BASKET,
+                state=SECTION_REFUSED,
+                reason=reason,
+                figure_ids=(),
+                chart=None,
+            )
+
+
+def test_basket_refuses_wholly_only_without_a_transaction_identifier() -> None:
+    # RRA-008 requires it for both metrics, so its absence is the one basket
+    # failure that takes the whole family.
+    section = Section(
+        section_id=SECTION_BASKET,
+        state=SECTION_REFUSED,
+        reason="transaction_identifier_absent",
+        figure_ids=(),
+        chart=None,
+    )
+    assert section.reason == "transaction_identifier_absent"
+
+
+def test_concentration_still_refuses_wholly_on_the_pending_aggregate() -> None:
+    # The same code is a whole-family refusal here, because the plan gates
+    # concentration entirely on the RRA-004 amendment rather than one metric.
+    section = Section(
+        section_id=SECTION_CONCENTRATION,
+        state=SECTION_REFUSED,
+        reason="aggregate_unavailable",
+        figure_ids=(),
+        chart=None,
+    )
+    assert section.reason == "aggregate_unavailable"
 
 
 def test_the_governed_vocabulary_is_the_union_of_the_families() -> None:
@@ -348,7 +404,6 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
             "units_absent",
             "decomposition_not_additive",
             "transaction_identifier_absent",
-            "dimension_absent",
         }
     ) == GOVERNED_SECTION_REASONS
 

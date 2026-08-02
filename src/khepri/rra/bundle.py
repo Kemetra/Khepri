@@ -143,22 +143,35 @@ SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
 SECTION_REASON_UNITS_ABSENT = "units_absent"
 SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE = "decomposition_not_additive"
 SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
-SECTION_REASON_DIMENSION_ABSENT = "dimension_absent"
 
-# Which reasons each section may state, taken from `RRA-008`'s own per-family
-# requirements rather than composed here. A governed code is not a licence to
-# use it anywhere: a growth section explaining itself with basket analysis's
-# missing transaction identifier is a contextually impossible refusal, and it
-# would be hashed into the bundle and rendered to a reader as authoritative.
+# Which reasons may refuse an entire section. That is a narrower question than
+# "which reasons can this family produce", and the two come apart wherever a
+# family has more than one metric: `RRA-008` refuses "the affected result", so a
+# family losing one of its metrics keeps the section present and carrying the
+# other. A code that can only kill one metric therefore belongs on that result,
+# beside the figures, and never on the section state -- a refused section carries
+# no figures at all, so putting it here would suppress a figure that survived.
 #
-#   period comparison  refuses when the prior window has no coverage
-#   concentration      refuses when the full distinct set cannot be computed
-#   growth             refuses on zero units, and on non-additive decomposition
-#   basket             refuses on an absent transaction identifier or dimension
+# A governed code is also not a licence to use it on any section: a growth
+# section explaining itself with basket analysis's missing transaction identifier
+# is a contextually impossible refusal, and it would be hashed into the bundle
+# and rendered to a reader as authoritative.
 #
-# `aggregate_unavailable` is the exception that belongs to two families, and it
-# is not from `RRA-008`: the merged plan introduces it for the pending `RRA-004`
-# amendment, which gates concentration entirely and basket's attach rate.
+#   period comparison  no prior-window coverage for either governed mode
+#   concentration      the full distinct set cannot be computed, or its
+#                      aggregate is unavailable -- both take the whole family
+#   growth             zero units, or a non-additive decomposition
+#   basket             no mapped transaction identifier, which `RRA-008`
+#                      requires for *both* basket metrics
+#
+# Basket is the case that shows the distinction. `RRA-008` requires an admissible
+# dimension for attach rate only, and the merged plan gates attach rate alone on
+# the pending `RRA-004` amendment, so `dimension_absent` and
+# `aggregate_unavailable` each kill attach rate while items per transaction --
+# `METRIC_UNITS / METRIC_TRANSACTIONS`, both already governed facts -- survives.
+# Neither may refuse the section. `dimension_absent` is not defined in this
+# module at all: it can never be a section state, so it belongs with the fact
+# package's result-level reasons, which is where the basket slice will put it.
 #
 # `SECTION_OVERVIEW` states no reason. It carries `RRA-004` headline figures
 # rather than an `RRA-008` family, and `RRA-004` refuses individual metrics
@@ -187,13 +200,7 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE,
         }
     ),
-    SECTION_BASKET: frozenset(
-        {
-            SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT,
-            SECTION_REASON_DIMENSION_ABSENT,
-            SECTION_REASON_AGGREGATE_UNAVAILABLE,
-        }
-    ),
+    SECTION_BASKET: frozenset({SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT}),
 }
 
 # Derived, never maintained alongside the table, so the two cannot disagree
