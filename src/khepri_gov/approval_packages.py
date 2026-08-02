@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Mapping
@@ -10,23 +9,25 @@ from urllib.parse import urlparse
 
 import yaml
 
+from khepri_gov.approval_renewals import (
+    RenewalScope,
+    renewal_and_legacy_evidence_errors,
+)
 from khepri_gov.approval_transition_validation import (
     ApprovedPackageIndex,
     PackageContext,
     TransitionItem,
     TransitionValidator,
 )
+from khepri_gov.digests import content_digest, document_digest
 from khepri_gov.lifecycle import (
-    LIFECYCLE_TRANSITIONS,
     ArtifactRef,
     LifecycleGraph,
-    ends_authority,
     normalize_iso_date,
 )
 
 PACKAGE_SCHEMA_VERSION = 1
 PACKAGE_STATES = {"proposed", "approved"}
-DIGEST_PREFIX = "sha256:"
 MANIFEST_FIELDS = (
     "schema_version",
     "id",
@@ -73,14 +74,6 @@ Artifact = dict[str, Any]
 Registries = Mapping[str, list[Artifact]]
 
 
-def _sha256(content: bytes) -> str:
-    return f"{DIGEST_PREFIX}{hashlib.sha256(content).hexdigest()}"
-
-
-def document_digest(path: Path) -> str:
-    return _sha256(path.read_bytes())
-
-
 def manifest_payload(package: Mapping[str, Any]) -> dict[str, Any]:
     return {field: package.get(field) for field in MANIFEST_FIELDS}
 
@@ -92,7 +85,7 @@ def manifest_digest(package: Mapping[str, Any]) -> str:
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode("utf-8")
-    return _sha256(encoded)
+    return content_digest(encoded)
 
 
 def load_package(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -374,145 +367,6 @@ def _validate_transitions_and_materialization(
         errors.extend(validator.validate(item, approval))
 
 
-def _package_artifact(
-    package: Mapping[str, Any],
-    artifact_id: str,
-) -> Mapping[str, Any] | None:
-    artifacts = package.get("artifacts")
-    if not isinstance(artifacts, list):
-        return None
-    return next(
-        (
-            entry
-            for entry in artifacts
-            if isinstance(entry, dict) and entry.get("id") == artifact_id
-        ),
-        None,
-    )
-
-
-def _validate_renewals_and_legacy_evidence(
-    root: Path,
-    packages_by_path: Mapping[str, Mapping[str, Any]],
-    known_artifacts: Mapping[str, tuple[str, Artifact]],
-    errors: list[str],
-) -> None:
-    proposed_claims: dict[str, tuple[str, Mapping[str, Any]]] = {}
-
-    for package_ref, package in packages_by_path.items():
-        label = f"approval-packages:{package.get('id', Path(package_ref).name)}"
-        artifacts = package.get("artifacts")
-        if not isinstance(artifacts, list):
-            continue
-        for entry in artifacts:
-            if not isinstance(entry, dict):
-                continue
-            artifact_id = entry.get("id")
-            if not isinstance(artifact_id, str):
-                continue
-            known = known_artifacts.get(artifact_id)
-            if known is None:
-                continue
-            _, registry_artifact = known
-
-            if package.get("state") == "proposed":
-                if artifact_id in proposed_claims:
-                    errors.append(
-                        f"approval-packages: artifact {artifact_id} appears in "
-                        "multiple proposed packages"
-                    )
-                else:
-                    proposed_claims[artifact_id] = (package_ref, entry)
-
-            supersedes = entry.get("supersedes_approval_ref")
-            if supersedes is None:
-                continue
-            current_state = registry_artifact.get("state")
-            registry = known[0]
-            from_state = entry.get("from_state")
-            to_state = entry.get("to_state")
-            transition = (from_state, to_state)
-            invalid_renewal = from_state != to_state and transition not in (
-                LIFECYCLE_TRANSITIONS[registry]
-            )
-            stale_renewal = from_state == to_state and from_state != current_state
-            if invalid_renewal or stale_renewal:
-                errors.append(
-                    f"{label}: renewal must preserve state {current_state!r}"
-                )
-
-            prior = packages_by_path.get(supersedes) if isinstance(supersedes, str) else None
-            if (
-                prior is None
-                or prior.get("state") != "approved"
-                or _package_artifact(prior, artifact_id) is None
-            ):
-                errors.append(
-                    f"{label}: superseded approval must be an approved YAML "
-                    f"package containing {artifact_id}"
-                )
-
-            is_ending = ends_authority(
-                known[0],
-                str(entry.get("to_state")),
-            )
-            requires_prior_ref = package.get("state") == "proposed" or is_ending
-            if requires_prior_ref and registry_artifact.get("approval_ref") != supersedes:
-                errors.append(
-                    f"{label}: {artifact_id} does not currently use the "
-                    "superseded approval"
-                )
-
-    for artifact_id, (_, registry_artifact) in known_artifacts.items():
-        approval_ref = registry_artifact.get("approval_ref")
-        if not isinstance(approval_ref, str):
-            continue
-        parsed = urlparse(approval_ref)
-        if parsed.scheme in {"http", "https"}:
-            continue
-        if approval_ref.endswith(".md"):
-            if approval_ref != "governance/approvals/APP-001-bootstrap.md":
-                errors.append(
-                    "approval-packages: unstructured approval evidence is "
-                    "limited to APP-001-bootstrap.md"
-                )
-            continue
-        if not approval_ref.endswith(".yaml"):
-            continue
-
-        current_package = packages_by_path.get(approval_ref)
-        current_entry = (
-            _package_artifact(current_package, artifact_id)
-            if current_package is not None
-            else None
-        )
-        if (
-            current_package is None
-            or current_package.get("state") != "approved"
-            or current_entry is None
-        ):
-            errors.append(
-                f"approval-packages: {artifact_id} approval_ref must identify "
-                "an approved package containing the artifact"
-            )
-            continue
-
-        if artifact_id in proposed_claims:
-            continue
-        document = registry_artifact.get("document")
-        expected_digest = current_entry.get("document_sha256")
-        if (
-            isinstance(document, str)
-            and (root / document).is_file()
-            and expected_digest != document_digest(root / document)
-        ):
-            package_id = current_package.get("id", Path(approval_ref).stem)
-            errors.append(
-                f"approval-packages:{package_id}: governed document for "
-                f"{artifact_id} changed without renewal"
-            )
-
-
 def validate_approval_packages(root: Path, registries: Registries) -> list[str]:
     errors: list[str] = []
     packages: list[tuple[Path, dict[str, Any]]] = []
@@ -563,10 +417,9 @@ def validate_approval_packages(root: Path, registries: Registries) -> list[str]:
             packages_by_path,
             errors,
         )
-    _validate_renewals_and_legacy_evidence(
-        root,
-        packages_by_path,
-        known_artifacts,
-        errors,
+    errors.extend(
+        renewal_and_legacy_evidence_errors(
+            RenewalScope(root, packages_by_path, known_artifacts)
+        )
     )
     return errors
