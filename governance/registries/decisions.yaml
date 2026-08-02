@@ -61,3 +61,8 @@ decisions:
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
+  - id: KHEPRI-DEC-009
+    title: Standing authorization for specification milestone transitions
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-009-standing-authorization.md

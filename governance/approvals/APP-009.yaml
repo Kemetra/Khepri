@@ -1,0 +1,26 @@
+schema_version: 1
+id: APP-009
+title: Standing authorization decision
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-009, adopting standing authorization for specification
+  milestone transitions only, under the closed permitted and prohibited scope
+  lists, mandatory expiry, named asserting gates, and fail-closed machine
+  enforcement that the decision states.
+exclusions:
+  - Any amendment to governance/CONSTITUTION.md, which this package does not carry
+  - Any specification, schema, or validator implementing the instrument
+  - Any standing authorization instrument, which must be approved individually
+  - Any transition recorded under a standing authorization
+  - Any change to governance/registries/authorities.yaml or the named authority
+  - Any transition or approval of KHEPRI-DEC-008
+  - Any claim that accepting this decision grants automation the power to approve
+  - Any claim that the drafting automation is a neutral judge of its own boundary
+manifest_digest: sha256:25663ad9d89b57966bb158e3a2da8e833219cefc4790cc9d7c943c15469dfdbd
+artifacts:
+  - id: KHEPRI-DEC-009
+    document: governance/decisions/KHEPRI-DEC-009-standing-authorization.md
+    document_sha256: sha256:9b3db5f3449b2e5cfc06a9fb4357f5626679ae512c406e7a31c26648bb6147d7
+    from_state: proposed
+    to_state: accepted
