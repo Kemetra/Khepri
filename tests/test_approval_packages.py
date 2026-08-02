@@ -319,7 +319,7 @@ def package_artifacts(package: dict[str, object]) -> list[dict[str, object]]:
 def test_package_rejects_unsupported_decision_transition(tmp_path: Path) -> None:
     valid_repository(tmp_path)
     path, package = proposed_package(tmp_path)
-    package_artifacts(package)[0]["to_state"] = "rejected"
+    package_artifacts(package)[0]["to_state"] = "superseded"
     rewrite_package(path, package)
 
     result = run_validator(tmp_path)
@@ -327,7 +327,7 @@ def test_package_rejects_unsupported_decision_transition(tmp_path: Path) -> None
     assert_invalid(
         result,
         "approval-packages:APP-002: unsupported transition for "
-        "KHEPRI-DEC-002: proposed -> rejected",
+        "KHEPRI-DEC-002: proposed -> superseded",
     )
 
 

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import yaml
 
 from khepri_gov.approval_packages import validate_approval_packages
+from khepri_gov.lifecycle import decision_supersession_errors
 
 SCHEMA_VERSION = 1
 REGISTRY_NAMES = ("authorities", "decisions", "families", "specifications")
@@ -26,7 +27,7 @@ STATE_VOCABULARIES = {
     "specifications": {"draft", "approved", "implemented", "verified", "retired"},
 }
 APPROVED_STATES = {
-    "decisions": {"accepted"},
+    "decisions": {"accepted", "superseded"},
     "families": {"active", "retired"},
     "specifications": {"approved", "implemented", "verified", "retired"},
 }
@@ -568,6 +569,7 @@ def validate_repository(root: Path) -> list[str]:
         _validate_shape(root, name, artifacts, errors)
 
     _validate_global_ids(registries, errors)
+    errors.extend(decision_supersession_errors(registries))
     _validate_authorities(root, registries, errors)
     _validate_family_relationships(registries, errors)
     for registry in ("families", "specifications"):

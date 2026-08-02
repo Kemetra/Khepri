@@ -4,12 +4,25 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import yaml
+
+from khepri_gov.approval_transition_validation import (
+    ApprovedPackageIndex,
+    PackageContext,
+    TransitionItem,
+    TransitionValidator,
+)
+from khepri_gov.lifecycle import (
+    LIFECYCLE_TRANSITIONS,
+    ArtifactRef,
+    LifecycleGraph,
+    ends_authority,
+    normalize_iso_date,
+)
 
 PACKAGE_SCHEMA_VERSION = 1
 PACKAGE_STATES = {"proposed", "approved"}
@@ -42,26 +55,19 @@ ARTIFACT_REQUIRED_FIELDS = {
     "from_state",
     "to_state",
 }
-ARTIFACT_OPTIONAL_FIELDS = {"supersedes_approval_ref"}
+ARTIFACT_OPTIONAL_FIELDS = {
+    "retirement_reason",
+    "superseded_by",
+    "supersedes_approval_ref",
+}
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 PACKAGE_ID_PATTERN = re.compile(r"^APP-[0-9]{3}$")
-INITIAL_TRANSITIONS = {
-    "decisions": {("proposed", "accepted")},
-    "families": {("proposed", "active")},
-    "specifications": {("draft", "approved")},
-}
-APPROVED_OR_LATER = {
-    "decisions": {"accepted"},
-    "families": {"active", "retired"},
-    "specifications": {"approved", "implemented", "verified", "retired"},
-}
 PACKAGE_APPROVAL_FIELDS = {
     "approved_by",
     "approved_at",
     "approved_manifest_digest",
     "evidence_ref",
 }
-ARTIFACT_APPROVAL_FIELDS = {"approved_by", "approved_at", "approval_ref"}
 
 Artifact = dict[str, Any]
 Registries = Mapping[str, list[Artifact]]
@@ -246,21 +252,6 @@ def _validate_package_shape(
                 )
 
 
-def _normalize_iso_date(value: Any) -> str | None:
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        if "T" in value:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
-        return date.fromisoformat(value).isoformat()
-    except ValueError:
-        return None
-
-
 def _valid_evidence_ref(value: Any) -> bool:
     if not isinstance(value, str):
         return False
@@ -315,7 +306,7 @@ def _validate_approval(
     if approver != package.get("owner"):
         errors.append(f"{label}: package owner and approver must match")
 
-    if _normalize_iso_date(approval.get("approved_at")) is None:
+    if normalize_iso_date(approval.get("approved_at")) is None:
         errors.append(f"{label}: approved_at must be an ISO date or datetime")
 
     if approval.get("approved_manifest_digest") != package.get("manifest_digest"):
@@ -345,31 +336,20 @@ def _validate_transitions_and_materialization(
     if package_state not in PACKAGE_STATES or not isinstance(artifacts, list):
         return
 
-    approval: Mapping[str, Any] | None = None
-    if package_state == "approved":
-        approval = _validate_approval(label, package, known_authorities, errors)
-
-    simulated_states = {
-        registry: {
-            item.get("id"): item.get("state")
-            for item in registries.get(registry, [])
-            if isinstance(item, dict) and isinstance(item.get("id"), str)
-        }
-        for registry in ("families", "specifications")
-    }
-    for entry in artifacts:
-        if not isinstance(entry, dict):
-            continue
-        artifact_id = entry.get("id")
-        known = known_artifacts.get(artifact_id) if isinstance(artifact_id, str) else None
-        from_state = entry.get("from_state")
-        if (
-            known is not None
-            and known[0] in simulated_states
-            and isinstance(from_state, str)
-        ):
-            simulated_states[known[0]][artifact_id] = from_state
+    approval = (
+        _validate_approval(label, package, known_authorities, errors)
+        if package_state == "approved"
+        else None
+    )
+    graph = LifecycleGraph.from_registries(registries)
+    graph.reset_package_sources(artifacts)
     package_ref = path.relative_to(root.resolve()).as_posix()
+    package_context = PackageContext(label, package_state, package_ref)
+    validator = TransitionValidator(
+        graph,
+        package_context,
+        ApprovedPackageIndex(packages_by_path),
+    )
 
     for entry in artifacts:
         if not isinstance(entry, dict):
@@ -389,101 +369,9 @@ def _validate_transitions_and_materialization(
                 f"{from_state} -> {to_state}"
             )
             continue
-
-        transition = (from_state, to_state)
-        is_initial = transition in INITIAL_TRANSITIONS[registry]
-        is_renewal = (
-            from_state == to_state
-            and to_state in APPROVED_OR_LATER[registry]
-            and isinstance(entry.get("supersedes_approval_ref"), str)
-            and bool(entry.get("supersedes_approval_ref"))
-        )
-        if not is_initial and not is_renewal:
-            errors.append(
-                f"{label}: unsupported transition for {artifact_id}: "
-                f"{from_state} -> {to_state}"
-            )
-        if is_initial and "supersedes_approval_ref" in entry:
-            errors.append(
-                f"{label}: initial approval must not supersede prior evidence"
-            )
-        if (
-            package_state == "proposed"
-            and is_initial
-            and ARTIFACT_APPROVAL_FIELDS.intersection(registry_artifact)
-        ):
-            errors.append(
-                f"{label}: {artifact_id} must not contain approval fields "
-                "before initial approval"
-            )
-
-        expected_state = from_state if package_state == "proposed" else to_state
-        actual_state = registry_artifact.get("state")
-        if actual_state != expected_state:
-            if package_state == "proposed":
-                errors.append(
-                    f"{label}: {artifact_id} must remain at "
-                    f"from_state {from_state!r}"
-                )
-            else:
-                errors.append(
-                    f"{label}: {artifact_id} must be at to_state {to_state!r}"
-                )
-
-        has_approved_successor = any(
-            successor.get("state") == "approved"
-            and any(
-                isinstance(successor_entry, dict)
-                and successor_entry.get("id") == artifact_id
-                and successor_entry.get("supersedes_approval_ref") == package_ref
-                for successor_entry in successor.get("artifacts", [])
-            )
-            for successor in packages_by_path.values()
-            if isinstance(successor.get("artifacts"), list)
-        )
-        if (
-            package_state == "approved"
-            and approval is not None
-            and not has_approved_successor
-        ):
-            for field in ("approved_by", "approved_at"):
-                package_value = approval.get(field)
-                artifact_value = registry_artifact.get(field)
-                if field == "approved_at":
-                    package_value = _normalize_iso_date(package_value)
-                    artifact_value = _normalize_iso_date(artifact_value)
-                if artifact_value != package_value:
-                    errors.append(
-                        f"{label}: {artifact_id} {field} does not match package"
-                    )
-            if registry_artifact.get("approval_ref") != package_ref:
-                errors.append(
-                    f"{label}: {artifact_id} approval_ref must be {package_ref}"
-                )
-
-        if registry == "families" and to_state == "active":
-            for dependency in registry_artifact.get("depends_on", []):
-                if simulated_states["families"].get(dependency) != "active":
-                    errors.append(
-                        f"{label}: dependency {dependency!r} is not active "
-                        f"before {artifact_id}"
-                    )
-        elif registry == "specifications" and to_state == "approved":
-            family = registry_artifact.get("family")
-            if simulated_states["families"].get(family) != "active":
-                errors.append(
-                    f"{label}: family {family!r} is not active before {artifact_id}"
-                )
-            for dependency in registry_artifact.get("depends_on", []):
-                dependency_state = simulated_states["specifications"].get(dependency)
-                if dependency_state not in APPROVED_OR_LATER["specifications"]:
-                    errors.append(
-                        f"{label}: dependency {dependency!r} is not approved "
-                        f"before {artifact_id}"
-                    )
-
-        if registry in simulated_states:
-            simulated_states[registry][artifact_id] = to_state
+        ref = ArtifactRef(label, artifact_id, registry)
+        item = TransitionItem(ref, entry, registry_artifact)
+        errors.extend(validator.validate(item, approval))
 
 
 def _package_artifact(
@@ -540,10 +428,15 @@ def _validate_renewals_and_legacy_evidence(
             if supersedes is None:
                 continue
             current_state = registry_artifact.get("state")
-            if (
-                entry.get("from_state") != current_state
-                or entry.get("to_state") != current_state
-            ):
+            registry = known[0]
+            from_state = entry.get("from_state")
+            to_state = entry.get("to_state")
+            transition = (from_state, to_state)
+            invalid_renewal = from_state != to_state and transition not in (
+                LIFECYCLE_TRANSITIONS[registry]
+            )
+            stale_renewal = from_state == to_state and from_state != current_state
+            if invalid_renewal or stale_renewal:
                 errors.append(
                     f"{label}: renewal must preserve state {current_state!r}"
                 )
@@ -559,10 +452,12 @@ def _validate_renewals_and_legacy_evidence(
                     f"package containing {artifact_id}"
                 )
 
-            if (
-                package.get("state") == "proposed"
-                and registry_artifact.get("approval_ref") != supersedes
-            ):
+            is_ending = ends_authority(
+                known[0],
+                str(entry.get("to_state")),
+            )
+            requires_prior_ref = package.get("state") == "proposed" or is_ending
+            if requires_prior_ref and registry_artifact.get("approval_ref") != supersedes:
                 errors.append(
                     f"{label}: {artifact_id} does not currently use the "
                     "superseded approval"
