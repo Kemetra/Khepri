@@ -30,17 +30,7 @@ def write_document(root: Path, relative_path: str) -> None:
     path.write_text(f"# {path.stem}\n", encoding="utf-8")
 
 
-def valid_repository(root: Path) -> None:
-    documents = [
-        "governance/authorities/ahmed-shaaban.md",
-        "governance/decisions/KHEPRI-DEC-001.md",
-        "governance/families/FND.md",
-        "governance/specifications/FND-001.md",
-    ]
-    for document in documents:
-        write_document(root, document)
-
-    registry = root / "governance" / "registries"
+def _write_authorities(registry: Path, document: str) -> None:
     write_yaml(
         registry / "authorities.yaml",
         {
@@ -52,11 +42,14 @@ def valid_repository(root: Path) -> None:
                     "roles": ["product_owner"],
                     "active": True,
                     "human": True,
-                    "document": documents[0],
+                    "document": document,
                 }
             ],
         },
     )
+
+
+def _write_decisions(registry: Path, document: str) -> None:
     write_yaml(
         registry / "decisions.yaml",
         {
@@ -67,7 +60,7 @@ def valid_repository(root: Path) -> None:
                     "title": "Successor policy",
                     "state": "accepted",
                     "owner": "AHMED-SHAABAN",
-                    "document": documents[1],
+                    "document": document,
                     "approved_by": "AHMED-SHAABAN",
                     "approved_at": "2026-07-29",
                     "approval_ref": "https://github.com/Kemetra/Khepri/pull/1",
@@ -75,6 +68,9 @@ def valid_repository(root: Path) -> None:
             ],
         },
     )
+
+
+def _write_families(registry: Path, document: str) -> None:
     write_yaml(
         registry / "families.yaml",
         {
@@ -85,7 +81,7 @@ def valid_repository(root: Path) -> None:
                     "name": "Platform Foundation",
                     "state": "active",
                     "owner": "AHMED-SHAABAN",
-                    "document": documents[2],
+                    "document": document,
                     "depends_on": [],
                     "approved_by": "AHMED-SHAABAN",
                     "approved_at": "2026-07-29",
@@ -94,6 +90,9 @@ def valid_repository(root: Path) -> None:
             ],
         },
     )
+
+
+def _write_specifications(registry: Path, document: str) -> None:
     write_yaml(
         registry / "specifications.yaml",
         {
@@ -105,7 +104,7 @@ def valid_repository(root: Path) -> None:
                     "state": "approved",
                     "family": "FND",
                     "owner": "AHMED-SHAABAN",
-                    "document": documents[3],
+                    "document": document,
                     "depends_on": [],
                     "approved_by": "AHMED-SHAABAN",
                     "approved_at": "2026-07-29",
@@ -114,6 +113,9 @@ def valid_repository(root: Path) -> None:
             ],
         },
     )
+
+
+def _write_reference_assessments(registry: Path) -> None:
     write_yaml(
         registry / "reference-assessments.yaml",
         {
@@ -139,6 +141,23 @@ def valid_repository(root: Path) -> None:
         },
     )
 
+
+def valid_repository(root: Path) -> None:
+    documents = [
+        "governance/authorities/ahmed-shaaban.md",
+        "governance/decisions/KHEPRI-DEC-001.md",
+        "governance/families/FND.md",
+        "governance/specifications/FND-001.md",
+    ]
+    for document in documents:
+        write_document(root, document)
+
+    registry = root / "governance" / "registries"
+    _write_authorities(registry, documents[0])
+    _write_decisions(registry, documents[1])
+    _write_families(registry, documents[2])
+    _write_specifications(registry, documents[3])
+    _write_reference_assessments(registry)
 
 def run_cli(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
