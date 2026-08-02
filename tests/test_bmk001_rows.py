@@ -115,6 +115,27 @@ def test_discount_and_refund_appear_at_the_governed_rates() -> None:
     assert abs(refunded / len(rows) - 0.05) < 0.02
 
 
+def test_conditional_amounts_vary_rather_than_being_a_constant_share() -> None:
+    """A draw slot past the end of a shared digest yields a constant that looks like data.
+
+    Before per-slot digests, every discount and refund was exactly 1% of revenue: the gate
+    fired at the right rate, so a rate-only test passed while the amounts were degenerate.
+    """
+    rows = _rows(PROFILE_EXTENDED, 2000)
+    discount_shares = {
+        (Decimal(row[9]) * 100 / Decimal(row[7])).quantize(Decimal("1"))
+        for row in rows
+        if Decimal(row[9]) > 0
+    }
+    refund_shares = {
+        (Decimal(row[10]) * 100 / Decimal(row[7])).quantize(Decimal("1"))
+        for row in rows
+        if Decimal(row[10]) > 0
+    }
+    assert len(discount_shares) > 5
+    assert len(refund_shares) > 5
+
+
 def test_personal_data_column_uses_the_reserved_invalid_domain() -> None:
     for row in _rows(PROFILE_EXTENDED):
         assert row[11].endswith("@example.invalid")

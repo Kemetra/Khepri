@@ -27,6 +27,7 @@ never customer-derived, never personal data.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from khepri.rra.benchmark_population import (
@@ -61,8 +62,6 @@ _UNIT_PRICE_MINOR_FLOOR = 250
 _UNIT_PRICE_MINOR_SPAN = 49_750
 _COST_SHARE_FLOOR_PERCENT = 45
 _COST_SHARE_SPAN_PERCENT = 35
-_DISCOUNT_SHARE_SPAN_PERCENT = 25
-_REFUND_SHARE_SPAN_PERCENT = 100
 
 
 class RowsRefused(ValueError):
@@ -123,33 +122,38 @@ def _row(
     return core + _conditional_fields(draw, revenue_minor, index)
 
 
+@dataclass(frozen=True, slots=True)
+class _ShareRule:
+    """How often a conditional amount appears, and how large it is when it does."""
+
+    slot: int
+    gate_percent: int
+    span_percent: int
+
+
+_DISCOUNT_RULE = _ShareRule(slot=8, gate_percent=DISCOUNT_RATE_PERCENT, span_percent=25)
+_REFUND_RULE = _ShareRule(slot=9, gate_percent=REFUND_RATE_PERCENT, span_percent=100)
+
+
 def _conditional_fields(
     draw: _Draw,
     revenue_minor: int,
     index: int,
 ) -> tuple[str, ...]:
     cost_percent = _COST_SHARE_FLOOR_PERCENT + draw(7, _COST_SHARE_SPAN_PERCENT)
-    discount_minor = _share_when(
-        draw, slot=8, gate=DISCOUNT_RATE_PERCENT, amount=revenue_minor,
-        span=_DISCOUNT_SHARE_SPAN_PERCENT,
-    )
-    refund_minor = _share_when(
-        draw, slot=9, gate=REFUND_RATE_PERCENT, amount=revenue_minor,
-        span=_REFUND_SHARE_SPAN_PERCENT,
-    )
     return (
         _money(revenue_minor * cost_percent // 100),
-        _money(discount_minor),
-        _money(refund_minor),
+        _money(_share_when(draw, _DISCOUNT_RULE, revenue_minor)),
+        _money(_share_when(draw, _REFUND_RULE, revenue_minor)),
         f"shopper.{index:08d}@example.invalid",
     )
 
 
-def _share_when(draw: _Draw, *, slot: int, gate: int, amount: int, span: int) -> int:
-    """A share of `amount`, or nothing, according to a seeded draw against `gate`."""
-    if draw(slot, 100) >= gate:
+def _share_when(draw: _Draw, rule: _ShareRule, amount: int) -> int:
+    """A share of `amount`, or nothing, according to a seeded draw against the rule."""
+    if draw(rule.slot, 100) >= rule.gate_percent:
         return 0
-    return amount * (draw(slot + 4, span) + 1) // 100
+    return amount * (draw(rule.slot + 100, rule.span_percent) + 1) // 100
 
 
 def _money(minor_units: int) -> str:
@@ -158,21 +162,25 @@ def _money(minor_units: int) -> str:
 
 
 class _Draw:
-    """A bounded integer per slot, derived from the seed and the row index."""
+    """A bounded integer per slot, derived from the seed and the row index.
 
-    __slots__ = ("_digest",)
+    Each slot gets its own digest rather than a slice of a shared one. A shared digest
+    is only 32 bytes, so a slot past the end silently yields an empty slice and a
+    constant zero -- a degenerate value that looks like data and is not.
+    """
 
-    def __init__(self, digest: bytes) -> None:
-        self._digest = digest
+    __slots__ = ("_key",)
+
+    def __init__(self, key: str) -> None:
+        self._key = key
 
     def __call__(self, slot: int, bound: int) -> int:
-        start = slot * 3
-        chunk = int.from_bytes(self._digest[start : start + 3], "big")
-        return chunk % bound
+        digest = hashlib.sha256(f"{self._key}:{slot}".encode()).digest()
+        return int.from_bytes(digest[:8], "big") % bound
 
 
 def _draws(seed: int, index: int) -> _Draw:
-    return _Draw(hashlib.sha256(f"{seed}:{index}".encode()).digest())
+    return _Draw(f"{seed}:{index}")
 
 
 def _require_positive(value: int, name: str) -> None:
