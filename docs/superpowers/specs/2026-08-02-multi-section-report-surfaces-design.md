@@ -2,9 +2,20 @@
 
 Date: 2026-08-02
 
-Authority: none. This document designs an amendment to `KHEPRI-DEC-005`, which has not been
-proposed. `RRA-006` and `RRA-008` are `approved` in `governance/registries/` and both bound the work
-below, but nothing here is approval and nothing here changes a registry.
+Authority: none. This document designs two amendments — one to `KHEPRI-DEC-005` and one to
+`RRA-004` — neither of which has been proposed. `RRA-006` and `RRA-008` are `approved` in
+`governance/registries/` and both bound the work below, but nothing here is approval and nothing
+here changes a registry.
+
+**A registry/prose drift was found while checking this and is recorded rather than fixed.** Both
+`governance/specifications/RRA-004.md` and `governance/specifications/RRA-008.md` end with the line
+"This specification is draft and does not authorize product implementation," while
+`governance/registries/specifications.yaml` records both as `state: approved` with approval
+evidence (`APP-002`, `APP-006`). `AGENTS.md` settles which one governs — the registry is
+authoritative for state and approval evidence, and approval is never inferred from prose — so
+implementation is authorized and the trailing sentences are stale. `uv run khepri-gov validate`
+passes regardless, because it does not read that prose. Correcting it touches two governed
+documents and therefore needs its own approval; it is not folded into this work.
 
 ## Outcome
 
@@ -20,6 +31,8 @@ This design deliberately covers only what is new. It does not restate:
 - The semantics of the four analysis families. `RRA-008` is approved, and
   `2026-08-02-rra-comparative-analysis-design.md` designs them in full — truncation rules, refusal
   preconditions, the exact-additivity requirement, the full-distinct-set rule for concentration.
+  What neither settles is whether the fact package *carries* what those rules need; two of the four
+  families turn out to need an aggregate that does not exist, which the next section takes up.
 - The reconciliation posture. `bundle.reconcile` already refuses a surface that presents anything
   the bundle did not supply, compares figures by rendered **text** rather than value, and requires
   equal figure coverage across languages.
@@ -39,6 +52,103 @@ requirements verbatim. The derived facts the new sections carry are authorized b
 An amendment was drafted for this and then removed. It would have placed a human approval gate on
 the critical path in exchange for permission the specification already grants, and manufacturing
 approval work is its own kind of governance failure.
+
+## Two of the four families cannot be derived from the fact package as it stands
+
+This is the largest finding in this design, and it is a governance finding rather than a coding one.
+`RRA-008` states requirements the current `RRA-004` package cannot supply, and `RRA-008` excludes
+itself from fixing that.
+
+### Concentration has no full set to rank
+
+`RRA-008` requires concentration "over the full admissible distinct-value set, never over the
+truncated display buckets," including the cumulative share curve and the top-decile and top-quartile
+shares. The only dimension aggregate the package carries is `Comparison`, and `build_comparison`
+keeps `MAX_COMPARISON_BUCKETS = 20` ranked buckets plus one aggregated `other`. `distinct_values` and
+`truncated_values` are **counts**; the omitted values and their revenues are gone by construction.
+
+A cumulative curve over 57 values, or the share held by their top decile, is therefore not
+computable from `Comparison` — not "harder to compute", not computable. Ranking the 20 surviving
+buckets and labelling the result a full-set statistic would publish a display artifact as a governed
+figure, which is the precise failure `RRA-008`'s wording exists to forbid.
+
+### Attach rate has no transaction membership
+
+`RRA-008` requires attach rate as "the share of transactions containing a given admissible dimension
+value," and requires that row count never substitute for transaction count. `FactPackage` carries
+totals, series, and dimension comparisons. It carries no transaction identifiers and no
+transaction-to-dimension membership, and `Bucket` records `rows`, not distinct transactions. The
+number of distinct transactions containing a given product is unrecoverable from these aggregates —
+a product appearing in 40 rows may sit in 40 transactions or in one.
+
+Items per transaction is a different matter and *is* computable today: `METRIC_UNITS` and
+`METRIC_TRANSACTIONS` are both governed facts in the package, and their quotient is the governed
+measure. So the basket family splits — one metric available now, one gated.
+
+### Why `RRA-008` cannot authorize the fix
+
+The natural remedy is to have fact-package construction retain the full-set concentration aggregate
+and the per-value transaction counts, where every value is still in hand. `RRA-008` forecloses that
+under its own authority. Its exclusions name "any change to the profiling, admissibility, or
+fact-package specifications this one builds on," and `RRA-004`'s stable contract states that
+`FactPackage` "is immutable after publication and is the only numerical source" for every surface.
+Adding a required aggregate is a change to the `RRA-004` specification.
+
+So the fix is an `RRA-004` amendment, approved by the named active authority, and it is the **second
+approval gate in this work** — independent of the `KHEPRI-DEC-005` one and on the critical path for
+two of the four families rather than for the workbook.
+
+### The aggregate the amendment must authorize
+
+Two additions, both deliberately label-free where they can be, and both computed at construction
+where the full set is still present:
+
+```python
+@dataclass(frozen=True, slots=True)
+class ConcentrationCurve:
+    """Ranked revenue shares over the full distinct set, before truncation."""
+
+    dimension: str
+    distinct_values: int
+    ranked_values: int
+    cumulative_shares: tuple[Decimal, ...]   # ranked descending, monotonic to 1
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionMembership:
+    """Distinct transactions per displayed value, and the full-set denominator."""
+
+    dimension: str
+    total_transactions: int
+    per_bucket: tuple[int, ...]              # positionally aligned to Comparison.buckets
+```
+
+`cumulative_shares` carries no value labels at all — a curve of shares cannot leak a customer value,
+so the aggregate that must span the full untruncated set is the one that carries the least. That is
+a property worth keeping rather than an accident: the full set is exactly where redaction and label
+sanitizing would otherwise have to be re-proven.
+
+`TransactionMembership.per_bucket` is positionally aligned to the buckets the comparison already
+publishes, so attach rate is emitted only for values the surface displays, while the denominator is
+the full-set distinct transaction count. That keeps the numerator inside the already-reconciled
+display set and the denominator governed, without carrying a per-value map of the whole long tail.
+
+Adding either changes the package's document shape and therefore its digest, so `PACKAGE_VERSION`
+becomes `rra004.package.v2`. `RRA-004`'s own contract requires that — "a new input, mapping, formula,
+or correction creates a new version" — and `reconciles()` must hold for the new aggregates on the
+same terms as the existing ones.
+
+### What proceeds while that gate is pending
+
+Unblocked: the section model, period comparison, growth decomposition, items per transaction, the
+chart work, and the web and PDF surfaces. Gated on the `RRA-004` amendment: concentration entirely,
+and attach rate within basket structure. Gated on the `KHEPRI-DEC-005` amendment: native workbook
+charts only.
+
+Until the amendment records approval, concentration's section is `SECTION_REFUSED` carrying
+`aggregate_unavailable` and attach rate is refused with the same reason. That is a governed refusal
+of the kind `RRA-008` already requires, not a silent omission — and it is the honest state of the
+system, since the aggregate genuinely is not there.
 
 ## Sections
 
@@ -72,6 +182,24 @@ class Section:
 `CitedFigure` gains `section`. `StatedFigure` gains `section` — the section a surface *claims* it
 placed the figure in, which is a claim and therefore reconciled rather than trusted.
 
+### A surface states its sections, and is not asked to imply them
+
+`SurfaceLanguage` gains `sections: tuple[str, ...]` — the ordered sections that language claims it
+presented — reconciled against the ordered section ids in `bundle.sections`.
+
+Deriving that tuple from the figure rows instead was the obvious shortcut and it is wrong in two
+directions at once. A **refused** section carries no figures by definition, so it would never appear
+in a derived tuple: the required refusal heading could be absent from every surface while
+reconciliation succeeded, which defeats the "a refused family still renders" rule below. And a
+section dropped from *both* languages would still produce two matching derived tuples, so the
+cross-language comparison would pass on a report that silently lost a whole analysis. Coverage
+inferred from content can only ever detect a disagreement between surfaces, never a shared omission;
+the bundle is the thing that knows what should be there, so the claim is compared against the bundle.
+
+This adds one refusal reason, `section_not_presented`, for a surface whose section claim does not
+match the bundle's — distinct from the two cross-language reasons, which stay for the case where the
+surfaces disagree with each other rather than with the bundle.
+
 `ORDERED_SECTIONS` covers **figure-bearing analysis sections only**. The template's existing caveats,
 commentary, citations and provenance sections hold no `CitedFigure`, so they are not `Section`s and
 are unchanged by this model. They keep their present place in the navigation and on every surface.
@@ -100,19 +228,41 @@ considered and rejected: a missing section is indistinguishable from an analysis
 attempted, and the reader cannot tell "there was nothing to show" from "we could not show it."
 Absence is never the disclosure.
 
+### The comparison section carries two governed modes, not one
+
+`RRA-008` requires the current window compared to a prior window of equal length "for
+period-over-period **and** year-over-year." Both are governed results, so both are figures in the
+comparison section, and each needs its own stable identity — `_identity` already derives fact and
+citation ids from `(metric, scope, formula_version)`, so the mode belongs in `scope`, giving
+`("period_over_period",)` and `("year_over_year",)` distinct ids for the same metric name.
+
+Deriving a single unnamed current/prior pair by splitting the trend satisfies neither requirement
+fully: it produces one comparison and leaves the reader unable to tell which window it compared. The
+two modes also refuse independently — a dataset spanning eight months has period-over-period coverage
+and no year-over-year coverage at all — and `RRA-008` refuses "the affected comparison, and not the
+report," so one mode refusing must leave the other standing inside the same section.
+
 ### New refusal reasons
 
-Four join `GOVERNED_REASONS`, the existing gate that keeps a refusal record free of customer
+Five join `GOVERNED_REASONS`, the existing gate that keeps a refusal record free of customer
 content:
 
 - `unknown_section` — a surface names a section outside `ORDERED_SECTIONS`
 - `figure_misplaced` — a stated figure's section differs from the bundle's
+- `section_not_presented` — a language's section claim does not match `bundle.sections`
 - `section_coverage_differs_by_language` — the section sets differ between Arabic and English
 - `section_order_differs_by_language` — the order differs between them
 
-The third and fourth exist because per-language reconciliation is individually satisfiable. A
+The last two exist because per-language reconciliation is individually satisfiable. A
 surface that drops the concentration section from Arabic alone reconciles perfectly language by
 language, exactly as the existing `figure_coverage_differs_by_language` comment describes for rows.
+They do not subsume `section_not_presented`, which catches the omission both languages agree on.
+
+`Section` validates its own state against `{SECTION_PRESENT, SECTION_REFUSED}` before it applies the
+reason rules. Checking only the two valid state/reason *combinations* leaves an unknown state such as
+`"pending"` with no reason passing construction, and a renderer branching on `state == SECTION_REFUSED`
+then draws it as present — a section in an invented state rendering as a normal one. Membership is
+checked first so a malformed state fails closed.
 
 ## Charts
 
@@ -121,7 +271,7 @@ language, exactly as the existing `figure_coverage_differs_by_language` comment 
 | Section | Chart | Source |
 |---|---|---|
 | Overview | bar | RRA-004 headline figures |
-| Comparison | grouped bar | current window against prior |
+| Comparison | grouped bar | current window against prior, per governed mode |
 | Concentration | line | `RRA-008`: "the cumulative share curve" |
 | Growth | grouped bar | price effect, volume effect, total change |
 | Basket | bar | attach rate per dimension value |
@@ -157,6 +307,41 @@ Arabic chart could therefore plot its first category on the wrong side while eve
 reconciles, because `reconcile` compares strings. Mirroring is verified by each renderer's own
 tests, in the same division of labour the codebase already applies to PDF tagging and reading
 direction: direction is declared to the bundle and proven by the renderer.
+
+### The chart module computes geometry; the template writes the markup
+
+A chart function returning an SVG string cannot be rendered by these templates. `build_environment()`
+sets `autoescape=True` unconditionally, and `html.py` states the rule it exists to hold: "nothing
+reachable from the bundle is ever marked safe … a page with one `|safe` in it has an escaping
+convention, not an escaping guarantee." A `{{ section.chart_svg }}` holding a Python string therefore
+reaches the reader as `&lt;svg …`, and the page shows chart source as text — on the web surface and,
+through template inheritance, on the printed one.
+
+The two available exits are a `|safe` exemption and a `Markup` object, and both are the same exit:
+they move the escaping decision from the environment into whoever remembers to apply it, on the one
+path customer-derived labels travel. The chart's own axis labels are customer values.
+
+So the boundary moves instead. `charts.py` returns a **view model of computed geometry** — coordinates
+already resolved to strings, labels as ordinary text — and a Jinja macro writes the `<svg>`, `<rect>`,
+`<path>` and `<title>` elements. The tags are template source, which is trusted because it is source;
+every label passes through the same autoescaping as every other cell, which is what makes a value
+named `<script>` inert here for the same reason it is inert in a table.
+
+```python
+@dataclass(frozen=True, slots=True)
+class ChartView:
+    kind: str
+    title: str
+    description: str
+    marks: tuple[ChartMark, ...]     # x, y, width, height / path, already strings
+    labels: tuple[str, ...]
+```
+
+`render_chart` becomes `build_chart(...) -> ChartView | None`, and `None` still means undrawable. The
+macro lives beside `report.html.j2` and is included by it, so the print surface inherits it with the
+rest of the parent template and the one-template guarantee is untouched. No new escaping policy, no
+exemption, and the SVG is verifiable by asserting the *rendered page* contains `<svg` — which the
+string-returning design could never have asserted, because it never would have.
 
 ### The accessible table is never replaced
 
@@ -243,7 +428,18 @@ distinction between nothing to show and unable to show.
 Beyond the golden-dataset tests `RRA-008` already specifies:
 
 - A figure stated in the wrong section refuses.
+- A section present in `bundle.sections` and absent from a language's section claim refuses, **including
+  when it is absent from both languages** — the case a derived tuple could never catch.
+- A refused section appears in the section claim even though it carries no figures.
+- A `Section` constructed with a state outside `{SECTION_PRESENT, SECTION_REFUSED}` raises.
 - Section coverage differing by language refuses; section order differing by language refuses.
+- Period-over-period and year-over-year each emit distinct fact and citation ids, and one refusing
+  leaves the other standing in the section.
+- A rendered page contains a literal `<svg` element — asserted on the page, not on a returned string.
+- A customer value named `<script>` appears escaped in a chart label on the rendered page.
+- Concentration and attach rate refuse with `aggregate_unavailable` until the `RRA-004` amendment
+  records approval, and their sections render that reason.
+- Items per transaction is derived from `METRIC_UNITS` and `METRIC_TRANSACTIONS`, never from row count.
 - A refused section renders its governed reason on all three surfaces in both languages.
 - A section-scoped caveat rendered under the wrong section refuses.
 - A report-level caveat renders in the caveats section and a section-scoped one inside its section.
@@ -257,36 +453,51 @@ Beyond the golden-dataset tests `RRA-008` already specifies:
 
 ## Delivery
 
-**This deviates from a written intent and the deviation is deliberate.**
-`2026-08-02-rra-comparative-analysis-design.md` states that `RRA-008` implementation is "four
-independently verifiable slices, one per analysis." The instruction governing this work is a single
-combined slice covering the section model, all four analysis families, and charts on three surfaces.
+**The four analysis families stay four independently verifiable slices.** An earlier revision of this
+design combined them with the section model and the chart work into one slice and recorded the
+increased Code Health risk as the price. That was the wrong trade and it is withdrawn.
+`2026-08-02-rra-comparative-analysis-design.md` already states that `RRA-008` implementation is "four
+independently verifiable slices, one per analysis," and `AGENTS.md` requires that a slice never widen
+beyond its stated boundary. Recording a cost does not purchase permission to incur it: the Code
+Health gate requires every new file to score exactly 10.00 and permits no tracked hotspot to decline,
+so a combined slice puts six or more new files in front of that gate at once and one violation blocks
+the correct parts along with the bad one. The four-slice sequencing exists precisely to bound that,
+and the shared section, chart, and renderer work layers through separately verifiable changes.
 
-The cost of the deviation is recorded here so it is not discovered later. The repository's Code
-Health gate requires every new file to score exactly 10.00 and permits no tracked hotspot to
-decline, and `src/khepri/rra/api.py` is a tracked hotspot. A combined slice presents six or more new
-files to that gate at once, and a single violation in any of them blocks the whole merge, including
-the parts that are correct. The four-slice sequencing exists to bound that risk.
+Eight slices, each independently mergeable and independently verifiable:
 
-Ordering within the slice is fixed by dependency regardless:
+| # | Slice | Gated on |
+|---|---|---|
+| 0a | `KHEPRI-DEC-005` amendment — numeric chart cells | — |
+| 0b | `RRA-004` amendment — concentration curve and transaction membership | — |
+| 1 | Section model in `bundle.py`: types, placement and section-claim reconciliation, caveat binding | — |
+| 2 | Period comparison, both governed modes | — |
+| 3 | Concentration | 0b |
+| 4 | Growth decomposition | — |
+| 5 | Basket structure — items per transaction; attach rate refuses until 0b | partially 0b |
+| 6 | Chart view model, macro, and the web and PDF surfaces | 1 |
+| 7 | Workbook: a sheet per section, then native charts | 1, 0a |
 
-1. `KHEPRI-DEC-005` amendment proposed, and approved by the named active authority. Nothing that
-   writes a numeric workbook cell may be written before this records approval evidence. This is the
-   only approval gate in the work; every other step is authorized by `RRA-006` and `RRA-008` as they
-   already stand.
-2. Section model in `bundle.py`, with the four new refusal reasons, the section-bound caveat pair,
-   and their tests.
-3. The four analysis families, each with its golden-dataset tests.
-4. The chart module, then the three renderers.
+Both approval gates are independent of each other and neither blocks slice 1. The two amendments can
+be proposed in parallel and neither is on the critical path for the section model, comparison, or
+growth. Slices 2 and 4 depend on nothing but the fact package as it already stands.
 
-Steps 2 through 4 do not depend on step 1 and can proceed while the amendment is pending. Only the
-workbook's chart path is gated.
+Slices 3 and 5 are written to be *implementable before* gate 0b clears — each emits its governed
+refusal (`aggregate_unavailable`) and its section renders that reason, which is deliverable behaviour
+rather than a stub. When the amendment lands, each is completed by a further slice that consumes the
+new aggregate and replaces the refusal with the figures. That way a pending human approval never
+leaves a branch parked.
 
 **One collision is predictable and belongs in the pull request before it happens.** `CitedFigure`
-gains a required `section` field and the caveat type changes shape — both are shared DTOs, so any
-branch that constructs either will fail to build once this merges, and the second to merge fixes the
-fixtures. This is the same class as the `alembic` `down_revision` sibling collision the repository's
-change discipline already names.
+gains a required `section` field, `SurfaceLanguage` gains a required `sections` field, and the caveat
+type changes shape — all three are shared DTOs, so any branch that constructs one will fail to build
+once slice 1 merges, and the second to merge fixes the fixtures. This is the same class as the
+`alembic` `down_revision` sibling collision the repository's change discipline already names.
+
+`PACKAGE_VERSION` moving to `rra004.package.v2` in slice 0b is a second, larger version of the same
+thing: it changes the package document shape and therefore every stored digest derived from it. It is
+confined to that slice deliberately, so the shape change arrives on its own and is not diagnosed
+through a renderer.
 
 ## Out of scope
 
@@ -302,7 +513,11 @@ change discipline already names.
 
 ## What this design does not do
 
-It creates no amendment document, no registry entry, no approval package, and no code. The
-`KHEPRI-DEC-005` amendment does not exist until it is written and its registry entry records
-approval evidence from the named active authority. A design document is not authority, and neither
-is a merged pull request.
+It creates no amendment document, no registry entry, no approval package, and no code. Neither the
+`KHEPRI-DEC-005` amendment nor the `RRA-004` amendment exists until it is written and its registry
+entry records approval evidence from the named active authority. A design document is not authority,
+and neither is a merged pull request.
+
+It also does not correct the two governed specification documents whose closing prose contradicts
+their registry state. That drift is recorded at the top of this document and left for a change that
+carries its own approval.

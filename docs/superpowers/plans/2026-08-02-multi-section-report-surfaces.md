@@ -4,9 +4,37 @@
 
 **Goal:** Present the report bundle as an ordered set of governed sections — each with an accessible table and a chart — across web, PDF and Excel, with the four `RRA-008` analysis families supplying four of those sections.
 
-**Architecture:** A section is a grouping of `CitedFigure`s by the analysis family that produced them, carried in the bundle rather than invented by a renderer. `reconcile()` gains placement checks so a surface cannot silently move a figure or a caveat between sections. Chart geometry is computed in `Decimal` from `Bucket.value` and becomes a coordinate only at write time. The web and PDF surfaces render inline SVG through the existing single template; the workbook renders native XlsxWriter charts addressing a dedicated non-authoritative numeric worksheet.
+**Architecture:** A section is a grouping of `CitedFigure`s by the analysis family that produced them, carried in the bundle rather than invented by a renderer. `reconcile()` gains placement checks so a surface cannot silently move a figure or a caveat between sections, and each language states its ordered sections explicitly rather than having them inferred from its figure rows. Chart geometry is computed in `Decimal` from `Bucket.value`, becomes a coordinate string at build time, and is written as markup by a Jinja macro rather than returned as an SVG string. The workbook renders native XlsxWriter charts addressing a dedicated non-authoritative numeric worksheet.
 
 **Tech Stack:** Python 3.13, uv, Jinja2 (autoescaped), Playwright + pinned Chromium, XlsxWriter, pytest, ruff.
+
+## Slices
+
+Eight independently verifiable slices, each merged on its own. The four analysis families stay four
+slices, per `2026-08-02-rra-comparative-analysis-design.md` and `AGENTS.md`'s rule that a slice never
+widen beyond its stated boundary.
+
+| Slice | Tasks | Gated on |
+|---|---|---|
+| **0a** `KHEPRI-DEC-005` amendment | 1 | — |
+| **0b** `RRA-004` amendment | 2 | — |
+| **1** Section model | 3, 4, 5 | — |
+| **2** Period comparison | 6 | — |
+| **3** Concentration | 7 | 0b to complete |
+| **4** Growth decomposition | 8 | — |
+| **5** Basket structure | 9 | 0b for attach rate |
+| **6** Charts, web and PDF | 10, 11, 12 | 1 |
+| **7** Workbook | 13 | 1, 0a |
+
+**There are two approval gates, not one.** Task 1 amends `KHEPRI-DEC-005` for numeric workbook chart
+cells. Task 2 amends `RRA-004` for two aggregates that `RRA-008` requires and the fact package does
+not carry — without it, concentration and attach rate are not computable at all, not merely harder.
+The two gates are independent, neither blocks slice 1, and both can be proposed in parallel.
+
+Tasks 7 and 9 are written to be implementable **before** gate 0b clears: each emits the governed
+refusal `aggregate_unavailable` and its section renders that reason. That is deliverable behaviour,
+not a stub, and it means no branch waits on a human. Each is completed afterwards by a follow-on slice
+that consumes the new aggregate.
 
 ## Global Constraints
 
@@ -17,16 +45,22 @@
 - *Overall Code Complexity* is the **mean** CC per function, threshold 4, aim ≤ 3.5.
 - Binary floating point is never an authoritative financial fact. Use `Decimal`.
 - Every workbook cell is written through `write_string`. The only exception this plan introduces is the `chartdata` worksheet, and only after Task 1 records approval.
-- No Jinja2 autoescape exemptions. No `|safe`. No client-side JavaScript.
+- No Jinja2 autoescape exemptions. No `|safe`, and no `Markup` either — the second is the first with a
+  different spelling. SVG structure is written by template source; everything derived from data passes
+  through autoescaping. A chart helper that returns markup as a string is the design this plan rejects.
+- **One slice, one merge.** Do not carry a second slice's files in a branch because they are convenient
+  to write together. `AGENTS.md` forbids widening a slice past its stated boundary, and the Code Health
+  gate scores every new file at 10.00 with no partial credit.
 - Arabic is RTL; Arabic and English carry equal facts, caveats and citations.
 - Commit signing is broken locally; unsigned commits are sanctioned until the key is restored. Use `git commit --no-gpg-sign`. **The harness classifier blocks the agent from committing an approval attributed to itself — Ahmed runs those commits with a `!` line.**
 - Branch protection forces serial merges. `main` is protected; work on a branch.
 
 ---
 
-### Task 1: Delegation record and the DEC-005 amendment
+### Task 1 — Slice 0a: Delegation record and the DEC-005 amendment
 
-**This task is the only approval gate in the plan.** Tasks 2–11 do not depend on it. Only Task 12's chart path does.
+**One of the plan's two approval gates.** Only Task 13's native chart path depends on it. It does not
+gate the section model, any analysis family, or the web and PDF surfaces.
 
 **Files:**
 - Create: `governance/delegations/DEL-002.yaml`
@@ -36,7 +70,7 @@
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: authority for a numeric cell on a `chartdata` worksheet, cited by Task 12.
+- Produces: authority for a numeric cell on a `chartdata` worksheet, cited by Task 13.
 
 **Scope this conservatively.** The instruction is session-scoped and expires the day it was given. If Task 1 is not completed that same day, **stop and ask Ahmed for a fresh instruction** — do not extend, renew, or reinterpret `DEL-002`. A delegate reading its own instruction generously is exactly what Article VIII exists to prevent.
 
@@ -135,7 +169,89 @@ The classifier refuses to let the agent commit an approval attributed to itself,
 
 ---
 
-### Task 2: Section and ChartSpec types
+### Task 2 — Slice 0b: The RRA-004 amendment for two missing aggregates
+
+**The plan's second approval gate, and the one nobody expected.** `RRA-008` requires two things the
+fact package cannot supply, and `RRA-008` excludes itself from fixing that.
+
+**Do not start this task by writing code.** Nothing here is implementable until the amendment records
+approval evidence from the named active authority.
+
+**What is missing, and why it is not a coding problem:**
+
+1. **Concentration has no full set to rank.** `RRA-008` requires concentration "over the full
+   admissible distinct-value set, never over the truncated display buckets," plus the cumulative share
+   curve and the top-decile and top-quartile shares. `build_comparison` keeps `MAX_COMPARISON_BUCKETS
+   = 20` buckets plus one aggregated `other`; `distinct_values` and `truncated_values` are **counts**.
+   The omitted values and their revenues are gone. A curve over 57 values cannot be recovered from 21
+   buckets, and ranking the survivors while calling the result a full-set statistic publishes a display
+   artifact as a governed figure.
+2. **Attach rate has no transaction membership.** `RRA-008` requires "the share of transactions
+   containing a given admissible dimension value" and forbids substituting row count. `FactPackage`
+   carries no transaction identifiers and `Bucket` records `rows`. A product in 40 rows may sit in 40
+   transactions or in one.
+
+**Why `RRA-008` cannot authorize the remedy.** Its exclusions name "any change to the profiling,
+admissibility, or fact-package specifications this one builds on," and `RRA-004`'s stable contract
+makes `FactPackage` "immutable after publication and the only numerical source" for every surface.
+Adding a required aggregate amends `RRA-004`.
+
+**Files:**
+- Create: `governance/delegations/DEL-00N.yaml` (identifier assigned at the time; see Task 1's warning)
+- Modify: `governance/specifications/RRA-004.md`
+- Modify: `governance/registries/specifications.yaml`
+- Create: `governance/approvals/APP-01N.yaml`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: authority for `ConcentrationCurve` and `TransactionMembership` in the fact package, and for
+  `PACKAGE_VERSION = "rra004.package.v2"`. Cited by the follow-on slices that complete Tasks 7 and 9.
+
+- [ ] **Step 1: Capture a fresh instruction**
+
+Same discipline as Task 1, and for the same reason: the instruction must be re-captured verbatim at the
+time this is picked up. Do not reuse Task 1's `DEL-002` record, and do not extend one delegation to
+cover both amendments — `DEL-002`'s `scope.artifacts` names `KHEPRI-DEC-005` only, and reading it to
+cover `RRA-004` is exactly the generous self-reading Article VIII forbids.
+
+- [ ] **Step 2: Add the two aggregates to RRA-004's requirements**
+
+Add beneath the existing dimension-comparison bullet:
+
+```markdown
+- Retain, for each admissible comparison dimension, the ranked revenue share curve over the full
+  distinct-value set before display truncation, together with the distinct-value count and the count
+  ranked. The curve carries shares only and no value labels.
+- Retain, for each admissible comparison dimension, the count of distinct transactions per published
+  bucket and the full-set distinct transaction total, when a transaction identifier is mapped.
+```
+
+Both are phrased as retention rather than new computation, because that is what they are: the values
+exist during construction and are discarded at truncation.
+
+- [ ] **Step 3: Record the package version bump in the same amendment**
+
+`RRA-004`'s contract already requires it — "a new input, mapping, formula, or correction creates a new
+version." The amendment must say that the added aggregates move the package to `rra004.package.v2`, so
+the version change carries approval rather than arriving as an implementation detail.
+
+- [ ] **Step 4: Validate, digest, and write the approval package**
+
+Follow Task 1's Steps 3–6 exactly — `uv run khepri-gov validate`, `document-digest`, an approval
+package with `approved_by: KHEPRI-AGENT` and a `delegation_ref` (**never** `evidence_ref`, never a
+human identifier), then `validate && delegation-guard`.
+
+`exclusions` must name, at minimum: any change to `RRA-008`'s own exclusions; any widening beyond the
+two retained aggregates; any new mapping semantics; any customer identifier or cohort capability, which
+`RRA-008` excludes permanently; and any claim that a human authority approved the package.
+
+- [ ] **Step 5: Hand the commit to Ahmed**
+
+As Task 1 Step 7. The classifier blocks the agent from committing an approval attributed to itself.
+
+---
+
+### Task 3 — Slice 1: Section and ChartSpec types
 
 **Files:**
 - Modify: `src/khepri/rra/bundle.py`
@@ -192,6 +308,21 @@ def test_refused_section_requires_a_reason() -> None:
 def test_chart_must_plot_at_least_one_figure() -> None:
     with pytest.raises(ValueError):
         ChartSpec(kind=CHART_BAR, figure_ids=())
+
+
+def test_a_state_outside_the_governed_set_is_rejected() -> None:
+    # A state the governed set does not contain must fail construction, not be
+    # judged by the reason rules. `pending` with no reason satisfies both of
+    # those rules, and a renderer testing `state == SECTION_REFUSED` then draws
+    # an invented state as a present section.
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_OVERVIEW,
+            state="pending",
+            reason=None,
+            figure_ids=(),
+            chart=None,
+        )
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -219,6 +350,7 @@ ORDERED_SECTIONS = (
 
 SECTION_PRESENT = "present"
 SECTION_REFUSED = "refused"
+GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
 
 CHART_BAR = "bar"
 CHART_GROUPED_BAR = "grouped_bar"
@@ -261,6 +393,10 @@ def _require_section(section_id: str) -> None:
 
 
 def _require_section_state(state: str, reason: str | None) -> None:
+    # Membership first. The two rules below constrain the *valid* states, and a
+    # state outside the set satisfies both by never matching either.
+    if state not in GOVERNED_SECTION_STATES:
+        raise ValueError("unknown section state")
     if state == SECTION_REFUSED and reason is None:
         raise ValueError("refused section states no reason")
     if state == SECTION_PRESENT and reason is not None:
@@ -277,7 +413,7 @@ def _require_chart_within(chart: ChartSpec | None, figure_ids: tuple[str, ...]) 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/rra/test_bundle_sections.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (5 tests)
 
 - [ ] **Step 5: Check Code Health before committing**
 
@@ -292,17 +428,30 @@ git commit --no-gpg-sign -m "feat: add governed section and chart types to the r
 
 ---
 
-### Task 3: Bind figures to sections and reconcile placement
+### Task 4 — Slice 1: Bind figures to sections and reconcile placement
 
 **Files:**
-- Modify: `src/khepri/rra/bundle.py` (`CitedFigure`, `StatedFigure`, `reconcile`, `GOVERNED_REASONS`)
+- Modify: `src/khepri/rra/bundle.py` (`CitedFigure`, `StatedFigure`, `SurfaceLanguage`, `reconcile`, `GOVERNED_REASONS`)
 - Test: `tests/rra/test_bundle_section_reconcile.py`
 
 **Interfaces:**
-- Consumes: `Section`, `ORDERED_SECTIONS` from Task 2.
-- Produces: `CitedFigure.section: str`, `StatedFigure.section: str`, and reasons `REASON_UNKNOWN_SECTION = "unknown_section"`, `REASON_FIGURE_MISPLACED = "figure_misplaced"`, `REASON_SECTION_COVERAGE_DIFFERS = "section_coverage_differs_by_language"`, `REASON_SECTION_ORDER_DIFFERS = "section_order_differs_by_language"`, `REASON_CHART_FIGURE_NOT_STATED = "chart_figure_not_stated"`.
+- Consumes: `Section`, `ORDERED_SECTIONS` from Task 3.
+- Produces: `CitedFigure.section: str`, `StatedFigure.section: str`, `SurfaceLanguage.sections: tuple[str, ...]`, and reasons `REASON_UNKNOWN_SECTION = "unknown_section"`, `REASON_FIGURE_MISPLACED = "figure_misplaced"`, `REASON_SECTION_NOT_PRESENTED = "section_not_presented"`, `REASON_SECTION_COVERAGE_DIFFERS = "section_coverage_differs_by_language"`, `REASON_SECTION_ORDER_DIFFERS = "section_order_differs_by_language"`, `REASON_CHART_FIGURE_NOT_STATED = "chart_figure_not_stated"`.
 
-**This task changes a shared DTO.** `CitedFigure` gains a required field, so every branch constructing one will fail to build once this merges. Write that into the pull request body before it happens — it is the same collision class as the alembic `down_revision` siblings the repository's change discipline already names.
+**This task changes two shared DTOs.** `CitedFigure` gains a required `section` and `SurfaceLanguage` gains a required `sections`, so every branch constructing either will fail to build once this merges. Write that into the pull request body before it happens — it is the same collision class as the alembic `down_revision` siblings the repository's change discipline already names.
+
+**A surface states its sections; it is never asked to imply them.** The tempting shortcut is to derive
+each language's section tuple by walking `entry.stated` and collecting distinct sections in order. It
+is wrong in two directions at once:
+
+- A **refused** section carries no figures by definition, so it never appears in a derived tuple. The
+  required refusal heading could then be missing from every surface while reconciliation succeeded —
+  which silently defeats the whole "a refused family still renders" rule.
+- A section dropped from **both** languages produces two matching derived tuples, so the cross-language
+  comparison passes on a report that lost an entire analysis.
+
+Coverage inferred from content can only ever detect surfaces disagreeing with each other. The bundle is
+what knows which sections should exist, so the claim is compared against the bundle.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -336,6 +485,25 @@ def test_section_dropped_from_one_language_only_refuses() -> None:
     assert str(refusal.value) == REASON_SECTION_COVERAGE_DIFFERS
 
 
+def test_section_dropped_from_both_languages_refuses() -> None:
+    # The case a derived tuple can never catch: both languages agree, and both
+    # are wrong. Only a comparison against the bundle sees it.
+    bundle = bundle_with_sections()
+    content = surface_content(bundle, drop_section=SECTION_COMPARISON)
+    with pytest.raises(BundleRefused) as refusal:
+        reconcile(content, bundle=bundle)
+    assert str(refusal.value) == REASON_SECTION_NOT_PRESENTED
+
+
+def test_a_refused_section_is_still_claimed_though_it_carries_no_figures() -> None:
+    bundle = bundle_with_sections(refuse={SECTION_COMPARISON: "prior_window_absent"})
+    content = surface_content(bundle)
+    reconcile(content, bundle=bundle)
+    for entry in content.languages:
+        assert SECTION_COMPARISON in entry.sections
+        assert not any(stated.section == SECTION_COMPARISON for stated in entry.stated)
+
+
 def test_correct_placement_reconciles() -> None:
     bundle = bundle_with_sections()
     reconcile(surface_content(bundle), bundle=bundle)
@@ -350,7 +518,7 @@ def test_chart_plotting_a_figure_the_surface_did_not_state_refuses() -> None:
 ```
 
 `unstate` drops a figure from `stated` while leaving it in the section's `ChartSpec`. This is the
-one gap the structural subset rule in Task 2 does not close: a chart may only reference figures its
+one gap the structural subset rule in Task 3 does not close: a chart may only reference figures its
 section declared, but the *surface* could still omit one from what it says it presented, leaving a
 plotted bar with no reconciled text behind it.
 
@@ -400,41 +568,69 @@ Wire it into the existing per-language loop in `reconcile`:
 ```python
     for entry in seen.values():
         _reconcile_language(entry, bundle)
+        _reconcile_claimed_sections(entry, bundle)
         _reconcile_charts(entry, bundle)
 ```
 
-Then, in `reconcile`, alongside the existing cross-language coverage comparison, add ordered-section comparison. Keep it a separate helper so `reconcile`'s own complexity does not rise:
+Add `sections: tuple[str, ...]` to `SurfaceLanguage`, validated on construction so an invented name
+cannot reach `reconcile` at all:
 
 ```python
-def _reconcile_sections(coverage: list[SurfaceLanguage]) -> None:
-    first = _sections_of(coverage[0])
-    for other in coverage[1:]:
-        current = _sections_of(other)
-        if frozenset(current) != frozenset(first):
-            raise BundleRefused(REASON_SECTION_COVERAGE_DIFFERS)
-        if current != first:
-            raise BundleRefused(REASON_SECTION_ORDER_DIFFERS)
+@dataclass(frozen=True, slots=True)
+class SurfaceLanguage:
+    language: str
+    direction: str
+    sections: tuple[str, ...]
+    stated: tuple[StatedFigure, ...]
+    caveats: tuple[StatedCaveat, ...]
+    disclosure: str
 
-
-def _sections_of(entry: SurfaceLanguage) -> tuple[str, ...]:
-    seen: list[str] = []
-    for stated in entry.stated:
-        if stated.section not in seen:
-            seen.append(stated.section)
-    return tuple(seen)
+    def __post_init__(self) -> None:
+        for section_id in self.sections:
+            _require_section(section_id)
 ```
 
+Then, in `reconcile`, two comparisons rather than one. The first is against the bundle and catches the
+omission both languages share; the second is between languages and catches the omission they disagree
+on. Keep each a separate helper so `reconcile`'s own complexity does not rise:
+
+```python
+def _reconcile_claimed_sections(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
+    if entry.sections != bundle.section_ids:
+        # Compared against the bundle, not against the other language. A section
+        # missing from both languages leaves them agreeing with each other and
+        # disagreeing with the report that was assembled.
+        raise BundleRefused(REASON_SECTION_NOT_PRESENTED)
+
+
+def _reconcile_sections(coverage: list[SurfaceLanguage]) -> None:
+    first = coverage[0].sections
+    for other in coverage[1:]:
+        if frozenset(other.sections) != frozenset(first):
+            raise BundleRefused(REASON_SECTION_COVERAGE_DIFFERS)
+        if other.sections != first:
+            raise BundleRefused(REASON_SECTION_ORDER_DIFFERS)
+```
+
+`ReportBundle.section_ids` is a one-line property returning `tuple(s.section_id for s in self.sections)`.
+
 Order is compared as a tuple and membership as a set, so a reordering and an omission produce different reasons rather than one ambiguous refusal.
+
+Strictly, `_reconcile_claimed_sections` passing for every language makes `_reconcile_sections`
+redundant — two tuples each equal to the bundle's are equal to each other. Both are kept deliberately:
+the cross-language reasons are governed reason codes that name a real and distinct failure, and a
+future change that relaxes the bundle comparison to a subset rule would silently take the
+cross-language guarantee with it. The cost is two comparisons of a five-element tuple.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/rra/test_bundle_section_reconcile.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (6 tests)
 
-- [ ] **Step 5: Fix every construction site of CitedFigure**
+- [ ] **Step 5: Fix every construction site of CitedFigure and SurfaceLanguage**
 
 Run: `uv run pytest -m 'not local_stack and not browser' -x -q`
-Expected: PASS. Failures here are the required-field collision, not new bugs — fix each construction site to pass a section.
+Expected: PASS. Failures here are the required-field collision, not new bugs — fix each construction site to pass a section, and each `SurfaceLanguage` to state its sections. `build_content` in `html.py` is the one that matters: it must pass `bundle.section_ids`, not a tuple it derives from the cells it just built.
 
 - [ ] **Step 6: Commit**
 
@@ -445,14 +641,14 @@ git commit --no-gpg-sign -m "feat: reconcile figure placement and section parity
 
 ---
 
-### Task 4: Bind caveats to sections
+### Task 5 — Slice 1: Bind caveats to sections
 
 **Files:**
 - Modify: `src/khepri/rra/bundle.py` (`SurfaceLanguage.caveats`, `_reconcile_language`)
 - Test: `tests/rra/test_bundle_section_caveats.py`
 
 **Interfaces:**
-- Consumes: `ORDERED_SECTIONS` from Task 2.
+- Consumes: `ORDERED_SECTIONS` from Task 3.
 - Produces: `StatedCaveat(code: str, section: str | None)`. `SurfaceLanguage.caveats` becomes `tuple[StatedCaveat, ...]`; `ReportBundle.caveats` likewise.
 
 `section=None` means a report-level caveat that belongs to no single analysis. No new refusal reason is needed: the existing comparison against `bundle.caveats` now compares pairs, so a misplaced caveat fails it exactly as a missing one does.
@@ -538,9 +734,17 @@ git commit --no-gpg-sign -m "feat: bind caveats to the section they qualify"
 
 ---
 
-### Tasks 5–8: The four analysis families
+### Tasks 6–9: The four analysis families — one slice each
 
-Each family is one task with the identical five-step shape: write the golden-dataset test, watch it fail, implement, watch it pass, commit. They share no code beyond the `RRA-004` types they read, which is why they are four files rather than one — a single `analysis.py` would fail *Number of Functions in a Single Module* and mean-CC immediately.
+**These are four slices, not one.** Each merges on its own. They share no code beyond the `RRA-004`
+types they read, which is why they are four files rather than one — a single `analysis.py` would fail
+*Number of Functions in a Single Module* and mean-CC immediately. Each task has the identical five-step
+shape: write the golden-dataset test, watch it fail, implement, watch it pass, commit.
+
+Two of the four cannot be completed until Task 2's `RRA-004` amendment records approval. Both are
+written to be *implementable now anyway*, emitting the governed refusal `aggregate_unavailable`, and
+completed by a follow-on slice afterwards. `REASON_AGGREGATE_UNAVAILABLE = "aggregate_unavailable"`
+joins the refusal reasons in `facts.py`.
 
 **Shared interfaces for all four** — each module exposes exactly one entry point returning either derived facts or a refusal, so the pipeline treats them uniformly:
 
@@ -548,11 +752,11 @@ Each family is one task with the identical five-step shape: write the golden-dat
 def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult: ...
 ```
 
-`RefusedResult(metric, reason)` and `Fact` already exist in `facts.py`; no new refusal channel is needed. A `RefusedResult` becomes a `Section` with `state=SECTION_REFUSED` in Task 10's assembly.
+`RefusedResult(metric, reason)` and `Fact` already exist in `facts.py`; no new refusal channel is needed. A `RefusedResult` becomes a `Section` with `state=SECTION_REFUSED` in Task 11's assembly.
 
 ---
 
-### Task 5: Period comparison
+### Task 6 — Slice 2: Period comparison, both governed modes
 
 **Files:**
 - Create: `src/khepri/rra/analysis/__init__.py`
@@ -561,7 +765,23 @@ def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult: ...
 
 **Interfaces:**
 - Consumes: `FactPackage`, `FactSeries`, `Bucket`, `Fact`, `RefusedResult`.
-- Produces: `comparison.derive(package) -> tuple[Fact, ...] | RefusedResult`.
+- Produces: `comparison.derive(package) -> tuple[Fact, ...] | RefusedResult`, and
+  `MODE_PERIOD_OVER_PERIOD = "period_over_period"`, `MODE_YEAR_OVER_YEAR = "year_over_year"`.
+
+**`RRA-008` requires two modes and they are both governed results.** Its wording is "for
+period-over-period **and** year-over-year." Deriving one unnamed current/prior pair by splitting the
+trend satisfies neither requirement fully — it produces a single comparison and leaves the reader
+unable to tell which window it compared.
+
+The two modes refuse **independently**. A dataset spanning eight months has period-over-period
+coverage and no year-over-year coverage at all, and `RRA-008` refuses "the affected comparison, and
+not the report," so one mode refusing must leave the other standing. `derive` therefore returns a
+`RefusedResult` only when *both* modes refuse; a single-mode refusal is carried as that mode's own
+refusal alongside the other mode's facts.
+
+Each mode's facts carry distinct stable identities through `_identity`'s existing `scope` parameter —
+`scope=(MODE_PERIOD_OVER_PERIOD,)` and `scope=(MODE_YEAR_OVER_YEAR,)` — so the same metric name in two
+modes yields two fact ids and two citation ids rather than colliding.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -602,7 +822,34 @@ def test_negative_base_refuses_the_percentage() -> None:
     facts = comparison.derive(package)
     metrics = {f.metric for f in facts}
     assert "revenue_delta_percent" not in metrics
+
+
+def test_both_governed_modes_are_emitted_with_distinct_identities() -> None:
+    package = package_with_trend(months=26)
+    facts = comparison.derive(package)
+    modes = {f.mode for f in facts if f.metric == "revenue_delta_absolute"}
+    assert modes == {MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR}
+    ids = {f.fact_id for f in facts if f.metric == "revenue_delta_absolute"}
+    citations = {f.citation_id for f in facts if f.metric == "revenue_delta_absolute"}
+    assert len(ids) == 2
+    assert len(citations) == 2
+
+
+def test_year_over_year_refuses_alone_when_coverage_is_under_a_year() -> None:
+    # Eight months has a prior month and no prior year. RRA-008 refuses the
+    # affected comparison and not the report, so period-over-period survives.
+    facts = comparison.derive(package_with_trend(months=8))
+    assert not isinstance(facts, RefusedResult)
+    modes = {f.mode for f in facts if f.metric == "revenue_delta_absolute"}
+    assert modes == {MODE_PERIOD_OVER_PERIOD}
+    refusal = next(r for r in comparison.refusals(package_with_trend(months=8)))
+    assert refusal.reason == "prior_window_absent"
 ```
+
+`Fact` has no `mode` field today. Rather than adding one, the mode is recorded the way every other
+scoping dimension already is — in the metric's `scope`, which `_identity` hashes — and the test reads
+it through a small `comparison.mode_of(fact)` helper that the module exposes beside `derive`. Adding a
+field to the shared `Fact` DTO for one family's benefit is a wider change than this slice owns.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -611,7 +858,23 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'khepri.rra.analysis'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Read `package.trend()` for the revenue series, split its buckets into current and prior windows of equal length, truncating both to the shorter day count and appending `window_truncated` to the caveats of every fact derived from a truncated window. Return `RefusedResult("revenue_comparison", "prior_window_absent")` when the prior window has no buckets. Emit the absolute delta always; emit the percentage only when the base is strictly positive.
+Read `package.trend()` for the revenue series once, then derive each mode from it through one shared
+windowing helper:
+
+- **Period over period** — the last *n* buckets against the *n* before them.
+- **Year over year** — the last *n* buckets against the *n* buckets one year earlier, located by period
+  label rather than by offset. `period_label` gives `YYYY-MM` at month granularity and `YYYY-MM-DD` at
+  day granularity, so the prior-year window is found by label arithmetic on the governed granularity and
+  never by assuming twelve buckets back. A gap in coverage would make a fixed offset silently compare
+  the wrong months.
+
+Both truncate to the shorter day count and append `window_truncated` to every fact derived from a
+truncated window. Each mode refuses with `prior_window_absent` when its own prior window has no
+buckets; `derive` returns a `RefusedResult` only when both modes refuse. Emit the absolute delta
+always; emit the percentage only when the base is strictly positive.
+
+One windowing helper serving both modes is what keeps this file at 10.00 — two near-duplicate paths
+would double the function count and the mean CC for no gain.
 
 Keep the base test in its own helper so the *Complex Conditional* threshold is not reached:
 
@@ -625,7 +888,7 @@ def _percentage_is_defined(base: Decimal | None) -> bool:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/rra/analysis/test_comparison.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 5: Check Code Health, then commit**
 
@@ -638,19 +901,45 @@ git commit --no-gpg-sign -m "feat: derive period comparison facts with like-for-
 
 ---
 
-### Task 6: Concentration
+### Task 7 — Slice 3: Concentration
+
+**Blocked by Task 2 for its figures.** Implement the refusal path now; complete it in a follow-on slice
+once the `RRA-004` amendment records approval.
 
 **Files:**
 - Create: `src/khepri/rra/analysis/concentration.py`
 - Test: `tests/rra/analysis/test_concentration.py`
 
 **Interfaces:**
-- Consumes: `FactPackage.comparison(dimension)`, `Comparison.distinct_values`, `Comparison.truncated_values`, `Bucket`.
+- Consumes: `FactPackage.comparison(dimension)`, and — after Task 2 — `ConcentrationCurve`.
 - Produces: `concentration.derive(package) -> tuple[Fact, ...] | RefusedResult`.
 
-`Comparison` already records `distinct_values` and `truncated_values`, which is exactly the full-distinct-set rule `RRA-008` requires. Use them; do not recount from the buckets.
+**The aggregate this family needs does not exist yet, and cannot be reconstructed here.** `RRA-008`
+requires concentration "over the full admissible distinct-value set, never over the truncated display
+buckets." `Comparison` carries `MAX_COMPARISON_BUCKETS = 20` ranked buckets plus one aggregated
+`other`, and `distinct_values` / `truncated_values` are **counts** — the omitted values and their
+revenues were discarded at truncation.
+
+An earlier revision of this plan said `Comparison` "already records `distinct_values` and
+`truncated_values`, which is exactly the full-distinct-set rule `RRA-008` requires. Use them; do not
+recount from the buckets." That was wrong and is corrected here. Those counts let a fact *state* that
+57 values exist; they do not let anything rank 57 values, accumulate a curve across them, or measure
+what share the top decile holds. Ranking the 20 survivors and labelling the result a full-set statistic
+is the precise failure `RRA-008`'s wording forbids, and a test asserting `distinct.value == "57"` would
+pass on exactly that fabrication.
+
+So until Task 2's amendment lands, `derive` returns `RefusedResult("concentration",
+"aggregate_unavailable")`. That is a governed refusal `RRA-008` already provides for, the section
+renders its reason, and no figure is invented.
+
+After the amendment: read `ConcentrationCurve` and emit the distinct count, the ranked count, the
+cumulative curve, and the top-decile and top-quartile shares from it. Emit no classification bands.
+Refuse with `distinct_set_uncomputable` when `distinct_values` is zero.
 
 - [ ] **Step 1: Write the failing test**
+
+Two tests now, against the refusal path. The rest arrive with the follow-on slice, and they are written
+here so the shape of what the amendment must enable is on record.
 
 ```python
 from khepri.rra.analysis import concentration
@@ -658,8 +947,25 @@ from khepri.rra.facts import RefusedResult
 from tests.rra.analysis.factories import package_with_products
 
 
+def test_refuses_while_the_full_set_aggregate_is_unavailable() -> None:
+    result = concentration.derive(package_with_products(distinct=57, displayed=20))
+    assert isinstance(result, RefusedResult)
+    assert result.reason == "aggregate_unavailable"
+
+
+def test_no_full_set_statistic_is_derived_from_display_buckets() -> None:
+    # The failure this family exists to avoid. 57 distinct values reach the
+    # package as 20 buckets plus `other`; nothing here may report a statistic
+    # over 57 while holding 21.
+    result = concentration.derive(package_with_products(distinct=57, displayed=20))
+    assert isinstance(result, RefusedResult)
+```
+
+**Deferred to the follow-on slice, after Task 2:**
+
+```python
 def test_curve_is_computed_over_the_full_distinct_set_not_the_display() -> None:
-    package = package_with_products(distinct=57, displayed=20)
+    package = package_with_products(distinct=57, displayed=20, curve=True)
     facts = concentration.derive(package)
     ranked = next(f for f in facts if f.metric == "concentration_ranked_values")
     distinct = next(f for f in facts if f.metric == "concentration_distinct_values")
@@ -694,12 +1000,18 @@ Expected: FAIL with `ImportError: cannot import name 'concentration'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Rank buckets by value descending, accumulate the cumulative share in `Decimal`, and emit the ranked count, the distinct count taken from `Comparison.distinct_values`, and the measured share held by the top decile and top quartile of ranked values. Emit no classification bands. Refuse with `distinct_set_uncomputable` when `distinct_values` is zero.
+Return `RefusedResult("concentration", "aggregate_unavailable")`. Do not read `Comparison` at all — a
+module that reads the buckets while refusing is a module one edit away from ranking them.
+
+The follow-on slice replaces this with: rank the full set from `ConcentrationCurve`, accumulate the
+cumulative share in `Decimal`, and emit the ranked count, the distinct count, the curve, and the
+measured top-decile and top-quartile shares. No classification bands. Refuse with
+`distinct_set_uncomputable` when `distinct_values` is zero.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/rra/analysis/test_concentration.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (2 tests)
 
 - [ ] **Step 5: Check Code Health, then commit**
 
@@ -710,7 +1022,7 @@ git commit --no-gpg-sign -m "feat: derive concentration facts over the full dist
 
 ---
 
-### Task 7: Growth decomposition
+### Task 8 — Slice 4: Growth decomposition
 
 **Files:**
 - Create: `src/khepri/rra/analysis/growth.py`
@@ -781,15 +1093,38 @@ git commit --no-gpg-sign -m "feat: derive price and volume growth decomposition 
 
 ---
 
-### Task 8: Basket structure
+### Task 9 — Slice 5: Basket structure
+
+**Half of this family is computable today; half is blocked by Task 2.**
 
 **Files:**
 - Create: `src/khepri/rra/analysis/basket.py`
 - Test: `tests/rra/analysis/test_basket.py`
 
 **Interfaces:**
-- Consumes: `FactPackage`, mapped `transaction_id`, an admissible product or category dimension.
+- Consumes: `FactPackage`, `METRIC_UNITS`, `METRIC_TRANSACTIONS`, and — after Task 2 — `TransactionMembership`.
 - Produces: `basket.derive(package) -> tuple[Fact, ...] | RefusedResult`.
+
+**Items per transaction is available now.** `METRIC_UNITS` and `METRIC_TRANSACTIONS` are both governed
+facts in the package, and their quotient is the governed measure. `METRIC_TRANSACTIONS` is already
+`_distinct(measures.transactions)` — a distinct count, not a row count — and it is already refused with
+`incomplete_transaction_identifiers` when the identifier column has gaps, so the "never substitute row
+count" requirement is satisfied by reading the governed fact rather than by counting anything here.
+
+Note this corrects an earlier revision of the plan, which said items per transaction "divides row count
+by transaction count." Row count is line-item count. `RRA-008` says *items*, and the governed items
+measure is `METRIC_UNITS`.
+
+**Attach rate is not available and cannot be derived here.** `RRA-008` requires "the share of
+transactions containing a given admissible dimension value." The package carries no transaction
+identifiers and no transaction-to-dimension membership; `Bucket` records `rows`. A product appearing in
+40 rows may sit in 40 transactions or in one, and nothing in these aggregates distinguishes those. It
+refuses with `aggregate_unavailable` until Task 2's amendment lands, then reads
+`TransactionMembership`.
+
+A partial family is not a broken one: `derive` returns the items-per-transaction fact and carries the
+attach-rate refusal beside it, which is exactly `RRA-008`'s "refuse the affected result" rather than the
+affected family.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -801,10 +1136,14 @@ from khepri.rra.facts import RefusedResult
 from tests.rra.analysis.factories import package_with_baskets
 
 
-def test_items_per_transaction_and_attach_rate_are_emitted() -> None:
+def test_items_per_transaction_is_emitted() -> None:
     metrics = {f.metric for f in basket.derive(package_with_baskets())}
     assert "basket_items_per_transaction" in metrics
-    assert "basket_attach_rate" in metrics
+
+
+def test_attach_rate_refuses_while_membership_is_unavailable() -> None:
+    refusal = basket.refusal_for(package_with_baskets(), "basket_attach_rate")
+    assert refusal.reason == "aggregate_unavailable"
 
 
 def test_missing_transaction_identifier_refuses_with_a_stated_reason() -> None:
@@ -814,17 +1153,23 @@ def test_missing_transaction_identifier_refuses_with_a_stated_reason() -> None:
 
 
 def test_line_item_grain_is_not_mistaken_for_transaction_grain() -> None:
-    package = package_with_baskets(rows=100, transactions=25)
+    # 100 rows, 25 transactions, 100 units. The denominator is the governed
+    # distinct transaction count; a row-count denominator would give "1.00".
+    package = package_with_baskets(rows=100, transactions=25, units=100)
     facts = basket.derive(package)
     items = next(f for f in facts if f.metric == "basket_items_per_transaction")
     assert items.value == "4.00"
 
 
 def test_attach_rate_requires_an_admissible_dimension() -> None:
-    result = basket.derive(package_with_baskets(dimension=None))
-    assert isinstance(result, RefusedResult)
-    assert result.reason == "dimension_absent"
+    refusal = basket.refusal_for(
+        package_with_baskets(dimension=None), "basket_attach_rate"
+    )
+    assert refusal.reason == "dimension_absent"
 ```
+
+`dimension_absent` takes precedence over `aggregate_unavailable`: a report with no admissible dimension
+could not carry attach rate even with the amendment in place, so that is the accurate reason.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -833,12 +1178,17 @@ Expected: FAIL with `ImportError: cannot import name 'basket'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Items per transaction divides row count by **transaction count**, never by row count. Attach rate is the share of transactions containing a given admissible dimension value. Refuse with `transaction_identifier_absent` or `dimension_absent` rather than substituting anything.
+Items per transaction is `METRIC_UNITS / METRIC_TRANSACTIONS`, both read as governed facts from the
+package. Refuse it with `transaction_identifier_absent` when `METRIC_TRANSACTIONS` is itself refused —
+read the package's own refusal rather than re-deriving the condition.
+
+Attach rate refuses: `dimension_absent` when no admissible product or category dimension exists,
+otherwise `aggregate_unavailable`. Substitute nothing.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/rra/analysis/test_basket.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (5 tests)
 
 - [ ] **Step 5: Check Code Health, then commit**
 
@@ -849,7 +1199,7 @@ git commit --no-gpg-sign -m "feat: derive basket structure facts from transactio
 
 ---
 
-### Task 9: The chart module
+### Task 10 — Slice 6: The chart geometry module
 
 **Files:**
 - Create: `src/khepri/rra/rendering/charts.py`
@@ -857,9 +1207,45 @@ git commit --no-gpg-sign -m "feat: derive basket structure facts from transactio
 
 **Interfaces:**
 - Consumes: `ChartSpec`, `CitedFigure`, `DIRECTION_RTL` from `bundle.py`.
-- Produces: `render_chart(spec: ChartSpec, figures: tuple[CitedFigure, ...], *, direction: str, language: str) -> str | None` returning an SVG fragment, or `None` when the series cannot be drawn.
+- Produces: `build_chart(spec: ChartSpec, figures: tuple[CitedFigure, ...], *, direction: str, language: str) -> ChartView | None`, plus `ChartView` and `ChartMark`.
 
-Geometry is computed in `Decimal` and converted to a coordinate only at write time. `render_chart` returns `None` rather than raising: the table is the authoritative presentation and a chart must never suppress governed analysis.
+**This module returns geometry, not markup.** An earlier revision had it return an SVG fragment as a
+`str`, and that cannot be rendered by these templates. `build_environment()` sets `autoescape=True`
+unconditionally and `html.py` states the rule outright: "nothing reachable from the bundle is ever
+marked safe … a page with one `|safe` in it has an escaping convention, not an escaping guarantee." A
+`{{ section.chart_svg }}` holding a Python string reaches the reader as `&lt;svg …`, so the page would
+display chart source as text — on the web surface and, through template inheritance, on the printed one.
+
+The two exits from that are `|safe` and `Markup`, and they are the same exit: both move the escaping
+decision out of the environment and into whoever remembers to apply it, on the one path customer-derived
+labels travel. Chart axis labels *are* customer values.
+
+So the boundary moves instead. This module resolves geometry to strings; a Jinja macro writes the
+elements. Tags come from template source, which is trusted because it is source; labels pass through the
+same autoescaping as every table cell, which is what makes a value named `<script>` inert here for the
+same reason it is inert there.
+
+```python
+@dataclass(frozen=True, slots=True)
+class ChartMark:
+    x: str
+    y: str
+    width: str
+    height: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChartView:
+    kind: str
+    title: str
+    description: str
+    marks: tuple[ChartMark, ...]
+    labels: tuple[str, ...]
+```
+
+Geometry is computed in `Decimal` and converted to a coordinate string only when the mark is built.
+`build_chart` returns `None` rather than raising: the table is the authoritative presentation and a
+chart must never suppress governed analysis.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -867,60 +1253,78 @@ Geometry is computed in `Decimal` and converted to a coordinate only at write ti
 from decimal import Decimal
 
 from khepri.rra.bundle import CHART_BAR, DIRECTION_LTR, DIRECTION_RTL, ChartSpec
-from khepri.rra.rendering.charts import render_chart
+from khepri.rra.rendering.charts import build_chart
 from tests.rra.rendering.factories import figures_for_chart
 
 
-def test_bar_chart_is_an_accessible_svg() -> None:
-    svg = render_chart(
+def test_a_drawable_series_yields_titled_marks() -> None:
+    view = build_chart(
         ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2")),
         figures_for_chart(),
         direction=DIRECTION_LTR,
         language="en",
     )
-    assert 'role="img"' in svg
-    assert "aria-labelledby=" in svg
+    assert view.title
+    assert view.description
+    assert len(view.marks) == 2
+
+
+def test_no_mark_coordinate_is_a_float() -> None:
+    # Geometry is Decimal until the coordinate is written, and what is written
+    # is a string. A float here would mean binary floating point reached the
+    # surface of a governed figure.
+    view = build_chart(
+        ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2")),
+        figures_for_chart(),
+        direction=DIRECTION_LTR,
+        language="en",
+    )
+    for mark in view.marks:
+        assert isinstance(mark.x, str)
+        assert isinstance(mark.height, str)
 
 
 def test_arabic_chart_mirrors_the_category_order() -> None:
     figures = figures_for_chart()
     spec = ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2"))
-    ltr = render_chart(spec, figures, direction=DIRECTION_LTR, language="en")
-    rtl = render_chart(spec, figures, direction=DIRECTION_RTL, language="ar")
-    assert _first_bar_x(ltr) != _first_bar_x(rtl)
+    ltr = build_chart(spec, figures, direction=DIRECTION_LTR, language="en")
+    rtl = build_chart(spec, figures, direction=DIRECTION_RTL, language="ar")
+    assert ltr.marks[0].x != rtl.marks[0].x
 
 
 def test_single_point_series_is_not_drawn() -> None:
-    svg = render_chart(
+    view = build_chart(
         ChartSpec(kind=CHART_BAR, figure_ids=("F-1",)),
         figures_for_chart(),
         direction=DIRECTION_LTR,
         language="en",
     )
-    assert svg is None
+    assert view is None
 
 
 def test_all_zero_series_is_not_drawn() -> None:
-    svg = render_chart(
+    view = build_chart(
         ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2")),
         figures_for_chart(values=(Decimal(0), Decimal(0))),
         direction=DIRECTION_LTR,
         language="en",
     )
-    assert svg is None
+    assert view is None
 
 
 def test_figure_without_a_value_is_not_drawn() -> None:
-    svg = render_chart(
+    view = build_chart(
         ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2")),
         figures_for_chart(values=(Decimal(10), None)),
         direction=DIRECTION_LTR,
         language="en",
     )
-    assert svg is None
+    assert view is None
 ```
 
-`_first_bar_x` is a two-line helper in the test file that reads the first `x=` attribute.
+Accessibility is no longer assertable here, because this module no longer writes `role="img"` — the macro
+does. Task 11 asserts it on the rendered page instead, which is a stronger claim: the earlier
+string-returning design could assert `'role="img"' in svg` while the page displayed that text literally.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -935,34 +1339,44 @@ Three kinds only. Dispatch through a dict lookup rather than an if-chain — a d
 _GEOMETRY = {CHART_BAR: _bars, CHART_GROUPED_BAR: _grouped_bars, CHART_LINE: _line}
 ```
 
-Mirror for RTL by transforming the x coordinate as `width - x - bar_width` when `direction == DIRECTION_RTL`, in one helper used by all three kinds. Escape every label through the same autoescaping the templates use — this fragment is inserted into an autoescaped template, so it must be built as markup the template treats as text it produced, not as an exemption.
+Mirror for RTL by transforming the x coordinate as `width - x - bar_width` when `direction == DIRECTION_RTL`, in one helper used by all three kinds.
+
+**Do no escaping in this module.** Labels are carried as ordinary `str` and escaped once, by the
+environment, when the macro writes them. A module that escapes them here and a template that escapes
+them again produces `&amp;lt;` in a customer's product name; a module that escapes them *instead* moves
+the guarantee out of the environment. Neither is what this design asks for.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/rra/rendering/test_charts.py -v`
-Expected: PASS (5 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 5: Check Code Health, then commit**
 
-New file, must score **10.00**. Watch mean CC: five small functions each at CC 1–2 keep the mean well under 3.5, whereas one `render_chart` holding all three kinds will not.
+New file, must score **10.00**. Watch mean CC: five small functions each at CC 1–2 keep the mean well under 3.5, whereas one `build_chart` holding all three kinds will not.
 
 ```bash
 git add src/khepri/rra/rendering/charts.py tests/rra/rendering/test_charts.py
-git commit --no-gpg-sign -m "feat: render governed fact series as accessible inline SVG"
+git commit --no-gpg-sign -m "feat: compute governed chart geometry as an exact view model"
 ```
 
 ---
 
-### Task 10: Web surface — sections and charts
+### Task 11 — Slice 6: Web surface — sections and charts
 
 **Files:**
 - Modify: `src/khepri/rra/rendering/templates/report.html.j2`
+- Create: `src/khepri/rra/rendering/templates/_chart.svg.j2`
 - Modify: `src/khepri/rra/rendering/html.py`
 - Test: `tests/rra/rendering/test_html_sections.py`
 
 **Interfaces:**
-- Consumes: `Section`, `ChartSpec` (Task 2), `render_chart` (Task 9).
-- Produces: an HTML surface whose `SurfaceContent` states a section per figure and a section per caveat.
+- Consumes: `Section`, `ChartSpec` (Task 3), `build_chart` (Task 10).
+- Produces: an HTML surface whose `SurfaceContent` states its ordered sections, a section per figure, and a section per caveat.
+
+`build_content` must pass `bundle.section_ids` into each `SurfaceLanguage` — not a tuple derived from the
+cells it just built. Deriving it there would make the surface agree with itself by construction, which is
+exactly the reconciliation this slice added.
 
 This task also assembles `Section`s from the package: a family returning `RefusedResult` becomes `state=SECTION_REFUSED` carrying `result.reason`.
 
@@ -983,6 +1397,22 @@ def test_a_refused_section_renders_its_governed_reason() -> None:
     page = render_web(language="en", refuse={SECTION_COMPARISON: "prior_window_absent"})
     assert f'<section id="{SECTION_COMPARISON}"' in page
     assert "prior_window_absent" in page
+
+
+def test_a_drawable_section_renders_a_real_svg_element() -> None:
+    # Positively assert the markup reached the page. The escaped-string design
+    # this replaced would have rendered `&lt;svg` here and passed every other
+    # test in this file.
+    page = render_web(language="en")
+    assert "<svg" in page
+    assert "&lt;svg" not in page
+    assert 'role="img"' in page
+
+
+def test_a_chart_label_from_customer_data_is_escaped() -> None:
+    page = render_web(language="en", label="<script>alert(1)</script>")
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;" in page
 
 
 def test_the_table_is_present_even_when_the_chart_is_not() -> None:
@@ -1022,26 +1452,54 @@ Expected: FAIL — the template renders one figures table, not a section per fam
 
 - [ ] **Step 3: Write minimal implementation**
 
-Replace the single `#figures` section with a loop over `sections`, each rendering heading, chart, then table. The refused branch renders the reason and no table. Nothing is marked safe; the SVG fragment is passed as template-produced markup, not as an exempted variable.
+Replace the single `#figures` section with a loop over `sections`, each rendering heading, chart, then table. The refused branch renders the reason and no table.
+
+Write the SVG in `_chart.svg.j2` as a macro. The elements are template source; every label goes through
+the environment's autoescaping, and nothing is marked safe:
 
 ```jinja
+{% macro chart(view, section_id) %}
+<svg role="img" aria-labelledby="{{ section_id }}-ct {{ section_id }}-cd"
+     viewBox="0 0 640 320" class="chart chart--{{ view.kind }}">
+  <title id="{{ section_id }}-ct">{{ view.title }}</title>
+  <desc id="{{ section_id }}-cd">{{ view.description }}</desc>
+  {% for mark in view.marks %}
+  <rect x="{{ mark.x }}" y="{{ mark.y }}"
+        width="{{ mark.width }}" height="{{ mark.height }}" />
+  {% endfor %}
+  {% for label in view.labels %}
+  <text class="chart__label">{{ label }}</text>
+  {% endfor %}
+</svg>
+{% endmacro %}
+```
+
+Then in the parent template:
+
+```jinja
+{% from "_chart.svg.j2" import chart %}
 {% for section in sections %}
 <section id="{{ section.section_id }}" aria-labelledby="{{ section.section_id }}-heading">
 <h2 id="{{ section.section_id }}-heading">{{ chrome.sections[section.section_id] }}</h2>
 {% if section.state == refused_state %}
 <p class="refused" data-reason="{{ section.reason }}">{{ chrome.refused[section.reason] }}</p>
 {% else %}
-{% if section.chart_svg %}{{ section.chart_svg }}{% endif %}
+{% if section.chart %}{{ chart(section.chart, section.section_id) }}{% endif %}
 {{ section_table(section) }}
 {% endif %}
 </section>
 {% endfor %}
 ```
 
+`section.chart` is the `ChartView` from Task 10, or `None`. A macro's output is markup because the macro
+*is* template source — which is the same reason `html.py` already includes the stylesheet as template
+source rather than passing it in as a variable. This follows the guarantee the module already documents
+instead of adding an exception to it.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/rra/rendering/test_html_sections.py -v`
-Expected: PASS (5 tests)
+Expected: PASS (7 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -1052,14 +1510,14 @@ git commit --no-gpg-sign -m "feat: render report sections and charts on the web 
 
 ---
 
-### Task 11: PDF pagination
+### Task 12 — Slice 6: PDF pagination
 
 **Files:**
 - Modify: `src/khepri/rra/rendering/templates/report.print.css`
 - Test: `tests/rra/rendering/test_pdf_sections.py` (marked `browser`)
 
 **Interfaces:**
-- Consumes: the template from Task 10. `report.pdf.html.j2` is **not modified** — it extends the parent and fills two blocks, and that inheritance is what keeps Arabic/English parity in one place.
+- Consumes: the template from Task 11. `report.pdf.html.j2` is **not modified** — it extends the parent and fills two blocks, and that inheritance is what keeps Arabic/English parity in one place, and is also what carries the chart macro onto the printed page with no PDF-specific chart code.
 
 The spec requires a refused section to render its reason on all three surfaces. There is no separate
 PDF test for it because there is no separate PDF markup: every heading, section and refusal on the
@@ -1116,16 +1574,20 @@ git commit --no-gpg-sign -m "feat: start each report section on its own printed 
 
 ---
 
-### Task 12: Workbook — a sheet per section and native charts
+### Task 13 — Slice 7: Workbook — a sheet per section and native charts
 
-**Blocked by Task 1.** Do not write a numeric cell before `APP-013` records approval.
+**Blocked by Task 1.** Do not write a numeric cell before the `KHEPRI-DEC-005` approval package records approval.
+
+**Split this slice at the numeric write.** The per-section worksheets need no amendment and can merge as
+soon as slice 1 does; only the native chart path is gated. Writing both together parks the whole slice
+behind a human approval for no reason.
 
 **Files:**
 - Modify: `src/khepri/rra/rendering/excel.py`
 - Test: `tests/rra/rendering/test_excel_sections.py`
 
 **Interfaces:**
-- Consumes: `Section` (Task 2), `StatedCaveat` (Task 4).
+- Consumes: `Section` (Task 3), `StatedCaveat` (Task 5).
 - Produces: fifteen worksheets — seven per language plus a shared `provenance`.
 
 The module docstring currently argues charts out. **Rewrite that paragraph** — leaving it would leave the file asserting the opposite of what it does, which is worse than either position.
@@ -1172,7 +1634,7 @@ def test_the_arabic_chart_axis_is_reversed() -> None:
     assert workbook_values("en_concentration").chart_axis_reversed is False
 ```
 
-The mirroring test matters for the same reason it did for SVG in Task 9, and `reconcile` cannot
+The mirroring test matters for the same reason it did for SVG in Task 10, and `reconcile` cannot
 catch it: a spreadsheet category axis defaults left-to-right regardless of the declared direction,
 so an Arabic chart would plot its first category on the wrong side while every text cell reconciles
 perfectly.
@@ -1235,7 +1697,30 @@ git commit --no-gpg-sign -m "feat: write one worksheet per section with a native
 
 ## Pull request notes
 
-Write these into the PR body **before** opening it, because both are predictable:
+Write these into each PR body **before** opening it, because all three are predictable:
 
-1. **Shared DTO collision.** `CitedFigure` gains a required `section` field (Task 3) and the caveat type changes shape (Task 4). Any branch constructing either fails to build once this merges; the second to merge fixes the fixtures.
-2. **Serial merges.** Branch protection requires branches be up to date, so merging any PR invalidates every other PR's checks. Budget `gh pr update-branch` → poll until `CLEAN` → `gh pr merge --squash`, about two minutes apiece.
+1. **Shared DTO collision.** `CitedFigure` gains a required `section` field and `SurfaceLanguage` gains a required `sections` field (Task 4), and the caveat type changes shape (Task 5). Any branch constructing one fails to build once slice 1 merges; the second to merge fixes the fixtures.
+2. **Package version collision.** Slice 0b moves `PACKAGE_VERSION` to `rra004.package.v2`, changing the package document shape and every digest derived from it. It is confined to its own slice so the shape change arrives alone rather than being diagnosed through a renderer.
+3. **Serial merges.** Branch protection requires branches be up to date, so merging any PR invalidates every other PR's checks. With eight slices this is the dominant cost: budget `update-branch` → poll until `CLEAN` → squash-merge, about two minutes apiece, and merge in dependency order (0a/0b and 1 first, then 2 and 4, then 6, then 7).
+
+Unresolved review comments block merging in this repository, so expect to answer every automated review
+thread on each slice rather than only the ones that change code.
+
+## Findings folded into this plan
+
+Seven review findings were raised against the first revision of this plan and six were confirmed against
+the code and `RRA-008` before being fixed here. They are recorded because each one was a case of the plan
+reading as correct while being unimplementable:
+
+| Finding | Where it now lives |
+|---|---|
+| Concentration cannot use `distinct_values` as a full set | Task 2 (the `RRA-004` amendment) and Task 7 |
+| Attach rate has no transaction membership | Task 2 and Task 9 |
+| Year-over-year comparison missing entirely | Task 6 |
+| Section coverage inferred from figure rows | Task 4 |
+| SVG string rendered as escaped text | Tasks 10 and 11 |
+| `Section` accepts a state outside the governed set | Task 3 |
+| Four analysis slices combined into one | The slice table at the top |
+
+The first two were deeper than reported: the remedy is not a code change but an `RRA-004` amendment,
+because `RRA-008` excludes changing the fact-package specification it builds on.
