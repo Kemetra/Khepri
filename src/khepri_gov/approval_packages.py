@@ -19,6 +19,13 @@ from khepri_gov.approval_transition_validation import (
     TransitionItem,
     TransitionValidator,
 )
+from khepri_gov.delegation import (
+    DelegationContext,
+    approval_identity_errors,
+    is_delegate,
+    load_delegations,
+    package_delegation_errors,
+)
 from khepri_gov.digests import content_digest, document_digest
 from khepri_gov.lifecycle import (
     ArtifactRef,
@@ -287,17 +294,11 @@ def _validate_approval(
         errors.append(f"{label}: approved package requires approval mapping")
         return None
 
-    for field in sorted(PACKAGE_APPROVAL_FIELDS - approval.keys()):
-        errors.append(f"{label}: approval missing required field {field!r}")
-    for field in sorted(approval.keys() - PACKAGE_APPROVAL_FIELDS):
-        errors.append(f"{label}: approval has unknown field {field!r}")
-
     approver = approval.get("approved_by")
     authority = known_authorities.get(approver) if isinstance(approver, str) else None
     if authority is None or authority.get("active") is not True:
         errors.append(f"{label}: unknown or inactive approver {approver!r}")
-    if approver != package.get("owner"):
-        errors.append(f"{label}: package owner and approver must match")
+    errors.extend(approval_identity_errors(label, package, approval, authority))
 
     if normalize_iso_date(approval.get("approved_at")) is None:
         errors.append(f"{label}: approved_at must be an ISO date or datetime")
@@ -305,12 +306,20 @@ def _validate_approval(
     if approval.get("approved_manifest_digest") != package.get("manifest_digest"):
         errors.append(f"{label}: approved_manifest_digest must equal manifest_digest")
 
-    if not _valid_evidence_ref(approval.get("evidence_ref")):
-        errors.append(
-            f"{label}: evidence_ref must be a Khepri GitHub review or comment URL"
-        )
-
+    errors.extend(_evidence_ref_errors(label, approval, authority))
     return approval
+
+
+def _evidence_ref_errors(
+    label: str,
+    approval: Mapping[str, Any],
+    authority: Mapping[str, Any] | None,
+) -> list[str]:
+    if is_delegate(authority):
+        return []
+    if _valid_evidence_ref(approval.get("evidence_ref")):
+        return []
+    return [f"{label}: evidence_ref must be a Khepri GitHub review or comment URL"]
 
 
 def _validate_transitions_and_materialization(
@@ -398,7 +407,21 @@ def validate_approval_packages(root: Path, registries: Registries) -> list[str]:
         path.relative_to(root.resolve()).as_posix(): package
         for path, package in packages
     }
+    delegation_records, delegation_errors = load_delegations(root)
+    errors.extend(delegation_errors)
+    delegation_context = DelegationContext(
+        delegation_records,
+        known_artifacts,
+        known_authorities,
+    )
     for path, package in packages:
+        errors.extend(
+            package_delegation_errors(
+                _package_label(path, package),
+                package,
+                delegation_context,
+            )
+        )
         _validate_package_shape(
             root,
             path,
