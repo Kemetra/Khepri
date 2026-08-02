@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-010
 title: Spoken delegation decision
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Accept KHEPRI-DEC-010, adopting spoken delegation to a named non-human
@@ -18,6 +18,11 @@ exclusions:
   - Any claim that a delegation record is cryptographic proof of an instruction
   - Any claim that the drafting delegate is a neutral judge of its own authority
 manifest_digest: sha256:815b1aefff666d6f7d982963db66b298f74782a149240ac853751fa79e862cfd
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-02
+  approved_manifest_digest: sha256:815b1aefff666d6f7d982963db66b298f74782a149240ac853751fa79e862cfd
+  evidence_ref: https://github.com/Kemetra/Khepri/pull/66#issuecomment-5159440664
 artifacts:
   - id: KHEPRI-DEC-010
     document: governance/decisions/KHEPRI-DEC-010-spoken-delegation.md
