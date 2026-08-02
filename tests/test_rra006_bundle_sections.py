@@ -3,11 +3,13 @@ from __future__ import annotations
 import pytest
 
 from khepri.rra.bundle import (
+    BUNDLE_VERSION,
     CHART_BAR,
     CHART_GROUPED_BAR,
     CHART_LINE,
     GOVERNED_CHART_KINDS,
     GOVERNED_SECTION_STATES,
+    NARRATIVE_OMITTED,
     ORDERED_SECTIONS,
     SECTION_BASKET,
     SECTION_COMPARISON,
@@ -16,9 +18,50 @@ from khepri.rra.bundle import (
     SECTION_OVERVIEW,
     SECTION_PRESENT,
     SECTION_REFUSED,
+    BundleIdentity,
     ChartSpec,
+    ReportBundle,
     Section,
 )
+
+
+def _present(section_id: str) -> Section:
+    return Section(
+        section_id=section_id,
+        state=SECTION_PRESENT,
+        reason=None,
+        figure_ids=(),
+        chart=None,
+    )
+
+
+def _identity() -> BundleIdentity:
+    """A provenance record with no data behind it.
+
+    Every field is a version string, a digest, or a count, so a bundle can be
+    assembled here without building a fact package. These tests are about the
+    section sequence a bundle declares and nothing downstream of it.
+    """
+    return BundleIdentity(
+        package_version="rra004.package.v1",
+        formula_version="rra004.formula.v1",
+        mapping_version="rra004.mapping.v1",
+        narrative_version="rra005.narrative.v1",
+        profile_digest="0" * 64,
+        source_sha256_hex="1" * 64,
+        monetary_precision=2,
+        row_count=0,
+    )
+
+
+def _bundle(sections: tuple[Section, ...]) -> ReportBundle:
+    return ReportBundle(
+        identity=_identity(),
+        figures=(),
+        caveats=(),
+        narrative_state=NARRATIVE_OMITTED,
+        sections=sections,
+    )
 
 
 def test_ordered_sections_starts_with_overview() -> None:
@@ -158,6 +201,34 @@ def test_a_refused_section_carries_no_figures_and_still_constructs() -> None:
     assert section.chart is None
 
 
+def test_a_refused_section_may_not_authorize_figures() -> None:
+    # The class invariant has to be enforced, not just documented. A refused
+    # section carrying figures declares content the refusal branch never
+    # renders, so the bundle would authorize figures no surface presents.
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_COMPARISON,
+            state=SECTION_REFUSED,
+            reason="prior_window_absent",
+            figure_ids=("F-1",),
+            chart=None,
+        )
+
+
+def test_a_refused_section_may_not_authorize_a_chart() -> None:
+    # Worse than unused: chart reconciliation requires every plotted figure to
+    # appear in what the surface stated, and a refused section states none, so
+    # this would refuse the whole bundle for a chart that should not exist.
+    with pytest.raises(ValueError):
+        Section(
+            section_id=SECTION_COMPARISON,
+            state=SECTION_REFUSED,
+            reason="prior_window_absent",
+            figure_ids=("F-1",),
+            chart=ChartSpec(kind=CHART_BAR, figure_ids=("F-1",)),
+        )
+
+
 def test_section_document_is_serializable_for_the_bundle_digest() -> None:
     section = Section(
         section_id=SECTION_BASKET,
@@ -173,3 +244,39 @@ def test_section_document_is_serializable_for_the_bundle_digest() -> None:
         "figure_ids": ["F-9"],
         "chart": {"kind": CHART_GROUPED_BAR, "figure_ids": ["F-9"]},
     }
+
+
+def test_a_bundle_declaring_the_governed_order_is_accepted() -> None:
+    bundle = _bundle(tuple(_present(section_id) for section_id in ORDERED_SECTIONS))
+    assert bundle.section_ids == ORDERED_SECTIONS
+
+
+def test_a_bundle_declaring_a_subset_in_governed_order_is_accepted() -> None:
+    bundle = _bundle((_present(SECTION_OVERVIEW), _present(SECTION_GROWTH)))
+    assert bundle.section_ids == (SECTION_OVERVIEW, SECTION_GROWTH)
+
+
+def test_a_bundle_with_no_sections_is_accepted() -> None:
+    assert _bundle(()).section_ids == ()
+
+
+def test_a_bundle_may_not_reorder_the_governed_sections() -> None:
+    # `section_ids` is the authority every surface's section claim reconciles
+    # against, so an order the bundle got wrong is an order every surface
+    # follows and reconciles against perfectly. Order is governed data; a
+    # caller assembling it is not entitled to choose.
+    with pytest.raises(ValueError):
+        _bundle((_present(SECTION_GROWTH), _present(SECTION_OVERVIEW)))
+
+
+def test_a_bundle_may_not_repeat_a_section() -> None:
+    with pytest.raises(ValueError):
+        _bundle((_present(SECTION_OVERVIEW), _present(SECTION_OVERVIEW)))
+
+
+def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> None:
+    # `sections` joined the hashed document, so every bundle id changed. Two
+    # bundles built from identical inputs on either side of that change must
+    # not claim the same schema version while having different identities.
+    assert BUNDLE_VERSION == "rra006.bundle.v2"
+    assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION

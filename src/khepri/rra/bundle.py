@@ -65,7 +65,12 @@ from khepri.rra.narrative import (
 )
 from khepri.rra.profiling import canonical_json
 
-BUNDLE_VERSION = "rra006.bundle.v1"
+# v2 carries `sections` in the bundle document. That document is hashed to name
+# a bundle, so the shape change moved every bundle id -- including for a bundle
+# whose sections are empty. Two bundles built from identical inputs on either
+# side of it must not claim one schema version while having different
+# identities, or stored evidence cannot tell the two document contracts apart.
+BUNDLE_VERSION = "rra006.bundle.v2"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -330,6 +335,7 @@ class Section:
         _require_section(self.section_id)
         _require_section_state(self.state, self.reason)
         _require_chart_within(self.chart, self.figure_ids)
+        _require_refusal_is_bare(self.state, self.figure_ids, self.chart)
 
     def as_document(self) -> dict[str, object]:
         return {
@@ -364,6 +370,26 @@ def _require_chart_within(chart: ChartSpec | None, figure_ids: tuple[str, ...]) 
         return
     if not frozenset(chart.figure_ids) <= frozenset(figure_ids):
         raise ValueError("chart plots a figure outside its section")
+
+
+def _require_refusal_is_bare(
+    state: str,
+    figure_ids: tuple[str, ...],
+    chart: ChartSpec | None,
+) -> None:
+    """A refused section carries nothing, and that is enforced rather than said.
+
+    The surfaces render a refused section as a heading and a reason with no
+    table, so figures declared here would be content the bundle authorized and
+    no surface presents. A chart is worse than unused: chart reconciliation
+    requires every plotted figure to appear in what the surface stated, and a
+    refused section states none, so it would refuse the whole bundle over a
+    chart that should never have existed.
+    """
+    if state != SECTION_REFUSED:
+        return
+    if figure_ids or chart is not None:
+        raise ValueError("refused section states figures or a chart")
 
 
 @dataclass(frozen=True, slots=True)
@@ -412,6 +438,9 @@ class ReportBundle:
     narrative_state: str
     sections: tuple[Section, ...] = ()
     narrative: NarrativeDraft | None = None
+
+    def __post_init__(self) -> None:
+        _require_governed_section_order(self.sections)
 
     @property
     def section_ids(self) -> tuple[str, ...]:
@@ -494,6 +523,26 @@ class ReportBundle:
             narrative_state=state,
             narrative=narrative,
         )
+
+
+def _require_governed_section_order(sections: tuple[Section, ...]) -> None:
+    """The bundle may not choose its own section order, and neither may a caller.
+
+    `section_ids` is the authority every surface's section claim is reconciled
+    against, so an order assembled wrongly here is an order every surface
+    follows and then reconciles against perfectly. Validating each `Section`
+    individually is not enough: five valid sections in the wrong sequence are
+    five valid sections.
+
+    A subset is allowed and a reordering is not, so the comparison is against
+    `ORDERED_SECTIONS` filtered to what was claimed rather than against the
+    whole tuple.
+    """
+    claimed = [entry.section_id for entry in sections]
+    if len(set(claimed)) != len(claimed):
+        raise ValueError("bundle repeats a section")
+    if claimed != [entry for entry in ORDERED_SECTIONS if entry in set(claimed)]:
+        raise ValueError("bundle states sections out of governed order")
 
 
 @dataclass(frozen=True, slots=True)
