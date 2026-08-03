@@ -251,6 +251,49 @@ As Task 1 Step 7. The classifier blocks the agent from committing an approval at
 
 ---
 
+### Task 2b — Slice 0c: Implementing what the RRA-004 amendment requires
+
+**Added after Task 2 landed, because the plan had no task for it.** Task 2 said the amendment
+"produces authority for `ConcentrationCurve` and `TransactionMembership`", and the follow-on slices
+were left to complete Tasks 7 and 9 — but nothing was ever going to put the aggregates *in* the fact
+package. That work is this task, and it is a prerequisite of Tasks 7 and 9 rather than part of them.
+
+`APP-014` widened the amendment to five items on Ahmed's instruction, so this task implements five,
+not two.
+
+**Files:**
+- Modify: `src/khepri/rra/aggregates.py`, `src/khepri/rra/facts.py`,
+  `src/khepri/rra/package_source.py`, `src/khepri/rra/analysis/comparison.py`
+- Test: `tests/test_rra004_retained_aggregates.py`
+
+**Interfaces:**
+- Produces: `ConcentrationCurve`, `Bucket.days`, `Bucket.transactions`,
+  `Comparison.distinct_transactions`, `Comparison.curve`, `Fact.formula_version` (and the same field
+  on `FactSeries` and `FactComparison`), `FactPackage.comparison_window_periods`,
+  `COMPARISON_WINDOW_PERIODS`, `SHARE_PRECISION`, and `PACKAGE_VERSION = "rra004.package.v2"`.
+
+**Three findings worth carrying forward:**
+
+1. **The curve must be built before `limit` is applied, inside `build_comparison`.** Deriving it from
+   the returned `Comparison` is impossible — that is the whole reason for the amendment — so it is
+   not a separate builder taking a `Comparison`.
+2. **`other` unions its transaction keys; it never sums them.** Every truncated value may share one
+   invoice, so addition reports five where the truth is one. That is the row-count substitution
+   `RRA-008` forbids, one level up. `_distinct_members` unions across the whole set for the same
+   reason: summing per-bucket counts counts a four-line invoice four times.
+3. **Shares are quantized when the curve is built, not when it is serialized.** A full-precision
+   share does not survive its own document, so `rebuild_fact_package` returned a curve unequal to the
+   one it was published from. Two round-trip tests caught it; `RRA-004` requires reruns
+   byte-equivalent, so the precision a curve publishes is the precision it holds.
+
+**One item is deliberately not done here.** `comparison.py` records
+`COMPARISON_FORMULA_VERSION` on its facts, but the day-count truncation caveat stays unreachable.
+`Bucket.days` now makes a partial period *detectable*, which is not the same as truncatable: a
+month's bucket total cannot be cut to fifteen days without per-day values, which the series does not
+carry. Emitting `RRA-008`'s truncation caveat while truncating nothing would be a false disclosure,
+and widening the series to per-day values inside every monthly bucket is a further `RRA-004`
+question. So the follow-on is a real slice against the day count, not a line in this one.
+
 ### Task 3 — Slice 1: Section and ChartSpec types
 
 **Files:**
@@ -903,8 +946,11 @@ git commit --no-gpg-sign -m "feat: derive period comparison facts with like-for-
 
 ### Task 7 — Slice 3: Concentration
 
-**Blocked by Task 2 for its figures.** Implement the refusal path now; complete it in a follow-on slice
-once the `RRA-004` amendment records approval.
+**No longer blocked.** `APP-014` recorded the amendment and Task 2b implemented `ConcentrationCurve`,
+so this task takes its completed path directly — read the curve, emit the counts, the cumulative
+shares, and the top-decile and top-quartile shares. The refusal path below still stands for the case
+the curve is absent, which is now a data condition (`distinct_values` of zero, a non-positive
+revenue total, or a negative ranked total) rather than a missing aggregate.
 
 **Files:**
 - Create: `src/khepri/rra/analysis/concentration.py`
@@ -1095,7 +1141,10 @@ git commit --no-gpg-sign -m "feat: derive price and volume growth decomposition 
 
 ### Task 9 — Slice 5: Basket structure
 
-**Half of this family is computable today; half is blocked by Task 2.**
+**No longer half-blocked.** `APP-014` recorded the amendment and Task 2b implemented the transaction
+counts, so both halves are computable: `Comparison.distinct_transactions` gives items per transaction
+and `Bucket.transactions` gives attach rate. The refusal path still stands for an unmapped or
+incomplete identifier column, where both counts are `None` by construction rather than zero.
 
 **Files:**
 - Create: `src/khepri/rra/analysis/basket.py`

@@ -36,7 +36,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, runtime_checkable
 
-from khepri.rra.aggregates import Bucket, Comparison, Series
+from khepri.rra.aggregates import Bucket, Comparison, ConcentrationCurve, Series
 from khepri.rra.facts import (
     Fact,
     FactComparison,
@@ -121,6 +121,7 @@ def rebuild_fact_package(document: Mapping[str, Any]) -> FactPackage:
         source_sha256_hex=_text(document, "source_sha256_hex"),
         row_count=_count(document, "row_count"),
         monetary_precision=_count(document, "monetary_precision"),
+        comparison_window_periods=_count(document, "comparison_window_periods"),
         facts=tuple(_fact(entry) for entry in _entries(document, "facts")),
         series=tuple(_series(entry) for entry in _entries(document, "series")),
         comparisons=tuple(_comparison(entry) for entry in _entries(document, "comparisons")),
@@ -139,6 +140,7 @@ def _fact(entry: Mapping[str, Any]) -> Fact:
         unit_kind=_text(entry, "unit_kind"),
         inputs=_labels(entry, "inputs"),
         caveats=_labels(entry, "caveats"),
+        formula_version=_text(entry, "formula_version"),
     )
 
 
@@ -155,6 +157,7 @@ def _series(entry: Mapping[str, Any]) -> FactSeries:
             buckets=tuple(_bucket(point) for point in _entries(entry, "points")),
         ),
         caveats=_labels(entry, "caveats"),
+        formula_version=_text(entry, "formula_version"),
     )
 
 
@@ -172,9 +175,41 @@ def _comparison(entry: Mapping[str, Any]) -> FactComparison:
             distinct_values=_count(entry, "distinct_values"),
             truncated_values=_count(entry, "truncated_values"),
             redacted_values=_count(entry, "redacted_values"),
+            distinct_transactions=_optional_count(entry, "distinct_transactions"),
+            curve=_curve(entry),
         ),
         caveats=_labels(entry, "caveats"),
+        formula_version=_text(entry, "formula_version"),
     )
+
+
+def _curve(entry: Mapping[str, Any]) -> ConcentrationCurve | None:
+    """The retained full-set curve, or nothing when the document states none.
+
+    A document may legitimately carry no curve -- a non-positive revenue total
+    yields none at construction -- so absence rebuilds as absence. A curve that
+    is present is required whole: a partial one would describe a distinct set it
+    never measured.
+    """
+    stored = _required(entry, "curve", optional=True)
+    if stored is None:
+        return None
+    if not isinstance(stored, Mapping):
+        raise PackageCorrupted("Stored fact package states no curve.")
+    return ConcentrationCurve(
+        distinct_values=_count(stored, "distinct_values"),
+        ranked_values=_count(stored, "ranked_values"),
+        shares=tuple(_share(share) for share in _entries(stored, "shares", of_mappings=False)),
+    )
+
+
+def _share(value: Any) -> Decimal:
+    if not isinstance(value, str):
+        raise PackageCorrupted("Stored fact package states no shares.")
+    try:
+        return Decimal(value)
+    except InvalidOperation as error:
+        raise PackageCorrupted("Stored fact package states no shares.") from error
 
 
 def _bucket(entry: Mapping[str, Any]) -> Bucket:
@@ -182,6 +217,8 @@ def _bucket(entry: Mapping[str, Any]) -> Bucket:
         label=_text(entry, "label"),
         value=_value(entry, "value"),
         rows=_count(entry, "rows"),
+        days=_optional_count(entry, "days"),
+        transactions=_optional_count(entry, "transactions"),
     )
 
 
@@ -198,6 +235,23 @@ def _text(document: Mapping[str, Any], name: str) -> str:
 
 def _count(document: Mapping[str, Any], name: str) -> int:
     value = _required(document, name)
+    if not _is_count(value):
+        raise PackageCorrupted(f"Stored fact package states no {name}.")
+    return value
+
+
+def _optional_count(document: Mapping[str, Any], name: str) -> int | None:
+    """A count the aggregate may not have taken at all.
+
+    `days` on a dimension bucket and `transactions` on a time bucket are absent by
+    construction, and so is any transaction count when no identifier is mapped.
+    Null rebuilds as `None` and never as zero: "not counted" and "counted, and
+    none" are different findings, and collapsing them would let an unmapped
+    column read as an empty one.
+    """
+    value = _required(document, name, optional=True)
+    if value is None:
+        return None
     if not _is_count(value):
         raise PackageCorrupted(f"Stored fact package states no {name}.")
     return value
