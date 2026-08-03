@@ -15,12 +15,13 @@ import hashlib
 from decimal import Decimal
 
 from khepri.rra.admissibility import assess_admissibility
+from khepri.rra.aggregates import UNLABELLED_BUCKET_LABEL
 from khepri.rra.analysis import basket
 from khepri.rra.analysis.basket import (
     BASKET_FORMULA_VERSION,
     METRIC_ATTACH_RATE,
     METRIC_ITEMS_PER_TRANSACTION,
-    REASON_AGGREGATE_UNAVAILABLE,
+    REASON_DIMENSION_ABSENT,
     REASON_TRANSACTION_IDENTIFIER_ABSENT,
 )
 from khepri.rra.bundle import SECTION_BASKET, SECTION_REASONS
@@ -145,8 +146,12 @@ def test_items_per_transaction_survives_the_loss_of_attach_rate() -> None:
     facts = facts_of(package)
 
     assert {fact.metric for fact in facts} == {METRIC_ITEMS_PER_TRANSACTION}
+    # `dimension_absent`, not `aggregate_unavailable`: the aggregate exists now, and
+    # a report with no admissible dimension could not carry attach rate even so.
+    # Naming the aggregate would explain the wrong failed precondition. Both the
+    # plan and bundle.py reserve this code for exactly this case.
     assert [refusal.reason for refusal in basket.refusals(package)] == [
-        REASON_AGGREGATE_UNAVAILABLE
+        REASON_DIMENSION_ABSENT
     ]
 
 
@@ -178,6 +183,37 @@ def test_an_incomplete_identifier_column_says_so_rather_than_absent() -> None:
     result = basket.derive(package_for(content))
     assert isinstance(result, RefusedResult)
     assert result.reason == REASON_INCOMPLETE_IDENTIFIERS
+
+
+def test_the_synthetic_unlabelled_bucket_gets_no_attach_rate() -> None:
+    """A null is not "a given admissible dimension value", just as `other` is not.
+
+    Rows with no product land in the synthetic `unlabelled` bucket. A rate over it
+    would state the share of transactions containing *no value*, which `RRA-008`
+    does not authorize and a reader would read as a product.
+
+    A source value literally spelled "unlabelled" is not affected: `build_comparison`
+    disambiguates any label that would shadow a reserved synthetic bucket.
+    """
+    content = (
+        b"date,revenue,units,invoice_no,product\n"
+        b"2026-01-05,100.00,3,INV-1,Water\n"
+        b"2026-01-06,200.00,5,INV-2,\n"
+        b"2026-01-07,60.00,1,INV-3,\n"
+    )
+    package = package_for(content)
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+    assert UNLABELLED_BUCKET_LABEL in {
+        bucket.label for bucket in published.comparison.buckets
+    }
+
+    labels = {
+        basket.attached_value_of(fact, package)
+        for fact in facts_of(package)
+        if fact.metric == METRIC_ATTACH_RATE
+    }
+    assert labels == {"Water"}
 
 
 def test_attach_rate_uses_whatever_measure_ranked_the_dimension() -> None:
@@ -252,7 +288,7 @@ def test_only_the_whole_family_reasons_are_section_reasons() -> None:
 
     # Never a whole-family refusal: reaching one needs items per transaction to
     # have refused as well, and its reason is the one recorded first.
-    assert REASON_AGGREGATE_UNAVAILABLE not in SECTION_REASONS[SECTION_BASKET]
+    assert REASON_DIMENSION_ABSENT not in SECTION_REASONS[SECTION_BASKET]
 
 
 def test_a_family_refusal_only_ever_names_a_reason_the_section_can_state() -> None:

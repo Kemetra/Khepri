@@ -64,7 +64,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Context, Decimal, localcontext
 
-from khepri.rra.aggregates import OTHER_BUCKET_LABEL, Bucket
+from khepri.rra.aggregates import (
+    OTHER_BUCKET_LABEL,
+    UNLABELLED_BUCKET_LABEL,
+    Bucket,
+)
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     METRIC_REVENUE,
@@ -94,12 +98,26 @@ METRIC_ITEMS_PER_TRANSACTION = "basket_items_per_transaction"
 METRIC_ATTACH_RATE = "basket_attach_rate"
 
 REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
-REASON_AGGREGATE_UNAVAILABLE = "aggregate_unavailable"
+# Reserved for this case by the merged plan and by `bundle.py`, which says it
+# "can never be a section state, so it belongs with the fact package's result-level
+# reasons, which is where the basket slice will put it". This is that slice.
+#
+# Not `aggregate_unavailable`: that named the missing `RRA-004` aggregate, and
+# `APP-014` has since supplied it. A report with no admissible dimension could not
+# carry attach rate even with the aggregate in place, so the dimension is the
+# failed precondition and naming the aggregate would explain the wrong one. With
+# the aggregate present, `aggregate_unavailable` is no longer reachable here at
+# all, and an unreachable governed reason is worse than an absent one.
+REASON_DIMENSION_ABSENT = "dimension_absent"
 
 # Which dimensions `RRA-008` allows attach rate over, in the order preferred.
 GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 
 _ITEMS_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
+
+# The two buckets `build_comparison` synthesizes rather than reads from a source
+# value. Neither is an admissible dimension value, so neither gets an attach rate.
+_SYNTHETIC_LABELS = frozenset({OTHER_BUCKET_LABEL, UNLABELLED_BUCKET_LABEL})
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +206,7 @@ def _refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
         refused.append(
             RefusedResult(
                 metric=METRIC_ATTACH_RATE,
-                reason=REASON_AGGREGATE_UNAVAILABLE,
+                reason=REASON_DIMENSION_ABSENT,
             )
         )
     return tuple(refused)
@@ -287,11 +305,22 @@ def _ranked(package: FactPackage, dimension: str) -> FactComparison | None:
 
 
 def _attachable(entry: FactComparison) -> tuple[Bucket, ...]:
-    """Published buckets that name a value and carry a transaction count."""
+    """Published buckets that name a real value and carry a transaction count.
+
+    Both synthetic buckets are excluded, because neither is "a given admissible
+    dimension value". `other` is the union of everything truncated, so a rate over
+    it states the share of transactions containing something unnamed; `unlabelled`
+    holds the rows with no value at all, so a rate over it states the share
+    containing *nothing* -- which a reader would read as a product.
+
+    A source value literally spelled `other` or `unlabelled` is unaffected:
+    `build_comparison` disambiguates any label that would shadow a reserved
+    synthetic bucket, so these two labels only ever mean the synthetic ones.
+    """
     return tuple(
         bucket
         for bucket in entry.comparison.buckets
-        if bucket.label != OTHER_BUCKET_LABEL and bucket.transactions is not None
+        if bucket.label not in _SYNTHETIC_LABELS and bucket.transactions is not None
     )
 
 
