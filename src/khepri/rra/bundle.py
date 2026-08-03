@@ -74,12 +74,13 @@ from khepri.rra.profiling import canonical_json
 #   v2  `sections` joins the document
 #   v3  every figure carries `section`, and `sections` arrives populated
 #   v4  a caveat is a (code, section) pair rather than a bare code
+#   v5  `figures` is ordered by governed section rather than by derivation
 #
 # The section model ships as several independently verifiable slices, and each
 # one that moves the document earns a version. That is version churn on purpose:
 # every string here named a shape that really existed on `main`, which is worth
 # more than a tidy sequence.
-BUNDLE_VERSION = "rra006.bundle.v4"
+BUNDLE_VERSION = "rra006.bundle.v5"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -832,7 +833,7 @@ class ReportBundle:
             state = NARRATIVE_OMITTED
 
         analysed = _analysed(package)
-        figures = (*_figures(package), *analysed.figures)
+        figures = _in_section_order((*_figures(package), *analysed.figures))
         sections = _sections(figures, analysed.refusals)
         return cls(
             identity=BundleIdentity.of(package),
@@ -858,6 +859,21 @@ class ReportBundle:
             sections=sections,
             narrative=narrative,
         )
+
+
+def _in_section_order(figures: tuple[CitedFigure, ...]) -> tuple[CitedFigure, ...]:
+    """Figures in governed section order, stable within each section.
+
+    Every surface walks `sections`, so a figure tuple in a different order makes the
+    claim and the file disagree about sequence while agreeing about content -- which
+    is what the workbook's per-section sheets exposed: the concentration curve is
+    derived last and belongs third.
+
+    Stable, so the order a family stated its facts in is the order a reader sees.
+    """
+    return tuple(
+        sorted(figures, key=lambda figure: ORDERED_SECTIONS.index(figure.section))
+    )
 
 
 def _sections(
