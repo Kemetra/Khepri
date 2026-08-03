@@ -48,6 +48,7 @@ from xlsxwriter.worksheet import Worksheet
 
 from khepri.rra.bundle import (
     DIRECTION_RTL,
+    GOVERNED_SECTION_STATES,
     LANGUAGE_DIRECTION,
     SURFACE_EXCEL,
     CitedFigure,
@@ -100,9 +101,40 @@ _CAVEATS_HEADING = {LANGUAGE_ENGLISH: "Caveats", LANGUAGE_ARABIC: "التحذي�
 # without customer text -- `bundle._figure_id` keeps labels out of it precisely
 # so a workbook can key its rows by one -- and it is what lets a reader, or a
 # reconciliation check, say which cell a figure was presented in.
+# The section column is what backs the workbook's claim about sections. Without it
+# a reader cannot tell which analysis a row belongs to, and `_content_language`
+# would be claiming a section index the sheet does not show -- which reconciliation
+# would never catch, because it compares the claim against the bundle and never
+# against the file.
 _FIGURE_COLUMNS = {
-    LANGUAGE_ENGLISH: ("Figure", "Citation", "Metric", "Unit", "Label", "Value"),
-    LANGUAGE_ARABIC: ("المعرّف", "الإسناد", "المقياس", "الوحدة", "التسمية", "القيمة"),
+    LANGUAGE_ENGLISH: (
+        "Figure",
+        "Citation",
+        "Section",
+        "Metric",
+        "Unit",
+        "Label",
+        "Value",
+    ),
+    LANGUAGE_ARABIC: (
+        "المعرّف",
+        "الإسناد",
+        "القسم",
+        "المقياس",
+        "الوحدة",
+        "التسمية",
+        "القيمة",
+    ),
+}
+# A section per row, refused ones included. The figure table can only show the
+# sections that have figures, so a refused analysis would be invisible in the
+# workbook while `_content_language` still claimed it -- and reconciliation compares
+# the claim against the bundle, never against the file. A reader of the workbook is
+# owed the same disclosure as a reader of the page: the heading, and the reason.
+_SECTIONS_HEADING = {LANGUAGE_ENGLISH: "Sections", LANGUAGE_ARABIC: "الأقسام"}
+_SECTION_COLUMNS = {
+    LANGUAGE_ENGLISH: ("Section", "State", "Reason"),
+    LANGUAGE_ARABIC: ("القسم", "الحالة", "السبب"),
 }
 _CITATION_COLUMNS = {
     LANGUAGE_ENGLISH: ("Citation", "Fact", "Metric", "Unit"),
@@ -135,10 +167,12 @@ GOVERNED_LABELS = frozenset(
     }
     | {
         header
-        for mapping in (_FIGURE_COLUMNS, _CITATION_COLUMNS)
+        for mapping in (_FIGURE_COLUMNS, _CITATION_COLUMNS, _SECTION_COLUMNS)
         for headers in mapping.values()
         for header in headers
     }
+    | set(_SECTIONS_HEADING.values())
+    | set(GOVERNED_SECTION_STATES)
 )
 
 _LABEL_WIDTH = 34
@@ -208,6 +242,11 @@ def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> No
     sheet.set_column(1, len(_FIGURE_COLUMNS[language]) - 1, _VALUE_WIDTH)
 
     row = _write_row(sheet, 0, (_DISCLOSURE_HEADING[language], bundle.disclosure(language)))
+    row = _write_row(sheet, row + 1, (_SECTIONS_HEADING[language],))
+    row = _write_row(sheet, row, _SECTION_COLUMNS[language])
+    for section in bundle.sections:
+        row = _write_row(sheet, row, (section.section_id, section.state, section.reason))
+
     row = _write_row(sheet, row + 1, (_FIGURES_HEADING[language],))
     row = _write_row(sheet, row, _FIGURE_COLUMNS[language])
     for figure in bundle.figures:
@@ -280,6 +319,7 @@ def _figure_cells(figure: CitedFigure, language: str) -> tuple[str | None, ...]:
     return (
         figure.figure_id,
         figure.citation_id,
+        figure.section,
         figure.metric,
         figure.unit_kind,
         figure.label,

@@ -39,7 +39,37 @@ from tests.test_rra006_bundle import language_of, package, surface_of
 
 
 def bundle_of() -> ReportBundle:
-    return ReportBundle.of(package())
+    """The package's own figures under one present section, and nothing else.
+
+    Trimmed to the overview deliberately. This file tests *reconciliation* -- what
+    happens when a surface misstates the sections it was handed -- and the four
+    `RRA-008` families now place four more sections, so every helper here would
+    otherwise have to rebuild a five-section index in order to exercise a rule that
+    needs one. The assembly has its own tests; this keeps the smallest bundle that
+    can be misstated.
+
+    Report-level caveats only, because a caveat scoped to a section this bundle no
+    longer declares is rejected by the constructor -- which is itself one of the
+    rules under test here.
+    """
+    full = ReportBundle.of(package())
+    figures = tuple(
+        figure for figure in full.figures if figure.section == SECTION_OVERVIEW
+    )
+    return replace(
+        full,
+        figures=figures,
+        caveats=tuple(caveat for caveat in full.caveats if caveat.section is None),
+        sections=(
+            Section(
+                section_id=SECTION_OVERVIEW,
+                state=SECTION_PRESENT,
+                reason=None,
+                figure_ids=tuple(figure.figure_id for figure in figures),
+                chart=None,
+            ),
+        ),
+    )
 
 
 def section_of(
@@ -123,11 +153,26 @@ def refusal_for(content: SurfaceContent, bundle: ReportBundle) -> str:
 
 
 def test_the_bundle_places_every_rra004_figure_in_the_overview() -> None:
-    # The four RRA-008 families are separate slices. Nothing here may claim a
-    # section for an analysis that has not been implemented.
-    bundle = bundle_of()
-    assert bundle.section_ids == (SECTION_OVERVIEW,)
-    assert {figure.section for figure in bundle.figures} == {SECTION_OVERVIEW}
+    # Asserted against the real bundle rather than the trimmed one above, because
+    # the claim is about where the package's own figures land now that the four
+    # RRA-008 families also place figures. A family's fact belongs to its own
+    # section; a package total belongs to the overview, and the arrival of the
+    # families must not have moved one.
+    bundle = ReportBundle.of(package())
+    citations = {
+        *(fact.citation_id for fact in package().facts),
+        *(entry.citation_id for entry in package().series),
+        *(entry.citation_id for entry in package().comparisons),
+    }
+    placed = {
+        figure.section
+        for figure in bundle.figures
+        if figure.citation_id in citations
+    }
+    assert placed == {SECTION_OVERVIEW}
+
+    # And the trimmed bundle this file reconciles against declares only that one.
+    assert bundle_of().section_ids == (SECTION_OVERVIEW,)
 
 
 # One bend of a faithful surface, and the reason that names what went wrong.

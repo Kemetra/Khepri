@@ -544,13 +544,30 @@ def test_a_row_missing_from_one_language_only_is_refused() -> None:
     # Each language reconciles perfectly on its own here. What differs is which
     # rows the two readers are shown, which no per-language check can see.
     bundle = ReportBundle.of(package())
+    # The dropped figure must be one no chart plots. A charted figure missing from a
+    # language earns `chart_figure_not_stated` first -- also correct, and a different
+    # finding: the chart would be drawing something that reader was never shown.
+    # This test is about coverage between the two languages, so it drops a row that
+    # only the table carries.
+    charted = {
+        figure_id
+        for section in bundle.sections
+        if section.chart is not None
+        for figure_id in section.chart.figure_ids
+    }
+    dropped = next(
+        figure
+        for figure in reversed(bundle.figures)
+        if figure.figure_id not in charted
+    )
     shortened = tuple(
         StatedFigure(
             figure_id=entry.figure_id,
             text=entry.renderings[LANGUAGE_ARABIC],
             section=entry.section,
         )
-        for entry in bundle.figures[:-1]
+        for entry in bundle.figures
+        if entry.figure_id != dropped.figure_id
     )
     uneven = (
         language_of(bundle, LANGUAGE_ARABIC, stated=shortened),

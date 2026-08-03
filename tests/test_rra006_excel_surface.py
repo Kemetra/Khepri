@@ -175,17 +175,30 @@ def _presented_language(
     rows = workbook.cells[name]
     headers = list(excel._FIGURE_COLUMNS[language])
     caveats_at = rows.index([excel._CAVEATS_HEADING[language]])
+    # The section comes from its own cell, never from a constant. Hardcoding the
+    # overview here would have made every figure the four RRA-008 families place
+    # read back as an overview figure, and this helper exists precisely so that a
+    # workbook which says something other than the claim is caught.
+    section_at = headers.index(excel._FIGURE_COLUMNS[language][2])
     stated = tuple(
-        StatedFigure(figure_id=row[0], text=row[-1], section=SECTION_OVERVIEW)
+        StatedFigure(figure_id=row[0], text=row[-1], section=row[section_at])
         for row in rows[rows.index(headers) + 1 : caveats_at]
     )
     return SurfaceLanguage(
         language=language,
         direction="rtl" if 'rightToLeft="1"' in workbook.sheets[name] else "ltr",
-        # Reconstructed from the sheet, never read from the bundle. This helper
-        # reports what the workbook actually contains, so a claim copied from
-        # the bundle would make every assertion built on it vacuous.
-        sections=tuple(dict.fromkeys(entry.section for entry in stated)),
+        # Read from the sections block, not derived from the figure rows. A refused
+        # section has no figure to derive from, so deriving would silently drop it --
+        # and the workbook would then present four sections while claiming five,
+        # which reconciliation cannot see because it never opens the file.
+        sections=tuple(
+            row[0]
+            for row in rows[
+                rows.index(list(excel._SECTION_COLUMNS[language])) + 1 : rows.index(
+                    [excel._FIGURES_HEADING[language]]
+                )
+            ]
+        ),
         stated=stated,
         # The sheet names the section a scoped caveat qualifies in the cell beside
         # the code, so both are read back from the sheet and never from the bundle.
@@ -392,6 +405,11 @@ def _allowed_text(bundle: ReportBundle) -> set[str]:
     # block names the section a scoped caveat qualifies, because one caveats heading
     # per language cannot otherwise tell a report-level warning from an analysis one.
     allowed |= set(bundle.section_ids)
+    # A refusal reason is bundle content, and the sections block states it so a
+    # workbook reader learns why an analysis is missing rather than just that it is.
+    allowed |= {
+        section.reason for section in bundle.sections if section.reason is not None
+    }
     allowed |= {bundle.disclosure(language) for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)}
     for figure in bundle.figures:
         allowed |= {figure.figure_id, figure.citation_id, figure.fact_id, figure.metric}
