@@ -857,6 +857,22 @@ def _fact(
     )
 
 
+def fact_identity(
+    *,
+    metric: str,
+    scope: tuple[str, ...],
+    formula_version: str = FORMULA_VERSION,
+) -> tuple[str, str]:
+    """The stable identity of a derived fact, for the `RRA-008` analysis modules.
+
+    Public because those modules derive facts of their own and must name them the
+    same way this one does. A second derivation would be a second chance to
+    collide, and `RRA-008` requires stable identifiers rather than merely unique
+    ones -- two runs over the same input must reach the same identity.
+    """
+    return _identity(metric=metric, scope=scope, formula_version=formula_version)
+
+
 def _identity(
     *,
     metric: str,

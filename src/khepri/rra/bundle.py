@@ -146,6 +146,11 @@ GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
 # Adding a code is deliberate: a family that needs a new one adds it here in the
 # slice that introduces it, rather than passing a string through.
 SECTION_REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+# Spelled to match the fact package's `REASON_INPUT_UNAVAILABLE` rather than
+# given a section-flavoured synonym: a family that refuses for this reason hands
+# its own code straight to the section, and two spellings of one condition would
+# make the hand-off a translation nobody would remember to keep honest.
+SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE = "required_input_unavailable"
 SECTION_REASON_AGGREGATE_UNAVAILABLE = "aggregate_unavailable"
 SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
 SECTION_REASON_UNITS_ABSENT = "units_absent"
@@ -193,9 +198,25 @@ SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
 # implementation proves it necessary, which is a one-line change in the obvious
 # place, and is a better outcome than this table quietly claiming authority the
 # specification does not give it.
+#
+# Comparison carries two, and the second is the case that proves the omission
+# above is a real risk rather than a tidy principle. `comparison.derive` refuses
+# with the reason its modes actually gave, and a compared period holding only
+# null revenue gives `required_input_unavailable` -- the window was present and
+# the measure was not. With only `prior_window_absent` permitted here, assembling
+# that refusal into its section had two outcomes and both were wrong: raise on a
+# valid package, or relabel the refusal as a missing window and tell a reader the
+# opposite of what happened. A section that cannot state its family's refusal
+# reason does not fail closed, it fails misleadingly.
+
 SECTION_REASONS: dict[str, frozenset[str]] = {
     SECTION_OVERVIEW: frozenset(),
-    SECTION_COMPARISON: frozenset({SECTION_REASON_PRIOR_WINDOW_ABSENT}),
+    SECTION_COMPARISON: frozenset(
+        {
+            SECTION_REASON_PRIOR_WINDOW_ABSENT,
+            SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
+        }
+    ),
     SECTION_CONCENTRATION: frozenset(
         {
             SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE,
