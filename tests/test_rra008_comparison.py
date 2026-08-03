@@ -14,6 +14,7 @@ from decimal import Decimal
 
 import pytest
 
+from khepri.rra import facts
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import GRANULARITY_DAY, GRANULARITY_MONTH
 from khepri.rra.analysis import comparison
@@ -373,6 +374,37 @@ def test_a_derived_fact_inherits_the_caveats_of_the_series_it_read() -> None:
     facts = facts_of(package)
     assert facts
     assert all(CAVEAT_UNDATED_ROWS_EXCLUDED in fact.caveats for fact in facts)
+
+
+def test_a_high_magnitude_ratio_does_not_abort_the_comparison() -> None:
+    # A valid package can hold values large enough that the ratio against a small
+    # prior period needs more than Python's default 28 digits. Under that context
+    # `quantize` raises InvalidOperation and takes the caller down -- neither a
+    # fact nor a governed refusal. The derivation borrows the package's own
+    # arithmetic precision, which is what `build_fact_package` computes under.
+    # Every value here is admissible: 18 digits is the governed maximum and six
+    # decimal places the governed monetary maximum. Four hundred such rows against
+    # a millionth-scale prior period is enough to need 29 digits, which is one
+    # more than the default context allows.
+    largest = "9" * 16 + ".99"
+    package = package_for(
+        [
+            (date(2026, 1, 1), "0.000001"),
+            *[(date(2026, 1, 2), largest) for _ in range(400)],
+            (date(2026, 1, 3), "1.00"),
+        ]
+    )
+    percent = next(
+        fact for fact in facts_of(package) if fact.metric == METRIC_DELTA_PERCENT
+    )
+    # Enormous but stated, rather than an exception escaping the module.
+    assert Decimal(percent.value) > Decimal(10) ** 20
+
+
+def test_the_governed_arithmetic_precision_is_the_packages_own() -> None:
+    # Borrowed rather than chosen. If the bound on admissible values is ever
+    # wrong, it is wrong in one place instead of two.
+    assert comparison.ARITHMETIC_PRECISION == facts.ARITHMETIC_PRECISION
 
 
 def test_no_fact_claims_a_caveat_this_module_cannot_reach() -> None:

@@ -51,6 +51,15 @@ whenever a final period *might* be partial refuses always, because completeness
 is equally undetectable in both directions. The cost is that the comparison lags
 by one period.
 
+**The arithmetic runs in the package's own decimal context.** `build_fact_package`
+computes under `ARITHMETIC_PRECISION`, and Python's default context is 28 digits.
+A valid package can hold enough high-magnitude rows that a ratio against a small
+prior period needs more than that: quantizing it then raises `InvalidOperation`
+and takes the caller down, rather than returning a fact or a governed refusal.
+Borrowing the same precision rather than choosing one keeps this module consistent
+with the values it consumes -- if the bound on those values is ever wrong, it is
+wrong in one place.
+
 **No truncation caveat, because nothing here can truncate.** A one-period window
 either has its counterpart or does not, so there is no shortened window to
 disclose, and the day-count truncation `RRA-008` describes is not derivable at
@@ -65,10 +74,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Context, Decimal, localcontext
 
 from khepri.rra.aggregates import GRANULARITY_MONTH, Bucket
 from khepri.rra.facts import (
+    ARITHMETIC_PRECISION,
     RATIO_PRECISION,
     REASON_INPUT_UNAVAILABLE,
     REASON_ZERO_DENOMINATOR,
@@ -169,7 +179,8 @@ def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
     would explain the refusal wrongly -- the window was there and the measure was
     not.
     """
-    outcomes = _outcomes(package)
+    with localcontext(Context(prec=ARITHMETIC_PRECISION)):
+        outcomes = _outcomes(package)
     facts = tuple(fact for outcome in outcomes for fact in outcome.facts)
     if facts:
         return facts
@@ -197,8 +208,10 @@ def refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
     absence is never the disclosure, so a consumer can tell a governed refusal
     from a metric that was quietly left out.
     """
+    with localcontext(Context(prec=ARITHMETIC_PRECISION)):
+        outcomes = _outcomes(package)
     return tuple(
-        refusal for outcome in _outcomes(package) for refusal in outcome.refusals
+        refusal for outcome in outcomes for refusal in outcome.refusals
     )
 
 
