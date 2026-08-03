@@ -74,12 +74,13 @@ from khepri.rra.profiling import canonical_json
 #   v2  `sections` joins the document
 #   v3  every figure carries `section`, and `sections` arrives populated
 #   v4  a caveat is a (code, section) pair rather than a bare code
+#   v5  `figures` is ordered by governed section rather than by derivation
 #
 # The section model ships as several independently verifiable slices, and each
 # one that moves the document earns a version. That is version churn on purpose:
 # every string here named a shape that really existed on `main`, which is worth
 # more than a tidy sequence.
-BUNDLE_VERSION = "rra006.bundle.v4"
+BUNDLE_VERSION = "rra006.bundle.v5"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"

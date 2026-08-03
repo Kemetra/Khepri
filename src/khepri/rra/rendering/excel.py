@@ -85,7 +85,11 @@ from khepri.rra.bundle import (
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 
-EXCEL_SURFACE_VERSION = "rra006.excel.v1"
+# v2 moves the figures off the two report sheets and onto a sheet per section. The
+# version is machine-readable provenance a consumer selects its parser from, so a
+# workbook with the new layout claiming v1 sends that consumer looking for a grid that
+# is no longer there.
+EXCEL_SURFACE_VERSION = "rra006.excel.v2"
 WORKBOOK_SUFFIX = ".xlsx"
 
 # Every coercion XlsxWriter would otherwise apply to a string, switched off.
@@ -318,23 +322,43 @@ def _write_section(
 
     row = _write_row(sheet, 0, _SECTION_COLUMNS[language])
     row = _write_row(sheet, row, (section.section_id, section.state, section.reason))
+    row = _write_section_figures(sheet, row, bundle, language, section.section_id)
+    _write_section_caveats(sheet, row, bundle, language, section.section_id)
 
-    figures = [
-        figure for figure in bundle.figures if figure.section == section.section_id
-    ]
-    if figures:
-        row = _write_row(sheet, row + 1, (_FIGURES_HEADING[language],))
-        row = _write_row(sheet, row, _FIGURE_COLUMNS[language])
-        for figure in figures:
-            row = _write_row(sheet, row, _figure_cells(figure, language))
 
-    scoped = [
-        caveat for caveat in bundle.caveats if caveat.section == section.section_id
-    ]
-    if scoped:
-        row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
-        for caveat in scoped:
-            row = _write_row(sheet, row, (caveat.code,))
+def _write_section_figures(
+    sheet: Worksheet,
+    row: int,
+    bundle: ReportBundle,
+    language: str,
+    section_id: str,
+) -> int:
+    """The section's figure table, or nothing at all when it refused."""
+    figures = [figure for figure in bundle.figures if figure.section == section_id]
+    if not figures:
+        return row
+    row = _write_row(sheet, row + 1, (_FIGURES_HEADING[language],))
+    row = _write_row(sheet, row, _FIGURE_COLUMNS[language])
+    for figure in figures:
+        row = _write_row(sheet, row, _figure_cells(figure, language))
+    return row
+
+
+def _write_section_caveats(
+    sheet: Worksheet,
+    row: int,
+    bundle: ReportBundle,
+    language: str,
+    section_id: str,
+) -> int:
+    """The caveats qualifying this analysis. The heading supplies their scope."""
+    scoped = [caveat for caveat in bundle.caveats if caveat.section == section_id]
+    if not scoped:
+        return row
+    row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
+    for caveat in scoped:
+        row = _write_row(sheet, row, (caveat.code,))
+    return row
 
 
 def _write_citations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:

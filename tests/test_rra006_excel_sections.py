@@ -108,20 +108,30 @@ def test_a_section_sheet_carries_only_its_own_figures() -> None:
     figure `section` field exist to prevent, and no text comparison would catch it.
     """
     workbook = workbook_of()
-    bundle = ReportBundle.of(package())
+    for section_id in ORDERED_SECTIONS:
+        stated = _sections_named_on(workbook, section_id)
+        assert stated <= {section_id}, (section_id, stated)
+
+    # And at least one sheet actually carried figures, so the loop above is not
+    # vacuously true over five empty sheets.
+    assert any(_sections_named_on(workbook, section_id) for section_id in ORDERED_SECTIONS)
+
+
+def _sections_named_on(
+    workbook: rra_workbooks.ReadWorkbook,
+    section_id: str,
+) -> set[str]:
+    """Every section named in the Section column of one section's sheet."""
     headers = list(excel._FIGURE_COLUMNS[LANGUAGE_ENGLISH])
     section_at = headers.index(excel._FIGURE_COLUMNS[LANGUAGE_ENGLISH][2])
-
-    for section_id in ORDERED_SECTIONS:
-        rows = workbook.cells[excel._section_sheet(section_id, LANGUAGE_ENGLISH)]
-        if headers not in rows:
-            continue
-        for row in rows[rows.index(headers) + 1 :]:
-            if len(row) > section_at:
-                assert row[section_at] == section_id
-
-    placed = {figure.section for figure in bundle.figures}
-    assert placed <= set(ORDERED_SECTIONS)
+    rows = workbook.cells[excel._section_sheet(section_id, LANGUAGE_ENGLISH)]
+    if headers not in rows:
+        return set()
+    return {
+        row[section_at]
+        for row in rows[rows.index(headers) + 1 :]
+        if len(row) > section_at
+    }
 
 
 def test_a_refused_section_still_gets_its_worksheet() -> None:

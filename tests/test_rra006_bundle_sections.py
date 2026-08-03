@@ -595,5 +595,10 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # `sections` joined the hashed document, so every bundle id changed. Two
     # bundles built from identical inputs on either side of that change must
     # not claim the same schema version while having different identities.
-    assert BUNDLE_VERSION == "rra006.bundle.v4"
+    #
+    # v5 for the same reason one step on: `figures` is now ordered by governed
+    # section rather than by derivation, which reorders the canonical document and
+    # moves every bundle id again. Stored evidence has to be able to tell the two
+    # ordering contracts apart.
+    assert BUNDLE_VERSION == "rra006.bundle.v5"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION
