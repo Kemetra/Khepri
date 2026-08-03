@@ -186,20 +186,30 @@ def _periods(
 
 
 def _period(revenue: FactSeries, units: FactSeries, label: str) -> _Period | None:
-    """One period, or nothing when it cannot state an average selling price.
+    """One period, or nothing when it cannot state an average selling price."""
+    measured = _measure_at(revenue, label)
+    counted = _divisor_at(units, label)
+    if measured is None or counted is None:
+        return None
+    return _Period(revenue=measured, units=counted)
 
-    Zero units refuses here rather than dividing: a price per nothing is not a
-    number, and `RRA-008` requires the refusal instead of a substituted figure.
+
+def _measure_at(series: FactSeries, label: str) -> Decimal | None:
+    """One period's measure, absent when the bucket or its value is."""
+    bucket = _bucket_at(series, label)
+    return None if bucket is None else bucket.value
+
+
+def _divisor_at(series: FactSeries, label: str) -> Decimal | None:
+    """Units that can divide a revenue: present, and not zero.
+
+    Zero refuses here rather than dividing. A price per nothing is not a number,
+    and `RRA-008` requires the refusal instead of a substituted figure.
     """
-    revenue_bucket = _bucket_at(revenue, label)
-    units_bucket = _bucket_at(units, label)
-    if revenue_bucket is None or units_bucket is None:
+    units = _measure_at(series, label)
+    if units is None or units == 0:
         return None
-    revenue_value = revenue_bucket.value
-    units_value = units_bucket.value
-    if revenue_value is None or units_value is None or units_value == 0:
-        return None
-    return _Period(revenue=revenue_value, units=units_value)
+    return units
 
 
 def _bucket_at(series: FactSeries, label: str) -> Bucket | None:
