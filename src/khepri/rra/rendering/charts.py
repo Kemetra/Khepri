@@ -98,6 +98,26 @@ _SCALE = Decimal(1).scaleb(-COORDINATE_PRECISION)
 
 
 @dataclass(frozen=True, slots=True)
+class ChartLabel:
+    """What a mark is called, and whether the surface must translate it.
+
+    Two kinds of text reach an axis and they must not be confused. A bucket figure
+    carries the customer's own product or branch name, which is final and only needs
+    escaping. A scalar figure -- a growth price effect, say -- has no category, and
+    its *metric* is what identifies the bar; that name is governed wording, so it is
+    a code the surface looks up in its per-language chrome.
+
+    A bare string could not tell those apart, and a surface guessing would either
+    print `metric.growth_price_effect` at a reader or run a customer's product name
+    through a translation table. An earlier version used the figure's own rendered
+    *value* as its label, which showed several amounts and named none of them.
+    """
+
+    value: str
+    localize: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ChartMark:
     """One drawn thing, addressed in canvas units as exact decimal strings."""
 
@@ -120,10 +140,8 @@ class ChartView:
     `width` and `height` are the canvas, carried so a `viewBox` is written from the
     geometry rather than from a number copied into a template.
 
-    `labels` is the category name a mark belongs to -- a customer value, and the
-    reason this whole module returns strings for the environment to escape. A figure
-    with no category falls back to the bundle's own rendering of its value in the
-    requested language, so nothing here formats a number.
+    `labels` names each mark: a customer category where the figure has one, and
+    otherwise a governed metric code. See `ChartLabel`.
 
     `polyline` connects the marks of a line chart, and is empty for every other kind.
     `RRA-008` requires a cumulative share *curve*, and independent marks are a
@@ -138,7 +156,7 @@ class ChartView:
     width: str
     height: str
     marks: tuple[ChartMark, ...]
-    labels: tuple[str, ...]
+    labels: tuple[ChartLabel, ...]
     polyline: str
 
 
@@ -184,9 +202,14 @@ def build_chart(
     figures: tuple[CitedFigure, ...],
     *,
     direction: str,
-    language: str,
 ) -> ChartView | None:
-    """The geometry for one chart, or nothing when the series cannot be drawn."""
+    """The geometry for one chart, or nothing when the series cannot be drawn.
+
+    There is deliberately no `language` parameter. The plan's signature had one, from
+    when this module was expected to produce localized text; it produces codes and
+    customer values instead, and a parameter it does not use would imply otherwise.
+    Direction stays, because mirroring is geometry.
+    """
     resolved = _resolve(spec, figures)
     if resolved is None:
         return None
@@ -201,21 +224,16 @@ def build_chart(
         width=_coordinate(CHART_WIDTH),
         height=_coordinate(CHART_HEIGHT),
         marks=marks,
-        labels=tuple(_label(figure, language) for figure in resolved),
+        labels=tuple(_label(figure) for figure in resolved),
         polyline=_polyline(spec.kind, marks),
     )
 
 
-def _label(figure: CitedFigure, language: str) -> str:
-    """What a mark is called: its category, or its value when it has no category.
-
-    A bucket figure carries the customer's own product or branch name, which is the
-    axis label the design names as customer-derived. A scalar figure has no category,
-    so the rendering already prepared for that language stands in.
-    """
+def _label(figure: CitedFigure) -> ChartLabel:
+    """A mark's category if it has one, otherwise the code for its metric."""
     if figure.label is not None:
-        return figure.label
-    return figure.renderings.get(language, "")
+        return ChartLabel(value=figure.label, localize=False)
+    return ChartLabel(value=f"metric.{figure.metric}", localize=True)
 
 
 def _resolve(
@@ -238,14 +256,21 @@ def _resolve(
 def _plot(resolved: tuple[CitedFigure, ...], *, mirrored: bool) -> _Plot | None:
     """A drawable series, or nothing.
 
-    Three refusals, all silent by design. One point is a number the table states
+    Four refusals, all silent by design. One point is a number the table states
     better. A missing value is a governed gap, and a chart may not render it as a
     zero. A domain of no width has nothing to scale by, and a flat axis implies a
     measurement it does not have.
+
+    And mixed units, because one axis states one dimension. A count of 25 beside a
+    ratio of 0.1818 scales the ratio to invisibility, and a reader sees a governed
+    figure that looks like nothing at all -- which is exactly what the concentration
+    section's own four scalars would have done, two counts beside two shares.
     """
     if len(resolved) < 2:
         return None
     if any(figure.value is None for figure in resolved):
+        return None
+    if len({figure.unit_kind for figure in resolved}) != 1:
         return None
     values = tuple(figure.value for figure in resolved if figure.value is not None)
     domain = _Domain(low=min(*values, Decimal(0)), high=max(*values, Decimal(0)))

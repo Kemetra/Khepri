@@ -32,6 +32,7 @@ from khepri.rra.rendering.charts import (
     CHART_HEIGHT,
     CHART_WIDTH,
     POINT_SIZE,
+    ChartLabel,
     ChartView,
     build_chart,
 )
@@ -79,7 +80,6 @@ def chart_of(
         ChartSpec(kind=kind, figure_ids=figure_ids),
         figures_for_chart(values),
         direction=LANGUAGE_DIRECTION[language],
-        language=language,
     )
 
 
@@ -146,31 +146,34 @@ def test_arabic_mirrors_the_category_order_without_moving_the_bars() -> None:
         assert (left.y, left.height, left.width) == (right.y, right.height, right.width)
 
 
-def test_labels_are_the_customer_category_a_mark_belongs_to() -> None:
-    """The axis label is the product or branch name, which is a customer value.
+def test_a_category_label_is_customer_text_the_surface_only_escapes() -> None:
+    """The axis label is the product or branch name, and it is final.
 
     That is the whole reason this module hands back strings for the environment to
-    escape rather than markup of its own. A label is not language-specific, because
-    it is the source value.
+    escape rather than markup of its own. It is not language-specific, because it is
+    the source value, and it must never be run through a translation table.
     """
-    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
-        view = chart_of(language=language)
-        assert view is not None
-        assert view.labels == ("V1", "V2")
+    view = chart_of()
+    assert view is not None
+    assert view.labels == (
+        ChartLabel(value="V1", localize=False),
+        ChartLabel(value="V2", localize=False),
+    )
 
 
-def test_a_figure_with_no_category_falls_back_to_its_own_rendering() -> None:
-    """Scalar figures have no bucket name, and the bundle already rendered them.
+def test_a_scalar_figure_is_named_by_its_metric_not_by_its_own_value() -> None:
+    """Growth effects have no category, and their amount does not identify them.
 
-    Formatting a number here instead would be a second formatter beside the one
-    that produced every other figure on the page.
+    An earlier version used each figure's rendered value as its label, so a reader
+    saw three amounts and no indication of which bar was the price effect. The metric
+    is what names the bar, and its wording is governed, so it travels as a code.
     """
     unlabelled = tuple(
         CitedFigure(
             figure_id=f"F-{index + 1}",
             citation_id="cit_000000000000",
             fact_id="fct_000000000000000000000000",
-            metric="growth_price_effect",
+            metric=metric,
             unit_kind="monetary",
             kind=KIND_VALUE,
             section=SECTION_COMPARISON,
@@ -178,20 +181,50 @@ def test_a_figure_with_no_category_falls_back_to_its_own_rendering() -> None:
             value=value,
             renderings={LANGUAGE_ENGLISH: str(value), LANGUAGE_ARABIC: f"ar:{value}"},
         )
-        for index, value in enumerate((Decimal(100), Decimal(300)))
+        for index, (metric, value) in enumerate(
+            (("growth_price_effect", Decimal(100)), ("growth_volume_effect", Decimal(300)))
+        )
     )
-    spec = ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2"))
+    view = build_chart(
+        ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2")),
+        unlabelled,
+        direction=DIRECTION_LTR,
+    )
+    assert view is not None
+    assert view.labels == (
+        ChartLabel(value="metric.growth_price_effect", localize=True),
+        ChartLabel(value="metric.growth_volume_effect", localize=True),
+    )
 
-    english = build_chart(
-        spec, unlabelled, direction=DIRECTION_LTR, language=LANGUAGE_ENGLISH
+
+def test_a_series_mixing_units_is_not_drawn() -> None:
+    """One axis states one dimension.
+
+    This is the concentration section's own four scalars: two counts beside two
+    shares. Scaled together, 25 makes 0.1818 invisible, and a reader sees a governed
+    figure that looks like nothing at all.
+    """
+    mixed = (
+        figure("F-1", Decimal(25), "distinct"),
+        CitedFigure(
+            figure_id="F-2",
+            citation_id="cit_000000000000",
+            fact_id="fct_000000000000000000000000",
+            metric="concentration_top_decile_share",
+            unit_kind="ratio",
+            kind=KIND_VALUE,
+            section=SECTION_COMPARISON,
+            label="decile",
+            value=Decimal("0.1818"),
+            renderings={LANGUAGE_ENGLISH: "0.1818", LANGUAGE_ARABIC: "0.1818"},
+        ),
     )
-    arabic = build_chart(
-        spec, unlabelled, direction=DIRECTION_RTL, language=LANGUAGE_ARABIC
+    view = build_chart(
+        ChartSpec(kind=CHART_BAR, figure_ids=("F-1", "F-2")),
+        mixed,
+        direction=DIRECTION_LTR,
     )
-    assert english is not None
-    assert arabic is not None
-    assert english.labels == ("100", "300")
-    assert arabic.labels == ("ar:100", "ar:300")
+    assert view is None
 
 
 def test_the_title_and_description_are_codes_a_surface_must_look_up() -> None:

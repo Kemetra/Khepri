@@ -1413,6 +1413,37 @@ git commit --no-gpg-sign -m "feat: compute governed chart geometry as an exact v
 
 ### Task 11 — Slice 6: Web surface — sections and charts
 
+**One decision must be made here before the concentration chart can be right, and it
+is not a geometry question.** Raised in review of Task 10 and recorded rather than
+resolved, because it is about which figures a section carries, which is this task.
+
+`SECTION_CHART_KINDS` fixes concentration as `CHART_LINE` because `RRA-008` requires
+the "cumulative share curve", and `bundle.py` notes that moving that row would need
+`RRA-008` to change first. But `ChartSpec` names *figure identifiers*, and the
+concentration family emits four scalars — a distinct count, a ranked count, and the
+top-decile and top-quartile shares. A line through those four is not the curve, and
+after Task 10's single-unit rule it is not drawable at all: two counts beside two
+ratios refuse, correctly.
+
+The measured curve is retained on the aggregate and reachable through
+`concentration.curve_for(package)`. Three ways out, and they are not equal:
+
+1. **One figure per curve point.** The chart then inherits the citation
+   reconciliation `ChartSpec` exists to give it. But #82 rejected exactly this: the
+   full distinct set can run to dozens of points, each becoming a governed figure and
+   citation identifier for a single statement, and every surface would reconcile all
+   of them.
+2. **Let a chart plot a retained aggregate rather than figures.** Cheap, and it
+   breaks the one property `ChartSpec` was designed for — a chart with no citations
+   is a picture nothing reconciles.
+3. **Emit the curve as one `FactSeries`-shaped figure** the way trends already are.
+   `CitedFigure.kind` already distinguishes `KIND_VALUE` from `KIND_ROWS`, so a
+   series-shaped figure is not a new concept — this is the option worth pricing
+   first.
+
+Whichever is chosen, state it in the pull request with the reason the other two were
+not. Do not quietly draw a line through the four scalars.
+
 **Files:**
 - Modify: `src/khepri/rra/rendering/templates/report.html.j2`
 - Create: `src/khepri/rra/rendering/templates/_chart.svg.j2`
