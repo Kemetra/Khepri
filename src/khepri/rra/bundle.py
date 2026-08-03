@@ -832,7 +832,7 @@ class ReportBundle:
             state = NARRATIVE_OMITTED
 
         analysed = _analysed(package)
-        figures = (*_figures(package), *analysed.figures)
+        figures = _in_section_order((*_figures(package), *analysed.figures))
         sections = _sections(figures, analysed.refusals)
         return cls(
             identity=BundleIdentity.of(package),
@@ -858,6 +858,21 @@ class ReportBundle:
             sections=sections,
             narrative=narrative,
         )
+
+
+def _in_section_order(figures: tuple[CitedFigure, ...]) -> tuple[CitedFigure, ...]:
+    """Figures in governed section order, stable within each section.
+
+    Every surface walks `sections`, so a figure tuple in a different order makes the
+    claim and the file disagree about sequence while agreeing about content -- which
+    is what the workbook's per-section sheets exposed: the concentration curve is
+    derived last and belongs third.
+
+    Stable, so the order a family stated its facts in is the order a reader sees.
+    """
+    return tuple(
+        sorted(figures, key=lambda figure: ORDERED_SECTIONS.index(figure.section))
+    )
 
 
 def _sections(

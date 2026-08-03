@@ -30,11 +30,34 @@ written as the decimal strings the package computed them to, which is also what
 `bundle.reconcile` compares: `500.0` and `500.00` are the same number and a
 different statement about precision.
 
-**What this module does not do.** It draws no charts. An XlsxWriter chart series
-addresses numeric cells, so charting a governed monetary series would reintroduce
-the floating-point representation above; and RRA-006's Excel requirement is
-accessible tables, units, formats, citation sheets, and machine-readable
-provenance, none of which is a chart.
+**One worksheet per governed analysis, per language.** The workbook used to run all
+five sections together in one grid. That was this surface disagreeing with the other
+two about what a section is -- the page gives each analysis a heading and the printed
+report gives each one a page -- and it left a reader no way to address a single
+analysis. A refused section still gets a sheet, stating its reason and carrying no
+figure table, because a missing sheet is the one disclosure a reader cannot tell apart
+from an analysis nobody ran.
+
+A sheet's *name* is not translated. It is an address: a reader following a reference,
+or any tool reading the file, needs the same name in both workbooks. The language lives
+inside the sheet.
+
+**Charts, and why this paragraph changed.** It used to argue charts out, on the grounds
+that an XlsxWriter chart series addresses numeric cells and Excel stores every numeric
+cell as an IEEE 754 double -- which `KHEPRI-DEC-005` forbids as an authoritative
+financial fact. That reasoning was sound and is why the prohibition still holds for
+every cell this module writes today.
+
+`APP-013` has since amended `KHEPRI-DEC-005` to permit a numeric cell *solely* as a
+chart series address, on a dedicated worksheet holding no authoritative figure and no
+citation identifier, excluded from the surface content a bundle reconciles. The
+authoritative figure remains the decimal string on the section worksheet. That
+amendment narrows the prohibition; it does not relax it.
+
+The native chart path is the remaining half of this slice and is deliberately not here
+yet: the per-section worksheets need no amendment and merge on their own, and parking
+them behind the chart work would have held reviewable work behind a numeric write. Until
+that lands, every cell in this module still goes through `write_string`.
 """
 
 from __future__ import annotations
@@ -53,6 +76,7 @@ from khepri.rra.bundle import (
     SURFACE_EXCEL,
     CitedFigure,
     ReportBundle,
+    Section,
     StatedCaveat,
     StatedFigure,
     SurfaceContent,
@@ -89,6 +113,17 @@ _PROVENANCE_EXCEL_VERSION = "excel_surface_version"
 # than one sheet with English chrome and Arabic values in it.
 _REPORT_SHEET = {LANGUAGE_ENGLISH: "Report (English)", LANGUAGE_ARABIC: "التقرير (العربية)"}
 _CITATION_SHEET = {LANGUAGE_ENGLISH: "Citations (English)", LANGUAGE_ARABIC: "الإسنادات (العربية)"}
+
+# A worksheet per section per language. The name is built from the section identifier
+# rather than translated, because a sheet name is an address: a reader following a
+# reference, and any tooling reading the file, needs the same name in both workbooks.
+# The heading inside the sheet is where the language belongs, and `_SECTION_COLUMNS`
+# carries it.
+_SECTION_SHEET_PREFIX = {LANGUAGE_ENGLISH: "en", LANGUAGE_ARABIC: "ar"}
+
+
+def _section_sheet(section_id: str, language: str) -> str:
+    return f"{_SECTION_SHEET_PREFIX[language]}_{section_id}"
 
 _DISCLOSURE_HEADING = {
     LANGUAGE_ENGLISH: "About this report",
@@ -231,15 +266,24 @@ class ExcelSurfaceRenderer:
 def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:
     for language in LANGUAGES:
         _write_report(workbook, bundle, language)
+        for section in bundle.sections:
+            _write_section(workbook, bundle, language, section)
         _write_citations(workbook, bundle, language)
     _write_provenance(workbook, bundle)
 
 
 def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
-    """Disclosure, then the figure table, then the caveats every reader gets."""
+    """The index sheet: the disclosure, the sections, and the report-level caveats.
+
+    It carries no figures. Each analysis has its own worksheet, so a reader opening
+    the workbook lands on what the report says about itself and then chooses an
+    analysis by name -- which is how the sections read on the page and on paper, and
+    a workbook that ran all five together in one grid was the surface disagreeing
+    with the other two about what a section is.
+    """
     sheet = _sheet(workbook, _REPORT_SHEET[language], language)
     sheet.set_column(0, 0, _LABEL_WIDTH)
-    sheet.set_column(1, len(_FIGURE_COLUMNS[language]) - 1, _VALUE_WIDTH)
+    sheet.set_column(1, len(_SECTION_COLUMNS[language]) - 1, _VALUE_WIDTH)
 
     row = _write_row(sheet, 0, (_DISCLOSURE_HEADING[language], bundle.disclosure(language)))
     row = _write_row(sheet, row + 1, (_SECTIONS_HEADING[language],))
@@ -247,23 +291,50 @@ def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> No
     for section in bundle.sections:
         row = _write_row(sheet, row, (section.section_id, section.state, section.reason))
 
-    row = _write_row(sheet, row + 1, (_FIGURES_HEADING[language],))
-    row = _write_row(sheet, row, _FIGURE_COLUMNS[language])
-    for figure in bundle.figures:
-        row = _write_row(sheet, row, _figure_cells(figure, language))
-
     row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
     for caveat in bundle.caveats:
-        # The section a caveat qualifies is written beside it, because this
-        # workbook has one caveats heading per language: a comparison-specific
-        # warning listed bare under it would tell a reader the whole report is
-        # qualified, and omitting it would drop a caveat `RRA-008` requires while
-        # `_content_language` still claimed it.
-        #
-        # A sheet per section is the better home and is the workbook slice's job.
-        # Naming the section here is what lets that slice arrive later without a
-        # report in between that either misinforms or under-discloses.
+        # Report-level here; a section's own caveats are written on its sheet. The
+        # section is still named beside the code, because the index is where a reader
+        # sees every caveat at once and a bare code there cannot say what it qualifies.
         row = _write_row(sheet, row, _caveat_cells(caveat))
+
+
+def _write_section(
+    workbook: Workbook,
+    bundle: ReportBundle,
+    language: str,
+    section: Section,
+) -> None:
+    """One analysis: its state, its figures, and the caveats that qualify it.
+
+    A refused section still gets a worksheet. `RRA-008` refuses the affected analysis
+    rather than the report, and a missing sheet is the one disclosure a reader cannot
+    distinguish from an analysis nobody ran -- the same reason the page renders a
+    heading and a reason rather than nothing.
+    """
+    sheet = _sheet(workbook, _section_sheet(section.section_id, language), language)
+    sheet.set_column(0, 0, _LABEL_WIDTH)
+    sheet.set_column(1, len(_FIGURE_COLUMNS[language]) - 1, _VALUE_WIDTH)
+
+    row = _write_row(sheet, 0, _SECTION_COLUMNS[language])
+    row = _write_row(sheet, row, (section.section_id, section.state, section.reason))
+
+    figures = [
+        figure for figure in bundle.figures if figure.section == section.section_id
+    ]
+    if figures:
+        row = _write_row(sheet, row + 1, (_FIGURES_HEADING[language],))
+        row = _write_row(sheet, row, _FIGURE_COLUMNS[language])
+        for figure in figures:
+            row = _write_row(sheet, row, _figure_cells(figure, language))
+
+    scoped = [
+        caveat for caveat in bundle.caveats if caveat.section == section.section_id
+    ]
+    if scoped:
+        row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
+        for caveat in scoped:
+            row = _write_row(sheet, row, (caveat.code,))
 
 
 def _write_citations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:

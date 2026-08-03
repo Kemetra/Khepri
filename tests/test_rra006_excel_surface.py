@@ -180,25 +180,23 @@ def _presented_language(
     # read back as an overview figure, and this helper exists precisely so that a
     # workbook which says something other than the claim is caught.
     section_at = headers.index(excel._FIGURE_COLUMNS[language][2])
+    # Figures now live on the per-section sheets, so they are gathered by walking
+    # every sheet the index declares -- in the index's order, which is the governed
+    # section order. Reading only the index would rebuild a claim of no figures at
+    # all, and the surface would look like it published an empty report.
     stated = tuple(
         StatedFigure(figure_id=row[0], text=row[-1], section=row[section_at])
-        for row in rows[rows.index(headers) + 1 : caveats_at]
+        for section_id in _declared_sections(workbook, language)
+        for row in _section_figure_rows(workbook, language, section_id, headers)
     )
     return SurfaceLanguage(
         language=language,
         direction="rtl" if 'rightToLeft="1"' in workbook.sheets[name] else "ltr",
-        # Read from the sections block, not derived from the figure rows. A refused
-        # section has no figure to derive from, so deriving would silently drop it --
-        # and the workbook would then present four sections while claiming five,
-        # which reconciliation cannot see because it never opens the file.
-        sections=tuple(
-            row[0]
-            for row in rows[
-                rows.index(list(excel._SECTION_COLUMNS[language])) + 1 : rows.index(
-                    [excel._FIGURES_HEADING[language]]
-                )
-            ]
-        ),
+        # Read from the index's sections block, not derived from the figure rows. A
+        # refused section has no figure to derive from, so deriving would silently
+        # drop it -- and the workbook would then present four sections while claiming
+        # five, which reconciliation cannot see because it never opens the file.
+        sections=_declared_sections(workbook, language),
         stated=stated,
         # The sheet names the section a scoped caveat qualifies in the cell beside
         # the code, so both are read back from the sheet and never from the bundle.
@@ -216,6 +214,38 @@ def _presented_language(
             row[1] for row in rows if row[:1] == [excel._DISCLOSURE_HEADING[language]]
         ),
     )
+
+
+def _declared_sections(
+    workbook: rra_workbooks.ReadWorkbook,
+    language: str,
+) -> tuple[str, ...]:
+    """The sections the index sheet names, in the order it names them."""
+    rows = workbook.cells[excel._REPORT_SHEET[language]]
+    start = rows.index(list(excel._SECTION_COLUMNS[language])) + 1
+    end = rows.index([excel._CAVEATS_HEADING[language]])
+    return tuple(row[0] for row in rows[start:end])
+
+
+def _section_figure_rows(
+    workbook: rra_workbooks.ReadWorkbook,
+    language: str,
+    section_id: str,
+    headers: list[str],
+) -> list[list[str]]:
+    """The figure rows on one section's sheet, and none if it has no table.
+
+    A refused section has a sheet and no figures, which is the shape that makes the
+    refusal visible in the workbook rather than only in the claim.
+    """
+    rows = workbook.cells[excel._section_sheet(section_id, language)]
+    if headers not in rows:
+        return []
+    start = rows.index(headers) + 1
+    end = len(rows)
+    if [excel._CAVEATS_HEADING[language]] in rows:
+        end = rows.index([excel._CAVEATS_HEADING[language]])
+    return [row for row in rows[start:end] if row]
 
 
 def _provenance(workbook: rra_workbooks.ReadWorkbook) -> dict[str, str]:
