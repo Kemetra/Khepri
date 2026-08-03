@@ -349,7 +349,17 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
     # `aggregate_unavailable` is the exception, and is not from RRA-008: the
     # merged plan introduces it for the pending RRA-004 amendment, which gates
     # concentration entirely and basket's attach rate.
-    assert SECTION_REASONS[SECTION_COMPARISON] == frozenset({"prior_window_absent"})
+    #
+    # Comparison's second reason is the other exception, and comes from RRA-004
+    # rather than RRA-008: `comparison.derive` refuses with the reason its modes
+    # actually gave, and a compared period holding only null revenue gives the
+    # fact package's `required_input_unavailable`. Its authority is that the
+    # family can reach it -- a section restricted to `prior_window_absent` would
+    # have to raise on a valid package or call an absent measure an absent
+    # window.
+    assert SECTION_REASONS[SECTION_COMPARISON] == frozenset(
+        {"prior_window_absent", "required_input_unavailable"}
+    )
     assert SECTION_REASONS[SECTION_CONCENTRATION] == frozenset(
         {"distinct_set_uncomputable", "aggregate_unavailable"}
     )
@@ -430,6 +440,11 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
     assert frozenset(
         {
             "prior_window_absent",
+            # Added by the comparison slice, which proved it reachable: a
+            # compared period holding only null revenue refuses the family with
+            # the fact package's own required_input_unavailable, and a section
+            # that cannot state its family's reason relabels it instead.
+            "required_input_unavailable",
             "aggregate_unavailable",
             "distinct_set_uncomputable",
             "units_absent",

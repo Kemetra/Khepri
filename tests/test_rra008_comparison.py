@@ -26,6 +26,7 @@ from khepri.rra.analysis.comparison import (
     REASON_NEGATIVE_BASE,
     REASON_PRIOR_WINDOW_ABSENT,
 )
+from khepri.rra.bundle import SECTION_COMPARISON, SECTION_REASONS
 from khepri.rra.facts import (
     CAVEAT_UNDATED_ROWS_EXCLUDED,
     REASON_INPUT_UNAVAILABLE,
@@ -75,7 +76,13 @@ def month_start(offset: int, *, year: int = 2024, month: int = 1) -> date:
 
 
 def monthly(months: int, *, skip: int | None = None) -> FactPackage:
-    """One row on the first of each of `months` consecutive months.
+    """One row on the first of each of `months` consecutive months from offset 0.
+
+    A month of run-up is prepended at offset -1 and is never compared. Only
+    periods with data on both sides are known whole, so without it the month at
+    offset 0 would be excluded as possibly left-truncated and every window here
+    would slide by one. Prepending it means offsets keep meaning what their names
+    say: `monthly(26)` still compares the same two periods it always did.
 
     `skip` omits one offset, which shifts every bucket after it -- the shape that
     makes positional pairing wrong and label pairing right.
@@ -83,7 +90,7 @@ def monthly(months: int, *, skip: int | None = None) -> FactPackage:
     return package_for(
         [
             (month_start(offset), "100.00")
-            for offset in range(months)
+            for offset in range(-1, months)
             if offset != skip
         ]
     )
@@ -119,17 +126,18 @@ def months_apart(current: str, prior: str) -> int:
 
 
 def two_settled_days(prior: str, current: str) -> FactPackage:
-    """Two days to compare, plus a third so both of them have settled.
+    """Two days to compare, bracketed by a day on each side so both have settled.
 
-    The trailing day is never compared. It exists so the two that matter are
-    periods with data after them, which is the only evidence available here that
-    a period finished.
+    Neither bracketing day is ever compared. They exist so the two that matter
+    have data on both sides, which is the only evidence available here that a
+    period is whole rather than cut off by where the export began or ended.
     """
     return package_for(
         [
-            (date(2026, 1, 1), prior),
-            (date(2026, 1, 2), current),
-            (date(2026, 1, 3), "1.00"),
+            (date(2026, 1, 1), "1.00"),
+            (date(2026, 1, 2), prior),
+            (date(2026, 1, 3), current),
+            (date(2026, 1, 4), "1.00"),
         ]
     )
 
@@ -259,16 +267,66 @@ def test_older_history_does_not_change_which_periods_are_compared() -> None:
 # --- what settles, and what refuses -----------------------------------------
 
 
-def test_the_final_period_is_left_out_because_its_completeness_is_unknown() -> None:
-    # Three days of data compare the second against the first; the third is
-    # excluded, because nothing in the series says whether it was cut off partway
-    # by wherever the export ended.
+def test_the_period_at_each_end_is_left_out_because_its_completeness_is_unknown() -> (
+    None
+):
+    # Four days of data compare the third against the second. Both outer days are
+    # excluded: nothing in the series says whether the last was cut off partway by
+    # wherever the export ended, or the first by wherever it began.
     package = two_settled_days("100.00", "150.00")
-    assert len(package.trend().series.buckets) == 3
+    assert len(package.trend().series.buckets) == 4
     absolute = next(
         fact for fact in facts_of(package) if fact.metric == METRIC_DELTA_ABSOLUTE
     )
     assert Decimal(absolute.value) == Decimal(50)
+
+
+def test_every_reason_this_family_refuses_with_is_one_its_section_can_state() -> None:
+    # A section may only carry a reason in SECTION_REASONS, so a family that
+    # refuses with anything else cannot be assembled into one: the section either
+    # raises on a valid package or relabels the refusal and tells a reader the
+    # opposite of what happened. Nothing serializes these facts yet, so this is
+    # the only place the mismatch is visible before the assembly slice lands.
+    refused = {
+        comparison.derive(package).reason
+        for package in (
+            monthly(1),
+            package_for(
+                [
+                    (date(2026, 1, 1), "1.00"),
+                    (date(2026, 1, 2), "100.00"),
+                    (date(2026, 1, 3), ""),
+                    (date(2026, 1, 4), "1.00"),
+                ]
+            ),
+        )
+    }
+    # Both reachable reasons, named so the subset assertion below cannot pass by
+    # exercising only one of them.
+    assert refused == {REASON_PRIOR_WINDOW_ABSENT, REASON_INPUT_UNAVAILABLE}
+    assert refused <= SECTION_REASONS[SECTION_COMPARISON]
+
+
+def test_a_left_truncated_first_period_is_never_compared_against() -> None:
+    # An export beginning on 15 January holds seventeen days in its first bucket.
+    # Every month here bills the same 3,100, so the honest year-over-year answer
+    # is no change -- but comparing a whole January 2026 against seventeen days of
+    # January 2025 reports +82%, an artifact of where the export started rather
+    # than anything the business did. Excluding only the final period caught the
+    # boundary the report points at and left the one it compares against.
+    rows = [(date(2025, 1, day), "100.00") for day in range(15, 32)]
+    rows += [
+        (month_start(offset, year=2025, month=2), "3100.00") for offset in range(13)
+    ]
+    package = package_for(rows)
+    assert package.trend().series.buckets[0].label == "2025-01"
+
+    found = window(package, MODE_YEAR_OVER_YEAR)
+    assert found is None or found.prior.label != "2025-01"
+    assert MODE_YEAR_OVER_YEAR not in modes_for(package)
+    assert REASON_PRIOR_WINDOW_ABSENT in {
+        refusal.reason for refusal in comparison.refusals(package)
+    }
 
 
 def test_one_settled_period_has_nothing_to_compare() -> None:
@@ -432,9 +490,10 @@ def test_a_refusal_names_the_reason_the_mode_actually_gave() -> None:
     # there.
     package = package_for(
         [
-            (date(2026, 1, 1), "100.00"),
-            (date(2026, 1, 2), ""),
-            (date(2026, 1, 3), "1.00"),
+            (date(2026, 1, 1), "1.00"),
+            (date(2026, 1, 2), "100.00"),
+            (date(2026, 1, 3), ""),
+            (date(2026, 1, 4), "1.00"),
         ]
     )
     result = comparison.derive(package)
@@ -449,9 +508,10 @@ def test_a_derived_fact_inherits_the_caveats_of_the_series_it_read() -> None:
     # caveat would be presented as covering rows the aggregate never saw.
     package = package_for(
         [
-            (date(2026, 1, 1), "100.00"),
-            (date(2026, 1, 2), "150.00"),
-            (date(2026, 1, 3), "1.00"),
+            (date(2026, 1, 1), "1.00"),
+            (date(2026, 1, 2), "100.00"),
+            (date(2026, 1, 3), "150.00"),
+            (date(2026, 1, 4), "1.00"),
         ]
         + [(None, "5.00")]
     )
@@ -474,9 +534,10 @@ def test_a_high_magnitude_ratio_does_not_abort_the_comparison() -> None:
     largest = "9" * 16 + ".99"
     package = package_for(
         [
-            (date(2026, 1, 1), "0.000001"),
-            *[(date(2026, 1, 2), largest) for _ in range(400)],
-            (date(2026, 1, 3), "1.00"),
+            (date(2026, 1, 1), "1.00"),
+            (date(2026, 1, 2), "0.000001"),
+            *[(date(2026, 1, 3), largest) for _ in range(400)],
+            (date(2026, 1, 4), "1.00"),
         ]
     )
     percent = next(

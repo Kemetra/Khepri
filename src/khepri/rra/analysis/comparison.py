@@ -38,18 +38,26 @@ dangerous. A missing counterpart refuses rather than substituting a neighbour.
 `RRA-008` asks that both windows be truncated "to the same day count when the
 current window is incomplete" -- comparing fifteen days of this month against a
 whole prior month overstates the change. `FactSeries` carries one bucket per
-period and no day count, so nothing here can tell a complete final month from a
-partial one. What *is* knowable is that every period with a later period after it
-finished, because data exists beyond it. So the comparison runs over settled
-periods and leaves the last one out.
+period and no day count, so nothing here can tell a whole month from a partial
+one. What *is* knowable is that a period with data on both sides of it is whole:
+a later period proves it finished, an earlier one proves it was already running
+when the export began. So the comparison runs over settled periods and leaves out
+the period at each end.
+
+Both ends, because either can be the period compared. An export beginning on 15
+January holds seventeen days in its first bucket, and a year-over-year comparison
+landing on it reads a whole January against a part of one: a series billing 3,100
+every month reports +82% growth that is an artifact of where the export started.
+An earlier revision excluded only the final period, which fixed the boundary the
+report was pointed at and left the one it compared against.
 
 That is deliberately not the specification's remedy, which needs a day count the
 aggregate does not carry. It is the nearest derivable thing to the requirement's
-intent, and the alternatives were worse: including the final bucket compares a
+intent, and the alternatives were worse: including an end bucket compares a
 possibly-partial period against a whole one and says nothing, and refusing
-whenever a final period *might* be partial refuses always, because completeness
-is equally undetectable in both directions. The cost is that the comparison lags
-by one period.
+whenever a period *might* be partial refuses always, because completeness is
+equally undetectable in both directions. The cost is that the comparison lags by
+one period and needs one period of run-up.
 
 **The arithmetic runs in the package's own decimal context.** `build_fact_package`
 computes under `ARITHMETIC_PRECISION`, and Python's default context is 28 digits.
@@ -68,6 +76,20 @@ it reads as a guarantee that something is being watched. Two `RRA-004` aggregate
 would change this: a governed window length, and per-period completeness. Both
 belong in the same amendment as the concentration curve and transaction
 membership.
+
+**One governed requirement is deferred, not met.** `RRA-008` requires the formula
+version recorded as provenance. `COMPARISON_FORMULA_VERSION` is hashed into every
+fact identity below, and hashing is not recording -- a serialized fact cannot
+disclose which formula produced it, and `mode_of` cannot interpret a fact derived
+under a superseded version. Recording it properly needs a field on `Fact`, which
+is an `RRA-004` type this specification excludes changing, so it is a fifth item
+for that same amendment rather than a change made here.
+
+Until then the obligation falls on the caller: **whichever slice first serializes
+these facts must record `COMPARISON_FORMULA_VERSION` alongside them.** Nothing
+does today -- no section carries them and no bundle includes them -- so the gap
+has no consumer yet, and it acquires one the moment section assembly lands. The
+constant is public for that reason and for no other.
 """
 
 from __future__ import annotations
@@ -354,14 +376,22 @@ def _against_counterpart(
 
 
 def _settled(buckets: tuple[Bucket, ...]) -> tuple[Bucket, ...]:
-    """Every period known to have finished, which is every one but the last.
+    """Every period known to be whole, which is every one but the two on the ends.
 
-    A period with a later period after it is complete, because data exists beyond
-    it. The final period may have been cut off mid-way by wherever the export
-    ended, and nothing in the series says which -- so it is left out rather than
-    compared against a whole one.
+    A period is whole when data exists on both sides of it: a later period proves
+    it finished, and an earlier period proves it was already running when the
+    export began. The first and last periods each have one open side, and nothing
+    in the series says whether that side was cut.
+
+    Both ends matter because either can be the one compared. An export beginning
+    on 15 January holds seventeen days in its first bucket; a year-over-year
+    comparison landing on it reads a full January against a part of one and
+    reports growth that is an artifact of the export window -- 3,100 a month
+    throughout becomes +82% because the first January is short. That is the same
+    failure the last period was excluded to prevent, and it was left standing at
+    the other end.
     """
-    return buckets[:-1]
+    return buckets[1:-1]
 
 
 def _counterpart_label(label: str, granularity: str, mode: str) -> str | None:
