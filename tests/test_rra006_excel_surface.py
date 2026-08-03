@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import itertools
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -510,6 +511,17 @@ def test_the_workbook_carries_machine_readable_provenance(tmp_path: Path) -> Non
 def test_regenerating_the_workbook_reproduces_the_same_cells(tmp_path: Path) -> None:
     # Not byte identity: XlsxWriter stamps a creation time into the package.
     # What determinism requires is that the same bundle yields the same cells.
+    #
+    # The size is compared out rather than compared, because it is the one field of the
+    # claim that legitimately differs. A workbook is a deflate archive and the stamped
+    # timestamp is part of what it compresses, so two renders a second apart can differ
+    # by a byte in *length* while every cell is identical -- which this test asserted
+    # for months and which finally failed on 2026-08-03 at 29007 against 29006. Its own
+    # comment already said byte identity is not the claim; the assertion overshot it.
+    #
+    # Nothing is lost by excluding it: `test_the_workbook_surface_reports_the_size_of
+    # _the_file_it_wrote` holds each render's size against the file that render actually
+    # produced, which is the claim worth making about a size.
     first = tmp_path / "first"
     second = tmp_path / "second"
     for directory in (first, second):
@@ -518,8 +530,11 @@ def test_regenerating_the_workbook_reproduces_the_same_cells(tmp_path: Path) -> 
     left, left_workbook = rendered(ReportBundle.of(package()), first)
     right, right_workbook = rendered(ReportBundle.of(package()), second)
 
-    assert left == right
+    assert replace(left, output_size_bytes=right.output_size_bytes) == right
     assert left_workbook.cells == right_workbook.cells
+    # Including the chart series values: a float is exactly where a deterministic rerun
+    # would break, and `cells` resolves a numeric cell and a text cell to the same thing.
+    assert left_workbook.numbers == right_workbook.numbers
 
 
 def test_the_workbook_is_named_by_the_bundle_it_was_built_for(tmp_path: Path) -> None:

@@ -600,5 +600,11 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # section rather than by derivation, which reorders the canonical document and
     # moves every bundle id again. Stored evidence has to be able to tell the two
     # ordering contracts apart.
-    assert BUNDLE_VERSION == "rra006.bundle.v5"
+    #
+    # v6 changes a field rather than an order: a series or comparison bucket figure
+    # records its fact's `metric` where it used to record the `measure` behind it, so
+    # `revenue_by_period` appears where `revenue` did. Every affected figure's document
+    # changes and every bundle id with it, and a consumer comparing a stored figure's
+    # metric across the two shapes would read a rename as a different measurement.
+    assert BUNDLE_VERSION == "rra006.bundle.v6"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION

@@ -767,9 +767,15 @@ def test_a_surface_may_show_a_subset_so_long_as_both_readers_see_it() -> None:
 def test_a_withheld_bucket_value_is_rendered_as_nothing_at_all() -> None:
     # A surface cannot print what was not supplied, and giving it an empty
     # rendering would hand it something to print.
+    #
+    # `metric` and `measure` are deliberately different here: a bucket figure carries
+    # the metric, because a figure's metric is its fact's metric everywhere in this
+    # module. Carrying the measure instead is what left the concentration curve
+    # claiming to be `revenue` and therefore chartable by nobody.
     owner = {
         "citation_id": "cit_x",
         "fact_id": "fct_x",
+        "metric": "revenue_by_branch",
         "measure": "revenue",
         "unit_kind": "money",
     }
@@ -777,3 +783,4 @@ def test_a_withheld_bucket_value_is_rendered_as_nothing_at_all() -> None:
 
     assert [entry.kind for entry in withheld] == ["rows"]
     assert withheld[0].renderings[LANGUAGE_ENGLISH] == "4"
+    assert withheld[0].metric == "revenue_by_branch"

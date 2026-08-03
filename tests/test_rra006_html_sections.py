@@ -19,6 +19,7 @@ from khepri.rra.bundle import (
     SECTION_CONCENTRATION,
     SECTION_GROWTH,
     SECTION_OVERVIEW,
+    SECTION_PRESENT,
     SECTION_REFUSED,
     FactPackage,
     ReportBundle,
@@ -71,6 +72,28 @@ def page(language: str = LANGUAGE_ENGLISH, rows: list | None = None) -> str:
     # Reconciled here so no assertion below rests on a page the bundle would reject.
     reconcile(surface.content, bundle=bundle)
     return surface.documents[language]
+
+
+def undrawable_section(rows: list | None = None) -> str:
+    """The first present section this dataset draws no chart for.
+
+    Derived rather than named. Both tests below used to name concentration, whose curve
+    was unchartable for an unrelated defect; fixing that broke two tests whose subject
+    -- what a section looks like when its figures cannot be drawn -- had not changed.
+    """
+    bundle = ReportBundle.of(package_for(rows or ROWS))
+    return next(
+        section.section_id
+        for section in bundle.sections
+        if section.state == SECTION_PRESENT and section.chart is None
+    )
+
+
+def section_block(rendered: str, section_id: str) -> str:
+    """One section's markup, up to wherever the next section begins."""
+    start = rendered.index(f'<section id="{section_id}"')
+    following = rendered.find('<section id="', start + 1)
+    return rendered[start:] if following == -1 else rendered[start:following]
 
 
 def test_each_family_has_its_own_heading_and_navigation_entry() -> None:
@@ -205,15 +228,8 @@ def test_a_chart_label_from_customer_data_is_escaped() -> None:
 
 
 def test_the_table_is_present_even_when_the_chart_is_not() -> None:
-    """The table is the authoritative presentation, and concentration draws nothing.
-
-    Two counts beside two ratios share no axis, so the chart is refused -- and the
-    figures are still there to read.
-    """
-    rendered = page()
-    concentration_at = rendered.index(f'<section id="{SECTION_CONCENTRATION}"')
-    growth_at = rendered.index(f'<section id="{SECTION_GROWTH}"')
-    block = rendered[concentration_at:growth_at]
+    """The table is the authoritative presentation, and a chart may never suppress it."""
+    block = section_block(page(), undrawable_section())
 
     assert "<table" in block
     assert "<svg" not in block
@@ -226,11 +242,7 @@ def test_an_undrawable_chart_says_so_inside_its_own_section() -> None:
     The caveat carries the distinction, and it is rendered under the section it
     qualifies rather than under the report's own caveats heading.
     """
-    rendered = page()
-    concentration_at = rendered.index(f'<section id="{SECTION_CONCENTRATION}"')
-    growth_at = rendered.index(f'<section id="{SECTION_GROWTH}"')
-
-    assert CAVEAT_CHART_NOT_DRAWN in rendered[concentration_at:growth_at]
+    assert CAVEAT_CHART_NOT_DRAWN in section_block(page(), undrawable_section())
 
 
 def test_both_languages_render_every_section() -> None:

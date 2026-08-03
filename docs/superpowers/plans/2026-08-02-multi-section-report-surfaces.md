@@ -1805,15 +1805,23 @@ translated. The chart title comes from `SECTION_HEADINGS` and the drawing's `des
 reason a failed `write_row` was a finding earlier: a dropped chart is indistinguishable from a
 section that never had one.
 
-**Defect found, not fixed here — the concentration curve is charted on no surface.**
-`bundle._bucket` records a series figure's `metric` as the series' **`measure`** (`revenue`), while
-`_FAMILIES[SECTION_CONCENTRATION].plots` asks for `concentration.METRIC_CURVE`
-(`concentration_curve`). So `_plottable` matches nothing, `Section.chart` is `None` for
+**Defect found during Task 13 and fixed in the slice after it — the concentration curve was
+charted on no surface.** `bundle._bucket` recorded a series figure's `metric` as the series'
+**`measure`** (`revenue`), while `_FAMILIES[SECTION_CONCENTRATION].plots` asks for
+`concentration.METRIC_CURVE`. So `_plottable` matched nothing, `Section.chart` was `None` for
 concentration on every dataset, and the one chart `RRA-008` requires by specification — the
-cumulative share curve — is absent from the web, print and workbook surfaces alike. This predates
-Task 13 and is a bundle-level fix affecting all three surfaces plus `BUNDLE_VERSION`, so it belongs
-in its own slice rather than inside the workbook's. `tests/test_rra006_excel_charts.py` builds a
-curve bundle directly so the `CHART_LINE` path is not shipped unexercised.
+cumulative share curve — was absent from the web, print and workbook surfaces alike.
+
+The root cause was an inconsistency, not a lookup: `_analysis_figure` records `fact.metric`, so a
+figure's metric was its fact's metric on one construction path and the measure behind it on the
+other. `_bucket` now records the metric, which moves `BUNDLE_VERSION` to `rra006.bundle.v6`.
+
+**Four tests had to change, and all four had used concentration as their example of an undrawable
+section** — it was undrawable for an unrelated reason, so they passed by coincidence and failed when
+the coincidence went away. Each was rewritten to derive the undrawable section from the bundle rather
+than name one. `test_drawability_is_decided_once_and_shared_with_the_geometry` was worse than
+coincidental: it asked `is_drawable` of every figure a section carries rather than of the figures it
+plots, and concentration's mixed-unit scalars made the answer come out right for the wrong reason.
 
 ---
 

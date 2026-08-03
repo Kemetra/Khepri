@@ -75,12 +75,13 @@ from khepri.rra.profiling import canonical_json
 #   v3  every figure carries `section`, and `sections` arrives populated
 #   v4  a caveat is a (code, section) pair rather than a bare code
 #   v5  `figures` is ordered by governed section rather than by derivation
+#   v6  a bucket figure's `metric` is its fact's metric, not the measure behind it
 #
 # The section model ships as several independently verifiable slices, and each
 # one that moves the document earns a version. That is version churn on purpose:
 # every string here named a shape that really existed on `main`, which is worth
 # more than a tidy sequence.
-BUNDLE_VERSION = "rra006.bundle.v5"
+BUNDLE_VERSION = "rra006.bundle.v6"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -1675,12 +1676,27 @@ def _bucket(
     A withheld value produces no figure rather than a figure with no text. A
     surface cannot print what was not supplied, and inventing an empty
     rendering here would give it something to print.
+
+    **The metric is the owner's `metric`, not its `measure`.** It used to be the
+    measure, and that was the one place in this module where a figure's metric was
+    not its fact's metric: `_analysis_figure` records `fact.metric`, so a growth
+    effect carried `growth_price_effect` while a revenue trend carried `revenue`
+    where its fact says `revenue_by_period`. A measure names the column a series was
+    computed over; a metric names what was computed, and a figure's metric is the
+    latter everywhere else.
+
+    That inconsistency is what made the concentration curve unchartable.
+    `_plottable` asks whether a figure's metric is one the family plots, the
+    concentration family plots `concentration_curve`, and every curve figure claimed
+    to be `revenue` -- so the one chart `RRA-008` requires by specification was
+    attached to no section and drawn on no surface, while every text cell beside it
+    reconciled perfectly.
     """
     label = str(cell["label"])
     common = {
         "citation_id": str(owner["citation_id"]),
         "fact_id": str(owner["fact_id"]),
-        "metric": str(owner["measure"]),
+        "metric": str(owner["metric"]),
         "unit_kind": str(owner["unit_kind"]),
         "label": label,
         "position": position,
