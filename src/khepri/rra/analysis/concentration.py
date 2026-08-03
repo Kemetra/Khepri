@@ -60,6 +60,7 @@ from khepri.rra.facts import (
     UNIT_COUNT,
     UNIT_RATIO,
     Fact,
+    FactComparison,
     FactPackage,
     RefusedResult,
     fact_identity,
@@ -89,19 +90,39 @@ GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 DECILE = 10
 QUARTILE = 4
 
+# Which unit each governed metric is stated in. A table rather than an argument,
+# so a metric cannot be emitted in the wrong unit by a caller passing one, and so
+# building a fact takes three arguments rather than five.
+#
+# The shares are `UNIT_RATIO` and therefore *fractions*: a top decile holding a
+# fifth of revenue is `0.2000`, not `20.0000`. The ratio contract is already in
+# use -- `gross_margin` stores a fraction and `narrative` multiplies every ratio
+# by a hundred to render it -- so storing a percentage here would reach a reader
+# as 2000%.
+_UNITS = {
+    METRIC_DISTINCT_VALUES: UNIT_COUNT,
+    METRIC_RANKED_VALUES: UNIT_COUNT,
+    METRIC_TOP_DECILE_SHARE: UNIT_RATIO,
+    METRIC_TOP_QUARTILE_SHARE: UNIT_RATIO,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class _Source:
-    """The chosen dimension and its caveats, beside whatever curve it measured.
+    """One measured curve, beside the dimension and caveats it came from.
 
-    `curve` is optional because a dimension can be admissible while no share over
-    it is statable. Keeping the two together lets `derive` tell "nothing to rank"
-    from "nothing rankable about it", which are different refusals.
+    Carried as one value so building a fact takes three arguments rather than
+    five, and so two facts of the same family cannot disagree about which
+    dimension produced them. The curve here is never absent: `derive` refuses
+    before constructing one.
     """
 
     dimension: str
-    curve: ConcentrationCurve | None
+    curve: ConcentrationCurve
     caveats: tuple[str, ...]
+
+    def precision_for(self, metric: str) -> int:
+        return 0 if _UNITS[metric] == UNIT_COUNT else RATIO_PRECISION
 
 
 def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
@@ -113,20 +134,26 @@ def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
     there and no share over it can be stated, which is what a non-positive revenue
     total or a negative ranked total means.
     """
-    published = _published(package)
-    if published is None:
+    found = _found(package)
+    if found is None:
         return RefusedResult(
             metric=METRIC_DISTINCT_VALUES,
             reason=REASON_AGGREGATE_UNAVAILABLE,
         )
-    curve = published.curve
+    dimension, entry = found
+    curve = entry.comparison.curve
     if curve is None:
         return RefusedResult(
             metric=METRIC_DISTINCT_VALUES,
             reason=REASON_DISTINCT_SET_UNCOMPUTABLE,
         )
+    source = _Source(
+        dimension=dimension,
+        curve=curve,
+        caveats=_inherited(entry.caveats),
+    )
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):
-        return _facts(published, curve)
+        return _facts(source)
 
 
 def curve_for(package: FactPackage) -> ConcentrationCurve | None:
@@ -136,8 +163,8 @@ def curve_for(package: FactPackage) -> ConcentrationCurve | None:
     independently would draw a product curve beside a category count and reconcile
     perfectly, because reconciliation compares the text beside a chart.
     """
-    published = _published(package)
-    return None if published is None else published.curve
+    found = _found(package)
+    return None if found is None else found[1].comparison.curve
 
 
 def dimension_of(fact: Fact) -> str | None:
@@ -162,15 +189,12 @@ def dimension_of(fact: Fact) -> str | None:
     )
 
 
-def _published(package: FactPackage) -> _Source | None:
+def _found(package: FactPackage) -> tuple[str, FactComparison] | None:
+    """The first governed dimension the package published, with its comparison."""
     for dimension in GOVERNED_DIMENSIONS:
         entry = package.comparison(dimension)
         if entry is not None:
-            return _Source(
-                dimension=dimension,
-                curve=entry.comparison.curve,
-                caveats=_inherited(entry.caveats),
-            )
+            return (dimension, entry)
     return None
 
 
@@ -178,29 +202,25 @@ def _inherited(caveats: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(caveat for caveat in caveats if caveat != CAVEAT_BUCKETS_TRUNCATED)
 
 
-def _facts(source: _Source, curve: ConcentrationCurve) -> tuple[Fact, ...]:
+def _facts(source: _Source) -> tuple[Fact, ...]:
     return (
-        _count(source, METRIC_DISTINCT_VALUES, curve.distinct_values),
-        _count(source, METRIC_RANKED_VALUES, curve.ranked_values),
-        _share(source, curve, METRIC_TOP_DECILE_SHARE, DECILE),
-        _share(source, curve, METRIC_TOP_QUARTILE_SHARE, QUARTILE),
+        _count(source, METRIC_DISTINCT_VALUES, source.curve.distinct_values),
+        _count(source, METRIC_RANKED_VALUES, source.curve.ranked_values),
+        _share(source, METRIC_TOP_DECILE_SHARE, DECILE),
+        _share(source, METRIC_TOP_QUARTILE_SHARE, QUARTILE),
     )
 
 
-def _share(
-    source: _Source,
-    curve: ConcentrationCurve,
-    metric: str,
-    fraction: int,
-) -> Fact:
+def _share(source: _Source, metric: str, fraction: int) -> Fact:
     """The cumulative share held by the leading fraction of ranked values.
 
     Read off the curve at the last value in the fraction, because the curve is
     already cumulative. Recomputing the sum here would be a second derivation of
     the same number and a second thing to get wrong.
     """
-    index = _leading(len(curve.shares), fraction) - 1
-    return _fact(source, metric, curve.shares[index], UNIT_RATIO, RATIO_PRECISION)
+    shares = source.curve.shares
+    index = _leading(len(shares), fraction) - 1
+    return _fact(source, metric, shares[index])
 
 
 def _leading(ranked: int, fraction: int) -> int:
@@ -213,16 +233,11 @@ def _leading(ranked: int, fraction: int) -> int:
 
 
 def _count(source: _Source, metric: str, value: int) -> Fact:
-    return _fact(source, metric, Decimal(value), UNIT_COUNT, 0)
+    return _fact(source, metric, Decimal(value))
 
 
-def _fact(
-    source: _Source,
-    metric: str,
-    value: Decimal,
-    unit_kind: str,
-    precision: int,
-) -> Fact:
+def _fact(source: _Source, metric: str, value: Decimal) -> Fact:
+    precision = source.precision_for(metric)
     fact_id, citation_id = fact_identity(
         metric=metric,
         scope=(source.dimension,),
@@ -234,7 +249,7 @@ def _fact(
         metric=metric,
         value=str(value.quantize(Decimal(1).scaleb(-precision))),
         precision=precision,
-        unit_kind=unit_kind,
+        unit_kind=_UNITS[metric],
         inputs=(source.dimension, SEMANTIC_REVENUE),
         caveats=source.caveats,
         formula_version=CONCENTRATION_FORMULA_VERSION,
