@@ -25,6 +25,7 @@ from khepri.rra.analysis.basket import (
 )
 from khepri.rra.bundle import SECTION_BASKET, SECTION_REASONS
 from khepri.rra.facts import (
+    CAVEAT_BUCKETS_TRUNCATED,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
     UNIT_RATIO,
@@ -34,7 +35,7 @@ from khepri.rra.facts import (
     build_fact_package,
 )
 from khepri.rra.intake import CSV_MEDIA_TYPE
-from khepri.rra.mapping import build_mapping
+from khepri.rra.mapping import SEMANTIC_PRODUCT, build_mapping
 from khepri.rra.profiling import build_profile
 
 # Eleven units over four rows, in three invoices. Water is in all three invoices;
@@ -177,6 +178,58 @@ def test_an_incomplete_identifier_column_says_so_rather_than_absent() -> None:
     result = basket.derive(package_for(content))
     assert isinstance(result, RefusedResult)
     assert result.reason == REASON_INCOMPLETE_IDENTIFIERS
+
+
+def test_attach_rate_uses_whatever_measure_ranked_the_dimension() -> None:
+    """Attach rate needs no revenue, so an absent revenue column must not refuse it.
+
+    An input mapping units, an identifier and a product is admissible -- units is a
+    core measure -- and the package publishes a *units* comparison carrying the
+    transaction counts. Looking only at the revenue comparison refused a rate every
+    input for which was present.
+    """
+    content = (
+        b"date,units,invoice_no,product\n"
+        b"2026-01-05,3,INV-1,Water\n"
+        b"2026-01-05,2,INV-1,Juice\n"
+        b"2026-01-06,5,INV-2,Water\n"
+    )
+    package = package_for(content)
+    assert package.comparison(SEMANTIC_PRODUCT) is None  # no revenue comparison exists
+
+    rates = {
+        basket.attached_value_of(fact, package): Decimal(fact.value)
+        for fact in facts_of(package)
+        if fact.metric == METRIC_ATTACH_RATE
+    }
+    assert rates == {"Water": Decimal("1.0000"), "Juice": Decimal("0.5000")}
+
+
+def test_attach_rate_carries_the_qualifications_of_the_buckets_it_covers() -> None:
+    """These rates cover the *published* buckets, so a truncation caveat applies.
+
+    This is the opposite of the concentration family, which drops the same caveat:
+    its curve spans the full distinct set and is not limited by the truncation.
+    Attach rate is limited by it exactly, so dropping the qualification would make
+    a partial set of rates read as a complete one.
+
+    Items per transaction is dimension-independent and takes none of it.
+    """
+    header = b"date,revenue,units,invoice_no,product\n"
+    rows = [
+        f"2026-01-05,{100 - index}.00,1,INV-{index},P{index:03d}\n".encode()
+        for index in range(25)
+    ]
+    package = package_for(header + b"".join(rows))
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+    assert CAVEAT_BUCKETS_TRUNCATED in published.caveats
+
+    for fact in facts_of(package):
+        if fact.metric == METRIC_ATTACH_RATE:
+            assert CAVEAT_BUCKETS_TRUNCATED in fact.caveats
+        else:
+            assert fact.caveats == ()
 
 
 def test_every_fact_records_this_family_formula_version() -> None:

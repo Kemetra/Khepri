@@ -32,6 +32,22 @@ admissible product or category dimension". Product is preferred for the same
 reason the concentration family prefers it: finer grain, and a category answer is
 derivable from it while the reverse is not.
 
+**Any measure's comparison will do.** Attach rate reads transaction counts, not the
+measure, and `build_comparison` counts the same transactions per key whichever
+total it ranks by. Revenue is preferred only because it is the ranking a reader is
+otherwise shown. Reading revenue *exclusively* refused a rate whose every input was
+present: an input mapping units, an identifier and a product is admissible with no
+revenue column at all, and the package then publishes a units comparison carrying
+the counts.
+
+**Attach rate inherits its comparison's caveats; items per transaction does not.**
+These rates cover the published buckets exactly, so a truncation or redaction
+qualification on those buckets qualifies them too -- dropping it would make a
+partial set of rates read as a complete one. That is the opposite of the
+concentration family, which drops the truncation caveat because its curve spans the
+full distinct set and is not limited by it. Items per transaction divides two
+whole-dataset totals and is qualified by neither.
+
 **A partial family is not a broken one.** `RRA-008` refuses "the affected result",
 so a dataset with transactions but no product dimension still states items per
 transaction, and the attach-rate refusal is carried beside it by `refusals`.
@@ -51,6 +67,7 @@ from decimal import Context, Decimal, localcontext
 from khepri.rra.aggregates import OTHER_BUCKET_LABEL, Bucket
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
+    METRIC_REVENUE,
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
     RATIO_PRECISION,
@@ -186,10 +203,13 @@ def _items(package: FactPackage) -> Fact | None:
     basket = _counts(package)
     if basket is None:
         return None
+    # No comparison caveats: this metric reads two whole-dataset totals and is not
+    # qualified by anything that happened to a dimension's buckets.
     return _fact(
         METRIC_ITEMS_PER_TRANSACTION,
         (),
         basket.units / basket.transactions,
+        (),
     )
 
 
@@ -231,11 +251,39 @@ def _identifier_reason(package: FactPackage) -> str:
 
 
 def _dimension(package: FactPackage) -> tuple[str, FactComparison] | None:
+    """The dimension to state attach rate over, and the comparison that ranked it.
+
+    Any measure will do, because attach rate reads transaction counts and not the
+    measure: `build_comparison` counts the same transactions per key whichever
+    total it ranks by. Revenue is preferred only because it is the ranking a
+    reader is otherwise shown.
+
+    Looking solely at the revenue comparison refused a rate whose every input was
+    present: an input mapping units, an identifier and a product is admissible
+    without any revenue column, and the package then publishes a units comparison
+    carrying the counts.
+    """
     for dimension in GOVERNED_DIMENSIONS:
-        entry = package.comparison(dimension)
-        if entry is not None and entry.comparison.distinct_transactions:
+        entry = _ranked(package, dimension)
+        if entry is not None:
             return (dimension, entry)
     return None
+
+
+def _ranked(package: FactPackage, dimension: str) -> FactComparison | None:
+    """A comparison of this dimension that counted transactions, revenue first."""
+    counted = [
+        entry
+        for entry in package.comparisons
+        if entry.comparison.dimension == dimension
+        and entry.comparison.distinct_transactions
+    ]
+    if not counted:
+        return None
+    return next(
+        (entry for entry in counted if entry.measure == METRIC_REVENUE),
+        counted[0],
+    )
 
 
 def _attachable(entry: FactComparison) -> tuple[Bucket, ...]:
@@ -258,6 +306,7 @@ def _attach_facts(package: FactPackage) -> tuple[Fact, ...]:
             METRIC_ATTACH_RATE,
             (dimension, bucket.label),
             Decimal(bucket.transactions or 0) / total,
+            entry.caveats,
         )
         for bucket in _attachable(entry)
     )
@@ -271,7 +320,12 @@ def _identity(metric: str, scope: tuple[str, ...]) -> tuple[str, str]:
     )
 
 
-def _fact(metric: str, scope: tuple[str, ...], value: Decimal) -> Fact:
+def _fact(
+    metric: str,
+    scope: tuple[str, ...],
+    value: Decimal,
+    caveats: tuple[str, ...],
+) -> Fact:
     fact_id, citation_id = _identity(metric, scope)
     return Fact(
         fact_id=fact_id,
@@ -281,6 +335,6 @@ def _fact(metric: str, scope: tuple[str, ...], value: Decimal) -> Fact:
         precision=RATIO_PRECISION,
         unit_kind=UNIT_RATIO,
         inputs=_ITEMS_INPUTS if not scope else (scope[0], SEMANTIC_TRANSACTION_ID),
-        caveats=(),
+        caveats=caveats,
         formula_version=BASKET_FORMULA_VERSION,
     )
