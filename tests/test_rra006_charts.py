@@ -241,6 +241,41 @@ def test_a_line_point_has_extent_so_a_mark_renderer_draws_something() -> None:
     assert view.marks[1].y == "0.0000"
 
 
+def test_a_line_carries_the_curve_that_connects_its_points() -> None:
+    """`RRA-008` requires a cumulative share *curve*, not a scatter.
+
+    Independent marks are a scatter however they are sized, so the view carries the
+    connecting geometry rather than leaving a consumer to invent it. A renderer
+    emitting one rectangle per mark drew squares where a curve was required.
+    """
+    view = chart_of(kind=CHART_LINE)
+    assert view is not None
+    assert view.polyline == "160.0000,213.3333 480.0000,0.0000"
+
+
+def test_the_curve_passes_through_the_marks_it_is_drawn_beside() -> None:
+    """Derived from the marks, so the two cannot disagree about where a point sits.
+
+    A polyline computed separately from the plot would be a second calculation, and
+    a rounding difference would show as a curve missing its own points.
+    """
+    view = chart_of(kind=CHART_LINE)
+    assert view is not None
+
+    points = [point.split(",") for point in view.polyline.split(" ")]
+    for (x, y), mark in zip(points, view.marks, strict=True):
+        assert Decimal(x) == Decimal(mark.x) + Decimal(mark.width) / 2
+        assert Decimal(y) == Decimal(mark.y)
+
+
+def test_only_a_line_carries_a_polyline() -> None:
+    """A bar chart has no curve, and an empty string is what a surface tests."""
+    for kind in (CHART_BAR, CHART_GROUPED_BAR):
+        view = chart_of(kind=kind)
+        assert view is not None
+        assert view.polyline == ""
+
+
 def test_a_negative_value_hangs_from_the_zero_line() -> None:
     """Growth effects can be negative, and a chart may not silently drop one.
 

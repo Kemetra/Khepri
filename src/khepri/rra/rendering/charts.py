@@ -80,8 +80,7 @@ CHART_HEIGHT = Decimal(320)
 
 # The extent of a point on a line. A line's marks are drawn as areas like any other,
 # because a surface renders marks uniformly; the mark's *top edge* is the value, the
-# same convention a bar follows, so a polyline can be drawn through `x + width / 2`
-# at `y` without a second geometry to keep in step.
+# same convention a bar follows.
 POINT_SIZE = Decimal(8)
 
 # How much of its slot a bar occupies. A plain bar leaves a gap so each reads as its
@@ -125,6 +124,12 @@ class ChartView:
     reason this whole module returns strings for the environment to escape. A figure
     with no category falls back to the bundle's own rendering of its value in the
     requested language, so nothing here formats a number.
+
+    `polyline` connects the marks of a line chart, and is empty for every other kind.
+    `RRA-008` requires a cumulative share *curve*, and independent marks are a
+    scatter however they are sized: a consumer drawing one rectangle per mark drew
+    squares where a curve was required. It is derived from the marks rather than
+    computed beside them, so the two cannot disagree about where a point sits.
     """
 
     kind: str
@@ -134,6 +139,7 @@ class ChartView:
     height: str
     marks: tuple[ChartMark, ...]
     labels: tuple[str, ...]
+    polyline: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,14 +193,16 @@ def build_chart(
     plot = _plot(resolved, mirrored=direction == DIRECTION_RTL)
     if plot is None:
         return None
+    marks = _GEOMETRY[spec.kind](plot)
     return ChartView(
         kind=spec.kind,
         title_code=f"chart_title.{resolved[0].section}",
         description_code=f"chart_description.{spec.kind}",
         width=_coordinate(CHART_WIDTH),
         height=_coordinate(CHART_HEIGHT),
-        marks=_GEOMETRY[spec.kind](plot),
+        marks=marks,
         labels=tuple(_label(figure, language) for figure in resolved),
+        polyline=_polyline(spec.kind, marks),
     )
 
 
@@ -261,8 +269,8 @@ def _line(plot: _Plot) -> tuple[ChartMark, ...]:
 
     Zero-extent marks were the earlier design, and a consumer rendering every mark
     as a rectangle drew a curve of nothing at all. The top edge carries the value,
-    as a bar's does, so a polyline through `x + width / 2` at `y` needs no second
-    geometry.
+    as a bar's does. What joins them is `ChartView.polyline`, because points alone
+    are a scatter however they are sized, and `RRA-008` requires a curve.
     """
     return tuple(
         ChartMark(
@@ -311,6 +319,24 @@ def _placed(plot: _Plot, index: int, *, width: Decimal) -> Decimal:
     if plot.mirrored:
         return CHART_WIDTH - x - width
     return x
+
+
+def _polyline(kind: str, marks: tuple[ChartMark, ...]) -> str:
+    """The points a line is drawn through, or nothing for a kind that is not one.
+
+    Read back off the marks rather than recomputed from the plot. A coordinate string
+    parses to the exact `Decimal` it was written from, so this is derivation and not
+    duplication -- there is no second calculation that could place a point somewhere
+    the rectangle beside it is not.
+
+    The value sits on a mark's top edge, so each point is the middle of that edge.
+    """
+    if kind != CHART_LINE:
+        return ""
+    return " ".join(
+        f"{_coordinate(Decimal(mark.x) + Decimal(mark.width) / 2)},{mark.y}"
+        for mark in marks
+    )
 
 
 def _coordinate(value: Decimal) -> str:
