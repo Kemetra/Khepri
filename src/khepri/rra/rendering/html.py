@@ -317,6 +317,7 @@ def build_context(
     reason the table is: everything in it has to be a governed version, a digest,
     or a count, and never anything derived from customer data.
     """
+    _require_no_scoped_caveat(bundle)
     return {
         "language": language,
         "direction": LANGUAGE_DIRECTION[language],
@@ -383,6 +384,34 @@ def _document_bytes(documents: dict[str, str]) -> int:
     RRA-007 records is a number of bytes.
     """
     return sum(len(document.encode("utf-8")) for document in documents.values())
+
+
+def _require_no_scoped_caveat(bundle: ReportBundle) -> None:
+    """This template has one caveats section, so it can only place report-level ones.
+
+    A section-scoped caveat qualifies one analysis and belongs inside that
+    section. Until the template renders a caveats block per section, the two
+    things this surface could do with one are both wrong: listing it under the
+    report's own heading tells a reader the whole dataset is qualified, and
+    filtering it out drops a caveat `RRA-008` requires while `build_content`
+    still claims it. The second is worse, because `reconcile` compares the claim
+    against the bundle and never against the page, so the surface would pass.
+
+    So it refuses. Both this surface and the printed one, which fills two blocks
+    of this same template and shares this context.
+
+    **Sequencing this implies, for whoever writes the analysis slices.** The four
+    `RRA-008` families emit section-scoped caveats. The per-section rendering must
+    land before any of them does, or every report carrying one refuses. That is
+    the honest failure -- the alternative is delivering a report whose reader
+    never sees a required caveat -- but it is a real ordering constraint and not a
+    surprise to discover during a slice.
+    """
+    scoped = [caveat.code for caveat in bundle.caveats if caveat.section is not None]
+    if scoped:
+        raise SurfaceRenderFailed(
+            "This surface cannot place a section-scoped caveat yet."
+        )
 
 
 def _require_text(value: str, name: str) -> None:

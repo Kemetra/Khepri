@@ -183,6 +183,7 @@ class ExcelSurfaceRenderer:
         up holding are only knowable once the archive has been finished, and any
         figure taken earlier would describe something that never existed.
         """
+        _require_no_scoped_caveat(bundle)
         path = self.path_for(bundle)
         try:
             with xlsxwriter.Workbook(str(path), dict(WORKBOOK_OPTIONS)) as workbook:
@@ -214,7 +215,11 @@ def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> No
 
     row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
     for caveat in bundle.caveats:
-        row = _write_row(sheet, row, (caveat,))
+        # Report-level by the time this runs: `render` refuses a bundle carrying
+        # a section-scoped caveat, because this workbook has one caveats heading
+        # per language and writing a comparison-specific warning under it would
+        # tell a reader the whole report is qualified.
+        row = _write_row(sheet, row, (caveat.code,))
 
 
 def _write_citations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
@@ -325,6 +330,27 @@ def _content_language(bundle: ReportBundle, language: str) -> SurfaceLanguage:
         caveats=bundle.caveats,
         disclosure=bundle.disclosure(language),
     )
+
+
+def _require_no_scoped_caveat(bundle: ReportBundle) -> None:
+    """One caveats heading per language means only report-level caveats fit.
+
+    A section-scoped caveat qualifies one analysis and belongs on that section's
+    own worksheet, which a later slice writes. Until then this surface has two
+    options and both misinform: writing it under the report's caveats heading
+    presents a comparison-specific warning as applying to everything, and
+    omitting it drops a caveat `RRA-008` requires while `_content_language` still
+    claims it -- and `reconcile` compares that claim against the bundle rather
+    than against the sheet, so the workbook would pass either way.
+
+    It refuses instead. `WorkbookUnavailable` is a `SurfaceUnavailable`, so the
+    assembler records an incomplete bundle rather than a mixture of surfaces,
+    which is what `RRA-006` asks for when one export cannot be produced.
+    """
+    if any(caveat.section is not None for caveat in bundle.caveats):
+        raise WorkbookUnavailable(
+            "This surface cannot place a section-scoped caveat yet."
+        )
 
 
 def _require_directory(value: Path, name: str) -> None:

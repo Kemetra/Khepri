@@ -532,7 +532,7 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
             assert entry.renderings[language] in document
             assert entry.citation_id in document
         for caveat in bundle.caveats:
-            assert caveat in document
+            assert caveat.code in document
         assert bundle.disclosure(language) in document
 
 

@@ -555,5 +555,5 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # `sections` joined the hashed document, so every bundle id changed. Two
     # bundles built from identical inputs on either side of that change must
     # not claim the same schema version while having different identities.
-    assert BUNDLE_VERSION == "rra006.bundle.v3"
+    assert BUNDLE_VERSION == "rra006.bundle.v4"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION
