@@ -324,7 +324,11 @@ def build_context(
         "chrome": _CHROME[language],
         "disclosure": bundle.disclosure(language),
         "narrative_state": bundle.narrative_state,
-        "caveats": list(bundle.caveats),
+        # Report-level caveats only. A section-scoped caveat qualifies one
+        # analysis and belongs inside that section, which is the per-section
+        # rendering a later slice adds -- listing it here would state it twice
+        # once that lands, and under the wrong heading until then.
+        "caveats": [entry for entry in bundle.caveats if entry.section is None],
         "cells": list(cells),
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),

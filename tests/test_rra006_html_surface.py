@@ -307,7 +307,7 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
             assert entry.renderings[language] in document
             assert entry.citation_id in document
         for caveat in bundle.caveats:
-            assert caveat in document
+            assert caveat.code in document
         # The governed disclosure, in full. A shortened or reworded one is not
         # the disclosure, and `bundle.reconcile` refuses it for the same reason.
         assert bundle.disclosure(language) in document

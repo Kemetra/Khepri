@@ -24,6 +24,7 @@ from khepri.rra.bundle import (
     CitedFigure,
     ReportBundle,
     Section,
+    StatedCaveat,
     StatedFigure,
     SurfaceContent,
     SurfaceLanguage,
@@ -186,7 +187,12 @@ def _presented_language(
         # the bundle would make every assertion built on it vacuous.
         sections=tuple(dict.fromkeys(entry.section for entry in stated)),
         stated=stated,
-        caveats=tuple(row[0] for row in rows[caveats_at + 1 :]),
+        # The sheet carries report-level caveats, so each is reconstructed
+        # with no section -- read from the sheet, never from the bundle.
+        caveats=tuple(
+            StatedCaveat(code=row[0], section=None)
+            for row in rows[caveats_at + 1 :]
+        ),
         disclosure=next(
             row[1] for row in rows if row[:1] == [excel._DISCLOSURE_HEADING[language]]
         ),
@@ -375,7 +381,7 @@ def _allowed_text(bundle: ReportBundle) -> set[str]:
     allowed |= set(identity)
     allowed |= {str(value) for value in identity.values()}
     allowed |= {bundle.bundle_id, bundle.narrative_state, EXCEL_SURFACE_VERSION}
-    allowed |= set(bundle.caveats)
+    allowed |= {caveat.code for caveat in bundle.caveats}
     allowed |= {bundle.disclosure(language) for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)}
     for figure in bundle.figures:
         allowed |= {figure.figure_id, figure.citation_id, figure.fact_id, figure.metric}

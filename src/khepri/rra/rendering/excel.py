@@ -214,7 +214,10 @@ def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> No
 
     row = _write_row(sheet, row + 1, (_CAVEATS_HEADING[language],))
     for caveat in bundle.caveats:
-        row = _write_row(sheet, row, (caveat,))
+        # The report's own caveats sheet carries report-level caveats. A
+        # section-scoped one belongs inside the section it qualifies, which is
+        # the per-section worksheet a later slice writes.
+        row = _write_row(sheet, row, (caveat.code,))
 
 
 def _write_citations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:

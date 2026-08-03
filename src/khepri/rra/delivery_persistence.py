@@ -259,9 +259,21 @@ def _surface_document(content: SurfaceContent) -> dict[str, object]:
                 "language": entry.language,
                 "direction": entry.direction,
                 "disclosure": entry.disclosure,
-                "caveats": list(entry.caveats),
+                # Placement is part of what a surface presented, so it belongs in
+                # the address of what it presented. Two surfaces stating the same
+                # figures and caveats under different headings are two different
+                # surfaces, and a digest blind to that would call them one.
+                "sections": list(entry.sections),
+                "caveats": [
+                    {"code": caveat.code, "section": caveat.section}
+                    for caveat in entry.caveats
+                ],
                 "stated": [
-                    {"figure_id": stated.figure_id, "text": stated.text}
+                    {
+                        "figure_id": stated.figure_id,
+                        "text": stated.text,
+                        "section": stated.section,
+                    }
                     for stated in entry.stated
                 ],
             }

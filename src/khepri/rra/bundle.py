@@ -72,13 +72,13 @@ from khepri.rra.profiling import canonical_json
 #
 #   v2  `sections` joins the document
 #   v3  every figure carries `section`, and `sections` arrives populated
+#   v4  a caveat is a (code, section) pair rather than a bare code
 #
 # The section model ships as several independently verifiable slices, and each
 # one that moves the document earns a version. That is version churn on purpose:
 # every string here named a shape that really existed on `main`, which is worth
-# more than a tidy sequence. Binding caveats to sections changes the shape again
-# and will take v4.
-BUNDLE_VERSION = "rra006.bundle.v3"
+# more than a tidy sequence.
+BUNDLE_VERSION = "rra006.bundle.v4"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -583,6 +583,38 @@ def _require_presence_is_populated(state: str, figure_ids: tuple[str, ...]) -> N
 
 
 @dataclass(frozen=True, slots=True)
+class StatedCaveat:
+    """One caveat, and the section it qualifies -- or none, for the whole report.
+
+    A flat tuple of codes left a hole the figure model had already closed.
+    `RRA-008` caveats are per-family: a caveat naming a truncated comparison
+    window belongs to the comparison, not to the report. With codes alone, a
+    surface could render that caveat under the basket section and reconcile
+    perfectly, because the comparison against `bundle.caveats` saw only the code.
+
+    Pairing the code with its section closes it without a new refusal reason.
+    The existing set comparison now compares pairs, so a misplaced caveat fails
+    it exactly as a missing one does.
+
+    `section=None` is a report-level caveat belonging to no single analysis --
+    `currency_not_declared` qualifies the dataset, not one family. Those render
+    in the report's own caveats section; section-scoped ones render inside the
+    section they qualify.
+    """
+
+    code: str
+    section: str | None
+
+    def __post_init__(self) -> None:
+        if self.section is None:
+            return
+        _require_section(self.section)
+
+    def as_document(self) -> dict[str, object]:
+        return {"code": self.code, "section": self.section}
+
+
+@dataclass(frozen=True, slots=True)
 class CitedFigure:
     """One figure, already rendered for every language that will show it.
 
@@ -629,7 +661,7 @@ class ReportBundle:
 
     identity: BundleIdentity
     figures: tuple[CitedFigure, ...]
-    caveats: tuple[str, ...]
+    caveats: tuple[StatedCaveat, ...]
     narrative_state: str
     sections: tuple[Section, ...] = ()
     narrative: NarrativeDraft | None = None
@@ -676,7 +708,7 @@ class ReportBundle:
         return {
             "identity": self.identity.as_document(),
             "figures": [entry.as_document() for entry in self.figures],
-            "caveats": list(self.caveats),
+            "caveats": [entry.as_document() for entry in self.caveats],
             "narrative_state": self.narrative_state,
             "sections": [entry.as_document() for entry in self.sections],
             "narrative": _narrative_document(self.narrative),
@@ -716,7 +748,13 @@ class ReportBundle:
         return cls(
             identity=BundleIdentity.of(package),
             figures=figures,
-            caveats=tuple(sorted(set(package.caveats))),
+            # Every RRA-004 caveat qualifies the dataset rather than one
+            # analysis, so each is report-level. The four RRA-008 families bring
+            # their own section-scoped caveats when those slices arrive.
+            caveats=tuple(
+                StatedCaveat(code=code, section=None)
+                for code in sorted(set(package.caveats))
+            ),
             narrative_state=state,
             sections=_sections(figures),
             narrative=narrative,
@@ -826,7 +864,7 @@ class SurfaceLanguage:
     direction: str
     sections: tuple[str, ...]
     stated: tuple[StatedFigure, ...]
-    caveats: tuple[str, ...]
+    caveats: tuple[StatedCaveat, ...]
     disclosure: str
 
     @property
