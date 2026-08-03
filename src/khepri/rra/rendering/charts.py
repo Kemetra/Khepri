@@ -22,10 +22,21 @@ there. **Nothing in this module escapes anything** -- escaping here as well woul
 put `&amp;lt;` in a customer's product name, and escaping here *instead* would move
 the guarantee off the environment.
 
-**It invents no prose either.** `title` and `description` are governed codes, for the
-same reason the coordinates are not markup: the wording a reader sees belongs in the
-per-language tables the surfaces already keep for section headings and refusal
-reasons. Composing a sentence here would put untranslated English on an Arabic page.
+**It invents no prose either.** `title_code` and `description_code` are governed
+codes, for the same reason the coordinates are not markup: the wording a reader sees
+belongs in the per-language tables the surfaces already keep for section headings and
+refusal reasons. Composing a sentence here would put untranslated English on an
+Arabic page.
+
+They carry the `_code` suffix so that inserting one straight into a `<title>` cannot
+happen quietly. The environment uses `StrictUndefined`, so a template reaching for
+`view.title` raises rather than printing an identifier at a reader — which is how the
+first draft of the Task 11 macro would have failed, loudly, instead of shipping
+`chart_title.comparison` to a customer.
+
+**The canvas travels with the view.** `width` and `height` are on `ChartView` because
+a template with `viewBox="0 0 640 320"` written in literally keeps drawing to the old
+canvas after this module changes, and every mark silently overflows.
 
 **Geometry is `Decimal` throughout, and becomes a string only when a mark is built.**
 A float coordinate would mean binary floating point reached the surface of a governed
@@ -60,8 +71,18 @@ from khepri.rra.bundle import (
 
 # One canvas for every chart in a report. Two charts drawn to different scales sit
 # on one page inviting a comparison their geometry does not support.
-CHART_WIDTH = Decimal(1000)
-CHART_HEIGHT = Decimal(400)
+#
+# These are also what a surface writes into its `viewBox`, which is why `ChartView`
+# carries them: a template with the numbers written in literally would keep drawing
+# after this module changed them, and every bar would silently overflow.
+CHART_WIDTH = Decimal(640)
+CHART_HEIGHT = Decimal(320)
+
+# The extent of a point on a line. A line's marks are drawn as areas like any other,
+# because a surface renders marks uniformly; the mark's *top edge* is the value, the
+# same convention a bar follows, so a polyline can be drawn through `x + width / 2`
+# at `y` without a second geometry to keep in step.
+POINT_SIZE = Decimal(8)
 
 # How much of its slot a bar occupies. A plain bar leaves a gap so each reads as its
 # own category; a grouped bar fills the slot so neighbours read as one group. That
@@ -91,14 +112,26 @@ class ChartMark:
 class ChartView:
     """What a macro needs to draw one chart, and nothing it could misread.
 
-    `title` and `description` are governed codes the surface translates.
-    `labels` holds the bundle's own rendering of each value in the requested
-    language, so no number is formatted twice.
+    `title_code` and `description_code` are governed codes a surface looks up in its
+    per-language chrome, exactly as it already does for section headings and refusal
+    reasons. They are named `_code` so that a template inserting one directly fails
+    rather than printing an identifier at a reader: the environment uses
+    `StrictUndefined`, so `{{ view.title }}` raises instead of rendering nothing.
+
+    `width` and `height` are the canvas, carried so a `viewBox` is written from the
+    geometry rather than from a number copied into a template.
+
+    `labels` is the category name a mark belongs to -- a customer value, and the
+    reason this whole module returns strings for the environment to escape. A figure
+    with no category falls back to the bundle's own rendering of its value in the
+    requested language, so nothing here formats a number.
     """
 
     kind: str
-    title: str
-    description: str
+    title_code: str
+    description_code: str
+    width: str
+    height: str
     marks: tuple[ChartMark, ...]
     labels: tuple[str, ...]
 
@@ -156,11 +189,25 @@ def build_chart(
         return None
     return ChartView(
         kind=spec.kind,
-        title=f"chart_title.{resolved[0].section}",
-        description=f"chart_description.{spec.kind}",
+        title_code=f"chart_title.{resolved[0].section}",
+        description_code=f"chart_description.{spec.kind}",
+        width=_coordinate(CHART_WIDTH),
+        height=_coordinate(CHART_HEIGHT),
         marks=_GEOMETRY[spec.kind](plot),
-        labels=tuple(figure.renderings.get(language, "") for figure in resolved),
+        labels=tuple(_label(figure, language) for figure in resolved),
     )
+
+
+def _label(figure: CitedFigure, language: str) -> str:
+    """What a mark is called: its category, or its value when it has no category.
+
+    A bucket figure carries the customer's own product or branch name, which is the
+    axis label the design names as customer-derived. A scalar figure has no category,
+    so the rendering already prepared for that language stands in.
+    """
+    if figure.label is not None:
+        return figure.label
+    return figure.renderings.get(language, "")
 
 
 def _resolve(
@@ -210,14 +257,19 @@ def _grouped_bars(plot: _Plot) -> tuple[ChartMark, ...]:
 
 
 def _line(plot: _Plot) -> tuple[ChartMark, ...]:
-    """Points at slot centres, with no extent: a polyline is drawn from coordinates."""
+    """Points at slot centres, sized so a surface drawing areas draws something.
+
+    Zero-extent marks were the earlier design, and a consumer rendering every mark
+    as a rectangle drew a curve of nothing at all. The top edge carries the value,
+    as a bar's does, so a polyline through `x + width / 2` at `y` needs no second
+    geometry.
+    """
     return tuple(
         ChartMark(
-            # A zero-width mark centres itself: `(slot - 0) / 2` is the slot centre.
-            x=_coordinate(_placed(plot, index, width=Decimal(0))),
+            x=_coordinate(_placed(plot, index, width=POINT_SIZE)),
             y=_coordinate(plot.domain.offset(value)),
-            width=_coordinate(Decimal(0)),
-            height=_coordinate(Decimal(0)),
+            width=_coordinate(POINT_SIZE),
+            height=_coordinate(POINT_SIZE),
         )
         for index, value in enumerate(plot.values)
     )
