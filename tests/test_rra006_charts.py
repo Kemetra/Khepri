@@ -22,6 +22,7 @@ from khepri.rra.bundle import (
     DIRECTION_LTR,
     DIRECTION_RTL,
     KIND_VALUE,
+    LANGUAGE_DIRECTION,
     SECTION_COMPARISON,
     ChartSpec,
     CitedFigure,
@@ -30,6 +31,7 @@ from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.charts import (
     CHART_HEIGHT,
     CHART_WIDTH,
+    ChartView,
     build_chart,
 )
 
@@ -64,13 +66,18 @@ def chart_of(
     kind: str = CHART_BAR,
     figure_ids: tuple[str, ...] = ("F-1", "F-2"),
     values: tuple[Decimal | None, ...] = (Decimal(100), Decimal(300)),
-    direction: str = DIRECTION_LTR,
     language: str = LANGUAGE_ENGLISH,
-):
+) -> ChartView | None:
+    """One chart, with the direction the governed table gives that language.
+
+    Direction is derived rather than passed, because `LANGUAGE_DIRECTION` is where
+    the pairing is decided and a test choosing its own could assert a mirroring
+    that no surface would ever request.
+    """
     return build_chart(
         ChartSpec(kind=kind, figure_ids=figure_ids),
         figures_for_chart(values),
-        direction=direction,
+        direction=LANGUAGE_DIRECTION[language],
         language=language,
     )
 
@@ -123,8 +130,11 @@ def test_arabic_mirrors_the_category_order_without_moving_the_bars() -> None:
     A mirror that also flipped the value axis would render every proportion
     upside down while every number beside it stayed correct.
     """
-    ltr = chart_of(direction=DIRECTION_LTR)
-    rtl = chart_of(direction=DIRECTION_RTL, language=LANGUAGE_ARABIC)
+    assert LANGUAGE_DIRECTION[LANGUAGE_ENGLISH] == DIRECTION_LTR
+    assert LANGUAGE_DIRECTION[LANGUAGE_ARABIC] == DIRECTION_RTL
+
+    ltr = chart_of(language=LANGUAGE_ENGLISH)
+    rtl = chart_of(language=LANGUAGE_ARABIC)
     assert ltr is not None
     assert rtl is not None
 
