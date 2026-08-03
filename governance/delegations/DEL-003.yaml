@@ -1,0 +1,14 @@
+schema_version: 1
+id: DEL-003
+delegate: KHEPRI-AGENT
+granted_by: AHMED-SHAABAN
+instruction: >-
+  i approve both lets do with recomendations
+granted_at: 2026-08-03
+session: a1e698dd-3a59-4c59-ae10-c57f08a34c96
+scope:
+  kind: session
+  artifacts:
+    - RRA-004
+expires_at: 2026-08-03
+revoked: false
