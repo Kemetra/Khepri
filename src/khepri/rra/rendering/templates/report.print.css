@@ -95,6 +95,23 @@
     break-inside: auto;
   }
 
+  /*
+   * One governed analysis per printed page. On screen the sections scroll past
+   * each other and the headings carry the boundary; on paper a section that
+   * begins halfway down a page puts two analyses under one glance, and a reader
+   * comparing a figure to the heading above it can read the wrong heading.
+   *
+   * `section + section` rather than `section`, so the first one does not force a
+   * blank leading page. The selector is `main > section` because only the
+   * governed analysis sections are direct children of `main` -- the caveats,
+   * commentary, citations and provenance blocks are siblings there too and are
+   * paginated by the same rule, which is what a reader of a printed report
+   * expects of them as well.
+   */
+  main > section + section {
+    break-before: page;
+  }
+
   /* A heading stranded at the foot of a page labels nothing. */
   h1,
   h2 {
