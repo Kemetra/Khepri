@@ -144,41 +144,49 @@ needs_chromium = pytest.mark.skipif(
 )
 
 
-def computed_breaks(language: str) -> list[str]:
-    """What Chromium computed for each section's `break-before`, under print media.
+def printed_page_count(pdf: bytes) -> int:
+    """How many pages the produced PDF actually has.
 
-    Asking the engine rather than measuring pixel offsets. A page number derived from
-    `getBoundingClientRect` divided by an assumed page height is a test that fails
-    when a margin changes; `break-before` is the property the rule sets and the thing
-    the engine acts on.
+    Counted from the page objects rather than from `/Count`, which appears on every
+    node of the page tree. `[^s]` excludes `/Type /Pages`, the tree node itself.
     """
-    from khepri.rra.rendering.chromium import launch_chromium
+    return len(re.findall(rb"/Type\s*/Page[^s]", pdf))
 
-    document = pages(language)
+
+def printed(language: str) -> bytes:
+    from khepri.rra.rendering.chromium import launch_chromium
+    from khepri.rra.rendering.pdf import PdfReportRenderer
+
+    bundle = ReportBundle.of(package())
     with launch_chromium() as printer:
-        page = printer.browser.new_page()
-        try:
-            page.emulate_media(media="print")
-            page.set_content(document, wait_until="load")
-            return page.evaluate(
-                "() => Array.from(document.querySelectorAll('main > section'))"
-                ".map(node => getComputedStyle(node).breakBefore)"
-            )
-        finally:
-            page.close()
+        return PdfReportRenderer(printer=printer).render_pdf(bundle).documents[language]
 
 
 @pytest.mark.browser
 @needs_chromium
-def test_chromium_breaks_before_every_section_but_the_first() -> None:
-    computed = computed_breaks(LANGUAGE_ENGLISH)
+def test_the_printed_pdf_has_a_page_for_every_section() -> None:
+    """Measured on the produced PDF, not on the declaration that asks for it.
 
-    assert len(computed) > 1
-    assert computed[0] != "page"
-    assert set(computed[1:]) == {"page"}
+    An earlier version of this test read `getComputedStyle(node).breakBefore`, which
+    reports the cascaded declaration and nothing about paged layout: Chromium can
+    retain the declaration while fragmentation places two sections on one page, and
+    that test would have passed with the promised pagination broken.
+
+    Page *count* is the property this rule changes and a real PDF exposes. Each
+    section forced onto a new page means at least one page per section, so the count
+    collapsing is what a broken rule looks like from outside. Mapping each heading to
+    its page number would say more, and needs a PDF text extractor this project does
+    not depend on -- worth adding when something else needs one, not for this.
+    """
+    bundle = ReportBundle.of(package())
+
+    assert printed_page_count(printed(LANGUAGE_ENGLISH)) >= len(bundle.sections)
 
 
 @pytest.mark.browser
 @needs_chromium
 def test_arabic_paginates_identically() -> None:
-    assert computed_breaks(LANGUAGE_ARABIC) == computed_breaks(LANGUAGE_ENGLISH)
+    """One template and one stylesheet, so the two languages cannot fragment apart."""
+    assert printed_page_count(printed(LANGUAGE_ARABIC)) == printed_page_count(
+        printed(LANGUAGE_ENGLISH)
+    )
