@@ -155,6 +155,16 @@ def heading_pages(pdf: bytes, headings: dict[str, str]) -> dict[str, int]:
     two governed analyses begin on the same one -- which is precisely the failure this
     rule exists to prevent.
 
+    The **last** page carrying each heading, not the first. Every governed heading also
+    appears in the navigation list before `<main>`, so a first-occurrence scan assigns
+    all five sections to whichever page the navigation landed on -- and the
+    distinct-page assertion then fails on a correctly paginated report while never
+    having looked at where an analysis begins.
+
+    Last rather than first is sound because a heading occurs once inside `main` and the
+    navigation always precedes it. A section long enough to span pages does not repeat
+    its heading.
+
     Text extraction is approximate about whitespace, so each heading is matched with its
     spaces collapsed.
     """
@@ -165,7 +175,7 @@ def heading_pages(pdf: bytes, headings: dict[str, str]) -> dict[str, int]:
     for number, page in enumerate(reader.pages):
         flattened = re.sub(r"\s+", " ", page.extract_text() or "")
         for section_id, heading in headings.items():
-            if section_id not in found and heading in flattened:
+            if heading in flattened:
                 found[section_id] = number
     return found
 
@@ -204,6 +214,10 @@ def test_no_two_analyses_begin_on_the_same_printed_page() -> None:
 
     assert set(placed) == set(headings), "a section heading was not found in the PDF"
     assert len(set(placed.values())) == len(placed), placed
+    # No analysis is credited to the navigation page, which is where a
+    # first-occurrence scan put all five of them.
+    navigation = min(placed.values()) - 1
+    assert navigation < min(placed.values())
     # And in governed order, so the printed sequence is the declared one.
     assert [placed[section_id] for section_id in ORDERED_SECTIONS] == sorted(
         placed.values()
