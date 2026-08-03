@@ -95,10 +95,15 @@ constant is public for that reason and for no other.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
 from decimal import Context, Decimal, localcontext
 
-from khepri.rra.aggregates import GRANULARITY_MONTH, Bucket
+from khepri.rra.aggregates import Bucket
+from khepri.rra.analysis.windows import (
+    GOVERNED_MODES,
+    MODE_PERIOD_OVER_PERIOD,
+    MODE_YEAR_OVER_YEAR,
+    compared_labels,
+)
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     RATIO_PRECISION,
@@ -129,9 +134,18 @@ from khepri.rra.mapping import SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_DATE
 # and a version that belongs to a different specification does not record it.
 COMPARISON_FORMULA_VERSION = "rra008.comparison.v1"
 
-MODE_PERIOD_OVER_PERIOD = "period_over_period"
-MODE_YEAR_OVER_YEAR = "year_over_year"
-GOVERNED_MODES = (MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR)
+# The modes and the window rule now live in `windows.py`, shared with the growth
+# family. Re-exported here because both were this module's public names before the
+# extraction, and a stable import path costs nothing.
+__all__ = [
+    "COMPARISON_FORMULA_VERSION",
+    "GOVERNED_MODES",
+    "MODE_PERIOD_OVER_PERIOD",
+    "MODE_YEAR_OVER_YEAR",
+    "derive",
+    "mode_of",
+    "refusals",
+]
 
 METRIC_DELTA_ABSOLUTE = "revenue_delta_absolute"
 METRIC_DELTA_PERCENT = "revenue_delta_percent"
@@ -398,102 +412,29 @@ def _refused(mode: str, reason: str) -> _Outcome:
 def _window_for(package: FactPackage, mode: str) -> _Window | None:
     """The last settled period, beside the period this mode compares it against.
 
-    The counterpart is looked up by label. A missing one refuses rather than
-    substituting whichever bucket happens to be adjacent in the series.
+    Which two periods those are is `windows.compared_labels`, shared with the
+    growth family so the delta stated here is the delta decomposed there.
     """
     trend = package.trend()
     if trend is None:
         return None
-    buckets = _settled(trend.series.buckets)
-    if not buckets:
+    labels = compared_labels(trend.series, mode)
+    if labels is None:
         return None
-    return _against_counterpart(buckets, trend, mode)
+    return _against_counterpart(labels, trend)
 
 
 def _against_counterpart(
-    buckets: tuple[Bucket, ...],
+    labels: tuple[str, str],
     trend: FactSeries,
-    mode: str,
 ) -> _Window | None:
-    current = buckets[-1]
-    label = _counterpart_label(current.label, trend.series.granularity, mode)
-    prior = {bucket.label: bucket for bucket in buckets}.get(label)
-    if prior is None:
-        return None
-    return _Window(current=current, prior=prior, inherited=trend.caveats)
-
-
-def _settled(buckets: tuple[Bucket, ...]) -> tuple[Bucket, ...]:
-    """Every period known to be whole, which is every one but the two on the ends.
-
-    A period is whole when data exists on both sides of it: a later period proves
-    it finished, and an earlier period proves it was already running when the
-    export began. The first and last periods each have one open side, and nothing
-    in the series says whether that side was cut.
-
-    Both ends matter because either can be the one compared. An export beginning
-    on 15 January holds seventeen days in its first bucket; a year-over-year
-    comparison landing on it reads a full January against a part of one and
-    reports growth that is an artifact of the export window -- 3,100 a month
-    throughout becomes +82% because the first January is short. That is the same
-    failure the last period was excluded to prevent, and it was left standing at
-    the other end.
-    """
-    return buckets[1:-1]
-
-
-def _counterpart_label(label: str, granularity: str, mode: str) -> str | None:
-    if mode == MODE_PERIOD_OVER_PERIOD:
-        return _preceding_label(label, granularity)
-    return _year_earlier_label(label, granularity)
-
-
-def _preceding_label(label: str, granularity: str) -> str | None:
-    """The period immediately before this one, at its own granularity."""
-    if granularity == GRANULARITY_MONTH:
-        return _month_label(label, months_earlier=1)
-    return _day_label(label, days_earlier=1)
-
-
-def _year_earlier_label(label: str, granularity: str) -> str | None:
-    """The same period one year earlier.
-
-    A year is expressed by decrementing the year field rather than subtracting a
-    number of periods, because twelve months is a year and 365 days is not always
-    one. The month form has no day to be invalid; the day form is parsed, so 29
-    February simply finds no counterpart and refuses.
-    """
-    if granularity == GRANULARITY_MONTH:
-        return _month_label(label, months_earlier=12)
-    return _day_label(label, days_earlier=None)
-
-
-def _month_label(label: str, *, months_earlier: int) -> str | None:
-    parts = label.split("-")
-    if len(parts) != 2:
-        return None
-    index = int(parts[0]) * 12 + int(parts[1]) - 1 - months_earlier
-    return f"{index // 12:04d}-{index % 12 + 1:02d}"
-
-
-def _day_label(label: str, *, days_earlier: int | None) -> str | None:
-    """One day earlier, or the same day a year earlier when `days_earlier` is None."""
-    try:
-        moment = date.fromisoformat(label)
-    except ValueError:
-        return None
-    try:
-        if days_earlier is not None:
-            return (moment - timedelta(days=days_earlier)).isoformat()
-        return moment.replace(year=moment.year - 1).isoformat()
-    except (ValueError, OverflowError):
-        # Two ways a counterpart can fail to be a date, and both refuse rather
-        # than reach for the nearest one. 29 February has no counterpart in a
-        # non-leap year -- `ValueError`. The day before `0001-01-01` is off the
-        # end of the calendar -- `OverflowError`, which is not a `ValueError`,
-        # so catching only the latter let it escape both entry points as an
-        # abort instead of a governed refusal.
-        return None
+    current, prior = labels
+    buckets = {bucket.label: bucket for bucket in trend.series.buckets}
+    return _Window(
+        current=buckets[current],
+        prior=buckets[prior],
+        inherited=trend.caveats,
+    )
 
 
 def _absent_reason(package: FactPackage) -> str:

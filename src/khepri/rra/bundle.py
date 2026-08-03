@@ -227,6 +227,15 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
         {
             SECTION_REASON_UNITS_ABSENT,
             SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE,
+            # Two rows whose authority is reachability, as for the comparison
+            # section: growth decomposes the same window the comparison states, so
+            # it fails the same two ways. A dataset short of two settled periods
+            # has no change to decompose, and an absent revenue trend has nothing
+            # to decompose at all. Neither is "units absent", and a section that
+            # cannot state its family's actual reason does not fail closed -- it
+            # fails misleadingly.
+            SECTION_REASON_PRIOR_WINDOW_ABSENT,
+            SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
         }
     ),
     SECTION_BASKET: frozenset({SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT}),
