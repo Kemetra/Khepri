@@ -50,12 +50,13 @@ that reconciliation cannot judge, which is stated where it is declared.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Protocol
 
-from khepri.rra.facts import FactPackage
+from khepri.rra.analysis import basket, comparison, concentration, growth
+from khepri.rra.facts import Fact, FactPackage, RefusedResult
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -131,6 +132,11 @@ ORDERED_SECTIONS = (
     SECTION_GROWTH,
     SECTION_BASKET,
 )
+
+# A section whose figures could not be drawn. Returning no chart is not by itself
+# a disclosure -- the section would simply look sparse, and a reader could not tell
+# "there was nothing to show" from "we could not show it". This carries that.
+CAVEAT_CHART_NOT_DRAWN = "chart_not_drawn"
 
 SECTION_PRESENT = "present"
 SECTION_REFUSED = "refused"
@@ -803,50 +809,124 @@ class ReportBundle:
         else:
             state = NARRATIVE_OMITTED
 
-        figures = _figures(package)
+        analysed = _analysed(package)
+        figures = (*_figures(package), *analysed.figures)
+        sections = _sections(figures, analysed.refusals)
         return cls(
             identity=BundleIdentity.of(package),
             figures=figures,
             # Every RRA-004 caveat qualifies the dataset rather than one
-            # analysis, so each is report-level. The four RRA-008 families bring
-            # their own section-scoped caveats when those slices arrive.
-            caveats=tuple(
-                StatedCaveat(code=code, section=None)
-                for code in sorted(set(package.caveats))
+            # analysis, so each is report-level. A family's caveat qualifies its
+            # own analysis and is scoped to that section: a bare code could be
+            # rendered under the basket heading while describing the comparison,
+            # and the surface would reconcile perfectly.
+            caveats=(
+                *(
+                    StatedCaveat(code=code, section=None)
+                    for code in sorted(set(package.caveats))
+                ),
+                *analysed.caveats,
+                *(
+                    StatedCaveat(code=CAVEAT_CHART_NOT_DRAWN, section=entry.section_id)
+                    for entry in sections
+                    if entry.state == SECTION_PRESENT and entry.chart is None
+                ),
             ),
             narrative_state=state,
-            sections=_sections(figures),
+            sections=sections,
             narrative=narrative,
         )
 
 
-def _sections(figures: tuple[CitedFigure, ...]) -> tuple[Section, ...]:
-    """The sections the bundle's own figures occupy, in governed order.
+def _sections(
+    figures: tuple[CitedFigure, ...],
+    refused: Mapping[str, str],
+) -> tuple[Section, ...]:
+    """The sections a bundle declares, in governed order.
 
     Derived from the figures rather than assembled beside them, so the sections
     a bundle declares and the sections its figures claim cannot disagree --
     `section_ids` is what every surface is reconciled against, and a bundle that
     disagreed with itself would refuse every correct surface.
 
-    A section appears only when a figure occupies it, which is what keeps every
-    section here `SECTION_PRESENT` with at least one figure. Refused sections
-    arrive with the analysis families that can refuse, and charts with the slice
-    that computes their geometry.
+    A refused family contributes no figures and still gets a section, because a
+    reader cannot tell "there was nothing to show" from "we could not show it"
+    unless the heading and the reason are both present. Absence is never the
+    disclosure.
+
+    A chart is attached only where the section's own figures can be drawn, and
+    `is_drawable` is the single place that decides. A section with a spec the
+    geometry would refuse promises a chart no surface can draw.
     """
-    occupied = {figure.section for figure in figures}
-    return tuple(
-        Section(
-            section_id=section_id,
-            state=SECTION_PRESENT,
-            reason=None,
-            figure_ids=tuple(
-                figure.figure_id for figure in figures if figure.section == section_id
-            ),
-            chart=None,
+    placed = {
+        section_id: tuple(
+            figure for figure in figures if figure.section == section_id
         )
         for section_id in ORDERED_SECTIONS
-        if section_id in occupied
+    }
+    return tuple(
+        _section(section_id, placed[section_id], refused.get(section_id))
+        for section_id in ORDERED_SECTIONS
+        if placed[section_id] or section_id in refused
     )
+
+
+def _section(
+    section_id: str,
+    figures: tuple[CitedFigure, ...],
+    reason: str | None,
+) -> Section:
+    """One section: refused with its reason, or present with its figures.
+
+    A family that stated even one fact is present. Its refusal, if it also
+    recorded one, belongs to the affected metric rather than to the section --
+    which is the distinction `SECTION_REASONS` enforces by refusing to admit a
+    per-metric reason as a section state.
+    """
+    if not figures:
+        return Section(
+            section_id=section_id,
+            state=SECTION_REFUSED,
+            reason=reason,
+            figure_ids=(),
+            chart=None,
+        )
+    figure_ids = tuple(figure.figure_id for figure in figures)
+    return Section(
+        section_id=section_id,
+        state=SECTION_PRESENT,
+        reason=None,
+        figure_ids=figure_ids,
+        chart=(
+            ChartSpec(kind=SECTION_CHART_KINDS[section_id], figure_ids=figure_ids)
+            if is_drawable(figures)
+            else None
+        ),
+    )
+
+
+def is_drawable(figures: tuple[CitedFigure, ...]) -> bool:
+    """Whether these figures can make a chart at all.
+
+    The rule lives here, with the types, and `rendering.charts` applies it. It
+    cannot live there: that module imports this one, so a bundle wanting the same
+    answer would have to keep a second copy, and a bundle attaching a spec the
+    geometry then refused would promise a chart no surface could draw.
+
+    Four conditions, each for a reason the geometry module states at length: one
+    point is a number a table states better; a missing value is a governed gap
+    and never a zero on a chart; a domain of no width has nothing to scale by;
+    and mixed units on one axis scale a ratio of 0.1818 to invisibility beside a
+    count of 25.
+    """
+    if len(figures) < 2:
+        return False
+    if any(figure.value is None for figure in figures):
+        return False
+    if len({figure.unit_kind for figure in figures}) != 1:
+        return False
+    values = [figure.value for figure in figures if figure.value is not None]
+    return min(*values, Decimal(0)) != max(*values, Decimal(0))
 
 
 def _require_governed_section_order(sections: tuple[Section, ...]) -> None:
@@ -1265,6 +1345,79 @@ def _reconcile_sections(coverage: list[SurfaceLanguage]) -> None:
             raise BundleRefused(REASON_SECTION_COVERAGE_DIFFERS)
         if other.sections != first:
             raise BundleRefused(REASON_SECTION_ORDER_DIFFERS)
+
+
+@dataclass(frozen=True, slots=True)
+class _Analysed:
+    """What the four `RRA-008` families contributed to one bundle.
+
+    Carried as one value because the three parts are decided together: a family
+    either placed figures in its section, or refused it with a reason, and either
+    way its caveats belong to that section alone.
+    """
+
+    figures: tuple[CitedFigure, ...]
+    refusals: dict[str, str]
+    caveats: tuple[StatedCaveat, ...]
+
+
+# Which module states each analysis section. A table rather than four calls in a
+# row, so a family cannot be wired to the wrong section and every one of them is
+# reached the same way.
+_FAMILIES = {
+    SECTION_COMPARISON: comparison.derive,
+    SECTION_CONCENTRATION: concentration.derive,
+    SECTION_GROWTH: growth.derive,
+    SECTION_BASKET: basket.derive,
+}
+
+
+def _analysed(package: FactPackage) -> _Analysed:
+    """Run every governed family and place what each of them said.
+
+    This is the seam the four families were built behind: until it existed they
+    could state facts that no surface would ever carry. A family refusing is not
+    an error here -- `RRA-008` refuses the affected analysis and not the report,
+    so a refusal becomes a section a reader can see.
+    """
+    figures: list[CitedFigure] = []
+    refusals: dict[str, str] = {}
+    caveats: list[StatedCaveat] = []
+    for section_id, derive in _FAMILIES.items():
+        stated = derive(package)
+        if isinstance(stated, RefusedResult):
+            refusals[section_id] = stated.reason
+            continue
+        figures.extend(_analysis_figure(fact, section_id) for fact in stated)
+        caveats.extend(
+            StatedCaveat(code=code, section=section_id)
+            for code in sorted({code for fact in stated for code in fact.caveats})
+        )
+    return _Analysed(
+        figures=tuple(figures),
+        refusals=refusals,
+        caveats=tuple(caveats),
+    )
+
+
+def _analysis_figure(fact: Fact, section_id: str) -> CitedFigure:
+    """One derived fact as a figure in the section that derived it.
+
+    Positioned by nothing: an analysis fact is a scalar, and its citation names
+    it uniquely because every family scopes its identities by mode or dimension.
+    """
+    return CitedFigure(
+        figure_id=_figure_id(fact.citation_id, KIND_VALUE, None),
+        citation_id=fact.citation_id,
+        fact_id=fact.fact_id,
+        metric=fact.metric,
+        unit_kind=fact.unit_kind,
+        kind=KIND_VALUE,
+        section=section_id,
+        label=None,
+        value=_decimal(fact.value),
+        renderings=_renderings(fact.value),
+    )
 
 
 def _figures(package: FactPackage) -> tuple[CitedFigure, ...]:
