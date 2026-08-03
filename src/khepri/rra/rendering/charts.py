@@ -68,7 +68,7 @@ from khepri.rra.bundle import (
     ChartSpec,
     CitedFigure,
 )
-from khepri.rra.rendering.chart_labels import category_of
+from khepri.rra.rendering.wording import category_of
 
 # One canvas for every chart in a report. Two charts drawn to different scales sit
 # on one page inviting a comparison their geometry does not support.
@@ -102,7 +102,7 @@ _SCALE = Decimal(1).scaleb(-COORDINATE_PRECISION)
 class ChartLabel:
     """A `ChartCategory` placed on the canvas: what a mark is called, and where.
 
-    The naming decision is not made here. `chart_labels.category_of` makes it, once,
+    The naming decision is not made here. `wording.category_of` makes it, once,
     for every surface -- the workbook draws a native chart from the same categories
     this places on an SVG, and a name that differed between the two would be the two
     surfaces disagreeing about what a mark is called. What this type adds is `x` and

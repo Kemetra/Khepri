@@ -100,7 +100,13 @@ from khepri.rra.bundle import (
     SurfaceUnavailable,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from khepri.rra.rendering.chart_labels import LABEL_WORDING, category_of, worded
+from khepri.rra.rendering.wording import (
+    CHART_DESCRIPTIONS,
+    LABEL_WORDING,
+    SECTION_HEADINGS,
+    category_of,
+    worded,
+)
 
 # v2 moved the figures off the two report sheets and onto a sheet per section; v3 adds
 # the chart data sheets and the native charts drawn from them. The version is
@@ -458,13 +464,32 @@ def _draw_charts(
     language: str,
     sheets: dict[str, Worksheet],
 ) -> None:
-    """Write one language's chart data, then draw each series onto its section sheet."""
+    """Write one language's chart data, then draw each series onto its section sheet.
+
+    The insertion result is checked rather than discarded. `insert_chart` reports a
+    refusal by return value, and a dropped chart would leave the sheet looking like a
+    section that has none -- indistinguishable, to a reader, from one whose figures
+    could not be drawn.
+    """
     for block in _write_chartdata(workbook, bundle, language):
-        sheets[block.section_id].insert_chart(
+        placed = sheets[block.section_id].insert_chart(
             _CHART_ANCHOR_ROW,
             _CHART_ANCHOR_COLUMN,
             _chart_for(workbook, block, language),
+            {"description": _described(block, language)},
         )
+        if placed != 0:
+            raise WorkbookUnavailable("A governed chart could not be placed.")
+
+
+def _described(block: _ChartBlock, language: str) -> str:
+    """The chart's alternative text: what a reader who cannot see it is told instead.
+
+    `RRA-006` requires an accessible workbook, and an embedded chart is the one object
+    on a sheet that carries no cell text of its own. Without this a screen reader
+    announces a picture and nothing about it.
+    """
+    return CHART_DESCRIPTIONS[language][f"chart_description.{block.kind}"]
 
 
 def _write_chartdata(
@@ -575,14 +600,24 @@ def _write_chart_value(
 
 
 def _chart_for(workbook: Workbook, block: _ChartBlock, language: str) -> Chart:
-    """One native chart over one block's rows.
+    """One native chart over one block's rows, titled with its section's heading.
 
-    No title and no axis titles. The sheet it is drawn on already names the analysis,
-    and prose composed here would be prose no per-language table governs. The legend
-    goes for the same reason: a single unnamed series is captioned `Series 1`, which is
-    a label this surface did not write and cannot translate.
+    The title is the accessibility requirement, not decoration: an embedded chart
+    carries no cell text, so without one a screen reader announces a picture and
+    nothing about which analysis it belongs to. It is governed wording read from
+    `wording.SECTION_HEADINGS`, the same heading the page and the printed report show
+    above the same analysis -- an earlier version omitted it on the grounds that prose
+    composed here would be ungoverned, which was the right rule applied to the wrong
+    case: this wording already exists and is already translated.
+
+    No axis titles. The category axis is named by its own categories and the value axis
+    would need a unit name no table governs.
+
+    No legend. A single unnamed series is captioned `Series 1`, which is a label this
+    surface did not write and cannot translate.
     """
     chart = workbook.add_chart(dict(_CHART_TYPES[block.kind]))
+    chart.set_title({"name": SECTION_HEADINGS[language][block.section_id]})
     chart.add_series(
         {
             "categories": _series_range(block, language, _CHART_CATEGORY_COLUMN),

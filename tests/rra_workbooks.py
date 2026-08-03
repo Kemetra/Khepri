@@ -120,13 +120,30 @@ class ReadWorkbook:
         is the claim being checked, and a workbook that put the Arabic chart on the
         English sheet would satisfy any assertion made over all charts at once.
         """
-        member = self.members[sheet]
         return [
             self.parts[chart]
-            for drawing in _targets(self.parts, member)
-            if "/drawings/" in drawing
+            for drawing in self._drawing_members(sheet)
             for chart in _targets(self.parts, drawing)
             if "/charts/" in chart and chart in self.parts
+        ]
+
+    def drawings(self, sheet: str) -> list[str]:
+        """Every drawing part on one worksheet, as XML.
+
+        Where an embedded object's alternative text lives: a chart's `descr` is an
+        attribute of the drawing that anchors it, not of the chart itself.
+        """
+        return [
+            self.parts[drawing]
+            for drawing in self._drawing_members(sheet)
+            if drawing in self.parts
+        ]
+
+    def _drawing_members(self, sheet: str) -> list[str]:
+        return [
+            target
+            for target in _targets(self.parts, self.members[sheet])
+            if "/drawings/" in target
         ]
 
 

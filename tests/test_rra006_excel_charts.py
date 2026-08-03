@@ -47,8 +47,13 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering import excel
-from khepri.rra.rendering.chart_labels import category_of, worded
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
+from khepri.rra.rendering.wording import (
+    CHART_DESCRIPTIONS,
+    SECTION_HEADINGS,
+    category_of,
+    worded,
+)
 from tests import rra_workbooks
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
@@ -355,6 +360,46 @@ def test_a_cumulative_share_curve_is_drawn_as_a_line() -> None:
     rows = workbook.cells[excel._chartdata_sheet(LANGUAGE_ENGLISH)]
     shown = [row[0] for row in rows if row and row[0]]
     assert shown == [SECTION_CONCENTRATION, *(rank for rank, _, _ in CURVE)]
+
+
+def test_each_chart_is_titled_with_its_section_heading_in_that_language() -> None:
+    """`RRA-006` requires an accessible workbook, and a chart is the one object on a
+    sheet with no cell text of its own.
+
+    Without a title a screen reader announces a picture and nothing about which
+    analysis it belongs to. The wording is the heading the page and the printed report
+    already show above the same analysis, read from the one shared table, so a reader
+    moving between surfaces is not told the section is called two different things.
+    """
+    bundle, workbook = rendered()
+
+    for section in charted(bundle):
+        titles = set()
+        for language in REQUIRED_LANGUAGES:
+            xml = workbook.charts(excel._section_sheet(section.section_id, language))[0]
+            heading = SECTION_HEADINGS[language][section.section_id]
+            assert heading in xml, (section.section_id, language)
+            titles.add(heading)
+        # And they are not the same string, so neither language is reading the other's.
+        assert len(titles) == len(REQUIRED_LANGUAGES), section.section_id
+
+
+def test_each_chart_carries_alternative_text_naming_what_it_shows() -> None:
+    """The other half of accessibility: what the picture is, not just which section.
+
+    Alternative text is an attribute of the drawing that anchors the chart, so it is
+    read from the drawing part rather than the chart part.
+    """
+    bundle, workbook = rendered()
+
+    for section in charted(bundle):
+        assert section.chart is not None
+        for language in REQUIRED_LANGUAGES:
+            drawing = workbook.drawings(excel._section_sheet(section.section_id, language))[0]
+            described = CHART_DESCRIPTIONS[language][
+                f"chart_description.{section.chart.kind}"
+            ]
+            assert described in drawing, (section.section_id, language)
 
 
 def test_regenerating_the_workbook_writes_the_same_numbers() -> None:

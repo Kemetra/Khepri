@@ -29,7 +29,6 @@ from khepri.rra.bundle import (
     CitedFigure,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from khepri.rra.rendering.chart_labels import LABEL_WORDING, category_of, worded
 from khepri.rra.rendering.charts import (
     CHART_HEIGHT,
     CHART_WIDTH,
@@ -38,6 +37,7 @@ from khepri.rra.rendering.charts import (
     ChartView,
     build_chart,
 )
+from khepri.rra.rendering.wording import LABEL_WORDING, category_of, worded
 
 
 def figure(figure_id: str, value: Decimal | None, label: str) -> CitedFigure:

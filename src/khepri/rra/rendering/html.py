@@ -55,8 +55,12 @@ from khepri.rra.narrative import (
     REQUIRED_LANGUAGES,
     NarrativeDraft,
 )
-from khepri.rra.rendering.chart_labels import LABEL_WORDING
 from khepri.rra.rendering.charts import ChartView, build_chart
+from khepri.rra.rendering.wording import (
+    CHART_DESCRIPTIONS,
+    LABEL_WORDING,
+    SECTION_HEADINGS,
+)
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
 
@@ -92,26 +96,14 @@ _CHROME: dict[str, dict[str, str]] = {
         "none": "None",
         "cites": "Cites",
         "chart_not_drawn": "No chart",
-        "sections": {
-            "overview": "Overview",
-            "comparison": "Period comparison",
-            "concentration": "Concentration",
-            "growth": "Growth decomposition",
-            "basket": "Basket structure",
-        },
-        "chart_descriptions": {
-            "chart_description.bar": "Bar chart of the figures in this section",
-            "chart_description.grouped_bar": (
-                "Grouped bar chart of the figures in this section"
-            ),
-            "chart_description.line": "Cumulative share curve over the ranked values",
-        },
-        # One table for every governed code a chart label can carry: metric names,
-        # and mode names. One lookup path in the macro, so a new kind of code cannot
-        # arrive with nowhere to be translated. It is read from `chart_labels`, beside
-        # the function that mints those codes, because the workbook's native chart
-        # needs the same wording and two copies would let the surfaces disagree about
-        # what a bar is called.
+        # Three tables read from `wording` rather than held here: section headings,
+        # chart descriptions, and the wording for every governed code a chart label can
+        # carry. Each is read by more than one surface -- the workbook titles its native
+        # chart with the section heading and takes its alternative text from the
+        # description -- and every copy would be a place the surfaces could drift into
+        # naming the same thing differently.
+        "sections": SECTION_HEADINGS[LANGUAGE_ENGLISH],
+        "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ENGLISH],
         "labels": LABEL_WORDING[LANGUAGE_ENGLISH],
     },
     LANGUAGE_ARABIC: {
@@ -135,18 +127,8 @@ _CHROME: dict[str, dict[str, str]] = {
         "none": "لا يوجد",
         "cites": "يُسند إلى",
         "chart_not_drawn": "لا يوجد رسم",
-        "sections": {
-            "overview": "نظرة عامة",
-            "comparison": "مقارنة الفترات",
-            "concentration": "التركّز",
-            "growth": "تحليل النمو",
-            "basket": "بنية السلة",
-        },
-        "chart_descriptions": {
-            "chart_description.bar": "رسم بالأعمدة للأرقام في هذا القسم",
-            "chart_description.grouped_bar": "رسم بأعمدة مجمّعة للأرقام في هذا القسم",
-            "chart_description.line": "منحنى النصيب التراكمي عبر القيم المرتّبة",
-        },
+        "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
+        "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
         "labels": LABEL_WORDING[LANGUAGE_ARABIC],
     },
 }

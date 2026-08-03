@@ -1787,12 +1787,23 @@ double is the nearest representation of exactly what a reader is shown. `float(f
 have depended on an invariant held in `bundle.py` — that a figure's `Decimal` and its rendering come
 from one string — and would have written more precision than the report claimed if that ever drifted.
 
-**A chart label table now sits in `rendering/chart_labels.py`.** The codes (`metric.growth_price_effect`,
-`label.period_over_period`) were minted in `rendering.charts` while the wording lived in
-`rendering.html`'s chrome, with nothing tying them together; the workbook needs the identical wording
-on its category axis, and two copies would let the page and the spreadsheet disagree about what a bar
-is called. `category_of` and `LABEL_WORDING` are now one module, and a test asserts every code the
-former can produce has wording in both languages.
+**Shared wording now lives in `rendering/wording.py`.** Three tables were held in `rendering.html`'s
+chrome while being needed by more than one surface: section headings, chart descriptions, and the
+wording for chart label codes. The codes themselves (`metric.growth_price_effect`,
+`label.period_over_period`) were minted in `rendering.charts`, so a new one could arrive with nowhere
+to be translated and the failure surfaced only when a reader loaded the page. `category_of` and
+`LABEL_WORDING` are now one module, `_CHROME` reads all three tables from it, and a test asserts
+every code `category_of` can produce has wording in both languages.
+
+**The workbook's charts are titled and carry alternative text, on review.** The first version
+deliberately omitted both on the grounds that prose composed in a renderer is ungoverned. That was
+the right rule applied to the wrong case: `RRA-006` requires an accessible Excel workbook, an
+embedded chart is the one object on a sheet carrying no cell text of its own, and the wording it
+needs — the section heading and the chart-kind description — already exists and is already
+translated. The chart title comes from `SECTION_HEADINGS` and the drawing's `descr` from
+`CHART_DESCRIPTIONS`. `insert_chart`'s return value is checked rather than discarded, for the same
+reason a failed `write_row` was a finding earlier: a dropped chart is indistinguishable from a
+section that never had one.
 
 **Defect found, not fixed here — the concentration curve is charted on no surface.**
 `bundle._bucket` records a series figure's `metric` as the series' **`measure`** (`revenue`), while
