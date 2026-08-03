@@ -98,6 +98,7 @@ from khepri.rra.bundle import (
     SurfaceContent,
     SurfaceLanguage,
     SurfaceUnavailable,
+    is_drawable,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.wording import (
@@ -550,17 +551,29 @@ def _chart_blocks(bundle: ReportBundle, language: str) -> tuple[_ChartBlock, ...
 
 
 def _plotted(bundle: ReportBundle, spec: ChartSpec) -> tuple[CitedFigure, ...] | None:
-    """The figures a spec names, in its order, or nothing if any is unusable here.
+    """The figures a spec names, in its order, or nothing if the series is undrawable.
 
-    Unusable means absent, or without a value, or without the ASCII rendering the
-    number is parsed from. Each of those would otherwise become a gap in the series,
-    and a chart may not render a governed gap as a zero.
+    Two checks, and the second is `bundle.is_drawable` rather than a rule of this
+    module's own. `Section` validates a chart's membership and its kind and not its
+    drawability, so a directly constructed bundle can carry a spec naming one point,
+    or figures in mixed units, or a domain of no width. `charts.build_chart` refuses
+    all three, so the page and the printed report would show no chart while this
+    surface drew one -- and mixed units in particular would give the workbook a value
+    axis scaling a ratio of 0.1818 against a count of 25. `is_drawable` lives in
+    `bundle` precisely so every surface answers that question the same way.
+
+    The first check is this module's, because it is about this module's write: a figure
+    without a value or without the ASCII rendering the number is parsed from has
+    nothing to write, and a chart may not render a governed gap as a zero.
     """
     known = {figure.figure_id: figure for figure in bundle.figures}
     found = [known.get(figure_id) for figure_id in spec.figure_ids]
     if any(figure is None or not _has_number(figure) for figure in found):
         return None
-    return tuple(figure for figure in found if figure is not None)
+    figures = tuple(figure for figure in found if figure is not None)
+    if not is_drawable(figures):
+        return None
+    return figures
 
 
 def _has_number(figure: CitedFigure) -> bool:

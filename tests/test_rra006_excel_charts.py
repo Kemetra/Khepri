@@ -26,12 +26,17 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import (
+    CHART_BAR,
     CHART_LINE,
+    DIRECTION_LTR,
     KIND_VALUE,
     NARRATIVE_OMITTED,
     ORDERED_SECTIONS,
+    SECTION_BASKET,
     SECTION_CONCENTRATION,
     SECTION_PRESENT,
     BundleIdentity,
@@ -47,6 +52,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering import excel
+from khepri.rra.rendering.charts import build_chart
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.wording import (
     CHART_DESCRIPTIONS,
@@ -400,6 +406,85 @@ def test_each_chart_carries_alternative_text_naming_what_it_shows() -> None:
                 f"chart_description.{section.chart.kind}"
             ]
             assert described in drawing, (section.section_id, language)
+
+
+def undrawable_bundle(units: tuple[str, ...], values: tuple[str, ...]) -> ReportBundle:
+    """A directly constructed bundle whose chart spec names an undrawable series.
+
+    `Section` validates a chart's membership and its kind and nothing about whether the
+    figures can be drawn, so this shape is a valid bundle. `ReportBundle.of` would never
+    build one; a caller assembling a bundle itself can.
+    """
+    figures = tuple(
+        CitedFigure(
+            figure_id=f"cit_odd/{KIND_VALUE}/{position}",
+            citation_id="cit_odd",
+            fact_id="fct_odd",
+            metric="attach_rate",
+            unit_kind=unit,
+            kind=KIND_VALUE,
+            section=SECTION_BASKET,
+            label=f"V{position}",
+            value=Decimal(value),
+            renderings={LANGUAGE_ENGLISH: value, LANGUAGE_ARABIC: value},
+        )
+        for position, (unit, value) in enumerate(zip(units, values, strict=True))
+    )
+    figure_ids = tuple(figure.figure_id for figure in figures)
+    return ReportBundle(
+        identity=BundleIdentity.of(package()),
+        figures=figures,
+        caveats=(),
+        narrative_state=NARRATIVE_OMITTED,
+        sections=(
+            Section(
+                section_id=SECTION_BASKET,
+                state=SECTION_PRESENT,
+                reason=None,
+                figure_ids=figure_ids,
+                chart=ChartSpec(kind=CHART_BAR, figure_ids=figure_ids),
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("units", "values"),
+    [
+        # One axis states one dimension. A count of 25 beside a ratio of 0.1818 scales
+        # the ratio to invisibility, and a reader sees a governed figure looking like
+        # nothing at all.
+        (("ratio", "count"), ("0.1818", "25")),
+        # A single point is a number the table states better.
+        (("ratio",), ("0.5000",)),
+        # A domain of no width has nothing to scale by, and a flat axis implies a
+        # measurement it does not have.
+        (("ratio", "ratio"), ("0.0000", "0.0000")),
+    ],
+)
+def test_an_undrawable_series_is_refused_here_exactly_as_the_page_refuses_it(
+    units: tuple[str, ...],
+    values: tuple[str, ...],
+) -> None:
+    """`is_drawable` lives in `bundle` so every surface answers this the same way.
+
+    A workbook applying its own rule would draw a chart the page and the printed report
+    both declined, and nothing reconciles differently -- `reconcile` compares the text
+    beside a chart and never the chart. Asserted against `build_chart` in the same test
+    so the two cannot drift into disagreeing.
+    """
+    bundle = undrawable_bundle(units, values)
+    section = bundle.sections[0]
+    assert section.chart is not None
+
+    assert build_chart(section.chart, bundle.figures, direction=DIRECTION_LTR) is None
+
+    _, workbook = rendered(bundle)
+    assert workbook.charts(excel._section_sheet(SECTION_BASKET, LANGUAGE_ENGLISH)) == []
+    # And no chart data sheet at all, so no number was written for a chart that is not
+    # drawn.
+    assert not chartdata_sheets() & set(workbook.cells)
+    assert all(numbers == [] for numbers in workbook.numbers.values())
 
 
 def test_regenerating_the_workbook_writes_the_same_numbers() -> None:
