@@ -265,6 +265,34 @@ def test_year_over_year_refuses_alone_when_coverage_is_under_a_year() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "package",
+    [
+        pytest.param(monthly(13), id="no-counterpart-period"),
+        pytest.param(
+            package_for(
+                [
+                    (date(2026, 1, 1), "100.00"),
+                    (date(2026, 1, 2), ""),
+                    (date(2026, 1, 3), "1.00"),
+                ]
+            ),
+            id="a-compared-period-with-no-revenue",
+        ),
+    ],
+)
+def test_a_mode_that_states_nothing_refuses_every_metric_it_would_have(
+    package: FactPackage,
+) -> None:
+    # Recording only the absolute delta would leave the percentage
+    # indistinguishable from a metric quietly left out, which is the distinction
+    # refusals() exists to preserve. A whole-mode failure has no survivor and
+    # owes a refusal for both.
+    recorded = comparison.refusals(package)
+    for metric in (METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT):
+        assert any(refusal.metric.startswith(metric) for refusal in recorded), metric
+
+
 def test_a_single_mode_refusal_is_not_a_report_refusal() -> None:
     assert not isinstance(comparison.derive(monthly(13)), RefusedResult)
 

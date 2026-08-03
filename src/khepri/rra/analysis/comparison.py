@@ -98,6 +98,9 @@ GOVERNED_MODES = (MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR)
 
 METRIC_DELTA_ABSOLUTE = "revenue_delta_absolute"
 METRIC_DELTA_PERCENT = "revenue_delta_percent"
+# Every metric this family states. A whole-mode failure refuses all of them, so
+# the list is named rather than implied by whichever one happened to be handy.
+GOVERNED_METRICS = (METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT)
 
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
 REASON_NEGATIVE_BASE = "negative_base"
@@ -240,14 +243,14 @@ def _outcomes(package: FactPackage) -> tuple[_Outcome, ...]:
 def _derive_mode(package: FactPackage, mode: str) -> _Outcome:
     window = _window_for(package, mode)
     if window is None:
-        return _refused(mode, METRIC_DELTA_ABSOLUTE, _absent_reason(package))
+        return _refused(mode, _absent_reason(package))
     return _compare(window, package, mode)
 
 
 def _compare(window: _Window, package: FactPackage, mode: str) -> _Outcome:
     current, prior = window.totals()
     if current is None or prior is None:
-        return _refused(mode, METRIC_DELTA_ABSOLUTE, REASON_INPUT_UNAVAILABLE)
+        return _refused(mode, REASON_INPUT_UNAVAILABLE)
     derivation = _Derivation(
         mode=mode,
         caveats=window.inherited,
@@ -285,10 +288,20 @@ def _with_percentage(
     )
 
 
-def _refused(mode: str, metric: str, reason: str) -> _Outcome:
+def _refused(mode: str, reason: str) -> _Outcome:
+    """A mode that could state nothing refuses every metric it would have stated.
+
+    Recording only the absolute delta would leave the percentage indistinguishable
+    from a metric quietly left out, which is the distinction `refusals` exists to
+    preserve. The invalid-base path already records a percentage refusal beside a
+    surviving absolute; a whole-mode failure has no survivor and owes two.
+    """
     return _Outcome(
         facts=(),
-        refusals=(RefusedResult(metric=_scoped_metric(metric, mode), reason=reason),),
+        refusals=tuple(
+            RefusedResult(metric=_scoped_metric(metric, mode), reason=reason)
+            for metric in GOVERNED_METRICS
+        ),
     )
 
 
