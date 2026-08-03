@@ -13,9 +13,13 @@
   viewBox is written from the view rather than from a literal, so a change to the
   canvas cannot leave this template drawing to the old one.
 
-  `title_code` and `description_code` are governed codes. The title reuses the
-  section heading a reader already sees; the description is looked up in the
-  per-language chrome. Neither is ever printed raw.
+  `title_code` and `description_code` are governed codes, and so is a label whose
+  `localize` flag is set. Every one of them is looked up in the per-language chrome,
+  never printed raw: the environment uses `StrictUndefined`, so a code the chrome has
+  no entry for raises here rather than reaching a reader as an identifier.
+
+  The title reuses the section heading a reader already sees, so there is no second
+  table to keep in step with the first.
 #}
 {% macro chart(view, section_id, chrome) %}
 <svg role="img" aria-labelledby="{{ section_id }}-ct {{ section_id }}-cd"
@@ -32,7 +36,7 @@
   {% endif %}
   {% for label in view.labels %}
   <text class="chart__label" x="{{ label.x }}" y="{{ label.y }}">{#
-    #}{% if label.localize %}<tspan class="chart__code">{{ label.value }}</tspan>{#
+    #}{% if label.localize %}{{ chrome.metrics[label.value] }}{#
     #}{% else %}{{ label.value }}{% endif %}</text>
   {% endfor %}
 </svg>

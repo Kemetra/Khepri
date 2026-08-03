@@ -729,7 +729,22 @@ def test_a_surface_may_show_a_subset_so_long_as_both_readers_see_it() -> None:
     # defect. What is refused is showing one subset to one reader and another
     # to the other, which the cross-language comparison already catches.
     bundle = ReportBundle.of(package())
-    totals = tuple(entry for entry in bundle.figures if entry.label is None)
+    # A subset must still include everything its charts plot. A page showing fewer
+    # rows is legitimate; a page whose chart draws a figure that reader was never
+    # shown is `chart_figure_not_stated`, and that is a different and correct
+    # refusal. Analysis figures now carry the scope they were derived under as a
+    # label, so "the totals" no longer happens to include them.
+    charted = {
+        figure_id
+        for section in bundle.sections
+        if section.chart is not None
+        for figure_id in section.chart.figure_ids
+    }
+    totals = tuple(
+        entry
+        for entry in bundle.figures
+        if entry.label is None or entry.figure_id in charted
+    )
     partial = tuple(
         language_of(
             bundle,

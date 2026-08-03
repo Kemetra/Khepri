@@ -135,10 +135,32 @@ def test_the_chart_is_labelled_for_a_screen_reader() -> None:
 
 
 def test_no_chart_code_reaches_the_reader_untranslated() -> None:
-    """A title or description code printed raw would be an identifier on the page."""
-    rendered = page()
-    assert "chart_title." not in rendered
-    assert "chart_description." not in rendered
+    """A code printed raw is an identifier on the page, in either language.
+
+    All three kinds are checked, because all three travel the same way: the title and
+    description codes, and a label whose `localize` flag is set. `StrictUndefined`
+    turns a missing chrome entry into a render failure rather than a blank, so this
+    also proves every code the families produce has an entry.
+    """
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        rendered = page(language)
+        assert "chart_title." not in rendered, language
+        assert "chart_description." not in rendered, language
+        assert "metric." not in rendered, language
+
+
+def test_a_scalar_chart_names_each_bar_in_the_readers_language() -> None:
+    """Growth compares three effects, so each bar has to say which effect it is.
+
+    Their metrics are what distinguishes them -- the mode is common to all three --
+    and a metric name is governed wording, so it is looked up rather than printed.
+    """
+    english = page(LANGUAGE_ENGLISH)
+    arabic = page(LANGUAGE_ARABIC)
+
+    assert "Price effect" in english
+    assert "Volume effect" in english
+    assert "أثر السعر" in arabic
 
 
 def test_a_chart_label_from_customer_data_is_escaped() -> None:

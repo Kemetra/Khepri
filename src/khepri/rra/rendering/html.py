@@ -104,6 +104,11 @@ _CHROME: dict[str, dict[str, str]] = {
             ),
             "chart_description.line": "Cumulative share curve over the ranked values",
         },
+        "metrics": {
+            "metric.growth_revenue_change": "Revenue change",
+            "metric.growth_price_effect": "Price effect",
+            "metric.growth_volume_effect": "Volume effect",
+        },
     },
     LANGUAGE_ARABIC: {
         "title": "تقرير التجزئة",
@@ -137,6 +142,11 @@ _CHROME: dict[str, dict[str, str]] = {
             "chart_description.bar": "رسم بالأعمدة للأرقام في هذا القسم",
             "chart_description.grouped_bar": "رسم بأعمدة مجمّعة للأرقام في هذا القسم",
             "chart_description.line": "منحنى النصيب التراكمي عبر القيم المرتّبة",
+        },
+        "metrics": {
+            "metric.growth_revenue_change": "التغيّر في الإيرادات",
+            "metric.growth_price_effect": "أثر السعر",
+            "metric.growth_volume_effect": "أثر الحجم",
         },
     },
 }

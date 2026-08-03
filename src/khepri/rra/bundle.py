@@ -891,17 +891,45 @@ def _section(
             figure_ids=(),
             chart=None,
         )
-    figure_ids = tuple(figure.figure_id for figure in figures)
+    plotted = _plottable(section_id, figures)
     return Section(
         section_id=section_id,
         state=SECTION_PRESENT,
         reason=None,
-        figure_ids=figure_ids,
+        figure_ids=tuple(figure.figure_id for figure in figures),
         chart=(
-            ChartSpec(kind=SECTION_CHART_KINDS[section_id], figure_ids=figure_ids)
-            if is_drawable(figures)
+            ChartSpec(
+                kind=SECTION_CHART_KINDS[section_id],
+                figure_ids=tuple(figure.figure_id for figure in plotted),
+            )
+            if is_drawable(plotted)
             else None
         ),
+    )
+
+
+def _plottable(
+    section_id: str,
+    figures: tuple[CitedFigure, ...],
+) -> tuple[CitedFigure, ...]:
+    """The figures this section's chart draws, as its family declared them.
+
+    The overview declares none and keeps no chart. Its figures are the package's
+    headline totals across every unit the dataset carries -- money beside counts
+    beside ratios -- and no single axis states them. Choosing a subset here would be
+    this module inventing an analysis nobody specified.
+
+    Row counts are never plotted either. A row count sits beside a value in the table
+    as a coverage number, and charting it next to the value it qualifies would put a
+    count of rows on the same axis as the money those rows carry.
+    """
+    family = _FAMILIES.get(section_id)
+    if family is None:
+        return ()
+    return tuple(
+        figure
+        for figure in figures
+        if figure.kind == KIND_VALUE and figure.metric in family.plots
     )
 
 
@@ -1364,11 +1392,80 @@ class _Analysed:
 # Which module states each analysis section. A table rather than four calls in a
 # row, so a family cannot be wired to the wrong section and every one of them is
 # reached the same way.
+@dataclass(frozen=True, slots=True)
+class _Family:
+    """One analysis family, and the three questions the assembly asks it.
+
+    `refusals` is not optional decoration. A family can state some results and refuse
+    others -- a comparison with a prior period but no prior year, a basket with items
+    per transaction and no dimension for attach rate -- and `RRA-008` refuses the
+    affected *result*. Recording only the facts would leave a reader unable to tell a
+    refused metric from one nobody asked for.
+
+    `names` recovers the scope a fact was derived under, and only where that scope
+    distinguishes one of the family's facts from another. Without it every attach-rate
+    row carries the same metric and no label, so two products render as two identical
+    rows. With it applied indiscriminately the opposite happens: growth's three
+    effects all share one mode, so labelling them by it would give three different
+    bars the same name and hide the metric that actually tells them apart.
+
+    `plots` names the metrics this family's chart draws, and the family declares them
+    because only the family knows. A rule inferred here would be wrong for at least
+    one section whichever way it was written: grouping by metric breaks growth, whose
+    three *different* metrics are exactly what its grouped bar compares; grouping by
+    unit breaks concentration, whose curve shares a unit with the two shares derived
+    from it and would be drawn twice.
+
+    A section states more than it draws, always. The rest stays in the table, which is
+    the authoritative presentation.
+    """
+
+    derive: object
+    refusals: object
+    names: object
+    plots: frozenset[str]
+
+
 _FAMILIES = {
-    SECTION_COMPARISON: comparison.derive,
-    SECTION_CONCENTRATION: concentration.derive,
-    SECTION_GROWTH: growth.derive,
-    SECTION_BASKET: basket.derive,
+    SECTION_COMPARISON: _Family(
+        derive=comparison.derive,
+        refusals=comparison.refusals,
+        names=lambda fact, package: comparison.mode_of(fact),
+        # The absolute deltas, one bar per mode. The percentage deltas are the same
+        # comparison restated as a ratio, and charting both puts a fraction on the
+        # money axis.
+        plots=frozenset({comparison.METRIC_DELTA_ABSOLUTE}),
+    ),
+    SECTION_CONCENTRATION: _Family(
+        derive=concentration.derive,
+        refusals=lambda package: (),
+        # No label. Every concentration fact shares one dimension, so naming it per
+        # row distinguishes nothing, and the curve's own points are labelled by rank.
+        # What tells the four scalars apart is their metric.
+        names=lambda fact, package: None,
+        # The curve, which is what `RRA-008` requires drawn. The four scalars are read
+        # from the table beside it.
+        plots=frozenset({concentration.METRIC_CURVE}),
+    ),
+    SECTION_GROWTH: _Family(
+        derive=growth.derive,
+        refusals=lambda package: (),
+        # No label, for the same reason: all three effects share one mode. The
+        # metric is what says which effect a row or a bar is, and a chart resolves it
+        # through the per-language table.
+        names=lambda fact, package: None,
+        # All three, because the point of the chart is that two effects sum to the
+        # change beside them. They share a unit, so they share an axis honestly.
+        plots=frozenset(growth.GOVERNED_METRICS),
+    ),
+    SECTION_BASKET: _Family(
+        derive=basket.derive,
+        refusals=basket.refusals,
+        names=basket.attached_value_of,
+        # The attach rates, one bar per value. Items per transaction is a different
+        # statement about the whole dataset and is not one of the bars.
+        plots=frozenset({basket.METRIC_ATTACH_RATE}),
+    ),
 }
 
 
@@ -1383,16 +1480,17 @@ def _analysed(package: FactPackage) -> _Analysed:
     figures: list[CitedFigure] = []
     refusals: dict[str, str] = {}
     caveats: list[StatedCaveat] = []
-    for section_id, derive in _FAMILIES.items():
-        stated = derive(package)
+    for section_id, family in _FAMILIES.items():
+        stated = family.derive(package)
         if isinstance(stated, RefusedResult):
             refusals[section_id] = stated.reason
             continue
-        figures.extend(_analysis_figure(fact, section_id) for fact in stated)
-        caveats.extend(
-            StatedCaveat(code=code, section=section_id)
-            for code in sorted({code for fact in stated for code in fact.caveats})
+        figures.extend(
+            _analysis_figure(fact, section_id, family.names(fact, package))
+            for fact in stated
         )
+        caveats.extend(_scoped(section_id, stated, family.refusals(package)))
+    figures.extend(_curve_figures(package))
     return _Analysed(
         figures=tuple(figures),
         refusals=refusals,
@@ -1400,7 +1498,49 @@ def _analysed(package: FactPackage) -> _Analysed:
     )
 
 
-def _analysis_figure(fact: Fact, section_id: str) -> CitedFigure:
+def _scoped(
+    section_id: str,
+    stated: tuple[Fact, ...],
+    refused: tuple[RefusedResult, ...],
+) -> tuple[StatedCaveat, ...]:
+    """Everything qualifying one section: its facts' caveats, and its refused results.
+
+    A partially refusing family has no other channel. Its section is present -- it
+    stated something -- and `SECTION_REASONS` will not admit a per-metric reason as a
+    section state, precisely because a refused section carries no figures and would
+    suppress the results that survived. So the reason travels as a caveat scoped to
+    the section, which is the governed way to carry a qualification into both
+    languages.
+
+    Deduplicated and sorted, so a rerun produces the same document.
+    """
+    codes = {code for fact in stated for code in fact.caveats}
+    codes |= {refusal.reason for refusal in refused}
+    return tuple(
+        StatedCaveat(code=code, section=section_id) for code in sorted(codes)
+    )
+
+
+def _curve_figures(package: FactPackage) -> tuple[CitedFigure, ...]:
+    """The concentration curve, as one figure per ranked point.
+
+    The four concentration scalars are two counts beside two ratios, so they share no
+    axis and are refused as a chart -- correctly. The curve is what `RRA-008` asks to
+    be drawn, and it reaches a surface the way a trend does: a `FactSeries` whose
+    buckets become figures sharing one citation.
+    """
+    series = concentration.curve_series(package)
+    if series is None:
+        return ()
+    document = series.as_document()
+    return tuple(
+        figure
+        for position, point in enumerate(document["points"])
+        for figure in _bucket(document, point, position, SECTION_CONCENTRATION)
+    )
+
+
+def _analysis_figure(fact: Fact, section_id: str, label: str | None) -> CitedFigure:
     """One derived fact as a figure in the section that derived it.
 
     Positioned by nothing: an analysis fact is a scalar, and its citation names
@@ -1414,7 +1554,9 @@ def _analysis_figure(fact: Fact, section_id: str) -> CitedFigure:
         unit_kind=fact.unit_kind,
         kind=KIND_VALUE,
         section=section_id,
-        label=None,
+        # The scope the family derived this under -- the mode, the dimension, or the
+        # dimension value. Without it two attach rates render as two identical rows.
+        label=label,
         value=_decimal(fact.value),
         renderings=_renderings(fact.value),
     )
@@ -1459,6 +1601,7 @@ def _bucket(
     owner: dict[str, object],
     cell: dict[str, object],
     position: int,
+    section: str = SECTION_OVERVIEW,
 ) -> tuple[CitedFigure, ...]:
     """The value a bucket carries, and the row count printed beside it.
 
@@ -1474,6 +1617,7 @@ def _bucket(
         "unit_kind": str(owner["unit_kind"]),
         "label": label,
         "position": position,
+        "section": section,
     }
     figures = [
         _figure(kind=KIND_ROWS, text=str(cell["rows"]), **common),
@@ -1492,6 +1636,7 @@ def _figure(
     kind: str,
     label: str | None,
     text: str,
+    section: str = SECTION_OVERVIEW,
     position: int | None = None,
 ) -> CitedFigure:
     return CitedFigure(
@@ -1501,11 +1646,10 @@ def _figure(
         metric=metric,
         unit_kind=unit_kind,
         kind=kind,
-        # Every figure the RRA-004 package carries is an overview figure. The
-        # four RRA-008 analysis families are separate slices and place their own
-        # figures when they arrive; nothing here may claim a section for an
-        # analysis that has not been implemented.
-        section=SECTION_OVERVIEW,
+        # Every figure the RRA-004 package carries is an overview figure, which is
+        # the default. The concentration curve is the one series a family supplies
+        # through this path, and it names its own section.
+        section=section,
         label=label,
         value=_decimal(text),
         renderings=_renderings(text),
