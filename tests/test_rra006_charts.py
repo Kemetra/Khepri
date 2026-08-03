@@ -414,8 +414,8 @@ def test_every_governed_label_a_category_can_carry_has_wording_in_both_languages
 
     The codes were minted in `charts` and the wording lived in `html`'s chrome, so a
     new code could arrive with nowhere to be translated -- and the failure surfaced
-    only when a reader loaded the page. Both halves now sit in `chart_labels`, and this
-    is what says they agree.
+    only when a reader loaded the page. Both halves now sit in `wording`, and this is
+    what says they agree.
     """
     for label in GOVERNED_FIGURE_LABELS:
         for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
