@@ -30,9 +30,9 @@ written as the decimal strings the package computed them to, which is also what
 `bundle.reconcile` compares: `500.0` and `500.00` are the same number and a
 different statement about precision.
 
-There is exactly one numeric cell in this module and it is not a figure. See the
-charts paragraph below and `_write_chart_value`, which is the only place permitted
-to write one.
+No *figure* is a number, and the numeric cells that do exist are not figures. There
+are as many of them as there are plotted values, in both languages, and exactly one
+write path puts them there: see the charts paragraph below and `_write_chart_value`.
 
 **One worksheet per governed analysis, per language.** The workbook used to run all
 five sections together in one grid. That was this surface disagreeing with the other
@@ -46,7 +46,7 @@ A sheet's *name* is not translated. It is an address: a reader following a refer
 or any tool reading the file, needs the same name in both workbooks. The language lives
 inside the sheet.
 
-**Charts, and the one numeric cell in this module.** This paragraph used to argue
+**Charts, and the one numeric write path in this module.** This paragraph used to argue
 charts out, on the grounds that an XlsxWriter chart series addresses numeric cells and
 Excel stores every numeric cell as an IEEE 754 double -- which `KHEPRI-DEC-005` forbids
 as an authoritative financial fact. That reasoning was sound and it is why the
