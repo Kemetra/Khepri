@@ -76,6 +76,7 @@ from khepri.rra.facts import (
     UNIT_RATIO,
     Fact,
     FactPackage,
+    FactSeries,
     RefusedResult,
     fact_identity,
 )
@@ -115,10 +116,18 @@ _UNITS = {
 
 @dataclass(frozen=True, slots=True)
 class _Window:
-    """One settled period beside the period it is compared against."""
+    """One settled period beside the period it is compared against.
+
+    `inherited` carries the caveats of the series these buckets came from. A
+    delta derived from a trend that excluded undated rows shares that
+    limitation, and `RRA-008` requires every derived fact reconciled to its
+    source aggregate -- a fact that dropped its source's caveat would be
+    presented as covering rows the aggregate never saw.
+    """
 
     current: Bucket
     prior: Bucket
+    inherited: tuple[str, ...]
 
     def totals(self) -> tuple[Decimal | None, Decimal | None]:
         return (self.current.value, self.prior.value)
@@ -126,7 +135,7 @@ class _Window:
 
 @dataclass(frozen=True, slots=True)
 class _Derivation:
-    """What every fact of one mode shares: its mode and its precision.
+    """What every fact of one mode shares: mode, caveats, precision.
 
     Carried as one value so building a fact takes three arguments rather than
     five, and so two facts of the same mode cannot disagree about which mode
@@ -134,6 +143,7 @@ class _Derivation:
     """
 
     mode: str
+    caveats: tuple[str, ...]
     monetary_precision: int
 
     def precision_for(self, unit_kind: str) -> int:
@@ -151,14 +161,31 @@ class _Outcome:
 
 
 def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
-    """Both governed comparisons, or a refusal when neither can be made."""
-    facts = tuple(fact for outcome in _outcomes(package) for fact in outcome.facts)
+    """Both governed comparisons, or a refusal when neither can be made.
+
+    The refusal carries the reason a mode actually gave rather than a reason
+    recomputed here. A compared period holding only null revenue refuses with
+    `required_input_unavailable`, and reporting `prior_window_absent` for it
+    would explain the refusal wrongly -- the window was there and the measure was
+    not.
+    """
+    outcomes = _outcomes(package)
+    facts = tuple(fact for outcome in outcomes for fact in outcome.facts)
     if facts:
         return facts
     return RefusedResult(
         metric=METRIC_DELTA_ABSOLUTE,
-        reason=_absent_reason(package),
+        reason=_refused_reason(outcomes, package),
     )
+
+
+def _refused_reason(outcomes: tuple[_Outcome, ...], package: FactPackage) -> str:
+    recorded = tuple(
+        refusal.reason for outcome in outcomes for refusal in outcome.refusals
+    )
+    if not recorded:
+        return _absent_reason(package)
+    return recorded[0]
 
 
 def refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
@@ -208,7 +235,11 @@ def _compare(window: _Window, package: FactPackage, mode: str) -> _Outcome:
     current, prior = window.totals()
     if current is None or prior is None:
         return _refused(mode, METRIC_DELTA_ABSOLUTE, REASON_INPUT_UNAVAILABLE)
-    derivation = _Derivation(mode=mode, monetary_precision=package.monetary_precision)
+    derivation = _Derivation(
+        mode=mode,
+        caveats=window.inherited,
+        monetary_precision=package.monetary_precision,
+    )
     return _with_percentage(derivation, current - prior, prior)
 
 
@@ -260,20 +291,20 @@ def _window_for(package: FactPackage, mode: str) -> _Window | None:
     buckets = _settled(trend.series.buckets)
     if not buckets:
         return None
-    return _against_counterpart(buckets, trend.series.granularity, mode)
+    return _against_counterpart(buckets, trend, mode)
 
 
 def _against_counterpart(
     buckets: tuple[Bucket, ...],
-    granularity: str,
+    trend: FactSeries,
     mode: str,
 ) -> _Window | None:
     current = buckets[-1]
-    label = _counterpart_label(current.label, granularity, mode)
+    label = _counterpart_label(current.label, trend.series.granularity, mode)
     prior = {bucket.label: bucket for bucket in buckets}.get(label)
     if prior is None:
         return None
-    return _Window(current=current, prior=prior)
+    return _Window(current=current, prior=prior, inherited=trend.caveats)
 
 
 def _settled(buckets: tuple[Bucket, ...]) -> tuple[Bucket, ...]:
@@ -356,7 +387,7 @@ def _fact(derivation: _Derivation, metric: str, value: Decimal) -> Fact:
         precision=precision,
         unit_kind=unit_kind,
         inputs=_INPUTS,
-        caveats=(),
+        caveats=derivation.caveats,
     )
 
 

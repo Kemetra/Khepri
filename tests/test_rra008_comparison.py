@@ -26,6 +26,8 @@ from khepri.rra.analysis.comparison import (
     REASON_PRIOR_WINDOW_ABSENT,
 )
 from khepri.rra.facts import (
+    CAVEAT_UNDATED_ROWS_EXCLUDED,
+    REASON_INPUT_UNAVAILABLE,
     REASON_ZERO_DENOMINATOR,
     UNIT_MONETARY,
     UNIT_RATIO,
@@ -44,9 +46,10 @@ from khepri.rra.profiling import build_profile
 HEADER = b"date,revenue,units,invoice_no,category,branch\n"
 
 
-def package_for(rows: list[tuple[date, str]]) -> FactPackage:
+def package_for(rows: list[tuple[date | None, str]]) -> FactPackage:
     body = b"".join(
-        f"{when.isoformat()},{amount},1,INV-{index},Beverages,Cairo\n".encode()
+        f"{'' if when is None else when.isoformat()},"
+        f"{amount},1,INV-{index},Beverages,Cairo\n".encode()
         for index, (when, amount) in enumerate(rows)
     )
     content = HEADER + body
@@ -334,6 +337,42 @@ def test_every_fact_declares_the_governed_measures_it_came_from() -> None:
     # lands in, and so which two periods are compared.
     for fact in facts_of(monthly(14)):
         assert fact.inputs == (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE)
+
+
+def test_a_refusal_names_the_reason_the_mode_actually_gave() -> None:
+    # The compared period has no revenue at all while its neighbours do, so both
+    # counterpart windows exist and the measure is what is missing. Reporting
+    # prior_window_absent would explain the refusal wrongly: the window was
+    # there.
+    package = package_for(
+        [
+            (date(2026, 1, 1), "100.00"),
+            (date(2026, 1, 2), ""),
+            (date(2026, 1, 3), "1.00"),
+        ]
+    )
+    result = comparison.derive(package)
+    assert isinstance(result, RefusedResult)
+    assert result.reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_a_derived_fact_inherits_the_caveats_of_the_series_it_read() -> None:
+    # The trend excluded rows with no date, which is a limitation of the
+    # aggregate these deltas are derived from. RRA-008 requires every derived
+    # fact reconciled to its source aggregate, so a delta that dropped the
+    # caveat would be presented as covering rows the aggregate never saw.
+    package = package_for(
+        [
+            (date(2026, 1, 1), "100.00"),
+            (date(2026, 1, 2), "150.00"),
+            (date(2026, 1, 3), "1.00"),
+        ]
+        + [(None, "5.00")]
+    )
+    assert CAVEAT_UNDATED_ROWS_EXCLUDED in package.trend().caveats
+    facts = facts_of(package)
+    assert facts
+    assert all(CAVEAT_UNDATED_ROWS_EXCLUDED in fact.caveats for fact in facts)
 
 
 def test_no_fact_claims_a_caveat_this_module_cannot_reach() -> None:
