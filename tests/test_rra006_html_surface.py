@@ -432,3 +432,59 @@ def test_the_stylesheet_ships_inside_the_page_rather_than_as_a_second_request() 
     # Bundled means bundled: nothing on this page fetches anything.
     assert "<link" not in document
     assert "<script" not in document
+
+
+# --- charts ----------------------------------------------------------------
+
+# Every class `_chart.svg.j2` puts on an element. The stylesheet carried a rule
+# for none of them, so each painted at its SVG default: marks solid black,
+# labels black on top of those marks, and a polyline the template already sets
+# `fill="none"` on left with no stroke, which paints nothing at all whatever its
+# geometry says.
+CHART_CLASSES = ("chart", "chart__mark", "chart__curve", "chart__label")
+
+
+def declarations_of(selector: str) -> str:
+    """The declaration block of the first rule naming this selector."""
+    source = stylesheet()
+    start = source.index(selector)
+    return source[source.index("{", start) : source.index("}", start)]
+
+
+@pytest.mark.parametrize("name", CHART_CLASSES)
+def test_the_stylesheet_rules_on_every_chart_class_the_template_emits(name: str) -> None:
+    # No assertion about the document can catch an unstyled chart. The elements
+    # are all present, correctly positioned and correctly labelled, and a reader
+    # still sees black blocks -- so the contract is checked here, against the
+    # stylesheet, which is the artifact that was missing.
+    assert f".{name}" in stylesheet(), name
+
+
+def test_the_curve_is_stroked_rather_than_left_to_paint_nothing() -> None:
+    # The RRA-008 concentration curve. `fill="none"` is inline in the template,
+    # so a polyline this sheet gives no stroke is invisible while every
+    # assertion about its `points` attribute keeps passing.
+    block = declarations_of(".chart__curve")
+
+    assert "stroke:" in block
+    assert "stroke: none" not in block
+
+
+def test_a_chart_mark_is_filled_from_the_report_palette() -> None:
+    # Not the SVG default black, which ignores the palette, prints as a slab of
+    # ink, and renders two touching grouped bars as one solid rectangle.
+    block = declarations_of(".chart__mark")
+
+    assert "fill:" in block
+    assert "var(--report-" in block
+
+
+def test_a_chart_label_stays_legible_where_it_is_placed() -> None:
+    # `charts.build_chart` puts every label at `y = CHART_HEIGHT`, which is
+    # inside the plotting area and therefore on top of the marks. Legibility is
+    # the stylesheet's problem: the label needs to be smaller than body text and
+    # separated from whatever it overlaps.
+    block = declarations_of(".chart__label")
+
+    assert "font-size:" in block
+    assert "paint-order:" in block

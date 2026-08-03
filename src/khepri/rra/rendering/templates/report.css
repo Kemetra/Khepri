@@ -192,6 +192,73 @@ article {
   margin-inline: 0;
 }
 
+/*
+ * Charts.
+ *
+ * An SVG element paints from its own presentation defaults, never from the
+ * document's: an unstyled `rect` is opaque black, and an unstyled `polyline` has
+ * no stroke at all. Both defaults are wrong here and the second is worse than
+ * wrong -- `_chart.svg.j2` sets `fill="none"` inline, so a curve this sheet says
+ * nothing about paints nothing whatever its geometry holds. That is how the
+ * RRA-008 concentration curve came to be present in the document, correct in
+ * every coordinate, and invisible to the reader.
+ *
+ * Colours are taken from the report palette rather than stated here, so charts
+ * follow the dark-scheme block below and the printed palette in
+ * `report.print.css` without a second set of declarations to keep in step.
+ *
+ * Sizes are in user units, which is what a length inside a `viewBox` means. A
+ * `rem` here would be scaled twice: once by the root font size, once by the
+ * viewBox transform.
+ */
+
+.chart {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  margin-block-end: var(--report-space);
+}
+
+.chart__mark {
+  fill: var(--report-accent);
+  /*
+   * `charts.GROUPED_FILL` is 1, so the marks of a grouped bar chart are adjacent
+   * by construction. Without a separating edge in the paper colour, two touching
+   * bars read as one wide rectangle and the comparison cannot be seen at all.
+   */
+  stroke: var(--report-paper);
+  stroke-width: 1;
+}
+
+.chart__curve {
+  fill: none;
+  stroke: var(--report-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart__label {
+  /*
+   * `charts._label` places every label at `y = CHART_HEIGHT`, horizontally
+   * centred on its mark -- inside the plotting area, and therefore over the
+   * marks rather than beside them. `paint-order` draws the paper-coloured stroke
+   * before the glyphs, which keeps a halo around each one so it stays readable
+   * against a filled bar.
+   *
+   * This makes a label legible where it is drawn. It does not stop a long
+   * category name from reaching its neighbour: at twelve categories a slot is
+   * about 53 user units wide, and no font size makes a product name fit that.
+   * Spacing labels out is geometry, and belongs to the module that owns it.
+   */
+  fill: var(--report-ink);
+  font-size: 10px;
+  text-anchor: middle;
+  paint-order: stroke fill;
+  stroke: var(--report-paper);
+  stroke-width: 3;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --report-ink: #eef1f5;
