@@ -519,6 +519,7 @@ def _fact(derivation: _Derivation, metric: str, value: Decimal) -> Fact:
         unit_kind=unit_kind,
         inputs=_INPUTS,
         caveats=derivation.caveats,
+        formula_version=COMPARISON_FORMULA_VERSION,
     )
 
 

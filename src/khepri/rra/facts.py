@@ -49,8 +49,18 @@ from khepri.rra.profiling import (
     safe_value_label,
 )
 
-PACKAGE_VERSION = "rra004.package.v1"
+# v2 carries the five items APP-014 added to RRA-004: the retained concentration
+# curve, distinct transaction counts, per-bucket date counts, the recorded
+# comparison window, and the formula version as a field on every emitted fact.
+PACKAGE_VERSION = "rra004.package.v2"
 FORMULA_VERSION = "rra004.formula.v1"
+
+# The governed comparison window, recorded rather than chosen by whichever module
+# needs one. `RRA-008` asks for "a prior window of equal length" and names no
+# length; one period at the package's own granularity is the only reading that
+# invents nothing. An earlier comparison revision took half the available history,
+# so prepending old rows changed a reported delta while recent rows were identical.
+COMPARISON_WINDOW_PERIODS = 1
 
 UNIT_MONETARY = "monetary"
 UNIT_COUNT = "count"
@@ -105,6 +115,15 @@ class FactsRefused(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Fact:
+    """One governed number, stating which formula produced it.
+
+    `formula_version` is a field and not only an input to `fact_identity` because
+    a hash names a fact and cannot be read back off one. Two versions do yield
+    different identifiers, but a stored citation still could not say which
+    formula produced the number it cites -- the provenance `RRA-008` requires and
+    hashing does not supply. `APP-014` amended `RRA-004` to require it here.
+    """
+
     fact_id: str
     citation_id: str
     metric: str
@@ -113,6 +132,7 @@ class Fact:
     unit_kind: str
     inputs: tuple[str, ...]
     caveats: tuple[str, ...]
+    formula_version: str = FORMULA_VERSION
 
     def as_document(self) -> dict[str, object]:
         return {
@@ -124,6 +144,7 @@ class Fact:
             "unit_kind": self.unit_kind,
             "inputs": list(self.inputs),
             "caveats": list(self.caveats),
+            "formula_version": self.formula_version,
         }
 
 
@@ -137,6 +158,7 @@ class FactSeries:
     unit_kind: str
     series: Series
     caveats: tuple[str, ...]
+    formula_version: str = FORMULA_VERSION
 
     def as_document(self) -> dict[str, object]:
         return {
@@ -147,6 +169,7 @@ class FactSeries:
             "precision": self.precision,
             "unit_kind": self.unit_kind,
             "caveats": list(self.caveats),
+            "formula_version": self.formula_version,
             **self.series.as_document(precision=self.precision),
         }
 
@@ -161,6 +184,7 @@ class FactComparison:
     unit_kind: str
     comparison: Comparison
     caveats: tuple[str, ...]
+    formula_version: str = FORMULA_VERSION
 
     def as_document(self) -> dict[str, object]:
         return {
@@ -171,6 +195,7 @@ class FactComparison:
             "precision": self.precision,
             "unit_kind": self.unit_kind,
             "caveats": list(self.caveats),
+            "formula_version": self.formula_version,
             **self.comparison.as_document(precision=self.precision),
         }
 
@@ -198,6 +223,7 @@ class FactPackage:
     comparisons: tuple[FactComparison, ...]
     refusals: tuple[RefusedResult, ...]
     caveats: tuple[str, ...]
+    comparison_window_periods: int = COMPARISON_WINDOW_PERIODS
 
     def fact(self, metric: str) -> Fact | None:
         return next((fact for fact in self.facts if fact.metric == metric), None)
@@ -241,6 +267,7 @@ class FactPackage:
             "source_sha256_hex": self.source_sha256_hex,
             "row_count": self.row_count,
             "monetary_precision": self.monetary_precision,
+            "comparison_window_periods": self.comparison_window_periods,
             "facts": [fact.as_document() for fact in self.facts],
             "series": [entry.as_document() for entry in self.series],
             "comparisons": [entry.as_document() for entry in self.comparisons],
@@ -487,6 +514,7 @@ def _build(
         aggregated,
         row_count=row_count,
         formula_version=formula_version,
+        transactions=_countable_transactions(measures),
         refusals=refusals,
         caveats=caveats,
     )
@@ -652,9 +680,26 @@ def _series(
                 unit_kind=entry.unit_kind,
                 series=series,
                 caveats=tuple(entry_caveats),
+                formula_version=formula_version,
             )
         )
     return results
+
+
+def _countable_transactions(measures: _Measures) -> list[str | None] | None:
+    """The identifiers, only when every row has one.
+
+    An incomplete column undercounts silently: three rows with one null
+    identifier would report two transactions as though that were the answer.
+    `METRIC_TRANSACTIONS` already refuses with `incomplete_transaction_identifiers`
+    for the same input, and a per-bucket count may not be more confident than the
+    total it belongs to.
+    """
+    if not measures.transaction_identifiers_complete:
+        return None
+    if all(value is None for value in measures.transactions):
+        return None
+    return measures.transactions
 
 
 def _comparisons(
@@ -664,6 +709,7 @@ def _comparisons(
     *,
     row_count: int,
     formula_version: str,
+    transactions: list[str | None] | None,
     refusals: list[RefusedResult],
     caveats: list[str],
 ) -> list[FactComparison]:
@@ -683,6 +729,7 @@ def _comparisons(
                 keys=keys,
                 values=entry.values,
                 display=_display_label,
+                transactions=transactions,
             )
             if not reconciles(
                 comparison.buckets,
@@ -715,6 +762,7 @@ def _comparisons(
                     unit_kind=entry.unit_kind,
                     comparison=comparison,
                     caveats=tuple(entry_caveats),
+                    formula_version=formula_version,
                 )
             )
     return results
@@ -854,6 +902,7 @@ def _fact(
         unit_kind=unit_kind,
         inputs=tuple(inputs),
         caveats=(),
+        formula_version=formula_version,
     )
 
 
