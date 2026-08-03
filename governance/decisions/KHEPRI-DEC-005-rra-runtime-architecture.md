@@ -58,6 +58,11 @@ boundary is introduced for the private beta.
   URL interpretation are disabled for customer-derived strings.
 - Charts consume fact-package series and never independently calculate business figures.
 - Every surface must reconcile to the same fact and citation identifiers before delivery.
+- A workbook may carry numeric cells solely as chart series addresses, on a dedicated worksheet
+  that holds no authoritative figure and no citation identifier. Such cells are excluded from the
+  surface content a bundle reconciles, and the authoritative figure remains the decimal string on
+  the section worksheet. This narrows the binary floating-point prohibition above; it does not
+  relax it.
 
 ### Cloud provider and deployment
 
