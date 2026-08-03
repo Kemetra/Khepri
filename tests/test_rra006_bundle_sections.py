@@ -377,8 +377,17 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
             "required_input_unavailable",
         }
     )
+    # Basket carries three. RRA-008 requires a transaction identifier for both its
+    # metrics, so an absent column and one with gaps each take the whole family --
+    # the fact package distinguishes those two causes already. The third is
+    # reachable as a whole-family refusal only: a dataset with an identifier and
+    # neither units nor a product dimension states nothing at all.
     assert SECTION_REASONS[SECTION_BASKET] == frozenset(
-        {"transaction_identifier_absent"}
+        {
+            "transaction_identifier_absent",
+            "incomplete_transaction_identifiers",
+            "required_input_unavailable",
+        }
     )
 
 
@@ -461,6 +470,11 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
             "units_absent",
             "decomposition_not_additive",
             "transaction_identifier_absent",
+            # Added by the basket slice, which proved it reachable: an identifier
+            # column with gaps takes both basket metrics, and the fact package
+            # already refuses its transaction count with this rather than with
+            # "absent". Relabelling it would name a cause that did not occur.
+            "incomplete_transaction_identifiers",
         }
     ) == GOVERNED_SECTION_REASONS
 

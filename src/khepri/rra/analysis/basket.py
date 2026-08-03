@@ -1,0 +1,286 @@
+"""Basket structure: items per transaction, and attach rate per published value.
+
+**Never a row count.** `RRA-008` forbids substituting row count for transaction
+count, and the two are easy to confuse because both are integers that look right.
+Four line items in three invoices is 1.3333 rows per transaction and 3.6667 items
+per transaction, and only the second answers the question.
+
+This module counts nothing itself. Items per transaction divides `METRIC_UNITS` by
+`METRIC_TRANSACTIONS`, both governed facts, and `METRIC_TRANSACTIONS` is already a
+distinct count that the package refuses outright when the identifier column has
+gaps. Attach rate divides `Bucket.transactions` by `Comparison.distinct_transactions`,
+both retained by `APP-014` as distinct counts and both unioned rather than summed.
+Reading governed aggregates rather than recounting is what satisfies the
+requirement -- there is no place here for a row count to creep in.
+
+**Items, not lines.** An earlier plan revision had items per transaction dividing
+row count by transaction count. Row count *is* line-item count; `RRA-008` says
+items, and the governed items measure is `METRIC_UNITS`.
+
+**One attach-rate fact per published value, and none for `other`.** Attach rate is
+inherently per value, and each rate is a separate claim a reader can act on, so
+each needs its own citation. The count is bounded by `MAX_COMPARISON_BUCKETS`,
+which is why per-value facts are right here and wrong for the concentration curve:
+that curve spans the full distinct set and is deliberately label-free.
+
+`other` is excluded because it is not "a given admissible dimension value". Its
+transaction count is the union of everything truncated, so a rate over it would
+state the share of transactions containing something unnamed -- true, and useless.
+
+**Products or categories, as the specification says.** Attach rate needs "an
+admissible product or category dimension". Product is preferred for the same
+reason the concentration family prefers it: finer grain, and a category answer is
+derivable from it while the reverse is not.
+
+**A partial family is not a broken one.** `RRA-008` refuses "the affected result",
+so a dataset with transactions but no product dimension still states items per
+transaction, and the attach-rate refusal is carried beside it by `refusals`.
+Absence is never the disclosure.
+
+**The refusal cause is read, not re-decided.** An unmapped identifier column and one
+with gaps are different findings, and the fact package already recorded which
+happened when it refused `METRIC_TRANSACTIONS`. This module reports that reason
+rather than forming its own opinion, so the two cannot disagree.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Context, Decimal, localcontext
+
+from khepri.rra.aggregates import OTHER_BUCKET_LABEL, Bucket
+from khepri.rra.facts import (
+    ARITHMETIC_PRECISION,
+    METRIC_TRANSACTIONS,
+    METRIC_UNITS,
+    RATIO_PRECISION,
+    REASON_INPUT_UNAVAILABLE,
+    UNIT_RATIO,
+    Fact,
+    FactComparison,
+    FactPackage,
+    RefusedResult,
+    fact_identity,
+)
+from khepri.rra.mapping import (
+    SEMANTIC_CATEGORY,
+    SEMANTIC_PRODUCT,
+    SEMANTIC_TRANSACTION_ID,
+    SEMANTIC_UNITS,
+)
+
+# This family's own formula version, pinned separately from the package's, so a
+# correction here cannot reuse the identifiers of a materially different number.
+BASKET_FORMULA_VERSION = "rra008.basket.v1"
+
+METRIC_ITEMS_PER_TRANSACTION = "basket_items_per_transaction"
+METRIC_ATTACH_RATE = "basket_attach_rate"
+
+REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
+REASON_AGGREGATE_UNAVAILABLE = "aggregate_unavailable"
+
+# Which dimensions `RRA-008` allows attach rate over, in the order preferred.
+GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
+
+_ITEMS_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
+
+
+@dataclass(frozen=True, slots=True)
+class _Basket:
+    """The two governed counts every basket metric divides by."""
+
+    units: Decimal
+    transactions: Decimal
+
+
+def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
+    """Whatever the package can state about basket structure, or one refusal.
+
+    A refusal is returned only when *nothing* could be stated. When items per
+    transaction stands and attach rate does not, the facts come back and the
+    refusal is carried by `refusals` -- which is `RRA-008`'s "refuse the affected
+    result" rather than the affected family.
+    """
+    with localcontext(Context(prec=ARITHMETIC_PRECISION)):
+        facts = _facts(package)
+    if facts:
+        return facts
+    return _summary(package)
+
+
+def refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
+    """Everything that could not be stated, beside whatever could."""
+    with localcontext(Context(prec=ARITHMETIC_PRECISION)):
+        return _refusals(package)
+
+
+def attached_value_of(fact: Fact, package: FactPackage) -> str | None:
+    """Which published value this attach rate belongs to, from its identity.
+
+    The label lives in the identity's hashed scope, so it is recomputed against
+    the package's own buckets rather than read off the fact. That also proves two
+    values cannot collide on one identifier.
+    """
+    found = _dimension(package)
+    if found is None:
+        return None
+    dimension, entry = found
+    return next(
+        (
+            bucket.label
+            for bucket in _attachable(entry)
+            if _identity(fact.metric, (dimension, bucket.label))[0] == fact.fact_id
+        ),
+        None,
+    )
+
+
+def _facts(package: FactPackage) -> tuple[Fact, ...]:
+    """Each metric stands or falls on its own inputs.
+
+    Attach rate needs no units and items per transaction needs no dimension, so
+    neither may be suppressed by the other's missing input. Deriving them together
+    once made an absent units measure refuse a rate it could have stated.
+    """
+    stated = (_items(package), *_attach_facts(package))
+    return tuple(fact for fact in stated if fact is not None)
+
+
+def _refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
+    """Per metric, and only for what actually failed.
+
+    A missing identifier is the one failure that takes both, because `RRA-008`
+    requires it for each. Everything else refuses one metric beside the other's
+    surviving figure.
+    """
+    if not _identified(package):
+        reason = _identifier_reason(package)
+        return (
+            RefusedResult(metric=METRIC_ITEMS_PER_TRANSACTION, reason=reason),
+            RefusedResult(metric=METRIC_ATTACH_RATE, reason=reason),
+        )
+    refused: list[RefusedResult] = []
+    if _items(package) is None:
+        refused.append(
+            RefusedResult(
+                metric=METRIC_ITEMS_PER_TRANSACTION,
+                reason=REASON_INPUT_UNAVAILABLE,
+            )
+        )
+    if _dimension(package) is None:
+        refused.append(
+            RefusedResult(
+                metric=METRIC_ATTACH_RATE,
+                reason=REASON_AGGREGATE_UNAVAILABLE,
+            )
+        )
+    return tuple(refused)
+
+
+def _identified(package: FactPackage) -> bool:
+    """Whether the package could count transactions at all."""
+    return package.fact(METRIC_TRANSACTIONS) is not None
+
+
+def _items(package: FactPackage) -> Fact | None:
+    basket = _counts(package)
+    if basket is None:
+        return None
+    return _fact(
+        METRIC_ITEMS_PER_TRANSACTION,
+        (),
+        basket.units / basket.transactions,
+    )
+
+
+def _summary(package: FactPackage) -> RefusedResult:
+    """The refusal that stands for the family when it stated nothing at all."""
+    recorded = _refusals(package)
+    if recorded:
+        return recorded[0]
+    return RefusedResult(
+        metric=METRIC_ITEMS_PER_TRANSACTION,
+        reason=REASON_INPUT_UNAVAILABLE,
+    )
+
+
+def _counts(package: FactPackage) -> _Basket | None:
+    """Units and transactions as governed facts, or nothing divisible."""
+    units = package.fact(METRIC_UNITS)
+    transactions = package.fact(METRIC_TRANSACTIONS)
+    if units is None or transactions is None:
+        return None
+    counted = Decimal(transactions.value)
+    if counted == 0:
+        return None
+    return _Basket(units=Decimal(units.value), transactions=counted)
+
+
+def _identifier_reason(package: FactPackage) -> str:
+    """Why the transaction count is missing, as the package itself recorded it.
+
+    An unmapped column and one with gaps are different findings, and the package
+    already decided which occurred. `required_input_unavailable` there means the
+    column was never mapped, which is this family's
+    `transaction_identifier_absent`; anything else is reported verbatim.
+    """
+    refused = package.refusal(METRIC_TRANSACTIONS)
+    if refused is None or refused.reason == REASON_INPUT_UNAVAILABLE:
+        return REASON_TRANSACTION_IDENTIFIER_ABSENT
+    return refused.reason
+
+
+def _dimension(package: FactPackage) -> tuple[str, FactComparison] | None:
+    for dimension in GOVERNED_DIMENSIONS:
+        entry = package.comparison(dimension)
+        if entry is not None and entry.comparison.distinct_transactions:
+            return (dimension, entry)
+    return None
+
+
+def _attachable(entry: FactComparison) -> tuple[Bucket, ...]:
+    """Published buckets that name a value and carry a transaction count."""
+    return tuple(
+        bucket
+        for bucket in entry.comparison.buckets
+        if bucket.label != OTHER_BUCKET_LABEL and bucket.transactions is not None
+    )
+
+
+def _attach_facts(package: FactPackage) -> tuple[Fact, ...]:
+    found = _dimension(package)
+    if found is None:
+        return ()
+    dimension, entry = found
+    total = Decimal(entry.comparison.distinct_transactions or 0)
+    return tuple(
+        _fact(
+            METRIC_ATTACH_RATE,
+            (dimension, bucket.label),
+            Decimal(bucket.transactions or 0) / total,
+        )
+        for bucket in _attachable(entry)
+    )
+
+
+def _identity(metric: str, scope: tuple[str, ...]) -> tuple[str, str]:
+    return fact_identity(
+        metric=metric,
+        scope=scope,
+        formula_version=BASKET_FORMULA_VERSION,
+    )
+
+
+def _fact(metric: str, scope: tuple[str, ...], value: Decimal) -> Fact:
+    fact_id, citation_id = _identity(metric, scope)
+    return Fact(
+        fact_id=fact_id,
+        citation_id=citation_id,
+        metric=metric,
+        value=str(value.quantize(Decimal(1).scaleb(-RATIO_PRECISION))),
+        precision=RATIO_PRECISION,
+        unit_kind=UNIT_RATIO,
+        inputs=_ITEMS_INPUTS if not scope else (scope[0], SEMANTIC_TRANSACTION_ID),
+        caveats=(),
+        formula_version=BASKET_FORMULA_VERSION,
+    )
