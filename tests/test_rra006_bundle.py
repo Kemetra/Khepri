@@ -544,13 +544,30 @@ def test_a_row_missing_from_one_language_only_is_refused() -> None:
     # Each language reconciles perfectly on its own here. What differs is which
     # rows the two readers are shown, which no per-language check can see.
     bundle = ReportBundle.of(package())
+    # The dropped figure must be one no chart plots. A charted figure missing from a
+    # language earns `chart_figure_not_stated` first -- also correct, and a different
+    # finding: the chart would be drawing something that reader was never shown.
+    # This test is about coverage between the two languages, so it drops a row that
+    # only the table carries.
+    charted = {
+        figure_id
+        for section in bundle.sections
+        if section.chart is not None
+        for figure_id in section.chart.figure_ids
+    }
+    dropped = next(
+        figure
+        for figure in reversed(bundle.figures)
+        if figure.figure_id not in charted
+    )
     shortened = tuple(
         StatedFigure(
             figure_id=entry.figure_id,
             text=entry.renderings[LANGUAGE_ARABIC],
             section=entry.section,
         )
-        for entry in bundle.figures[:-1]
+        for entry in bundle.figures
+        if entry.figure_id != dropped.figure_id
     )
     uneven = (
         language_of(bundle, LANGUAGE_ARABIC, stated=shortened),
@@ -712,7 +729,22 @@ def test_a_surface_may_show_a_subset_so_long_as_both_readers_see_it() -> None:
     # defect. What is refused is showing one subset to one reader and another
     # to the other, which the cross-language comparison already catches.
     bundle = ReportBundle.of(package())
-    totals = tuple(entry for entry in bundle.figures if entry.label is None)
+    # A subset must still include everything its charts plot. A page showing fewer
+    # rows is legitimate; a page whose chart draws a figure that reader was never
+    # shown is `chart_figure_not_stated`, and that is a different and correct
+    # refusal. Analysis figures now carry the scope they were derived under as a
+    # label, so "the totals" no longer happens to include them.
+    charted = {
+        figure_id
+        for section in bundle.sections
+        if section.chart is not None
+        for figure_id in section.chart.figure_ids
+    }
+    totals = tuple(
+        entry
+        for entry in bundle.figures
+        if entry.label is None or entry.figure_id in charted
+    )
     partial = tuple(
         language_of(
             bundle,

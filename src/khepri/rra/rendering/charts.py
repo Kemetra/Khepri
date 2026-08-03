@@ -65,6 +65,7 @@ from khepri.rra.bundle import (
     CHART_GROUPED_BAR,
     CHART_LINE,
     DIRECTION_RTL,
+    GOVERNED_FIGURE_LABELS,
     ChartSpec,
     CitedFigure,
 )
@@ -241,6 +242,10 @@ def _label(figure: CitedFigure, mark: ChartMark) -> ChartLabel:
     cannot disagree about where they are.
     """
     placed = {"x": _coordinate(_centre(mark)), "y": _coordinate(CHART_HEIGHT)}
+    if figure.label in GOVERNED_FIGURE_LABELS:
+        # A governed label is an internal identifier, not customer text. Treating one
+        # as final put `period_over_period` on both the English and the Arabic axis.
+        return ChartLabel(value=f"label.{figure.label}", localize=True, **placed)
     if figure.label is not None:
         return ChartLabel(value=figure.label, localize=False, **placed)
     return ChartLabel(value=f"metric.{figure.metric}", localize=True, **placed)

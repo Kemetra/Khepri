@@ -52,7 +52,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Context, Decimal, localcontext
 
-from khepri.rra.aggregates import ConcentrationCurve
+from khepri.rra.aggregates import Bucket, ConcentrationCurve, Series
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     CAVEAT_BUCKETS_TRUNCATED,
@@ -62,6 +62,7 @@ from khepri.rra.facts import (
     Fact,
     FactComparison,
     FactPackage,
+    FactSeries,
     RefusedResult,
     fact_identity,
 )
@@ -76,6 +77,7 @@ from khepri.rra.mapping import SEMANTIC_CATEGORY, SEMANTIC_PRODUCT, SEMANTIC_REV
 # had changed underneath it.
 CONCENTRATION_FORMULA_VERSION = "rra008.concentration.v1"
 
+METRIC_CURVE = "concentration_curve"
 METRIC_DISTINCT_VALUES = "concentration_distinct_values"
 METRIC_RANKED_VALUES = "concentration_ranked_values"
 METRIC_TOP_DECILE_SHARE = "concentration_top_decile_share"
@@ -86,6 +88,10 @@ REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
 
 # Which dimensions `RRA-008` names, in the order this family prefers them.
 GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
+
+# The axis a concentration curve is stated over. `Series.granularity` names the unit
+# of a bucket's position, and for this series that unit is rank rather than time.
+GRANULARITY_RANK = "rank"
 
 DECILE = 10
 QUARTILE = 4
@@ -154,6 +160,52 @@ def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
     )
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):
         return _facts(source)
+
+
+def curve_series(package: FactPackage) -> FactSeries | None:
+    """The measured curve as one governed series, so a surface can draw it.
+
+    **Why a series and not one fact per point, and not the raw aggregate.** A chart
+    inherits the citation reconciliation of the figures it plots -- that is what
+    `ChartSpec` exists for -- so a chart drawn from a retained aggregate would be a
+    picture nothing reconciles. But four scalar facts are not a curve either: they
+    are two counts beside two ratios, which share no axis and are refused as a chart
+    for exactly that reason.
+
+    A `FactSeries` is the shape already used for trends, and the bundle already turns
+    one into a figure per bucket sharing a single citation. An earlier note claimed
+    one figure per point would mint dozens of citation identifiers; that was wrong,
+    and it is the reason this took a second look.
+
+    Bucket labels are rank ordinals, never value labels. The display truncates
+    precisely so a report cannot name every distinct value, and labelling the curve
+    would hand a surface the list the truncation withheld.
+    """
+    found = _found(package)
+    if found is None:
+        return None
+    dimension, entry = found
+    curve = entry.comparison.curve
+    if curve is None:
+        return None
+    fact_id, citation_id = _identity(METRIC_CURVE, (dimension,))
+    return FactSeries(
+        fact_id=fact_id,
+        citation_id=citation_id,
+        metric=METRIC_CURVE,
+        measure=SEMANTIC_REVENUE,
+        precision=RATIO_PRECISION,
+        unit_kind=UNIT_RATIO,
+        series=Series(
+            granularity=GRANULARITY_RANK,
+            buckets=tuple(
+                Bucket(label=str(rank + 1), value=share, rows=1)
+                for rank, share in enumerate(curve.shares)
+            ),
+        ),
+        caveats=_inherited(entry.caveats),
+        formula_version=CONCENTRATION_FORMULA_VERSION,
+    )
 
 
 def curve_for(package: FactPackage) -> ConcentrationCurve | None:
@@ -236,13 +288,17 @@ def _count(source: _Source, metric: str, value: int) -> Fact:
     return _fact(source, metric, Decimal(value))
 
 
-def _fact(source: _Source, metric: str, value: Decimal) -> Fact:
-    precision = source.precision_for(metric)
-    fact_id, citation_id = fact_identity(
+def _identity(metric: str, scope: tuple[str, ...]) -> tuple[str, str]:
+    return fact_identity(
         metric=metric,
-        scope=(source.dimension,),
+        scope=scope,
         formula_version=CONCENTRATION_FORMULA_VERSION,
     )
+
+
+def _fact(source: _Source, metric: str, value: Decimal) -> Fact:
+    precision = source.precision_for(metric)
+    fact_id, citation_id = _identity(metric, (source.dimension,))
     return Fact(
         fact_id=fact_id,
         citation_id=citation_id,

@@ -1,0 +1,43 @@
+{#
+  One governed chart, written as template source.
+
+  The elements are here rather than built as a string in Python for one reason:
+  autoescaping is unconditional and nothing reachable from the bundle is ever
+  marked safe, so a Python string of markup would reach the reader as `&lt;svg`.
+  A macro's output is markup because the macro *is* source, while every label
+  inside it still passes through the same escaping as a table cell -- which is
+  what makes a product named `<script>` inert here for the same reason it is
+  inert there.
+
+  Coordinates come from `charts.build_chart` as exact decimal strings, and the
+  viewBox is written from the view rather than from a literal, so a change to the
+  canvas cannot leave this template drawing to the old one.
+
+  `title_code` and `description_code` are governed codes, and so is a label whose
+  `localize` flag is set. Every one of them is looked up in the per-language chrome,
+  never printed raw: the environment uses `StrictUndefined`, so a code the chrome has
+  no entry for raises here rather than reaching a reader as an identifier.
+
+  The title reuses the section heading a reader already sees, so there is no second
+  table to keep in step with the first.
+#}
+{% macro chart(view, section_id, chrome) %}
+<svg role="img" aria-labelledby="{{ section_id }}-ct {{ section_id }}-cd"
+     viewBox="0 0 {{ view.width }} {{ view.height }}"
+     class="chart chart--{{ view.kind }}">
+  <title id="{{ section_id }}-ct">{{ chrome.sections[section_id] }}</title>
+  <desc id="{{ section_id }}-cd">{{ chrome.chart_descriptions[view.description_code] }}</desc>
+  {% for mark in view.marks %}
+  <rect class="chart__mark" x="{{ mark.x }}" y="{{ mark.y }}"
+        width="{{ mark.width }}" height="{{ mark.height }}" />
+  {% endfor %}
+  {% if view.polyline %}
+  <polyline class="chart__curve" fill="none" points="{{ view.polyline }}" />
+  {% endif %}
+  {% for label in view.labels %}
+  <text class="chart__label" x="{{ label.x }}" y="{{ label.y }}">{#
+    #}{% if label.localize %}{{ chrome.labels[label.value] }}{#
+    #}{% else %}{{ label.value }}{% endif %}</text>
+  {% endfor %}
+</svg>
+{% endmacro %}

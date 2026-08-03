@@ -27,8 +27,8 @@ from khepri.rra.bundle import (
     reconcile,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from khepri.rra.rendering.excel import ExcelSurfaceRenderer, WorkbookUnavailable
-from khepri.rra.rendering.html import HtmlReportRenderer, SurfaceRenderFailed
+from khepri.rra.rendering.excel import ExcelSurfaceRenderer
+from khepri.rra.rendering.html import HtmlReportRenderer
 from tests.test_rra006_bundle import language_of, package, surface_of
 
 
@@ -81,11 +81,33 @@ def test_a_section_scoped_caveat_must_name_a_governed_section() -> None:
 
 def test_every_rra004_caveat_is_report_level() -> None:
     # They qualify the dataset rather than one analysis: a currency that was
-    # never declared is not a fact about the comparison. The four RRA-008
-    # families bring their own section-scoped caveats when those slices arrive.
+    # never declared is not a fact about the comparison.
+    #
+    # The RRA-008 families have since arrived and do bring section-scoped caveats,
+    # so this is now a statement about the package's own codes rather than about
+    # every caveat a bundle carries. Asserting the latter would have made the
+    # arrival of the families look like a regression.
+    source = package()
+    bundle = ReportBundle.of(source)
+    assert source.caveats
+    report_level = {
+        caveat.code for caveat in bundle.caveats if caveat.section is None
+    }
+    assert set(source.caveats) <= report_level
+
+    scoped = {caveat.code for caveat in bundle.caveats if caveat.section is not None}
+    assert scoped.isdisjoint(set(source.caveats))
+
+
+def test_a_familys_caveat_is_scoped_to_the_section_that_derived_it() -> None:
+    # The other half of the rule above, and the reason pairing exists at all: a
+    # caveat about one analysis may not arrive report-level, or a reader is told
+    # the whole dataset is qualified by it.
     bundle = bundle_of()
-    assert bundle.caveats
-    assert all(caveat.section is None for caveat in bundle.caveats)
+    scoped = [caveat for caveat in bundle.caveats if caveat.section is not None]
+    assert scoped
+    for caveat in scoped:
+        assert caveat.section in bundle.section_ids
 
 
 def test_the_caveat_document_carries_the_pair() -> None:
@@ -142,7 +164,15 @@ def test_a_caveat_may_not_be_scoped_to_a_section_the_bundle_never_declared() -> 
     # section. A caveat scoped to an absent one has no heading to be rendered
     # under, so a surface drops it or misfiles it -- and it still reconciles,
     # because reconciliation compares the pair against the bundle, not the page.
-    bundle = bundle_of()
+    # Built by hand rather than from a package: every family now either states or
+    # refuses, so `ReportBundle.of` always declares all five sections and no real
+    # package can produce the absent one this rule guards against.
+    bundle = replace(
+        bundle_of(),
+        figures=(),
+        caveats=(),
+        sections=(),
+    )
     assert SECTION_COMPARISON not in bundle.section_ids
     with pytest.raises(ValueError):
         replace(
@@ -175,18 +205,39 @@ def test_a_caveat_scoped_to_a_declared_section_is_accepted() -> None:
         ),
     ],
 )
-def test_a_surface_refuses_a_scoped_caveat_it_cannot_place(render: object) -> None:
-    # Both surfaces have one caveats heading, so a scoped caveat leaves them two
-    # options and both misinform: under the report's heading it says the whole
-    # dataset is qualified, and omitted it drops a caveat RRA-008 requires while
-    # the claim still carries it. The second passes reconciliation, because that
-    # compares the claim against the bundle and never against the page.
+def test_a_surface_places_a_scoped_caveat_rather_than_refusing_it(
+    render: object,
+) -> None:
+    # This test used to assert the opposite. Both surfaces refused a scoped caveat
+    # because each had one caveats heading, and both options open to them
+    # misinformed: under the report's heading it says the whole dataset is
+    # qualified, and omitted it drops a caveat RRA-008 requires while the claim
+    # still carries it -- which passes reconciliation, because that compares the
+    # claim against the bundle and never against the page.
     #
-    # The printed surface fills two blocks of the web template and shares its
-    # context, so it refuses through the same guard.
+    # Refusing was the honest answer only while neither surface could place one.
+    # The per-section slice arrived, so refusing now would reject every report the
+    # four families produce. The page renders a scoped caveat inside its own
+    # section; the workbook names the section in the cell beside the code until the
+    # per-section sheet slice moves it onto that sheet.
     scoped = replace(
         bundle_of(),
         caveats=(StatedCaveat(code="window_truncated", section=SECTION_OVERVIEW),),
     )
-    with pytest.raises((SurfaceRenderFailed, WorkbookUnavailable)):
-        render(scoped)  # type: ignore[operator]
+    rendered = render(scoped)  # type: ignore[operator]
+    assert rendered is not None
+
+
+def test_the_page_places_a_scoped_caveat_inside_the_section_it_qualifies() -> None:
+    # The positive claim behind the inversion above. Under the report's own
+    # heading would tell a reader the whole dataset is qualified.
+    scoped = replace(
+        bundle_of(),
+        caveats=(StatedCaveat(code="window_truncated", section=SECTION_OVERVIEW),),
+    )
+    page = HtmlReportRenderer().render_html(scoped).documents[LANGUAGE_ENGLISH]
+
+    section_at = page.index(f'<section id="{SECTION_OVERVIEW}"')
+    caveats_at = page.index('<section id="caveats"')
+    code_at = page.index("window_truncated")
+    assert section_at < code_at < caveats_at

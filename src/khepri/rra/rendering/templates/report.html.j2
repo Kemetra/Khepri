@@ -1,3 +1,4 @@
+{% from "_chart.svg.j2" import chart %}
 {#
   The canonical bilingual report page. Rendered once per governed language, so
   the root element states one `lang` and one `dir` and the stylesheet lays both
@@ -32,7 +33,9 @@
 <nav aria-label="{{ chrome.navigation }}">
 <h2>{{ chrome.navigation }}</h2>
 <ul>
-<li><a href="#figures">{{ chrome.figures }}</a></li>
+{% for section in sections %}
+<li><a href="#{{ section.section_id }}">{{ chrome.sections[section.section_id] }}</a></li>
+{% endfor %}
 <li><a href="#caveats">{{ chrome.caveats }}</a></li>
 {% if passages %}
 <li><a href="#commentary">{{ chrome.commentary }}</a></li>
@@ -42,8 +45,13 @@
 </ul>
 </nav>
 <main id="report">
-<section id="figures" aria-labelledby="figures-heading">
-<h2 id="figures-heading">{{ chrome.figures }}</h2>
+{% for section in sections %}
+<section id="{{ section.section_id }}" aria-labelledby="{{ section.section_id }}-heading">
+<h2 id="{{ section.section_id }}-heading">{{ chrome.sections[section.section_id] }}</h2>
+{% if section.state == refused_state %}
+<p class="refused" data-reason="{{ section.reason }}"><code>{{ section.reason }}</code></p>
+{% else %}
+{% if section.chart %}{{ chart(section.chart, section.section_id, chrome) }}{% endif %}
 <div class="scroller">
 <table>
 <caption>{{ chrome.figures_caption }}</caption>
@@ -58,7 +66,7 @@
 </tr>
 </thead>
 <tbody>
-{% for cell in cells %}
+{% for cell in section.cells %}
 <tr data-figure-id="{{ cell.figure_id }}">
 <th scope="row">{% if cell.label is none %}{{ chrome.total }}{% else %}{{ cell.label }}{% endif %}</th>
 <td>{{ cell.metric }}</td>
@@ -71,7 +79,16 @@
 </tbody>
 </table>
 </div>
+{% endif %}
+{% if section.caveats %}
+<ul class="caveats caveats--section">
+{% for code in section.caveats %}
+<li><code>{{ code }}</code></li>
+{% endfor %}
+</ul>
+{% endif %}
 </section>
+{% endfor %}
 <section id="caveats" aria-labelledby="caveats-heading">
 <h2 id="caveats-heading">{{ chrome.caveats }}</h2>
 {% if caveats %}
