@@ -23,6 +23,7 @@ from the same template the web tests already cover. Only pagination is new.
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 from datetime import date, timedelta
 from importlib import resources
@@ -36,6 +37,7 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.profiling import build_profile
+from khepri.rra.rendering import html as html_module
 from khepri.rra.rendering.html import HtmlReportRenderer
 from tests.test_rra006_pdf_surface import chromium_available
 
@@ -144,13 +146,28 @@ needs_chromium = pytest.mark.skipif(
 )
 
 
-def printed_page_count(pdf: bytes) -> int:
-    """How many pages the produced PDF actually has.
+def heading_pages(pdf: bytes, headings: dict[str, str]) -> dict[str, int]:
+    """Which page of the produced PDF each section's heading landed on.
 
-    Counted from the page objects rather than from `/Count`, which appears on every
-    node of the page tree. `[^s]` excludes `/Type /Pages`, the tree node itself.
+    Read out of the PDF itself rather than inferred. Page *count* was the earlier
+    assertion and it is not enough: the caveats, citations and provenance blocks and any
+    long table consume pages of their own, so a report can stay above five pages while
+    two governed analyses begin on the same one -- which is precisely the failure this
+    rule exists to prevent.
+
+    Text extraction is approximate about whitespace, so each heading is matched with its
+    spaces collapsed.
     """
-    return len(re.findall(rb"/Type\s*/Page[^s]", pdf))
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(pdf))
+    found: dict[str, int] = {}
+    for number, page in enumerate(reader.pages):
+        flattened = re.sub(r"\s+", " ", page.extract_text() or "")
+        for section_id, heading in headings.items():
+            if section_id not in found and heading in flattened:
+                found[section_id] = number
+    return found
 
 
 def printed(language: str) -> bytes:
@@ -162,31 +179,42 @@ def printed(language: str) -> bytes:
         return PdfReportRenderer(printer=printer).render_pdf(bundle).documents[language]
 
 
+def section_headings(language: str) -> dict[str, str]:
+    """The heading text each section is printed under, from the surface's own chrome."""
+    return {
+        section_id: html_module._CHROME[language]["sections"][section_id]
+        for section_id in ORDERED_SECTIONS
+    }
+
+
 @pytest.mark.browser
 @needs_chromium
-def test_the_printed_pdf_has_a_page_for_every_section() -> None:
-    """Measured on the produced PDF, not on the declaration that asks for it.
+def test_no_two_analyses_begin_on_the_same_printed_page() -> None:
+    """The promise of the rule, asserted on the produced PDF.
 
-    An earlier version of this test read `getComputedStyle(node).breakBefore`, which
-    reports the cascaded declaration and nothing about paged layout: Chromium can
-    retain the declaration while fragmentation places two sections on one page, and
-    that test would have passed with the promised pagination broken.
-
-    Page *count* is the property this rule changes and a real PDF exposes. Each
-    section forced onto a new page means at least one page per section, so the count
-    collapsing is what a broken rule looks like from outside. Mapping each heading to
-    its page number would say more, and needs a PDF text extractor this project does
-    not depend on -- worth adding when something else needs one, not for this.
+    Two earlier versions of this test were weaker. `getComputedStyle` reported the
+    cascaded declaration and said nothing about paged layout. Page count then included
+    pages consumed by long tables and by the caveats, citations and provenance blocks,
+    so it stayed high enough to pass with the rule broken. This maps each heading to the
+    page it was printed on and asserts they are all different, which is the claim.
     """
-    bundle = ReportBundle.of(package())
+    pdf = printed(LANGUAGE_ENGLISH)
+    headings = section_headings(LANGUAGE_ENGLISH)
+    placed = heading_pages(pdf, headings)
 
-    assert printed_page_count(printed(LANGUAGE_ENGLISH)) >= len(bundle.sections)
+    assert set(placed) == set(headings), "a section heading was not found in the PDF"
+    assert len(set(placed.values())) == len(placed), placed
+    # And in governed order, so the printed sequence is the declared one.
+    assert [placed[section_id] for section_id in ORDERED_SECTIONS] == sorted(
+        placed.values()
+    )
 
 
 @pytest.mark.browser
 @needs_chromium
-def test_arabic_paginates_identically() -> None:
+def test_arabic_paginates_the_same_sections_onto_distinct_pages() -> None:
     """One template and one stylesheet, so the two languages cannot fragment apart."""
-    assert printed_page_count(printed(LANGUAGE_ARABIC)) == printed_page_count(
-        printed(LANGUAGE_ENGLISH)
-    )
+    placed = heading_pages(printed(LANGUAGE_ARABIC), section_headings(LANGUAGE_ARABIC))
+
+    assert set(placed) == set(ORDERED_SECTIONS)
+    assert len(set(placed.values())) == len(placed), placed
