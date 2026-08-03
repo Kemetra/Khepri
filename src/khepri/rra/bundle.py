@@ -156,6 +156,10 @@ SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
 SECTION_REASON_UNITS_ABSENT = "units_absent"
 SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE = "decomposition_not_additive"
 SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
+# The fact package's own wording, reused rather than restated: `RRA-004` refuses
+# the transaction count with this when the identifier column has gaps, and the
+# basket family reports the cause the package recorded.
+SECTION_REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
 
 # Which reasons may refuse an entire section. That is a narrower question than
 # "which reasons can this family produce", and the two come apart wherever a
@@ -238,7 +242,31 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
         }
     ),
-    SECTION_BASKET: frozenset({SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT}),
+    SECTION_BASKET: frozenset(
+        {
+            SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT,
+            # One more, and only one. `RRA-008` requires a transaction identifier
+            # for both basket metrics, so its absence is the single failure that
+            # takes the whole family -- and a column with gaps is that same
+            # failure with a different cause, which the fact package already
+            # distinguishes when it refuses the transaction count. Reporting it as
+            # "identifier absent" would name a cause that did not occur.
+            #
+            SECTION_REASON_INCOMPLETE_IDENTIFIERS,
+            # And one that is per-metric *and* whole-family, depending on what
+            # else the dataset has. An absent units measure refuses items per
+            # transaction while attach rate stands -- carried on the result, not
+            # here. But a dataset with an identifier and neither units nor a
+            # product or category dimension states nothing at all, and then the
+            # section is refused and needs a reason it can say.
+            #
+            # `aggregate_unavailable` stays off this list, and provably can: it
+            # refuses attach rate only, and reaching a whole-family refusal
+            # requires items per transaction to have refused too, whose reason is
+            # recorded first.
+            SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
+        }
+    ),
 }
 
 # Derived, never maintained alongside the table, so the two cannot disagree
