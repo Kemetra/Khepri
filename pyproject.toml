@@ -29,6 +29,7 @@ khepri-gov = "khepri_gov.cli:main"
 [dependency-groups]
 dev = [
     "httpx2>=2.9.1",
+    "pypdf>=6,<7",
     "pytest>=8.3,<9",
     "ruff>=0.9,<1",
 ]
