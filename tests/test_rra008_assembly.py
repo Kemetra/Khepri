@@ -15,9 +15,12 @@ from __future__ import annotations
 import hashlib
 from datetime import date, timedelta
 
+from khepri.rra import bundle as bundle_module
 from khepri.rra.admissibility import assess_admissibility
+from khepri.rra.analysis import concentration
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
+    CHART_LINE,
     SECTION_BASKET,
     SECTION_COMPARISON,
     SECTION_CONCENTRATION,
@@ -165,23 +168,33 @@ def test_a_familys_caveat_is_scoped_to_its_own_section() -> None:
 
 
 def test_a_section_whose_figures_cannot_be_drawn_says_so() -> None:
-    """Concentration states two counts and two shares, which share no axis.
+    """Returning no chart is not a disclosure: the section would look merely sparse.
 
-    `is_drawable` refuses mixed units, so no chart is attached -- and a section that
-    simply looked sparse would leave a reader unable to tell a missing chart from a
-    chart that was never possible. The caveat carries that distinction.
+    Stated over every present section rather than over one named example. The earlier
+    version named concentration, whose curve was unchartable for an unrelated defect;
+    when that was fixed the test failed while the behaviour it describes was intact.
+    A rule asserted of one section is a rule that rots when that section changes.
     """
     bundle = bundle_of(full_package())
-    section = section_of(bundle, SECTION_CONCENTRATION)
-    assert section is not None
-    assert section.chart is None
-
-    codes = {
-        caveat.code
+    scoped = {
+        (caveat.section, caveat.code)
         for caveat in bundle.caveats
-        if caveat.section == SECTION_CONCENTRATION
+        if caveat.code == CAVEAT_CHART_NOT_DRAWN
     }
-    assert CAVEAT_CHART_NOT_DRAWN in codes
+    undrawable = {
+        section.section_id
+        for section in bundle.sections
+        if section.state == SECTION_PRESENT and section.chart is None
+    }
+    # Not vacuous: this dataset has one comparison mode, and a single point is a number
+    # the table states better.
+    assert undrawable
+
+    assert {section_id for section_id, _ in scoped} == undrawable
+    # And no section that *did* draw one claims otherwise.
+    for section in bundle.sections:
+        if section.chart is not None:
+            assert (section.section_id, CAVEAT_CHART_NOT_DRAWN) not in scoped
 
 
 def test_a_drawable_section_carries_a_chart_of_its_own_figures() -> None:
@@ -199,9 +212,57 @@ def test_drawability_is_decided_once_and_shared_with_the_geometry() -> None:
     `charts.py` imports `bundle`, so the predicate cannot live there without the
     bundle duplicating it -- and a bundle that attached a spec the geometry then
     refused would promise a chart no surface could draw.
+
+    Asked of the figures the section *plots*, not of every figure it carries. An
+    earlier version asked it of all of them and passed by coincidence: concentration
+    carries two counts and two ratios beside its curve, so the whole set is undrawable
+    and the section had no chart, and the two agreed for unrelated reasons.
     """
     bundle = bundle_of(full_package())
     by_id = {figure.figure_id: figure for figure in bundle.figures}
     for section in bundle.sections:
         figures = tuple(by_id[figure_id] for figure_id in section.figure_ids)
-        assert (section.chart is not None) == is_drawable(figures)
+        plotted = bundle_module._plottable(section.section_id, figures)
+        assert (section.chart is not None) == is_drawable(plotted), section.section_id
+
+
+def test_a_bucket_figure_carries_the_metric_of_the_fact_it_cites() -> None:
+    """A figure's metric is its fact's metric, whichever path built the figure.
+
+    The two paths disagreed. A scalar analysis fact became a figure carrying
+    `fact.metric`, while a series or comparison bucket became one carrying the owner's
+    **`measure`** -- so a trend over revenue reported `revenue` where the fact says
+    `revenue_by_period`. That is what made the concentration curve unchartable: the
+    family asks to plot `concentration_curve` and every curve figure claimed to be
+    `revenue`.
+    """
+    package = full_package()
+    bundle = bundle_of(package)
+
+    figures = {figure.citation_id: figure for figure in bundle.figures}
+    entries = (*package.series, *package.comparisons)
+    assert entries
+    for entry in entries:
+        assert figures[entry.citation_id].metric == entry.metric, entry.metric
+
+
+def test_the_concentration_curve_is_charted_as_a_cumulative_line() -> None:
+    """The one chart `RRA-008` requires by specification rather than by design.
+
+    It was drawn on no surface: `_plottable` matched nothing, so `Section.chart` was
+    `None` for concentration on every dataset. Every chart test derived its bundle from
+    a dataset and asserted over whichever sections happened to be charted, so a section
+    that was never charted was invisible to all of them.
+    """
+    bundle = bundle_of(full_package())
+    section = section_of(bundle, SECTION_CONCENTRATION)
+    assert section is not None
+    assert section.chart is not None
+    assert section.chart.kind == CHART_LINE
+
+    # The curve, and not the four scalars beside it: two counts and two ratios share no
+    # axis, and charting them would scale a ratio to invisibility against a count.
+    by_id = {figure.figure_id: figure for figure in bundle.figures}
+    plotted = [by_id[figure_id] for figure_id in section.chart.figure_ids]
+    assert len(plotted) > 1
+    assert {figure.metric for figure in plotted} == {concentration.METRIC_CURVE}

@@ -123,13 +123,15 @@ CURVE = (("1", "0.6000", "٠٫٦٠٠٠"), ("2", "0.8500", "٠٫٨٥٠٠"), ("3",
 def curve_bundle() -> ReportBundle:
     """A bundle carrying the one chart `RRA-008` requires: a cumulative share curve.
 
-    Constructed here rather than derived from a dataset, and that is a finding rather
-    than a convenience. `bundle._bucket` records a series figure's metric as the
-    series' *measure* -- `revenue` -- while `_FAMILIES` asks the concentration section
-    to plot `concentration_curve`, so `_plottable` matches nothing and no dataset
-    produces a curve chart on any surface. That defect predates this file and is not
-    the workbook's to fix; what it would otherwise do is leave the `CHART_LINE` branch
-    of `_CHART_TYPES` shipped and unexercised.
+    Constructed rather than derived so the shares are exactly known, which is what lets
+    the line-chart test assert the written numbers against a literal.
+
+    It was originally constructed because it had to be: `bundle._bucket` recorded a
+    series figure's metric as the series' *measure* -- `revenue` -- while the
+    concentration family asks to plot `concentration_curve`, so no dataset produced a
+    curve chart on any surface and the `CHART_LINE` branch would have shipped
+    unexercised. That is fixed; real datasets now reach this branch too, and
+    `test_rra008_assembly` holds the dataset-derived side of it.
     """
     figures = tuple(
         CitedFigure(
