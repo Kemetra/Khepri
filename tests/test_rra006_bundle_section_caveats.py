@@ -10,7 +10,9 @@ now compares pairs, so a misplaced caveat fails it exactly as a missing one does
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +27,8 @@ from khepri.rra.bundle import (
     reconcile,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.rendering.excel import ExcelSurfaceRenderer, WorkbookUnavailable
+from khepri.rra.rendering.html import HtmlReportRenderer, SurfaceRenderFailed
 from tests.test_rra006_bundle import language_of, package, surface_of
 
 
@@ -131,3 +135,58 @@ def test_a_misstated_caveat_refuses(prepare: object) -> None:
     with pytest.raises(BundleRefused) as refused:
         reconcile(bend(bundle, caveats, both=both), bundle=bundle)
     assert str(refused.value) == REASON_CAVEAT_COVERAGE_DIFFERS
+
+
+def test_a_caveat_may_not_be_scoped_to_a_section_the_bundle_never_declared() -> None:
+    # The vocabulary says the name exists, not that this report has that
+    # section. A caveat scoped to an absent one has no heading to be rendered
+    # under, so a surface drops it or misfiles it -- and it still reconciles,
+    # because reconciliation compares the pair against the bundle, not the page.
+    bundle = bundle_of()
+    assert SECTION_COMPARISON not in bundle.section_ids
+    with pytest.raises(ValueError):
+        replace(
+            bundle,
+            caveats=(StatedCaveat(code="window_truncated", section=SECTION_COMPARISON),),
+        )
+
+
+def test_a_caveat_scoped_to_a_declared_section_is_accepted() -> None:
+    bundle = bundle_of()
+    scoped = replace(
+        bundle,
+        caveats=(StatedCaveat(code="window_truncated", section=SECTION_OVERVIEW),),
+    )
+    assert scoped.caveats[0].section == SECTION_OVERVIEW
+
+
+@pytest.mark.parametrize(
+    "render",
+    [
+        pytest.param(
+            lambda bundle: HtmlReportRenderer().render_html(bundle),
+            id="web",
+        ),
+        pytest.param(
+            lambda bundle: ExcelSurfaceRenderer(
+                directory=Path(tempfile.mkdtemp())
+            ).render(bundle),
+            id="workbook",
+        ),
+    ],
+)
+def test_a_surface_refuses_a_scoped_caveat_it_cannot_place(render: object) -> None:
+    # Both surfaces have one caveats heading, so a scoped caveat leaves them two
+    # options and both misinform: under the report's heading it says the whole
+    # dataset is qualified, and omitted it drops a caveat RRA-008 requires while
+    # the claim still carries it. The second passes reconciliation, because that
+    # compares the claim against the bundle and never against the page.
+    #
+    # The printed surface fills two blocks of the web template and shares its
+    # context, so it refuses through the same guard.
+    scoped = replace(
+        bundle_of(),
+        caveats=(StatedCaveat(code="window_truncated", section=SECTION_OVERVIEW),),
+    )
+    with pytest.raises((SurfaceRenderFailed, WorkbookUnavailable)):
+        render(scoped)  # type: ignore[operator]

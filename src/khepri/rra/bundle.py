@@ -669,6 +669,7 @@ class ReportBundle:
     def __post_init__(self) -> None:
         _require_governed_section_order(self.sections)
         _require_sections_index_the_figures(self.sections, self.figures)
+        _require_caveat_scopes_are_declared(self.sections, self.caveats)
 
     @property
     def section_ids(self) -> tuple[str, ...]:
@@ -839,6 +840,27 @@ def _require_sections_index_the_figures(
         raise ValueError("bundle indexes one figure under more than one section")
     if dict(indexed) != {figure.figure_id: figure.section for figure in figures}:
         raise ValueError("bundle sections and figures disagree about placement")
+
+
+def _require_caveat_scopes_are_declared(
+    sections: tuple[Section, ...],
+    caveats: tuple[StatedCaveat, ...],
+) -> None:
+    """A scoped caveat needs a section to be rendered in.
+
+    `StatedCaveat` checks the governed vocabulary, which says the name exists --
+    not that this report has that section. A caveat scoped to a section the
+    bundle never declared has no legal location on any surface: there is no
+    heading to put it under, so a renderer either drops it or misfiles it, and
+    the caveat still reconciles because reconciliation compares the pair against
+    the bundle rather than against the page.
+
+    Report-level caveats are exempt, having no scope to place.
+    """
+    declared = {section.section_id for section in sections}
+    scoped = {caveat.section for caveat in caveats if caveat.section is not None}
+    if not scoped <= declared:
+        raise ValueError("bundle scopes a caveat to a section it does not declare")
 
 
 @dataclass(frozen=True, slots=True)
