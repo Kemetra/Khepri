@@ -328,6 +328,38 @@ def test_both_modes_refusing_refuses_the_comparison() -> None:
     assert result.reason == REASON_PRIOR_WINDOW_ABSENT
 
 
+@pytest.mark.parametrize(
+    ("label", "shift"),
+    [
+        pytest.param("2024-02-29", "year", id="a-leap-day-a-year-earlier"),
+        pytest.param("0001-01-01", "day", id="the-day-before-the-calendar-starts"),
+    ],
+)
+def test_a_counterpart_that_is_not_a_date_refuses(label: str, shift: str) -> None:
+    # Two ways a counterpart fails to exist, and they raise different
+    # exceptions: 29 February a year earlier is a ValueError, and the day before
+    # 0001-01-01 is an OverflowError, which is not a ValueError. Guarding only
+    # the first let the second escape both entry points as an abort.
+    if shift == "year":
+        assert comparison._year_earlier_label(label, GRANULARITY_DAY) is None
+    else:
+        assert comparison._preceding_label(label, GRANULARITY_DAY) is None
+
+
+def test_an_unrepresentable_predecessor_refuses_instead_of_aborting() -> None:
+    # The profiling parser accepts year 1, so this is a valid package. Both
+    # entry points must report the governed refusal rather than raise.
+    package = package_for(
+        [(date(1, 1, 1), "100.00"), (date(1, 1, 2), "150.00")]
+    )
+    result = comparison.derive(package)
+    assert isinstance(result, RefusedResult)
+    assert result.reason == REASON_PRIOR_WINDOW_ABSENT
+    assert {refusal.reason for refusal in comparison.refusals(package)} == {
+        REASON_PRIOR_WINDOW_ABSENT
+    }
+
+
 def test_a_leap_day_has_no_counterpart_and_refuses() -> None:
     # 29 February a year earlier is not a date. The nearest day is a different
     # day, and substituting one would state a comparison nobody asked for.

@@ -404,14 +404,17 @@ def _day_label(label: str, *, days_earlier: int | None) -> str | None:
         moment = date.fromisoformat(label)
     except ValueError:
         return None
-    if days_earlier is not None:
-        return (moment - timedelta(days=days_earlier)).isoformat()
     try:
+        if days_earlier is not None:
+            return (moment - timedelta(days=days_earlier)).isoformat()
         return moment.replace(year=moment.year - 1).isoformat()
-    except ValueError:
-        # 29 February has no counterpart in a non-leap year. Refusing is right:
-        # the nearest day is a different day, and substituting one would state a
-        # comparison nobody asked for.
+    except (ValueError, OverflowError):
+        # Two ways a counterpart can fail to be a date, and both refuse rather
+        # than reach for the nearest one. 29 February has no counterpart in a
+        # non-leap year -- `ValueError`. The day before `0001-01-01` is off the
+        # end of the calendar -- `OverflowError`, which is not a `ValueError`,
+        # so catching only the latter let it escape both entry points as an
+        # abort instead of a governed refusal.
         return None
 
 
