@@ -42,38 +42,54 @@ A sheet's *name* is not translated. It is an address: a reader following a refer
 or any tool reading the file, needs the same name in both workbooks. The language lives
 inside the sheet.
 
-**Charts, and why this paragraph changed.** It used to argue charts out, on the grounds
-that an XlsxWriter chart series addresses numeric cells and Excel stores every numeric
-cell as an IEEE 754 double -- which `KHEPRI-DEC-005` forbids as an authoritative
-financial fact. That reasoning was sound and is why the prohibition still holds for
-every cell this module writes today.
+**Charts, and the one numeric cell in this module.** This paragraph used to argue
+charts out, on the grounds that an XlsxWriter chart series addresses numeric cells and
+Excel stores every numeric cell as an IEEE 754 double -- which `KHEPRI-DEC-005` forbids
+as an authoritative financial fact. That reasoning was sound and it is why the
+prohibition still holds for every other cell here.
 
-`APP-013` has since amended `KHEPRI-DEC-005` to permit a numeric cell *solely* as a
-chart series address, on a dedicated worksheet holding no authoritative figure and no
-citation identifier, excluded from the surface content a bundle reconciles. The
-authoritative figure remains the decimal string on the section worksheet. That
-amendment narrows the prohibition; it does not relax it.
+`APP-013` amended `KHEPRI-DEC-005` to permit a numeric cell *solely* as a chart series
+address, on a dedicated worksheet holding no authoritative figure and no citation
+identifier, excluded from the surface content a bundle reconciles. The authoritative
+figure remains the decimal string on the section worksheet. That amendment narrows the
+prohibition; it does not relax it, and `_write_chart_value` is the single place in this
+module that may write one.
 
-The native chart path is the remaining half of this slice and is deliberately not here
-yet: the per-section worksheets need no amendment and merge on their own, and parking
-them behind the chart work would have held reviewable work behind a numeric write. Until
-that lands, every cell in this module still goes through `write_string`.
+Three things follow from "narrows, not relaxes", and each is built rather than
+promised. The number is parsed from the figure's *own authoritative string*, so the
+double is by construction the nearest representation of what a reader is shown, not of
+some longer `Decimal` the string never claimed. The chart sheet carries no
+`figure_id`, `citation_id` or `fact_id`, so there is nothing on it a reader could quote
+as the figure. And it is not read back into the surface claim -- `_content_language`
+states the figures the bundle carries and nothing about this sheet -- so a numeric cell
+can never become a figure the report published.
+
+It is a visible worksheet, not a hidden one. Hiding numbers that a decision permits
+only conditionally is the wrong direction: an auditor opening the workbook is owed
+every cell in it, and the disclosure that these are chart machinery is the section
+identifier written above each block, not their absence from the tab bar.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 import xlsxwriter
+from xlsxwriter.chart import Chart
 from xlsxwriter.workbook import Workbook
 from xlsxwriter.worksheet import Worksheet
 
 from khepri.rra.bundle import (
+    CHART_BAR,
+    CHART_GROUPED_BAR,
+    CHART_LINE,
     DIRECTION_RTL,
     GOVERNED_SECTION_STATES,
     LANGUAGE_DIRECTION,
     SURFACE_EXCEL,
+    ChartSpec,
     CitedFigure,
     ReportBundle,
     Section,
@@ -84,12 +100,14 @@ from khepri.rra.bundle import (
     SurfaceUnavailable,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.rendering.chart_labels import LABEL_WORDING, category_of, worded
 
-# v2 moves the figures off the two report sheets and onto a sheet per section. The
-# version is machine-readable provenance a consumer selects its parser from, so a
-# workbook with the new layout claiming v1 sends that consumer looking for a grid that
-# is no longer there.
-EXCEL_SURFACE_VERSION = "rra006.excel.v2"
+# v2 moved the figures off the two report sheets and onto a sheet per section; v3 adds
+# the chart data sheets and the native charts drawn from them. The version is
+# machine-readable provenance a consumer selects its parser from, so a workbook with a
+# new layout claiming an old version sends that consumer looking for a grid that is no
+# longer there -- and, at v3, leaves it unprepared for a sheet whose cells are numbers.
+EXCEL_SURFACE_VERSION = "rra006.excel.v3"
 WORKBOOK_SUFFIX = ".xlsx"
 
 # Every coercion XlsxWriter would otherwise apply to a string, switched off.
@@ -128,6 +146,16 @@ _SECTION_SHEET_PREFIX = {LANGUAGE_ENGLISH: "en", LANGUAGE_ARABIC: "ar"}
 
 def _section_sheet(section_id: str, language: str) -> str:
     return f"{_SECTION_SHEET_PREFIX[language]}_{section_id}"
+
+
+# One chart data sheet per language, named on the same terms as a section sheet: an
+# address rather than a translation. Two of them and not one, because the categories
+# are text and text is translated. The *numbers* on the two sheets are identical -- a
+# number is not a rendering, so it has no script and nothing to translate.
+_CHARTDATA_SECTION = "chartdata"
+
+def _chartdata_sheet(language: str) -> str:
+    return _section_sheet(_CHARTDATA_SECTION, language)
 
 _DISCLOSURE_HEADING = {
     LANGUAGE_ENGLISH: "About this report",
@@ -180,6 +208,32 @@ _CITATION_COLUMNS = {
     LANGUAGE_ARABIC: ("الإسناد", "الحقيقة", "المقياس", "الوحدة"),
 }
 
+# Category left, value right. Held as constants because the series addresses are built
+# from them: a chart pointing at the column beside the one that was written plots the
+# categories as values, silently, and nothing in the text reconciles differently.
+_CHART_CATEGORY_COLUMN = 0
+_CHART_VALUE_COLUMN = 1
+
+# Where a chart sits on its section sheet: clear of the figure table, so the
+# authoritative figures stay readable beside the picture drawn from them.
+_CHART_ANCHOR_ROW = 1
+_CHART_ANCHOR_COLUMN = len(_FIGURE_COLUMNS[LANGUAGE_ENGLISH]) + 1
+
+# The chart kind each governed kind is drawn as. `column` rather than `bar`:
+# XlsxWriter's `bar` is horizontal, and every other surface draws these rising from a
+# baseline.
+_CHART_TYPES = {
+    CHART_BAR: {"type": "column"},
+    CHART_GROUPED_BAR: {"type": "column", "subtype": "clustered"},
+    CHART_LINE: {"type": "line"},
+}
+
+# The rendering a chart value is parsed from. English because it is the ASCII decimal
+# form: the Arabic rendering is the same number in Arabic-Indic digits, which is a
+# script and not something `Decimal` parses. Naming it keeps that from reading like a
+# surface preferring one language's figures.
+_CHART_NUMBER_LANGUAGE = LANGUAGE_ENGLISH
+
 # Every literal this module may put in a cell that did not come from the bundle.
 # Held as one frozen set so "did the renderer invent this text?" is decidable:
 # a cell is either bundle content or a member of this.
@@ -212,6 +266,12 @@ GOVERNED_LABELS = frozenset(
     }
     | set(_SECTIONS_HEADING.values())
     | set(GOVERNED_SECTION_STATES)
+    # Chart categories. A bucket's category is the customer's own value and is bundle
+    # content; a scalar's is a governed metric or mode name, which is this renderer
+    # putting text in a cell and therefore belongs in this set. The wording is the one
+    # `chart_labels` also gives the page, so the axis of the native chart and the axis
+    # of the SVG cannot read differently.
+    | {text for wording in LABEL_WORDING.values() for text in wording.values()}
 )
 
 _LABEL_WIDTH = 34
@@ -270,9 +330,16 @@ class ExcelSurfaceRenderer:
 def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:
     for language in LANGUAGES:
         _write_report(workbook, bundle, language)
-        for section in bundle.sections:
-            _write_section(workbook, bundle, language, section)
+        sheets = {
+            section.section_id: _write_section(workbook, bundle, language, section)
+            for section in bundle.sections
+        }
         _write_citations(workbook, bundle, language)
+        # Last of the language's sheets, and after the sections it draws onto. A chart
+        # is inserted into a worksheet object, so the section sheets have to exist
+        # first; putting the data sheet at the end also keeps a reader landing on the
+        # index and the analyses rather than on the machinery.
+        _draw_charts(workbook, bundle, language, sheets)
     _write_provenance(workbook, bundle)
 
 
@@ -308,13 +375,15 @@ def _write_section(
     bundle: ReportBundle,
     language: str,
     section: Section,
-) -> None:
+) -> Worksheet:
     """One analysis: its state, its figures, and the caveats that qualify it.
 
     A refused section still gets a worksheet. `RRA-008` refuses the affected analysis
     rather than the report, and a missing sheet is the one disclosure a reader cannot
     distinguish from an analysis nobody ran -- the same reason the page renders a
     heading and a reason rather than nothing.
+
+    Returns the sheet so a chart can be drawn onto it once the data it plots exists.
     """
     sheet = _sheet(workbook, _section_sheet(section.section_id, language), language)
     sheet.set_column(0, 0, _LABEL_WIDTH)
@@ -324,6 +393,7 @@ def _write_section(
     row = _write_row(sheet, row, (section.section_id, section.state, section.reason))
     row = _write_section_figures(sheet, row, bundle, language, section.section_id)
     _write_section_caveats(sheet, row, bundle, language, section.section_id)
+    return sheet
 
 
 def _write_section_figures(
@@ -359,6 +429,187 @@ def _write_section_caveats(
     for caveat in scoped:
         row = _write_row(sheet, row, (caveat.code,))
     return row
+
+
+@dataclass(frozen=True, slots=True)
+class _ChartBlock:
+    """One section's series on the chart data sheet: where it sits, and what it plots.
+
+    The layout is a value object rather than something each writer works out for
+    itself, because two things read it: the sheet writer places the cells, and the
+    series builder addresses them. Two independent derivations of the same rows is how
+    a chart comes to plot the row above the one that was written.
+    """
+
+    section_id: str
+    kind: str
+    first_row: int
+    categories: tuple[str, ...]
+    figures: tuple[CitedFigure, ...]
+
+    @property
+    def last_row(self) -> int:
+        return self.first_row + len(self.figures) - 1
+
+
+def _draw_charts(
+    workbook: Workbook,
+    bundle: ReportBundle,
+    language: str,
+    sheets: dict[str, Worksheet],
+) -> None:
+    """Write one language's chart data, then draw each series onto its section sheet."""
+    for block in _write_chartdata(workbook, bundle, language):
+        sheets[block.section_id].insert_chart(
+            _CHART_ANCHOR_ROW,
+            _CHART_ANCHOR_COLUMN,
+            _chart_for(workbook, block, language),
+        )
+
+
+def _write_chartdata(
+    workbook: Workbook,
+    bundle: ReportBundle,
+    language: str,
+) -> tuple[_ChartBlock, ...]:
+    """The one sheet in this workbook whose cells are numbers.
+
+    Created only when there is a chart to feed, because an empty sheet is a tab a
+    reader has to open to discover it says nothing. Each block is headed by the
+    section identifier it belongs to: that is what makes the sheet auditable -- a
+    reader can see which analysis a run of numbers was drawn for -- while carrying
+    nothing citable, which is what `APP-013` requires of it.
+    """
+    blocks = _chart_blocks(bundle, language)
+    if not blocks:
+        return blocks
+    sheet = _sheet(workbook, _chartdata_sheet(language), language)
+    sheet.set_column(_CHART_CATEGORY_COLUMN, _CHART_CATEGORY_COLUMN, _LABEL_WIDTH)
+    sheet.set_column(_CHART_VALUE_COLUMN, _CHART_VALUE_COLUMN, _VALUE_WIDTH)
+    for block in blocks:
+        _write_chart_block(sheet, block)
+    return blocks
+
+
+def _chart_blocks(bundle: ReportBundle, language: str) -> tuple[_ChartBlock, ...]:
+    """The layout: one block per charted section, in the bundle's section order.
+
+    A section whose chart cannot be resolved contributes no block and no chart, rather
+    than a block missing a row. `bundle._require_chart_within` already refuses a spec
+    naming a figure its section does not carry, so this is the second line -- and it
+    fails closed for the same reason `charts._resolve` does: a series drawn from the
+    figures it happened to find plots something the section never authorized.
+    """
+    blocks: list[_ChartBlock] = []
+    row = 0
+    for section in bundle.sections:
+        if section.chart is None:
+            continue
+        figures = _plotted(bundle, section.chart)
+        if figures is None:
+            continue
+        blocks.append(
+            _ChartBlock(
+                section_id=section.section_id,
+                kind=section.chart.kind,
+                first_row=row + 1,
+                categories=tuple(
+                    worded(category_of(figure), language) for figure in figures
+                ),
+                figures=figures,
+            )
+        )
+        # The block's own heading row, its pairs, and one blank row before the next.
+        row += len(figures) + 2
+    return tuple(blocks)
+
+
+def _plotted(bundle: ReportBundle, spec: ChartSpec) -> tuple[CitedFigure, ...] | None:
+    """The figures a spec names, in its order, or nothing if any is unusable here.
+
+    Unusable means absent, or without a value, or without the ASCII rendering the
+    number is parsed from. Each of those would otherwise become a gap in the series,
+    and a chart may not render a governed gap as a zero.
+    """
+    known = {figure.figure_id: figure for figure in bundle.figures}
+    found = [known.get(figure_id) for figure_id in spec.figure_ids]
+    if any(figure is None or not _has_number(figure) for figure in found):
+        return None
+    return tuple(figure for figure in found if figure is not None)
+
+
+def _has_number(figure: CitedFigure) -> bool:
+    return figure.value is not None and _CHART_NUMBER_LANGUAGE in figure.renderings
+
+
+def _write_chart_block(sheet: Worksheet, block: _ChartBlock) -> None:
+    """One section's block: the section identifier, then a category and a value a row."""
+    _write_row(sheet, block.first_row - 1, (block.section_id,))
+    for offset, figure in enumerate(block.figures):
+        row = block.first_row + offset
+        sheet.write_string(row, _CHART_CATEGORY_COLUMN, block.categories[offset])
+        _write_chart_value(sheet, row, _CHART_VALUE_COLUMN, figure)
+
+
+def _write_chart_value(
+    sheet: Worksheet,
+    row: int,
+    column: int,
+    figure: CitedFigure,
+) -> None:
+    """The single numeric write in this module.
+
+    `APP-013` permits it solely as a chart series address, on a worksheet holding no
+    authoritative figure and no citation. The authoritative figure is the string on the
+    section sheet.
+
+    Parsed from that authoritative string rather than narrowed from the figure's own
+    `Decimal`. The two are the same number today -- `bundle._figure` builds both from
+    one string -- but "the same" is an invariant held in another module, and this is
+    the write the decision narrows. Parsing the string makes the double the nearest
+    representation of exactly what a reader is shown, whatever that invariant does
+    later; `float(figure.value)` would have quietly written more precision than the
+    report ever claimed, which is the relaxation `APP-013` refuses.
+    """
+    sheet.write_number(row, column, float(Decimal(figure.renderings[_CHART_NUMBER_LANGUAGE])))
+
+
+def _chart_for(workbook: Workbook, block: _ChartBlock, language: str) -> Chart:
+    """One native chart over one block's rows.
+
+    No title and no axis titles. The sheet it is drawn on already names the analysis,
+    and prose composed here would be prose no per-language table governs. The legend
+    goes for the same reason: a single unnamed series is captioned `Series 1`, which is
+    a label this surface did not write and cannot translate.
+    """
+    chart = workbook.add_chart(dict(_CHART_TYPES[block.kind]))
+    chart.add_series(
+        {
+            "categories": _series_range(block, language, _CHART_CATEGORY_COLUMN),
+            "values": _series_range(block, language, _CHART_VALUE_COLUMN),
+        }
+    )
+    chart.set_legend({"none": True})
+    if LANGUAGE_DIRECTION[language] == DIRECTION_RTL:
+        # The only place a chart's direction is real rather than declared. A category
+        # axis runs left to right whatever the sheet declares, so without this the
+        # Arabic chart plots its first category on the wrong side while every text cell
+        # beside it reconciles perfectly. Only the category axis: reversing the value
+        # axis would render every proportion upside down with every number beside it
+        # still correct.
+        chart.set_x_axis({"reverse": True})
+    return chart
+
+
+def _series_range(block: _ChartBlock, language: str, column: int) -> list[object]:
+    """One column of a block, as the sheet-and-cells address a series takes."""
+    return [
+        _chartdata_sheet(language),
+        block.first_row,
+        column,
+        block.last_row,
+        column,
+    ]
 
 
 def _write_citations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:

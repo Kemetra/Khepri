@@ -377,9 +377,21 @@ def test_no_worksheet_cell_is_written_as_a_number(tmp_path: Path) -> None:
     # A numeric cell in Excel is an IEEE 754 double, and DEC-005 forbids binary
     # floating point as an authoritative financial fact. Every governed figure
     # is therefore the exact decimal string the fact package produced.
+    #
+    # `APP-013` permits one exception: a chart series address, on the chart data sheet
+    # and nowhere else. So the assertion is a boundary rather than an absence -- the
+    # permission holds for that sheet and must not have leaked anywhere a reader could
+    # quote a cell as the figure. `test_rra006_excel_charts` holds the other side of
+    # it, that the numbers on that sheet are faithful copies of the governed strings.
     _, workbook = rendered(ReportBundle.of(package()), tmp_path)
 
+    permitted = {
+        excel._chartdata_sheet(language)
+        for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC)
+    }
     for name, xml in workbook.sheets.items():
+        if name in permitted:
+            continue
         for cell in xml.split("<c ")[1:]:
             declaration = cell.split(">", 1)[0]
             assert '<v>' not in cell or 't="s"' in declaration or 't="inlineStr"' in declaration, (

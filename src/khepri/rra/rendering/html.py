@@ -55,6 +55,7 @@ from khepri.rra.narrative import (
     REQUIRED_LANGUAGES,
     NarrativeDraft,
 )
+from khepri.rra.rendering.chart_labels import LABEL_WORDING
 from khepri.rra.rendering.charts import ChartView, build_chart
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
@@ -107,14 +108,11 @@ _CHROME: dict[str, dict[str, str]] = {
         },
         # One table for every governed code a chart label can carry: metric names,
         # and mode names. One lookup path in the macro, so a new kind of code cannot
-        # arrive with nowhere to be translated.
-        "labels": {
-            "metric.growth_revenue_change": "Revenue change",
-            "metric.growth_price_effect": "Price effect",
-            "metric.growth_volume_effect": "Volume effect",
-            "label.period_over_period": "Against the previous period",
-            "label.year_over_year": "Against the same period last year",
-        },
+        # arrive with nowhere to be translated. It is read from `chart_labels`, beside
+        # the function that mints those codes, because the workbook's native chart
+        # needs the same wording and two copies would let the surfaces disagree about
+        # what a bar is called.
+        "labels": LABEL_WORDING[LANGUAGE_ENGLISH],
     },
     LANGUAGE_ARABIC: {
         "title": "تقرير التجزئة",
@@ -149,13 +147,7 @@ _CHROME: dict[str, dict[str, str]] = {
             "chart_description.grouped_bar": "رسم بأعمدة مجمّعة للأرقام في هذا القسم",
             "chart_description.line": "منحنى النصيب التراكمي عبر القيم المرتّبة",
         },
-        "labels": {
-            "metric.growth_revenue_change": "التغيّر في الإيرادات",
-            "metric.growth_price_effect": "أثر السعر",
-            "metric.growth_volume_effect": "أثر الحجم",
-            "label.period_over_period": "مقابل الفترة السابقة",
-            "label.year_over_year": "مقابل الفترة نفسها من العام الماضي",
-        },
+        "labels": LABEL_WORDING[LANGUAGE_ARABIC],
     },
 }
 

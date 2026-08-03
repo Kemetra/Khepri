@@ -1773,6 +1773,37 @@ git add src/khepri/rra/rendering/excel.py tests/rra/rendering/test_excel_section
 git commit --no-gpg-sign -m "feat: write one worksheet per section with a native governed chart"
 ```
 
+### Notes from executing Task 13
+
+**Slice 13a** (per-section worksheets, no numeric write) merged as #89. **Slice 13b** (the chart
+data sheets and the native charts) is the second commit; `EXCEL_SURFACE_VERSION` moved to
+`rra006.excel.v3`, because a consumer selecting its parser from that version is otherwise
+unprepared for a sheet whose cells are numbers.
+
+**`figure.precision` does not exist.** Step 3's snippet quantizes to it. `CitedFigure` carries a
+`Decimal` and a per-language rendering and no precision field, and the resolution is better than
+deriving one: the number is parsed from the figure's *own authoritative English string*, so the
+double is the nearest representation of exactly what a reader is shown. `float(figure.value)` would
+have depended on an invariant held in `bundle.py` — that a figure's `Decimal` and its rendering come
+from one string — and would have written more precision than the report claimed if that ever drifted.
+
+**A chart label table now sits in `rendering/chart_labels.py`.** The codes (`metric.growth_price_effect`,
+`label.period_over_period`) were minted in `rendering.charts` while the wording lived in
+`rendering.html`'s chrome, with nothing tying them together; the workbook needs the identical wording
+on its category axis, and two copies would let the page and the spreadsheet disagree about what a bar
+is called. `category_of` and `LABEL_WORDING` are now one module, and a test asserts every code the
+former can produce has wording in both languages.
+
+**Defect found, not fixed here — the concentration curve is charted on no surface.**
+`bundle._bucket` records a series figure's `metric` as the series' **`measure`** (`revenue`), while
+`_FAMILIES[SECTION_CONCENTRATION].plots` asks for `concentration.METRIC_CURVE`
+(`concentration_curve`). So `_plottable` matches nothing, `Section.chart` is `None` for
+concentration on every dataset, and the one chart `RRA-008` requires by specification — the
+cumulative share curve — is absent from the web, print and workbook surfaces alike. This predates
+Task 13 and is a bundle-level fix affecting all three surfaces plus `BUNDLE_VERSION`, so it belongs
+in its own slice rather than inside the workbook's. `tests/test_rra006_excel_charts.py` builds a
+curve bundle directly so the `CHART_LINE` path is not shipped unexercised.
+
 ---
 
 ## Pull request notes

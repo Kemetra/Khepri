@@ -65,10 +65,10 @@ from khepri.rra.bundle import (
     CHART_GROUPED_BAR,
     CHART_LINE,
     DIRECTION_RTL,
-    GOVERNED_FIGURE_LABELS,
     ChartSpec,
     CitedFigure,
 )
+from khepri.rra.rendering.chart_labels import category_of
 
 # One canvas for every chart in a report. Two charts drawn to different scales sit
 # on one page inviting a comparison their geometry does not support.
@@ -100,18 +100,13 @@ _SCALE = Decimal(1).scaleb(-COORDINATE_PRECISION)
 
 @dataclass(frozen=True, slots=True)
 class ChartLabel:
-    """What a mark is called, and whether the surface must translate it.
+    """A `ChartCategory` placed on the canvas: what a mark is called, and where.
 
-    Two kinds of text reach an axis and they must not be confused. A bucket figure
-    carries the customer's own product or branch name, which is final and only needs
-    escaping. A scalar figure -- a growth price effect, say -- has no category, and
-    its *metric* is what identifies the bar; that name is governed wording, so it is
-    a code the surface looks up in its per-language chrome.
-
-    A bare string could not tell those apart, and a surface guessing would either
-    print `metric.growth_price_effect` at a reader or run a customer's product name
-    through a translation table. An earlier version used the figure's own rendered
-    *value* as its label, which showed several amounts and named none of them.
+    The naming decision is not made here. `chart_labels.category_of` makes it, once,
+    for every surface -- the workbook draws a native chart from the same categories
+    this places on an SVG, and a name that differed between the two would be the two
+    surfaces disagreeing about what a mark is called. What this type adds is `x` and
+    `y`, which are geometry and belong to this module.
     """
 
     value: str
@@ -235,20 +230,19 @@ def build_chart(
 
 
 def _label(figure: CitedFigure, mark: ChartMark) -> ChartLabel:
-    """A mark's category if it has one, otherwise the code for its metric.
+    """The figure's governed category, placed under the mark it names.
 
-    Placed under the mark it names, at the foot of the canvas. The horizontal centre
-    is read off the mark, the same derivation `_polyline` uses, so a label and its bar
-    cannot disagree about where they are.
+    At the foot of the canvas, horizontally centred on the mark. The centre is read
+    off the mark, the same derivation `_polyline` uses, so a label and its bar cannot
+    disagree about where they are.
     """
-    placed = {"x": _coordinate(_centre(mark)), "y": _coordinate(CHART_HEIGHT)}
-    if figure.label in GOVERNED_FIGURE_LABELS:
-        # A governed label is an internal identifier, not customer text. Treating one
-        # as final put `period_over_period` on both the English and the Arabic axis.
-        return ChartLabel(value=f"label.{figure.label}", localize=True, **placed)
-    if figure.label is not None:
-        return ChartLabel(value=figure.label, localize=False, **placed)
-    return ChartLabel(value=f"metric.{figure.metric}", localize=True, **placed)
+    category = category_of(figure)
+    return ChartLabel(
+        value=category.value,
+        localize=category.localize,
+        x=_coordinate(_centre(mark)),
+        y=_coordinate(CHART_HEIGHT),
+    )
 
 
 def _resolve(
