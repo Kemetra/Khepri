@@ -18,7 +18,6 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import GRANULARITY_DAY, GRANULARITY_MONTH
 from khepri.rra.analysis import comparison
 from khepri.rra.analysis.comparison import (
-    CAVEAT_WINDOW_TRUNCATED,
     METRIC_DELTA_ABSOLUTE,
     METRIC_DELTA_PERCENT,
     MODE_PERIOD_OVER_PERIOD,
@@ -28,28 +27,29 @@ from khepri.rra.analysis.comparison import (
 )
 from khepri.rra.facts import (
     REASON_ZERO_DENOMINATOR,
+    UNIT_MONETARY,
     UNIT_RATIO,
     FactPackage,
     RefusedResult,
     build_fact_package,
 )
 from khepri.rra.intake import CSV_MEDIA_TYPE
-from khepri.rra.mapping import build_mapping
+from khepri.rra.mapping import (
+    SEMANTIC_REVENUE,
+    SEMANTIC_TRANSACTION_DATE,
+    build_mapping,
+)
 from khepri.rra.profiling import build_profile
 
 HEADER = b"date,revenue,units,invoice_no,category,branch\n"
 
 
-def csv_for(rows: list[tuple[date, str]]) -> bytes:
+def package_for(rows: list[tuple[date, str]]) -> FactPackage:
     body = b"".join(
         f"{when.isoformat()},{amount},1,INV-{index},Beverages,Cairo\n".encode()
         for index, (when, amount) in enumerate(rows)
     )
-    return HEADER + body
-
-
-def package_for(rows: list[tuple[date, str]]) -> FactPackage:
-    content = csv_for(rows)
+    content = HEADER + body
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -65,33 +65,29 @@ def package_for(rows: list[tuple[date, str]]) -> FactPackage:
     )
 
 
-def monthly(months: int, amount: str = "100.00") -> FactPackage:
-    """One row on the first of each of `months` consecutive months."""
-    start = date(2024, 1, 1)
-    rows = [
-        (date(start.year + (start.month - 1 + offset) // 12,
-              (start.month - 1 + offset) % 12 + 1, 1), amount)
-        for offset in range(months)
-    ]
-    return package_for(rows)
+def month_start(offset: int, *, year: int = 2024, month: int = 1) -> date:
+    index = year * 12 + month - 1 + offset
+    return date(index // 12, index % 12 + 1, 1)
 
 
-def monthly_with_gap(months: int, *, missing: int) -> FactPackage:
-    """Consecutive months with one offset omitted, shifting everything after it."""
-    start = date(2024, 1, 1)
+def monthly(months: int, *, skip: int | None = None) -> FactPackage:
+    """One row on the first of each of `months` consecutive months.
+
+    `skip` omits one offset, which shifts every bucket after it -- the shape that
+    makes positional pairing wrong and label pairing right.
+    """
     return package_for(
         [
-            (date(start.year + (start.month - 1 + offset) // 12,
-                  (start.month - 1 + offset) % 12 + 1, 1), "100.00")
+            (month_start(offset), "100.00")
             for offset in range(months)
-            if offset != missing
+            if offset != skip
         ]
     )
 
 
-def daily(days: int, amount: str = "100.00") -> FactPackage:
+def daily(days: int) -> FactPackage:
     start = date(2026, 1, 1)
-    return package_for([(start + timedelta(days=offset), amount) for offset in range(days)])
+    return package_for([(start + timedelta(days=n), "100.00") for n in range(days)])
 
 
 def facts_of(package: FactPackage) -> tuple:
@@ -100,163 +96,22 @@ def facts_of(package: FactPackage) -> tuple:
     return result
 
 
-def modes_for(package: FactPackage, metric: str = METRIC_DELTA_ABSOLUTE) -> set[str]:
+def modes_for(package: FactPackage) -> set[str]:
     return {
-        comparison.mode_of(fact) for fact in facts_of(package) if fact.metric == metric
+        comparison.mode_of(fact)
+        for fact in facts_of(package)
+        if fact.metric == METRIC_DELTA_ABSOLUTE
     }
 
 
-def test_a_month_spanning_trend_is_month_granular() -> None:
-    # The premise every year-over-year assertion below rests on: a span over 92
-    # days is bucketed by month, so a year earlier is twelve labels back.
-    assert monthly(26).trend().series.granularity == GRANULARITY_MONTH
-    assert daily(20).trend().series.granularity == GRANULARITY_DAY
-
-
-def test_both_governed_modes_are_emitted() -> None:
-    # RRA-008 requires period-over-period *and* year-over-year. One unnamed
-    # current/prior pair satisfies neither fully.
-    assert modes_for(monthly(26)) == {MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR}
-
-
-def test_the_two_modes_carry_distinct_stable_identities() -> None:
-    facts = [f for f in facts_of(monthly(26)) if f.metric == METRIC_DELTA_ABSOLUTE]
-    assert len({fact.fact_id for fact in facts}) == 2
-    assert len({fact.citation_id for fact in facts}) == 2
-
-
-def test_identities_are_stable_across_runs_over_the_same_input() -> None:
-    # Stable, not merely unique. RRA-008 requires a rerun to reach the same
-    # identity, which is what makes a citation followable between reports.
-    first = {fact.fact_id for fact in facts_of(monthly(26))}
-    second = {fact.fact_id for fact in facts_of(monthly(26))}
-    assert first == second
-
-
-def test_year_over_year_refuses_alone_when_coverage_is_under_a_year() -> None:
-    # Eight months has a prior period and no prior year. RRA-008 refuses the
-    # affected comparison and not the report, so the other mode survives.
-    package = monthly(8)
-    assert modes_for(package) == {MODE_PERIOD_OVER_PERIOD}
-    reasons = {refusal.reason for refusal in comparison.refusals(package)}
-    assert reasons == {REASON_PRIOR_WINDOW_ABSENT}
-
-
-def test_a_single_mode_refusal_is_not_a_report_refusal() -> None:
-    assert not isinstance(comparison.derive(monthly(8)), RefusedResult)
-
-
-def test_both_modes_refusing_refuses_the_comparison() -> None:
-    # One bucket has no prior window of any kind, so there is nothing to state.
-    result = comparison.derive(monthly(1))
-    assert isinstance(result, RefusedResult)
-    assert result.reason == REASON_PRIOR_WINDOW_ABSENT
-
-
-def yoy_facts(package: FactPackage) -> list:
-    return [
-        fact
-        for fact in facts_of(package)
-        if comparison.mode_of(fact) == MODE_YEAR_OVER_YEAR
-    ]
-
-
-def test_a_prior_year_window_short_of_the_current_one_truncates_and_caveats() -> None:
-    # Fifteen months, so the seven-month current window reaches back into a
-    # prior-year window that runs off the start of the series. Only three of
-    # those months exist, so *both* sides are cut to those three -- the current
-    # side too, or the comparison would measure seven months against three.
-    facts = yoy_facts(monthly(15))
-    assert facts
-    assert all(CAVEAT_WINDOW_TRUNCATED in fact.caveats for fact in facts)
-
-
-@pytest.mark.parametrize(
-    "mode",
-    [
-        pytest.param(MODE_PERIOD_OVER_PERIOD, id="period-over-period"),
-        pytest.param(MODE_YEAR_OVER_YEAR, id="year-over-year"),
-    ],
-)
-def test_a_complete_window_carries_no_truncation_caveat(mode: str) -> None:
-    # The control the caveat needs to be worth anything. Twenty-six consecutive
-    # months gives both modes a full prior window, so neither is shortened and
-    # neither claims to have been.
-    facts = [
-        fact for fact in facts_of(monthly(26)) if comparison.mode_of(fact) == mode
-    ]
-    assert facts
-    assert all(CAVEAT_WINDOW_TRUNCATED not in fact.caveats for fact in facts)
+def window(package: FactPackage, mode: str):
+    return comparison._window_for(package, mode)
 
 
 def months_apart(current: str, prior: str) -> int:
     current_year, current_month = (int(part) for part in current.split("-"))
     prior_year, prior_month = (int(part) for part in prior.split("-"))
     return (current_year - prior_year) * 12 + (current_month - prior_month)
-
-
-@pytest.mark.parametrize(
-    "package",
-    [
-        pytest.param(monthly(26), id="complete-coverage"),
-        pytest.param(monthly(15), id="a-prior-year-window-running-off-the-start"),
-        pytest.param(monthly_with_gap(26, missing=5), id="a-gap-mid-window"),
-    ],
-)
-def test_every_year_over_year_pair_is_exactly_a_year_apart(package: FactPackage) -> None:
-    # The assertion whose absence let a real bug through. An earlier version
-    # compressed the prior side past a missing month and trimmed the current side
-    # to match, which kept the counts equal and left three of eleven pairs
-    # thirteen months apart -- every label plausible, every sum correct, the
-    # comparison measuring something nobody asked for.
-    window = comparison._window_for(package, MODE_YEAR_OVER_YEAR)
-    assert window is not None
-    assert window.pairs
-    for current, prior in window.pairs:
-        assert months_apart(current.label, prior.label) == 12
-
-
-def test_an_unmatched_period_is_dropped_with_its_pair() -> None:
-    # Not compressed past. The current period whose counterpart is missing leaves
-    # the window entirely, so what remains is still a like-for-like comparison.
-    window = comparison._window_for(
-        monthly_with_gap(26, missing=5), MODE_YEAR_OVER_YEAR
-    )
-    assert window is not None
-    assert window.truncated
-    stated = {current.label for current, _ in window.pairs}
-    assert "2025-06" not in stated
-
-
-def test_the_prior_year_window_is_located_by_label_not_by_offset() -> None:
-    # A month of coverage missing in the middle shifts every bucket after it. A
-    # fixed twelve-bucket step would then compare the wrong months while looking
-    # perfectly healthy; label arithmetic finds fewer buckets and truncates.
-    intact = monthly(26)
-    holed = monthly_with_gap(26, missing=5)
-    assert len(holed.trend().series.buckets) == len(intact.trend().series.buckets) - 1
-    # The intact series has a complete prior-year window and says so. Removing
-    # one month leaves the same current window pointing at a year-ago window
-    # that is now one bucket short -- so it truncates and says *that*. A fixed
-    # twelve-bucket step would have compared a different pair of periods and
-    # reported no truncation at all, which is the silent version of being wrong.
-    assert all(
-        CAVEAT_WINDOW_TRUNCATED not in fact.caveats for fact in yoy_facts(intact)
-    )
-    assert all(CAVEAT_WINDOW_TRUNCATED in fact.caveats for fact in yoy_facts(holed))
-
-
-def test_the_absolute_delta_is_exact_over_a_flat_trend() -> None:
-    # Equal revenue in both windows is a zero change, to the package's own
-    # precision. Computed in Decimal throughout, so it is exactly zero.
-    facts = facts_of(monthly(26))
-    pop = next(
-        fact
-        for fact in facts
-        if fact.metric == METRIC_DELTA_ABSOLUTE
-        and comparison.mode_of(fact) == MODE_PERIOD_OVER_PERIOD
-    )
-    assert Decimal(pop.value) == Decimal(0)
 
 
 def two_settled_days(prior: str, current: str) -> FactPackage:
@@ -275,10 +130,110 @@ def two_settled_days(prior: str, current: str) -> FactPackage:
     )
 
 
+def test_the_trend_granularity_is_what_the_labels_mean() -> None:
+    # The premise every label assertion below rests on.
+    assert monthly(26).trend().series.granularity == GRANULARITY_MONTH
+    assert daily(20).trend().series.granularity == GRANULARITY_DAY
+
+
+def test_both_governed_modes_are_emitted() -> None:
+    # RRA-008 requires period-over-period *and* year-over-year. One unnamed
+    # current/prior pair satisfies neither fully.
+    assert modes_for(monthly(14)) == {MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR}
+
+
+def test_the_two_modes_carry_distinct_stable_identities() -> None:
+    facts = [f for f in facts_of(monthly(14)) if f.metric == METRIC_DELTA_ABSOLUTE]
+    assert len({fact.fact_id for fact in facts}) == 2
+    assert len({fact.citation_id for fact in facts}) == 2
+
+
+def test_identities_are_stable_across_runs_over_the_same_input() -> None:
+    # Stable, not merely unique. RRA-008 requires a rerun to reach the same
+    # identity, which is what makes a citation followable between reports.
+    assert {f.fact_id for f in facts_of(monthly(14))} == {
+        f.fact_id for f in facts_of(monthly(14))
+    }
+
+
+# --- which two periods each mode compares -----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_gap"),
+    [
+        pytest.param(MODE_PERIOD_OVER_PERIOD, 1, id="the-immediately-preceding-period"),
+        pytest.param(MODE_YEAR_OVER_YEAR, 12, id="the-same-period-a-year-earlier"),
+    ],
+)
+def test_each_mode_compares_the_period_its_name_says(mode: str, expected_gap: int) -> None:
+    found = window(monthly(26), mode)
+    assert found is not None
+    assert months_apart(found.current.label, found.prior.label) == expected_gap
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_gap"),
+    [
+        pytest.param(MODE_PERIOD_OVER_PERIOD, 1, id="period-over-period"),
+        pytest.param(MODE_YEAR_OVER_YEAR, 12, id="year-over-year"),
+    ],
+)
+def test_a_gap_in_coverage_does_not_move_which_periods_are_compared(
+    mode: str,
+    expected_gap: int,
+) -> None:
+    # A missing month shifts every bucket after it, so pairing by position would
+    # silently substitute a neighbour: with January, March, April and May in the
+    # series, April's predecessor *by position* is January. Every label still
+    # looks plausible and every sum is correct, which is what makes it dangerous.
+    found = window(monthly(26, skip=5), mode)
+    assert found is not None
+    assert months_apart(found.current.label, found.prior.label) == expected_gap
+
+
+def test_a_missing_counterpart_refuses_rather_than_substituting_a_neighbour() -> None:
+    # The period right before the compared one is absent, so there is nothing to
+    # compare against. It refuses rather than reaching one further back, which is
+    # what positional pairing would have done.
+    package = monthly(26, skip=23)
+    labels = [bucket.label for bucket in package.trend().series.buckets]
+    assert "2025-12" not in labels
+    assert "2026-01" in labels
+    found = window(package, MODE_PERIOD_OVER_PERIOD)
+    assert found is None
+    # The other mode is unaffected: a year before 2026-01 is present.
+    assert window(package, MODE_YEAR_OVER_YEAR) is not None
+
+
+@pytest.mark.parametrize("months", [14, 26, 38, 62])
+def test_the_compared_periods_never_overlap_however_long_the_history(months: int) -> None:
+    # An earlier revision took half the available history as the window, which at
+    # 37 settled months produced an 18-month year-over-year comparison whose two
+    # windows overlapped by six months -- a period compared partly against itself.
+    for mode in (MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR):
+        found = window(monthly(months), mode)
+        assert found is not None
+        assert found.current.label != found.prior.label
+
+
+def test_older_history_does_not_change_which_periods_are_compared() -> None:
+    # The same recent data must give the same answer however much history sits
+    # behind it. A window derived from total coverage failed this: prepending old
+    # rows moved the boundary and changed the reported delta.
+    short = window(monthly(14), MODE_YEAR_OVER_YEAR)
+    long = window(monthly(14 + 24), MODE_YEAR_OVER_YEAR)
+    assert months_apart(short.current.label, short.prior.label) == 12
+    assert months_apart(long.current.label, long.prior.label) == 12
+
+
+# --- what settles, and what refuses -----------------------------------------
+
+
 def test_the_final_period_is_left_out_because_its_completeness_is_unknown() -> None:
-    # The window is built from settled periods only. Three days of data compare
-    # the second against the first; the third is excluded, because nothing in the
-    # series says whether it was cut off partway by wherever the export ended.
+    # Three days of data compare the second against the first; the third is
+    # excluded, because nothing in the series says whether it was cut off partway
+    # by wherever the export ended.
     package = two_settled_days("100.00", "150.00")
     assert len(package.trend().series.buckets) == 3
     absolute = next(
@@ -288,8 +243,6 @@ def test_the_final_period_is_left_out_because_its_completeness_is_unknown() -> N
 
 
 def test_one_settled_period_has_nothing_to_compare() -> None:
-    # Two days leaves one settled period and no prior, so the comparison refuses
-    # rather than comparing a period against a possibly-partial one.
     result = comparison.derive(
         package_for([(date(2026, 1, 1), "100.00"), (date(2026, 1, 2), "150.00")])
     )
@@ -297,10 +250,41 @@ def test_one_settled_period_has_nothing_to_compare() -> None:
     assert result.reason == REASON_PRIOR_WINDOW_ABSENT
 
 
+def test_year_over_year_refuses_alone_when_coverage_is_under_a_year() -> None:
+    # Thirteen months leaves twelve settled, so the latest has a predecessor and
+    # no counterpart a year back. RRA-008 refuses the affected comparison and not
+    # the report, so the other mode survives.
+    package = monthly(13)
+    assert modes_for(package) == {MODE_PERIOD_OVER_PERIOD}
+    assert REASON_PRIOR_WINDOW_ABSENT in {
+        refusal.reason for refusal in comparison.refusals(package)
+    }
+
+
+def test_a_single_mode_refusal_is_not_a_report_refusal() -> None:
+    assert not isinstance(comparison.derive(monthly(13)), RefusedResult)
+
+
+def test_both_modes_refusing_refuses_the_comparison() -> None:
+    result = comparison.derive(monthly(1))
+    assert isinstance(result, RefusedResult)
+    assert result.reason == REASON_PRIOR_WINDOW_ABSENT
+
+
+def test_a_leap_day_has_no_counterpart_and_refuses() -> None:
+    # 29 February a year earlier is not a date. The nearest day is a different
+    # day, and substituting one would state a comparison nobody asked for.
+    assert comparison._year_earlier_label("2024-02-29", GRANULARITY_DAY) is None
+    assert comparison._year_earlier_label("2024-02-28", GRANULARITY_DAY) == "2023-02-28"
+
+
+# --- what each fact says ----------------------------------------------------
+
+
 def test_the_percentage_delta_is_a_fraction_not_a_percentage() -> None:
     # UNIT_RATIO already means a fraction here: gross_margin stores one, and
-    # narrative multiplies every ratio by a hundred to render it. Storing 50
-    # for a rise from 100 to 150 would reach a reader as 5000%.
+    # narrative multiplies every ratio by a hundred to render it. Storing 50 for
+    # a rise from 100 to 150 would reach a reader as 5000%.
     percent = next(
         fact
         for fact in facts_of(two_settled_days("100.00", "150.00"))
@@ -308,6 +292,15 @@ def test_the_percentage_delta_is_a_fraction_not_a_percentage() -> None:
     )
     assert percent.unit_kind == UNIT_RATIO
     assert Decimal(percent.value) == Decimal("0.5")
+
+
+def test_the_absolute_delta_is_monetary() -> None:
+    absolute = next(
+        fact
+        for fact in facts_of(two_settled_days("100.00", "150.00"))
+        if fact.metric == METRIC_DELTA_ABSOLUTE
+    )
+    assert absolute.unit_kind == UNIT_MONETARY
 
 
 @pytest.mark.parametrize(
@@ -329,15 +322,30 @@ def test_a_non_positive_base_refuses_the_percentage_and_records_it(
     metrics = {fact.metric for fact in facts_of(package)}
     assert METRIC_DELTA_ABSOLUTE in metrics
     assert METRIC_DELTA_PERCENT not in metrics
-    assert reason in {refusal.reason for refusal in comparison.refusals(package)}
-    assert any(
-        METRIC_DELTA_PERCENT in refusal.metric
-        for refusal in comparison.refusals(package)
-    )
+    recorded = comparison.refusals(package)
+    assert reason in {refusal.reason for refusal in recorded}
+    assert any(METRIC_DELTA_PERCENT in refusal.metric for refusal in recorded)
+
+
+def test_every_fact_declares_the_governed_measures_it_came_from() -> None:
+    # `Fact.inputs` holds semantic measures. A formula version here would
+    # mislabel a version string as provenance and leave the fact declaring no
+    # measure at all. The date is an input too: it decides which period a row
+    # lands in, and so which two periods are compared.
+    for fact in facts_of(monthly(14)):
+        assert fact.inputs == (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE)
+
+
+def test_no_fact_claims_a_caveat_this_module_cannot_reach() -> None:
+    # A one-period window either has its counterpart or refuses, so there is no
+    # shortened window to disclose -- and RRA-008's day-count truncation is not
+    # derivable from a period series at all. A governed caveat with no reachable
+    # trigger reads as a guarantee that something is being watched.
+    assert all(fact.caveats == () for fact in facts_of(monthly(14)))
 
 
 @pytest.mark.parametrize("metric", [METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT])
 def test_every_emitted_fact_names_a_governed_mode(metric: str) -> None:
-    facts = [fact for fact in facts_of(monthly(26)) if fact.metric == metric]
+    facts = [fact for fact in facts_of(monthly(14)) if fact.metric == metric]
     assert facts
     assert all(comparison.mode_of(fact) is not None for fact in facts)

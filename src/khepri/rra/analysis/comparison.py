@@ -12,18 +12,27 @@ not the report", so one mode refusing must leave the other standing: `derive`
 returns a `RefusedResult` only when *both* refuse, and `refusals` carries every
 refusal beside whatever facts survived -- per mode, and per metric within a mode.
 
-**A window is a set of matched pairs, not two independent runs.** Each current
-period is paired with the one it is compared against, and a period whose
-counterpart is missing takes its pair out of the window rather than shifting the
-alignment. Trimming the two sides independently to a common length is how a
-year-over-year comparison silently ends up measuring thirteen months against
-twelve -- the labels still look plausible and every arithmetic step is correct.
+**One period against one period, because no window length is governed.**
+`RRA-008` says "a prior window of equal length" and never says what that length
+is, and neither `RRA-004` nor the fact package supplies one. So the window is a
+single period: period-over-period compares a period with the one before it, and
+year-over-year with the same period a year earlier. That is what those two terms
+mean, and it is the only reading that invents nothing.
 
-**The prior-year period is found by label, never by offset.** `period_label`
-gives `YYYY-MM` at month granularity, so a year earlier is that label with its
-year decremented. Stepping back a fixed twelve buckets would compare the wrong
-months the moment a month of coverage is missing, and a comparison that quietly
-changes which period it means is worse than one that refuses.
+An earlier revision took half the available history as the window, which was
+wrong three ways. It invented a boundary; it made the answer depend on how much
+*old* data happened to be present, so prepending history changed the reported
+delta while recent data was identical; and at 37 settled months it produced an
+18-month year-over-year comparison whose two windows overlapped by six months --
+a period compared partly against itself.
+
+**Both counterparts are found by label, never by position.** `period_label` keys
+each bucket by the period it covers, so the preceding period and the period a year
+earlier are both located by arithmetic on that label. Stepping back a fixed
+number of buckets compares whatever happens to sit there: with January, March,
+April and May in the series, April's predecessor by position is January. The
+labels still look plausible and every sum is correct, which is what makes it
+dangerous. A missing counterpart refuses rather than substituting a neighbour.
 
 **The final period is excluded, because its completeness is unknowable here.**
 `RRA-008` asks that both windows be truncated "to the same day count when the
@@ -40,18 +49,26 @@ intent, and the alternatives were worse: including the final bucket compares a
 possibly-partial period against a whole one and says nothing, and refusing
 whenever a final period *might* be partial refuses always, because completeness
 is equally undetectable in both directions. The cost is that the comparison lags
-by one period. An `RRA-004` aggregate carrying period completeness would remove
-the need for this, and belongs in the same amendment as the concentration curve.
+by one period.
+
+**No truncation caveat, because nothing here can truncate.** A one-period window
+either has its counterpart or does not, so there is no shortened window to
+disclose, and the day-count truncation `RRA-008` describes is not derivable at
+all. A governed caveat with no reachable trigger is worse than an absent one --
+it reads as a guarantee that something is being watched. Two `RRA-004` aggregates
+would change this: a governed window length, and per-period completeness. Both
+belong in the same amendment as the concentration curve and transaction
+membership.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 
 from khepri.rra.aggregates import GRANULARITY_MONTH, Bucket
 from khepri.rra.facts import (
-    FORMULA_VERSION,
     RATIO_PRECISION,
     REASON_INPUT_UNAVAILABLE,
     REASON_ZERO_DENOMINATOR,
@@ -62,6 +79,7 @@ from khepri.rra.facts import (
     RefusedResult,
     fact_identity,
 )
+from khepri.rra.mapping import SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_DATE
 
 MODE_PERIOD_OVER_PERIOD = "period_over_period"
 MODE_YEAR_OVER_YEAR = "year_over_year"
@@ -70,9 +88,16 @@ GOVERNED_MODES = (MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR)
 METRIC_DELTA_ABSOLUTE = "revenue_delta_absolute"
 METRIC_DELTA_PERCENT = "revenue_delta_percent"
 
-CAVEAT_WINDOW_TRUNCATED = "window_truncated"
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
 REASON_NEGATIVE_BASE = "negative_base"
+
+# What these facts are derived from, named in the governed mapping vocabulary.
+# `Fact.inputs` elsewhere holds semantic measures -- the formula version is
+# recorded separately by the package, and putting one here would mislabel a
+# version string as source provenance and leave the facts declaring no measure.
+# The date is an input as much as the revenue: it decides which period a row
+# lands in, and therefore which two periods are compared.
+_INPUTS = (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE)
 
 # Which unit each governed metric is stated in. A table rather than an argument,
 # so a metric cannot be emitted in the wrong unit by a caller passing one.
@@ -90,34 +115,25 @@ _UNITS = {
 
 @dataclass(frozen=True, slots=True)
 class _Window:
-    """Matched period pairs, current beside the period each is compared against.
+    """One settled period beside the period it is compared against."""
 
-    Pairs rather than two runs, so the alignment cannot drift. `truncated` says a
-    current period was dropped for want of its counterpart, which is a shorter
-    window and not a rescaled one.
-    """
-
-    pairs: tuple[tuple[Bucket, Bucket], ...]
-    truncated: bool
+    current: Bucket
+    prior: Bucket
 
     def totals(self) -> tuple[Decimal | None, Decimal | None]:
-        return (
-            _total(pair[0] for pair in self.pairs),
-            _total(pair[1] for pair in self.pairs),
-        )
+        return (self.current.value, self.prior.value)
 
 
 @dataclass(frozen=True, slots=True)
 class _Derivation:
-    """What every fact of one mode shares: its mode, its caveats, its precision.
+    """What every fact of one mode shares: its mode and its precision.
 
     Carried as one value so building a fact takes three arguments rather than
-    six, and so two facts of the same mode cannot disagree about which mode they
-    came from or whether their window was shortened.
+    five, and so two facts of the same mode cannot disagree about which mode
+    produced them.
     """
 
     mode: str
-    caveats: tuple[str, ...]
     monetary_precision: int
 
     def precision_for(self, unit_kind: str) -> int:
@@ -192,11 +208,7 @@ def _compare(window: _Window, package: FactPackage, mode: str) -> _Outcome:
     current, prior = window.totals()
     if current is None or prior is None:
         return _refused(mode, METRIC_DELTA_ABSOLUTE, REASON_INPUT_UNAVAILABLE)
-    derivation = _Derivation(
-        mode=mode,
-        caveats=(CAVEAT_WINDOW_TRUNCATED,) if window.truncated else (),
-        monetary_precision=package.monetary_precision,
-    )
+    derivation = _Derivation(mode=mode, monetary_precision=package.monetary_precision)
     return _with_percentage(derivation, current - prior, prior)
 
 
@@ -232,24 +244,36 @@ def _with_percentage(
 def _refused(mode: str, metric: str, reason: str) -> _Outcome:
     return _Outcome(
         facts=(),
-        refusals=(
-            RefusedResult(metric=_scoped_metric(metric, mode), reason=reason),
-        ),
+        refusals=(RefusedResult(metric=_scoped_metric(metric, mode), reason=reason),),
     )
 
 
 def _window_for(package: FactPackage, mode: str) -> _Window | None:
+    """The last settled period, beside the period this mode compares it against.
+
+    The counterpart is looked up by label. A missing one refuses rather than
+    substituting whichever bucket happens to be adjacent in the series.
+    """
     trend = package.trend()
     if trend is None:
         return None
     buckets = _settled(trend.series.buckets)
-    length = len(buckets) // 2
-    if length < 1:
+    if not buckets:
         return None
-    current = buckets[-length:]
-    if mode == MODE_PERIOD_OVER_PERIOD:
-        return _paired(current, buckets[-2 * length : -length])
-    return _year_earlier(current, buckets, trend.series.granularity)
+    return _against_counterpart(buckets, trend.series.granularity, mode)
+
+
+def _against_counterpart(
+    buckets: tuple[Bucket, ...],
+    granularity: str,
+    mode: str,
+) -> _Window | None:
+    current = buckets[-1]
+    label = _counterpart_label(current.label, granularity, mode)
+    prior = {bucket.label: bucket for bucket in buckets}.get(label)
+    if prior is None:
+        return None
+    return _Window(current=current, prior=prior)
 
 
 def _settled(buckets: tuple[Bucket, ...]) -> tuple[Bucket, ...]:
@@ -263,53 +287,55 @@ def _settled(buckets: tuple[Bucket, ...]) -> tuple[Bucket, ...]:
     return buckets[:-1]
 
 
-def _paired(
-    current: tuple[Bucket, ...],
-    prior: tuple[Bucket, ...],
-) -> _Window | None:
-    """Pair the two runs positionally, oldest aligned with oldest."""
-    if len(prior) != len(current):
-        return None
-    return _Window(pairs=tuple(zip(current, prior, strict=True)), truncated=False)
+def _counterpart_label(label: str, granularity: str, mode: str) -> str | None:
+    if mode == MODE_PERIOD_OVER_PERIOD:
+        return _preceding_label(label, granularity)
+    return _year_earlier_label(label, granularity)
 
 
-def _year_earlier(
-    current: tuple[Bucket, ...],
-    buckets: tuple[Bucket, ...],
-    granularity: str,
-) -> _Window | None:
-    """Pair each current period with the same period one year before it.
+def _preceding_label(label: str, granularity: str) -> str | None:
+    """The period immediately before this one, at its own granularity."""
+    if granularity == GRANULARITY_MONTH:
+        return _month_label(label, months_earlier=1)
+    return _day_label(label, days_earlier=1)
 
-    A current period whose counterpart is missing is dropped *with* its pair, so
-    every remaining pair is exactly a year apart. Compressing the prior side and
-    trimming the current side to match would keep the count equal and the
-    alignment wrong.
+
+def _year_earlier_label(label: str, granularity: str) -> str | None:
+    """The same period one year earlier.
+
+    A year is expressed by decrementing the year field rather than subtracting a
+    number of periods, because twelve months is a year and 365 days is not always
+    one. The month form has no day to be invalid; the day form is parsed, so 29
+    February simply finds no counterpart and refuses.
     """
-    known = {bucket.label: bucket for bucket in buckets}
-    pairs = tuple(
-        (bucket, known[label])
-        for bucket in current
-        if (label := _label_year_earlier(bucket.label, granularity)) in known
-    )
-    if not pairs:
-        return None
-    return _Window(pairs=pairs, truncated=len(pairs) < len(current))
+    if granularity == GRANULARITY_MONTH:
+        return _month_label(label, months_earlier=12)
+    return _day_label(label, days_earlier=None)
 
 
-def _label_year_earlier(label: str, granularity: str) -> str | None:
-    """The same period one year earlier, in the label form its granularity uses.
+def _month_label(label: str, *, months_earlier: int) -> str | None:
+    parts = label.split("-")
+    if len(parts) != 2:
+        return None
+    index = int(parts[0]) * 12 + int(parts[1]) - 1 - months_earlier
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"
 
-    Decrementing the year text rather than doing date arithmetic, because the
-    label *is* the governed identity of a period -- `build_series` keys its
-    buckets by it -- and reconstructing a date to re-derive a label would be a
-    second way of naming the same thing.
-    """
-    year, _, rest = label.partition("-")
-    if not rest:
+
+def _day_label(label: str, *, days_earlier: int | None) -> str | None:
+    """One day earlier, or the same day a year earlier when `days_earlier` is None."""
+    try:
+        moment = date.fromisoformat(label)
+    except ValueError:
         return None
-    if granularity == GRANULARITY_MONTH and len(rest) != 2:
+    if days_earlier is not None:
+        return (moment - timedelta(days=days_earlier)).isoformat()
+    try:
+        return moment.replace(year=moment.year - 1).isoformat()
+    except ValueError:
+        # 29 February has no counterpart in a non-leap year. Refusing is right:
+        # the nearest day is a different day, and substituting one would state a
+        # comparison nobody asked for.
         return None
-    return f"{int(year) - 1:04d}-{rest}"
 
 
 def _absent_reason(package: FactPackage) -> str:
@@ -329,15 +355,10 @@ def _fact(derivation: _Derivation, metric: str, value: Decimal) -> Fact:
         value=str(value.quantize(Decimal(1).scaleb(-precision))),
         precision=precision,
         unit_kind=unit_kind,
-        inputs=(FORMULA_VERSION,),
-        caveats=derivation.caveats,
+        inputs=_INPUTS,
+        caveats=(),
     )
 
 
 def _scoped_metric(metric: str, mode: str) -> str:
     return f"{metric}.{mode}"
-
-
-def _total(buckets) -> Decimal | None:
-    present = [bucket.value for bucket in buckets if bucket.value is not None]
-    return sum(present, Decimal(0)) if present else None
