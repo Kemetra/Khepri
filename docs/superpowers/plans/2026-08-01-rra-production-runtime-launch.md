@@ -220,8 +220,8 @@ Expected: all PASS. If the CDK/jsii process is sandbox-blocked, rerun the same c
 
 Run:
 
-- `git -c safe.directory=C:/Users/user/Documents/GitHub/Khepri diff --check`
-- `git -c safe.directory=C:/Users/user/Documents/GitHub/Khepri status --short`
+- `git -c safe.directory=C:/Users/Shaaban/Documents/GitHub/Khepri diff --check`
+- `git -c safe.directory=C:/Users/Shaaban/Documents/GitHub/Khepri status --short`
 
 Expected: no whitespace errors; only the local-contract correction, this plan, and the runtime-launch slice are modified.
 

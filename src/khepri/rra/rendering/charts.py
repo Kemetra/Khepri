@@ -24,9 +24,8 @@ the guarantee off the environment.
 
 **It invents no prose either.** `title_code` and `description_code` are governed
 codes, for the same reason the coordinates are not markup: the wording a reader sees
-belongs in the per-language tables the surfaces already keep for section headings and
-refusal reasons. Composing a sentence here would put untranslated English on an
-Arabic page.
+lives in `rendering.wording`, the one per-language table every surface reads.
+Composing a sentence here would put untranslated English on an Arabic page.
 
 They carry the `_code` suffix so that inserting one straight into a `<title>` cannot
 happen quietly. The environment uses `StrictUndefined`, so a template reaching for
@@ -129,9 +128,9 @@ class ChartMark:
 class ChartView:
     """What a macro needs to draw one chart, and nothing it could misread.
 
-    `title_code` and `description_code` are governed codes a surface looks up in its
-    per-language chrome, exactly as it already does for section headings and refusal
-    reasons. They are named `_code` so that a template inserting one directly fails
+    `title_code` and `description_code` are governed codes a surface resolves through
+    `rendering.wording`, exactly as it already does for a mark's category. They are
+    named `_code` so that a template inserting one directly fails
     rather than printing an identifier at a reader: the environment uses
     `StrictUndefined`, so `{{ view.title }}` raises instead of rendering nothing.
 

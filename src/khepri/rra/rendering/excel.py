@@ -10,8 +10,8 @@ The first is formula injection. Excel treats a cell whose text begins `=`, `+`,
 label is customer-derived; `profiling._sanitize` already removes those prefixes,
 so a fact package cannot carry one. That is not a defence a renderer may lean
 on: it would put a live `=HYPERLINK(...)` in a customer's workbook one upstream
-change later. So every cell here is written through `write_string`, which never
-interprets, and the workbook additionally disables formula, URL, and number
+change later. So every cell holding text is written through `write_string`, which
+never interprets, and the workbook additionally disables formula, URL, and number
 coercion for the generic write path. A hostile label reaches the cell verbatim
 and inert -- verbatim because editing it would make this module a thing that
 decides content, and `bundle.py` exists to keep that decision in one place.
@@ -22,13 +22,17 @@ would look like diligence. There is no arithmetic in this module. Every figure
 is the exact string the fact package produced, and the only strings a cell may
 hold besides bundle content are the governed labels in `GOVERNED_LABELS`.
 
-**Why no cell is a number.** Excel stores every numeric cell as an IEEE 754
+**Why no figure is a number.** Excel stores every numeric cell as an IEEE 754
 double, and DEC-005 forbids binary floating point as an authoritative financial
 fact. Writing a governed total as a number would therefore round-trip money
 through exactly the representation the decision rules out. The figures are
 written as the decimal strings the package computed them to, which is also what
 `bundle.reconcile` compares: `500.0` and `500.00` are the same number and a
 different statement about precision.
+
+No *figure* is a number, and the numeric cells that do exist are not figures. There
+are as many of them as there are plotted values, in both languages, and exactly one
+write path puts them there: see the charts paragraph below and `_write_chart_value`.
 
 **One worksheet per governed analysis, per language.** The workbook used to run all
 five sections together in one grid. That was this surface disagreeing with the other
@@ -42,7 +46,7 @@ A sheet's *name* is not translated. It is an address: a reader following a refer
 or any tool reading the file, needs the same name in both workbooks. The language lives
 inside the sheet.
 
-**Charts, and the one numeric cell in this module.** This paragraph used to argue
+**Charts, and the one numeric write path in this module.** This paragraph used to argue
 charts out, on the grounds that an XlsxWriter chart series addresses numeric cells and
 Excel stores every numeric cell as an IEEE 754 double -- which `KHEPRI-DEC-005` forbids
 as an authoritative financial fact. That reasoning was sound and it is why the
@@ -276,8 +280,8 @@ GOVERNED_LABELS = frozenset(
     # Chart categories. A bucket's category is the customer's own value and is bundle
     # content; a scalar's is a governed metric or mode name, which is this renderer
     # putting text in a cell and therefore belongs in this set. The wording is the one
-    # `chart_labels` also gives the page, so the axis of the native chart and the axis
-    # of the SVG cannot read differently.
+    # `wording` also gives the page, so the axis of the native chart and the axis of
+    # the SVG cannot read differently.
     | {text for wording in LABEL_WORDING.values() for text in wording.values()}
 )
 

@@ -8,6 +8,33 @@
 
 **Tech Stack:** Python 3.13, uv, Jinja2 (autoescaped), Playwright + pinned Chromium, XlsxWriter, pytest, ruff.
 
+## Where the files actually landed
+
+**This plan is complete (13 of 13 tasks, PRs #74–#91). The test paths in the steps below were never
+created.** The repository keeps a flat `tests/` directory named by governed specification, not the
+`tests/rra/...` tree these steps predicted, so a `Run:` or `git add` line below names a path that
+does not exist. The steps are left as they were authored — they are the record of what was planned —
+and this table is what to follow instead.
+
+| Named in the steps below | Actual file |
+|---|---|
+| `tests/rra/test_bundle_sections.py` | `tests/test_rra006_bundle_sections.py` |
+| `tests/rra/test_bundle_section_caveats.py` | `tests/test_rra006_bundle_section_caveats.py` |
+| `tests/rra/test_bundle_section_reconcile.py` | `tests/test_rra006_bundle_section_reconcile.py` |
+| `tests/rra/analysis/test_comparison.py` | `tests/test_rra008_comparison.py` |
+| `tests/rra/analysis/test_concentration.py` | `tests/test_rra008_concentration.py` |
+| `tests/rra/analysis/test_growth.py` | `tests/test_rra008_growth.py` |
+| `tests/rra/analysis/test_basket.py` | `tests/test_rra008_basket.py` |
+| `tests/rra/rendering/test_charts.py` | `tests/test_rra006_charts.py` |
+| `tests/rra/rendering/test_html_sections.py` | `tests/test_rra006_html_sections.py` |
+| `tests/rra/rendering/test_pdf_sections.py` | `tests/test_rra006_pdf_sections.py` |
+| `tests/rra/rendering/test_excel_sections.py` | `tests/test_rra006_excel_sections.py`, plus `tests/test_rra006_excel_charts.py` for slice 13b |
+| `tests/rra/factories.py` | No shared factory module exists. Each test module builds its own package with a local `package()` helper, and the workbook reader is `tests/rra_workbooks.py`. |
+
+Two files the plan does not name also exist: `tests/test_rra008_assembly.py`, which holds the seam
+placing the four families into bundle sections, and `src/khepri/rra/analysis/windows.py`, the governed
+window logic that comparison and growth both read so the two split the same delta.
+
 ## Slices
 
 Eight independently verifiable slices, each merged on its own. The four analysis families stay four
@@ -164,7 +191,7 @@ Expected: both PASS. The package validator sees artifact transitions; the delega
 The classifier refuses to let the agent commit an approval attributed to itself, and will not be moved by a spoken approval or a settings rule. Do not hunt for a phrasing that slips past it. Write the message to a file and hand over one line:
 
 ```
-! git -C C:/Users/user/Documents/GitHub/Khepri commit --no-gpg-sign -F <msgfile>
+! git -C C:/Users/Shaaban/Documents/GitHub/Khepri commit --no-gpg-sign -F <msgfile>
 ```
 
 ---

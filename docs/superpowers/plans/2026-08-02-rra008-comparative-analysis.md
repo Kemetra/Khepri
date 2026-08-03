@@ -12,6 +12,25 @@ governed fact package as deterministic derived facts over the `RRA-004` aggregat
 named active authority and the registry entry reads `approved`.** Implementing ahead of that is the
 failure `AGENTS.md` forbids, and a passing gate is not approval.
 
+## Where the files actually landed
+
+**This plan is complete. The module and test names in the steps below were not the ones used.** The
+four analyses became a package rather than four sibling modules, and two were renamed for what they
+compute. The steps are left as authored; follow this table instead.
+
+| Named in the steps below | Actual file |
+|---|---|
+| `src/khepri/rra/analysis_periods.py` | `src/khepri/rra/analysis/comparison.py` |
+| `src/khepri/rra/analysis_concentration.py` | `src/khepri/rra/analysis/concentration.py` |
+| `src/khepri/rra/analysis_decomposition.py` | `src/khepri/rra/analysis/growth.py` |
+| `src/khepri/rra/analysis_basket.py` | `src/khepri/rra/analysis/basket.py` |
+| `tests/test_rra008_periods.py` | `tests/test_rra008_comparison.py` |
+| `tests/test_rra008_decomposition.py` | `tests/test_rra008_growth.py` |
+| `tests/test_rra008_package_integration.py` | `tests/test_rra008_assembly.py` |
+
+`src/khepri/rra/analysis/windows.py` is a fifth module this plan does not name: comparison and growth
+both read it, so the two families split the same delta rather than each deciding what a period is.
+
 **Architecture:** One module per analysis, each exporting immutable result types with an
 `as_document(precision)` method in the style of `Bucket`, `Series`, and `Comparison` in
 `aggregates.py`. Nothing is added to `facts.py`, which is already 948 lines against the 800-line
