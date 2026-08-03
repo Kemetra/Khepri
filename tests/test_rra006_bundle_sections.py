@@ -345,18 +345,24 @@ def test_the_overview_states_no_governed_refusal_reason() -> None:
 
 
 def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
-    # Taken from RRA-008's per-family requirements, not composed here.
-    # `aggregate_unavailable` is the exception, and is not from RRA-008: the
-    # merged plan introduces it for the pending RRA-004 amendment, which gates
-    # concentration entirely and basket's attach rate.
+    # Taken from RRA-008's per-family requirements, not composed here. The rows
+    # that are *not* from RRA-008 all have the same authority: the family can
+    # reach them. A section restricted to the specification's wording would have
+    # to raise on a valid package, or explain a refusal with a cause that is not
+    # the one that occurred.
     #
-    # Comparison's second reason is the other exception, and comes from RRA-004
-    # rather than RRA-008: `comparison.derive` refuses with the reason its modes
-    # actually gave, and a compared period holding only null revenue gives the
-    # fact package's `required_input_unavailable`. Its authority is that the
-    # family can reach it -- a section restricted to `prior_window_absent` would
-    # have to raise on a valid package or call an absent measure an absent
-    # window.
+    # `aggregate_unavailable` was introduced by the merged plan for the RRA-004
+    # amendment. APP-014 has since recorded it, and `concentration.derive` now
+    # uses the reason for a dimension that exists while no curve over it does.
+    #
+    # Comparison's `required_input_unavailable` comes from RRA-004: `derive`
+    # refuses with the reason its modes actually gave, and a compared period
+    # holding only null revenue gives the fact package's.
+    #
+    # Growth carries four because it decomposes the window the comparison states
+    # and therefore fails the same two ways as well as its own: a dataset short
+    # of two settled periods has no change to split, and an absent revenue trend
+    # has nothing to split at all. Neither is "units absent".
     assert SECTION_REASONS[SECTION_COMPARISON] == frozenset(
         {"prior_window_absent", "required_input_unavailable"}
     )
@@ -364,7 +370,12 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
         {"distinct_set_uncomputable", "aggregate_unavailable"}
     )
     assert SECTION_REASONS[SECTION_GROWTH] == frozenset(
-        {"units_absent", "decomposition_not_additive"}
+        {
+            "units_absent",
+            "decomposition_not_additive",
+            "prior_window_absent",
+            "required_input_unavailable",
+        }
     )
     assert SECTION_REASONS[SECTION_BASKET] == frozenset(
         {"transaction_identifier_absent"}

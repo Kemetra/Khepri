@@ -17,7 +17,7 @@ import pytest
 from khepri.rra import facts
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import GRANULARITY_DAY, GRANULARITY_MONTH
-from khepri.rra.analysis import comparison
+from khepri.rra.analysis import comparison, windows
 from khepri.rra.analysis.comparison import (
     METRIC_DELTA_ABSOLUTE,
     METRIC_DELTA_PERCENT,
@@ -398,10 +398,8 @@ def test_a_counterpart_that_is_not_a_date_refuses(label: str, shift: str) -> Non
     # exceptions: 29 February a year earlier is a ValueError, and the day before
     # 0001-01-01 is an OverflowError, which is not a ValueError. Guarding only
     # the first let the second escape both entry points as an abort.
-    if shift == "year":
-        assert comparison._year_earlier_label(label, GRANULARITY_DAY) is None
-    else:
-        assert comparison._preceding_label(label, GRANULARITY_DAY) is None
+    mode = MODE_YEAR_OVER_YEAR if shift == "year" else MODE_PERIOD_OVER_PERIOD
+    assert windows.counterpart_label(label, GRANULARITY_DAY, mode) is None
 
 
 def test_an_unrepresentable_predecessor_refuses_instead_of_aborting() -> None:
@@ -421,8 +419,14 @@ def test_an_unrepresentable_predecessor_refuses_instead_of_aborting() -> None:
 def test_a_leap_day_has_no_counterpart_and_refuses() -> None:
     # 29 February a year earlier is not a date. The nearest day is a different
     # day, and substituting one would state a comparison nobody asked for.
-    assert comparison._year_earlier_label("2024-02-29", GRANULARITY_DAY) is None
-    assert comparison._year_earlier_label("2024-02-28", GRANULARITY_DAY) == "2023-02-28"
+    assert (
+        windows.counterpart_label("2024-02-29", GRANULARITY_DAY, MODE_YEAR_OVER_YEAR)
+        is None
+    )
+    assert (
+        windows.counterpart_label("2024-02-28", GRANULARITY_DAY, MODE_YEAR_OVER_YEAR)
+        == "2023-02-28"
+    )
 
 
 # --- what each fact says ----------------------------------------------------
