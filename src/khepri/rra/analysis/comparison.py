@@ -92,6 +92,21 @@ from khepri.rra.facts import (
 )
 from khepri.rra.mapping import SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_DATE
 
+# This family's own formula version, pinned separately from the package's.
+#
+# `fact_identity` defaults to the `RRA-004` formula version, which would name
+# these facts under a version that says nothing about how they were derived. A
+# correction to the comparison alone would then reuse the same fact and citation
+# identifiers for a materially different number -- and a stored citation would
+# point at an answer that had changed underneath it.
+#
+# This is not hypothetical for this module. Within one pull request the derivation
+# moved from half-history windows to one-period windows and from a percentage to a
+# fraction; under the package's version every one of those produced identical
+# identifiers. `RRA-008` also requires the formula version recorded as provenance,
+# and a version that belongs to a different specification does not record it.
+COMPARISON_FORMULA_VERSION = "rra008.comparison.v1"
+
 MODE_PERIOD_OVER_PERIOD = "period_over_period"
 MODE_YEAR_OVER_YEAR = "year_over_year"
 GOVERNED_MODES = (MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR)
@@ -230,7 +245,12 @@ def mode_of(fact: Fact) -> str | None:
         (
             mode
             for mode in GOVERNED_MODES
-            if fact_identity(metric=fact.metric, scope=(mode,))[0] == fact.fact_id
+            if fact_identity(
+                metric=fact.metric,
+                scope=(mode,),
+                formula_version=COMPARISON_FORMULA_VERSION,
+            )[0]
+            == fact.fact_id
         ),
         None,
     )
@@ -404,7 +424,11 @@ def _absent_reason(package: FactPackage) -> str:
 def _fact(derivation: _Derivation, metric: str, value: Decimal) -> Fact:
     unit_kind = _UNITS[metric]
     precision = derivation.precision_for(unit_kind)
-    fact_id, citation_id = fact_identity(metric=metric, scope=(derivation.mode,))
+    fact_id, citation_id = fact_identity(
+        metric=metric,
+        scope=(derivation.mode,),
+        formula_version=COMPARISON_FORMULA_VERSION,
+    )
     return Fact(
         fact_id=fact_id,
         citation_id=citation_id,

@@ -152,6 +152,31 @@ def test_the_two_modes_carry_distinct_stable_identities() -> None:
     assert len({fact.citation_id for fact in facts}) == 2
 
 
+def test_facts_are_named_under_this_familys_own_formula_version() -> None:
+    # Not the package's. A correction to the comparison alone would otherwise
+    # reuse the same fact and citation identifiers for a materially different
+    # number, and a stored citation would point at an answer that had changed
+    # underneath it. Within this pull request the derivation moved from
+    # half-history windows to one-period windows and from a percentage to a
+    # fraction -- under the package's version every one produced identical ids.
+    assert comparison.COMPARISON_FORMULA_VERSION != facts.FORMULA_VERSION
+    absolute = next(
+        fact for fact in facts_of(monthly(14)) if fact.metric == METRIC_DELTA_ABSOLUTE
+    )
+    expected, _ = facts.fact_identity(
+        metric=METRIC_DELTA_ABSOLUTE,
+        scope=(comparison.mode_of(absolute),),
+        formula_version=comparison.COMPARISON_FORMULA_VERSION,
+    )
+    assert absolute.fact_id == expected
+    under_package, _ = facts.fact_identity(
+        metric=METRIC_DELTA_ABSOLUTE,
+        scope=(comparison.mode_of(absolute),),
+        formula_version=facts.FORMULA_VERSION,
+    )
+    assert absolute.fact_id != under_package
+
+
 def test_identities_are_stable_across_runs_over_the_same_input() -> None:
     # Stable, not merely unique. RRA-008 requires a rerun to reach the same
     # identity, which is what makes a citation followable between reports.
