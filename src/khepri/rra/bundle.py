@@ -99,6 +99,13 @@ LANGUAGE_DIRECTION = {LANGUAGE_ARABIC: DIRECTION_RTL, LANGUAGE_ENGLISH: DIRECTIO
 KIND_VALUE = "value"
 KIND_ROWS = "rows"
 
+# Figure labels that are governed vocabulary rather than customer text. A bucket
+# label is a product or branch name and is final; a comparison mode is an internal
+# identifier, and printing `period_over_period` on an Arabic axis is the same class
+# of failure as printing a metric code there. `rendering.charts` asks this set which
+# kind a label is, because this module owns the vocabulary and that one imports it.
+GOVERNED_FIGURE_LABELS = frozenset(comparison.GOVERNED_MODES)
+
 # Whether the report carries narrative, and if not, why. RRA-006 requires the
 # reader be told which, so it is a governed value rather than a sentence
 # somebody remembered to write.
@@ -137,6 +144,21 @@ ORDERED_SECTIONS = (
 # a disclosure -- the section would simply look sparse, and a reader could not tell
 # "there was nothing to show" from "we could not show it". This carries that.
 CAVEAT_CHART_NOT_DRAWN = "chart_not_drawn"
+
+# How many points of a concentration curve reach a surface, and why there is a limit
+# at all. The ranked set is the *full* distinct-value set, which admissibility bounds
+# only by the upload size: a 50 MB file can carry hundreds of thousands of distinct
+# products. Every point becomes two figures, and at roughly half a million ranks each
+# language's worksheet passes Excel's 1,048,576-row limit -- where `_write_row`
+# ignores XlsxWriter's failed-write return while the surface claim still lists every
+# figure, so a workbook missing its tail reconciles perfectly.
+#
+# So the curve is sampled at evenly spaced ranks, always including the last, and the
+# sampling is disclosed. Every published share is a measured one; what is bounded is
+# how many of them are published, exactly as `MAX_COMPARISON_BUCKETS` bounds a
+# comparison and says so.
+MAX_CURVE_POINTS = 100
+CAVEAT_CURVE_SAMPLED = "curve_points_sampled"
 
 SECTION_PRESENT = "present"
 SECTION_REFUSED = "refused"
@@ -1482,14 +1504,20 @@ def _analysed(package: FactPackage) -> _Analysed:
     caveats: list[StatedCaveat] = []
     for section_id, family in _FAMILIES.items():
         stated = family.derive(package)
+        refused = family.refusals(package)
         if isinstance(stated, RefusedResult):
+            # The section's own reason is the family's summary, which names one cause.
+            # Two modes can refuse for different reasons, and `refusals` is the
+            # complete per-mode record -- so the rest still travels as scoped
+            # disclosures rather than being dropped with the `continue`.
             refusals[section_id] = stated.reason
+            caveats.extend(_scoped(section_id, (), refused))
             continue
         figures.extend(
             _analysis_figure(fact, section_id, family.names(fact, package))
             for fact in stated
         )
-        caveats.extend(_scoped(section_id, stated, family.refusals(package)))
+        caveats.extend(_scoped(section_id, stated, refused))
     figures.extend(_curve_figures(package))
     return _Analysed(
         figures=tuple(figures),
@@ -1512,10 +1540,17 @@ def _scoped(
     the section, which is the governed way to carry a qualification into both
     languages.
 
+    A refusal keeps its result identity. `RefusedResult.metric` is already
+    mode-qualified where a family has modes -- `revenue_delta_percent.year_over_year`
+    -- and reducing it to the bare reason collapses two different refused results
+    that failed for the same cause, leaving a reader told that something was refused
+    and not which. So the code is `<result>:<reason>`, which a surface renders
+    verbatim like every other governed code.
+
     Deduplicated and sorted, so a rerun produces the same document.
     """
     codes = {code for fact in stated for code in fact.caveats}
-    codes |= {refusal.reason for refusal in refused}
+    codes |= {f"{refusal.metric}:{refusal.reason}" for refusal in refused}
     return tuple(
         StatedCaveat(code=code, section=section_id) for code in sorted(codes)
     )
@@ -1533,11 +1568,27 @@ def _curve_figures(package: FactPackage) -> tuple[CitedFigure, ...]:
     if series is None:
         return ()
     document = series.as_document()
+    points = _sampled(list(document["points"]))
     return tuple(
         figure
-        for position, point in enumerate(document["points"])
+        for position, point in enumerate(points)
         for figure in _bucket(document, point, position, SECTION_CONCENTRATION)
     )
+
+
+def _sampled(points: list[object]) -> list[object]:
+    """At most `MAX_CURVE_POINTS` of a curve, evenly spaced, ending on the last.
+
+    The last point is kept unconditionally because it is the whole ranked set by
+    definition: a curve that stopped short of it would understate concentration at
+    the only rank a reader can check against 100%.
+    """
+    if len(points) <= MAX_CURVE_POINTS:
+        return points
+    step = len(points) / MAX_CURVE_POINTS
+    kept = {int(index * step) for index in range(MAX_CURVE_POINTS)}
+    kept.add(len(points) - 1)
+    return [point for index, point in enumerate(points) if index in kept]
 
 
 def _analysis_figure(fact: Fact, section_id: str, label: str | None) -> CitedFigure:

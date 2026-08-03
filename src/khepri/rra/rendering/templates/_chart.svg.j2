@@ -36,7 +36,7 @@
   {% endif %}
   {% for label in view.labels %}
   <text class="chart__label" x="{{ label.x }}" y="{{ label.y }}">{#
-    #}{% if label.localize %}{{ chrome.metrics[label.value] }}{#
+    #}{% if label.localize %}{{ chrome.labels[label.value] }}{#
     #}{% else %}{{ label.value }}{% endif %}</text>
   {% endfor %}
 </svg>

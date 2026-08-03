@@ -147,6 +147,16 @@ def test_no_chart_code_reaches_the_reader_untranslated() -> None:
         assert "chart_title." not in rendered, language
         assert "chart_description." not in rendered, language
         assert "metric." not in rendered, language
+        # A mode is an internal identifier too, and treating it as customer text put
+        # `period_over_period` on both axes and in both tables.
+        #
+        # Checked as element *text* rather than as a substring, because a mode is also
+        # part of a refused result's identity -- `revenue_delta_percent.year_over_year:
+        # prior_window_absent` -- and that is a governed code rendered in `<code>`,
+        # which is what this template does with every governed code. The failure being
+        # guarded is an identifier standing alone where a name belongs.
+        for mode in ("period_over_period", "year_over_year"):
+            assert f">{mode}<" not in rendered, (language, mode)
 
 
 def test_a_scalar_chart_names_each_bar_in_the_readers_language() -> None:
@@ -161,6 +171,14 @@ def test_a_scalar_chart_names_each_bar_in_the_readers_language() -> None:
     assert "Price effect" in english
     assert "Volume effect" in english
     assert "أثر السعر" in arabic
+
+
+def test_a_comparison_bar_names_the_window_it_compares() -> None:
+    """A mode is governed wording, so it is translated rather than printed."""
+    english = page(LANGUAGE_ENGLISH)
+    arabic = page(LANGUAGE_ARABIC)
+    assert "Against the previous period" in english
+    assert "مقابل الفترة السابقة" in arabic
 
 
 def test_a_chart_label_from_customer_data_is_escaped() -> None:

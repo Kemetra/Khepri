@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from khepri.rra.bundle import (
+    GOVERNED_FIGURE_LABELS,
     LANGUAGE_DIRECTION,
     SECTION_REFUSED,
     SURFACE_WEB,
@@ -104,10 +105,15 @@ _CHROME: dict[str, dict[str, str]] = {
             ),
             "chart_description.line": "Cumulative share curve over the ranked values",
         },
-        "metrics": {
+        # One table for every governed code a chart label can carry: metric names,
+        # and mode names. One lookup path in the macro, so a new kind of code cannot
+        # arrive with nowhere to be translated.
+        "labels": {
             "metric.growth_revenue_change": "Revenue change",
             "metric.growth_price_effect": "Price effect",
             "metric.growth_volume_effect": "Volume effect",
+            "label.period_over_period": "Against the previous period",
+            "label.year_over_year": "Against the same period last year",
         },
     },
     LANGUAGE_ARABIC: {
@@ -143,10 +149,12 @@ _CHROME: dict[str, dict[str, str]] = {
             "chart_description.grouped_bar": "رسم بأعمدة مجمّعة للأرقام في هذا القسم",
             "chart_description.line": "منحنى النصيب التراكمي عبر القيم المرتّبة",
         },
-        "metrics": {
+        "labels": {
             "metric.growth_revenue_change": "التغيّر في الإيرادات",
             "metric.growth_price_effect": "أثر السعر",
             "metric.growth_volume_effect": "أثر الحجم",
+            "label.period_over_period": "مقابل الفترة السابقة",
+            "label.year_over_year": "مقابل الفترة نفسها من العام الماضي",
         },
     },
 }
@@ -334,9 +342,25 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
         kind=figure.kind,
         unit_kind=figure.unit_kind,
         section=figure.section,
-        label=figure.label,
+        label=_row_label(figure.label, language),
         text=text,
     )
+
+
+def _row_label(label: str | None, language: str) -> str | None:
+    """A row's own name, translated when it is a governed code rather than a value.
+
+    A bucket label is a product or branch name and is reproduced exactly. A comparison
+    mode is an internal identifier, and `period_over_period` in a table cell is the
+    same failure as `period_over_period` on an axis -- the chart path was fixed first
+    and this is the same code reaching the reader one column over.
+
+    Nothing reconciled changes: `reconcile` compares a figure's *text*, never its
+    label.
+    """
+    if label is None or label not in GOVERNED_FIGURE_LABELS:
+        return label
+    return _CHROME[language]["labels"][f"label.{label}"]
 
 
 def build_context(
