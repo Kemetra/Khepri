@@ -115,6 +115,8 @@ class ChartLabel:
 
     value: str
     localize: bool
+    x: str
+    y: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,16 +226,24 @@ def build_chart(
         width=_coordinate(CHART_WIDTH),
         height=_coordinate(CHART_HEIGHT),
         marks=marks,
-        labels=tuple(_label(figure) for figure in resolved),
+        labels=tuple(
+            _label(figure, mark) for figure, mark in zip(resolved, marks, strict=True)
+        ),
         polyline=_polyline(spec.kind, marks),
     )
 
 
-def _label(figure: CitedFigure) -> ChartLabel:
-    """A mark's category if it has one, otherwise the code for its metric."""
+def _label(figure: CitedFigure, mark: ChartMark) -> ChartLabel:
+    """A mark's category if it has one, otherwise the code for its metric.
+
+    Placed under the mark it names, at the foot of the canvas. The horizontal centre
+    is read off the mark, the same derivation `_polyline` uses, so a label and its bar
+    cannot disagree about where they are.
+    """
+    placed = {"x": _coordinate(_centre(mark)), "y": _coordinate(CHART_HEIGHT)}
     if figure.label is not None:
-        return ChartLabel(value=figure.label, localize=False)
-    return ChartLabel(value=f"metric.{figure.metric}", localize=True)
+        return ChartLabel(value=figure.label, localize=False, **placed)
+    return ChartLabel(value=f"metric.{figure.metric}", localize=True, **placed)
 
 
 def _resolve(
@@ -299,7 +309,7 @@ def _line(plot: _Plot) -> tuple[ChartMark, ...]:
     """
     return tuple(
         ChartMark(
-            x=_coordinate(_placed(plot, index, width=POINT_SIZE)),
+            x=_coordinate(_mirror(plot, _rank(plot, index) - POINT_SIZE / 2, POINT_SIZE)),
             y=_coordinate(plot.domain.offset(value)),
             width=_coordinate(POINT_SIZE),
             height=_coordinate(POINT_SIZE),
@@ -308,12 +318,28 @@ def _line(plot: _Plot) -> tuple[ChartMark, ...]:
     )
 
 
+def _rank(plot: _Plot, index: int) -> Decimal:
+    """Where the kth cumulative point sits: at the rank fraction it speaks for.
+
+    A cumulative share curve's kth point states what the top `(k + 1) / n` of ranked
+    values hold, so that fraction is its horizontal position. Slot centres were the
+    earlier placement and they shift every percentile left by half a slot: with ten
+    points the top decile appeared at 5% and the final point, which is by definition
+    the whole set, landed at 95% instead of at the boundary.
+
+    The last point therefore sits on the right edge and its mark is half outside the
+    viewBox. That is a clipped half-dot; the alternative was a curve that misstated
+    every percentile it plotted.
+    """
+    return CHART_WIDTH * Decimal(index + 1) / len(plot.values)
+
+
 def _columns(plot: _Plot, *, fill: Decimal) -> tuple[ChartMark, ...]:
     """Rectangles rising from, or hanging beneath, the zero line."""
     width = plot.slot * fill
     return tuple(
         ChartMark(
-            x=_coordinate(_placed(plot, index, width=width)),
+            x=_coordinate(_mirror(plot, plot.slot * index + (plot.slot - width) / 2, width)),
             y=_coordinate(_top(plot, value)),
             width=_coordinate(width),
             height=_coordinate(_height(plot, value)),
@@ -334,16 +360,20 @@ def _height(plot: _Plot, value: Decimal) -> Decimal:
     return abs(plot.domain.zero - plot.domain.offset(value))
 
 
-def _placed(plot: _Plot, index: int, *, width: Decimal) -> Decimal:
-    """Where a mark sits along the category axis, mirrored for right-to-left.
+def _mirror(plot: _Plot, x: Decimal, width: Decimal) -> Decimal:
+    """The same left edge, measured from the other side when the page reads that way.
 
-    Only the category axis mirrors. Flipping the value axis as well would render
-    every proportion upside down while every number beside it stayed correct.
+    Only the category axis mirrors. Flipping the value axis as well would render every
+    proportion upside down while every number beside it stayed correct.
     """
-    x = plot.slot * index + (plot.slot - width) / 2
     if plot.mirrored:
         return CHART_WIDTH - x - width
     return x
+
+
+def _centre(mark: ChartMark) -> Decimal:
+    """The middle of a mark's top edge: the point its value is stated at."""
+    return Decimal(mark.x) + Decimal(mark.width) / 2
 
 
 def _polyline(kind: str, marks: tuple[ChartMark, ...]) -> str:
@@ -358,10 +388,7 @@ def _polyline(kind: str, marks: tuple[ChartMark, ...]) -> str:
     """
     if kind != CHART_LINE:
         return ""
-    return " ".join(
-        f"{_coordinate(Decimal(mark.x) + Decimal(mark.width) / 2)},{mark.y}"
-        for mark in marks
-    )
+    return " ".join(f"{_coordinate(_centre(mark))},{mark.y}" for mark in marks)
 
 
 def _coordinate(value: Decimal) -> str:

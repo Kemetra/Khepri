@@ -156,8 +156,8 @@ def test_a_category_label_is_customer_text_the_surface_only_escapes() -> None:
     view = chart_of()
     assert view is not None
     assert view.labels == (
-        ChartLabel(value="V1", localize=False),
-        ChartLabel(value="V2", localize=False),
+        ChartLabel(value="V1", localize=False, x="160.0000", y="320.0000"),
+        ChartLabel(value="V2", localize=False, x="480.0000", y="320.0000"),
     )
 
 
@@ -192,8 +192,12 @@ def test_a_scalar_figure_is_named_by_its_metric_not_by_its_own_value() -> None:
     )
     assert view is not None
     assert view.labels == (
-        ChartLabel(value="metric.growth_price_effect", localize=True),
-        ChartLabel(value="metric.growth_volume_effect", localize=True),
+        ChartLabel(
+            value="metric.growth_price_effect", localize=True, x="160.0000", y="320.0000"
+        ),
+        ChartLabel(
+            value="metric.growth_volume_effect", localize=True, x="480.0000", y="320.0000"
+        ),
     )
 
 
@@ -268,8 +272,8 @@ def test_a_line_point_has_extent_so_a_mark_renderer_draws_something() -> None:
     assert {(mark.width, mark.height) for mark in view.marks} == {
         (str(POINT_SIZE.quantize(Decimal("0.0001"))),) * 2
     }
-    # Slot centres are 160 and 480; the mark is centred on each.
-    assert [mark.x for mark in view.marks] == ["156.0000", "476.0000"]
+    # Rank fractions are 1/2 and 2/2 of the width; the mark is centred on each.
+    assert [mark.x for mark in view.marks] == ["316.0000", "636.0000"]
     # The top edge is the value, exactly as for a bar.
     assert view.marks[1].y == "0.0000"
 
@@ -283,7 +287,7 @@ def test_a_line_carries_the_curve_that_connects_its_points() -> None:
     """
     view = chart_of(kind=CHART_LINE)
     assert view is not None
-    assert view.polyline == "160.0000,213.3333 480.0000,0.0000"
+    assert view.polyline == "320.0000,213.3333 640.0000,0.0000"
 
 
 def test_the_curve_passes_through_the_marks_it_is_drawn_beside() -> None:
@@ -299,6 +303,52 @@ def test_the_curve_passes_through_the_marks_it_is_drawn_beside() -> None:
     for (x, y), mark in zip(points, view.marks, strict=True):
         assert Decimal(x) == Decimal(mark.x) + Decimal(mark.width) / 2
         assert Decimal(y) == Decimal(mark.y)
+
+
+def test_a_cumulative_point_sits_at_the_rank_fraction_it_speaks_for() -> None:
+    """The kth point states what the top `(k + 1) / n` of ranked values hold.
+
+    Slot centres were the earlier placement, and they shift every percentile left by
+    half a slot: with ten points the top decile appeared at 5% of the width and the
+    final point -- which is by definition the whole set -- landed at 95% rather than
+    on the boundary.
+    """
+    view = chart_of(
+        kind=CHART_LINE,
+        figure_ids=tuple(f"F-{index + 1}" for index in range(10)),
+        values=tuple(Decimal(index + 1) for index in range(10)),
+    )
+    assert view is not None
+
+    centres = [Decimal(point.split(",")[0]) for point in view.polyline.split(" ")]
+    # A tenth of the width per rank, and the last point on the boundary.
+    assert centres[0] == CHART_WIDTH / 10
+    assert centres[-1] == CHART_WIDTH
+    for index, centre in enumerate(centres):
+        assert centre == CHART_WIDTH * Decimal(index + 1) / 10
+
+
+def test_a_label_is_placed_under_the_mark_it_names() -> None:
+    """A surface emitting one `<text>` per label with no coordinates stacks them all
+    at the origin, which is what the documented macro did.
+
+    The position is read off the mark, so a label cannot drift from its own bar.
+    """
+    view = chart_of()
+    assert view is not None
+
+    for label, mark in zip(view.labels, view.marks, strict=True):
+        assert Decimal(label.x) == Decimal(mark.x) + Decimal(mark.width) / 2
+        assert Decimal(label.y) == CHART_HEIGHT
+
+
+def test_labels_mirror_with_their_marks() -> None:
+    """A right-to-left page moves the bar and the name of the bar together."""
+    rtl = chart_of(language=LANGUAGE_ARABIC)
+    assert rtl is not None
+    assert [label.value for label in rtl.labels] == ["V1", "V2"]
+    assert rtl.labels[0].x == "480.0000"
+    assert rtl.labels[1].x == "160.0000"
 
 
 def test_only_a_line_carries_a_polyline() -> None:
