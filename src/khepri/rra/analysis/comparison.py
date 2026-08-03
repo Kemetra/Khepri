@@ -142,6 +142,22 @@ GOVERNED_METRICS = (METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT)
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
 REASON_NEGATIVE_BASE = "negative_base"
 
+# Which cause speaks for the family when the two modes refuse for different
+# reasons -- a period-over-period predecessor missing while the year-earlier
+# counterpart exists but holds no revenue, say. No single reason is true of the
+# family then, so one is chosen by a declared order rather than by whichever mode
+# `GOVERNED_MODES` happens to name first.
+#
+# `required_input_unavailable` outranks because it is the more specific finding.
+# `prior_window_absent` is the generic "there was nothing to compare against",
+# and preferring it while a more specific cause sat recorded is the exact
+# mislabel that made a family-level reason worth deriving in the first place.
+#
+# Reasons absent from this tuple sort last rather than raising: a metric-scoped
+# refusal like `negative_base` never reaches here, because the mode that records
+# one also produced an absolute delta and so did not refuse wholly.
+_REASON_PRECEDENCE = (REASON_INPUT_UNAVAILABLE, REASON_PRIOR_WINDOW_ABSENT)
+
 # What these facts are derived from, named in the governed mapping vocabulary.
 # `Fact.inputs` elsewhere holds semantic measures -- the formula version is
 # recorded separately by the package, and putting one here would mislabel a
@@ -218,25 +234,57 @@ def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
     `required_input_unavailable`, and reporting `prior_window_absent` for it
     would explain the refusal wrongly -- the window was there and the measure was
     not.
+
+    The two modes can refuse for *different* reasons, and one field cannot hold
+    two. What this returns is therefore a summary and says so: it names the mode
+    whose cause it carries. `refusals` is the complete record, and section
+    assembly wanting per-mode causes must read that rather than this.
     """
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):
         outcomes = _outcomes(package)
     facts = tuple(fact for outcome in outcomes for fact in outcome.facts)
     if facts:
         return facts
-    return RefusedResult(
-        metric=METRIC_DELTA_ABSOLUTE,
-        reason=_refused_reason(outcomes, package),
-    )
+    return _family_refusal(outcomes, package)
 
 
-def _refused_reason(outcomes: tuple[_Outcome, ...], package: FactPackage) -> str:
+def _family_refusal(
+    outcomes: tuple[_Outcome, ...],
+    package: FactPackage,
+) -> RefusedResult:
+    """The one refusal that stands for the family, chosen rather than stumbled on.
+
+    Returning a recorded refusal whole, rather than rebuilding one, is what keeps
+    the mode in the metric: `revenue_delta_absolute.year_over_year` explains one
+    governed comparison and does not claim to explain the other. The previous
+    version rebuilt it with a bare metric, so a reason true of one mode was
+    presented as the family's.
+    """
     recorded = tuple(
-        refusal.reason for outcome in outcomes for refusal in outcome.refusals
+        refusal for outcome in outcomes for refusal in outcome.refusals
     )
     if not recorded:
-        return _absent_reason(package)
-    return recorded[0]
+        return RefusedResult(
+            metric=METRIC_DELTA_ABSOLUTE,
+            reason=_absent_reason(package),
+        )
+    return min(recorded, key=_precedence)
+
+
+def _precedence(refusal: RefusedResult) -> tuple[int, str]:
+    """Rank a refusal so the summary is a decision and not an accident.
+
+    This used to take whichever refusal `GOVERNED_MODES` happened to list first,
+    which meant period-over-period's cause always won and year-over-year's was
+    dropped unseen. The metric breaks ties so the choice is total: two modes
+    refusing alike now yield the same summary whichever order they were derived.
+    """
+    ranked = (
+        _REASON_PRECEDENCE.index(refusal.reason)
+        if refusal.reason in _REASON_PRECEDENCE
+        else len(_REASON_PRECEDENCE)
+    )
+    return (ranked, refusal.metric)
 
 
 def refusals(package: FactPackage) -> tuple[RefusedResult, ...]:

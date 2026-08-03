@@ -501,6 +501,44 @@ def test_a_refusal_names_the_reason_the_mode_actually_gave() -> None:
     assert result.reason == REASON_INPUT_UNAVAILABLE
 
 
+def test_modes_refusing_for_different_reasons_do_not_lose_one_of_them() -> None:
+    # The two modes fail differently: period-over-period has no predecessor
+    # because 2025-12 is missing, while year-over-year finds its counterpart and
+    # finds no revenue in it. One field cannot hold both causes, so the summary
+    # says which mode it speaks for -- and picks the specific cause over the
+    # generic one rather than whichever mode was derived first.
+    rows = [(date(2024, 12, 1), "100.00")]
+    rows.append((date(2025, 1, 1), ""))
+    rows += [(date(2025, month, 1), "100.00") for month in range(2, 12)]
+    rows += [(date(2026, 1, 1), "100.00"), (date(2026, 2, 1), "100.00")]
+    package = package_for(rows)
+    assert "2025-12" not in {
+        bucket.label for bucket in package.trend().series.buckets
+    }
+
+    # Nothing is lost: refusals() still carries every cause, per mode.
+    assert {
+        (refusal.metric, refusal.reason) for refusal in comparison.refusals(package)
+    } == {
+        (metric_and_mode, reason)
+        for reason, mode in (
+            (REASON_PRIOR_WINDOW_ABSENT, MODE_PERIOD_OVER_PERIOD),
+            (REASON_INPUT_UNAVAILABLE, MODE_YEAR_OVER_YEAR),
+        )
+        for metric_and_mode in (
+            f"{METRIC_DELTA_ABSOLUTE}.{mode}",
+            f"{METRIC_DELTA_PERCENT}.{mode}",
+        )
+    }
+
+    result = comparison.derive(package)
+    assert isinstance(result, RefusedResult)
+    # Not prior_window_absent, which is what iteration order used to yield.
+    assert result.reason == REASON_INPUT_UNAVAILABLE
+    # And it names the mode it explains, rather than implying it covers both.
+    assert result.metric == f"{METRIC_DELTA_ABSOLUTE}.{MODE_YEAR_OVER_YEAR}"
+
+
 def test_a_derived_fact_inherits_the_caveats_of_the_series_it_read() -> None:
     # The trend excluded rows with no date, which is a limitation of the
     # aggregate these deltas are derived from. RRA-008 requires every derived
