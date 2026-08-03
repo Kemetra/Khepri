@@ -15,6 +15,7 @@ from khepri.rra.bundle import (
     OUTCOME_DELIVERED,
     REQUIRED_SURFACES,
     SECTION_OVERVIEW,
+    SECTION_PRESENT,
     SURFACE_EXCEL,
     SURFACE_PDF,
     SURFACE_WEB,
@@ -22,6 +23,7 @@ from khepri.rra.bundle import (
     BundleIdentity,
     CitedFigure,
     ReportBundle,
+    Section,
     StatedFigure,
     SurfaceContent,
     SurfaceLanguage,
@@ -111,6 +113,18 @@ def hostile_bundle() -> ReportBundle:
         figures=figures,
         caveats=(),
         narrative_state=NARRATIVE_OMITTED,
+        # The bundle indexes the figures it carries. Declaring no section while
+        # holding figures is a bundle disagreeing with itself, which every
+        # surface would copy both halves of into its claim.
+        sections=(
+            Section(
+                section_id=SECTION_OVERVIEW,
+                state=SECTION_PRESENT,
+                reason=None,
+                figure_ids=tuple(figure.figure_id for figure in figures),
+                chart=None,
+            ),
+        ),
     )
 
 

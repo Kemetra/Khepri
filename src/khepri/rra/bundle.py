@@ -65,12 +65,20 @@ from khepri.rra.narrative import (
 )
 from khepri.rra.profiling import canonical_json
 
-# v2 carries `sections` in the bundle document. That document is hashed to name
-# a bundle, so the shape change moved every bundle id -- including for a bundle
-# whose sections are empty. Two bundles built from identical inputs on either
-# side of it must not claim one schema version while having different
+# The bundle document is hashed to name a bundle, so any change to its shape
+# moves every bundle id. Two bundles built from identical inputs on either side
+# of such a change must not claim one schema version while having different
 # identities, or stored evidence cannot tell the two document contracts apart.
-BUNDLE_VERSION = "rra006.bundle.v2"
+#
+#   v2  `sections` joins the document
+#   v3  every figure carries `section`, and `sections` arrives populated
+#
+# The section model ships as several independently verifiable slices, and each
+# one that moves the document earns a version. That is version churn on purpose:
+# every string here named a shape that really existed on `main`, which is worth
+# more than a tidy sequence. Binding caveats to sections changes the shape again
+# and will take v4.
+BUNDLE_VERSION = "rra006.bundle.v3"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -628,6 +636,7 @@ class ReportBundle:
 
     def __post_init__(self) -> None:
         _require_governed_section_order(self.sections)
+        _require_sections_index_the_figures(self.sections, self.figures)
 
     @property
     def section_ids(self) -> tuple[str, ...]:
@@ -761,6 +770,37 @@ def _require_governed_section_order(sections: tuple[Section, ...]) -> None:
         raise ValueError("bundle repeats a section")
     if claimed != [entry for entry in ORDERED_SECTIONS if entry in set(claimed)]:
         raise ValueError("bundle states sections out of governed order")
+
+
+def _require_sections_index_the_figures(
+    sections: tuple[Section, ...],
+    figures: tuple[CitedFigure, ...],
+) -> None:
+    """The section index and the figures must agree about placement.
+
+    Deriving the sections in `of` protects only callers who use `of`, and the
+    constructor is public. A bundle assembled directly could place an overview
+    figure while declaring no sections, declare a section indexing a figure id
+    that does not exist, or index a figure under a section other than its own --
+    and every surface would then copy *both halves* of that contradiction into
+    its claim and reconcile against it perfectly, because reconciliation compares
+    a surface with the bundle and never the bundle with itself.
+
+    One comparison covers all of it. A figure absent from the index is a missing
+    key, an indexed figure that does not exist is an extra one, and a figure
+    indexed under the wrong section is a differing value. Refused sections are
+    exempt for free: they carry no figures, so they contribute no pairs, and a
+    present section always carries at least one.
+    """
+    indexed = [
+        (figure_id, section.section_id)
+        for section in sections
+        for figure_id in section.figure_ids
+    ]
+    if len({figure_id for figure_id, _ in indexed}) != len(indexed):
+        raise ValueError("bundle indexes one figure under more than one section")
+    if dict(indexed) != {figure.figure_id: figure.section for figure in figures}:
+        raise ValueError("bundle sections and figures disagree about placement")
 
 
 @dataclass(frozen=True, slots=True)

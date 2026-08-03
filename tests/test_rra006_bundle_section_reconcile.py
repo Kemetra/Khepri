@@ -25,6 +25,7 @@ from khepri.rra.bundle import (
     SECTION_GROWTH,
     SECTION_OVERVIEW,
     SECTION_PRESENT,
+    SECTION_REFUSED,
     BundleRefused,
     ChartSpec,
     ReportBundle,
@@ -59,6 +60,34 @@ def section_of(
             else figures
         ),
         chart=chart,
+    )
+
+
+def across_two_sections(bundle: ReportBundle) -> ReportBundle:
+    """The same bundle with its first figure genuinely moved to comparison.
+
+    The figure's own `section` moves with it, because a bundle may not index a
+    figure under a section other than the one it claims. An earlier version of
+    this helper only rewrote the index, which built a bundle contradicting
+    itself -- a section indexing an overview figure as comparison, and that
+    figure indexed twice. The constructor now rejects it, which is the point.
+    """
+    moved, *rest = bundle.figures
+    replaced = replace(moved, section=SECTION_COMPARISON)
+    return replace(
+        bundle,
+        figures=(replaced, *rest),
+        sections=(
+            section_of(
+                bundle,
+                figures=tuple(figure.figure_id for figure in rest),
+            ),
+            section_of(
+                bundle,
+                SECTION_COMPARISON,
+                figures=(replaced.figure_id,),
+            ),
+        ),
     )
 
 
@@ -163,18 +192,8 @@ def test_section_order_differing_by_language_refuses() -> None:
     # Same set, different sequence. Order is compared as a tuple and membership
     # as a set, so a reordering and an omission are told apart rather than
     # collapsed into one ambiguous refusal.
-    base = bundle_of()
-    bundle = replace(
-        base,
-        sections=(
-            section_of(base),
-            section_of(
-                base,
-                SECTION_COMPARISON,
-                figures=(base.figures[0].figure_id,),
-            ),
-        ),
-    )
+    bundle = across_two_sections(bundle_of())
+    assert bundle.section_ids == (SECTION_OVERVIEW, SECTION_COMPARISON)
     content = bend(bundle, sections=(SECTION_COMPARISON, SECTION_OVERVIEW))
     assert refusal_for(content, bundle) == REASON_SECTION_ORDER_DIFFERS
 
@@ -240,6 +259,79 @@ def test_a_chart_plotting_a_figure_the_surface_did_not_state_refuses() -> None:
 def test_a_faithful_surface_reconciles(prepare: object) -> None:
     bundle = prepare(bundle_of())  # type: ignore[operator]
     reconcile(surface_of(bundle), bundle=bundle)
+
+
+# A bundle that contradicts itself, which no amount of reconciliation can catch.
+#
+# `reconcile` compares a surface against the bundle and never the bundle against
+# itself, so every surface would faithfully copy both halves of the contradiction
+# into its claim -- `bundle.section_ids` on one side and each figure's own section
+# on the other -- and reconcile perfectly. Deriving the index in `of` protects
+# only callers who use `of`, and the constructor is public.
+CONTRADICTORY_BUNDLES = [
+    pytest.param(
+        lambda bundle: {"sections": ()},
+        id="figures-placed-in-a-section-the-bundle-never-declares",
+    ),
+    pytest.param(
+        lambda bundle: {
+            "sections": (section_of(bundle, figures=("F-does-not-exist",)),)
+        },
+        id="a-section-indexing-a-figure-that-does-not-exist",
+    ),
+    pytest.param(
+        lambda bundle: {
+            "sections": (
+                section_of(bundle),
+                section_of(
+                    bundle,
+                    SECTION_COMPARISON,
+                    figures=(bundle.figures[0].figure_id,),
+                ),
+            )
+        },
+        id="one-figure-indexed-under-two-sections",
+    ),
+    pytest.param(
+        lambda bundle: {
+            "sections": (
+                section_of(
+                    bundle,
+                    SECTION_COMPARISON,
+                    figures=tuple(f.figure_id for f in bundle.figures),
+                ),
+            )
+        },
+        id="a-figure-indexed-under-a-section-other-than-its-own",
+    ),
+]
+
+
+@pytest.mark.parametrize("fields", CONTRADICTORY_BUNDLES)
+def test_a_bundle_may_not_disagree_with_itself_about_placement(fields: object) -> None:
+    bundle = bundle_of()
+    with pytest.raises(ValueError):
+        replace(bundle, **fields(bundle))  # type: ignore[operator]
+
+
+def test_a_refused_section_needs_no_figures_to_index() -> None:
+    # Refused sections are exempt for free: they carry no figures, so they
+    # contribute nothing to the index, and a present section always carries one.
+    bundle = bundle_of()
+    widened = replace(
+        bundle,
+        sections=(
+            section_of(bundle),
+            Section(
+                section_id=SECTION_GROWTH,
+                state=SECTION_REFUSED,
+                reason="units_absent",
+                figure_ids=(),
+                chart=None,
+            ),
+        ),
+    )
+    assert widened.section_ids == (SECTION_OVERVIEW, SECTION_GROWTH)
 
 
 def test_a_stated_figure_carries_its_section_as_a_claim() -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from khepri.rra.bundle import (
@@ -10,6 +12,7 @@ from khepri.rra.bundle import (
     GOVERNED_CHART_KINDS,
     GOVERNED_SECTION_REASONS,
     GOVERNED_SECTION_STATES,
+    KIND_VALUE,
     NARRATIVE_OMITTED,
     ORDERED_SECTIONS,
     SECTION_BASKET,
@@ -23,9 +26,11 @@ from khepri.rra.bundle import (
     SECTION_REFUSED,
     BundleIdentity,
     ChartSpec,
+    CitedFigure,
     ReportBundle,
     Section,
 )
+from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 
 
 def _present(section_id: str) -> Section:
@@ -57,10 +62,36 @@ def _identity() -> BundleIdentity:
     )
 
 
+def _figure(figure_id: str, section: str) -> CitedFigure:
+    """A figure with no data behind it, placed in one section."""
+    return CitedFigure(
+        figure_id=figure_id,
+        citation_id="cit_000000000000",
+        fact_id="fct_000000000000000000000000",
+        metric="revenue",
+        unit_kind="monetary",
+        kind=KIND_VALUE,
+        section=section,
+        label=None,
+        value=Decimal("500.00"),
+        renderings={LANGUAGE_ENGLISH: "500.00", LANGUAGE_ARABIC: "٥٠٠٫٠٠"},
+    )
+
+
 def _bundle(sections: tuple[Section, ...]) -> ReportBundle:
+    """A bundle carrying exactly the figures its sections index.
+
+    The figures are derived from the index rather than supplied beside it,
+    because a bundle whose sections and figures disagree about placement is
+    rejected -- these tests are about the section sequence, not about that.
+    """
     return ReportBundle(
         identity=_identity(),
-        figures=(),
+        figures=tuple(
+            _figure(figure_id, section.section_id)
+            for section in sections
+            for figure_id in section.figure_ids
+        ),
         caveats=(),
         narrative_state=NARRATIVE_OMITTED,
         sections=sections,
@@ -524,5 +555,5 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # `sections` joined the hashed document, so every bundle id changed. Two
     # bundles built from identical inputs on either side of that change must
     # not claim the same schema version while having different identities.
-    assert BUNDLE_VERSION == "rra006.bundle.v2"
+    assert BUNDLE_VERSION == "rra006.bundle.v3"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION
