@@ -37,9 +37,9 @@ decisions:
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md
-    approved_by: AHMED-SHAABAN
-    approved_at: 2026-07-29
-    approval_ref: governance/approvals/APP-003.yaml
+    approved_by: KHEPRI-AGENT
+    approved_at: 2026-08-03
+    approval_ref: governance/approvals/APP-013.yaml
   - id: KHEPRI-DEC-006
     title: RRA beta benchmark workload and environment
     state: accepted
