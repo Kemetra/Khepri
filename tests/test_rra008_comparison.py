@@ -23,9 +23,16 @@ from khepri.rra.analysis.comparison import (
     METRIC_DELTA_PERCENT,
     MODE_PERIOD_OVER_PERIOD,
     MODE_YEAR_OVER_YEAR,
+    REASON_NEGATIVE_BASE,
     REASON_PRIOR_WINDOW_ABSENT,
 )
-from khepri.rra.facts import FactPackage, RefusedResult, build_fact_package
+from khepri.rra.facts import (
+    REASON_ZERO_DENOMINATOR,
+    UNIT_RATIO,
+    FactPackage,
+    RefusedResult,
+    build_fact_package,
+)
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
@@ -67,6 +74,19 @@ def monthly(months: int, amount: str = "100.00") -> FactPackage:
         for offset in range(months)
     ]
     return package_for(rows)
+
+
+def monthly_with_gap(months: int, *, missing: int) -> FactPackage:
+    """Consecutive months with one offset omitted, shifting everything after it."""
+    start = date(2024, 1, 1)
+    return package_for(
+        [
+            (date(start.year + (start.month - 1 + offset) // 12,
+                  (start.month - 1 + offset) % 12 + 1, 1), "100.00")
+            for offset in range(months)
+            if offset != missing
+        ]
+    )
 
 
 def daily(days: int, amount: str = "100.00") -> FactPackage:
@@ -169,20 +189,51 @@ def test_a_complete_window_carries_no_truncation_caveat(mode: str) -> None:
     assert all(CAVEAT_WINDOW_TRUNCATED not in fact.caveats for fact in facts)
 
 
+def months_apart(current: str, prior: str) -> int:
+    current_year, current_month = (int(part) for part in current.split("-"))
+    prior_year, prior_month = (int(part) for part in prior.split("-"))
+    return (current_year - prior_year) * 12 + (current_month - prior_month)
+
+
+@pytest.mark.parametrize(
+    "package",
+    [
+        pytest.param(monthly(26), id="complete-coverage"),
+        pytest.param(monthly(15), id="a-prior-year-window-running-off-the-start"),
+        pytest.param(monthly_with_gap(26, missing=5), id="a-gap-mid-window"),
+    ],
+)
+def test_every_year_over_year_pair_is_exactly_a_year_apart(package: FactPackage) -> None:
+    # The assertion whose absence let a real bug through. An earlier version
+    # compressed the prior side past a missing month and trimmed the current side
+    # to match, which kept the counts equal and left three of eleven pairs
+    # thirteen months apart -- every label plausible, every sum correct, the
+    # comparison measuring something nobody asked for.
+    window = comparison._window_for(package, MODE_YEAR_OVER_YEAR)
+    assert window is not None
+    assert window.pairs
+    for current, prior in window.pairs:
+        assert months_apart(current.label, prior.label) == 12
+
+
+def test_an_unmatched_period_is_dropped_with_its_pair() -> None:
+    # Not compressed past. The current period whose counterpart is missing leaves
+    # the window entirely, so what remains is still a like-for-like comparison.
+    window = comparison._window_for(
+        monthly_with_gap(26, missing=5), MODE_YEAR_OVER_YEAR
+    )
+    assert window is not None
+    assert window.truncated
+    stated = {current.label for current, _ in window.pairs}
+    assert "2025-06" not in stated
+
+
 def test_the_prior_year_window_is_located_by_label_not_by_offset() -> None:
     # A month of coverage missing in the middle shifts every bucket after it. A
     # fixed twelve-bucket step would then compare the wrong months while looking
     # perfectly healthy; label arithmetic finds fewer buckets and truncates.
     intact = monthly(26)
-    start = date(2024, 1, 1)
-    holed = package_for(
-        [
-            (date(start.year + (start.month - 1 + offset) // 12,
-                  (start.month - 1 + offset) % 12 + 1, 1), "100.00")
-            for offset in range(26)
-            if offset != 5
-        ]
-    )
+    holed = monthly_with_gap(26, missing=5)
     assert len(holed.trend().series.buckets) == len(intact.trend().series.buckets) - 1
     # The intact series has a complete prior-year window and says so. Removing
     # one month leaves the same current window pointing at a year-ago window
@@ -208,34 +259,81 @@ def test_the_absolute_delta_is_exact_over_a_flat_trend() -> None:
     assert Decimal(pop.value) == Decimal(0)
 
 
-def test_a_zero_base_refuses_the_percentage_and_keeps_the_absolute() -> None:
-    # A percentage of nothing is undefined. RRA-008 refuses it and keeps the
-    # absolute, because the change itself is still a fact.
-    package = package_for(
-        [(date(2026, 1, 1), "0.00"), (date(2026, 1, 2), "50.00")]
+def two_settled_days(prior: str, current: str) -> FactPackage:
+    """Two days to compare, plus a third so both of them have settled.
+
+    The trailing day is never compared. It exists so the two that matter are
+    periods with data after them, which is the only evidence available here that
+    a period finished.
+    """
+    return package_for(
+        [
+            (date(2026, 1, 1), prior),
+            (date(2026, 1, 2), current),
+            (date(2026, 1, 3), "1.00"),
+        ]
     )
+
+
+def test_the_final_period_is_left_out_because_its_completeness_is_unknown() -> None:
+    # The window is built from settled periods only. Three days of data compare
+    # the second against the first; the third is excluded, because nothing in the
+    # series says whether it was cut off partway by wherever the export ended.
+    package = two_settled_days("100.00", "150.00")
+    assert len(package.trend().series.buckets) == 3
+    absolute = next(
+        fact for fact in facts_of(package) if fact.metric == METRIC_DELTA_ABSOLUTE
+    )
+    assert Decimal(absolute.value) == Decimal(50)
+
+
+def test_one_settled_period_has_nothing_to_compare() -> None:
+    # Two days leaves one settled period and no prior, so the comparison refuses
+    # rather than comparing a period against a possibly-partial one.
+    result = comparison.derive(
+        package_for([(date(2026, 1, 1), "100.00"), (date(2026, 1, 2), "150.00")])
+    )
+    assert isinstance(result, RefusedResult)
+    assert result.reason == REASON_PRIOR_WINDOW_ABSENT
+
+
+def test_the_percentage_delta_is_a_fraction_not_a_percentage() -> None:
+    # UNIT_RATIO already means a fraction here: gross_margin stores one, and
+    # narrative multiplies every ratio by a hundred to render it. Storing 50
+    # for a rise from 100 to 150 would reach a reader as 5000%.
+    percent = next(
+        fact
+        for fact in facts_of(two_settled_days("100.00", "150.00"))
+        if fact.metric == METRIC_DELTA_PERCENT
+    )
+    assert percent.unit_kind == UNIT_RATIO
+    assert Decimal(percent.value) == Decimal("0.5")
+
+
+@pytest.mark.parametrize(
+    ("prior", "reason"),
+    [
+        pytest.param("0.00", REASON_ZERO_DENOMINATOR, id="a-base-of-zero"),
+        pytest.param("-50.00", REASON_NEGATIVE_BASE, id="a-negative-base"),
+    ],
+)
+def test_a_non_positive_base_refuses_the_percentage_and_records_it(
+    prior: str,
+    reason: str,
+) -> None:
+    # A percentage of zero is undefined and of a negative base it misleads: a
+    # shrinking loss reads as growth. The absolute delta stands either way, and
+    # the refusal is recorded -- a consumer must be able to tell a governed
+    # refusal from a metric quietly left out.
+    package = two_settled_days(prior, "10.00")
     metrics = {fact.metric for fact in facts_of(package)}
     assert METRIC_DELTA_ABSOLUTE in metrics
     assert METRIC_DELTA_PERCENT not in metrics
-
-
-def test_a_negative_base_refuses_the_percentage() -> None:
-    # A shrinking loss would read as growth. The base must be strictly positive.
-    package = package_for(
-        [(date(2026, 1, 1), "-50.00"), (date(2026, 1, 2), "10.00")]
+    assert reason in {refusal.reason for refusal in comparison.refusals(package)}
+    assert any(
+        METRIC_DELTA_PERCENT in refusal.metric
+        for refusal in comparison.refusals(package)
     )
-    metrics = {fact.metric for fact in facts_of(package)}
-    assert METRIC_DELTA_PERCENT not in metrics
-
-
-def test_a_positive_base_emits_the_percentage() -> None:
-    package = package_for(
-        [(date(2026, 1, 1), "100.00"), (date(2026, 1, 2), "150.00")]
-    )
-    percent = next(
-        fact for fact in facts_of(package) if fact.metric == METRIC_DELTA_PERCENT
-    )
-    assert Decimal(percent.value) == Decimal(50)
 
 
 @pytest.mark.parametrize("metric", [METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT])

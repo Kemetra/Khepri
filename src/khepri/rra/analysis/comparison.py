@@ -9,27 +9,39 @@ compared.
 **The modes refuse independently.** A dataset spanning eight months has a prior
 period and no prior year at all. `RRA-008` refuses "the affected comparison, and
 not the report", so one mode refusing must leave the other standing: `derive`
-returns a `RefusedResult` only when *both* refuse, and `refusals` carries a
-single-mode refusal beside the other mode's facts.
+returns a `RefusedResult` only when *both* refuse, and `refusals` carries every
+refusal beside whatever facts survived -- per mode, and per metric within a mode.
 
-**The prior-year window is found by label, never by offset.** `period_label`
-gives `YYYY-MM` at month granularity, so the window one year earlier is located
-by decrementing the year in each label and keeping the buckets that exist.
-Stepping back a fixed twelve buckets would silently compare the wrong months the
-moment a month of coverage is missing -- and a comparison that quietly changes
-which period it means is worse than one that refuses.
+**A window is a set of matched pairs, not two independent runs.** Each current
+period is paired with the one it is compared against, and a period whose
+counterpart is missing takes its pair out of the window rather than shifting the
+alignment. Trimming the two sides independently to a common length is how a
+year-over-year comparison silently ends up measuring thirteen months against
+twelve -- the labels still look plausible and every arithmetic step is correct.
 
-**One caveat this module cannot emit, and why it is not simply missing.**
-`RRA-008` also asks that both windows be truncated "to the same day count when
-the current window is incomplete" -- comparing fifteen days of this month against
-a whole prior month overstates the change. That is not derivable here. The
-governed trend carries one bucket per period, and at month granularity the days
-inside a bucket are already summed away, so nothing in `FactSeries` says whether
-the most recent month is complete. This is the same shape of gap as
-concentration's: an aggregate that discarded the detail a requirement needs.
-`window_truncated` below is therefore about a *shorter window*, which is real and
-reachable -- a prior-year window missing months to a coverage gap -- and not about
-a partial final period, which needs an `RRA-004` aggregate that does not exist.
+**The prior-year period is found by label, never by offset.** `period_label`
+gives `YYYY-MM` at month granularity, so a year earlier is that label with its
+year decremented. Stepping back a fixed twelve buckets would compare the wrong
+months the moment a month of coverage is missing, and a comparison that quietly
+changes which period it means is worse than one that refuses.
+
+**The final period is excluded, because its completeness is unknowable here.**
+`RRA-008` asks that both windows be truncated "to the same day count when the
+current window is incomplete" -- comparing fifteen days of this month against a
+whole prior month overstates the change. `FactSeries` carries one bucket per
+period and no day count, so nothing here can tell a complete final month from a
+partial one. What *is* knowable is that every period with a later period after it
+finished, because data exists beyond it. So the comparison runs over settled
+periods and leaves the last one out.
+
+That is deliberately not the specification's remedy, which needs a day count the
+aggregate does not carry. It is the nearest derivable thing to the requirement's
+intent, and the alternatives were worse: including the final bucket compares a
+possibly-partial period against a whole one and says nothing, and refusing
+whenever a final period *might* be partial refuses always, because completeness
+is equally undetectable in both directions. The cost is that the comparison lags
+by one period. An `RRA-004` aggregate carrying period completeness would remove
+the need for this, and belongs in the same amendment as the concentration curve.
 """
 
 from __future__ import annotations
@@ -41,6 +53,8 @@ from khepri.rra.aggregates import GRANULARITY_MONTH, Bucket
 from khepri.rra.facts import (
     FORMULA_VERSION,
     RATIO_PRECISION,
+    REASON_INPUT_UNAVAILABLE,
+    REASON_ZERO_DENOMINATOR,
     UNIT_MONETARY,
     UNIT_RATIO,
     Fact,
@@ -55,38 +69,42 @@ GOVERNED_MODES = (MODE_PERIOD_OVER_PERIOD, MODE_YEAR_OVER_YEAR)
 
 METRIC_DELTA_ABSOLUTE = "revenue_delta_absolute"
 METRIC_DELTA_PERCENT = "revenue_delta_percent"
-GOVERNED_METRICS = (METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT)
 
 CAVEAT_WINDOW_TRUNCATED = "window_truncated"
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
-REASON_TREND_UNAVAILABLE = "required_input_unavailable"
-
-# A percentage of one hundred, as an exact Decimal. `RRA-008` requires the
-# arithmetic stay exact, so the scale factor is not a float.
-_PERCENT = Decimal(100)
-
-
-@dataclass(frozen=True, slots=True)
-class _Window:
-    """A current run of buckets and the prior run it is compared against.
-
-    Equal length by construction: whichever side has fewer buckets decides the
-    length, and `truncated` records that it cost the other side some. Comparing
-    unequal windows would report a change that is partly a change in how much
-    period each side covers.
-    """
-
-    current: tuple[Bucket, ...]
-    prior: tuple[Bucket, ...]
-    truncated: bool
-
+REASON_NEGATIVE_BASE = "negative_base"
 
 # Which unit each governed metric is stated in. A table rather than an argument,
 # so a metric cannot be emitted in the wrong unit by a caller passing one.
+#
+# The percentage delta is a `UNIT_RATIO` and therefore a *fraction*: a rise from
+# 100 to 150 is `0.5000`, not `50.0000`. The ratio contract is already in use --
+# `gross_margin` stores a fraction, and `narrative` multiplies every ratio by a
+# hundred to render it -- so storing a percentage here would reach a reader as
+# 5000%.
 _UNITS = {
     METRIC_DELTA_ABSOLUTE: UNIT_MONETARY,
     METRIC_DELTA_PERCENT: UNIT_RATIO,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _Window:
+    """Matched period pairs, current beside the period each is compared against.
+
+    Pairs rather than two runs, so the alignment cannot drift. `truncated` says a
+    current period was dropped for want of its counterpart, which is a shorter
+    window and not a rescaled one.
+    """
+
+    pairs: tuple[tuple[Bucket, Bucket], ...]
+    truncated: bool
+
+    def totals(self) -> tuple[Decimal | None, Decimal | None]:
+        return (
+            _total(pair[0] for pair in self.pairs),
+            _total(pair[1] for pair in self.pairs),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,11 +126,17 @@ class _Derivation:
         return RATIO_PRECISION
 
 
+@dataclass(frozen=True, slots=True)
+class _Outcome:
+    """One mode's results: what it derived, and what it refused and why."""
+
+    facts: tuple[Fact, ...]
+    refusals: tuple[RefusedResult, ...]
+
+
 def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
     """Both governed comparisons, or a refusal when neither can be made."""
-    facts = tuple(
-        fact for mode in GOVERNED_MODES for fact in _mode_facts(package, mode)
-    )
+    facts = tuple(fact for outcome in _outcomes(package) for fact in outcome.facts)
     if facts:
         return facts
     return RefusedResult(
@@ -122,26 +146,26 @@ def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
 
 
 def refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
-    """The modes that could not be compared, when at least one other could.
+    """Everything that could not be stated, beside whatever could.
 
-    Beside the facts rather than instead of them. A report whose year-over-year
-    coverage is short still carries a period-over-period comparison, and a reader
-    is told which one is missing and why.
+    A report whose year-over-year coverage is short still carries a
+    period-over-period comparison, and a percentage refused for a non-positive
+    base still leaves its absolute delta standing. Each of those is recorded:
+    absence is never the disclosure, so a consumer can tell a governed refusal
+    from a metric that was quietly left out.
     """
     return tuple(
-        RefusedResult(metric=_scoped_metric(METRIC_DELTA_ABSOLUTE, mode), reason=reason)
-        for mode in GOVERNED_MODES
-        if (reason := _mode_refusal(package, mode)) is not None
+        refusal for outcome in _outcomes(package) for refusal in outcome.refusals
     )
 
 
 def mode_of(fact: Fact) -> str | None:
     """Which governed mode produced this fact, recovered from its identity.
 
-    The mode lives in the metric's `scope`, which `_identity` hashes, so it is
-    not readable off the fact -- it is recomputed. Asking which of the two
-    identities matches is also a proof that they differ, which is the property
-    `RRA-008`'s stable-identifier requirement depends on.
+    The mode lives in the metric's `scope`, which the identity derivation hashes,
+    so it is not readable off the fact -- it is recomputed. Asking which of the
+    two identities matches is also a proof that they differ, which is the
+    property `RRA-008`'s stable-identifier requirement depends on.
     """
     return next(
         (
@@ -153,34 +177,64 @@ def mode_of(fact: Fact) -> str | None:
     )
 
 
-def _mode_facts(package: FactPackage, mode: str) -> tuple[Fact, ...]:
+def _outcomes(package: FactPackage) -> tuple[_Outcome, ...]:
+    return tuple(_derive_mode(package, mode) for mode in GOVERNED_MODES)
+
+
+def _derive_mode(package: FactPackage, mode: str) -> _Outcome:
     window = _window_for(package, mode)
     if window is None:
-        return ()
-    return _facts_for(
-        window,
-        _Derivation(
-            mode=mode,
-            caveats=(CAVEAT_WINDOW_TRUNCATED,) if window.truncated else (),
-            monetary_precision=package.monetary_precision,
+        return _refused(mode, METRIC_DELTA_ABSOLUTE, _absent_reason(package))
+    return _compare(window, package, mode)
+
+
+def _compare(window: _Window, package: FactPackage, mode: str) -> _Outcome:
+    current, prior = window.totals()
+    if current is None or prior is None:
+        return _refused(mode, METRIC_DELTA_ABSOLUTE, REASON_INPUT_UNAVAILABLE)
+    derivation = _Derivation(
+        mode=mode,
+        caveats=(CAVEAT_WINDOW_TRUNCATED,) if window.truncated else (),
+        monetary_precision=package.monetary_precision,
+    )
+    return _with_percentage(derivation, current - prior, prior)
+
+
+def _with_percentage(
+    derivation: _Derivation,
+    change: Decimal,
+    base: Decimal,
+) -> _Outcome:
+    """The absolute delta always; the percentage only against a positive base.
+
+    A percentage of zero is undefined, and of a negative base it misleads -- a
+    shrinking loss reads as growth. Either way the refusal is recorded rather
+    than the metric simply being absent.
+    """
+    absolute = _fact(derivation, METRIC_DELTA_ABSOLUTE, change)
+    if base > 0:
+        return _Outcome(
+            facts=(absolute, _fact(derivation, METRIC_DELTA_PERCENT, change / base)),
+            refusals=(),
+        )
+    reason = REASON_ZERO_DENOMINATOR if base == 0 else REASON_NEGATIVE_BASE
+    return _Outcome(
+        facts=(absolute,),
+        refusals=(
+            RefusedResult(
+                metric=_scoped_metric(METRIC_DELTA_PERCENT, derivation.mode),
+                reason=reason,
+            ),
         ),
     )
 
 
-def _facts_for(window: _Window, derivation: _Derivation) -> tuple[Fact, ...]:
-    current = _total(window.current)
-    prior = _total(window.prior)
-    if current is None or prior is None:
-        return ()
-    absolute = _fact(derivation, METRIC_DELTA_ABSOLUTE, current - prior)
-    if not _percentage_is_defined(prior):
-        # The absolute delta always, the percentage only against a positive
-        # base. A percentage of zero is undefined, and of a negative base it
-        # misleads: a shrinking loss reads as growth.
-        return (absolute,)
-    return (
-        absolute,
-        _fact(derivation, METRIC_DELTA_PERCENT, (current - prior) / prior * _PERCENT),
+def _refused(mode: str, metric: str, reason: str) -> _Outcome:
+    return _Outcome(
+        facts=(),
+        refusals=(
+            RefusedResult(metric=_scoped_metric(metric, mode), reason=reason),
+        ),
     )
 
 
@@ -188,45 +242,58 @@ def _window_for(package: FactPackage, mode: str) -> _Window | None:
     trend = package.trend()
     if trend is None:
         return None
-    buckets = trend.series.buckets
+    buckets = _settled(trend.series.buckets)
     length = len(buckets) // 2
     if length < 1:
         return None
     current = buckets[-length:]
     if mode == MODE_PERIOD_OVER_PERIOD:
-        return _matched(current, buckets[-2 * length : -length])
-    return _matched(current, _year_earlier(current, buckets, trend.series.granularity))
+        return _paired(current, buckets[-2 * length : -length])
+    return _year_earlier(current, buckets, trend.series.granularity)
 
 
-def _matched(
+def _settled(buckets: tuple[Bucket, ...]) -> tuple[Bucket, ...]:
+    """Every period known to have finished, which is every one but the last.
+
+    A period with a later period after it is complete, because data exists beyond
+    it. The final period may have been cut off mid-way by wherever the export
+    ended, and nothing in the series says which -- so it is left out rather than
+    compared against a whole one.
+    """
+    return buckets[:-1]
+
+
+def _paired(
     current: tuple[Bucket, ...],
     prior: tuple[Bucket, ...],
 ) -> _Window | None:
-    """Cut both runs to the shorter, so the two windows cover equal period."""
-    if not prior:
+    """Pair the two runs positionally, oldest aligned with oldest."""
+    if len(prior) != len(current):
         return None
-    length = min(len(current), len(prior))
-    return _Window(
-        current=current[-length:],
-        prior=prior[-length:],
-        truncated=length < len(current),
-    )
+    return _Window(pairs=tuple(zip(current, prior, strict=True)), truncated=False)
 
 
 def _year_earlier(
     current: tuple[Bucket, ...],
     buckets: tuple[Bucket, ...],
     granularity: str,
-) -> tuple[Bucket, ...]:
-    """The buckets one year before each of `current`, by label and not by offset.
+) -> _Window | None:
+    """Pair each current period with the same period one year before it.
 
-    Only the ones that exist. A missing month makes this window shorter, which
-    `_matched` turns into a like-for-like truncation and a caveat, rather than
-    letting a fixed step land on the wrong period.
+    A current period whose counterpart is missing is dropped *with* its pair, so
+    every remaining pair is exactly a year apart. Compressing the prior side and
+    trimming the current side to match would keep the count equal and the
+    alignment wrong.
     """
     known = {bucket.label: bucket for bucket in buckets}
-    wanted = (_label_year_earlier(bucket.label, granularity) for bucket in current)
-    return tuple(known[label] for label in wanted if label in known)
+    pairs = tuple(
+        (bucket, known[label])
+        for bucket in current
+        if (label := _label_year_earlier(bucket.label, granularity)) in known
+    )
+    if not pairs:
+        return None
+    return _Window(pairs=pairs, truncated=len(pairs) < len(current))
 
 
 def _label_year_earlier(label: str, granularity: str) -> str | None:
@@ -245,15 +312,9 @@ def _label_year_earlier(label: str, granularity: str) -> str | None:
     return f"{int(year) - 1:04d}-{rest}"
 
 
-def _mode_refusal(package: FactPackage, mode: str) -> str | None:
-    if _mode_facts(package, mode):
-        return None
-    return _absent_reason(package)
-
-
 def _absent_reason(package: FactPackage) -> str:
     if package.trend() is None:
-        return REASON_TREND_UNAVAILABLE
+        return REASON_INPUT_UNAVAILABLE
     return REASON_PRIOR_WINDOW_ABSENT
 
 
@@ -277,12 +338,6 @@ def _scoped_metric(metric: str, mode: str) -> str:
     return f"{metric}.{mode}"
 
 
-def _total(buckets: tuple[Bucket, ...]) -> Decimal | None:
+def _total(buckets) -> Decimal | None:
     present = [bucket.value for bucket in buckets if bucket.value is not None]
     return sum(present, Decimal(0)) if present else None
-
-
-def _percentage_is_defined(base: Decimal | None) -> bool:
-    if base is None:
-        return False
-    return base > 0
