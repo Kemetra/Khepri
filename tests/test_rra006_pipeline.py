@@ -191,8 +191,13 @@ def surface_of(
             SurfaceLanguage(
                 language=language,
                 direction=LANGUAGE_DIRECTION[language],
+                sections=bundle.section_ids,
                 stated=tuple(
-                    StatedFigure(figure_id=entry.figure_id, text=entry.renderings[language])
+                    StatedFigure(
+                        figure_id=entry.figure_id,
+                        text=entry.renderings[language],
+                        section=entry.section,
+                    )
                     for entry in bundle.figures
                 ),
                 caveats=bundle.caveats,
@@ -253,8 +258,13 @@ class DriftingRenderer(Renderer):
                 SurfaceLanguage(
                     language=first.language,
                     direction=first.direction,
+                    sections=bundle.section_ids,
                     stated=(
-                        StatedFigure(figure_id=first.stated[0].figure_id, text="1"),
+                        StatedFigure(
+                            figure_id=first.stated[0].figure_id,
+                            text="1",
+                            section=first.stated[0].section,
+                        ),
                         *first.stated[1:],
                     ),
                     caveats=first.caveats,

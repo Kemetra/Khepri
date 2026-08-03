@@ -31,6 +31,7 @@ from khepri.rra.bundle import (
     REASON_UNKNOWN_SURFACE,
     REASON_WRONG_DIRECTION,
     REQUIRED_SURFACES,
+    SECTION_OVERVIEW,
     SURFACE_EXCEL,
     SURFACE_PDF,
     SURFACE_WEB,
@@ -147,14 +148,20 @@ def language_of(
     disclosure: str | None = None,
     stated: tuple[StatedFigure, ...] | None = None,
     caveats: tuple[str, ...] | None = None,
+    sections: tuple[str, ...] | None = None,
 ) -> SurfaceLanguage:
     """A faithful presentation of the bundle, unless a test bends one field."""
     return SurfaceLanguage(
         language=language,
         direction=LANGUAGE_DIRECTION[language] if direction is None else direction,
+        sections=bundle.section_ids if sections is None else sections,
         stated=(
             tuple(
-                StatedFigure(figure_id=entry.figure_id, text=entry.renderings[language])
+                StatedFigure(
+                    figure_id=entry.figure_id,
+                    text=entry.renderings[language],
+                    section=entry.section,
+                )
                 for entry in bundle.figures
             )
             if stated is None
@@ -388,6 +395,7 @@ def test_a_language_the_report_does_not_publish_is_refused() -> None:
         SurfaceLanguage(
             language="fr",
             direction="ltr",
+            sections=bundle.section_ids,
             stated=(),
             caveats=bundle.caveats,
             disclosure="",
@@ -456,7 +464,13 @@ def test_a_surface_that_reformats_a_figure_is_refused() -> None:
         language_of(
             bundle,
             LANGUAGE_ENGLISH,
-            stated=(StatedFigure(figure_id=revenue.figure_id, text="500.0"),),
+            stated=(
+                StatedFigure(
+                    figure_id=revenue.figure_id,
+                    text="500.0",
+                    section=revenue.section,
+                ),
+            ),
         ),
     )
 
@@ -478,6 +492,7 @@ def test_an_english_page_showing_the_arabic_rendering_is_refused() -> None:
                 StatedFigure(
                     figure_id=revenue.figure_id,
                     text=revenue.renderings[LANGUAGE_ARABIC],
+                    section=revenue.section,
                 ),
             ),
         ),
@@ -496,7 +511,13 @@ def test_a_figure_the_bundle_never_carried_is_refused() -> None:
         language_of(
             bundle,
             LANGUAGE_ENGLISH,
-            stated=(StatedFigure(figure_id="cit_nothing/value", text="500.00"),),
+            stated=(
+                StatedFigure(
+                    figure_id="cit_nothing/value",
+                    text="500.00",
+                    section=SECTION_OVERVIEW,
+                ),
+            ),
         ),
     )
 
@@ -524,7 +545,11 @@ def test_a_row_missing_from_one_language_only_is_refused() -> None:
     # rows the two readers are shown, which no per-language check can see.
     bundle = ReportBundle.of(package())
     shortened = tuple(
-        StatedFigure(figure_id=entry.figure_id, text=entry.renderings[LANGUAGE_ARABIC])
+        StatedFigure(
+            figure_id=entry.figure_id,
+            text=entry.renderings[LANGUAGE_ARABIC],
+            section=entry.section,
+        )
         for entry in bundle.figures[:-1]
     )
     uneven = (
@@ -693,7 +718,11 @@ def test_a_surface_may_show_a_subset_so_long_as_both_readers_see_it() -> None:
             bundle,
             language,
             stated=tuple(
-                StatedFigure(figure_id=entry.figure_id, text=entry.renderings[language])
+                StatedFigure(
+                    figure_id=entry.figure_id,
+                    text=entry.renderings[language],
+                    section=entry.section,
+                )
                 for entry in totals
             ),
         )

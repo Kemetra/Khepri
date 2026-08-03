@@ -10,6 +10,7 @@ from jinja2 import Environment
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import (
     LANGUAGE_DIRECTION,
+    SECTION_OVERVIEW,
     SURFACE_WEB,
     CitedFigure,
     ReportBundle,
@@ -123,6 +124,7 @@ def figure(
         metric="revenue",
         unit_kind="monetary",
         kind="value",
+        section=SECTION_OVERVIEW,
         label=label,
         value=Decimal(value),
         renderings=renderings

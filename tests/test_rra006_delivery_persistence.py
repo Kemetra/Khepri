@@ -207,8 +207,13 @@ def surface_of(bundle: ReportBundle, surface: str) -> SurfaceContent:
             SurfaceLanguage(
                 language=language,
                 direction=LANGUAGE_DIRECTION[language],
+                sections=bundle.section_ids,
                 stated=tuple(
-                    StatedFigure(figure_id=entry.figure_id, text=entry.renderings[language])
+                    StatedFigure(
+                        figure_id=entry.figure_id,
+                        text=entry.renderings[language],
+                        section=entry.section,
+                    )
                     for entry in bundle.figures
                 ),
                 caveats=bundle.caveats,

@@ -253,6 +253,12 @@ REASON_FIGURE_COVERAGE_DIFFERS = "figure_coverage_differs_by_language"
 REASON_CAVEAT_COVERAGE_DIFFERS = "caveat_coverage_differs_by_language"
 REASON_DISCLOSURE_ALTERED = "disclosure_altered"
 REASON_NARRATIVE_STATE_CONFLICT = "narrative_state_conflict"
+REASON_UNKNOWN_SECTION = "unknown_section"
+REASON_FIGURE_MISPLACED = "figure_misplaced"
+REASON_SECTION_NOT_PRESENTED = "section_not_presented"
+REASON_SECTION_COVERAGE_DIFFERS = "section_coverage_differs_by_language"
+REASON_SECTION_ORDER_DIFFERS = "section_order_differs_by_language"
+REASON_CHART_FIGURE_NOT_STATED = "chart_figure_not_stated"
 
 # Everything a bundle refusal may be recorded as. `BundleRefused` is public, so
 # a renderer can raise it carrying any text it likes, while the attempt record
@@ -274,6 +280,12 @@ GOVERNED_REASONS = frozenset(
         REASON_CAVEAT_COVERAGE_DIFFERS,
         REASON_DISCLOSURE_ALTERED,
         REASON_NARRATIVE_STATE_CONFLICT,
+        REASON_UNKNOWN_SECTION,
+        REASON_FIGURE_MISPLACED,
+        REASON_SECTION_NOT_PRESENTED,
+        REASON_SECTION_COVERAGE_DIFFERS,
+        REASON_SECTION_ORDER_DIFFERS,
+        REASON_CHART_FIGURE_NOT_STATED,
     }
 )
 
@@ -580,9 +592,13 @@ class CitedFigure:
     metric: str
     unit_kind: str
     kind: str
+    section: str
     label: str | None
     value: Decimal | None
     renderings: dict[str, str]
+
+    def __post_init__(self) -> None:
+        _require_section(self.section)
 
     def as_document(self) -> dict[str, object]:
         return {
@@ -592,6 +608,7 @@ class CitedFigure:
             "metric": self.metric,
             "unit_kind": self.unit_kind,
             "kind": self.kind,
+            "section": self.section,
             "label": self.label,
             "value": None if self.value is None else str(self.value),
             "renderings": dict(sorted(self.renderings.items())),
@@ -686,13 +703,44 @@ class ReportBundle:
         else:
             state = NARRATIVE_OMITTED
 
+        figures = _figures(package)
         return cls(
             identity=BundleIdentity.of(package),
-            figures=_figures(package),
+            figures=figures,
             caveats=tuple(sorted(set(package.caveats))),
             narrative_state=state,
+            sections=_sections(figures),
             narrative=narrative,
         )
+
+
+def _sections(figures: tuple[CitedFigure, ...]) -> tuple[Section, ...]:
+    """The sections the bundle's own figures occupy, in governed order.
+
+    Derived from the figures rather than assembled beside them, so the sections
+    a bundle declares and the sections its figures claim cannot disagree --
+    `section_ids` is what every surface is reconciled against, and a bundle that
+    disagreed with itself would refuse every correct surface.
+
+    A section appears only when a figure occupies it, which is what keeps every
+    section here `SECTION_PRESENT` with at least one figure. Refused sections
+    arrive with the analysis families that can refuse, and charts with the slice
+    that computes their geometry.
+    """
+    occupied = {figure.section for figure in figures}
+    return tuple(
+        Section(
+            section_id=section_id,
+            state=SECTION_PRESENT,
+            reason=None,
+            figure_ids=tuple(
+                figure.figure_id for figure in figures if figure.section == section_id
+            ),
+            chart=None,
+        )
+        for section_id in ORDERED_SECTIONS
+        if section_id in occupied
+    )
 
 
 def _require_governed_section_order(sections: tuple[Section, ...]) -> None:
@@ -717,16 +765,26 @@ def _require_governed_section_order(sections: tuple[Section, ...]) -> None:
 
 @dataclass(frozen=True, slots=True)
 class StatedFigure:
-    """A figure as one surface actually presents it."""
+    """A figure as one surface actually presents it, and where it put it.
+
+    `section` is a claim, not a lookup. Nothing validates it on construction and
+    nothing copies it from the bundle: a surface that read the bundle's answer
+    would agree with itself by definition, and the placement check below would
+    pass on every surface including a broken one. An invented name is judged by
+    `reconcile` rather than rejected here, so it becomes a governed refusal a
+    bundle attempt can record instead of an exception nothing can describe.
+    """
 
     figure_id: str
     text: str
+    section: str
 
 
 @dataclass(frozen=True, slots=True)
 class SurfaceLanguage:
     language: str
     direction: str
+    sections: tuple[str, ...]
     stated: tuple[StatedFigure, ...]
     caveats: tuple[str, ...]
     disclosure: str
@@ -927,6 +985,8 @@ def reconcile(content: SurfaceContent, *, bundle: ReportBundle) -> None:
 
     for entry in seen.values():
         _reconcile_language(entry, bundle)
+        _reconcile_claimed_section_names(entry)
+        _reconcile_charts(entry, bundle)
 
     coverage = [seen[language] for language in sorted(seen)]
     first = coverage[0]
@@ -936,6 +996,16 @@ def reconcile(content: SurfaceContent, *, bundle: ReportBundle) -> None:
         # table reconciles perfectly language by language.
         if other.shown != first.shown:
             raise BundleRefused(REASON_FIGURE_COVERAGE_DIFFERS)
+    _reconcile_sections(coverage)
+
+    # Against the bundle *after* the languages have been compared with each
+    # other, so each failure gets the reason that describes it. One language
+    # dropping a section is a disagreement between surfaces; both dropping it is
+    # a disagreement with the report. Checking the bundle first would report the
+    # second reason for the first failure and leave the cross-language codes
+    # unreachable, which is a governed reason that can never be recorded.
+    for entry in seen.values():
+        _reconcile_sections_against_bundle(entry, bundle)
 
 
 def _reconcile_language(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
@@ -952,11 +1022,91 @@ def _reconcile_language(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
         figure = bundle.figure(stated.figure_id)
         if figure is None:
             raise BundleRefused(REASON_UNKNOWN_FIGURE)
+        _reconcile_placement(stated, figure)
         if stated.text != figure.renderings.get(entry.language):
             # Text, not value. `500.0` and `500.00` are the same number and a
             # different statement about precision, and a surface is not
             # entitled to choose which one a reader sees.
             raise BundleRefused(REASON_FIGURE_NOT_RECONCILED)
+
+
+def _reconcile_placement(stated: StatedFigure, figure: CitedFigure) -> None:
+    """Where a figure was shown is a claim like the text of it.
+
+    A figure printed under the wrong heading is cited correctly and read
+    wrongly: every string matches, so text reconciliation passes, and the
+    reader attributes a basket number to growth analysis. The section a surface
+    invents is checked before the one it misplaces, so an unknown name and a
+    wrong-but-governed name give different reasons.
+    """
+    if stated.section not in ORDERED_SECTIONS:
+        raise BundleRefused(REASON_UNKNOWN_SECTION)
+    if stated.section != figure.section:
+        raise BundleRefused(REASON_FIGURE_MISPLACED)
+
+
+def _reconcile_claimed_section_names(entry: SurfaceLanguage) -> None:
+    """An invented section name is its own failure, and the most specific one.
+
+    Checked first and per language, before the claim is compared with anything,
+    so a surface naming a section that does not exist is told that rather than
+    being reported as disagreeing with the bundle or with the other language.
+    """
+    for section_id in entry.sections:
+        if section_id not in ORDERED_SECTIONS:
+            raise BundleRefused(REASON_UNKNOWN_SECTION)
+
+
+def _reconcile_sections_against_bundle(
+    entry: SurfaceLanguage,
+    bundle: ReportBundle,
+) -> None:
+    """Compared against the bundle, because the bundle is what knows.
+
+    Against the other language it would catch only a disagreement between
+    surfaces. A section missing from *both* leaves them agreeing with each other
+    and disagreeing with the report that was assembled, and a refused section
+    carries no figures at all -- so nothing derived from figure rows could ever
+    notice either case.
+
+    Claiming more than the bundle assembled fails the same comparison, and
+    should: a heading for an analysis nobody ran is as wrong as a missing one.
+    """
+    if entry.sections != bundle.section_ids:
+        raise BundleRefused(REASON_SECTION_NOT_PRESENTED)
+
+
+def _reconcile_charts(entry: SurfaceLanguage, bundle: ReportBundle) -> None:
+    """Every plotted figure is also a figure this language says it presented.
+
+    `ChartSpec.figure_ids` is already a subset of its section's figures by
+    construction, and those are reconciled by exact string comparison. This
+    closes the one gap that leaves: the surface could omit a plotted figure from
+    what it claims to present, leaving a mark on a chart with no reconciled text
+    behind it.
+    """
+    for section in bundle.sections:
+        if section.chart is None:
+            continue
+        if not frozenset(section.chart.figure_ids) <= entry.shown:
+            raise BundleRefused(REASON_CHART_FIGURE_NOT_STATED)
+
+
+def _reconcile_sections(coverage: list[SurfaceLanguage]) -> None:
+    """The languages agree on which sections they showed, and in what order.
+
+    Strictly redundant once every language has been compared against the bundle:
+    two tuples each equal to `bundle.section_ids` are equal to each other. Kept
+    because these are governed reason codes naming a real and distinct failure,
+    and because a later change relaxing the bundle comparison to a subset rule
+    would otherwise take the cross-language guarantee with it silently.
+    """
+    first = coverage[0].sections
+    for other in coverage[1:]:
+        if frozenset(other.sections) != frozenset(first):
+            raise BundleRefused(REASON_SECTION_COVERAGE_DIFFERS)
+        if other.sections != first:
+            raise BundleRefused(REASON_SECTION_ORDER_DIFFERS)
 
 
 def _figures(package: FactPackage) -> tuple[CitedFigure, ...]:
@@ -1040,6 +1190,11 @@ def _figure(
         metric=metric,
         unit_kind=unit_kind,
         kind=kind,
+        # Every figure the RRA-004 package carries is an overview figure. The
+        # four RRA-008 analysis families are separate slices and place their own
+        # figures when they arrive; nothing here may claim a section for an
+        # analysis that has not been implemented.
+        section=SECTION_OVERVIEW,
         label=label,
         value=_decimal(text),
         renderings=_renderings(text),
