@@ -72,8 +72,13 @@ def _language(bundle: ReportBundle, language: str) -> SurfaceLanguage:
     return SurfaceLanguage(
         language=language,
         direction=LANGUAGE_DIRECTION[language],
+        sections=bundle.section_ids,
         stated=tuple(
-            StatedFigure(figure_id=figure.figure_id, text=figure.renderings[language])
+            StatedFigure(
+                figure_id=figure.figure_id,
+                text=figure.renderings[language],
+                section=figure.section,
+            )
             for figure in bundle.figures
         ),
         caveats=bundle.caveats,

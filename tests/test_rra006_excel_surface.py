@@ -14,6 +14,8 @@ from khepri.rra.bundle import (
     NARRATIVE_OMITTED,
     OUTCOME_DELIVERED,
     REQUIRED_SURFACES,
+    SECTION_OVERVIEW,
+    SECTION_PRESENT,
     SURFACE_EXCEL,
     SURFACE_PDF,
     SURFACE_WEB,
@@ -21,6 +23,7 @@ from khepri.rra.bundle import (
     BundleIdentity,
     CitedFigure,
     ReportBundle,
+    Section,
     StatedFigure,
     SurfaceContent,
     SurfaceLanguage,
@@ -98,6 +101,7 @@ def hostile_bundle() -> ReportBundle:
             metric="revenue_by_category",
             unit_kind="monetary",
             kind=KIND_VALUE,
+            section=SECTION_OVERVIEW,
             label=label,
             value=Decimal("1.00"),
             renderings={LANGUAGE_ENGLISH: "1.00", LANGUAGE_ARABIC: "١٫٠٠"},
@@ -109,6 +113,18 @@ def hostile_bundle() -> ReportBundle:
         figures=figures,
         caveats=(),
         narrative_state=NARRATIVE_OMITTED,
+        # The bundle indexes the figures it carries. Declaring no section while
+        # holding figures is a bundle disagreeing with itself, which every
+        # surface would copy both halves of into its claim.
+        sections=(
+            Section(
+                section_id=SECTION_OVERVIEW,
+                state=SECTION_PRESENT,
+                reason=None,
+                figure_ids=tuple(figure.figure_id for figure in figures),
+                chart=None,
+            ),
+        ),
     )
 
 
@@ -158,13 +174,18 @@ def _presented_language(
     rows = workbook.cells[name]
     headers = list(excel._FIGURE_COLUMNS[language])
     caveats_at = rows.index([excel._CAVEATS_HEADING[language]])
+    stated = tuple(
+        StatedFigure(figure_id=row[0], text=row[-1], section=SECTION_OVERVIEW)
+        for row in rows[rows.index(headers) + 1 : caveats_at]
+    )
     return SurfaceLanguage(
         language=language,
         direction="rtl" if 'rightToLeft="1"' in workbook.sheets[name] else "ltr",
-        stated=tuple(
-            StatedFigure(figure_id=row[0], text=row[-1])
-            for row in rows[rows.index(headers) + 1 : caveats_at]
-        ),
+        # Reconstructed from the sheet, never read from the bundle. This helper
+        # reports what the workbook actually contains, so a claim copied from
+        # the bundle would make every assertion built on it vacuous.
+        sections=tuple(dict.fromkeys(entry.section for entry in stated)),
+        stated=stated,
         caveats=tuple(row[0] for row in rows[caveats_at + 1 :]),
         disclosure=next(
             row[1] for row in rows if row[:1] == [excel._DISCLOSURE_HEADING[language]]
@@ -199,10 +220,12 @@ class FaithfulRenderer:
                 SurfaceLanguage(
                     language=language,
                     direction=LANGUAGE_DIRECTION[language],
+                    sections=bundle.section_ids,
                     stated=tuple(
                         StatedFigure(
                             figure_id=figure.figure_id,
                             text=figure.renderings[language],
+                            section=figure.section,
                         )
                         for figure in bundle.figures
                     ),

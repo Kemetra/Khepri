@@ -11,9 +11,12 @@ import pytest
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import (
     LANGUAGE_DIRECTION,
+    SECTION_OVERVIEW,
+    SECTION_PRESENT,
     SURFACE_PDF,
     CitedFigure,
     ReportBundle,
+    Section,
     reconcile,
 )
 from khepri.rra.facts import FactPackage, build_fact_package
@@ -125,6 +128,7 @@ def figure(
         metric="revenue",
         unit_kind="monetary",
         kind="value",
+        section=SECTION_OVERVIEW,
         label=label,
         value=Decimal(value),
         renderings=renderings
@@ -139,6 +143,20 @@ def bundle_with(*figures: CitedFigure, caveats: tuple[str, ...] = ()) -> ReportB
         figures=figures,
         caveats=caveats,
         narrative_state=base.narrative_state,
+        # The bundle has to index the figures it carries. A bundle declaring no
+        # section while holding one is a bundle disagreeing with itself, and
+        # every surface would copy both halves of that into its claim.
+        sections=(
+            Section(
+                section_id=SECTION_OVERVIEW,
+                state=SECTION_PRESENT,
+                reason=None,
+                figure_ids=tuple(figure.figure_id for figure in figures),
+                chart=None,
+            ),
+        )
+        if figures
+        else (),
         narrative=None,
     )
 

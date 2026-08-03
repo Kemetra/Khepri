@@ -129,6 +129,7 @@ class FigureCell:
     metric: str
     kind: str
     unit_kind: str
+    section: str
     label: str | None
     text: str
 
@@ -252,8 +253,18 @@ def build_content(
             SurfaceLanguage(
                 language=language,
                 direction=LANGUAGE_DIRECTION[language],
+                # The sections the bundle declares, in its order. Deriving this
+                # from the cells just built would make the surface agree with
+                # itself by construction, and a refused section has no cell to
+                # derive from at all -- so a dropped refusal heading would
+                # reconcile. What this claims is what the template must render.
+                sections=bundle.section_ids,
                 stated=tuple(
-                    StatedFigure(figure_id=cell.figure_id, text=cell.text)
+                    StatedFigure(
+                        figure_id=cell.figure_id,
+                        text=cell.text,
+                        section=cell.section,
+                    )
                     for cell in cells[language]
                 ),
                 caveats=bundle.caveats,
@@ -281,6 +292,7 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
         metric=figure.metric,
         kind=figure.kind,
         unit_kind=figure.unit_kind,
+        section=figure.section,
         label=figure.label,
         text=text,
     )
