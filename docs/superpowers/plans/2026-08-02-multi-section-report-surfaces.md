@@ -1773,6 +1773,48 @@ git add src/khepri/rra/rendering/excel.py tests/rra/rendering/test_excel_section
 git commit --no-gpg-sign -m "feat: write one worksheet per section with a native governed chart"
 ```
 
+### Notes from executing Task 13
+
+**Slice 13a** (per-section worksheets, no numeric write) merged as #89. **Slice 13b** (the chart
+data sheets and the native charts) is the second commit; `EXCEL_SURFACE_VERSION` moved to
+`rra006.excel.v3`, because a consumer selecting its parser from that version is otherwise
+unprepared for a sheet whose cells are numbers.
+
+**`figure.precision` does not exist.** Step 3's snippet quantizes to it. `CitedFigure` carries a
+`Decimal` and a per-language rendering and no precision field, and the resolution is better than
+deriving one: the number is parsed from the figure's *own authoritative English string*, so the
+double is the nearest representation of exactly what a reader is shown. `float(figure.value)` would
+have depended on an invariant held in `bundle.py` — that a figure's `Decimal` and its rendering come
+from one string — and would have written more precision than the report claimed if that ever drifted.
+
+**Shared wording now lives in `rendering/wording.py`.** Three tables were held in `rendering.html`'s
+chrome while being needed by more than one surface: section headings, chart descriptions, and the
+wording for chart label codes. The codes themselves (`metric.growth_price_effect`,
+`label.period_over_period`) were minted in `rendering.charts`, so a new one could arrive with nowhere
+to be translated and the failure surfaced only when a reader loaded the page. `category_of` and
+`LABEL_WORDING` are now one module, `_CHROME` reads all three tables from it, and a test asserts
+every code `category_of` can produce has wording in both languages.
+
+**The workbook's charts are titled and carry alternative text, on review.** The first version
+deliberately omitted both on the grounds that prose composed in a renderer is ungoverned. That was
+the right rule applied to the wrong case: `RRA-006` requires an accessible Excel workbook, an
+embedded chart is the one object on a sheet carrying no cell text of its own, and the wording it
+needs — the section heading and the chart-kind description — already exists and is already
+translated. The chart title comes from `SECTION_HEADINGS` and the drawing's `descr` from
+`CHART_DESCRIPTIONS`. `insert_chart`'s return value is checked rather than discarded, for the same
+reason a failed `write_row` was a finding earlier: a dropped chart is indistinguishable from a
+section that never had one.
+
+**Defect found, not fixed here — the concentration curve is charted on no surface.**
+`bundle._bucket` records a series figure's `metric` as the series' **`measure`** (`revenue`), while
+`_FAMILIES[SECTION_CONCENTRATION].plots` asks for `concentration.METRIC_CURVE`
+(`concentration_curve`). So `_plottable` matches nothing, `Section.chart` is `None` for
+concentration on every dataset, and the one chart `RRA-008` requires by specification — the
+cumulative share curve — is absent from the web, print and workbook surfaces alike. This predates
+Task 13 and is a bundle-level fix affecting all three surfaces plus `BUNDLE_VERSION`, so it belongs
+in its own slice rather than inside the workbook's. `tests/test_rra006_excel_charts.py` builds a
+curve bundle directly so the `CHART_LINE` path is not shipped unexercised.
+
 ---
 
 ## Pull request notes

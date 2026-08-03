@@ -21,6 +21,7 @@ from khepri.rra.bundle import (
     CHART_LINE,
     DIRECTION_LTR,
     DIRECTION_RTL,
+    GOVERNED_FIGURE_LABELS,
     KIND_VALUE,
     LANGUAGE_DIRECTION,
     SECTION_COMPARISON,
@@ -36,6 +37,7 @@ from khepri.rra.rendering.charts import (
     ChartView,
     build_chart,
 )
+from khepri.rra.rendering.wording import LABEL_WORDING, category_of, worded
 
 
 def figure(figure_id: str, value: Decimal | None, label: str) -> CitedFigure:
@@ -402,3 +404,34 @@ def test_the_canvas_is_governed_rather_than_chosen_per_chart() -> None:
     they do not support."""
     assert Decimal(640) == CHART_WIDTH
     assert Decimal(320) == CHART_HEIGHT
+
+
+# --- the wording every governed code resolves to ---------------------------
+
+
+def test_every_governed_label_a_category_can_carry_has_wording_in_both_languages() -> None:
+    """The tie the shared module exists to make structural.
+
+    The codes were minted in `charts` and the wording lived in `html`'s chrome, so a
+    new code could arrive with nowhere to be translated -- and the failure surfaced
+    only when a reader loaded the page. Both halves now sit in `chart_labels`, and this
+    is what says they agree.
+    """
+    for label in GOVERNED_FIGURE_LABELS:
+        for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+            assert f"label.{label}" in LABEL_WORDING[language], (label, language)
+
+
+def test_the_two_languages_are_one_table_with_one_key_set() -> None:
+    """Wording added to one language cannot be silently missing from the other."""
+    assert set(LABEL_WORDING[LANGUAGE_ENGLISH]) == set(LABEL_WORDING[LANGUAGE_ARABIC])
+    assert LABEL_WORDING[LANGUAGE_ENGLISH] != LABEL_WORDING[LANGUAGE_ARABIC]
+
+
+def test_a_customer_value_is_never_run_through_the_wording_table() -> None:
+    """A product name is final. Translating one would be a renderer editing content."""
+    category = category_of(figure("F-1", Decimal(1), label="Water"))
+
+    assert category.localize is False
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        assert worded(category, language) == "Water"
