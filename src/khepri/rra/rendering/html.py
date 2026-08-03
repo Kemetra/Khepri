@@ -39,9 +39,11 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from khepri.rra.bundle import (
     LANGUAGE_DIRECTION,
+    SECTION_REFUSED,
     SURFACE_WEB,
     CitedFigure,
     ReportBundle,
+    Section,
     StatedFigure,
     SurfaceContent,
     SurfaceLanguage,
@@ -52,6 +54,7 @@ from khepri.rra.narrative import (
     REQUIRED_LANGUAGES,
     NarrativeDraft,
 )
+from khepri.rra.rendering.charts import ChartView, build_chart
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
 
@@ -86,6 +89,21 @@ _CHROME: dict[str, dict[str, str]] = {
         "total": "Total",
         "none": "None",
         "cites": "Cites",
+        "chart_not_drawn": "No chart",
+        "sections": {
+            "overview": "Overview",
+            "comparison": "Period comparison",
+            "concentration": "Concentration",
+            "growth": "Growth decomposition",
+            "basket": "Basket structure",
+        },
+        "chart_descriptions": {
+            "chart_description.bar": "Bar chart of the figures in this section",
+            "chart_description.grouped_bar": (
+                "Grouped bar chart of the figures in this section"
+            ),
+            "chart_description.line": "Cumulative share curve over the ranked values",
+        },
     },
     LANGUAGE_ARABIC: {
         "title": "تقرير التجزئة",
@@ -107,6 +125,19 @@ _CHROME: dict[str, dict[str, str]] = {
         "total": "الإجمالي",
         "none": "لا يوجد",
         "cites": "يُسند إلى",
+        "chart_not_drawn": "لا يوجد رسم",
+        "sections": {
+            "overview": "نظرة عامة",
+            "comparison": "مقارنة الفترات",
+            "concentration": "التركّز",
+            "growth": "تحليل النمو",
+            "basket": "بنية السلة",
+        },
+        "chart_descriptions": {
+            "chart_description.bar": "رسم بالأعمدة للأرقام في هذا القسم",
+            "chart_description.grouped_bar": "رسم بأعمدة مجمّعة للأرقام في هذا القسم",
+            "chart_description.line": "منحنى النصيب التراكمي عبر القيم المرتّبة",
+        },
     },
 }
 
@@ -317,7 +348,6 @@ def build_context(
     reason the table is: everything in it has to be a governed version, a digest,
     or a count, and never anything derived from customer data.
     """
-    _require_no_scoped_caveat(bundle)
     return {
         "language": language,
         "direction": LANGUAGE_DIRECTION[language],
@@ -325,7 +355,13 @@ def build_context(
         "chrome": _CHROME[language],
         "disclosure": bundle.disclosure(language),
         "narrative_state": bundle.narrative_state,
-        "caveats": list(bundle.caveats),
+        # Report-level caveats only. A section-scoped one qualifies one analysis and
+        # is rendered inside that section: listing it here would tell a reader the
+        # whole dataset is qualified, and dropping it would leave `build_content`
+        # claiming a caveat the page never showed.
+        "caveats": [caveat for caveat in bundle.caveats if caveat.section is None],
+        "sections": _section_views(bundle, language, cells),
+        "refused_state": SECTION_REFUSED,
         "cells": list(cells),
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
@@ -386,32 +422,68 @@ def _document_bytes(documents: dict[str, str]) -> int:
     return sum(len(document.encode("utf-8")) for document in documents.values())
 
 
-def _require_no_scoped_caveat(bundle: ReportBundle) -> None:
-    """This template has one caveats section, so it can only place report-level ones.
+@dataclass(frozen=True, slots=True)
+class _SectionView:
+    """One governed section as the template needs it: heading, chart, cells, caveats.
 
-    A section-scoped caveat qualifies one analysis and belongs inside that
-    section. Until the template renders a caveats block per section, the two
-    things this surface could do with one are both wrong: listing it under the
-    report's own heading tells a reader the whole dataset is qualified, and
-    filtering it out drops a caveat `RRA-008` requires while `build_content`
-    still claims it. The second is worse, because `reconcile` compares the claim
-    against the bundle and never against the page, so the surface would pass.
-
-    So it refuses. Both this surface and the printed one, which fills two blocks
-    of this same template and shares this context.
-
-    **Sequencing this implies, for whoever writes the analysis slices.** The four
-    `RRA-008` families emit section-scoped caveats. The per-section rendering must
-    land before any of them does, or every report carrying one refuses. That is
-    the honest failure -- the alternative is delivering a report whose reader
-    never sees a required caveat -- but it is a real ordering constraint and not a
-    surprise to discover during a slice.
+    Assembled here rather than in the template because a template choosing which
+    cells belong to a section could disagree with `bundle.section_ids`, which is
+    what every surface is reconciled against.
     """
-    scoped = [caveat.code for caveat in bundle.caveats if caveat.section is not None]
-    if scoped:
-        raise SurfaceRenderFailed(
-            "This surface cannot place a section-scoped caveat yet."
+
+    section_id: str
+    state: str
+    reason: str | None
+    cells: tuple[FigureCell, ...]
+    caveats: tuple[str, ...]
+    chart: ChartView | None
+
+
+def _section_views(
+    bundle: ReportBundle,
+    language: str,
+    cells: tuple[FigureCell, ...],
+) -> list[_SectionView]:
+    """Every section the bundle declares, in its order, with what it renders.
+
+    The geometry is computed per language because the category axis mirrors for a
+    right-to-left page. Whether a chart is drawable at all is not a per-language
+    question and was already decided by the bundle, which is why a section without
+    a `ChartSpec` gets no chart here and carries `chart_not_drawn` instead.
+    """
+    figures = {figure.figure_id: figure for figure in bundle.figures}
+    return [
+        _SectionView(
+            section_id=section.section_id,
+            state=section.state,
+            reason=section.reason,
+            cells=tuple(
+                cell for cell in cells if cell.section == section.section_id
+            ),
+            caveats=tuple(
+                caveat.code
+                for caveat in bundle.caveats
+                if caveat.section == section.section_id
+            ),
+            chart=_chart_of(section, figures, language),
         )
+        for section in bundle.sections
+    ]
+
+
+def _chart_of(
+    section: Section,
+    figures: dict[str, CitedFigure],
+    language: str,
+) -> ChartView | None:
+    """The geometry for one section's chart, if the bundle declared one."""
+    if section.chart is None:
+        return None
+    return build_chart(
+        section.chart,
+        tuple(figures[figure_id] for figure_id in section.figure_ids),
+        direction=LANGUAGE_DIRECTION[language],
+    )
 
 
 def _require_text(value: str, name: str) -> None:

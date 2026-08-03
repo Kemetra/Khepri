@@ -187,10 +187,16 @@ def _presented_language(
         # the bundle would make every assertion built on it vacuous.
         sections=tuple(dict.fromkeys(entry.section for entry in stated)),
         stated=stated,
-        # The sheet carries report-level caveats, so each is reconstructed
-        # with no section -- read from the sheet, never from the bundle.
+        # The sheet names the section a scoped caveat qualifies in the cell beside
+        # the code, so both are read back from the sheet and never from the bundle.
+        # A parser that ignored the second cell would rebuild every caveat as
+        # report-level and pass a workbook that told a reader the whole dataset was
+        # qualified by one analysis.
         caveats=tuple(
-            StatedCaveat(code=row[0], section=None)
+            StatedCaveat(
+                code=row[0],
+                section=row[1] if len(row) > 1 and row[1] else None,
+            )
             for row in rows[caveats_at + 1 :]
         ),
         disclosure=next(
@@ -382,6 +388,10 @@ def _allowed_text(bundle: ReportBundle) -> set[str]:
     allowed |= {str(value) for value in identity.values()}
     allowed |= {bundle.bundle_id, bundle.narrative_state, EXCEL_SURFACE_VERSION}
     allowed |= {caveat.code for caveat in bundle.caveats}
+    # A section identifier is governed vocabulary, like a caveat code. The caveats
+    # block names the section a scoped caveat qualifies, because one caveats heading
+    # per language cannot otherwise tell a report-level warning from an analysis one.
+    allowed |= set(bundle.section_ids)
     allowed |= {bundle.disclosure(language) for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)}
     for figure in bundle.figures:
         allowed |= {figure.figure_id, figure.citation_id, figure.fact_id, figure.metric}

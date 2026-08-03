@@ -348,6 +348,15 @@ def test_the_page_furniture_is_one_table_with_one_key_set() -> None:
     assert set(chrome[LANGUAGE_ARABIC]) == set(chrome[LANGUAGE_ENGLISH])
     for entries in chrome.values():
         for name, text in entries.items():
+            # Nested tables -- section headings, chart descriptions -- are walked
+            # too. A table added to one language and forgotten in the other is the
+            # failure this test exists to catch, and nesting must not open a hole
+            # in it.
+            if isinstance(text, dict):
+                assert set(text) == set(chrome[LANGUAGE_ENGLISH][name]), name
+                for key, nested in text.items():
+                    assert nested.strip(), f"{name}.{key}"
+                continue
             assert text.strip(), name
 
 
