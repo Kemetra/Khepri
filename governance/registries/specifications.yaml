@@ -61,9 +61,9 @@ specifications:
     document: governance/specifications/RRA-004.md
     depends_on:
       - RRA-003
-    approved_by: AHMED-SHAABAN
-    approved_at: 2026-07-29
-    approval_ref: governance/approvals/APP-002.yaml
+    approved_by: KHEPRI-AGENT
+    approved_at: 2026-08-03
+    approval_ref: governance/approvals/APP-014.yaml
   - id: RRA-005
     title: Grounded Arabic and English Narrative
     state: approved
