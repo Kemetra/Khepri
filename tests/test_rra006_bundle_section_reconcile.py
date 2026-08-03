@@ -27,23 +27,70 @@ from khepri.rra.bundle import (
     SECTION_PRESENT,
     BundleRefused,
     ChartSpec,
+    ReportBundle,
     Section,
     StatedFigure,
+    SurfaceContent,
     reconcile,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from tests.test_rra006_bundle import language_of, package, surface_of
-
-from khepri.rra.bundle import ReportBundle  # isort: skip
 
 
 def bundle_of() -> ReportBundle:
     return ReportBundle.of(package())
 
 
-def test_a_faithful_surface_reconciles() -> None:
-    bundle = bundle_of()
-    reconcile(surface_of(bundle), bundle=bundle)
+def section_of(
+    bundle: ReportBundle,
+    section_id: str = SECTION_OVERVIEW,
+    *,
+    figures: tuple[str, ...] | None = None,
+    chart: ChartSpec | None = None,
+) -> Section:
+    """One present section over the bundle's figures, or a named subset."""
+    return Section(
+        section_id=section_id,
+        state=SECTION_PRESENT,
+        reason=None,
+        figure_ids=(
+            tuple(figure.figure_id for figure in bundle.figures)
+            if figures is None
+            else figures
+        ),
+        chart=chart,
+    )
+
+
+def bend(bundle: ReportBundle, *, both: bool = False, **fields: object) -> SurfaceContent:
+    """A faithful surface with one field bent, in Arabic alone or in both.
+
+    Which of the two matters: bending Arabic alone produces a disagreement
+    between the surfaces, and bending both produces a disagreement with the
+    bundle. Those are different failures with different governed reasons, so
+    every test says explicitly which one it is reaching for.
+    """
+    return surface_of(
+        bundle,
+        languages=(
+            language_of(bundle, LANGUAGE_ARABIC, **fields),  # type: ignore[arg-type]
+            language_of(bundle, LANGUAGE_ENGLISH, **(fields if both else {})),  # type: ignore[arg-type]
+        ),
+    )
+
+
+def restated(bundle: ReportBundle, section: str) -> tuple[StatedFigure, ...]:
+    """Every figure of one language, claimed under a section of our choosing."""
+    return tuple(
+        replace(entry, section=section)
+        for entry in language_of(bundle, LANGUAGE_ARABIC).stated
+    )
+
+
+def refusal_for(content: SurfaceContent, bundle: ReportBundle) -> str:
+    with pytest.raises(BundleRefused) as refused:
+        reconcile(content, bundle=bundle)
+    return str(refused.value)
 
 
 def test_the_bundle_places_every_rra004_figure_in_the_overview() -> None:
@@ -54,107 +101,62 @@ def test_the_bundle_places_every_rra004_figure_in_the_overview() -> None:
     assert {figure.section for figure in bundle.figures} == {SECTION_OVERVIEW}
 
 
-def test_a_figure_stated_in_the_wrong_section_refuses() -> None:
-    # Every string still matches. The reader attributes an overview number to
-    # comparison analysis, and text reconciliation cannot see it.
+# One bend of a faithful surface, and the reason that names what went wrong.
+#
+# Tabulated rather than written out, because these cases differ only in the bend
+# and the reason -- and the taxonomy is the substance here. Every row reconciles
+# perfectly by text; each fails somewhere else:
+#
+#   * a figure under another section's heading is cited right and read wrong
+#   * an invented name is a distinct failure from a wrong-but-governed one, so a
+#     refusal record can say which happened
+#   * one language dropping a section disagrees with the other language, while
+#     both dropping it disagrees with the report -- and the second is the case no
+#     tuple derived from figure rows could ever catch, since the two surfaces
+#     agree with each other
+#   * claiming more than the bundle assembled is as wrong as claiming less: a
+#     heading for an analysis nobody ran
+BENT_SURFACES = [
+    pytest.param(
+        lambda bundle: {"stated": restated(bundle, SECTION_COMPARISON)},
+        REASON_FIGURE_MISPLACED,
+        id="a-figure-under-another-sections-heading",
+    ),
+    pytest.param(
+        lambda bundle: {"stated": restated(bundle, "invented")},
+        REASON_UNKNOWN_SECTION,
+        id="a-figure-under-an-invented-heading",
+    ),
+    pytest.param(
+        lambda bundle: {"both": True, "sections": ()},
+        REASON_SECTION_NOT_PRESENTED,
+        id="a-section-dropped-from-both-languages",
+    ),
+    pytest.param(
+        lambda bundle: {"sections": ()},
+        REASON_SECTION_COVERAGE_DIFFERS,
+        id="a-section-dropped-from-one-language",
+    ),
+    pytest.param(
+        lambda bundle: {"both": True, "sections": ("invented",)},
+        REASON_UNKNOWN_SECTION,
+        id="a-claim-naming-a-section-that-does-not-exist",
+    ),
+    pytest.param(
+        lambda bundle: {"both": True, "sections": (SECTION_OVERVIEW, SECTION_GROWTH)},
+        REASON_SECTION_NOT_PRESENTED,
+        id="a-claim-the-bundle-never-assembled",
+    ),
+]
+
+
+@pytest.mark.parametrize(("fields", "reason"), BENT_SURFACES)
+def test_a_bent_surface_refuses_with_the_reason_that_names_it(
+    fields: object,
+    reason: str,
+) -> None:
     bundle = bundle_of()
-    moved = tuple(
-        replace(entry, section=SECTION_COMPARISON)
-        for entry in language_of(bundle, LANGUAGE_ARABIC).stated
-    )
-    content = surface_of(
-        bundle,
-        languages=(
-            language_of(bundle, LANGUAGE_ARABIC, stated=moved),
-            language_of(bundle, LANGUAGE_ENGLISH),
-        ),
-    )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_FIGURE_MISPLACED
-
-
-def test_a_figure_stated_in_an_invented_section_refuses_as_unknown() -> None:
-    # An invented name and a wrong-but-governed name are different failures and
-    # get different reasons, so a refusal record says which one happened.
-    bundle = bundle_of()
-    invented = tuple(
-        replace(entry, section="invented")
-        for entry in language_of(bundle, LANGUAGE_ARABIC).stated
-    )
-    content = surface_of(
-        bundle,
-        languages=(
-            language_of(bundle, LANGUAGE_ARABIC, stated=invented),
-            language_of(bundle, LANGUAGE_ENGLISH),
-        ),
-    )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_UNKNOWN_SECTION
-
-
-def test_a_section_dropped_from_both_languages_refuses() -> None:
-    # The case no derived tuple could ever catch: both languages agree with each
-    # other and disagree with the report that was assembled.
-    bundle = bundle_of()
-    content = surface_of(
-        bundle,
-        languages=tuple(
-            language_of(bundle, language, sections=())
-            for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
-        ),
-    )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_SECTION_NOT_PRESENTED
-
-
-def test_a_section_claim_naming_an_unknown_section_refuses() -> None:
-    bundle = bundle_of()
-    content = surface_of(
-        bundle,
-        languages=tuple(
-            language_of(bundle, language, sections=("invented",))
-            for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
-        ),
-    )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_UNKNOWN_SECTION
-
-
-def test_a_section_claim_the_bundle_never_assembled_refuses() -> None:
-    # Claiming *more* than the bundle declares is the same failure as claiming
-    # less: the surface is presenting a heading for an analysis nobody ran.
-    bundle = bundle_of()
-    content = surface_of(
-        bundle,
-        languages=tuple(
-            language_of(bundle, language, sections=(SECTION_OVERVIEW, SECTION_GROWTH))
-            for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
-        ),
-    )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_SECTION_NOT_PRESENTED
-
-
-def test_a_section_dropped_from_one_language_only_refuses_as_a_disagreement() -> None:
-    # One language dropping a section is a disagreement between surfaces; both
-    # dropping it is a disagreement with the report. They get different reasons,
-    # which is why the cross-language comparison runs before the bundle one.
-    bundle = bundle_of()
-    content = surface_of(
-        bundle,
-        languages=(
-            language_of(bundle, LANGUAGE_ARABIC, sections=()),
-            language_of(bundle, LANGUAGE_ENGLISH),
-        ),
-    )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_SECTION_COVERAGE_DIFFERS
+    assert refusal_for(bend(bundle, **fields(bundle)), bundle) == reason  # type: ignore[operator]
 
 
 def test_section_order_differing_by_language_refuses() -> None:
@@ -165,39 +167,22 @@ def test_section_order_differing_by_language_refuses() -> None:
     bundle = replace(
         base,
         sections=(
-            Section(
-                section_id=SECTION_OVERVIEW,
-                state=SECTION_PRESENT,
-                reason=None,
-                figure_ids=tuple(f.figure_id for f in base.figures),
-                chart=None,
-            ),
-            Section(
-                section_id=SECTION_COMPARISON,
-                state=SECTION_PRESENT,
-                reason=None,
-                figure_ids=(base.figures[0].figure_id,),
-                chart=None,
+            section_of(base),
+            section_of(
+                base,
+                SECTION_COMPARISON,
+                figures=(base.figures[0].figure_id,),
             ),
         ),
     )
-    swapped = (SECTION_COMPARISON, SECTION_OVERVIEW)
-    content = surface_of(
-        bundle,
-        languages=(
-            language_of(bundle, LANGUAGE_ARABIC, sections=swapped),
-            language_of(bundle, LANGUAGE_ENGLISH),
-        ),
-    )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_SECTION_ORDER_DIFFERS
+    content = bend(bundle, sections=(SECTION_COMPARISON, SECTION_OVERVIEW))
+    assert refusal_for(content, bundle) == REASON_SECTION_ORDER_DIFFERS
 
 
 def test_every_new_section_reason_is_governed() -> None:
     # A reason a refusal record may not carry is a reason that cannot be
-    # recorded, so each must be in the gate that keeps those records
-    # free of customer content.
+    # recorded, so each must be in the gate that keeps those records free of
+    # customer content.
     for reason in (
         REASON_UNKNOWN_SECTION,
         REASON_FIGURE_MISPLACED,
@@ -209,61 +194,51 @@ def test_every_new_section_reason_is_governed() -> None:
         assert reason in GOVERNED_REASONS
 
 
+def charted(bundle: ReportBundle) -> ReportBundle:
+    """The same bundle with its overview section plotting its first two figures."""
+    return replace(
+        bundle,
+        sections=(
+            section_of(
+                bundle,
+                chart=ChartSpec(
+                    kind=CHART_BAR,
+                    figure_ids=(
+                        bundle.figures[0].figure_id,
+                        bundle.figures[1].figure_id,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 def test_a_chart_plotting_a_figure_the_surface_did_not_state_refuses() -> None:
-    # The one gap the structural subset rule leaves open. The chart may only
+    # The one gap the structural subset rule leaves open. A chart may only
     # reference figures its section declared, but the surface can still omit one
     # from what it says it presented -- leaving a mark with no text behind it.
-    base = bundle_of()
-    plotted = base.figures[0].figure_id
-    bundle = replace(
-        base,
-        sections=(
-            Section(
-                section_id=SECTION_OVERVIEW,
-                state=SECTION_PRESENT,
-                reason=None,
-                figure_ids=tuple(f.figure_id for f in base.figures),
-                chart=ChartSpec(
-                    kind=CHART_BAR,
-                    figure_ids=(plotted, base.figures[1].figure_id),
-                ),
-            ),
-        ),
-    )
-    withheld = tuple(
-        entry
-        for entry in language_of(bundle, LANGUAGE_ARABIC).stated
-        if entry.figure_id != plotted
-    )
-    content = surface_of(
+    bundle = charted(bundle_of())
+    withheld = bundle.figures[0].figure_id
+    content = bend(
         bundle,
-        languages=(
-            language_of(bundle, LANGUAGE_ARABIC, stated=withheld),
-            language_of(bundle, LANGUAGE_ENGLISH),
+        stated=tuple(
+            entry
+            for entry in language_of(bundle, LANGUAGE_ARABIC).stated
+            if entry.figure_id != withheld
         ),
     )
-    with pytest.raises(BundleRefused) as refusal:
-        reconcile(content, bundle=bundle)
-    assert str(refusal.value) == REASON_CHART_FIGURE_NOT_STATED
+    assert refusal_for(content, bundle) == REASON_CHART_FIGURE_NOT_STATED
 
 
-def test_a_chart_whose_figures_are_all_stated_reconciles() -> None:
-    base = bundle_of()
-    bundle = replace(
-        base,
-        sections=(
-            Section(
-                section_id=SECTION_OVERVIEW,
-                state=SECTION_PRESENT,
-                reason=None,
-                figure_ids=tuple(f.figure_id for f in base.figures),
-                chart=ChartSpec(
-                    kind=CHART_BAR,
-                    figure_ids=(base.figures[0].figure_id, base.figures[1].figure_id),
-                ),
-            ),
-        ),
-    )
+@pytest.mark.parametrize(
+    "prepare",
+    [
+        pytest.param(lambda bundle: bundle, id="without-a-chart"),
+        pytest.param(charted, id="with-a-chart-plotting-only-stated-figures"),
+    ],
+)
+def test_a_faithful_surface_reconciles(prepare: object) -> None:
+    bundle = prepare(bundle_of())  # type: ignore[operator]
     reconcile(surface_of(bundle), bundle=bundle)
 
 
