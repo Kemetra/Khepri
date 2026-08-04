@@ -205,8 +205,24 @@ ship with the business workbook or the native charts break. `_series_range`
 (`excel.py:656-665`) addresses the chartdata sheet **by name**, so a chart whose
 series points at a removed sheet renders empty. It carries no authoritative figure
 and no citation (`excel.py:56-60`), so it is Audit-tier by classification but
-always-delivered by necessity. Recommended treatment: **hidden**
-(`sheet.hide()`) — present for the charts, absent from the sheet tabs.
+always-delivered by necessity.
+
+**It stays visible.** An earlier draft of this document recommended hiding it for
+tab-bar tidiness. That was wrong, and `excel.py:71-75` already argues why:
+
+> "It is a visible worksheet, not a hidden one. Hiding numbers that a decision
+> permits only conditionally is the wrong direction: an auditor opening the
+> workbook is owed every cell in it, and the disclosure that these are chart
+> machinery is the section identifier written above each block, not their absence
+> from the tab bar."
+
+The reasoning is sound and it is an auditability property, not a style preference.
+`APP-013` permits a numeric cell *conditionally* — solely as a chart series
+address, on a dedicated worksheet holding no authoritative figure and no citation
+identifier. A conditional permission that hides its own evidence is worse than no
+permission. **Do not hide this sheet.** The block-level section identifiers written
+above each series (`_write_chart_block`, `excel.py:587-593`) are the disclosure
+that these cells are machinery.
 
 Business sheets carry **business column names**. No sheet in 1–7 contains a
 `figure_id`, `citation_id`, raw `metric`, `kind`, or `unit_kind` column.

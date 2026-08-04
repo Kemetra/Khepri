@@ -72,8 +72,22 @@ an id-prefixed code, or a module path:
 | HTML | **0** identifiers | 46 identifiers |
 | Excel | **0** identifiers (9 business sheets) | 47 identifiers (Audit Trail + Provenance) |
 
-Also verified: **zero** Eastern-Arabic numerals (§B.4a), and the Chart Data sheet
-carries `state="hidden"` — present so the native charts resolve, absent from the tabs.
+Also verified: **zero** Eastern-Arabic numerals (§B.4a), and **no hidden worksheets**
+— see below.
+
+### One recommendation reversed before it shipped
+
+An earlier draft recommended hiding the Chart Data worksheet so the tab bar stayed
+tidy. `excel.py:71-75` already argues against exactly that:
+
+> "It is a visible worksheet, not a hidden one. Hiding numbers that a decision permits
+> only conditionally is the wrong direction: an auditor opening the workbook is owed
+> every cell in it."
+
+`APP-013` permits a numeric cell in the workbook *conditionally*, and a conditional
+permission that hides its own evidence is worse than no permission. The recommendation
+was reversed and the sheet ships visible. Recorded because it is the kind of
+tidiness-for-auditability trade that is easy to make by accident.
 
 This check should become a test when the implementation slice lands. Match identifier
 *tokens*, not words — an early version of the check flagged "Total revenue change"
