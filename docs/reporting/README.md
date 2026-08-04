@@ -222,10 +222,23 @@ single chunk of work in Phase 1, larger than the wording tables; and the tests
 currently *pin the ledger structure as correct*, so migrating them is an act of
 deciding what the new contract is, not mechanical find-and-replace.
 
-Also unpriced: whether the benchmark surface (`benchmark_trial.py:164`, which asserts
-`surfaces != REQUIRED_SURFACES`) makes any assertion about rendered content. Two
-required CI checks exist in no workflow file and cannot be reproduced locally, so this
-must be answered by reading the benchmark, not by running it.
+**Checked, and it is not a problem: the benchmark asserts nothing about rendered
+content.** `_require_whole_report` (`benchmark_trial.py:161-165`) checks only that a
+*complete* bundle names every required surface:
+
+```python
+def _require_whole_report(surfaces: tuple[str, ...], complete: bool) -> None:
+    if not complete:
+        return
+    if surfaces != REQUIRED_SURFACES:
+        raise ValueError("A complete bundle names every required surface.")
+```
+
+It never inspects figures, caveats, sections, or the disclosure, and it takes the
+renderers as a port (`benchmark_trial.py:74`). So the presentation change touches the
+benchmark's assertions not at all — which follows from §B.1's rule anyway, since all
+three surfaces are still produced. Answered by reading, because the benchmark is one of
+the two required CI checks that exist in no workflow file and cannot be run locally.
 
 ## Scope boundary
 

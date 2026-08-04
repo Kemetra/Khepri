@@ -285,6 +285,49 @@ code on any customer surface.
 
 ---
 
+## D.5a What a parity check can and cannot enforce
+
+`RRA-005` requires genuine bilingual parity, and it is worth being precise about how
+much of that is mechanisable — because the existing mechanism is weaker than it looks.
+
+`wording.py:120-122` asserts **key-set equality**:
+
+```python
+for _language, _headings in SECTION_HEADINGS.items():
+    if set(_headings) != set(ORDERED_SECTIONS):
+        raise RuntimeError("every governed section needs a heading in every language")
+```
+
+That catches a *missing* entry. It cannot catch a *wrong* one. An Arabic string that
+says the opposite of its English counterpart passes every check in the codebase.
+
+For the five short labels the module holds today that gap is small. For what this
+package adds — 12 metric names, 8 section refusals, 5 result refusals and 12 caveats,
+much of it multi-sentence prose — it is not small, because a mistranslated refusal tells
+a customer the wrong thing about their own data in a document sold as defensible.
+
+**Enforce mechanically (required at import):**
+
+| Check | Catches |
+|---|---|
+| Key-set equality per table per language | A missing entry |
+| Non-empty, non-whitespace values | A placeholder left in |
+| No Eastern-Arabic numerals in any value (§B.4a) | The numeral error this package already made once |
+| No governed identifier appearing in any value | An identifier smuggled into customer text |
+| Arabic values contain Arabic script; English values do not | An untranslated English string sitting in the Arabic table |
+
+That last one is the cheapest high-value check and it does not exist today. A copy-paste
+that leaves English in the Arabic column is the most likely failure by far, and a
+script-range test catches it.
+
+**Cannot be enforced mechanically — needs the owner:**
+
+Whether the Arabic *means* the English, and whether it reads like a person rather than
+a system. No test reaches this. It is why §D.2a and §B.5 ask for **authorship rather
+than proofreading**, and why the golden sample is the gate.
+
+---
+
 ## D.6 Tone rules
 
 - Address the reader as the owner of the data: "your file", not "the input".

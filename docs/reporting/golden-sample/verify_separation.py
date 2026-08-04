@@ -118,79 +118,111 @@ def _sheet_verdict(tier: str, name: str, found: list[str]) -> tuple[str, list[st
     return "clean", []
 
 
+def _check_sheet(archive: zipfile.ZipFile, index: int, tag: str, shared: list[str]) -> list[str]:
+    """One worksheet: print how it reads, return what is wrong with it."""
+    name = re.search(r'name="([^"]+)"', tag).group(1)
+    tier = _tier_of(name)
+    found = _identifiers(_sheet_text(archive, index, shared))
+    verdict, leaks = _sheet_verdict(tier, name, found)
+    print(f"  {index:>2} [{tier:9}] {name:34} {verdict}")
+    return _name_failures(name, tag) + leaks
+
+
+def _workbook_parts(archive: zipfile.ZipFile) -> tuple[list[str], list[str]]:
+    """The shared-string table and the sheet declarations, in workbook order."""
+    shared = re.findall(
+        r"<t[^>]*>(.*?)</t>",
+        archive.read("xl/sharedStrings.xml").decode("utf-8"),
+        re.S,
+    )
+    tags = re.findall(r"<sheet [^>]*/>", archive.read("xl/workbook.xml").decode("utf-8"))
+    return shared, tags
+
+
 def check_workbook() -> list[str]:
-    failures: list[str] = []
     with zipfile.ZipFile(XLSX) as archive:
-        shared = re.findall(
-            r"<t[^>]*>(.*?)</t>",
-            archive.read("xl/sharedStrings.xml").decode("utf-8"),
-            re.S,
-        )
-        tags = re.findall(r"<sheet [^>]*/>", archive.read("xl/workbook.xml").decode("utf-8"))
+        shared, tags = _workbook_parts(archive)
         print(f"\nWorkbook: {len(tags)} sheets")
-        for index, tag in enumerate(tags, start=1):
-            name = re.search(r'name="([^"]+)"', tag).group(1)
-            tier = _tier_of(name)
-            found = _identifiers(_sheet_text(archive, index, shared))
-            verdict, leaks = _sheet_verdict(tier, name, found)
-            failures.extend(_name_failures(name, tag))
-            failures.extend(leaks)
-            print(f"  {index:>2} [{tier:9}] {name:34} {verdict}")
-    return failures
+        checked = [
+            _check_sheet(archive, index, tag, shared) for index, tag in enumerate(tags, start=1)
+        ]
+    return [failure for sheet in checked for failure in sheet]
+
+
+def _check_region(region: str, markup: str) -> list[str]:
+    """One HTML region: print its identifier count, return a failure if it leaked.
+
+    Only the business region can fail. The evidence region is *expected* to be full
+    of identifiers -- that is what it is for.
+    """
+    found = _identifiers(_visible_text(markup))
+    leaked = found if region == "business" else []
+    print(
+        f"  {region:10} {len(found):>3} identifiers{' LEAK ' + str(leaked[:5]) if leaked else ''}"
+    )
+    return [f"HTML {region} region leaked {leaked[:5]}"] if leaked else []
+
+
+def _check_numerals(source: str) -> list[str]:
+    """Arabic report text uses Western numerals (0-9); see the IA, section B.4a."""
+    eastern = re.findall(EASTERN_ARABIC_NUMERALS, source)
+    print(f"  {'numerals':10} {len(eastern):>3} Eastern-Arabic (must be 0)")
+    return [f"{len(eastern)} Eastern-Arabic numerals (use Western 0-9)"] if eastern else []
 
 
 def check_html() -> list[str]:
-    failures: list[str] = []
     source = HTML.read_text(encoding="utf-8")
     split = source.index('<h1 id="evidence"')
-    regions = {"business": source[:split], "evidence": source[split:]}
     print("\nHTML")
-    for region, markup in regions.items():
-        found = _identifiers(_visible_text(markup))
-        if region == "business" and found:
-            failures.append(f"HTML business region leaked {found[:5]}")
-        print(
-            f"  {region:10} {len(found):>3} identifiers"
-            f"{' LEAK ' + str(found[:5]) if region == 'business' and found else ''}"
-        )
+    business = _check_region("business", source[:split])
+    evidence = _check_region("evidence", source[split:])
+    return business + evidence + _check_numerals(source)
 
-    eastern = re.findall(EASTERN_ARABIC_NUMERALS, source)
-    if eastern:
-        failures.append(f"{len(eastern)} Eastern-Arabic numerals (use Western 0-9)")
-    print(f"  {'numerals':10} {len(eastern):>3} Eastern-Arabic (must be 0)")
-    return failures
+
+def _check_guard(label: str, marker: bytes, blob: bytes) -> list[str]:
+    """One marker `pdf.py` refuses to publish a PDF without.
+
+    Six markers covering four properties: a PDF container (header and trailer), a
+    structure tree, mark info, and an embedded font program.
+    """
+    present = marker in blob
+    print(f"  {label:18} {'pass' if present else 'FAIL'}")
+    return [] if present else [f"PDF missing {label}"]
 
 
 def check_pdf() -> list[str]:
-    failures: list[str] = []
     blob = PDF.read_bytes()
     print("\nPDF publication guards")
-    for label, marker in PDF_GUARDS.items():
-        ok = marker in blob
-        if not ok:
-            failures.append(f"PDF missing {label}")
-        print(f"  {label:18} {'pass' if ok else 'FAIL'}")
+    checked = [_check_guard(label, marker, blob) for label, marker in PDF_GUARDS.items()]
     pages = re.search(rb"/Type\s*/Pages.*?/Count\s+(\d+)", blob, re.S)
     print(f"  {'pages':18} {pages.group(1).decode() if pages else '?'}   {len(blob) // 1024} KB")
-    return failures
+    return [failure for guard in checked for failure in guard]
+
+
+def _missing_samples() -> list[Path]:
+    """Which sample files are absent, so the run can say so before checking anything."""
+    return [path for path in (XLSX, HTML, PDF) if not path.exists()]
+
+
+def _report(failures: list[str]) -> int:
+    """Print the outcome and return the exit code it implies."""
+    print()
+    if not failures:
+        print("[OK] business surfaces carry no governed identifier; audit surfaces carry them all")
+        return 0
+    print(f"[FAIL] {len(failures)} problem(s):", file=sys.stderr)
+    for failure in failures:
+        print(f"  - {failure}", file=sys.stderr)
+    return 1
 
 
 def main() -> int:
-    for path in (XLSX, HTML, PDF):
-        if not path.exists():
+    missing = _missing_samples()
+    if missing:
+        for path in missing:
             print(f"[FAIL] missing sample: {path}", file=sys.stderr)
-            return 1
-
-    failures = check_workbook() + check_html() + check_pdf()
-
-    print()
-    if failures:
-        print(f"[FAIL] {len(failures)} problem(s):", file=sys.stderr)
-        for failure in failures:
-            print(f"  - {failure}", file=sys.stderr)
         return 1
-    print("[OK] business surfaces carry no governed identifier; audit surfaces carry them all")
-    return 0
+    return _report(check_workbook() + check_html() + check_pdf())
 
 
 if __name__ == "__main__":
