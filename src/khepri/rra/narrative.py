@@ -1,5 +1,11 @@
 """Grounded Arabic and English narrative over an approved fact package.
 
+This module implements RRA-005. It owns the `NarrativeAdapter` contract that
+specification defines, the projection that keeps raw rows and identifiers away
+from a provider, the validation that rejects unsupported numbers and citations,
+the Arabic/English parity requirement, and the refusal path that returns no
+prose rather than inventing fallback analysis.
+
 **What leaves this process.** A narrative request is *projected* from the fact
 package through `_REQUEST_SCHEMA` rather than filtered against a list of things
 to strip. Anything the package gains later — a new field on a fact, a new
