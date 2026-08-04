@@ -255,6 +255,75 @@ caveat set to match exactly, so this sheet must be complete, not curated.
 
 ---
 
+## B.4a Conventions checked against outside practice
+
+The structure above was designed from Khepri's own field inventory. Its *look and
+voice* were not — those were assumed, so they were checked against retail
+reporting practice on 2026-08-04. Four results, one of which corrected the sample.
+
+### Confirmed
+
+**Findings before figures, with progressive disclosure.** Retail business-review
+practice puts a short executive layer first — "whether the business is on track
+and where attention is needed" — then drivers, then detail. §B.0's inversion and
+§B.2's section order match this. No change.
+
+**Four KPIs at the executive level is the right ceiling.** Practice warns against
+including data "simply because it's available" and recommends the few signals that
+*explain* performance rather than describe it. The sample's 4-tile row is at the
+limit, not below it.
+
+**Limitations as specific, actionable exceptions.** Practice recommends alerts
+that "explain why the issue matters, and point to the owner or next step" over
+undifferentiated flagging. This is independently the same shape as §D's five-part
+refusal contract — particularly part 5, the export action. Convergent, so §D
+stands as written.
+
+### Corrected
+
+**Western numerals (0–9) in Arabic financial text, not Eastern (٠–٩).** Western
+numerals are the safe commercial default across the Arabic-speaking world;
+Eastern Arabic numerals appear in literary and formal contexts, not commercial
+documents. The golden sample originally rendered the Arabic summary with
+`٢٫١٪` / `٤٫٧٪` / `٧١٪` and has been corrected to `2.1%` / `4.7%` / `71%`.
+
+**Rule for the implementation slice:** Arabic report text uses Western numerals.
+This is a wording-layer rule, not a formatting one — `bundle` already produces the
+figure strings and the renderers must not reformat them (`html.py:1-9`), so the
+Arabic renderings must be *generated* with Western numerals in `bundle`, never
+transliterated at the surface.
+
+**RTL means mirroring the layout, not just the text.** Tables, charts, and
+diagrams all mirror; bullets align right. Khepri already does this correctly —
+one document per language each declaring its own `dir`, logical CSS properties
+throughout (`html.py:11-17`), and `chart.set_x_axis({"reverse": True})` for the
+Arabic category axis (`excel.py:645-652`). Noted as already-satisfied so the
+implementation slice does not "fix" it.
+
+### A gap worth naming, not closing here
+
+**Comparable-store ("like-for-like") sales is the metric this buyer segment reads
+first, and Khepri does not compute it.** Total revenue growth conflates a concept
+getting stronger with a chain getting bigger: a retailer can post 24% total growth
+while comparable sales fall 3%. Operators and lenders treat like-for-like as the
+cleanest read on whether the business is actually improving.
+
+This is **out of scope for this package** — it is a new governed analysis, not a
+presentation change, and would need an `RRA-008` family. It is recorded here
+because it is the most likely "why isn't this in the report?" question from a
+mid-market retail buyer, and because the roadmap should carry it. Note the
+dependency: it needs branch-level data across two comparable periods, which is
+also what `prior_window_absent` currently refuses on. **Recommended: add to the
+roadmap as a Phase 3 candidate** (multi-dataset accumulation), where the retention
+change that makes two comparable periods available is already planned.
+
+Sources: [Umbrex retail KPI dashboard playbook](https://umbrex.com/resources/retail-industry-playbooks/retail-kpi-dashboard-weekly-business-review-playbook/designing-the-retail-kpi-dashboard/) ·
+[Arabic invoicing and RTL conventions](https://invovate.com/blog/invoicing-in-arabic) ·
+[RetailDogma on same-store sales](https://www.retaildogma.com/same-store-sales/) ·
+[Toolio comparable-store reporting guide](https://www.toolio.com/post/your-go-to-guide-for-comparable-store-sales-reporting-and-planning)
+
+---
+
 ## B.5 Naming — business names for governed metrics
 
 The matrix (§A.1) established there is **no existing translation path for
