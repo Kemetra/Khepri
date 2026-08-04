@@ -229,26 +229,30 @@ Provenance sheet.
 
 **The golden sample shows the English half only.** That is a deliberate
 simplification to keep the sample readable, and it is the one place the sample
-diverges from the delivered artifact. Two naming options for the implementation
-slice, and the owner should pick:
+diverges from the delivered artifact. Two naming options existed:
 
 | Option | Sheet names | Trade-off |
 |---|---|---|
 | **(a)** Suffix, as today | `Executive Summary (English)` / `الملخص التنفيذي (العربية)` | Consistent with the current `_REPORT_SHEET` convention; 15 tabs is a lot to scan |
 | **(b)** Two workbooks | One file per language, 8 tabs each | Cleaner for the reader; doubles the delivered files and needs a delivery-layer change |
 
-**(a) is recommended** — it changes no delivery contract, and a bilingual client
-opening one file is the current behaviour customers have already seen. Revisit if
-15 tabs tests badly.
+**Adopted: (a), owner-authorized 2026-08-04.** It changes no delivery contract,
+and a bilingual client opening one file is the behaviour customers have already
+seen. Revisit if 15 tabs tests badly with real readers — reversing it is a
+delivery-layer change, not a bundle change.
 
-Sheet 5 (Product & Category) is listed because the owner asked for it. **Flagged
-dependency:** the current bundle's section set is
-`overview / comparison / concentration / growth / basket`. There is no
-product-or-category performance section. Sheet 5 is therefore either (a) a
-re-presentation of the concentration family's ranked buckets under a business
-name, or (b) genuinely new analysis requiring an `RRA-008` family. **(a) is
-recommended** — it needs no new governed analysis, and the concentration family
-already ranks buckets by contribution. The golden sample uses (a).
+Sheet 5 (Product & Category) is listed because the owner asked for it. The
+current bundle's section set is
+`overview / comparison / concentration / growth / basket` — there is no
+product-or-category performance section. Two options existed: (a) re-present the
+concentration family's ranked buckets under a business name, or (b) add a new
+`RRA-008` family.
+
+**Adopted: (a), owner-authorized 2026-08-04.** It needs no new governed analysis,
+and the concentration family already ranks buckets by contribution. Sheet 5 is a
+presentation of `concentration` and nothing more; the ranked-bucket figures it
+shows are the same figures the concentration section states, so the two can never
+disagree.
 
 Sheet 7 is where the reconcile constraint lands: `bundle.py:1324` requires the
 caveat set to match exactly, so this sheet must be complete, not curated.
@@ -331,21 +335,45 @@ The matrix (§A.1) established there is **no existing translation path for
 the implementation slice derives the full key set from the governed metric
 vocabulary.
 
+The governed metric vocabulary is **ten metrics** (`facts.py:69-78`) plus the two
+growth effects (`analysis/growth.py:72-73`). All twelve are listed; the earlier
+draft covered four and left the rest to reach the page as raw identifiers.
+
 | Governed metric | English business name | Arabic business name |
 |---|---|---|
 | `revenue` | Revenue | الإيرادات |
 | `units` | Units sold | الوحدات المبيعة |
 | `transactions` | Number of sales | عدد المبيعات |
-| `average_transaction_value` | Average sale value | متوسط قيمة البيع |
-| `growth_revenue_change` | Total revenue change | إجمالي تغير الإيرادات |
+| `average_order_value` | Average sale value | متوسط قيمة البيع |
+| `average_selling_price` | Average selling price | متوسط سعر البيع |
+| `cost` | Cost of goods sold | تكلفة المبيعات |
+| `gross_profit` | Gross profit | إجمالي الربح |
+| `gross_margin` | Gross margin | هامش الربح الإجمالي |
+| `discount` | Discounts given | الخصومات الممنوحة |
+| `returns` | Returns | المرتجعات |
 | `growth_price_effect` | Effect of price changes | أثر تغير الأسعار |
 | `growth_volume_effect` | Effect of volume changes | أثر تغير الكميات |
-| `items_per_transaction` | Items per sale | عدد الأصناف لكل بيع |
-| `attach_rate` | Attach rate | معدل الإضافة |
-| `concentration_*` | Share of sales | نصيب من المبيعات |
 
-Arabic column requires owner review — `RRA-005` demands genuine bilingual
-parity, which is not achieved by translating the English.
+Derived labels the surfaces also need:
+
+| Concept | English | Arabic |
+|---|---|---|
+| Total revenue change | Total revenue change | إجمالي تغير الإيرادات |
+| Items per sale (basket) | Items per sale | عدد الأصناف لكل بيع |
+| Attach rate (basket) | Attach rate | معدل الإضافة |
+| Concentration bucket share | Share of sales | نصيب من المبيعات |
+| Cumulative share | Cumulative share | النصيب التراكمي |
+
+> **The Arabic column above is a draft and needs owner authorship, not owner
+> proofreading.** `RRA-005` requires genuine bilingual parity, and a translated
+> English column is not parity — it is English wearing Arabic script. Two
+> specific places to check: `gross_margin` vs `gross_profit` are distinguished in
+> Arabic accounting usage by more than an adjective, and "attach rate" has no
+> settled Arabic retail term, so `معدل الإضافة` may need replacing with a phrase
+> rather than a term.
+>
+> **Numerals: Western (0–9), never Eastern (٠–٩)** — see §B.4a. This is a
+> `bundle`-layer rule, not a surface one.
 
 ---
 

@@ -52,8 +52,11 @@ not itself the customer report.
 
 ## D.2 Section refusals — whole analysis unavailable
 
-Wording below is a draft for owner review. Arabic requires owner authorship
-(`RRA-005` parity).
+Wording below is a draft for owner review. **The Arabic in §D.2a needs owner
+authorship rather than proofreading** — `RRA-005` requires genuine parity, and
+refusal prose is the hardest place to achieve it, because the English is written
+to sound like a helpful shopkeeper rather than a system. A literal translation
+will sound like a system.
 
 ### `prior_window_absent` — comparison, growth
 
@@ -124,6 +127,70 @@ consistency test. That is the differentiator made visible.
 > the rows that have one would describe part of your sales and be presented as if
 > it described all of them. The rest of the review is unaffected. Export with a
 > receipt number on every row and this becomes available.
+
+---
+
+## D.2a Arabic draft — section refusals
+
+Western numerals throughout (§B.4a). Each entry keeps the five-part contract:
+what, why, rest-still-valid, which field, how to fix.
+
+### `prior_window_absent`
+
+> **المقارنة بفترة سابقة — غير متاحة**
+> يغطي ملفك فترة واحدة، فلا توجد داخله فترة أسبق للمقارنة بها. وما عدا ذلك في هذا
+> التقرير غير متأثر، وهو يوصف الفترة التي قدّمتها. ولإتاحة المقارنة، صدِّر ملفاً
+> يغطي أيضاً الفترة التي تريد المقارنة بها — الأشهر نفسها من العام السابق، أو
+> الأشهر التي تسبقها مباشرة.
+
+### `required_input_unavailable`
+
+> **[اسم التحليل] — غير متاح**
+> الأرقام التي يحتاجها هذا التحليل غير موجودة في الملف. وما عدا ذلك في التقرير غير
+> متأثر. أضِف [اسم العمود] إلى ملف التصدير ليصبح هذا التحليل متاحاً.
+
+### `aggregate_unavailable`
+
+> **تركّز المبيعات — غير متاح**
+> الإجماليات التي يُبنى عليها هذا التحليل لم يتسنَّ إنتاجها من الصفوف المقدَّمة. وما
+> عدا ذلك في التقرير غير متأثر.
+
+### `distinct_set_uncomputable`
+
+> **تركّز المبيعات — غير متاح**
+> يقارن تحليل التركّز كل منتج أو فرع بالبقية، والملف لا يحدّد هويتها بدرجة تكفي
+> للتمييز بينها. وما عدا ذلك في التقرير غير متأثر. صدِّر الملف باسم منتج أو فرع
+> ثابت في كل صف ليصبح هذا التحليل متاحاً.
+
+### `units_absent`
+
+> **محرّكات النمو — غير متاحة**
+> يحتاج تقسيم النمو إلى سعر وكمية إلى كمية مبيعة لكل عملية، وهي غير موجودة في
+> الملف. أرقام الإيرادات غير متأثرة — يبيّن التقرير مقدار تغيّر الإيرادات، لكن لا
+> يبيّن ما جاء منه من السعر وما جاء من الكمية. أضِف الكمية المبيعة إلى ملف التصدير
+> ليصبح هذا التحليل متاحاً.
+
+### `decomposition_not_additive`
+
+> **محرّكات النمو — محجوبة**
+> حُسب أثر السعر وأثر الكمية، لكن مجموعهما لا يساوي إجمالي تغيّر الإيرادات. وبدلاً
+> من عرض تقسيم لا يتوازن، حُجب. أرقام الإيرادات غير متأثرة وتبقى صحيحة. وغالباً ما
+> يعني ذلك أن الكميات والإيرادات في الملف مقيسة على مجموعتين مختلفتين من الصفوف.
+
+### `transaction_identifier_absent`
+
+> **حجم سلة الشراء — غير متاح**
+> لا يحتوي ملفك على رقم فاتورة أو إيصال، فلا توجد طريقة لمعرفة أي الصفوف تنتمي إلى
+> البيع نفسه. وعدّ الصفوف بدلاً من ذلك سيضخّم حجم السلة في كل بيع يمتد على عدة
+> أسطر. وما عدا ذلك في التقرير غير متأثر. صدِّر الملف مع رقم الإيصال ليصبح هذا
+> التحليل متاحاً.
+
+### `incomplete_transaction_identifiers`
+
+> **حجم سلة الشراء — غير متاح**
+> بعض الصفوف تحمل رقم إيصال وبعضها لا يحمله. وحجم السلة المحسوب من الصفوف التي
+> تحمله يوصف جزءاً من مبيعاتك ويُعرض كأنه يوصفها كلها. وما عدا ذلك في التقرير غير
+> متأثر. صدِّر الملف مع رقم إيصال في كل صف ليصبح هذا التحليل متاحاً.
 
 ---
 

@@ -371,6 +371,24 @@ happened to export.
 3. Specify schema-drift handling — the customer's export format will change, and a silent
    remap is a correctness failure on a defensibility product. Refuse, explain, and offer remap.
 4. Extend `RRA-008` comparison to cross-dataset periods.
+5. **Add comparable-store ("like-for-like") sales.** Recorded here 2026-08-04 after checking the
+   report design against retail reporting practice. This is the metric mid-market retail buyers and
+   their lenders read *first*, and Khepri does not compute it. Total revenue growth conflates a
+   concept getting stronger with a chain getting bigger: a retailer can post 24% total growth while
+   comparable sales fall 3%. It is a **new governed analysis**, not a presentation change, so it
+   needs an `RRA-008` family amendment rather than a wording table.
+
+   **Why it lands in this phase rather than Phase 1.** It requires branch-level revenue across two
+   comparable periods, restricted to the branches present in *both*. That is exactly the data
+   accumulation makes ordinary and that a single upload currently refuses with
+   `prior_window_absent`. Building it before accumulation would ship an analysis that refuses for
+   most real customers.
+
+   **A refusal it needs.** A chain that opened or closed branches between the two periods has a
+   comparable set smaller than its full estate, and a like-for-like figure computed over a
+   silently-shrunken set is the exact misstatement this product exists to refuse. Expect a new
+   governed reason — provisionally `comparable_set_insufficient` — plus a caveat naming how many
+   branches were excluded and why.
 
 **Exit criterion.** A customer uploads a second month and receives a comparison neither upload
 could have produced alone.

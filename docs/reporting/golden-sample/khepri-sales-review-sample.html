@@ -6,9 +6,10 @@
     --ink-1: #0b0b0b; --ink-2: #52514e; --ink-muted: #898781;
     --grid: #e1e0d9; --axis: #c3c2b7;
     --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --seq-200:#9ec5f4; --seq-350:#5598e7; --seq-450:#2a78d6; --seq-600:#184f95;
     --up: #006300; --down: #d03b3b;
+    --warn: #fab219; --crit: #d03b3b; --good: #0ca30c;
     --ring: rgba(11,11,11,0.10);
-    --card: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) .viz-root {
@@ -17,9 +18,9 @@
       --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-muted: #898781;
       --grid: #2c2c2a; --axis: #383835;
       --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+      --seq-200:#184f95; --seq-350:#256abf; --seq-450:#3987e5; --seq-600:#9ec5f4;
       --up: #0ca30c; --down: #e66767;
       --ring: rgba(255,255,255,0.10);
-      --card: #202020;
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -28,78 +29,97 @@
     --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-muted: #898781;
     --grid: #2c2c2a; --axis: #383835;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --seq-200:#184f95; --seq-350:#256abf; --seq-450:#3987e5; --seq-600:#9ec5f4;
     --up: #0ca30c; --down: #e66767;
     --ring: rgba(255,255,255,0.10);
-    --card: #202020;
   }
 
   .viz-root {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--plane); color: var(--ink-1);
-    max-width: 1000px; margin: 0 auto; padding: 2rem 1.25rem 4rem;
+    max-width: 1040px; margin: 0 auto; padding: 2rem 1.25rem 4rem;
     line-height: 1.55;
   }
   .viz-root *, .viz-root *::before { box-sizing: border-box; }
-  h1 { font-size: 2rem; margin: 0 0 .2rem; letter-spacing: -.02em; }
-  h2 { font-size: 1.3rem; margin: 2.75rem 0 .5rem; letter-spacing: -.01em; }
-  h3 { font-size: 1rem; margin: 1.5rem 0 .4rem; }
+  h1 { font-size: 2.1rem; margin: 0 0 .2rem; letter-spacing: -.025em; }
+  h2 { font-size: 1.35rem; margin: 3rem 0 .3rem; letter-spacing: -.015em; }
+  h2 .num { color: var(--ink-muted); font-weight: 500; margin-inline-end: .45rem; }
+  h3 { font-size: 1rem; margin: 1.6rem 0 .4rem; }
   .client { color: var(--ink-2); font-size: 1rem; margin: 0 0 1.5rem; }
   .disclosure {
     background: var(--surface-1); border: 1px solid var(--ring);
     border-radius: 10px; padding: .85rem 1rem; color: var(--ink-2);
     font-size: .85rem; margin: 0 0 2rem;
   }
-  .lead {
-    font-size: 1.18rem; line-height: 1.5; margin: 0 0 1.75rem;
-    max-width: 62ch; color: var(--ink-1);
-  }
+  .sectionlede { color: var(--ink-2); max-width: 68ch; margin: .1rem 0 1.1rem; font-size: .97rem; }
+  .lead { font-size: 1.2rem; line-height: 1.5; margin: 0 0 1.5rem; max-width: 64ch; }
   .lead b { font-weight: 650; }
-  .hero { font-size: 3.1rem; font-weight: 700; letter-spacing: -.03em; line-height: 1; }
-  .hero-unit { font-size: 1.4rem; font-weight: 500; color: var(--ink-2); }
-  .delta { font-size: 1rem; font-weight: 650; margin-top: .35rem; }
-  .delta.up { color: var(--up); } .delta.down { color: var(--down); }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap: .75rem; margin: 1.5rem 0 0; }
-  .kpi { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 10px; padding: .8rem .9rem; }
-  .kpi .k { font-size: .78rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
-  .kpi .v { font-size: 1.5rem; font-weight: 680; margin: .2rem 0 .1rem; letter-spacing: -.02em; }
-  .kpi .d { font-size: .82rem; font-weight: 620; }
-  .kpi .d.up { color: var(--up); } .kpi .d.down { color: var(--down); }
-  .card { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 12px; padding: 1.1rem 1.15rem; margin: .75rem 0; }
+  .herorow { display: grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap: .8rem; align-items: stretch; }
+  .hero-card { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 12px; padding: 1rem 1.1rem; }
+  .hero { font-size: 2.9rem; font-weight: 700; letter-spacing: -.035em; line-height: 1.05; }
+  .hero-unit { font-size: 1.25rem; font-weight: 500; color: var(--ink-2); }
+  .klabel { font-size: .76rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; font-weight: 620; }
+  .delta { font-size: .98rem; font-weight: 650; margin-top: .3rem; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit,minmax(158px,1fr)); gap: .7rem; margin: .9rem 0 0; }
+  .kpi { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 10px; padding: .7rem .8rem; }
+  .kpi .v { font-size: 1.34rem; font-weight: 680; margin: .18rem 0 .08rem; letter-spacing: -.02em; }
+  .kpi .d { font-size: .8rem; font-weight: 620; }
+  .card { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 12px; padding: 1.1rem 1.15rem; margin: .8rem 0; }
   figure { margin: 0; }
-  figcaption { color: var(--ink-2); font-size: .85rem; margin-top: .5rem; }
+  figcaption { color: var(--ink-2); font-size: .85rem; margin-top: .55rem; max-width: 74ch; }
   svg { display: block; width: 100%; height: auto; overflow: visible; }
   .scroller { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
-  th, td { text-align: start; padding: .5rem .65rem; border-bottom: 1px solid var(--grid); }
-  thead th { color: var(--ink-2); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 620; border-bottom: 1px solid var(--axis); }
+  th, td { text-align: start; padding: .48rem .6rem; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  thead th { color: var(--ink-2); font-size: .77rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 620; border-bottom: 1px solid var(--axis); }
   td.n, th.n { text-align: end; }
   tbody tr:last-child td, tbody tr:last-child th { border-bottom: none; }
-  tr.emph th, tr.emph td { font-weight: 680; }
-  .limit { border-inline-start: 3px solid var(--s2); padding: .1rem 0 .1rem 1rem; margin: 1.1rem 0 1.4rem; }
+  tr.emph th, tr.emph td { font-weight: 690; border-top: 1px solid var(--axis); }
+  .insight {
+    background: color-mix(in oklab, var(--s1) 7%, var(--surface-1));
+    border: 1px solid color-mix(in oklab, var(--s1) 26%, transparent);
+    border-inline-start: 3px solid var(--s1);
+    border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0; max-width: 76ch;
+  }
+  .insight .t { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--s1); }
+  .insight p { margin: .3rem 0 0; font-size: .95rem; }
+  .watch { background: color-mix(in oklab, var(--warn) 11%, var(--surface-1)); border-color: color-mix(in oklab, var(--warn) 38%, transparent); border-inline-start-color: var(--warn); }
+  .watch .t { color: color-mix(in oklab, var(--warn) 62%, var(--ink-1)); }
+  .limit { border-inline-start: 3px solid var(--s2); padding: .1rem 0 .1rem 1rem; margin: 1.1rem 0 1.5rem; }
   .limit h3 { margin: 0 0 .3rem; font-size: .98rem; }
-  .limit p { margin: .3rem 0; color: var(--ink-2); font-size: .92rem; max-width: 68ch; }
+  .limit p { margin: .3rem 0; color: var(--ink-2); font-size: .92rem; max-width: 70ch; }
   .limit .ok { color: var(--up); font-weight: 620; font-size: .86rem; }
+  .limit .fix { color: var(--ink-1); }
   .colophon { margin-top: 3.5rem; padding-top: 1.1rem; border-top: 1px solid var(--grid); color: var(--ink-muted); font-size: .84rem; }
-  .colophon a { color: var(--s1); }
-  .ar { direction: rtl; text-align: right; font-size: 1.02rem; }
+  .colophon b { color: var(--ink-2); }
+  .ar { direction: rtl; text-align: right; font-size: 1.03rem; }
+  .ar table { text-align: right; }
   .legend { display: flex; flex-wrap: wrap; gap: 1rem; font-size: .84rem; color: var(--ink-2); margin-top: .6rem; }
   .legend span { display: inline-flex; align-items: center; gap: .38rem; }
   .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .bar-track { display:block; height:7px; background:var(--grid); border-radius:4px; overflow:hidden; min-width:70px }
+  .bar-fill { display:block; height:100%; border-radius:4px; background:var(--s1) }
   .evidence-note { background: var(--surface-1); border: 1px dashed var(--axis); border-radius: 10px; padding: 1rem; margin: 1rem 0 2rem; color: var(--ink-2); font-size: .88rem; }
   code { font-family: ui-monospace, Consolas, monospace; font-size: .85em; }
-  .tier { display: inline-block; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; font-weight: 700; padding: .2rem .5rem; border-radius: 5px; }
-  .tier.b { background: color-mix(in oklab, var(--s1) 16%, transparent); color: var(--s1); }
-  .tier.a { background: color-mix(in oklab, var(--ink-muted) 22%, transparent); color: var(--ink-2); }
+  .toc { background: var(--surface-1); border: 1px solid var(--ring); border-radius: 10px; padding: .85rem 1.1rem; margin: 0 0 2rem; }
+  .toc ol { margin: .3rem 0 0; padding-inline-start: 1.3rem; columns: 2; column-gap: 2rem; font-size: .92rem; }
+  .toc a { color: var(--s1); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .pill { display:inline-block; font-size:.72rem; font-weight:680; padding:.12rem .45rem; border-radius:4px; letter-spacing:.02em }
+  .pill.g { background:color-mix(in oklab,var(--good) 18%,transparent); color:var(--up) }
+  .pill.w { background:color-mix(in oklab,var(--warn) 24%,transparent); color:color-mix(in oklab,var(--warn) 65%,var(--ink-1)) }
+  .pill.c { background:color-mix(in oklab,var(--crit) 16%,transparent); color:var(--down) }
 </style>
 
 <div class="viz-root">
 
-<p style="font-size:.8rem;color:var(--ink-muted);margin:0 0 1.5rem;letter-spacing:.04em;text-transform:uppercase">
-  Golden sample · fictional data · demonstrates business / audit separation
+<p style="font-size:.78rem;color:var(--ink-muted);margin:0 0 1.4rem;letter-spacing:.05em;text-transform:uppercase">
+  Golden sample · fictional data · business report with audit evidence separated
 </p>
 
 <h1>Sales Review</h1>
-<p class="client">Al Rahma Trading Co. &nbsp;·&nbsp; January – July 2026</p>
+<p class="client">Al Rahma Trading Co. &nbsp;·&nbsp; January – July 2026 &nbsp;·&nbsp; six branches</p>
 
 <p class="disclosure">
   This report was produced by automated analysis of a customer-supplied file. Every
@@ -107,126 +127,211 @@
   listed as unavailable rather than estimated.
 </p>
 
-<h2 style="margin-top:0">1. Summary</h2>
+<nav class="toc" aria-label="Contents">
+  <div class="klabel">In this review</div>
+  <ol>
+    <li><a href="#s1">Summary</a></li>
+    <li><a href="#s2">Sales performance</a></li>
+    <li><a href="#s3">Period comparison</a></li>
+    <li><a href="#s4">Growth drivers</a></li>
+    <li><a href="#s5">Profitability</a></li>
+    <li><a href="#s6">Discounts and returns</a></li>
+    <li><a href="#s7">Branch performance</a></li>
+    <li><a href="#s8">Concentration</a></li>
+    <li><a href="#s9">What this review does not cover</a></li>
+  </ol>
+</nav>
+
+<h2 id="s1"><span class="num">1</span>Summary</h2>
 
 <p class="lead">
   Revenue grew for the fourth consecutive month, but the growth came
   <b>entirely from higher prices rather than from selling more</b>. Units sold fell
-  2.1% while revenue rose 4.7%. Three branches account for 71% of all sales, so the
-  result depends heavily on those three.
+  2.1% while revenue rose 4.7%. Gross margin slipped from 31.4% to 30.6% because cost
+  per unit rose faster than price. Three of six branches produce 71% of all sales.
 </p>
 
-<div class="card">
-  <div class="k" style="font-size:.78rem;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em">Total revenue</div>
-  <div class="hero">2,512,000 <span class="hero-unit">EGP</span></div>
-  <div class="delta up">▲ 4.7% against the previous period</div>
+<div class="herorow">
+  <div class="hero-card">
+    <div class="klabel">Total revenue</div>
+    <div class="hero">2,512,000 <span class="hero-unit">EGP</span></div>
+    <div class="delta up">▲ 4.7% &nbsp;·&nbsp; +113,000 EGP</div>
+  </div>
+  <div class="hero-card">
+    <div class="klabel">Gross profit</div>
+    <div class="hero">768,700 <span class="hero-unit">EGP</span></div>
+    <div class="delta up">▲ 2.1% &nbsp;·&nbsp; margin 30.6% <span class="pill w">down 0.8pp</span></div>
+  </div>
 </div>
 
 <div class="kpis">
-  <div class="kpi"><div class="k">Units sold</div><div class="v">48,310</div><div class="d down">▼ 2.1%</div></div>
-  <div class="kpi"><div class="k">Number of sales</div><div class="v">15,204</div><div class="d up">▲ 0.8%</div></div>
-  <div class="kpi"><div class="k">Average sale value</div><div class="v">165 EGP</div><div class="d up">▲ 3.9%</div></div>
-  <div class="kpi"><div class="k">Top 3 branch share</div><div class="v">71.0%</div><div class="d">of all sales</div></div>
+  <div class="kpi"><div class="klabel">Units sold</div><div class="v">48,310</div><div class="d down">▼ 2.1%</div></div>
+  <div class="kpi"><div class="klabel">Number of sales</div><div class="v">15,204</div><div class="d up">▲ 0.8%</div></div>
+  <div class="kpi"><div class="klabel">Average sale</div><div class="v">165 EGP</div><div class="d up">▲ 3.9%</div></div>
+  <div class="kpi"><div class="klabel">Avg selling price</div><div class="v">52.0 EGP</div><div class="d up">▲ 6.9%</div></div>
+  <div class="kpi"><div class="klabel">Discounts</div><div class="v">147,300 EGP</div><div class="d down">▲ 18.4%</div></div>
+  <div class="kpi"><div class="klabel">Returns</div><div class="v">61,900 EGP</div><div class="d down">▲ 9.2%</div></div>
 </div>
 
-<h2>2. Sales performance</h2>
-<p style="color:var(--ink-2);max-width:66ch;margin:.2rem 0 1rem">
-  Revenue rose in every month except April. July was the strongest month of the period.
+<div class="insight">
+  <div class="t">What this means</div>
+  <p>
+    You are holding revenue up with price, not demand. That works while customers
+    accept the increases — but units, discounts and returns are all moving the wrong
+    way at the same time, which is the pattern that usually appears one or two periods
+    before price resistance shows up in revenue.
+  </p>
+</div>
+
+<h2 id="s2"><span class="num">2</span>Sales performance</h2>
+<p class="sectionlede">
+  Revenue rose in every month except April. July was the strongest month of the period
+  at 403,000 EGP — but it was also the month with the fewest units sold, at 6,550.
 </p>
 
 <div class="card">
 <figure>
-<svg viewBox="0 0 720 260" role="img" aria-label="Revenue by month, rising from 318,000 EGP in January to 403,000 EGP in July, with a dip in April.">
+<svg viewBox="0 0 760 300" role="img" aria-label="Revenue rose from 318,000 EGP in January to 403,000 EGP in July, dipping in April. Units sold declined steadily from 6,980 to 6,550 over the same period. The two lines diverge from May onward.">
   <g stroke="var(--grid)" stroke-width="1">
-    <line x1="60" y1="30"  x2="700" y2="30"/>
-    <line x1="60" y1="80"  x2="700" y2="80"/>
-    <line x1="60" y1="130" x2="700" y2="130"/>
-    <line x1="60" y1="180" x2="700" y2="180"/>
+    <line x1="62" y1="34"  x2="700" y2="34"/><line x1="62" y1="84"  x2="700" y2="84"/>
+    <line x1="62" y1="134" x2="700" y2="134"/><line x1="62" y1="184" x2="700" y2="184"/>
   </g>
-  <line x1="60" y1="210" x2="700" y2="210" stroke="var(--axis)" stroke-width="1"/>
+  <line x1="62" y1="214" x2="700" y2="214" stroke="var(--axis)" stroke-width="1"/>
   <g fill="var(--ink-muted)" font-size="10" text-anchor="end">
-    <text x="52" y="34">420k</text><text x="52" y="84">380k</text>
-    <text x="52" y="134">340k</text><text x="52" y="184">300k</text>
+    <text x="54" y="38">420k</text><text x="54" y="88">380k</text>
+    <text x="54" y="138">340k</text><text x="54" y="188">300k</text>
   </g>
-  <polyline fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
-    points="105,187 200,171 295,140 390,155 485,120 580,100 675,81"/>
+  <!-- revenue -->
+  <polyline fill="none" stroke="var(--s1)" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"
+    points="105,191 200,175 295,144 390,159 485,124 580,104 675,85"/>
   <g fill="var(--s1)">
-    <circle cx="105" cy="187" r="4"/><circle cx="200" cy="171" r="4"/>
-    <circle cx="295" cy="140" r="4"/><circle cx="390" cy="155" r="4"/>
-    <circle cx="485" cy="120" r="4"/><circle cx="580" cy="100" r="4"/>
-    <circle cx="675" cy="81" r="5" stroke="var(--surface-1)" stroke-width="2"/>
+    <circle cx="105" cy="191" r="3.5"/><circle cx="200" cy="175" r="3.5"/><circle cx="295" cy="144" r="3.5"/>
+    <circle cx="390" cy="159" r="3.5"/><circle cx="485" cy="124" r="3.5"/><circle cx="580" cy="104" r="3.5"/>
+    <circle cx="675" cy="85" r="5" stroke="var(--surface-1)" stroke-width="2"/>
   </g>
-  <text x="675" y="66" fill="var(--ink-1)" font-size="11" font-weight="650" text-anchor="middle">403k</text>
-  <text x="105" y="172" fill="var(--ink-2)" font-size="11" text-anchor="middle">318k</text>
+  <text x="675" y="70" fill="var(--ink-1)" font-size="11.5" font-weight="680" text-anchor="middle">403k</text>
+  <text x="105" y="176" fill="var(--s1)" font-size="11" font-weight="620" text-anchor="middle">318k</text>
+  <text x="712" y="89" fill="var(--s1)" font-size="10.5" font-weight="650">Revenue</text>
+  <!-- units, indexed to the same plot band -->
+  <polyline fill="none" stroke="var(--s2)" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"
+    stroke-dasharray="0" points="105,120 200,112 295,105 390,129 485,124 580,134 675,152"/>
+  <g fill="var(--s2)">
+    <circle cx="105" cy="120" r="3.5"/><circle cx="200" cy="112" r="3.5"/><circle cx="295" cy="105" r="3.5"/>
+    <circle cx="390" cy="129" r="3.5"/><circle cx="485" cy="124" r="3.5"/><circle cx="580" cy="134" r="3.5"/>
+    <circle cx="675" cy="152" r="5" stroke="var(--surface-1)" stroke-width="2"/>
+  </g>
+  <text x="712" y="156" fill="var(--s2)" font-size="10.5" font-weight="650">Units</text>
+  <text x="675" y="169" fill="var(--ink-1)" font-size="11.5" font-weight="680" text-anchor="middle">6,550</text>
   <g fill="var(--ink-muted)" font-size="10.5" text-anchor="middle">
-    <text x="105" y="228">Jan</text><text x="200" y="228">Feb</text><text x="295" y="228">Mar</text>
-    <text x="390" y="228">Apr</text><text x="485" y="228">May</text><text x="580" y="228">Jun</text>
-    <text x="675" y="228">Jul</text>
+    <text x="105" y="232">Jan</text><text x="200" y="232">Feb</text><text x="295" y="232">Mar</text>
+    <text x="390" y="232">Apr</text><text x="485" y="232">May</text><text x="580" y="232">Jun</text>
+    <text x="675" y="232">Jul</text>
   </g>
+  <!-- divergence marker -->
+  <line x1="485" y1="34" x2="485" y2="214" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="490" y="264" fill="var(--ink-2)" font-size="10.5">the two lines separate from May</text>
 </svg>
-<figcaption>Revenue by month, in Egyptian pounds.</figcaption>
+<figcaption>
+  Revenue and units sold, month by month. Both are drawn on one plot band so the
+  divergence is visible; the axis is labelled in revenue, and unit figures are labelled
+  directly on their own line.
+</figcaption>
 </figure>
+<div class="legend">
+  <span><i class="swatch" style="background:var(--s1)"></i> Revenue (EGP)</span>
+  <span><i class="swatch" style="background:var(--s2)"></i> Units sold</span>
+</div>
+</div>
+
+<div class="insight">
+  <div class="t">The turn happened in May</div>
+  <p>
+    Until April, revenue and units moved together. From May they separate: revenue keeps
+    climbing while units fall. Everything after that point is price doing the work.
+  </p>
 </div>
 
 <div class="scroller">
 <table>
-  <thead><tr><th>Month</th><th class="n">Revenue</th><th class="n">Units sold</th><th class="n">Number of sales</th><th class="n">Average sale value</th></tr></thead>
+  <thead><tr>
+    <th>Month</th><th class="n">Revenue</th><th class="n">Units</th><th class="n">Sales</th>
+    <th class="n">Avg sale</th><th class="n">Avg price</th><th class="n">Gross margin</th>
+  </tr></thead>
   <tbody>
-    <tr><th>January</th><td class="n">318,000 EGP</td><td class="n">6,980</td><td class="n">2,110</td><td class="n">151 EGP</td></tr>
-    <tr><th>February</th><td class="n">331,000 EGP</td><td class="n">7,120</td><td class="n">2,180</td><td class="n">152 EGP</td></tr>
-    <tr><th>March</th><td class="n">356,000 EGP</td><td class="n">7,240</td><td class="n">2,260</td><td class="n">158 EGP</td></tr>
-    <tr><th>April</th><td class="n">344,000 EGP</td><td class="n">6,810</td><td class="n">2,140</td><td class="n">161 EGP</td></tr>
-    <tr><th>May</th><td class="n">372,000 EGP</td><td class="n">6,890</td><td class="n">2,230</td><td class="n">167 EGP</td></tr>
-    <tr><th>June</th><td class="n">388,000 EGP</td><td class="n">6,720</td><td class="n">2,250</td><td class="n">172 EGP</td></tr>
-    <tr><th>July</th><td class="n">403,000 EGP</td><td class="n">6,550</td><td class="n">2,034</td><td class="n">198 EGP</td></tr>
-    <tr class="emph"><th>Total</th><td class="n">2,512,000 EGP</td><td class="n">48,310</td><td class="n">15,204</td><td class="n">165 EGP</td></tr>
+    <tr><th>January</th><td class="n">318,000</td><td class="n">6,980</td><td class="n">2,110</td><td class="n">151</td><td class="n">45.6</td><td class="n">31.6%</td></tr>
+    <tr><th>February</th><td class="n">331,000</td><td class="n">7,120</td><td class="n">2,180</td><td class="n">152</td><td class="n">46.5</td><td class="n">31.5%</td></tr>
+    <tr><th>March</th><td class="n">356,000</td><td class="n">7,240</td><td class="n">2,260</td><td class="n">158</td><td class="n">49.2</td><td class="n">31.4%</td></tr>
+    <tr><th>April</th><td class="n">344,000</td><td class="n">6,810</td><td class="n">2,140</td><td class="n">161</td><td class="n">50.5</td><td class="n">31.0%</td></tr>
+    <tr><th>May</th><td class="n">372,000</td><td class="n">6,890</td><td class="n">2,230</td><td class="n">167</td><td class="n">54.0</td><td class="n">30.4%</td></tr>
+    <tr><th>June</th><td class="n">388,000</td><td class="n">6,720</td><td class="n">2,250</td><td class="n">172</td><td class="n">57.7</td><td class="n">29.9%</td></tr>
+    <tr><th>July</th><td class="n">403,000</td><td class="n">6,550</td><td class="n">2,034</td><td class="n">198</td><td class="n">61.5</td><td class="n">29.4%</td></tr>
+    <tr class="emph"><th>Period</th><td class="n">2,512,000</td><td class="n">48,310</td><td class="n">15,204</td><td class="n">165</td><td class="n">52.0</td><td class="n">30.6%</td></tr>
   </tbody>
 </table>
 </div>
+<p style="color:var(--ink-muted);font-size:.83rem;margin:.5rem 0 0">
+  Revenue, average sale and average price in Egyptian pounds.
+</p>
 
-<h2>3. Period comparison</h2>
-<p style="color:var(--ink-2);max-width:66ch;margin:.2rem 0 1rem">
-  Compared against the seven months immediately before this period.
+<h2 id="s3"><span class="num">3</span>Period comparison</h2>
+<p class="sectionlede">
+  Against the seven months immediately before this period. Six of the eight figures moved
+  in your favour; the two that did not are the two that decide profit.
 </p>
 
 <div class="scroller">
 <table>
-  <thead><tr><th>Figure</th><th class="n">This period</th><th class="n">Previous period</th><th class="n">Change</th></tr></thead>
+  <thead><tr><th>Figure</th><th class="n">This period</th><th class="n">Previous</th><th class="n">Change</th><th></th></tr></thead>
   <tbody>
-    <tr><th>Revenue</th><td class="n">2,512,000 EGP</td><td class="n">2,399,000 EGP</td><td class="n" style="color:var(--up);font-weight:650">▲ 4.7%</td></tr>
-    <tr><th>Units sold</th><td class="n">48,310</td><td class="n">49,347</td><td class="n" style="color:var(--down);font-weight:650">▼ 2.1%</td></tr>
-    <tr><th>Number of sales</th><td class="n">15,204</td><td class="n">15,083</td><td class="n" style="color:var(--up);font-weight:650">▲ 0.8%</td></tr>
-    <tr><th>Average sale value</th><td class="n">165 EGP</td><td class="n">159 EGP</td><td class="n" style="color:var(--up);font-weight:650">▲ 3.9%</td></tr>
+    <tr><th>Revenue</th><td class="n">2,512,000</td><td class="n">2,399,000</td><td class="n up">▲ 4.7%</td><td><span class="pill g">good</span></td></tr>
+    <tr><th>Units sold</th><td class="n">48,310</td><td class="n">49,347</td><td class="n down">▼ 2.1%</td><td><span class="pill w">watch</span></td></tr>
+    <tr><th>Number of sales</th><td class="n">15,204</td><td class="n">15,083</td><td class="n up">▲ 0.8%</td><td><span class="pill g">good</span></td></tr>
+    <tr><th>Average sale value</th><td class="n">165</td><td class="n">159</td><td class="n up">▲ 3.9%</td><td><span class="pill g">good</span></td></tr>
+    <tr><th>Average selling price</th><td class="n">52.0</td><td class="n">48.6</td><td class="n up">▲ 6.9%</td><td><span class="pill g">good</span></td></tr>
+    <tr><th>Cost of goods sold</th><td class="n">1,743,300</td><td class="n">1,645,700</td><td class="n down">▲ 5.9%</td><td><span class="pill w">watch</span></td></tr>
+    <tr><th>Gross profit</th><td class="n">768,700</td><td class="n">753,300</td><td class="n up">▲ 2.1%</td><td><span class="pill g">good</span></td></tr>
+    <tr><th>Gross margin</th><td class="n">30.6%</td><td class="n">31.4%</td><td class="n down">▼ 0.8pp</td><td><span class="pill c">act</span></td></tr>
   </tbody>
 </table>
 </div>
 
-<h2>4. Growth drivers</h2>
-<p style="color:var(--ink-2);max-width:66ch;margin:.2rem 0 1rem">
-  Revenue rose 113,000 EGP. Splitting that change shows where it came from: higher
-  prices added 164,000 EGP, while selling fewer units gave back 51,000 EGP.
+<div class="insight watch">
+  <div class="t">The one line to act on</div>
+  <p>
+    Cost of goods sold rose 5.9% while revenue rose 4.7%. Cost is growing faster than
+    revenue, which is the whole of the margin decline. Price rises of 6.9% were not
+    enough to cover it.
+  </p>
+</div>
+
+<h2 id="s4"><span class="num">4</span>Growth drivers</h2>
+<p class="sectionlede">
+  Revenue rose 113,000 EGP. Splitting that change shows where it came from: higher prices
+  added 164,000 EGP, while selling fewer units gave back 51,000 EGP.
 </p>
 
 <div class="card">
 <figure>
-<svg viewBox="0 0 720 250" role="img" aria-label="Higher prices added 164,000 EGP; lower volume subtracted 51,000 EGP; the net revenue change was 113,000 EGP.">
+<svg viewBox="0 0 760 250" role="img" aria-label="Higher prices added 164,000 EGP. Lower volume subtracted 51,000 EGP. The net revenue change was 113,000 EGP.">
   <g stroke="var(--grid)" stroke-width="1">
-    <line x1="70" y1="40" x2="700" y2="40"/><line x1="70" y1="90" x2="700" y2="90"/><line x1="70" y1="140" x2="700" y2="140"/>
+    <line x1="74" y1="40" x2="700" y2="40"/><line x1="74" y1="90" x2="700" y2="90"/><line x1="74" y1="140" x2="700" y2="140"/>
   </g>
-  <line x1="70" y1="190" x2="700" y2="190" stroke="var(--axis)" stroke-width="1"/>
+  <line x1="74" y1="190" x2="700" y2="190" stroke="var(--axis)" stroke-width="1"/>
   <g fill="var(--ink-muted)" font-size="10" text-anchor="end">
-    <text x="62" y="44">180k</text><text x="62" y="94">120k</text><text x="62" y="144">60k</text><text x="62" y="194">0</text>
+    <text x="66" y="44">180k</text><text x="66" y="94">120k</text><text x="66" y="144">60k</text><text x="66" y="194">0</text>
   </g>
-  <rect x="120" y="53" width="120" height="137" rx="4" fill="var(--s1)"/>
-  <text x="180" y="45" text-anchor="middle" font-size="12.5" font-weight="680" fill="var(--ink-1)">+164k</text>
-  <rect x="300" y="148" width="120" height="42" rx="4" fill="var(--s2)"/>
-  <text x="360" y="140" text-anchor="middle" font-size="12.5" font-weight="680" fill="var(--ink-1)">−51k</text>
-  <rect x="480" y="96" width="120" height="94" rx="4" fill="var(--ink-muted)"/>
-  <text x="540" y="88" text-anchor="middle" font-size="12.5" font-weight="680" fill="var(--ink-1)">+113k</text>
-  <g fill="var(--ink-2)" font-size="11" text-anchor="middle">
-    <text x="180" y="210">Higher prices</text>
-    <text x="360" y="210">Lower volume</text>
-    <text x="540" y="210">Net change</text>
+  <rect x="130" y="53" width="128" height="137" rx="4" fill="var(--s1)"/>
+  <text x="194" y="45" text-anchor="middle" font-size="13" font-weight="690" fill="var(--ink-1)">+164,000</text>
+  <rect x="320" y="148" width="128" height="42" rx="4" fill="var(--s2)"/>
+  <text x="384" y="140" text-anchor="middle" font-size="13" font-weight="690" fill="var(--ink-1)">−51,000</text>
+  <line x1="258" y1="53" x2="320" y2="53" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="448" y1="96" x2="510" y2="96" stroke="var(--ink-muted)" stroke-width="1" stroke-dasharray="3 3"/>
+  <rect x="510" y="96" width="128" height="94" rx="4" fill="var(--ink-muted)"/>
+  <text x="574" y="88" text-anchor="middle" font-size="13" font-weight="690" fill="var(--ink-1)">+113,000</text>
+  <g fill="var(--ink-2)" font-size="11.5" text-anchor="middle">
+    <text x="194" y="211">Higher prices</text>
+    <text x="384" y="211">Lower volume</text>
+    <text x="574" y="211">Net change</text>
   </g>
 </svg>
 <figcaption>
@@ -236,40 +341,171 @@
 </figure>
 </div>
 
-<h2>5. Concentration</h2>
-<p style="color:var(--ink-2);max-width:66ch;margin:.2rem 0 1rem">
+<div class="insight">
+  <div class="t">Read this with section 5</div>
+  <p>
+    A 164,000 EGP price gain that yields only 15,400 EGP of extra gross profit means most
+    of the price increase went to covering cost, not to margin. The growth is real; it is
+    just not profitable growth.
+  </p>
+</div>
+
+<h2 id="s5"><span class="num">5</span>Profitability</h2>
+<p class="sectionlede">
+  Gross profit rose 15,400 EGP on a revenue rise of 113,000 EGP — a 13.6% conversion.
+  Margin fell every single month of the period.
+</p>
+
+<div class="card">
+<figure>
+<svg viewBox="0 0 760 240" role="img" aria-label="Gross margin declined every month from 31.6% in January to 29.4% in July, a fall of 2.2 percentage points across the period.">
+  <g stroke="var(--grid)" stroke-width="1">
+    <line x1="62" y1="40" x2="700" y2="40"/><line x1="62" y1="90" x2="700" y2="90"/><line x1="62" y1="140" x2="700" y2="140"/>
+  </g>
+  <line x1="62" y1="180" x2="700" y2="180" stroke="var(--axis)"/>
+  <g fill="var(--ink-muted)" font-size="10" text-anchor="end">
+    <text x="54" y="44">32%</text><text x="54" y="94">31%</text><text x="54" y="144">30%</text><text x="54" y="184">29%</text>
+  </g>
+  <polyline fill="none" stroke="var(--s1)" stroke-width="2.25" stroke-linejoin="round"
+    points="105,60 200,65 295,70 390,90 485,120 580,145 675,170"/>
+  <g fill="var(--s1)">
+    <circle cx="105" cy="60" r="4"/><circle cx="200" cy="65" r="3.5"/><circle cx="295" cy="70" r="3.5"/>
+    <circle cx="390" cy="90" r="3.5"/><circle cx="485" cy="120" r="3.5"/><circle cx="580" cy="145" r="3.5"/>
+    <circle cx="675" cy="170" r="5" stroke="var(--surface-1)" stroke-width="2"/>
+  </g>
+  <text x="105" y="48" fill="var(--ink-1)" font-size="11.5" font-weight="680" text-anchor="middle">31.6%</text>
+  <text x="675" y="159" fill="var(--down)" font-size="11.5" font-weight="680" text-anchor="middle">29.4%</text>
+  <g fill="var(--ink-muted)" font-size="10.5" text-anchor="middle">
+    <text x="105" y="200">Jan</text><text x="200" y="200">Feb</text><text x="295" y="200">Mar</text>
+    <text x="390" y="200">Apr</text><text x="485" y="200">May</text><text x="580" y="200">Jun</text>
+    <text x="675" y="200">Jul</text>
+  </g>
+  <text x="380" y="226" fill="var(--ink-2)" font-size="10.5" text-anchor="middle">seven consecutive monthly declines</text>
+</svg>
+<figcaption>Gross margin by month. Every month is lower than the one before it.</figcaption>
+</figure>
+</div>
+
+<div class="scroller">
+<table>
+  <thead><tr><th>Figure</th><th class="n">This period</th><th class="n">Previous</th><th class="n">Change</th></tr></thead>
+  <tbody>
+    <tr><th>Revenue</th><td class="n">2,512,000</td><td class="n">2,399,000</td><td class="n up">+113,000</td></tr>
+    <tr><th>Cost of goods sold</th><td class="n">1,743,300</td><td class="n">1,645,700</td><td class="n down">+97,600</td></tr>
+    <tr class="emph"><th>Gross profit</th><td class="n">768,700</td><td class="n">753,300</td><td class="n up">+15,400</td></tr>
+    <tr><th>Gross margin</th><td class="n">30.6%</td><td class="n">31.4%</td><td class="n down">−0.8pp</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="s6"><span class="num">6</span>Discounts and returns</h2>
+<p class="sectionlede">
+  Both rose faster than revenue. Together they cost 209,200 EGP this period, up
+  32,000 EGP.
+</p>
+
+<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+  <div class="kpi"><div class="klabel">Discounts given</div><div class="v">147,300 EGP</div><div class="d down">▲ 18.4% &nbsp;·&nbsp; 5.9% of revenue</div></div>
+  <div class="kpi"><div class="klabel">Returns</div><div class="v">61,900 EGP</div><div class="d down">▲ 9.2% &nbsp;·&nbsp; 2.5% of revenue</div></div>
+  <div class="kpi"><div class="klabel">Combined leakage</div><div class="v">209,200 EGP</div><div class="d down">8.3% of revenue, was 7.4%</div></div>
+</div>
+
+<div class="insight watch">
+  <div class="t">Discounting is rising alongside prices</div>
+  <p>
+    List prices rose 6.9% and discounts rose 18.4% in the same period. That combination
+    usually means the price increase is being negotiated away at the counter — the
+    increase is on the shelf but not in the till. Returns rising 9.2% points the same way.
+  </p>
+</div>
+
+<h2 id="s7"><span class="num">7</span>Branch performance</h2>
+<p class="sectionlede">
+  Six branches. Two grew faster than the business; two shrank. Nasr City alone is 29.5%
+  of revenue.
+</p>
+
+<div class="scroller">
+<table>
+  <thead><tr>
+    <th>Branch</th><th class="n">Revenue</th><th style="min-width:110px">Share</th>
+    <th class="n">Change</th><th class="n">Units</th><th class="n">Avg sale</th><th class="n">Margin</th>
+  </tr></thead>
+  <tbody>
+    <tr><th>Nasr City</th><td class="n">742,000</td>
+      <td><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span> 29.5%</td>
+      <td class="n up">▲ 8.1%</td><td class="n">13,910</td><td class="n">178</td><td class="n">31.8%</td></tr>
+    <tr><th>Maadi</th><td class="n">618,000</td>
+      <td><span class="bar-track"><span class="bar-fill" style="width:83%"></span></span> 24.6%</td>
+      <td class="n up">▲ 6.4%</td><td class="n">11,760</td><td class="n">171</td><td class="n">31.1%</td></tr>
+    <tr><th>Heliopolis</th><td class="n">424,000</td>
+      <td><span class="bar-track"><span class="bar-fill" style="width:57%"></span></span> 16.9%</td>
+      <td class="n up">▲ 3.2%</td><td class="n">8,240</td><td class="n">163</td><td class="n">30.4%</td></tr>
+    <tr><th>Giza</th><td class="n">311,000</td>
+      <td><span class="bar-track"><span class="bar-fill" style="width:42%"></span></span> 12.4%</td>
+      <td class="n up">▲ 1.1%</td><td class="n">6,180</td><td class="n">154</td><td class="n">29.8%</td></tr>
+    <tr><th>Zamalek</th><td class="n">228,000</td>
+      <td><span class="bar-track"><span class="bar-fill" style="width:31%"></span></span> 9.1%</td>
+      <td class="n down">▼ 2.4%</td><td class="n">4,610</td><td class="n">149</td><td class="n">28.9%</td></tr>
+    <tr><th>Dokki</th><td class="n">189,000</td>
+      <td><span class="bar-track"><span class="bar-fill" style="width:25%"></span></span> 7.5%</td>
+      <td class="n down">▼ 5.7%</td><td class="n">3,610</td><td class="n">143</td><td class="n">27.6%</td></tr>
+    <tr class="emph"><th>All branches</th><td class="n">2,512,000</td><td>100%</td>
+      <td class="n up">▲ 4.7%</td><td class="n">48,310</td><td class="n">165</td><td class="n">30.6%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="insight">
+  <div class="t">Margin follows size, in order</div>
+  <p>
+    The branches rank identically by revenue and by margin — Nasr City is both the biggest
+    and the most profitable, Dokki both the smallest and the least, with no exceptions in
+    between. Your two shrinking branches are also your two thinnest. Whatever Nasr City and
+    Maadi are doing is worth understanding before Dokki gets more support.
+  </p>
+</div>
+
+<h2 id="s8"><span class="num">8</span>Concentration</h2>
+<p class="sectionlede">
   Sales are heavily concentrated. The top three branches of six produce 71% of revenue —
   if sales were spread evenly, three of six would produce 50%.
 </p>
 
 <div class="card">
 <figure>
-<svg viewBox="0 0 720 280" role="img" aria-label="Cumulative share of sales curve: the top branch holds 29.5%, the top three hold 71%, rising to 100% across all six branches. An even-spread reference line is shown for comparison.">
+<svg viewBox="0 0 760 290" role="img" aria-label="Cumulative share of sales: the top branch holds 29.5%, the top three hold 71%, rising to 100% across all six. An even-spread reference line is shown for comparison; your curve sits well above it.">
   <g stroke="var(--grid)" stroke-width="1">
-    <line x1="70" y1="40" x2="690" y2="40"/><line x1="70" y1="90" x2="690" y2="90"/>
-    <line x1="70" y1="140" x2="690" y2="140"/><line x1="70" y1="190" x2="690" y2="190"/>
+    <line x1="70" y1="40" x2="700" y2="40"/><line x1="70" y1="90" x2="700" y2="90"/>
+    <line x1="70" y1="140" x2="700" y2="140"/><line x1="70" y1="190" x2="700" y2="190"/>
   </g>
-  <line x1="70" y1="240" x2="690" y2="240" stroke="var(--axis)"/>
+  <line x1="70" y1="240" x2="700" y2="240" stroke="var(--axis)"/>
   <g fill="var(--ink-muted)" font-size="10" text-anchor="end">
     <text x="62" y="44">100%</text><text x="62" y="94">75%</text><text x="62" y="144">50%</text><text x="62" y="194">25%</text>
   </g>
-  <line x1="70" y1="240" x2="690" y2="40" stroke="var(--ink-muted)" stroke-width="1.5" stroke-dasharray="5 4"/>
-  <text x="470" y="152" fill="var(--ink-muted)" font-size="10.5" transform="rotate(-18 470 152)">if sales were spread evenly</text>
-  <polyline fill="none" stroke="var(--s1)" stroke-width="2.25" stroke-linejoin="round"
-    points="70,240 173,181 276,132 379,98 482,73 585,55 690,40"/>
+  <line x1="70" y1="240" x2="700" y2="40" stroke="var(--ink-muted)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="466" y="150" fill="var(--ink-muted)" font-size="10.5" transform="rotate(-17.6 466 150)">if sales were spread evenly</text>
+  <path d="M70,240 L175,181 L280,132 L385,98 L490,73 L595,55 L700,40 L700,40 L70,240 Z"
+        fill="var(--s1)" opacity="0.09"/>
+  <polyline fill="none" stroke="var(--s1)" stroke-width="2.5" stroke-linejoin="round"
+    points="70,240 175,181 280,132 385,98 490,73 595,55 700,40"/>
   <g fill="var(--s1)">
-    <circle cx="173" cy="181" r="4"/><circle cx="276" cy="132" r="4"/>
-    <circle cx="379" cy="98" r="5" stroke="var(--surface-1)" stroke-width="2"/>
-    <circle cx="482" cy="73" r="4"/><circle cx="585" cy="55" r="4"/><circle cx="690" cy="40" r="4"/>
+    <circle cx="175" cy="181" r="4"/><circle cx="280" cy="132" r="4"/>
+    <circle cx="385" cy="98" r="5.5" stroke="var(--surface-1)" stroke-width="2"/>
+    <circle cx="490" cy="73" r="4"/><circle cx="595" cy="55" r="4"/><circle cx="700" cy="40" r="4"/>
   </g>
-  <text x="379" y="86" fill="var(--ink-1)" font-size="11.5" font-weight="680" text-anchor="middle">71%</text>
+  <text x="385" y="85" fill="var(--ink-1)" font-size="12" font-weight="690" text-anchor="middle">71%</text>
+  <text x="175" y="169" fill="var(--s1)" font-size="10.5" font-weight="620" text-anchor="middle">29.5%</text>
   <g fill="var(--ink-muted)" font-size="10.5" text-anchor="middle">
-    <text x="173" y="258">1</text><text x="276" y="258">2</text><text x="379" y="258">3</text>
-    <text x="482" y="258">4</text><text x="585" y="258">5</text><text x="690" y="258">6</text>
+    <text x="175" y="258">1</text><text x="280" y="258">2</text><text x="385" y="258">3</text>
+    <text x="490" y="258">4</text><text x="595" y="258">5</text><text x="700" y="258">6</text>
   </g>
-  <text x="380" y="275" fill="var(--ink-2)" font-size="10.5" text-anchor="middle">branches, ranked by revenue</text>
+  <text x="385" y="278" fill="var(--ink-2)" font-size="10.5" text-anchor="middle">branches, ranked by revenue</text>
 </svg>
-<figcaption>Cumulative share of sales. The dashed line is what an even spread would look like.</figcaption>
+<figcaption>
+  Cumulative share of sales. The shaded gap between your curve and the dashed line is how
+  concentrated the business is — the wider the gap, the more it depends on a few branches.
+</figcaption>
 </figure>
 <div class="legend">
   <span><i class="swatch" style="background:var(--s1)"></i> Your sales</span>
@@ -277,24 +513,20 @@
 </div>
 </div>
 
-<div class="scroller">
-<table>
-  <thead><tr><th>Branch</th><th class="n">Revenue</th><th class="n">Share of sales</th><th class="n">Cumulative</th></tr></thead>
-  <tbody>
-    <tr><th>Nasr City</th><td class="n">742,000 EGP</td><td class="n">29.5%</td><td class="n">29.5%</td></tr>
-    <tr><th>Maadi</th><td class="n">618,000 EGP</td><td class="n">24.6%</td><td class="n">54.1%</td></tr>
-    <tr><th>Heliopolis</th><td class="n">424,000 EGP</td><td class="n">16.9%</td><td class="n">71.0%</td></tr>
-    <tr><th>Giza</th><td class="n">311,000 EGP</td><td class="n">12.4%</td><td class="n">83.4%</td></tr>
-    <tr><th>Zamalek</th><td class="n">228,000 EGP</td><td class="n">9.1%</td><td class="n">92.5%</td></tr>
-    <tr><th>Dokki</th><td class="n">189,000 EGP</td><td class="n">7.5%</td><td class="n">100.0%</td></tr>
-  </tbody>
-</table>
+<div class="insight watch">
+  <div class="t">Concentration risk</div>
+  <p>
+    Losing Nasr City would remove 29.5% of revenue and a disproportionate share of profit,
+    since it also carries the highest margin. Concentration is not automatically bad — it
+    often means one location is genuinely excellent — but it does mean the business has one
+    point of failure rather than six.
+  </p>
 </div>
 
-<h2>6. What this review does not cover</h2>
-<p style="color:var(--ink-2);max-width:68ch;margin:.2rem 0 1.2rem">
-  Three analyses could not be produced from the file you supplied. Everything shown
-  above is unaffected by these.
+<h2 id="s9"><span class="num">9</span>What this review does not cover</h2>
+<p class="sectionlede">
+  Two analyses could not be produced from the file you supplied. Everything above is
+  unaffected by these.
 </p>
 
 <div class="limit">
@@ -303,48 +535,51 @@
   belong to the same sale. Counting rows instead would overstate basket size wherever
   one sale spans several lines.</p>
   <p class="ok">The rest of this review is unaffected.</p>
-  <p><b>To make it available:</b> export with the receipt number included.</p>
+  <p class="fix"><b>To make it available:</b> export with the receipt number included.</p>
 </div>
 
 <div class="limit">
   <h3>Comparison with the same period last year</h3>
   <p>Your file covers seven months, so the same period one year earlier is not inside it.
-  The comparison shown above is against the seven months immediately before.</p>
+  The comparison in section 3 is against the seven months immediately before.</p>
   <p class="ok">The rest of this review is unaffected.</p>
-  <p><b>To make it available:</b> export a file that also covers January to July of last year.</p>
-</div>
-
-<div class="limit">
-  <h3>Profit margin</h3>
-  <p>No cost column was found in the file, so revenue can be measured but profit cannot.</p>
-  <p class="ok">The rest of this review is unaffected.</p>
-  <p><b>To make it available:</b> include the unit cost in your export.</p>
+  <p class="fix"><b>To make it available:</b> export a file that also covers January to July of last year.</p>
 </div>
 
 <h3>Qualifications on figures that are shown</h3>
-<p style="color:var(--ink-2);max-width:68ch">
+<p style="color:var(--ink-2);max-width:70ch;margin:.3rem 0 0">
   The concentration curve is drawn from 100 evenly spaced points across your full product
   range. The figures beside it use every row.
 </p>
 
-<h2>ملخص</h2>
+<h2 id="ar">ملخص التقرير</h2>
 <div class="ar">
   <p>
     ارتفعت الإيرادات للشهر الرابع على التوالي، لكن النمو جاء بالكامل من ارتفاع الأسعار
     وليس من زيادة الكميات المبيعة. انخفضت الوحدات المبيعة بنسبة 2.1% في حين ارتفعت
-    الإيرادات بنسبة 4.7%. وتستأثر ثلاثة فروع بنسبة 71% من إجمالي المبيعات.
+    الإيرادات بنسبة 4.7%.
   </p>
   <p>
-    ثلاث تحليلات لم يتسنَّ إنتاجها من الملف المُقدَّم: حجم سلة الشراء، والمقارنة بنفس
-    الفترة من العام الماضي، وهامش الربح. وما عدا ذلك في هذا التقرير غير متأثر بها.
+    وتراجع هامش الربح الإجمالي من 31.4% إلى 30.6%، لأن تكلفة المبيعات ارتفعت بنسبة 5.9%
+    وهي أسرع من ارتفاع الإيرادات. كما ارتفعت الخصومات الممنوحة بنسبة 18.4% والمرتجعات
+    بنسبة 9.2%، وهو ما يشير إلى أن الزيادة السعرية يجري التنازل عن جزء منها عند البيع.
+  </p>
+  <p>
+    وتستأثر ثلاثة فروع من ستة بنسبة 71% من إجمالي المبيعات، ويأتي فرع مدينة نصر وحده
+    بنسبة 29.5%. ويتطابق ترتيب الفروع حسب الإيرادات مع ترتيبها حسب هامش الربح دون
+    استثناء.
+  </p>
+  <p>
+    تحليلان لم يتسنَّ إنتاجهما من الملف المُقدَّم: حجم سلة الشراء — لعدم وجود رقم إيصال —
+    والمقارنة بنفس الفترة من العام الماضي. وما عدا ذلك في هذا التقرير غير متأثر بهما.
   </p>
 </div>
 
 <div class="colophon">
   <p><b>Report reference 4A7C-2F91 · version 2</b></p>
-  <p>
-    Full calculation evidence and data lineage:
-    <a href="#evidence">Technical Evidence</a>.
+  <p>Full calculation evidence and data lineage available on request.</p>
+  <p style="margin-top:.6rem">
+    Al Rahma Trading Co. · January – July 2026 · produced 4 August 2026
   </p>
 </div>
 
@@ -360,9 +595,11 @@
   checking or disputing a figure starts here. Nothing on this page is needed to read
   the report itself.
   <br><br>
-  In the shipped product this is a <b>separate page</b> in HTML, an <b>appendix</b>
-  after a page break in PDF, and the <b>last two worksheets</b> in Excel. It is shown
-  here below the report only so the sample is a single file.
+  <b>This layer is optional to the customer.</b> It is generated for every report —
+  always, unconditionally — and delivered only when asked for. In the shipped product it
+  is a <b>separate page</b> in HTML, an <b>appendix</b> after a page break in PDF, and the
+  <b>last two worksheets</b> in Excel. It appears below the report here only so the sample
+  is a single file.
 </div>
 
 <h2 style="margin-top:1.5rem">Section states</h2>
@@ -387,13 +624,22 @@
     <tr><td><code>fig-001</code></td><td><code>revenue</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>2512000.00</code></td><td><code>cit-a41</code></td></tr>
     <tr><td><code>fig-002</code></td><td><code>units</code></td><td><code>total</code></td><td><code>count</code></td><td class="n"><code>48310</code></td><td><code>cit-a42</code></td></tr>
     <tr><td><code>fig-003</code></td><td><code>transactions</code></td><td><code>total</code></td><td><code>count</code></td><td class="n"><code>15204</code></td><td><code>cit-a43</code></td></tr>
-    <tr><td><code>fig-004</code></td><td><code>average_transaction_value</code></td><td><code>ratio</code></td><td><code>currency</code></td><td class="n"><code>165.22</code></td><td><code>cit-a44</code></td></tr>
-    <tr><td><code>fig-005</code></td><td><code>growth_price_effect</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>164000.00</code></td><td><code>cit-a51</code></td></tr>
-    <tr><td><code>fig-006</code></td><td><code>growth_volume_effect</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>-51000.00</code></td><td><code>cit-a52</code></td></tr>
-    <tr><td><code>fig-007</code></td><td><code>growth_revenue_change</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>113000.00</code></td><td><code>cit-a53</code></td></tr>
+    <tr><td><code>fig-004</code></td><td><code>average_order_value</code></td><td><code>ratio</code></td><td><code>currency</code></td><td class="n"><code>165.22</code></td><td><code>cit-a44</code></td></tr>
+    <tr><td><code>fig-005</code></td><td><code>average_selling_price</code></td><td><code>ratio</code></td><td><code>currency</code></td><td class="n"><code>51.99</code></td><td><code>cit-a45</code></td></tr>
+    <tr><td><code>fig-006</code></td><td><code>cost</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>1743300.00</code></td><td><code>cit-a46</code></td></tr>
+    <tr><td><code>fig-007</code></td><td><code>gross_profit</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>768700.00</code></td><td><code>cit-a47</code></td></tr>
+    <tr><td><code>fig-008</code></td><td><code>gross_margin</code></td><td><code>ratio</code></td><td><code>proportion</code></td><td class="n"><code>0.3060</code></td><td><code>cit-a48</code></td></tr>
+    <tr><td><code>fig-009</code></td><td><code>discount</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>147300.00</code></td><td><code>cit-a49</code></td></tr>
+    <tr><td><code>fig-010</code></td><td><code>returns</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>61900.00</code></td><td><code>cit-a50</code></td></tr>
+    <tr><td><code>fig-011</code></td><td><code>growth_price_effect</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>164000.00</code></td><td><code>cit-a51</code></td></tr>
+    <tr><td><code>fig-012</code></td><td><code>growth_volume_effect</code></td><td><code>total</code></td><td><code>currency</code></td><td class="n"><code>-51000.00</code></td><td><code>cit-a52</code></td></tr>
   </tbody>
 </table>
 </div>
+<p style="color:var(--ink-2);font-size:.88rem;max-width:72ch">
+  Twelve of the twelve governed metrics the bundle carries. The business report shows all
+  twelve under business names and none under these identifiers.
+</p>
 
 <h2>Caveat codes</h2>
 <div class="scroller">
@@ -408,7 +654,7 @@
   </tbody>
 </table>
 </div>
-<p style="color:var(--ink-2);font-size:.88rem;max-width:70ch">
+<p style="color:var(--ink-2);font-size:.88rem;max-width:72ch">
   Every caveat the bundle carries appears here <i>and</i> in the business report's
   limitations section. The claimed caveat set must equal the bundle's exactly, so a
   caveat can be relocated but never dropped.
