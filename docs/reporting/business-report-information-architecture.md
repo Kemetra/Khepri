@@ -58,20 +58,63 @@ of a preference rather than of the data.
 
 **So the audit layer is generated for every report, always, unconditionally.**
 
-### Why it is *delivered* on request
+### Why it is delivered *within* the surface, not filtered out of the delivery
 
-Generation and delivery are already separate stages.
-`delivery_persistence.py:239` reads surfaces back **per surface**, each with its
-own stored digest:
+> **Corrected 2026-08-04 after external review.** An earlier version of this
+> section claimed the audit layer could be withheld by a *delivery-time filter*,
+> citing `delivery_persistence.py:239` and its `if surface in found` guard as
+> evidence that "the delivery layer already tolerates reading a subset."
+> **That reading was wrong, and the claim it supported was false.**
+
+Line 239 is a *corruption detector feeding a rejector*, not a tolerance for
+subsets. Its consumer rejects any partial delivery outright:
 
 ```python
-return tuple(found[surface] for surface in REQUIRED_SURFACES if surface in found)
+named = tuple(entry.surface for entry in surfaces)
+if named != REQUIRED_SURFACES:
+    raise DeliveryCorrupted("Stored delivery does not name every required surface.")
 ```
+> `delivery_persistence.py:346-350`
 
-The `if surface in found` guard means the delivery layer already tolerates
-reading a subset. So withholding the audit layer from a customer download is a
-delivery-time filter, not a generation-time branch. **No governance change, no
-reconcile change, no change to the bundle contract.**
+Two further equality gates sit on the same path — `pipeline.py:156` ("A delivered
+report names every required surface") and `pipeline.py:345` ("A delivery carries
+every required surface exactly once"). So there are **seven** equality checks, not
+six, and the seventh is the one the filter story depended on being permissive.
+
+### The corrected mechanism: within-surface suppression
+
+All three surfaces are generated, stored, and read **whole**. The audit content is
+a *region inside each surface*, and optionality is a **render variant** — which
+region the customer's copy includes — decided before the surface is stored, not a
+subset selected at download.
+
+| Surface | Business variant | With-evidence variant |
+|---|---|---|
+| HTML | Report page; colophon points to evidence | Report page + Technical Evidence page |
+| PDF | Business body, appendix block empty | Business body + appendix after a page break |
+| Excel | Business worksheets; audit sheets absent | Business worksheets + Audit Trail + Provenance |
+
+Both variants are complete `web`/`pdf`/`excel` surfaces. `REQUIRED_SURFACES` is
+satisfied in both cases, every equality gate passes, and no delivery contract
+changes.
+
+**The open question this leaves, and it is the owner's call.** Two variants of one
+report means either (i) the customer chooses before generation, so one variant is
+produced and stored — which makes `surface_digest` a function of the choice as well
+as the data, weakening but not breaking reproducibility, since the digest still
+pins exactly what was shown; or (ii) both variants are produced, which needs a
+place to put the second one — a fourth non-required deliverable outside
+`REQUIRED_SURFACES`, and *that* is a delivery-contract change.
+
+**Recommended: (i).** It changes no contract, and the reproducibility claim that
+matters commercially is "this report re-runs to this identity," which (i)
+preserves. Route (ii) is the right answer only if a customer must be able to
+request the evidence *after* receiving the report without re-running it — worth
+asking a prospect, not worth assuming.
+
+**Either way, the audit layer is generated with every report.** Skipping a surface
+returns `REASON_MISSING_SURFACE` and yields an incomplete bundle
+(`bundle.py:1222`). That part of the original argument stands.
 
 ### What the customer sees
 
@@ -189,16 +232,37 @@ sheets last.
 
 | # | Worksheet | Tier | Delivered | Contents |
 |---|---|---|---|---|
-| 1 | Executive Summary | B | always | Lead finding, hero figure, KPI block, period covered, disclosure |
-| 2 | Sales Performance | B | always | Revenue / units / transactions / average sale by period |
-| 3 | Period Comparison | B | always | Current vs prior, absolute and percentage |
+| 1 | Executive Summary | B | always | Lead finding, hero figures, KPI block, period covered, disclosure |
+| 2 | Sales Performance | B | always | Revenue / units / sales / average sale / average price / margin by period |
+| 3 | Period Comparison | B | always | Current vs prior, absolute and percentage, with per-line assessment |
 | 4 | Growth Drivers | B | always | Price effect, volume effect, total change |
-| 5 | Product & Category Performance | B | always | Ranked contribution |
-| 6 | Basket Analysis | B | always | Items per sale, attach rate |
-| 7 | Data Limitations | B | always | Every refusal and caveat in customer prose (§D) |
-| 8 | Chart Data | A | always¹ | Existing chartdata sheet — the one numeric write path (`APP-013`) |
-| 9 | Audit Trail | A | on request | section_id, state, raw reason, figure_id, metric, kind, unit_kind, citation_id |
-| 10 | Provenance | A | on request | Full BundleIdentity, bundle_id, surface versions |
+| 5 | Profitability | B | always | Revenue, cost, gross profit, gross margin; monthly margin trend |
+| 6 | Discounts and Returns | B | always | Discounts, returns, combined leakage as a share of revenue |
+| 7 | Branch Performance | B | always | Ranked contribution per branch — the concentration family, rebadged² |
+| 8 | Data Limitations | B | always | Every refusal and caveat in customer prose (§D) |
+| 9 | Chart Data | A | always¹ | Existing chartdata sheet — the one numeric write path (`APP-013`) |
+| 10 | Audit Trail | A | on request | section_id, state, raw reason, figure_id, metric, kind, unit_kind, citation_id |
+| 11 | Provenance | A | on request | Full BundleIdentity, bundle_id, surface versions |
+
+> **Revised 2026-08-04 after external review**, which found the earlier table
+> disagreed with the golden sample. The table now matches the sample. Three changes
+> and the reasons for them:
+>
+> - **`Profitability` and `Discounts and Returns` added.** The earlier table covered
+>   four metrics; the governed vocabulary is twelve. `cost`, `gross_profit`,
+>   `gross_margin`, `discount` and `returns` had no worksheet to live on.
+> - **`Product & Category Performance` renamed `Branch Performance`.**
+>   Same sheet, same adopted decision (a) — the concentration family's ranked
+>   buckets. The bucket dimension is whatever the customer's file supplies, which
+>   for a retail chain is usually branch; the old name implied product only.
+>   The short form is forced by the 31-character cap — see note 2.
+> - **`Basket Analysis` removed as a standing sheet.** Basket is the family most
+>   often refused (`transaction_identifier_absent` needs a receipt number most
+>   exports lack), and a worksheet whose only content is an apology is worse than
+>   its absence. When basket is *present* it takes a sheet in this position; when
+>   refused it appears in Data Limitations. **This makes the business sheet set
+>   dependent on which analyses survived** — a property the audit sheets do not have,
+>   and worth stating because it means the workbook's tab count varies by dataset.
 
 ¹ Sheet 8 holds the chart series addresses the embedded charts read, and it must
 ship with the business workbook or the native charts break. `_series_range`
@@ -230,6 +294,35 @@ Business sheets carry **business column names**. No sheet in 1–7 contains a
 **Two workbooks, one generation pass.** The default download carries sheets 1–8;
 the on-request download carries all ten. Both are written from the same bundle in
 the same pass, so no figure can differ between them.
+
+² **Excel caps worksheet names at 31 characters, and this binds the suffix
+decision.** Found while regenerating the golden sample: XlsxWriter raises
+`InvalidWorksheetName` on a 33-character name. With ` (English)` costing 10
+characters, a business sheet name has a **21-character budget**. Measured:
+
+| Name | With suffix | |
+|---|---|---|
+| `Executive Summary` | 27 | ok |
+| `Discounts and Returns` | **31** | at the limit, zero headroom |
+| `Branch & Category Performance` | 39 | **rejected** → `Branch Performance` (28) |
+
+The Arabic suffix ` (العربية)` is the same 10 characters, so the budget is
+symmetric. Two consequences for the implementation slice:
+
+- **The business sheet names in the table above are the long form.** Any name
+  exceeding 21 characters must be shortened, and the shortened form is what a
+  customer reads — so it is a wording decision, not a truncation. Never let
+  XlsxWriter or Excel truncate silently.
+- **A key-set assertion at import should also assert the length budget**, in the
+  same style as `wording.py:120-122`. The failure without it is an exception during
+  a customer's report render, and a 22-character name added later would pass every
+  review and fail on the first bilingual workbook.
+
+This is a real constraint on the adopted decision (a) that was not visible when it
+was adopted. It does not overturn the decision — every required name fits within
+the budget — but it does mean **option (b), two workbooks, buys 10 characters of
+name budget** as well as fewer tabs. Worth remembering if a future sheet needs a
+longer name.
 
 ### The table above is per language, and the real workbook is bilingual
 
@@ -355,6 +448,26 @@ The governed metric vocabulary is **ten metrics** (`facts.py:69-78`) plus the tw
 growth effects (`analysis/growth.py:72-73`). All twelve are listed; the earlier
 draft covered four and left the rest to reach the page as raw identifiers.
 
+> **This table must be complete at import, and an incomplete one means no report.**
+> `worded()` (`wording.py:149-151`) does `return LABEL_WORDING[language][key]` and
+> raises on a missing code by deliberate design — the docstring says "a missing one
+> raises rather than falling back to the code… a fallback would ship it quietly." A
+> `KeyError` raised inside a renderer is caught at `bundle.py:1213-1219` as
+> `REASON_SURFACE_FAILED`, which produces an **incomplete bundle**.
+>
+> So a missing business name is not an ugly label on a customer's report — it is the
+> absence of the report. Guard the table with an import-time key-set assertion in the
+> style `wording.py:120-122` already establishes:
+>
+> ```python
+> if set(_headings) != set(ORDERED_SECTIONS):
+>     raise RuntimeError(...)
+> ```
+>
+> Assert against the union of `facts.py`'s metric constants and
+> `analysis/growth.py`'s effect constants, so a metric added later cannot reach a
+> renderer unworded.
+
 | Governed metric | English business name | Arabic business name |
 |---|---|---|
 | `revenue` | Revenue | الإيرادات |
@@ -422,19 +535,33 @@ Recorded here rather than resolved, so the owner sees the risk before approving.
 7. **`SECTION_HEADINGS` already exists and is already business-voiced.** The
    section heading path is the one part of this that needs no new mechanism.
 
-8. **Optional delivery is a delivery-layer change, not a generation-layer one.**
-   `REQUIRED_SURFACES` is compared for exact equality in six places
-   (`bundle.py:1222`, `pipeline.py:156`, `pipeline.py:345`, `reports.py:253`,
-   `delivery_persistence.py:349`, `benchmark_trial.py:164`), so all three surfaces
-   must always be produced. `delivery_persistence.py:239` already reads surfaces
-   back per-surface with an `if surface in found` guard, so withholding one from a
-   download needs no contract change. **Do not implement optionality by skipping
-   generation.**
+8. **Optionality is a render variant per surface — never a delivery filter.**
+   `REQUIRED_SURFACES` is compared for exact equality in **seven** places:
+   `bundle.py:1222`, `pipeline.py:156`, `pipeline.py:345`, `reports.py:253`,
+   `delivery_persistence.py:349`, `benchmark_trial.py:164`, and
+   `delivery_persistence.py:346-350` — the last of which raises `DeliveryCorrupted`
+   on a partial delivery. All three surfaces are always produced, stored, and read
+   whole. **Do not implement optionality by skipping generation, and do not
+   implement it by filtering the delivery.** See §B.1.
 
-9. **The workbook is bilingual and the sample is not.** ~15 sheets delivered
-   versus 10 shown. See §B.4. The owner picks suffix-naming (recommended) or
-   split workbooks.
+9. **The workbook is bilingual and the sample is not.** ~17 sheets delivered
+   versus 12 shown. Suffix naming adopted; see §B.4.
 
-10. **Excel sheet 8 (chartdata) must ship with the business workbook** even though
-    it is Audit-tier, because `_series_range` (`excel.py:656-665`) addresses it by
-    name and the native charts break without it. Hide it rather than omit it.
+10. **Excel's chart-data sheet must ship with the business workbook and stay
+    visible.** `_series_range` (`excel.py:656-665`) addresses it by name, so the
+    native charts break without it — and `excel.py:71-75` requires it visible on
+    `APP-013` grounds. An earlier draft of this document recommended hiding it; that
+    was withdrawn. Hiding it would need an `APP-013` amendment, and `APP-013` pins
+    `KHEPRI-DEC-005` by document digest.
+
+11. **`worded()` raises on a missing key, so every wording table is a
+    no-report-if-incomplete dependency**, not a cosmetic one. See §B.5.
+
+12. **Excel worksheet names cap at 31 characters**, leaving 21 once the bilingual
+    suffix is added. See §B.4 note 2.
+
+13. **Test migration is the largest single work item and is unpriced here.** 19 test
+    files carry ~170 references to the structure being relocated, and
+    `tests/test_rra006_excel_charts.py` pins the chart-data sheet by name in eleven
+    places. The tests currently assert the ledger structure is correct, so migrating
+    them is a contract decision rather than a find-and-replace. See the README.

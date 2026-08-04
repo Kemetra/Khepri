@@ -28,22 +28,38 @@ the whole document.
 
 ---
 
-## D.1 The catalog is 13, not 32
+## D.1 The catalog is 11 distinct codes, in 13 contexts — not 32
 
-Two vocabularies exist and only one is customer-facing.
+Three vocabularies exist and only two are customer-facing.
 
 | Vocabulary | Count | Source | Customer-facing? |
 |---|---|---|---|
 | Section reasons | 8 | `GOVERNED_SECTION_REASONS`, `bundle.py:178-192` | **Yes** — kills a whole analysis |
 | Result reasons | 5 | `facts.py:80-84` | **Yes** — kills one metric, section survives |
-| Bundle integrity reasons | ~21 | `GOVERNED_REASONS`, `bundle.py:363+` | **No** — no report is published at all |
+| Bundle integrity reasons | 20 | `GOVERNED_REASONS`, `bundle.py:365-386` | **No** — no report is published at all |
 
-The 21 integrity codes are Internal (see matrix §A.6). Earlier sessions counted
-all three vocabularies together as "32 governed refusal reasons" and used that as
-a product differentiator. **The customer-facing catalog is 13.** The differentiator
-survives the correction — "analysis that tells you what it cannot tell you" is
-true of 13 codes just as it was of 32 — but the catalog must not ship 21 internal
-integrity codes to customers.
+**8 + 5 = 13 messages, but only 11 distinct codes.** Two codes appear in *both*
+customer-facing vocabularies:
+
+- `required_input_unavailable`
+- `incomplete_transaction_identifiers`
+
+Each needs **two** messages, because the same code means different things at the
+two levels: at section level the whole analysis is gone; at result level one metric
+is gone and the section stands. §D.2 and §D.3 already word them separately.
+
+> **Two corrections recorded rather than quietly fixed.**
+>
+> Earlier sessions summed all three vocabularies to "32 governed refusal reasons"
+> and used it as a product differentiator. An earlier draft of *this document*
+> corrected that to "13" — and reproduced the same double-counting error, summing
+> two overlapping vocabularies. The honest statement is **11 distinct codes
+> yielding 13 code-in-context messages**.
+>
+> The differentiator survives both corrections. "Analysis that tells you what it
+> cannot tell you" is true of 11 codes just as it was of 32. What must not happen
+> is shipping 20 internal integrity codes to customers, or quoting a catalog size
+> that cannot be reproduced from the source.
 
 **Keep the full catalog as an internal product and specification asset.** It is
 not itself the customer report.
@@ -215,18 +231,44 @@ reason belonging to the fact package. It is **not currently defined** in
 
 ---
 
-## D.4 Caveats
+## D.4 Caveats — all twelve, complete
 
 Caveats qualify an analysis that **was** published. They are not refusals and
 must not read as apologies.
 
-| Code | Business message |
-|---|---|
-| `curve_points_sampled` | "The concentration curve is drawn from 100 evenly spaced points across your full product range. The figures beside it use every row." |
+`_reconcile_language` (`bundle.py:1324-1325`) requires **set equality** between
+claimed and bundle caveats, so an unworded caveat is a reconcile failure rather
+than a cosmetic gap. An earlier draft of this document worded one code and
+deferred the rest to "the implementation slice" — which contradicted its own
+finding. All twelve are enumerated below.
 
-The full caveat vocabulary must be enumerated by the implementation slice.
-`bundle.py:1324` requires **set equality** between claimed and bundle caveats, so
-an unworded caveat is a reconcile failure, not a cosmetic gap.
+The vocabulary: nine in `facts.py:86-94`, two in `bundle.py:148,163`, one in
+`analysis/growth.py:84`.
+
+| Code | Source | Business message |
+|---|---|---|
+| `currency_not_declared` | `facts.py:86` | "Your file does not state which currency the amounts are in. The figures are shown as supplied and have not been converted." |
+| `duplicate_rows_present` | `facts.py:87` | "Some rows in your file are exact duplicates of each other. They have been counted as supplied — if they are genuine repeat sales this is correct, and if they are an export error the totals are overstated." |
+| `negative_revenue_present` | `facts.py:88` | "Some rows carry a negative sale amount. These are included as supplied, which is correct if they are refunds recorded in the sales file." |
+| `returns_not_netted` | `facts.py:89` | "Returns are reported separately and have not been subtracted from revenue. Revenue here is gross of returns." |
+| `null_measure_inputs` | `facts.py:90` | "Some rows have no amount recorded. They are excluded from the totals rather than counted as zero." |
+| `rows_without_time_field_excluded` | `facts.py:91` | "Some rows carry no date. They are excluded from anything measured by period, so month-by-month figures cover slightly fewer rows than the totals." |
+| `comparison_buckets_truncated` | `facts.py:92` | "Your file covers more periods than this comparison shows. The comparison uses the most recent complete periods." |
+| `personal_values_redacted` | `facts.py:93` | "Values that appeared to identify individual people were removed before analysis. No figure in this report depends on them." |
+| `derived_metrics_use_matched_rows` | `facts.py:94` | "Figures that combine two measures — such as average price — use only the rows where both measures are present. They may therefore cover fewer rows than either measure alone." |
+| `chart_not_drawn` | `bundle.py:148` | "No chart is shown for this section. The figures beside it are complete." |
+| `curve_points_sampled` | `bundle.py:163` | "The concentration curve is drawn from 100 evenly spaced points across your full product range. The figures beside it use every row." |
+| `growth_interaction_assigned_to_price` | `analysis/growth.py:84` | "Where price and quantity both changed, the combined part of the change is counted with the price effect. This is a stated convention, applied the same way every time, so the two effects still add exactly to the total." |
+
+> **Arabic for all twelve is required and is not drafted here.** §D.2a drafts the
+> eight section refusals; these twelve need the same treatment and the same owner
+> authorship. Western numerals throughout (§B.4a).
+
+**Completeness must be enforced at import, not reviewed.** `wording.py:120-122`
+already establishes the pattern — a key-set assertion that raises at import when a
+table and its vocabulary disagree. The caveat table needs the same guard against
+the union of the three source modules, because the failure mode without it is
+`REASON_SURFACE_FAILED` at render time on a customer's report.
 
 ---
 

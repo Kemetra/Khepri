@@ -270,8 +270,11 @@ architecture untouched.
 
 1. **Split the presentation into two layers.** A business report that leads with findings, and a
    governed audit-evidence layer carrying every identifier. Separate page in HTML, appendix after
-   a page break in PDF, final two worksheets in Excel. Both always shipped; the audit layer is the
-   differentiator, not a debug view.
+   a page break in PDF, final two worksheets in Excel. The audit layer is **generated with every
+   report** and is the differentiator, not a debug view; whether the customer's copy *includes*
+   it is a render variant of each surface. It is never a delivery-time filter —
+   `delivery_persistence.py:346-350` raises `DeliveryCorrupted` on a delivery that does not name
+   every required surface. See `docs/reporting/business-report-information-architecture.md` §B.1.
 2. **Reorder the business report by decision relevance** — what happened, why, which products or
    branches or periods drove it, the implication, the limitations. Not by bundle section order.
 3. **Add the business-name table for governed metrics.** `label` already has a translation path

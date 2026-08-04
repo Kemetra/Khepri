@@ -13,12 +13,16 @@ implementation slice will be checked against.
 | **I — Internal** | Never rendered on any customer surface at all. | Logs, telemetry, attempt records | Never |
 
 **Owner decision, 2026-08-04: the business report is the product; the audit
-evidence is optional to the customer.** "Optional" applies to **delivery only** —
-Tier A content is *generated for every report, always*, because skipping a surface
-returns `REASON_MISSING_SURFACE` and yields an incomplete bundle
-(`bundle.py:1222`), and because `surface_digest` would otherwise vary with a
-customer preference rather than with the data. See the IA's §B.1 for the full
-argument.
+evidence is optional to the customer.**
+
+Tier A content is *generated for every report, always* — skipping a surface returns
+`REASON_MISSING_SURFACE` and yields an incomplete bundle (`bundle.py:1222`).
+
+"Optional" is a **render variant of each surface**, not a filter applied at
+delivery. An earlier version of this document said delivery-time filtering; that
+was wrong — `delivery_persistence.py:346-350` raises `DeliveryCorrupted` on any
+delivery that does not name every required surface. See the IA's §B.1, which
+carries the correction and the two remaining routes.
 
 The rule that produces the tiers: **a field is Business only if a retail owner
 could act on it without knowing Khepri exists.** A field that only means
@@ -64,9 +68,24 @@ Source: `_SectionView` (`html.py:433-447`); template renders a refused section a
 
 | Field | Current rendering | Tier | Business treatment |
 |---|---|---|---|
-| `section_id` | `id=`, anchor, `<h2>` key | **B** (as heading) / **A** (as `id`) | The heading is already translated via `SECTION_HEADINGS`. The raw `section_id` stays as an HTML anchor (invisible) but must not be *displayed*. |
+| `section_id` | `id=`, anchor, `<h2>` key | **B** (as heading) / **A** (as `id`) | The heading is already translated via `SECTION_HEADINGS`. The raw `section_id` survives as an HTML anchor — see the rule below — but must never be *displayed*. |
 | `state` | `data-` attribute | **I** | `present` / `refused` is structural. The reader infers it from the prose. |
 | `reason` | `<code>` — visible | **A** (code) + **B** (prose) | See §D. B gets a five-part customer explanation; the raw code appears only in the appendix. |
+
+> **The rule for identifiers in attributes.** §A.1 removes `data-figure-id`
+> entirely while this section keeps `section_id` as an `id=` anchor, and both are
+> invisible to a reader — so the difference needs a stated rule rather than a
+> case-by-case judgement.
+>
+> **An identifier may survive in an attribute only when the reader uses it.** An
+> `id=` anchor is navigation: the table of contents links to it and the browser
+> scrolls to it, so it does work for the reader. `data-figure-id` does work for
+> nobody — it was a hook for tooling, and a business report is not a tooling
+> surface. Same visibility, different function, so different treatment.
+>
+> Consequence for the leak check: it must test **visible text**, not raw markup,
+> or it will flag every legitimate anchor. The verified checks in this package do
+> exactly that (they strip tags before matching).
 
 ---
 
@@ -118,7 +137,7 @@ layer unchanged.
 
 ## A.6 Internal-only — never on any customer surface
 
-`GOVERNED_REASONS` (`bundle.py:363+`, ~21 codes) are **bundle integrity
+`GOVERNED_REASONS` (`bundle.py:365-386`, **20** codes) are **bundle integrity
 failures**: `unknown_surface`, `missing_surface`, `duplicate_surface`,
 `surface_failed`, `bundle_mismatch`, `unknown_language`, `missing_language`,
 `wrong_direction`, `unknown_figure`, `figure_not_reconciled`,
@@ -132,10 +151,12 @@ them fires, no report is published.** They describe Khepri failing to build a
 trustworthy artifact. A customer cannot encounter one in a delivered report, so
 they belong in no customer-facing catalog — including the audit appendix.
 
-> **Correction to earlier sessions.** These 21 were previously counted together
+> **Correction to earlier sessions.** These 20 were previously counted together
 > with the section reasons to give a "32 governed refusal reasons" figure used as
 > a product differentiator. That count is wrong for customer-facing purposes. The
-> customer-facing catalog is **13** (8 section + 5 result — see §D). The 21
+> customer-facing catalog is **11 distinct codes yielding 13 code-in-context
+> messages** — 8 section + 5 result, with `required_input_unavailable` and
+> `incomplete_transaction_identifiers` appearing in both (see §D.1). The 20
 > integrity codes are an internal correctness mechanism.
 
 Also Internal: source module paths, stage telemetry, lease identifiers, job ids,
