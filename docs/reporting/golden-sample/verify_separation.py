@@ -79,50 +79,62 @@ def _visible_text(markup: str) -> str:
     return re.sub(r"<[^>]+>", " ", markup)
 
 
+def _sheet_text(archive: zipfile.ZipFile, index: int, shared: list[str]) -> str:
+    """The shared strings one worksheet references, as one searchable blob."""
+    sheet = archive.read(f"xl/worksheets/sheet{index}.xml").decode("utf-8")
+    indexes = [int(m) for m in re.findall(r'<c[^>]*t="s"[^>]*><v>(\d+)</v>', sheet)]
+    return " | ".join(shared[i] for i in indexes if i < len(shared))
+
+
+def _tier_of(name: str) -> str:
+    if name in AUDIT_SHEETS:
+        return "AUDIT"
+    if name in MECHANISM_SHEETS:
+        return "MECHANISM"
+    return "BUSINESS"
+
+
+def _name_failures(name: str, tag: str) -> list[str]:
+    """What is wrong with a worksheet's name or visibility, independent of content."""
+    failures = []
+    if len(name) > EXCEL_SHEET_NAME_LIMIT:
+        failures.append(f"sheet name over {EXCEL_SHEET_NAME_LIMIT} chars: {name!r}")
+    # No hidden worksheets anywhere: APP-013 permits the chart-data cells only
+    # conditionally, and concealing conditional evidence is worse than not having
+    # the permission (excel.py:71-75).
+    if 'state="hidden"' in tag or 'state="veryHidden"' in tag:
+        failures.append(f"hidden worksheet: {name!r}")
+    return failures
+
+
+def _sheet_verdict(tier: str, name: str, found: list[str]) -> tuple[str, list[str]]:
+    """How one worksheet reads, and whether it broke the rule."""
+    if tier == "AUDIT":
+        return f"{len(found)} identifiers (expected)", []
+    if tier == "MECHANISM":
+        return f"{len(found)} identifiers, visible (required)", []
+    if found:
+        return f"LEAK {found[:5]}", [f"{name}: leaked {found[:5]}"]
+    return "clean", []
+
+
 def check_workbook() -> list[str]:
     failures: list[str] = []
     with zipfile.ZipFile(XLSX) as archive:
-        workbook = archive.read("xl/workbook.xml").decode("utf-8")
         shared = re.findall(
             r"<t[^>]*>(.*?)</t>",
             archive.read("xl/sharedStrings.xml").decode("utf-8"),
             re.S,
         )
-        tags = re.findall(r"<sheet [^>]*/>", workbook)
+        tags = re.findall(r"<sheet [^>]*/>", archive.read("xl/workbook.xml").decode("utf-8"))
         print(f"\nWorkbook: {len(tags)} sheets")
         for index, tag in enumerate(tags, start=1):
             name = re.search(r'name="([^"]+)"', tag).group(1)
-            hidden = 'state="hidden"' in tag or 'state="veryHidden"' in tag
-
-            if len(name) > EXCEL_SHEET_NAME_LIMIT:
-                failures.append(f"sheet name over {EXCEL_SHEET_NAME_LIMIT} chars: {name!r}")
-
-            # No hidden worksheets anywhere: APP-013 permits the chart-data cells
-            # only conditionally, and concealing conditional evidence is worse
-            # than not having the permission.
-            if hidden:
-                failures.append(f"hidden worksheet: {name!r}")
-
-            sheet = archive.read(f"xl/worksheets/sheet{index}.xml").decode("utf-8")
-            indexes = [
-                int(m) for m in re.findall(r'<c[^>]*t="s"[^>]*><v>(\d+)</v>', sheet)
-            ]
-            cells = " | ".join(shared[i] for i in indexes if i < len(shared))
-            found = _identifiers(cells)
-
-            if name in AUDIT_SHEETS:
-                tier = "AUDIT"
-                verdict = f"{len(found)} identifiers (expected)"
-            elif name in MECHANISM_SHEETS:
-                tier = "MECHANISM"
-                verdict = f"{len(found)} identifiers, visible (required)"
-            else:
-                tier = "BUSINESS"
-                if found:
-                    failures.append(f"{name}: leaked {found[:5]}")
-                    verdict = f"LEAK {found[:5]}"
-                else:
-                    verdict = "clean"
+            tier = _tier_of(name)
+            found = _identifiers(_sheet_text(archive, index, shared))
+            verdict, leaks = _sheet_verdict(tier, name, found)
+            failures.extend(_name_failures(name, tag))
+            failures.extend(leaks)
             print(f"  {index:>2} [{tier:9}] {name:34} {verdict}")
     return failures
 
@@ -137,8 +149,10 @@ def check_html() -> list[str]:
         found = _identifiers(_visible_text(markup))
         if region == "business" and found:
             failures.append(f"HTML business region leaked {found[:5]}")
-        print(f"  {region:10} {len(found):>3} identifiers"
-              f"{' LEAK ' + str(found[:5]) if region == 'business' and found else ''}")
+        print(
+            f"  {region:10} {len(found):>3} identifiers"
+            f"{' LEAK ' + str(found[:5]) if region == 'business' and found else ''}"
+        )
 
     eastern = re.findall(EASTERN_ARABIC_NUMERALS, source)
     if eastern:
@@ -157,8 +171,7 @@ def check_pdf() -> list[str]:
             failures.append(f"PDF missing {label}")
         print(f"  {label:18} {'pass' if ok else 'FAIL'}")
     pages = re.search(rb"/Type\s*/Pages.*?/Count\s+(\d+)", blob, re.S)
-    print(f"  {'pages':18} {pages.group(1).decode() if pages else '?'}"
-          f"   {len(blob) // 1024} KB")
+    print(f"  {'pages':18} {pages.group(1).decode() if pages else '?'}   {len(blob) // 1024} KB")
     return failures
 
 
@@ -176,8 +189,7 @@ def main() -> int:
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         return 1
-    print("[OK] business surfaces carry no governed identifier;"
-          " audit surfaces carry them all")
+    print("[OK] business surfaces carry no governed identifier; audit surfaces carry them all")
     return 0
 
 
