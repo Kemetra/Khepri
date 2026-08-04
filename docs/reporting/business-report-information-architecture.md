@@ -444,9 +444,20 @@ The matrix (§A.1) established there is **no existing translation path for
 the implementation slice derives the full key set from the governed metric
 vocabulary.
 
-The governed metric vocabulary is **ten metrics** (`facts.py:69-78`) plus the two
-growth effects (`analysis/growth.py:72-73`). All twelve are listed; the earlier
+The governed metric vocabulary is **13 keys**: ten metrics (`facts.py:69-78`) plus
+the three in `growth.GOVERNED_METRICS` (`analysis/growth.py:71-74`). The earlier
 draft covered four and left the rest to reach the page as raw identifiers.
+
+> **Corrected while verifying the assertion is implementable.** Two earlier drafts
+> said "twelve metrics — ten plus two growth effects." `growth.py:74` exports
+> `GOVERNED_METRICS = (METRIC_REVENUE_CHANGE, METRIC_PRICE_EFFECT,
+> METRIC_VOLUME_EFFECT)` — **three**, not two. `growth_revenue_change` is a governed
+> metric in its own right, not the "derived label" the table below once filed it as.
+>
+> **Assert against the exported tuple, never against scraped `METRIC_*` names.**
+> `growth.py` also *imports* `METRIC_UNITS` from `facts`, so a module-level scan for
+> the `METRIC_` prefix picks up four names and one of them is a re-export. The
+> exported tuple is the vocabulary; the name prefix is a coincidence of style.
 
 > **This table must be complete at import, and an incomplete one means no report.**
 > `worded()` (`wording.py:149-151`) does `return LABEL_WORDING[language][key]` and
@@ -480,14 +491,15 @@ draft covered four and left the rest to reach the page as raw identifiers.
 | `gross_margin` | Gross margin | هامش الربح الإجمالي |
 | `discount` | Discounts given | الخصومات الممنوحة |
 | `returns` | Returns | المرتجعات |
+| `growth_revenue_change` | Total revenue change | إجمالي تغير الإيرادات |
 | `growth_price_effect` | Effect of price changes | أثر تغير الأسعار |
 | `growth_volume_effect` | Effect of volume changes | أثر تغير الكميات |
 
-Derived labels the surfaces also need:
+Derived labels the surfaces also need — **not** part of the 13-key assertion, because
+they are not governed metric codes:
 
 | Concept | English | Arabic |
 |---|---|---|
-| Total revenue change | Total revenue change | إجمالي تغير الإيرادات |
 | Items per sale (basket) | Items per sale | عدد الأصناف لكل بيع |
 | Attach rate (basket) | Attach rate | معدل الإضافة |
 | Concentration bucket share | Share of sales | نصيب من المبيعات |
