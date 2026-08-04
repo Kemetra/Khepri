@@ -6,11 +6,19 @@ Every field the three surfaces currently render, classified into one of three
 tiers. The classification is the whole point of this document: it is the thing an
 implementation slice will be checked against.
 
-| Tier | Meaning | Where it may appear |
-|---|---|---|
-| **B — Business** | The customer deliverable. Plain business language. | Primary report body |
-| **A — Audit** | Customer-accessible, but separated. Machine identifiers live here. | PDF technical appendix, HTML Technical Evidence page, Excel Audit Trail / Provenance sheets |
-| **I — Internal** | Never rendered on any customer surface at all. | Logs, telemetry, attempt records |
+| Tier | Meaning | Where it may appear | Delivered |
+|---|---|---|---|
+| **B — Business** | The customer deliverable. Plain business language. | Primary report body | **Always** |
+| **A — Audit** | Customer-accessible, but separated. Machine identifiers live here. | PDF technical appendix, HTML Technical Evidence page, Excel Audit Trail / Provenance sheets | **On request** |
+| **I — Internal** | Never rendered on any customer surface at all. | Logs, telemetry, attempt records | Never |
+
+**Owner decision, 2026-08-04: the business report is the product; the audit
+evidence is optional to the customer.** "Optional" applies to **delivery only** —
+Tier A content is *generated for every report, always*, because skipping a surface
+returns `REASON_MISSING_SURFACE` and yields an incomplete bundle
+(`bundle.py:1222`), and because `surface_digest` would otherwise vary with a
+customer preference rather than with the data. See the IA's §B.1 for the full
+argument.
 
 The rule that produces the tiers: **a field is Business only if a retail owner
 could act on it without knowing Khepri exists.** A field that only means

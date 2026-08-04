@@ -75,6 +75,29 @@ and the identifier usually share a root; that is expected, not a leak.
    requires claimed and bundle caveat sets to be *equal*. An unworded caveat is a
    reconcile failure.
 
+## Delivery: business report always, audit evidence on request
+
+**Owner decision, 2026-08-04.** The business report is the product. The audit
+evidence is optional *to the customer*.
+
+"Optional" means **delivery only**. Tier A content is generated for every report,
+unconditionally, for two reasons:
+
+-  is compared for exact equality in six places, so a bundle
+  producing fewer than three surfaces returns  and is an
+  *incomplete bundle* — no report at all ().
+-  content-addresses what each surface presented. Conditional
+  generation would make the digest vary with a customer preference rather than
+  with the data, and "the same input reproduces the same bundle identity" is the
+  claim the product is sold on.
+
+ already reads surfaces back per-surface with an
+ guard, so withholding one from a download needs no contract
+change. **Do not implement optionality by skipping generation.**
+
+The business report names its reference and points to the evidence once, in the
+colophon, and carries no identifier anywhere else.
+
 ## Scope boundary
 
 Docs only. No `src/` edits, no registry edits, no new decision record. If the
