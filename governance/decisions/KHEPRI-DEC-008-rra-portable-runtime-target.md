@@ -386,9 +386,28 @@ customer-defined formulas.
 - Unlock `src/khepri/runtime/config.py` from `me-central-1`, the twelve-digit account identifier,
   and the KMS key ARN.
 - Re-issue `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` against the selected target.
-- Add a `superseded_by` field to the decisions registry and validator support for supersession
-  linkage. The schema records no such field today, so this decision's supersession relationship is
-  stated in prose only. That gap is recorded here so it is not mistaken for an oversight, and is
-  outside this decision's slice.
+- ~~Add a `superseded_by` field to the decisions registry and validator support for supersession
+  linkage.~~ **Discharged.** This obligation was written when the schema recorded no such field.
+  `FND-002` supplied it since: `superseded_by` is validated in `khepri_gov.lifecycle`
+  (`AUTHORITY_ENDING_FIELDS`, `_superseded_decision_errors`, `successor_errors`) and accepted by
+  `approval_packages`. The rules now enforced are that a superseded decision must name
+  `superseded_by`, that its successor must itself be accepted or superseded, and that a
+  non-superseded decision may not carry the field. This decision's supersession relationship is
+  therefore expressible in the registry rather than in prose only.
+
+- **Accepting this decision is not a single registry edit, and the approval package must carry the
+  supersession transitions.** `governance/approvals/APP-013.yaml` pins `KHEPRI-DEC-005` and
+  `governance/approvals/APP-005.yaml` pins `KHEPRI-DEC-007`, each at `to_state: accepted`. Moving
+  either decision to `superseded` without transition records in the new package makes those prior
+  packages invalid. Verified by dry run against the validator, which reports
+  `approval-packages:APP-013: KHEPRI-DEC-005 must be at to_state 'accepted'`,
+  `approval-packages:APP-005: KHEPRI-DEC-007 must be at to_state 'accepted'`, and
+  `approval-packages:APP-013: renewal must preserve state 'superseded'`.
+
+  The approval package accepting this decision must therefore contain three artifacts: this
+  decision moving `proposed → accepted`, `KHEPRI-DEC-005` moving `accepted → superseded` with
+  `superseded_by: KHEPRI-DEC-008`, and `KHEPRI-DEC-007` moving the same way. All of it lands in one
+  commit, because a repository state in which the successor is accepted and the predecessors are
+  not yet superseded is a state Constitution I forbids and the validator rejects.
 
 This decision remains proposed until its registry entry contains explicit approval evidence.
