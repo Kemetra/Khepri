@@ -93,6 +93,17 @@ residency justification; the concrete product satisfying each capability with ex
 confirmation that the object store's expiry, deletion, and multipart-abort semantics satisfy
 `RRA-002`; recorded RTO and RPO; and the sizing values DEC-008's rules require.
 
+**Two different gates, easily conflated.** Accepting `KHEPRI-DEC-008` is **not** a spending
+decision. The decision says so in its own words: "It does not select a provider, a region, or a
+residency commitment. It does not authorize provisioning, deployment, or beta launch." It replaces
+provider-specific products with a capability contract and authorizes the portability slices to be
+written. What it costs is nothing.
+
+Accepting it is gated by **authority** — Constitution II reserves approval of an architecture
+decision to a named authority, and automation approves only as a named delegate within a recorded
+delegation. Provisioning is gated by **money**. Keeping those separate matters, because conflating
+them makes an approval look expensive when the expensive step is two artifacts later.
+
 **Steps — 0A-gov (no spend).**
 
 1. Owner reviews and accepts `KHEPRI-DEC-008`. Approval evidence is a GitHub issue comment, then
