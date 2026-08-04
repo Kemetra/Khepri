@@ -85,3 +85,8 @@ decisions:
     approved_by: AHMED-SHAABAN
     approved_at: 2026-08-02
     approval_ref: governance/approvals/APP-011.yaml
+  - id: KHEPRI-DEC-012
+    title: Transformation and orchestration tooling boundary
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-012-transformation-and-orchestration-boundary.md
