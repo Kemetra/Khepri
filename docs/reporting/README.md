@@ -83,16 +83,16 @@ evidence is optional *to the customer*.
 "Optional" means **delivery only**. Tier A content is generated for every report,
 unconditionally, for two reasons:
 
--  is compared for exact equality in six places, so a bundle
-  producing fewer than three surfaces returns  and is an
-  *incomplete bundle* — no report at all ().
--  content-addresses what each surface presented. Conditional
+- `REQUIRED_SURFACES` is compared for exact equality in six places, so a bundle
+  producing fewer than three surfaces returns `REASON_MISSING_SURFACE` and is an
+  *incomplete bundle* — no report at all (`bundle.py:1222`).
+- `surface_digest` content-addresses what each surface presented. Conditional
   generation would make the digest vary with a customer preference rather than
   with the data, and "the same input reproduces the same bundle identity" is the
   claim the product is sold on.
 
- already reads surfaces back per-surface with an
- guard, so withholding one from a download needs no contract
+`delivery_persistence.py:239` already reads surfaces back per-surface with an
+`if surface in found` guard, so withholding one from a download needs no contract
 change. **Do not implement optionality by skipping generation.**
 
 The business report names its reference and points to the evidence once, in the
