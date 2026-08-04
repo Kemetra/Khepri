@@ -280,7 +280,15 @@ def build_profile(
 
 
 def materialize(content: bytes, media_type: str) -> pl.DataFrame:
-    """Read governed CSV/XLSX content with every column held as text."""
+    """Read governed CSV/XLSX content with every column held as text.
+
+    The XLSX path names `engine="calamine"`, which Polars satisfies with the
+    declared `fastexcel` dependency. That dependency is imported nowhere in this
+    repository, so this call is the only thing that makes it required: reading
+    the manifest alone, it looks unused. KHEPRI-DEC-008 names the
+    fastexcel/calamine engine as the approved XLSX reader, so removing the
+    dependency would break this line rather than tidy a manifest.
+    """
     try:
         if media_type == CSV_MEDIA_TYPE:
             return pl.read_csv(
