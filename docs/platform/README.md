@@ -58,18 +58,19 @@ evidenced — each is a fact about the repository that any reader can re-derive:
 | 2 | [`cross-repository-ownership-matrix.md`](cross-repository-ownership-matrix.md) | Which repository owns each capability, and where today's state disagrees |
 | 3 | [`khepri-seshat-target-architecture.md`](khepri-seshat-target-architecture.md) | The boundary, the dependency direction, and the seven seams it needs |
 | 4 | [`cross-repository-pr-sequence.md`](cross-repository-pr-sequence.md) | PR split (R1a / R1b / R2 / R3), gate scope, the exact transitions each governance package would carry, validation commands, stop conditions |
+| 5 | [`../reporting/golden-sample-plan.md`](../reporting/golden-sample-plan.md) | Phase 1 plan against the design package that already exists, and the G5 commercial-validation gate |
 
 ### Not in this slice — do not follow these as links
 
 The package was split so that reviewing whether an architecture read is *correct* stays separate
 from reviewing whether a governance draft is *the right thing to propose*. Three groups of
-documents are therefore named but **not present in this tree**, and are written as plain paths
-rather than links so nothing here resolves to a 404:
+documents are therefore named but **not yet present**, and are written as plain paths rather than
+links so nothing here resolves to a 404. Each row is promoted into the table above when its PR
+lands — R3 already has been.
 
 | Arrives in | Path, once it lands | Contents |
 |---|---|---|
 | **R1b** | `docs/platform/proposed-governance/` | `README.md`, `identifier-survey.md`, `KHEPRI-DEC-012-amendment.md`, `decision-draft-seshat-boundary.md`, `family-charter-draft-commercial.md` — drafts named by placeholder, each with the registry *shape* it would need |
-| **R3** | `docs/reporting/golden-sample-plan.md` | Phase 1 plan against the design package that already exists, plus the G5 commercial-validation gate |
 | **R2** | `Kemetra/Seshat-BI` · `docs/architecture/` | `headless-analysis-engine.md`, `khepri-consumer-boundary.md`, `analysis-evidence-contracts.md` |
 
 Prose elsewhere in this package refers to those documents by name. Until their PRs land, treat
