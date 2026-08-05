@@ -55,7 +55,7 @@ revenue signal, not architectural completeness.
 | **0A-spend** | Provision and benchmark | Owner authorizes ~174-235 USD/month | 0B, 0C |
 | **0B** | Charter the commercial family | New family + superseding decision | 0A, 0C |
 | **0C** | Test the thesis with a mock | **None — ungated** | 0A, 0B |
-| **1** | Make the moat visible | Spec under new family | — |
+| **1** | Business-first reporting layer + separated audit evidence | Design package approved, then spec under new family | — |
 | **2** | Durable identity and workspaces | Specs; supersedes RRA-001 boundary | — |
 | **3** | Multi-dataset accumulation | Spec; the actual product unlock | — |
 | **4** | Commercial: pricing, billing, quotas | Spec | 5 (partly) |
@@ -232,45 +232,87 @@ that here costs a few conversations. Learning it after Phase 3 costs the schema.
 
 ---
 
-## Phase 1 — Make the moat visible
+## Phase 1 — Create a business-first reporting layer with separately accessible governed audit evidence
 
 **Why before tenancy.** It is the cheapest *code* phase, needs no schema change, and it builds the
-artifact Phase 0C validated as a mock. Doing it before tenancy means the differentiator is real
+artifact Phase 0C validated as a mock. Doing it before tenancy means the deliverable is sellable
 before the expensive retention and identity work is committed. Phase 0C, not this phase, is what
 tests the hypothesis.
 
 **Do not start this phase if Phase 0C came back negative.** Re-sequence instead.
 
-**The problem.** `FactPackage` is immutable, versioned, and content-addressed; every fact carries
-a citation identifier and a formula version; every surface reconciles to one package version; a
-partial render is refused rather than delivered. A customer sees none of this. The audit's
-section 6.4 names the strategic error available here: dressing up the pipeline while leaving the
-moat where a buyer never looks.
+**The problem — restated 2026-08-04 after owner review of the generated outputs.** The earlier
+framing of this phase was "make the moat visible," on the assumption that the provenance data
+existed but was not surfaced. That was wrong in an important way: **the provenance is already
+surfaced, and it is surfaced in the wrong place.** The HTML, PDF, and Excel outputs are
+structurally technical audit ledgers. The primary customer report exposes figure identifiers,
+citation identifiers, raw metric codes, raw unit-kind codes, section states, refusal codes,
+caveat codes, and full bundle provenance — in the report body, styled as machine identifiers.
+
+So the defect is not missing visibility. It is **missing separation**. A report ordered by
+computation mechanism, addressed to a reader who wants findings, does not become a business report
+by translating its identifiers into prose — it becomes a translated technical report.
+
+**Not "surface refusals." Not "fill the wording table."** Both were considered and both are too
+narrow. Filling `rendering/wording.py` addresses the vocabulary and leaves the information
+architecture untouched.
+
+**The design package, approved before implementation.** Three documents plus a golden sample:
+
+| Document | Contents |
+|---|---|
+| `docs/reporting/presentation-visibility-matrix.md` | Every rendered field classified Business / Audit / Internal |
+| `docs/reporting/business-report-information-architecture.md` | Customer-facing structure for HTML, PDF, Excel |
+| `docs/reporting/refusal-presentation.md` | The five-part customer refusal contract; the 13-code catalog |
+| `docs/reporting/golden-sample/` | HTML, PDF, XLSX mocks on one fictional dataset |
 
 **Steps.**
 
-1. Specify a **provenance surface** — a per-report view answering, for any figure: which package
-   version produced it, which formula version, which source columns it derives from, which
-   citation identifier carries it, and what the input digest was. The data exists;
-   `Fact.citation_id`, `fact_id`, `formula_version`, and the package digest are already fields.
-2. Specify a **reproduction receipt**: the input digest, package version, bundle identity, and a
+1. **Split the presentation into two layers.** A business report that leads with findings, and a
+   governed audit-evidence layer carrying every identifier. Separate page in HTML, appendix after
+   a page break in PDF, final two worksheets in Excel. The audit layer is **generated with every
+   report** and is the differentiator, not a debug view; whether the customer's copy *includes*
+   it is a render variant of each surface. It is never a delivery-time filter —
+   `delivery_persistence.py:346-350` raises `DeliveryCorrupted` on a delivery that does not name
+   every required surface. See `docs/reporting/business-report-information-architecture.md` §B.1.
+2. **Reorder the business report by decision relevance** — what happened, why, which products or
+   branches or periods drove it, the implication, the limitations. Not by bundle section order.
+3. **Add the business-name table for governed metrics.** `label` already has a translation path
+   (`GOVERNED_FIGURE_LABELS` → `_row_label`); `metric` has none and reaches the page raw. This is
+   new work, not a fill-in.
+4. **Implement the five-part refusal contract** (`refusal-presentation.md` §D) for all 13
+   customer-facing reason codes — 8 section reasons plus 5 result reasons — in Arabic and English.
+   Every refusal states whether the rest of the report remains valid.
+5. **Word every caveat.** `bundle.py:1324` requires the claimed caveat set to *equal* the bundle's,
+   so an unworded caveat is a reconcile failure rather than a cosmetic gap. No opt-out, no subset.
+6. **Keep the reproduction receipt** — input digest, package version, bundle identity, and the
    statement that re-running the same input reproduces the same bundle identity. This is what a
-   customer forwards to their auditor.
-3. Close the one genuine gap `KHEPRI-DEC-012` names: a browsable catalog of governed facts,
-   formulas, and their semantics. Khepri has stricter versioning than dbt and no generated docs.
-4. Specify how refusal is *presented*. Admissibility gating (RRA-003) is real value that reads as
-   rejection; the surface should frame it as "we will not report what we cannot support," with
-   the specific reason.
+   customer forwards to their auditor, and it belongs in the audit layer.
+7. **Keep the governed-fact catalog** as an internal product and specification asset. It is not
+   the customer report.
 
-**Exit criterion.** A report a customer can defend to a third party without Khepri's help.
+**Verified implementation facts** (from `docs/reporting/` §B.6):
 
-**Kill test.** Phase 0C already ran it. Re-show the *built* surface to the same prospects and check
-that the implementation still lands the way the mock did — a real surface carries caveats and
-refusals a mock can omit.
+- `reconcile` (`bundle.py:1271-1314`) validates the `SurfaceContent` *claim* and never parses the
+  rendered document. Relocating a field changes no claim, so **the separation is a pure
+  presentation change** and needs no change to the reconcile contract.
+- **Deletion is not relocation.** The caveat set, the figure set, and the disclosure
+  (`bundle.py:1319-1323`, compared in full) must all survive.
+- PDF does not fork: `pdf.py:193` renders through the shared `build_context` and the print
+  template *extends* the web template. The appendix is a template block.
+
+**Exit criterion.** A report a retail owner reads for the finding and forwards to their auditor for
+the evidence — with no identifier on any page the owner reads, and no figure missing from the page
+the auditor reads.
+
+**Kill test.** Phase 0C already ran it. Re-show the *built* surfaces to the same prospects. A real
+surface carries caveats and refusals a mock can omit.
 
 **What could kill the business.** If auditability is a hygiene factor rather than a purchase
 driver, the moat does not convert and the product competes on report quality alone — where a
-generic pipeline plus a good LLM prompt is a real competitor.
+generic pipeline plus a good LLM prompt is a real competitor. Note the sharper risk this
+restatement exposes: for the whole of the beta so far the *only* output was the technical ledger,
+so any prospect shown it was shown the least sellable form of the product.
 
 ---
 
@@ -332,6 +374,24 @@ happened to export.
 3. Specify schema-drift handling — the customer's export format will change, and a silent
    remap is a correctness failure on a defensibility product. Refuse, explain, and offer remap.
 4. Extend `RRA-008` comparison to cross-dataset periods.
+5. **Add comparable-store ("like-for-like") sales.** Recorded here 2026-08-04 after checking the
+   report design against retail reporting practice. This is the metric mid-market retail buyers and
+   their lenders read *first*, and Khepri does not compute it. Total revenue growth conflates a
+   concept getting stronger with a chain getting bigger: a retailer can post 24% total growth while
+   comparable sales fall 3%. It is a **new governed analysis**, not a presentation change, so it
+   needs an `RRA-008` family amendment rather than a wording table.
+
+   **Why it lands in this phase rather than Phase 1.** It requires branch-level revenue across two
+   comparable periods, restricted to the branches present in *both*. That is exactly the data
+   accumulation makes ordinary and that a single upload currently refuses with
+   `prior_window_absent`. Building it before accumulation would ship an analysis that refuses for
+   most real customers.
+
+   **A refusal it needs.** A chain that opened or closed branches between the two periods has a
+   comparable set smaller than its full estate, and a like-for-like figure computed over a
+   silently-shrunken set is the exact misstatement this product exists to refuse. Expect a new
+   governed reason — provisionally `comparable_set_insufficient` — plus a caveat naming how many
+   branches were excluded and why.
 
 **Exit criterion.** A customer uploads a second month and receives a comparison neither upload
 could have produced alone.
