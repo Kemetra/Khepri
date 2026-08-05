@@ -57,24 +57,19 @@ evidenced — each is a fact about the repository that any reader can re-derive:
 | 1 | [`current-state-delta.md`](current-state-delta.md) | What is already built, partial, duplicated, missing, blocked, or contradicted |
 | 2 | [`cross-repository-ownership-matrix.md`](cross-repository-ownership-matrix.md) | Which repository owns each capability, and where today's state disagrees |
 | 3 | [`khepri-seshat-target-architecture.md`](khepri-seshat-target-architecture.md) | The boundary, the dependency direction, and the seven seams it needs |
-| 4 | [`cross-repository-pr-sequence.md`](cross-repository-pr-sequence.md) | PR split (R1a / R1b / R2 / R3), gate scope, the exact transitions each governance package would carry, validation commands, stop conditions |
-| 5 | [`../reporting/golden-sample-plan.md`](../reporting/golden-sample-plan.md) | Phase 1 plan against the design package that already exists, and the G5 commercial-validation gate |
+| 4 | [`cross-repository-pr-sequence.md`](cross-repository-pr-sequence.md) | **Start at its §0** — what merged, and which gates the owner has deferred. Then the PR split, gate scope, the exact transitions each governance package would carry, validation commands, stop conditions |
+| 5 | [`../reporting/golden-sample-plan.md`](../reporting/golden-sample-plan.md) | Phase 1 plan against the design package that already exists, and the G5 commercial-validation gate — **deferred**, see §C.3 |
+| 6 | [`proposed-governance/`](proposed-governance/README.md) | The drafts themselves, each named by placeholder and carrying the registry *shape* it would need |
 
-### Not in this slice — do not follow these as links
+### The other half of the boundary lives in a different repository
 
-The package was split so that reviewing whether an architecture read is *correct* stays separate
-from reviewing whether a governance draft is *the right thing to propose*. Three groups of
-documents are therefore named but **not yet present**, and are written as plain paths rather than
-links so nothing here resolves to a 404. Each row is promoted into the table above when its PR
-lands — R3 already has been.
+`Kemetra/Seshat-BI` · `docs/architecture/{headless-analysis-engine, khepri-consumer-boundary,
+analysis-evidence-contracts}.md`, merged as `3875aca` (#579) and citing this repository at
+`db98f4b`.
 
-| Arrives in | Path, once it lands | Contents |
-|---|---|---|
-| **R1b** | `docs/platform/proposed-governance/` | `README.md`, `identifier-survey.md`, `KHEPRI-DEC-012-amendment.md`, `decision-draft-seshat-boundary.md`, `family-charter-draft-commercial.md` — drafts named by placeholder, each with the registry *shape* it would need |
-| **R2** | `Kemetra/Seshat-BI` · `docs/architecture/` | `headless-analysis-engine.md`, `khepri-consumer-boundary.md`, `analysis-evidence-contracts.md` |
-
-Prose elsewhere in this package refers to those documents by name. Until their PRs land, treat
-every such reference as a forward reference, not a navigable link.
+**Not a link, and not evidence.** Two independent governance systems cite each other by commit
+SHA and never by the other's approval — Constitution III. A reviewer can check the reciprocity;
+neither side may lean on it.
 
 ## Why no file was written under `governance/`
 
