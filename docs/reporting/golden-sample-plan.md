@@ -17,7 +17,7 @@ Read `README.md` in this directory first — it is the package this plan closes 
 | 1 | Presentation visibility matrix (Business / Audit / Internal) | **Drafted** | `presentation-visibility-matrix.md` |
 | 2 | Business report information architecture | **Drafted** | `business-report-information-architecture.md` |
 | 3 | Refusal and limitation presentation contract | **Drafted** | `refusal-presentation.md` — five-part contract, 11 distinct codes in 13 contexts |
-| 4 | One fictional but realistic retail dataset | **Drafted** | "Al Rahma Trading Co.", Jan–Jul 2026 |
+| 4 | One fictional but realistic retail dataset | **Drafted, with one gap** | "Al Rahma Trading Co.", Jan–Jul 2026 — no transaction identifiers, see §B.1 |
 | 5 | Golden HTML mock | **Drafted** | `golden-sample/khepri-sales-review-sample.html` |
 | 6 | Golden PDF mock | **Drafted** | `golden-sample/khepri-sales-review-sample.pdf` — 8 pages, appendix on a fresh page |
 | 7 | Golden Excel mock | **Drafted** | `golden-sample/khepri-sales-review-sample.xlsx` — 12 sheets |
@@ -30,24 +30,51 @@ Read `README.md` in this directory first — it is the package this plan closes 
 | Multiple months | Yes — seven, January to July 2026 |
 | Products and categories | Yes |
 | Multiple branches or locations | Yes — per-branch revenue, units, margin, change |
-| Units, revenue, discounts, returns, cost | Yes — all twelve governed metrics: the ten in `facts.py:69-78` plus the two growth effects in `analysis/growth.py:72-73` |
-| Transaction identifiers | Yes — basket analysis depends on them |
-| A clear growth-driver story | Yes — growth decomposition into its two effects |
+| Units, revenue, discounts, returns, cost | Yes — all **thirteen** governed metrics: the ten in `facts.py:69-78` plus the three in `growth.GOVERNED_METRICS` (`analysis/growth.py:71-74`) |
+| Transaction identifiers | **No — not met.** The sample file carries no receipt or invoice number, so basket analysis is *refused*, not produced. See §B.1 |
+| A clear growth-driver story | Yes — growth decomposition into price and volume effects, alongside the total change |
 | At least one analysis that succeeds | Yes |
 | At least one unavailable for a valid reason | Yes |
 | At least one data-quality caveat | Yes |
 
-**The coverage requirement is met, with one constraint the package states and this plan
-endorses.** From `README.md`:
+### B.1 One coverage requirement is not met, and it is not a wording problem
+
+Roadmap §10 requires the fictional dataset to carry **transaction identifiers**. The sample file
+does not. Its own Basket Analysis section says so to the reader:
+
+> Your file has no receipt or invoice number, so there is no way to tell which rows belong to
+> the same sale. Counting rows instead would overstate basket size wherever one sale spans
+> several lines.
+
+So basket analysis appears in the sample as a **refusal**, not as a produced analysis. An earlier
+version of this table recorded transaction identifiers as present because basket analysis was
+listed in the report — reading a section heading as evidence of the data behind it.
+
+**Two roadmap §10 requirements are in tension here, and the sample resolves them the wrong way
+round.** It must carry transaction identifiers, *and* it must show "at least one analysis that is
+unavailable for a valid reason." Today one requirement is satisfied by breaking the other: the
+missing identifiers are what produce the refusal.
+
+They are separable. Add receipt numbers so basket analysis computes, and let the year-on-year
+comparison — already refused in the sample because the file covers only seven months — carry the
+refusal requirement on its own. **That is a change to the fictional dataset, not to this plan**,
+and it is the owner's call whether to make it before approving the sample or to approve the sample
+with the gap recorded.
+
+Recorded as a **known gap in deliverable 4**, not as a defect in the design.
+
+### B.2 What the coverage constraint does and does not permit
+
+From `README.md`:
 
 > Richness comes from metrics Khepri **already computes**, never from invented analysis. A
 > golden sample is a promise about the product; inventing a forecast, a customer segmentation,
 > or a basket-affinity matrix would make the sample a specification for work nobody approved.
 
 This is why comparable-store sales is absent from the sample and recorded as a roadmap item
-instead. Roadmap §10's Excel target structure lists **Basket Analysis** as a sheet; Khepri does
-compute basket analysis (`analysis/basket.py`), so the sheet is honest. It lists nothing Khepri
-cannot produce.
+instead. Note that adding receipt numbers per §B.1 does **not** violate this constraint: basket
+analysis is already implemented (`analysis/basket.py`), so the sample would be showing a capability
+Khepri has rather than promising one it lacks.
 
 ## C. What Phase 1 still needs
 
@@ -81,7 +108,8 @@ business reader can understand the report without technical training."
 But **approval of `[SPEC-REPORT]` and implementation of the report layer should follow four
 things, in this order:**
 
-1. the static golden sample (exists today, awaiting approval);
+1. the **owner-approved** static golden sample — G4, not merely its existence. The sample exists
+   today and is awaiting approval; an unapproved mock is not evidence of anything;
 2. **three retail chain or mid-market prospect interviews**;
 3. **two agency interviews**;
 4. an explicit owner decision recorded as **go / revise / stop**.
@@ -117,6 +145,7 @@ Tracked as **G5** in
 | Leads with conclusions, not raw metric tables | **Owner judgment.** The IA orders by decision relevance; whether it reads that way is a reader's call. |
 | Arabic genuinely written for Arabic readers | **Not evidenced** — §C.1 |
 | Owner approves before implementation | **Outstanding** |
+| Fictional dataset carries transaction identifiers | **Not met** — §B.1 |
 | Commercial validation (G5) before `[SPEC-REPORT]` approval | **Not started** — §C.3 |
 
 Two criteria are owner judgment by construction. That is correct — a mechanical proxy for
