@@ -9,9 +9,47 @@ Everything below describes work that is **ready for owner review and possible ap
 initiation**. Nothing here has been approved, and this document cannot approve it.
 
 Artifacts are named by placeholder. **No identifier is allocated or reserved.** The survey of what
-the registries currently hold, and what a next value *would* be if derived, arrives with R1b as
-`docs/platform/proposed-governance/identifier-survey.md` — a forward reference, not a link, since
-that file is not in this tree.
+the registries currently hold, and what a next value *would* be if derived, is
+[`proposed-governance/identifier-survey.md`](proposed-governance/identifier-survey.md), merged as
+R1b. It records provisional candidates and reserves nothing.
+
+---
+
+## 0. Status, 2026-08-05
+
+### The review PRs have landed; no governance PR has been opened
+
+| PR | Repository | State |
+|---|---|---|
+| **R1a** | `Kemetra/Khepri` | merged `db98f4b` (#97) |
+| **R2** | `Kemetra/Seshat-BI` | merged `3875aca` (#579) |
+| **R3** | `Kemetra/Khepri` | merged `7dd3c31` (#98) |
+| **R1b** | `Kemetra/Khepri` | merged `b2c032c` (#99) |
+
+**No registry has been edited and no artifact has changed state.** `KHEPRI-DEC-008` is still
+`proposed`; `KHEPRI-DEC-012` is still `proposed`; no identifier has been allocated. Every package
+in §4 remains unopened.
+
+### G4 and G5 are deferred
+
+**Owner direction, 2026-08-05, given in a working session and recorded nowhere in either
+repository — a planning input, not traceable evidence.** G4 (golden-sample approval, including
+the Arabic copy review) and G5 (three retail interviews, two agency interviews, and an explicit
+go / revise / stop) are **deferred until the owner records them.**
+
+**Deferred is not overridden, and the distinction is the entire point.** An override lets
+`[SPEC-REPORT]` through *without* the interview evidence, and §2 G5 requires it to be written into
+the approving package naming what was skipped. A deferral lets nothing through: **`G-g` stays
+closed, `I1` stays blocked**, and recording a deferral needs no approval authority, because it
+grants nothing.
+
+**Consequence.** `G-g → I1` — the only chain in this document that produces something a customer
+can see — is parked, and parked **by choice rather than by an unmet dependency**. What G5 never
+blocked stays available: `G-a → I2`, the boundary chain `G-c → G-e`, and `G-b`.
+
+> **This section is the single statement of that fact.** §2, §3, §6 and §7 point here rather than
+> restate it. A gate status repeated in five places is a contradiction waiting for one of them to
+> be updated alone — which has already happened twice in this package.
 
 ---
 
@@ -101,6 +139,9 @@ Roadmap §10 Phase 1 stop condition, plus the Arabic copy review.
 **Blocks:** `[SPEC-REPORT]` proceeding to approval, and therefore implementation.
 **Does not block:** the design package, or the sample itself.
 
+> **Deferred by owner direction, 2026-08-05 — §0.** Not overridden. G4 still blocks exactly what
+> it blocked before.
+
 ### G5 — Commercial validation (Phase 0C)
 
 `docs/khepri-commercial-roadmap.md` Phase 0C. Every sequencing argument in both roadmaps rests
@@ -130,6 +171,11 @@ skipped and why, in the approval package that approves the specification. Silenc
 override. A gate bypassed without a record is indistinguishable later from a gate that never
 existed, and the whole point of G5 is that its absence is currently invisible.
 
+> **Deferred by owner direction, 2026-08-05 — §0.** **Deferred, not overridden**: no interview has
+> happened, none is currently scheduled, and no override has been written. G-g stays closed and I1
+> stays blocked. The paragraph above remains the standing requirement should the owner later elect
+> to proceed without the evidence.
+
 ---
 
 ## 3. Proposed PR split
@@ -140,12 +186,15 @@ to *accept a decision*, and combining them means the second borrows assent from 
 
 ### Review PRs — no governance transition, no registry, no approval package
 
-| PR | Repo | Contents | Depends on |
-|---|---|---|---|
-| **R1a** | Khepri | **Khepri architecture planning.** `docs/platform/README.md`, `current-state-delta.md`, `khepri-seshat-target-architecture.md`, `cross-repository-ownership-matrix.md`, this file. | base |
-| **R1b** | Khepri | **Proposed governance drafts.** `docs/platform/proposed-governance/{README, identifier-survey, KHEPRI-DEC-012-amendment, decision-draft-seshat-boundary, family-charter-draft-commercial}.md`. | R1a merged |
-| **R2** | Seshat-BI | **Seshat headless-engine boundary planning.** `docs/architecture/{headless-analysis-engine, khepri-consumer-boundary, analysis-evidence-contracts}.md`. | R1a merged; cites its **actual merged commit SHA** |
-| **R3** | Khepri | **Business-report and golden-sample planning.** `docs/reporting/golden-sample-plan.md`. | base — independent of R1a, R1b, R2 |
+| PR | Repo | Contents | Depends on | Outcome |
+|---|---|---|---|---|
+| **R1a** | Khepri | **Khepri architecture planning.** `docs/platform/README.md`, `current-state-delta.md`, `khepri-seshat-target-architecture.md`, `cross-repository-ownership-matrix.md`, this file. | base | **merged** `db98f4b` (#97) |
+| **R1b** | Khepri | **Proposed governance drafts.** `docs/platform/proposed-governance/{README, identifier-survey, KHEPRI-DEC-012-amendment, decision-draft-seshat-boundary, family-charter-draft-commercial}.md`. | R1a merged | **merged** `b2c032c` (#99) |
+| **R2** | Seshat-BI | **Seshat headless-engine boundary planning.** `docs/architecture/{headless-analysis-engine, khepri-consumer-boundary, analysis-evidence-contracts}.md`. | R1a merged; cites its **actual merged commit SHA** | **merged** `3875aca` (#579), citing `db98f4b` |
+| **R3** | Khepri | **Business-report and golden-sample planning.** `docs/reporting/golden-sample-plan.md`. | base — independent of R1a, R1b, R2 | **merged** `7dd3c31` (#98) |
+
+The split held: **no governance transition rode in on any of them**, and every dependency was
+satisfied before its dependent opened.
 
 **Why R1a and R1b are separate.** Reviewing whether an architecture read is *correct* is
 different work from reviewing whether a governance draft is *the right thing to propose*. Mixing
@@ -398,9 +447,10 @@ GOVERNANCE (one atomic purpose per PR; owner-initiated only)
                                          + DEC-003 superseded   (atomic, 4 transitions)
   G-g  [SPEC-REPORT] approved ──► I1 report layer (synthetic fixtures)
 
-PHASE 0C (ungated, startable today; nothing waits on it but G-g and I1)
+PHASE 0C (ungated, but DEFERRED by owner direction 2026-08-05 - see §0)
   static golden sample + 3 retail interviews + 2 agency interviews
         └─► owner: go / revise / stop ──► G5 cleared ──► G-g
+  nothing waits on it but G-g and I1, and both are therefore parked
 
 GATE SCOPE
   G1 blocks : real customer data - beta launch - production claims -
@@ -528,8 +578,8 @@ Each halts its own chain. None halts all of them — that is the point of the sp
 | # | Condition | Halts | Does not halt |
 |---|---|---|---|
 | 1 | `KHEPRI-DEC-008` not accepted | G-a2, I2, I3, and therefore G1 | R1a–R3, G-b–G-g, **I1** |
-| 2 | Golden sample not approved (incl. Arabic copy review) — **G4** | G-g, I1 | Everything else |
-| 2b | **G5** — three retail interviews, two agency interviews, and an explicit owner go/revise/stop not recorded | G-g, I1 | R3, the sample, the interviews. **Overridable only in writing**, in the approving package. |
+| 2 | Golden sample not approved (incl. Arabic copy review) — **G4**. **Deferred, §0** | G-g, I1 | Everything else |
+| 2b | **G5** — three retail interviews, two agency interviews, and an explicit owner go/revise/stop not recorded. **Deferred, §0** | G-g, I1 | R3, the sample, the interviews. **Overridable only in writing**, in the approving package. |
 | 3 | `[DEC-BOUNDARY]` not accepted | G-e, all deferred work | R1a–R3, G-a, G-f, G-g, I1, I2 |
 | 4 | The `APP-002` renewal not approved | G-f in its entirety — all four transitions, since the package is atomic | Everything else |
 | 5 | Prospect validation negative | **Re-sequence, not halt** — see below | — |
@@ -537,11 +587,18 @@ Each halts its own chain. None halts all of them — that is the point of the sp
 | 7 | Spec 138 still open in Seshat | D3. Dormant while deferred | R2, G-d |
 | 8 | `KHEPRI-DEC-012` revision not reviewed | G-b2 — the digest pinned must be the reviewed text | G-c, which needs no acceptance of DEC-012 |
 
-**On conditions 2b and 5 — they are the same evidence, read two ways.** Phase 0C is **ungated and
-startable today**: no code, no charter, no environment, no approval. As **G5** it gates `[SPEC-REPORT]`
-approval, because an information architecture built on the wrong differentiator is expensive to
-unwind. As **stop condition 5** a negative result does not halt work — it changes what the work
-should be. Both readings point the same way: run it before I1, not after.
+**On conditions 2b and 5 — they are the same evidence, read two ways.** Phase 0C is **ungated**:
+no code, no charter, no environment, no approval stands between the owner and starting it. As
+**G5** it gates `[SPEC-REPORT]` approval, because an information architecture built on the wrong
+differentiator is expensive to unwind. As **stop condition 5** a negative result does not halt
+work — it changes what the work should be. Both readings point the same way: run it before I1,
+not after.
+
+**It is deferred rather than running (§0),** and that is worth stating precisely: *ungated* and
+*deferred* are compatible. Nothing prevents Phase 0C from starting; the owner has elected not to
+start it yet. The cost of the deferral is not a blocked dependency — it is that conditions 2b and
+5 both stay unresolved, so the differentiator the whole sequence is built on stays unverified for
+as long as the deferral lasts.
 
 ---
 
@@ -605,4 +662,6 @@ section.
 - Whether `KHEPRI-DEC-008`'s supersession of `KHEPRI-DEC-005` preserves `KHEPRI-DEC-003`
   condition 3 (§2 caveat). A drafting obligation for G-a, not a blocker for review.
 - **G5 in its entirety.** Three retail interviews, two agency interviews, and an explicit owner
-  go/revise/stop. None has happened.
+  go/revise/stop. None has happened, and **the owner has deferred all of it (§0)** — so this stays
+  open rather than moving to "closed", and it is open by decision rather than by oversight. G4 is
+  deferred with it.

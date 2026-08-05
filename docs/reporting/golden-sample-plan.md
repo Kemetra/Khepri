@@ -135,6 +135,12 @@ is currently invisible, and bypassing it invisibly would restore exactly that co
 Tracked as **G5** in
 [`../platform/cross-repository-pr-sequence.md`](../platform/cross-repository-pr-sequence.md) §2.
 
+> **Deferred by owner direction, 2026-08-05.** G4 and G5 both wait until the owner records them —
+> see that document's §0, which is the single statement of the deferral. **Deferred, not
+> overridden**: the override paragraph above is a standing requirement that has not been invoked,
+> and `[SPEC-REPORT]` remains unapprovable. The four items in this section are unchanged; what
+> changed is that none of them is currently being pursued.
+
 ### C.4 Acceptance criteria: evidenced, versus asserted
 
 | §10 Phase 1 criterion | Evidence |
@@ -144,9 +150,9 @@ Tracked as **G5** in
 | Every important finding supported by visible evidence or a linked audit entry | **Partially verified** — 47 Excel / 46 HTML identifiers present in the audit regions; the *linkage* between a finding and its audit entry is not machine-checked |
 | Leads with conclusions, not raw metric tables | **Owner judgment.** The IA orders by decision relevance; whether it reads that way is a reader's call. |
 | Arabic genuinely written for Arabic readers | **Not evidenced** — §C.1 |
-| Owner approves before implementation | **Outstanding** |
+| Owner approves before implementation | **Outstanding — deferred**, §C.3 |
 | Fictional dataset carries transaction identifiers | **Not met** — §B.1 |
-| Commercial validation (G5) before `[SPEC-REPORT]` approval | **Not started** — §C.3 |
+| Commercial validation (G5) before `[SPEC-REPORT]` approval | **Not started — deferred**, §C.3 |
 
 Two criteria are owner judgment by construction. That is correct — a mechanical proxy for
 "reads like a business report" is the failure mode the package exists to escape.

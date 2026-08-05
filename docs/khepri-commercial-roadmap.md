@@ -212,7 +212,17 @@ segment has been spoken to. A mock tests it. If a mock is sufficient to test the
 mock is the test, and it must come before the code rather than beside it.
 
 **It is ungated.** It touches no code, needs no charter, no specification, and no environment. It
-can start today, in parallel with 0A and 0B.
+can start at any time, in parallel with 0A and 0B.
+
+> **Deferred by owner direction, 2026-08-05 — not started.** Recorded as **G4 and G5** in
+> [`platform/cross-repository-pr-sequence.md`](platform/cross-repository-pr-sequence.md) §0, which
+> is the single statement of the deferral.
+>
+> **Ungated and deferred are compatible, and the combination is the thing to notice.** Nothing
+> blocks this phase; it is simply not being run yet. So its exit criterion below is not merely
+> unmet — it is **not currently being pursued**, which means the assumption named in the first
+> paragraph stays an assumption for as long as the deferral lasts. Everything downstream that this
+> phase was meant to de-risk proceeds, if it proceeds at all, on an unverified thesis.
 
 **Steps.**
 
