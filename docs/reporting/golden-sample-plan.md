@@ -131,14 +131,22 @@ Not authorized by this plan. Recorded so the approval decision is made with its 
 The design package records "no governance dependency is known." That is right for the *design*.
 The *implementation* changes RRA-006's rendered output and needs a specification.
 
-**Decided by the owner, 2026-08-05: `[SPEC-REPORT]`, under the existing RRA family.**
+**Recommended route: a new specification under the existing RRA family.** This is a
+recommendation, not a decision. **No approval package, registry entry, or approval reference
+records a choice of route**, and none may be inferred from this document. `AGENTS.md` is explicit
+that human approval is not claimed or recorded without explicit traceable evidence, so the route
+is settled when a governed artifact settles it — not here.
 
-The change is presentational; `docs/reporting/` establishes that `reconcile` validates the
-`SurfaceContent` claim and never parses the document, so relocation is claim-neutral. `[SPEC-REPORT]`
-needs no commercial capability and is therefore **not blocked behind the commercial-family charter** — which
-matters, because it is the only phase a buyer can see and the charter is the slower gate. It is
-also now on the slower gate for a second reason: `RRA.md` is digest-pinned by `APP-002`, so the
-charter package requires a renewal.
+The argument for it: the change is presentational; `docs/reporting/` establishes that `reconcile`
+validates the `SurfaceContent` claim and never parses the document, so relocation is
+claim-neutral. `[SPEC-REPORT]` needs no commercial capability, so this route does **not** put it
+behind the commercial-family charter — which matters, because the report is the only phase a buyer
+can see and the charter is the slower gate. That gap has since widened: `RRA.md` is digest-pinned
+by `APP-002`, so the charter package requires a renewal rather than a plain edit.
+
+The alternative — placing it under the commercial family — is cleaner if the report is understood
+as a commercial deliverable rather than a beta capability, and costs the charter dependency. Both
+are live until an approved artifact chooses.
 
 **One thing to check when drafting `[SPEC-REPORT]`.** `APP-002` pins `RRA-006` by
 `document_sha256`. `[SPEC-REPORT]` is a *new* specification depending on RRA-006, not an edit to it, so
