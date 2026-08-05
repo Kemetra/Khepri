@@ -46,11 +46,17 @@ font program).
 
 ### What makes it "rich" — and the constraint on that
 
-The sample uses **all twelve governed metrics**: the ten in `facts.py:69-78` plus the
-two growth effects in `analysis/growth.py:72-73`. The first draft used four, which is
-why it read thin — `cost`, `gross_profit`, `gross_margin`, `discount`, `returns` and
-`average_selling_price` are all computable today and were reaching the page as raw
-identifiers or not at all.
+The sample uses **all thirteen governed metrics**: the ten in `facts.py:69-78` plus the
+three in `growth.GOVERNED_METRICS` (`analysis/growth.py:71-74`).
+
+> **Corrected 2026-08-05.** This paragraph said "twelve — ten plus two growth effects,"
+> which drops `growth_revenue_change`. `business-report-information-architecture.md:447`
+> already carried the right count and recorded the same correction, so the package
+> contradicted itself in two files. The IA was right; this line was wrong.
+
+The first draft used four, which is why it read thin — `cost`, `gross_profit`,
+`gross_margin`, `discount`, `returns` and `average_selling_price` are all computable
+today and were reaching the page as raw identifiers or not at all.
 
 Richness comes from metrics Khepri **already computes**, never from invented analysis.
 A golden sample is a promise about the product; inventing a forecast, a customer
