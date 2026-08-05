@@ -8,9 +8,10 @@ follow-up fixes.
 Everything below describes work that is **ready for owner review and possible approval
 initiation**. Nothing here has been approved, and this document cannot approve it.
 
-Artifacts are named by placeholder — see
-[`proposed-governance/identifier-survey.md`](proposed-governance/identifier-survey.md). No
-identifier is allocated or reserved.
+Artifacts are named by placeholder. **No identifier is allocated or reserved.** The survey of what
+the registries currently hold, and what a next value *would* be if derived, arrives with R1b as
+`docs/platform/proposed-governance/identifier-survey.md` — a forward reference, not a link, since
+that file is not in this tree.
 
 ---
 
@@ -179,11 +180,26 @@ contain, so the package's size is visible before it is drafted.
 | `KHEPRI-DEC-007` | `accepted` | `superseded` | `superseded_by: KHEPRI-DEC-008` |
 
 Plus one new approval package pinning DEC-008's document digest and recording all three
-transitions. `(accepted, superseded)` is a valid transition
-(`lifecycle.py:14`), and `superseded_by` is supported by both the lifecycle validator
-(`lifecycle.py:43,151`) and the package schema (`approval_packages.py:68`) — **so the
-`docs/khepri-commercial-roadmap.md` obligation to "add `superseded_by` to the decisions registry
-and validator" is already discharged.**
+transitions. `(accepted, superseded)` is a valid transition (`lifecycle.py:14`), and
+`superseded_by` is supported by both the lifecycle validator (`lifecycle.py:43,151`) and the
+package schema (`approval_packages.py:68`) — **so DEC-008's own obligation to "add a
+`superseded_by` field to the decisions registry and validator support" is already discharged.**
+`KHEPRI-DEC-008` records that discharge itself as of `e27d0bb` (PR #95).
+
+**Why the three transitions cannot travel separately — verified, not argued.** PR #95 (`e27d0bb`)
+established this by dry run against the validator, and it is the reason this package is atomic
+rather than merely convenient to combine. `APP-013.yaml` pins `KHEPRI-DEC-005` and `APP-005.yaml`
+pins `KHEPRI-DEC-007`, each with `to_state: accepted`. Moving either decision to `superseded`
+without transition records in the *new* package invalidates those *prior* packages:
+
+```text
+ERROR approval-packages:APP-013: KHEPRI-DEC-005 must be at to_state 'accepted'
+ERROR approval-packages:APP-005: KHEPRI-DEC-007 must be at to_state 'accepted'
+ERROR approval-packages:APP-013: renewal must preserve state 'superseded'
+```
+
+A repository state in which the successor is accepted and its predecessors are not yet superseded
+is one Constitution I forbids and the validator rejects. All three transitions land in one commit.
 
 **Do not fix `KHEPRI-DEC-005`'s stale closing sentence in this package, or any other.** Once
 DEC-005 is `superseded`, editing its body would rewrite prior authority, which Constitution VI
@@ -544,19 +560,49 @@ should be. Both readings point the same way: run it before I1, not after.
 
 ---
 
-## 9. Status of preconditions, 2026-08-05
+## 9. Preconditions — status, and how each is (or is not) evidenced
 
-- [x] Owner has read the delta report and accepts its six findings.
-- [x] Distribution — **committed files, no package**, with five source-of-truth rules
-      (`[DEC-BOUNDARY]` §2a).
-- [x] Integration scope — **boundary now, integration deferred**.
-- [x] Renderer question — **two renderers, two products, closed**.
-- [x] `AGENTS.md` ambiguity — **qualify to Seshat-Platform**; replacement text drafted.
-- [x] `RRA.md` digest check **run**: pinned by `APP-002`, digest matches, G-f is a renewal.
-- [x] `APP-009` absence **confirmed intentional** — `c00c098` created, `f38ee8f` withdrew.
-- [x] Metric authority for consumer requests — **closed as a precondition**, not left open
-      (`[DEC-BOUNDARY]` §9). Mechanism parked to the integration specification.
-- [x] Deployment gate scope — **evidenced against `KHEPRI-DEC-003`'s four conditions**, §2 above.
+**No checkboxes here, deliberately.** An earlier revision rendered these as a ticked list, and a
+ticked box reads as a cleared gate whatever the surrounding prose says. Most of these are not
+cleared. They are split below by **what kind of thing would make them true.**
 
-**Open:** whether `KHEPRI-DEC-008`'s supersession of `KHEPRI-DEC-005` preserves DEC-003
-condition 3 (§2 caveat). It is a drafting obligation for G-a, not a blocker for review.
+### Evidenced — any reader can re-derive these from the repository
+
+| Precondition | Evidence |
+|---|---|
+| `RRA.md` is digest-pinned, so the commercial re-scope is a renewal | `APP-002.yaml` binds `sha256:8a1235a0d6…`; the file hashes to exactly that |
+| `APP-009`'s absence is intentional | Created `c00c098` (#65), withdrawn `f38ee8f` (#66) when `KHEPRI-DEC-009` was rejected |
+| The deployment gate does not order environment before implementation | `KHEPRI-DEC-003` condition 3 requires an **accepted architecture decision**; `KHEPRI-DEC-005` is accepted |
+| `superseded_by` is already supported | `lifecycle.py:43,151`; `approval_packages.py:68` |
+
+### Recorded as owner direction — **not** traceable evidence
+
+The owner selected each of these in a working session on 2026-08-05. **No issue comment, approval
+package, registry entry, or approval reference records any of them**, and `AGENTS.md:17-18`
+forbids treating that as human approval. They shape the reasoning in this package; they clear
+nothing.
+
+- Distribution — committed files, no package, with the five source-of-truth rules
+  (`[DEC-BOUNDARY]` §2a).
+- Integration scope — boundary now, integration deferred.
+- Renderer question — two renderers, two products, closed.
+- `AGENTS.md` ambiguity — qualify to Seshat-Platform.
+- Report layer under `RRA` as `[SPEC-REPORT]`.
+- `KHEPRI-DEC-012` amended while `proposed`, then accepted.
+- Deployment gate as Phase 0 item 0.
+
+**Each becomes a cleared gate only when its own governed artifact is approved with traceable
+evidence.** Until then a downstream document must obtain its own approval and must not cite this
+section.
+
+### Analysed and closed within this package
+
+- Metric authority for consumer requests — a **precondition**, not an open question
+  (`[DEC-BOUNDARY]` §9). Mechanism parked to the integration specification.
+
+### Open
+
+- Whether `KHEPRI-DEC-008`'s supersession of `KHEPRI-DEC-005` preserves `KHEPRI-DEC-003`
+  condition 3 (§2 caveat). A drafting obligation for G-a, not a blocker for review.
+- **G5 in its entirety.** Three retail interviews, two agency interviews, and an explicit owner
+  go/revise/stop. None has happened.

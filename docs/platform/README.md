@@ -17,12 +17,22 @@ no implementation.
 Both working trees were clean at inspection. Every claim in this package is anchored to a
 file path or a registry entry at those two commits.
 
-## Owner decisions taken, 2026-08-05
+## Owner direction given in session, 2026-08-05 — not traceable evidence
 
-Recorded here as **planning direction**, not as governance. None of these is an approval; each
-still requires its own governed artifact and named-human approval under Constitution II.
+> **These are planning inputs, not cleared gates.** The owner selected each of these in a working
+> session. **That selection is not recorded anywhere in this repository** — there is no issue
+> comment, approval package, registry entry, or approval reference behind any row below.
+>
+> `AGENTS.md` is explicit: *"Do not claim or record human approval unless the named authority
+> supplied explicit, traceable evidence."* Constitution II reserves approval to a named authority
+> and Constitution V fails closed on ambiguous authority. **A reader must therefore treat every
+> row as an unresolved input**, and any artifact that depends on one must obtain its own
+> traceable approval rather than citing this table.
+>
+> Each row states the direction taken so the reasoning in this package is legible. None of them
+> approves anything, and none may be cited as evidence that a gate is cleared.
 
-| # | Question | Decision | Effect |
+| # | Question | Direction taken | What it shapes |
 |---|---|---|---|
 | 1 | Seshat integration in the first release? | **Define the boundary now, defer the integration** | `[DEC-BOUNDARY]` and the Seshat boundary decision proceed. Waves 3–6 (contract package, headless facade, adapter, consumer) are **deferred past Milestones A and B**. |
 | 2 | Contract distribution | **Committed files; no package** | Five source-of-truth rules replace the package pin — Seshat owns the canonical schemas, Khepri consumes a pinned copy or projection, version and digest recorded, drift tests fail closed, fixtures demonstrate but do not define. See `[DEC-BOUNDARY]` §2a. |
@@ -32,7 +42,8 @@ still requires its own governed artifact and named-human approval under Constitu
 | 6 | `AGENTS.md` Seshat ambiguity | **Qualify to Seshat-Platform**, in the `[DEC-BOUNDARY]` package | Leaves no reading under which the 2026-08-03 Seshat port is a standing violation. |
 | 7 | Deployment gate | **Phase 0 item 0 — accept `KHEPRI-DEC-008` first** | Accepting costs nothing; it authorizes no provisioning. It gates real-customer data, beta launch, production claims, and external demonstration — **not** documentation, the golden sample, `[SPEC-REPORT]`, or synthetic-fixture implementation. |
 
-Two further questions were **resolved by inspection**, not by choice:
+**Two further questions were resolved by inspection rather than by direction**, and these *are*
+evidenced — each is a fact about the repository that any reader can re-derive:
 
 - **`RRA.md` is digest-pinned** by `APP-002` as `sha256:8a1235a0d6…`, and the file hashes to
   exactly that today. The commercial re-scope of `RRA.md` is therefore a **renewal approval package**, not an edit.
@@ -46,14 +57,23 @@ Two further questions were **resolved by inspection**, not by choice:
 | 1 | [`current-state-delta.md`](current-state-delta.md) | What is already built, partial, duplicated, missing, blocked, or contradicted |
 | 2 | [`cross-repository-ownership-matrix.md`](cross-repository-ownership-matrix.md) | Which repository owns each capability, and where today's state disagrees |
 | 3 | [`khepri-seshat-target-architecture.md`](khepri-seshat-target-architecture.md) | The boundary, the dependency direction, and the seven seams it needs |
-| 4 | [`proposed-governance/`](proposed-governance/) | Decision and family drafts, named by placeholder, with the registry *shape* each would need. **Reviewed separately as R1b, after R1a merges** — agreeing an architecture read is accurate is not agreeing a decision should exist. |
-| 5 | [`cross-repository-pr-sequence.md`](cross-repository-pr-sequence.md) | PR split (R1a / R1b / R2 / R3), gate scope, the exact transitions each governance package would carry, validation commands, stop conditions |
-| 6 | [`../reporting/golden-sample-plan.md`](../reporting/golden-sample-plan.md) | Phase 1 plan against the design package that already exists |
+| 4 | [`cross-repository-pr-sequence.md`](cross-repository-pr-sequence.md) | PR split (R1a / R1b / R2 / R3), gate scope, the exact transitions each governance package would carry, validation commands, stop conditions |
 
-The Seshat-side counterparts are drafted in that repository's working tree, uncommitted:
-`docs/architecture/headless-analysis-engine.md`,
-`docs/architecture/khepri-consumer-boundary.md`,
-`docs/architecture/analysis-evidence-contracts.md`.
+### Not in this slice — do not follow these as links
+
+The package was split so that reviewing whether an architecture read is *correct* stays separate
+from reviewing whether a governance draft is *the right thing to propose*. Three groups of
+documents are therefore named but **not present in this tree**, and are written as plain paths
+rather than links so nothing here resolves to a 404:
+
+| Arrives in | Path, once it lands | Contents |
+|---|---|---|
+| **R1b** | `docs/platform/proposed-governance/` | `README.md`, `identifier-survey.md`, `KHEPRI-DEC-012-amendment.md`, `decision-draft-seshat-boundary.md`, `family-charter-draft-commercial.md` — drafts named by placeholder, each with the registry *shape* it would need |
+| **R3** | `docs/reporting/golden-sample-plan.md` | Phase 1 plan against the design package that already exists, plus the G5 commercial-validation gate |
+| **R2** | `Kemetra/Seshat-BI` · `docs/architecture/` | `headless-analysis-engine.md`, `khepri-consumer-boundary.md`, `analysis-evidence-contracts.md` |
+
+Prose elsewhere in this package refers to those documents by name. Until their PRs land, treat
+every such reference as a forward reference, not a navigable link.
 
 ## Why no file was written under `governance/`
 
