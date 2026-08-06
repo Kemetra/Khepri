@@ -90,3 +90,8 @@ decisions:
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-012-transformation-and-orchestration-boundary.md
+  - id: KHEPRI-DEC-013
+    title: Seshat-BI analytical dependency and ownership boundary
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-013-seshat-analytical-boundary.md
