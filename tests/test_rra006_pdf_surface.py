@@ -657,11 +657,22 @@ def test_real_chromium_lays_the_arabic_page_out_right_to_left() -> None:
                 f"() => document.fonts.check('16px \"{FONT_FAMILY}\"')"
             )
             # In a right-to-left table the first column sits furthest right.
-            columns = page.evaluate(
-                "() => [...document.querySelectorAll('thead th')]"
-                ".map(th => th.getBoundingClientRect().left)"
+            #
+            # Asserted per table, not across the document. A flat scan of every
+            # `thead th` on the page concatenates one descending run per table, and
+            # the joined list is not itself descending as soon as a later table's
+            # first column starts further right than an earlier table's last -- which
+            # is ordinary, since the tables hold different content and size their
+            # columns independently. The report now renders one table per governed
+            # analysis, so the flat form failed on a correctly laid out page.
+            tables = page.evaluate(
+                "() => [...document.querySelectorAll('table')].map(table =>"
+                " [...table.querySelectorAll('thead th')]"
+                ".map(th => th.getBoundingClientRect().left))"
             )
-            assert len(columns) > 1
-            assert columns == sorted(columns, reverse=True)
+            assert tables, "the Arabic page rendered no table to measure"
+            for index, columns in enumerate(tables):
+                assert len(columns) > 1, (index, columns)
+                assert columns == sorted(columns, reverse=True), (index, columns)
         finally:
             page.close()
