@@ -57,8 +57,8 @@ evidenced — each is a fact about the repository that any reader can re-derive:
 | 1 | [`current-state-delta.md`](current-state-delta.md) | What is already built, partial, duplicated, missing, blocked, or contradicted |
 | 2 | [`cross-repository-ownership-matrix.md`](cross-repository-ownership-matrix.md) | Which repository owns each capability, and where today's state disagrees |
 | 3 | [`khepri-seshat-target-architecture.md`](khepri-seshat-target-architecture.md) | The boundary, the dependency direction, and the seven seams it needs |
-| 4 | [`cross-repository-pr-sequence.md`](cross-repository-pr-sequence.md) | **Start at its §0** — what merged, and which gates the owner has deferred. Then the PR split, gate scope, the exact transitions each governance package would carry, validation commands, stop conditions |
-| 5 | [`../reporting/golden-sample-plan.md`](../reporting/golden-sample-plan.md) | Phase 1 plan against the design package that already exists, and the G5 commercial-validation gate — **deferred**, see §C.3 |
+| 4 | [`cross-repository-pr-sequence.md`](cross-repository-pr-sequence.md) | **Start at its §0** — what merged, and current gate status: **G5 withdrawn 2026-08-06, G4 remaining**. Then the PR split, gate scope, the exact transitions each governance package would carry, validation commands, stop conditions |
+| 5 | [`../reporting/golden-sample-plan.md`](../reporting/golden-sample-plan.md) | Phase 1 plan against the design package that already exists, and the G5 commercial-validation gate — **withdrawn**, see §C.3 |
 | 6 | [`proposed-governance/`](proposed-governance/README.md) | The drafts themselves, each named by placeholder and carrying the registry *shape* it would need |
 
 ### The other half of the boundary lives in a different repository
