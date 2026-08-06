@@ -1,0 +1,38 @@
+schema_version: 1
+id: APP-016
+title: Business-first report presentation specification approved
+state: approved
+owner: AHMED-SHAABAN
+scope: >-
+  Create RRA-009 at draft and approve it, specifying that one report bundle
+  presents the same facts through a business report and a separated governed
+  audit-evidence layer on every surface, in Arabic and English, with the audit
+  region generated for every report rather than filtered at delivery. Carries
+  the G5 override the withdrawal requires: the commercial-validation gate was
+  withdrawn by owner election on 2026-08-06 without being cleared, so no
+  prospect in either named segment was spoken to and the premise that
+  auditability is a purchase driver rather than a hygiene factor is recorded as
+  a permanently untested assumption behind this specification. G4, the
+  golden-sample approval, was granted by the owner on 2026-08-06.
+exclusions:
+  - Any change to governance/CONSTITUTION.md or the authorities registry
+  - Any delegation record, including DEL-005 which this package cites
+  - Any widening of DEL-005, whose scope and expiry this package cannot alter
+  - Any implementation of the specification, which is a separate slice
+  - Any amendment of RRA-006, which RRA-009 depends on and does not change
+  - Any new figure, aggregate, analysis family, metric, or chart kind
+  - Any claim that the withdrawn commercial-validation gate was satisfied
+  - Any claim that a human authority approved this package
+manifest_digest: sha256:a86adc3924774b25664061f5c026e5dbf679f98cbc754fd429c67ac0097bf67e
+approval:
+  approved_by: KHEPRI-AGENT
+  approved_at: 2026-08-06
+  approved_manifest_digest: sha256:a86adc3924774b25664061f5c026e5dbf679f98cbc754fd429c67ac0097bf67e
+  delegation_ref: governance/delegations/DEL-005.yaml
+  session: 24ff0bc9-7c52-4d22-85ba-cec99dc35572
+artifacts:
+  - id: RRA-009
+    document: governance/specifications/RRA-009.md
+    document_sha256: sha256:7f4248e0b2377d5965df36085ea4b58592f104fb8b0f84420509b63b705c316d
+    from_state: draft
+    to_state: approved
