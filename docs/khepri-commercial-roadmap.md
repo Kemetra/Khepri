@@ -45,16 +45,16 @@ Every row is governance-gated before it is code-gated.
 
 ## Phase map
 
-Phase 0A-gov, 0B, and 0C are governance and discovery. **0A-spend is real money** and is separated
-for that reason. Phase 1 is the first code a buyer would notice. Sequencing is chosen for earliest
+Phase 0A-gov and 0B are governance. **0A-spend is real money** and is separated for that reason.
+Phase 0C is withdrawn (see below). Phase 1 is the first code a buyer would notice. Sequencing is chosen for earliest
 revenue signal, not architectural completeness.
 
 | Phase | Name | Gate artifact | Parallel with |
 |---|---|---|---|
-| **0A-gov** | Accept DEC-008, select the target | DEC-008 accepted + target-selection artifact | 0B, 0C |
-| **0A-spend** | Provision and benchmark | Owner authorizes ~174-235 USD/month | 0B, 0C |
-| **0B** | Charter the commercial family | New family + superseding decision | 0A, 0C |
-| **0C** | Test the thesis with a mock | **None — ungated** | 0A, 0B |
+| **0A-gov** | Accept DEC-008, select the target | DEC-008 accepted + target-selection artifact | 0B |
+| **0A-spend** | Provision and benchmark | Owner authorizes ~174-235 USD/month | 0B |
+| **0B** | Charter the commercial family | New family + superseding decision | 0A |
+| ~~**0C**~~ | ~~Test the thesis with a mock~~ — **WITHDRAWN 2026-08-06** | — | — |
 | **1** | Business-first reporting layer + separated audit evidence | Design package approved, then spec under new family | — |
 | **2** | Durable identity and workspaces | Specs; supersedes RRA-001 boundary | — |
 | **3** | Multi-dataset accumulation | Spec; the actual product unlock | — |
@@ -136,7 +136,7 @@ Chromium is the largest single memory consumer and does not shrink with dataset 
 sizing rules). Run this before writing any commercial code.
 
 **Note on ordering.** 0A-spend is the only phase whose gate is money rather than an artifact. If
-the owner defers it, 0B and 0C still proceed and Phase 1 can be specified — but nothing can be
+the owner defers it, 0B still proceeds and Phase 1 can be specified — but nothing can be
 *demonstrated*, so revenue stays blocked. Deferring it is a legitimate choice with a stated cost,
 not a failure.
 
@@ -204,52 +204,64 @@ state in three sentences why a chain pays monthly for this, the charter is prema
 
 ---
 
-## Phase 0C — Test the thesis with a mock
+## Phase 0C — WITHDRAWN by owner election, 2026-08-06
 
-**Why this exists as its own phase.** The entire sequencing argument below rests on auditability
-being what a buyer pays for, and that is currently an *assumption* — no prospect in either named
-segment has been spoken to. A mock tests it. If a mock is sufficient to test the thesis, then the
-mock is the test, and it must come before the code rather than beside it.
+**The owner has elected not to conduct prospect interviews, and this phase is withdrawn rather
+than deferred.** Recorded as the withdrawal of **G5** in
+[`platform/cross-repository-pr-sequence.md`](platform/cross-repository-pr-sequence.md) §0, which
+stays the single statement of gate status. It is written down rather than deleted because the same
+document records why: a gate removed without a record is later indistinguishable from a gate that
+never existed.
 
-**It is ungated.** It touches no code, needs no charter, no specification, and no environment. It
-can start at any time, in parallel with 0A and 0B.
+**This is a legitimate election, and it was always available.** Phase 0C was *ungated* — nothing
+ever blocked it, and it needed no code, charter, environment, or approval. It gated `[SPEC-REPORT]`
+and nothing else. Withdrawing it therefore costs no schedule and blocks nothing.
 
-> **Deferred by owner direction, 2026-08-05 — not started.** Recorded as **G4 and G5** in
-> [`platform/cross-repository-pr-sequence.md`](platform/cross-repository-pr-sequence.md) §0, which
-> is the single statement of the deferral.
->
-> **Ungated and deferred are compatible, and the combination is the thing to notice.** Nothing
-> blocks this phase; it is simply not being run yet. So its exit criterion below is not merely
-> unmet — it is **not currently being pursued**, which means the assumption named in the first
-> paragraph stays an assumption for as long as the deferral lasts. Everything downstream that this
-> phase was meant to de-risk proceeds, if it proceeds at all, on an unverified thesis.
+### What the withdrawal costs, stated plainly
 
-**Steps.**
+The sequencing argument in this roadmap rested on auditability being what a buyer pays for. **No
+prospect in either named segment has been spoken to, and none now will be.** That premise is
+therefore permanently an assumption rather than a finding, and every phase from 1 onward is
+sequenced around a differentiator that has not been tested against a buyer.
 
-1. Mock the provenance surface and the reproduction receipt as static design artifacts. No
-   implementation.
-2. Show them to at least three retail chain or mid-market prospects and at least two agencies.
-3. Ask what they would pay for, unprompted, before showing the mock. Then show it and ask again.
-4. Record what they reacted to that was *not* auditability. That list is the real roadmap input.
+The specific exposure, which is worth carrying explicitly:
 
-**Exit criterion.** Written evidence, from named prospects, about whether defensibility is a
-purchase driver or a hygiene factor.
+- If auditability is a **hygiene factor** rather than a purchase driver, phases 1 through 7 are
+  ordered around the wrong thing, and the product competes on report quality alone — where a
+  generic pipeline plus a good prompt is a real competitor.
+- The failure would surface at **first paid sale attempt** instead of after a few conversations.
+- What prospects would have reacted to *instead* of auditability is now unknown, and that list was
+  the roadmap's most valuable missing input.
 
-**What could kill the business — and this is the phase that finds out cheaply.** If auditability
-is hygiene rather than a driver, phases 1 through 7 are sequenced around the wrong differentiator,
-and the correct response is to re-sequence around whatever prospects actually reacted to. Learning
-that here costs a few conversations. Learning it after Phase 3 costs the schema.
+**No re-sequencing is implied.** The roadmap's order stands as written; it simply stands on
+judgment rather than evidence. That is the owner's call to make, and it is recorded here so a
+later reader does not mistake an untested premise for a validated one.
+
+### What survives the withdrawal
+
+- **The static golden sample exists** — `docs/reporting/golden-sample/` holds HTML, PDF, and XLSX
+  on a fictional dataset, plus `verify_separation.py`. It was never gated and is not withdrawn.
+- **G4 — golden-sample approval, including the Arabic copy review — is unaffected.** It is a
+  review of an artifact that already exists, not an interview, and it still gates `[SPEC-REPORT]`.
+  It is now the **only** thing between the owner and the report layer.
+- **The kill tests in later phases stand**, minus their references to prospect conversations.
+
+**Exit criterion.** None. The phase is withdrawn, not pending.
+
+**If the owner later wants the evidence**, nothing prevents it: the phase was ungated and the
+sample still exists. Reviving it needs no approval, only a decision.
 
 ---
 
 ## Phase 1 — Create a business-first reporting layer with separately accessible governed audit evidence
 
 **Why before tenancy.** It is the cheapest *code* phase, needs no schema change, and it builds the
-artifact Phase 0C validated as a mock. Doing it before tenancy means the deliverable is sellable
-before the expensive retention and identity work is committed. Phase 0C, not this phase, is what
-tests the hypothesis.
+artifact the golden sample already mocks. Doing it before tenancy means the deliverable is sellable
+before the expensive retention and identity work is committed.
 
-**Do not start this phase if Phase 0C came back negative.** Re-sequence instead.
+**Phase 0C is withdrawn, so nothing tests the hypothesis before this phase ships.** This phase now
+proceeds on the untested premise that auditability is what a buyer pays for. Its only remaining
+gate is G4, the golden-sample approval.
 
 **The problem — restated 2026-08-04 after owner review of the generated outputs.** The earlier
 framing of this phase was "make the moat visible," on the assumption that the provenance data
@@ -315,8 +327,10 @@ architecture untouched.
 the evidence — with no identifier on any page the owner reads, and no figure missing from the page
 the auditor reads.
 
-**Kill test.** Phase 0C already ran it. Re-show the *built* surfaces to the same prospects. A real
-surface carries caveats and refusals a mock can omit.
+**Kill test.** Phase 0C is withdrawn, so no prospect has seen the mock and there is no baseline to
+re-show against. The nearest available substitute is the golden-sample review (G4) against the
+*built* surfaces rather than the mock — a real surface carries caveats and refusals a mock can
+omit, and that difference is now unobserved by anyone outside the project.
 
 **What could kill the business.** If auditability is a hygiene factor rather than a purchase
 driver, the moat does not convert and the product competes on report quality alone — where a
@@ -554,8 +568,9 @@ reasoning the digest binding exists to stop.
 
 ## The three sentences that matter
 
-The moat is already built and nobody can see it, so Phase 0C tests the whole thesis with a mock
-before any charter or schema exists. Everything expensive is gated behind two governance approvals
-and one spending decision, none of which code can substitute for. The binding limits are retention
+The moat is already built and nobody can see it, and Phase 0C — which would have tested that whole
+thesis with a mock before any charter or schema existed — is withdrawn by owner election, so the
+thesis now rests on judgment rather than evidence. Everything expensive is gated behind two
+governance approvals and one spending decision, none of which code can substitute for. The binding limits are retention
 and tenancy — one dataset per session, and a seven-day expiry that deletes the comparison baseline
 — and `KHEPRI-DEC-012` records that no orchestrator is coming to fix either.

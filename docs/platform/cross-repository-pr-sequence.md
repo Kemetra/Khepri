@@ -30,22 +30,28 @@ R1b. It records provisional candidates and reserves nothing.
 `proposed`; `KHEPRI-DEC-012` is still `proposed`; no identifier has been allocated. Every package
 in §4 remains unopened.
 
-### G4 and G5 are deferred
+### G5 is withdrawn. G4 remains.
 
-**Owner direction, 2026-08-05, given in a working session and recorded nowhere in either
-repository — a planning input, not traceable evidence.** G4 (golden-sample approval, including
-the Arabic copy review) and G5 (three retail interviews, two agency interviews, and an explicit
-go / revise / stop) are **deferred until the owner records them.**
+**Owner election, 2026-08-06: the prospect interviews will not be conducted.** G5 — three retail
+interviews, two agency interviews, and an explicit go / revise / stop — is **withdrawn**, not
+deferred. It no longer gates anything.
 
-**Deferred is not overridden, and the distinction is the entire point.** An override lets
-`[SPEC-REPORT]` through *without* the interview evidence, and §2 G5 requires it to be written into
-the approving package naming what was skipped. A deferral lets nothing through: **`G-g` stays
-closed, `I1` stays blocked**, and recording a deferral needs no approval authority, because it
-grants nothing.
+**This is the override §2 G5 always contemplated, and it is legitimate.** That section states the
+election is the owner's to make, on one condition: it must be **recorded**, naming what was
+skipped, rather than left silent. This section is that record, and the text below is retained
+rather than deleted for the reason §2 gives — *"a gate bypassed without a record is
+indistinguishable later from a gate that never existed."*
 
-**Consequence.** `G-g → I1` — the only chain in this document that produces something a customer
-can see — is parked, and parked **by choice rather than by an unmet dependency**. What G5 never
-blocked stays available: `G-a → I2`, the boundary chain `G-c → G-e`, and `G-b`.
+**What was skipped, named as §2 requires.** No prospect in either named segment was spoken to. The
+premise that auditability is a purchase driver rather than a hygiene factor is therefore
+permanently an assumption. The whole sequencing argument in both roadmaps rests on it, and it now
+rests on the owner's judgment rather than on evidence. **Any approval package that approves
+`[SPEC-REPORT]` must carry this override by reference.**
+
+**G4 is unaffected and still gates `[SPEC-REPORT]`.** It is the golden-sample approval, including
+the Arabic copy review — a review of `docs/reporting/golden-sample/`, which already exists. It is
+not an interview, it costs nothing but the owner's reading, and it is now the **only** gate between
+the owner and `G-g → I1`, the sole chain here that produces something a customer can see.
 
 > **This section is the single statement of that fact.** §2, §3, §6 and §7 point here rather than
 > restate it. A gate status repeated in five places is a contradiction waiting for one of them to
@@ -139,8 +145,8 @@ Roadmap §10 Phase 1 stop condition, plus the Arabic copy review.
 **Blocks:** `[SPEC-REPORT]` proceeding to approval, and therefore implementation.
 **Does not block:** the design package, or the sample itself.
 
-> **Deferred by owner direction, 2026-08-05 — §0.** Not overridden. G4 still blocks exactly what
-> it blocked before.
+> **Unaffected by the 2026-08-06 withdrawal of G5 — §0.** G4 still blocks exactly what it blocked
+> before, and with G5 withdrawn it is now the **only** gate on `[SPEC-REPORT]`.
 
 ### G5 — Commercial validation (Phase 0C)
 
@@ -171,10 +177,10 @@ skipped and why, in the approval package that approves the specification. Silenc
 override. A gate bypassed without a record is indistinguishable later from a gate that never
 existed, and the whole point of G5 is that its absence is currently invisible.
 
-> **Deferred by owner direction, 2026-08-05 — §0.** **Deferred, not overridden**: no interview has
-> happened, none is currently scheduled, and no override has been written. G-g stays closed and I1
-> stays blocked. The paragraph above remains the standing requirement should the owner later elect
-> to proceed without the evidence.
+> **WITHDRAWN by owner election, 2026-08-06 — §0.** The override contemplated in the paragraph
+> above has now been exercised and recorded: no interview happened, none will, and §0 names what
+> was skipped. **G5 no longer blocks `G-g` or `I1`.** The requirement text is retained as the
+> record of what was set aside, not as a live gate.
 
 ---
 
@@ -382,8 +388,9 @@ exactly that today. `src/khepri_gov/approval_renewals.py` applies; a plain edit 
 Plus one new approval package pinning the specification document digest. Created at `draft` and
 approved in the same package, as `APP-002` did for `RRA-001` through `RRA-007`.
 
-**Gated by G4 and G5.** If the owner approves without G5's interview evidence, the package must
-carry an **explicit override** naming what was skipped and why.
+**Gated by G4 alone.** G5 is withdrawn (§0). The package must carry the **explicit override** that
+withdrawal requires, naming what was skipped — no prospect interviews, and the differentiator
+premise left untested — by reference to §0.
 
 ### Implementation PRs — after their specification is approved
 
@@ -447,17 +454,17 @@ GOVERNANCE (one atomic purpose per PR; owner-initiated only)
                                          + DEC-003 superseded   (atomic, 4 transitions)
   G-g  [SPEC-REPORT] approved ──► I1 report layer (synthetic fixtures)
 
-PHASE 0C (ungated, but DEFERRED by owner direction 2026-08-05 - see §0)
-  static golden sample + 3 retail interviews + 2 agency interviews
-        └─► owner: go / revise / stop ──► G5 cleared ──► G-g
-  nothing waits on it but G-g and I1, and both are therefore parked
+PHASE 0C - WITHDRAWN by owner election 2026-08-06 (see §0)
+  3 retail interviews + 2 agency interviews + go/revise/stop  -- will not happen
+        └─► G5 no longer gates anything; the override is recorded in §0
+  G-g now waits on G4 alone - the golden-sample approval, which is a read not an interview
 
 GATE SCOPE
   G1 blocks : real customer data - beta launch - production claims -
               external demonstration on a governed environment
   G1 NOT    : R1a R1b R2 R3 - G-b G-b2 G-c G-d G-e G-f G-g - I1 - I2
-  G5 blocks : G-g - I1
-  G5 NOT    : R3 - the static golden sample - the interviews themselves
+  G4 blocks : G-g - I1          (golden-sample approval; the only remaining gate on them)
+  G5 blocks : nothing - WITHDRAWN 2026-08-06
 
 DEFERRED (not proposed, no identifiers derived)
   D1 ──► D2 ──► D3 ──► D4 ──► D5 ──► D6
@@ -578,8 +585,8 @@ Each halts its own chain. None halts all of them — that is the point of the sp
 | # | Condition | Halts | Does not halt |
 |---|---|---|---|
 | 1 | `KHEPRI-DEC-008` not accepted | G-a2, I2, I3, and therefore G1 | R1a–R3, G-b–G-g, **I1** |
-| 2 | Golden sample not approved (incl. Arabic copy review) — **G4**. **Deferred, §0** | G-g, I1 | Everything else |
-| 2b | **G5** — three retail interviews, two agency interviews, and an explicit owner go/revise/stop not recorded. **Deferred, §0** | G-g, I1 | R3, the sample, the interviews. **Overridable only in writing**, in the approving package. |
+| 2 | Golden sample not approved (incl. Arabic copy review) — **G4**. Now the **only** gate on G-g, §0 | G-g, I1 | Everything else |
+| 2b | ~~**G5** — interviews and an owner go/revise/stop~~ — **WITHDRAWN 2026-08-06, §0.** Overridden in writing, as this row always required | **nothing** | — |
 | 3 | `[DEC-BOUNDARY]` not accepted | G-e, all deferred work | R1a–R3, G-a, G-f, G-g, I1, I2 |
 | 4 | The `APP-002` renewal not approved | G-f in its entirety — all four transitions, since the package is atomic | Everything else |
 | 5 | Prospect validation negative | **Re-sequence, not halt** — see below | — |
@@ -587,18 +594,17 @@ Each halts its own chain. None halts all of them — that is the point of the sp
 | 7 | Spec 138 still open in Seshat | D3. Dormant while deferred | R2, G-d |
 | 8 | `KHEPRI-DEC-012` revision not reviewed | G-b2 — the digest pinned must be the reviewed text | G-c, which needs no acceptance of DEC-012 |
 
-**On conditions 2b and 5 — they are the same evidence, read two ways.** Phase 0C is **ungated**:
-no code, no charter, no environment, no approval stands between the owner and starting it. As
-**G5** it gates `[SPEC-REPORT]` approval, because an information architecture built on the wrong
-differentiator is expensive to unwind. As **stop condition 5** a negative result does not halt
-work — it changes what the work should be. Both readings point the same way: run it before I1,
-not after.
+**On conditions 2b and 5 — both are now closed by the same election.** Phase 0C was always
+*ungated*: no code, no charter, no environment, no approval stood between the owner and starting
+it. As **G5** it gated `[SPEC-REPORT]` approval; as **stop condition 5** a negative result would
+have re-sequenced rather than halted. The owner has elected not to run it at all (§0), so neither
+reading can ever resolve.
 
-**It is deferred rather than running (§0),** and that is worth stating precisely: *ungated* and
-*deferred* are compatible. Nothing prevents Phase 0C from starting; the owner has elected not to
-start it yet. The cost of the deferral is not a blocked dependency — it is that conditions 2b and
-5 both stay unresolved, so the differentiator the whole sequence is built on stays unverified for
-as long as the deferral lasts.
+**State the residue precisely, because it does not disappear with the gate.** The differentiator
+the whole sequence is built on is now permanently unverified. That is not a blocked dependency and
+it halts nothing — it is a standing exposure, and the first place it can surface is a paid sale
+attempt rather than a conversation. Recorded here so no later reader mistakes a withdrawn gate for
+a cleared one.
 
 ---
 
@@ -661,7 +667,12 @@ section.
 
 - Whether `KHEPRI-DEC-008`'s supersession of `KHEPRI-DEC-005` preserves `KHEPRI-DEC-003`
   condition 3 (§2 caveat). A drafting obligation for G-a, not a blocker for review.
+- **G4 — golden-sample approval, including the Arabic copy review.** The sample exists at
+  `docs/reporting/golden-sample/`. This is a read, not an interview, and it is the only thing left
+  gating `G-g → I1`.
+
+**Closed by election rather than by evidence**
+
 - **G5 in its entirety.** Three retail interviews, two agency interviews, and an explicit owner
-  go/revise/stop. None has happened, and **the owner has deferred all of it (§0)** — so this stays
-  open rather than moving to "closed", and it is open by decision rather than by oversight. G4 is
-  deferred with it.
+  go/revise/stop. **None happened and none will (§0).** This is closed as a *gate* while remaining
+  unresolved as a *question* — the distinction matters, and §7 records the residue.
