@@ -506,21 +506,31 @@ engine. `KHEPRI-DEC-012` should be superseded rather than ignored if that change
 
 ## Authorized now — no new governance required
 
-These are gated by nothing. Each is a defect against an already-approved artifact, and each is an
-independently verifiable slice available today. They are listed here so they are not mistaken for
-roadmap work waiting on a charter.
+These were gated by nothing. Each was a defect against an already-approved artifact, and each was
+an independently verifiable slice. They were listed here so they would not be mistaken for roadmap
+work waiting on a charter.
 
-1. **Cite `RRA-005` in the code that implements it.** `specifications.yaml` records RRA-005 as
-   `approved`; `grep -rn "RRA-005" src/` returns nothing, and `narrative.py` cites only RRA-006
-   despite being the RRA-005 implementation with 106 tests behind it. Adding the traceability
-   comment is authorized under the approved specification.
-2. **Declare `pydantic` and `botocore` in `pyproject.toml`.** Both are imported directly
-   (`rra/api.py`, `rra/report_api.py`, `runtime/wiring.py`) and resolve only transitively through
-   FastAPI and boto3. Both are named in the approved architecture decision's stack. A transitive
-   resolution that works today is not a pin.
-3. **Name `fastexcel` where it is used.** It is a declared dependency that appears nowhere in
-   `src/`, `tests/`, or `scripts/` — it is the engine `polars.read_excel` requires at
-   `profiling.py:294`. A comment at that call site would stop it reading as an unused dependency.
+> **All three landed in `5117fa3` (#94) on 2026-08-04 — the day this document was drafted — and
+> this section described the state immediately before that commit.** Nothing here is available
+> work. The items are retained rather than deleted because a list of "available slices" that
+> silently shrinks gives a later reader no way to tell a completed item from one that was dropped;
+> each is marked with where its fix now lives, so the claim can be checked rather than trusted.
+
+1. ~~**Cite `RRA-005` in the code that implements it.**~~ **Done.** `specifications.yaml` records
+   RRA-005 as `approved`, and `src/khepri/rra/narrative.py:3` now opens "This module implements
+   RRA-005." `grep -rn "RRA-005" src/` returns that line; the observation that it returned nothing
+   was true only before `5117fa3`.
+2. ~~**Declare `pydantic` and `botocore` in `pyproject.toml`.**~~ **Done.** Both are declared at
+   `pyproject.toml:20,27` (`botocore>=1.43.58,<2`, `pydantic>=2.11,<3`), above a comment naming
+   the direct import sites and stating the reasoning this item asked for — that a transitive
+   resolution through FastAPI and boto3 is not a pin, and `KHEPRI-DEC-008` names Pydantic as the
+   application-boundary schema library.
+3. ~~**Name `fastexcel` where it is used.**~~ **Done.** The `materialize` docstring at
+   `src/khepri/rra/profiling.py:282-291` now states that the `engine="calamine"` call is the only
+   thing making the dependency required, that it is imported nowhere in the repository, and that
+   `KHEPRI-DEC-008` names the fastexcel/calamine engine as the approved XLSX reader — so removing
+   it would break the line rather than tidy a manifest.
+
 **Not authorized now, and worth knowing why.** `KHEPRI-DEC-005`'s stale closing sentence — "This
 decision remains proposed until its registry entry contains explicit approval evidence," against a
 registry recording `state: accepted` — **cannot** be fixed as a housekeeping edit. `APP-013.yaml`
