@@ -1,38 +1,4 @@
-# `[DEC-BOUNDARY]` (DRAFT — PROMOTED): Seshat-BI analytical dependency and ownership boundary
-
-**PROMOTED to `KHEPRI-DEC-013`, state `proposed`.** The governed artifact is
-[`governance/decisions/KHEPRI-DEC-013-seshat-analytical-boundary.md`](../../../governance/decisions/KHEPRI-DEC-013-seshat-analytical-boundary.md),
-with its registry entry in `governance/registries/decisions.yaml`.
-
-**Read the governed document, not this one.** This file is retained as the review record — it is
-what was proposed, so a later reader can compare it against what landed. It carries no authority
-and never did.
-
-`KHEPRI-DEC-013` is **`proposed`, not accepted.** Promotion allocated an identifier and created a
-registry entry; it granted nothing. Constitution VI requires `approved_by`, `approved_at`, and
-`approval_ref` only at `accepted`, so the entry records none, and no approval package pins the
-document. The identifier was derived against the registry at the promotion moment as
-[`identifier-survey.md`](identifier-survey.md) describes — `KHEPRI-DEC-001` … `-012` with no gaps,
-so `-013` — and nothing had been reserved.
-
-**Three deviations from the text below, all deliberate.**
-
-1. **`§Registry shape` was dropped.** It described the entry that *would* be added. The entry now
-   exists, so a section describing a hypothetical version of it would be a second, weaker
-   representation of a governed fact — the drift Constitution I forbids.
-2. **`§9` moved into `Decision`.** In this draft it sits *after* the session-direction table,
-   below the Consequences. It is a numbered Decision subsection following §8, so it was placed
-   there. No wording changed.
-3. **`§6`'s `AGENTS.md` qualification is stated but not performed.** The draft says "in the same
-   approval package." Per
-   [`cross-repository-pr-sequence.md`](../cross-repository-pr-sequence.md) §3, narrowing the copy
-   prohibition is a consequence of the boundary being **accepted**, not proposed — it belongs to
-   G-e. The governed document records this explicitly so the obligation cannot be read as
-   discharged.
-
-Follows the template at `governance/templates/decision.md`.
-
----
+# KHEPRI-DEC-013: Seshat-BI analytical dependency and ownership boundary
 
 ## Context
 
@@ -131,13 +97,12 @@ all of the following hold, in a separately approved decision:
 
 ### 2. Permitted dependency shape — and no dependency is declared yet
 
-**This draft proposes: define the boundary now, defer the integration.** The direction was given
+**This decision defines the boundary now and defers the integration.** That direction was given
 by the owner in a working session on 2026-08-05 and **is not recorded anywhere in this
 repository** — no issue comment, approval package, registry entry, or approval reference. It is a
-planning input, not an approval, and this draft carries no authority until a named authority
-approves it with traceable evidence. As proposed, the decision
-settles what a dependency may look like. It declares none, and no Khepri code consumes Seshat
-evidence under it.
+planning input, not an approval, and this decision carries no authority until a named authority
+approves it with traceable evidence. The decision settles what a dependency may look like. It
+declares none, and no Khepri code consumes Seshat evidence under it.
 
 The permitted future shape is **a versioned analytical contract package** carrying schemas,
 fixtures, and validators — and nothing else. No numerical library, no CLI, no workspace root,
@@ -154,10 +119,10 @@ distribution neither side depends on is never installed.
 
 ### 2a. No package — and the source of truth that replaces one
 
-**This draft proposes: no package is published.** Same status as §2 — session direction, not
-traceable evidence. Contracts would be exchanged as committed
-files. A package would otherwise have supplied the source of truth; without one, it must be
-stated, or "committed fixtures" degrades into two repositories editing lookalike files.
+**No package is published.** Same status as §2 — session direction, not traceable evidence.
+Contracts are exchanged as committed files. A package would otherwise have supplied the source of
+truth; without one, it must be stated, or "committed fixtures" degrades into two repositories
+editing lookalike files.
 
 Five rules, all of which any future contract work must satisfy:
 
@@ -250,20 +215,24 @@ proposals, ledgers, governance records, or application code" — immediately aft
 to Seshat-Platform. Read across both repositories, that sentence already prohibits the
 2026-08-03 port in the reverse direction.
 
-**This decision requires that `AGENTS.md` line be qualified in the same approval package**, to
-read explicitly on Seshat-Platform, with Seshat-BI governed by this decision instead. Leaving
-it ambiguous means either the port is a standing violation or the rule means nothing, and both
-readings are available today.
+**This decision requires that `AGENTS.md` line be qualified in the approval package that accepts
+this decision**, to read explicitly on Seshat-Platform, with Seshat-BI governed by this decision
+instead. Leaving it ambiguous means either the port is a standing violation or the rule means
+nothing, and both readings are available today.
 
-`AGENTS.md` is not pinned by `document_sha256` in any approval package, so this is a plain
-edit rather than a renewal. Proposed replacement for the two adjacent bullets:
+**The qualification is a consequence of acceptance, not of proposal, so it is not made here.**
+While this decision is `proposed` it carries no authority, and narrowing an existing prohibition
+on the strength of an unaccepted decision would be exactly the borrowed-authority failure
+Constitution III forbids. `AGENTS.md` is not pinned by `document_sha256` in any approval package,
+so when the time comes it is a plain edit rather than a renewal. Proposed replacement for the two
+adjacent bullets:
 
 > - Treat `Kemetra/Seshat-Platform@f206b7f2c021c7d4e25ba131776ca4b22db6d876` only as
 >   non-authoritative reference material.
 > - Do not copy **Seshat-Platform** catalogs, specifications, proposals, ledgers, governance
 >   records, or application code.
 > - `Kemetra/Seshat-BI` is a separate active repository, not predecessor reference material.
->   Khepri's relationship with it is governed by `[DEC-BOUNDARY]`, which permits a versioned
+>   Khepri's relationship with it is governed by `KHEPRI-DEC-013`, which permits a versioned
 >   analytical contract and refuses its CLI, checkout, readiness state machine, distribution,
 >   and adapter runtimes.
 
@@ -287,7 +256,8 @@ Authorized:
 
 **Not authorized, and explicitly deferred:**
 
-- a Khepri evidence-consumer specification (a consumer specification is *not* allocated by this decision);
+- a Khepri evidence-consumer specification (a consumer specification is *not* allocated by this
+  decision);
 - any dependency declaration in `pyproject.toml`;
 - any request adapter, evidence consumer, or compatibility gate in `src/`;
 - any published contract package.
@@ -300,66 +270,6 @@ one is already on the record: the 2026-08-03 renderer port happened in good fait
 correct Seshat decision, because no artifact existed for either side to consult. A boundary is
 cheap now and retroactive later. Deferring the integration is a schedule choice; deferring the
 boundary is how the next duplication gets built.
-
-## Consequences
-
-- Roadmap §5.2's analytical ownership is **partially rejected for the first release**, with the
-  transfer condition in §1 recorded. Roadmap §19.10 requires the contradiction be reported
-  rather than silently resolved; this is that report, in governed form.
-- Roadmap §5.2's report-composition ownership is **partially rejected as already overtaken by
-  an owner-approved Seshat decision**, and closed rather than reversed.
-- `KHEPRI-DEC-012` is unaffected and not superseded. Its amendment (drafted separately) should
-  land first, while it is still `proposed`.
-- Khepri's deployment gate is untouched and remains first. `KHEPRI-DEC-005` is accepted and
-  unfundable; `KHEPRI-DEC-008` is `proposed`. **Nothing in this decision can be demonstrated to
-  a customer until that clears.**
-- Seshat's authority model is preserved verbatim: ADR-0008's five categories,
-  `authority: derived-evidence-only`, named-human approval. Roadmap §19.9 requires it; the
-  headless facade must not become an approval bypass, and its adversarial test is a request
-  that *claims* readiness, which must be `refused`.
-- Khepri's numerical, reconciliation, privacy, bilingual, and refusal guarantees are unchanged.
-  Roadmap §19.8 requires it. No RRA specification is amended.
-- Distribution is answered — no package (§2a) — and the five source-of-truth rules replace what
-  a package pin would have provided.
-- Metric authority for consumer requests is a **precondition**, not an open question (§9).
-- One follow-up obligation: the `AGENTS.md` qualification in §6, in this decision's approval
-  package.
-
-## Registry shape
-
-**No registry entry is created by this planning pass, and no identifier is allocated.** Should
-the owner direct that this be drafted as a governed decision, the entry added to
-`governance/registries/decisions.yaml` would take this shape, with `<derived-id>` resolved
-against the registry at that moment:
-
-```yaml
-  - id: <derived-id>
-    title: Seshat-BI analytical dependency and ownership boundary
-    state: proposed
-    owner: AHMED-SHAABAN
-    document: governance/decisions/<derived-id>-seshat-analytical-boundary.md
-```
-
-No `approved_by`, `approved_at`, or `approval_ref` — Constitution VI requires those only at
-`accepted`, and Constitution II reserves the approval to a named authority.
-
-## Session direction this draft reflects — not evidence, not approval
-
-The four questions below were previously carried as open in the planning package. The owner gave
-direction on each in a working session on 2026-08-05. **None of that direction is recorded in
-this repository**, and `AGENTS.md` forbids treating it as human approval.
-
-They are listed so a reader can see *why this draft reads the way it does*. **A reader must treat
-each as an unresolved input**, and no artifact may cite this table as evidence that a question is
-settled. Each becomes settled when this decision is approved with traceable evidence — or is
-re-opened if the owner directs otherwise before then.
-
-| Question | Direction this draft reflects | Where it shapes the text |
-|---|---|---|
-| Distribution | Committed files; no package | §2, §2a |
-| Integration in the first release | Deferred past Milestones A and B; boundary drafted now | §8 |
-| Renderer divergence | Two renderers, two products, closed | §4 |
-| `AGENTS.md` ambiguity | Qualify to Seshat-Platform, in this package | §6 |
 
 ### 9. Metric authority is a precondition for integration, not an open question
 
@@ -399,8 +309,58 @@ Because the integration is deferred (§8), this constrains nothing today. It is 
 that a later slice cannot discover the problem under schedule pressure and solve it with a
 relaxed profile.
 
+## Consequences
+
+- Roadmap §5.2's analytical ownership is **partially rejected for the first release**, with the
+  transfer condition in §1 recorded. Roadmap §19.10 requires the contradiction be reported
+  rather than silently resolved; this is that report, in governed form.
+- Roadmap §5.2's report-composition ownership is **partially rejected as already overtaken by
+  an owner-approved Seshat decision**, and closed rather than reversed.
+- `KHEPRI-DEC-012` is unaffected and not superseded. Its amendment was applied under PR #102,
+  while it was still `proposed`, as this decision's ordering required. **Cited by pull request
+  rather than by commit**: `main` takes squash merges, so the branch commit that carried the
+  amendment does not survive as a reachable SHA, and citing it would leave a reference that
+  resolves to nothing. §14 rule 10 forbids citing an unmerged commit; a squashed-away one is the
+  same defect arriving later.
+- Khepri's deployment gate is untouched and remains first. `KHEPRI-DEC-005` is accepted and
+  unfundable; `KHEPRI-DEC-008` is `proposed`. **Nothing in this decision can be demonstrated to
+  a customer until that clears.**
+- Seshat's authority model is preserved verbatim: ADR-0008's five categories,
+  `authority: derived-evidence-only`, named-human approval. Roadmap §19.9 requires it; the
+  headless facade must not become an approval bypass, and its adversarial test is a request
+  that *claims* readiness, which must be `refused`.
+- Khepri's numerical, reconciliation, privacy, bilingual, and refusal guarantees are unchanged.
+  Roadmap §19.8 requires it. No RRA specification is amended.
+- Distribution is answered — no package (§2a) — and the five source-of-truth rules replace what
+  a package pin would have provided.
+- Metric authority for consumer requests is a **precondition**, not an open question (§9).
+- One follow-up obligation: the `AGENTS.md` qualification in §6, in the approval package that
+  accepts this decision. It is **not** discharged by this decision being proposed.
+
+## Session direction this decision reflects — not evidence, not approval
+
+The four questions below were previously carried as open in the planning package. The owner gave
+direction on each in a working session on 2026-08-05. **None of that direction is recorded in
+this repository**, and `AGENTS.md` forbids treating it as human approval.
+
+They are listed so a reader can see *why this decision reads the way it does*. **A reader must
+treat each as an unresolved input**, and no artifact may cite this table as evidence that a
+question is settled. Each becomes settled when this decision is approved with traceable
+evidence — or is re-opened if the owner directs otherwise before then.
+
+| Question | Direction this decision reflects | Where it shapes the text |
+|---|---|---|
+| Distribution | Committed files; no package | §2, §2a |
+| Integration in the first release | Deferred past Milestones A and B; boundary drafted now | §8 |
+| Renderer divergence | Two renderers, two products, closed | §4 |
+| `AGENTS.md` ambiguity | Qualify to Seshat-Platform, in the accepting package | §6 |
+
 ## Remaining open questions
 
 None that gate this decision. The mechanism parked in §9 is the substantive design work, and it
 belongs to the integration specification that does not yet exist. It is analysed in
 `Seshat-BI/docs/architecture/analysis-evidence-contracts.md` §4.
+
+---
+
+This decision remains proposed until its registry entry contains explicit approval evidence.
