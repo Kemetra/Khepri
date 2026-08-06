@@ -114,6 +114,17 @@ specifications:
     approved_by: AHMED-SHAABAN
     approved_at: 2026-08-02
     approval_ref: governance/approvals/APP-006.yaml
+  - id: RRA-009
+    title: Business-First Report Presentation with Separated Audit Evidence
+    state: approved
+    family: RRA
+    owner: AHMED-SHAABAN
+    document: governance/specifications/RRA-009.md
+    depends_on:
+      - RRA-006
+    approved_by: KHEPRI-AGENT
+    approved_at: 2026-08-06
+    approval_ref: governance/approvals/APP-016.yaml
   - id: FND-003
     title: Delegated Approval Records
     state: implemented

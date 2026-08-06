@@ -30,7 +30,19 @@ R1b. It records provisional candidates and reserves nothing.
 `proposed`; `KHEPRI-DEC-012` is still `proposed`; no identifier has been allocated. Every package
 in §4 remains unopened.
 
-### G5 is withdrawn. G4 remains.
+### G4 is granted. G5 is withdrawn. Both gates on `[SPEC-REPORT]` are now closed.
+
+**Owner approval, 2026-08-06: "i approve g4 golden sample."** G4 — the golden-sample approval
+including the Arabic copy review — is **granted**, and no longer gates anything. `G-g` proceeded
+on it the same day as `APP-016`, approving `RRA-009` under `DEL-005`.
+
+**Recorded as given, and no more than that.** The approval was stated in a working session. It is
+the owner's to grant and the gate is theirs to close, so this is a clearance rather than an
+election — the distinction from G5 below matters. What this record does *not* assert is which of
+the three surfaces were read or how the Arabic copy was reviewed; that is the owner's own account
+to give, and inventing one would be the fabrication this document exists to prevent.
+
+### G5 is withdrawn.
 
 **Owner election, 2026-08-06: the prospect interviews will not be conducted.** G5 — three retail
 interviews, two agency interviews, and an explicit go / revise / stop — is **withdrawn**, not
@@ -48,10 +60,15 @@ permanently an assumption. The whole sequencing argument in both roadmaps rests 
 rests on the owner's judgment rather than on evidence. **Any approval package that approves
 `[SPEC-REPORT]` must carry this override by reference.**
 
-**G4 is unaffected and still gates `[SPEC-REPORT]`.** It is the golden-sample approval, including
-the Arabic copy review — a review of `docs/reporting/golden-sample/`, which already exists. It is
-not an interview, it costs nothing but the owner's reading, and it is now the **only** gate between
-the owner and `G-g → I1`, the sole chain here that produces something a customer can see.
+**The override survives G4's grant, and outlives it.** G5's withdrawal is not cured by G4 being
+granted: they answered different questions. G4 asked whether the sample is good enough; G5 asked
+whether anyone would pay for what makes it good. `APP-016` carries the override in its `scope`
+accordingly, and any later package approving a successor to `RRA-009` must carry it too.
+
+**G4 was the last gate on `G-g → I1`, and it is now granted (above).** `I1` — the implementation
+of `RRA-009` against local synthetic fixtures — is therefore ungated: `G1` was never on this chain,
+and no other gate is. It is the sole chain here that produces something a customer can see, and
+nothing now stands between it and being written.
 
 > **This section is the single statement of that fact.** §2, §3, §6 and §7 point here rather than
 > restate it. A gate status repeated in five places is a contradiction waiting for one of them to
@@ -138,12 +155,17 @@ and "At most ONE of the two may be in implementation at a time (spec 138 FR-026)
 **Currently uncontended** — the integration is deferred, so this package requests no Seshat
 implementation capacity at all.
 
-### G4 — Golden-sample approval
+### G4 — Golden-sample approval — **GRANTED 2026-08-06, §0**
 
 Roadmap §10 Phase 1 stop condition, plus the Arabic copy review.
 
-**Blocks:** `[SPEC-REPORT]` proceeding to approval, and therefore implementation.
-**Does not block:** the design package, or the sample itself.
+**Blocks: nothing.** Granted by the owner on 2026-08-06; `RRA-009` was approved the same day by
+`APP-016`. Retained rather than deleted so the gate's existence stays legible — a cleared gate and
+a gate that never existed must not read alike, which is the same discipline §0 applies to G5's
+withdrawal.
+
+**Blocked, while it stood:** `[SPEC-REPORT]` proceeding to approval, and therefore implementation.
+**Never blocked:** the design package, or the sample itself.
 
 > **Unaffected by the 2026-08-06 withdrawal of G5 — §0.** G4 still blocks exactly what it blocked
 > before, and with G5 withdrawn it is now the **only** gate on `[SPEC-REPORT]`.
@@ -388,9 +410,10 @@ exactly that today. `src/khepri_gov/approval_renewals.py` applies; a plain edit 
 Plus one new approval package pinning the specification document digest. Created at `draft` and
 approved in the same package, as `APP-002` did for `RRA-001` through `RRA-007`.
 
-**Gated by G4 alone.** G5 is withdrawn (§0). The package must carry the **explicit override** that
-withdrawal requires, naming what was skipped — no prospect interviews, and the differentiator
-premise left untested — by reference to §0.
+**Both gates closed; executed as `APP-016` on 2026-08-06.** G4 granted, G5 withdrawn (§0). The
+package carries the **explicit override** that withdrawal requires, naming what was skipped — no
+prospect interviews, and the differentiator premise left untested — in its `scope`. Approved by
+`KHEPRI-AGENT` as a delegate under `DEL-005`, never under the owner's identifier.
 
 ### Implementation PRs — after their specification is approved
 
@@ -457,13 +480,13 @@ GOVERNANCE (one atomic purpose per PR; owner-initiated only)
 PHASE 0C - WITHDRAWN by owner election 2026-08-06 (see §0)
   3 retail interviews + 2 agency interviews + go/revise/stop  -- will not happen
         └─► G5 no longer gates anything; the override is recorded in §0
-  G-g now waits on G4 alone - the golden-sample approval, which is a read not an interview
+  G-g waited on G4 alone; G4 was GRANTED 2026-08-06 and G-g executed as APP-016
 
 GATE SCOPE
   G1 blocks : real customer data - beta launch - production claims -
               external demonstration on a governed environment
   G1 NOT    : R1a R1b R2 R3 - G-b G-b2 G-c G-d G-e G-f G-g - I1 - I2
-  G4 blocks : G-g - I1          (golden-sample approval; the only remaining gate on them)
+  G4 blocks : nothing - GRANTED 2026-08-06; G-g executed as APP-016, I1 is ungated
   G5 blocks : nothing - WITHDRAWN 2026-08-06
 
 DEFERRED (not proposed, no identifiers derived)
@@ -585,7 +608,7 @@ Each halts its own chain. None halts all of them — that is the point of the sp
 | # | Condition | Halts | Does not halt |
 |---|---|---|---|
 | 1 | `KHEPRI-DEC-008` not accepted | G-a2, I2, I3, and therefore G1 | R1a–R3, G-b–G-g, **I1** |
-| 2 | Golden sample not approved (incl. Arabic copy review) — **G4**. Now the **only** gate on G-g, §0 | G-g, I1 | Everything else |
+| 2 | ~~Golden sample not approved (incl. Arabic copy review) — **G4**~~ — **GRANTED 2026-08-06, §0.** `G-g` executed as `APP-016` | **nothing** | — |
 | 2b | ~~**G5** — interviews and an owner go/revise/stop~~ — **WITHDRAWN 2026-08-06, §0.** Overridden in writing, as this row always required | **nothing** | — |
 | 3 | `[DEC-BOUNDARY]` not accepted | G-e, all deferred work | R1a–R3, G-a, G-f, G-g, I1, I2 |
 | 4 | The `APP-002` renewal not approved | G-f in its entirety — all four transitions, since the package is atomic | Everything else |
@@ -667,9 +690,9 @@ section.
 
 - Whether `KHEPRI-DEC-008`'s supersession of `KHEPRI-DEC-005` preserves `KHEPRI-DEC-003`
   condition 3 (§2 caveat). A drafting obligation for G-a, not a blocker for review.
-- **G4 — golden-sample approval, including the Arabic copy review.** The sample exists at
-  `docs/reporting/golden-sample/`. This is a read, not an interview, and it is the only thing left
-  gating `G-g → I1`.
+- ~~**G4 — golden-sample approval, including the Arabic copy review.**~~ **Granted 2026-08-06
+  (§0), so this is no longer outstanding.** `G-g` executed as `APP-016` the same day and `I1` is
+  ungated.
 
 **Closed by election rather than by evidence**
 
