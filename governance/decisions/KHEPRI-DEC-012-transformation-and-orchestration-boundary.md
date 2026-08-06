@@ -191,7 +191,10 @@ or fan-out across datasets within one run. Retry semantics alone are not a trigg
   Dagster must supersede it rather than argue the point again. While it remains `proposed` it is
   reasoning on the record, not authority.
 - Seshat-BI is unaffected. Its adapters remain correctly placed over a medallion warehouse that
-  actually exists. No cross-repository dependency is created in either direction.
+  actually exists. No cross-repository dependency is created in either direction. **Read that
+  second sentence against the scope stated below** — it describes the effect of refusing dbt and
+  Dagster, not a standing prohibition on every form of cross-repository dependency. See
+  *What this decision does not decide about Seshat-BI*.
 - The coupling that option B would have created is refused explicitly. Seshat-BI is not on a
   package index, pins `dbt-core==1.12.0` against Khepri's `jinja2>=3.1,<4`, declares
   `requires-python >=3.13` against Khepri's `>=3.13,<3.14`, and makes dbt an extra with lazy
@@ -202,9 +205,44 @@ or fan-out across datasets within one run. Retry semantics alone are not a trigg
 - One documentation gap is left open and named rather than fixed here: Khepri has no generated,
   browsable catalog of its governed facts, formulas, and citations. That is the one dbt
   discipline it lacks, it is achievable without dbt, and it is plausibly customer-facing for a
-  buyer purchasing defensibility. It is outside this decision's boundary.
+  buyer purchasing defensibility. It is outside this decision's boundary. **The gap is narrower
+  than the sentences above imply, and a candidate owner now exists.** The Phase 1 design package
+  (`docs/reporting/`) resolves its customer-facing half by separating the business report from a
+  governed audit-evidence layer carrying every identifier, and deliberately keeps the
+  governed-fact catalog "as an internal product and specification asset" rather than a customer
+  surface. What stays absent is the browsable internal artifact — not the citation data, which
+  `Fact.citation_id` and the `FactPackage` digest already carry.
 - This decision supersedes nothing. It does not amend `RRA.md`, alter any specification, or
   authorize any product capability. It records no approval and creates no authority.
+
+### What this decision does not decide about Seshat-BI
+
+This decision refuses two **tooling runtime** dependencies: a dbt binary compiling against a
+warehouse, and a Dagster daemon with its own run storage. Its evidence is about runtimes — a
+separately provisioned interpreter, a repository-root filesystem lock, a `dbt-core==1.12.0` pin
+against Khepri's `jinja2>=3.1,<4`, `requires-python >=3.13` against Khepri's `>=3.13,<3.14`, and a
+wheel that deliberately excludes `src/khepri/local` from the image that runs web and worker.
+
+A dependency on a **versioned analytical contract** — a published schema package with fixtures and
+a compatibility manifest, carrying no numerical library, no CLI, no workspace root, and no
+adapter — is a different question with different evidence. This decision does not reach it, and
+the sentence "No cross-repository dependency is created in either direction" describes the effect
+of refusing dbt and Dagster, not a standing prohibition on every form of cross-repository
+dependency.
+
+That question belongs to the Khepri/Seshat-BI boundary decision. If that decision authorizes a
+contract dependency, it does so on its own evidence and supersedes nothing here.
+
+The following stay refused by this decision and are not reopened by any boundary decision:
+
+```text
+Khepri -> dbt runtime
+Khepri -> Dagster runtime
+Khepri -> Power BI runtime
+Khepri -> a Seshat-BI repository checkout or workspace root
+Khepri -> the Seshat-BI CLI
+Khepri -> co-installation of the seshat-bi distribution
+```
 
 ### What this decision does not settle
 
@@ -212,6 +250,11 @@ It does not address the observation that prompted it. The limits that bind Khepr
 are that a session accepts one dataset ever, and that seven-day expiry deletes the baseline a
 comparison would need. Both are retention and tenancy limits, not orchestration limits, and no
 scheduler fixes either. They are the roadmap's subject, and they begin with a family charter.
+
+**That roadmap has since been written, so a reader should not go looking for a missing document.**
+`docs/khepri-commercial-roadmap.md` (2026-08-04) sequences those retention and tenancy limits and
+names the family charter as its Phase 0B gate. It is an advisory plan and carries no authority —
+it approves nothing and creates none — but it is where the observation is now answered.
 
 It also does not settle where Khepri deploys. `KHEPRI-DEC-005` remains `accepted` and names an
 environment `KHEPRI-DEC-008` prices at approximately 675 USD per month and states the owner
