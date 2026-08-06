@@ -180,6 +180,61 @@ def heading_pages(pdf: bytes, headings: dict[str, str]) -> dict[str, int]:
     return found
 
 
+def discriminating_metrics(bundle: ReportBundle) -> dict[str, set[str]]:
+    """Each section's governed metric codes that name no other section's metric.
+
+    `revenue` belongs to `overview` but is a substring of `comparison`'s
+    `revenue_delta_absolute`, so matching it would credit one section's page to
+    another. Only codes that appear in no other section's code are kept, and they are
+    derived from the bundle rather than listed here so a new metric cannot silently
+    stop discriminating.
+    """
+    by_section = {
+        section_id: {figure.metric for figure in bundle.figures if figure.section == section_id}
+        for section_id in ORDERED_SECTIONS
+    }
+    discriminating = {}
+    for section_id, metrics in by_section.items():
+        others = {
+            metric
+            for other, codes in by_section.items()
+            if other != section_id
+            for metric in codes
+        }
+        discriminating[section_id] = {
+            metric for metric in metrics if not any(metric in other for other in others)
+        }
+    return discriminating
+
+
+def _flattened_pages(pdf: bytes) -> list[str]:
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(pdf))
+    return [re.sub(r"[\s_]+", "", page.extract_text() or "") for page in reader.pages]
+
+
+def metric_pages(pdf: bytes, metrics: dict[str, set[str]]) -> dict[str, int]:
+    """The first printed page carrying any of each section's discriminating metrics.
+
+    **First**, not last: a section's audit table can run onto the following page, so
+    the last page carrying its codes is where it *ended*, and where an analysis begins
+    is the claim the pagination rule makes.
+
+    Underscores are stripped from both sides because extraction does not preserve
+    them reliably.
+    """
+    pages = _flattened_pages(pdf)
+    found: dict[str, int] = {}
+    for section_id, codes in metrics.items():
+        stripped = {code.replace("_", "") for code in codes}
+        for number, text in enumerate(pages):
+            if any(code in text for code in stripped):
+                found[section_id] = number
+                break
+    return found
+
+
 def printed(language: str) -> bytes:
     from khepri.rra.rendering.chromium import launch_chromium
     from khepri.rra.rendering.pdf import PdfReportRenderer
@@ -227,8 +282,38 @@ def test_no_two_analyses_begin_on_the_same_printed_page() -> None:
 @pytest.mark.browser
 @needs_chromium
 def test_arabic_paginates_the_same_sections_onto_distinct_pages() -> None:
-    """One template and one stylesheet, so the two languages cannot fragment apart."""
-    placed = heading_pages(printed(LANGUAGE_ARABIC), section_headings(LANGUAGE_ARABIC))
+    """One template and one stylesheet, so the two languages cannot fragment apart.
 
-    assert set(placed) == set(ORDERED_SECTIONS)
-    assert len(set(placed.values())) == len(placed), placed
+    **Anchored on governed metric codes, not on Arabic heading text, and that is not a
+    convenience.** Arabic heading text cannot be recovered from a Chromium-printed PDF
+    at all. The extraction returns shaped presentation forms (U+FB50-U+FEFF) with
+    `\\x00` where glyphs reverse-map to nothing, and only about half of each heading's
+    characters survive -- `4/9` for `overview`, `7/14` for `comparison`. Stripping the
+    NULs, applying NFKC and dropping diacritics recovers none of the five, in either
+    direction, so the text is destroyed rather than transformed. A `/ToUnicode` CMap is
+    present on every font, so nothing is missing from the PDF; the loss is inside
+    Chromium's CMap for shaped Arabic, where ligatures reverse-map lossily.
+
+    An earlier version of this test matched base-form heading text and could therefore
+    never have passed. It reported all five sections missing, and it never ran in CI to
+    say so.
+
+    The metric codes are Latin, extract exactly, and are the same tokens in both
+    languages -- which makes this assertion *stronger* than the one it replaces: the
+    two languages are compared page-for-page against each other, which is what "cannot
+    fragment apart" actually claims.
+    """
+    bundle = ReportBundle.of(package())
+    metrics = discriminating_metrics(bundle)
+    assert all(metrics.values()), metrics
+
+    arabic = metric_pages(printed(LANGUAGE_ARABIC), metrics)
+    english = metric_pages(printed(LANGUAGE_ENGLISH), metrics)
+
+    assert set(arabic) == set(ORDERED_SECTIONS), "a section's metrics reached no page"
+    # No two analyses begin on the same page.
+    assert len(set(arabic.values())) == len(arabic), arabic
+    # In governed order, so the printed sequence is the declared one.
+    assert [arabic[section_id] for section_id in ORDERED_SECTIONS] == sorted(arabic.values())
+    # And identically to English, which is the shared-template guarantee itself.
+    assert arabic == english, {"arabic": arabic, "english": english}
