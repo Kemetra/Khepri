@@ -1,8 +1,25 @@
 # Draft amendment to `KHEPRI-DEC-012`
 
-**Draft for owner review. Not applied.** Target:
+**APPLIED.** Target:
 `governance/decisions/KHEPRI-DEC-012-transformation-and-orchestration-boundary.md`.
-No registry change — `KHEPRI-DEC-012` stays `proposed`.
+No registry change was made — `KHEPRI-DEC-012` remains `proposed`, and **this amendment neither
+accepted it nor created any authority.** This file is retained as the review record: it is what
+was proposed, so a later reader can compare it against what landed.
+
+**Two deviations from the text below, both deliberate.**
+
+1. **Placement.** The draft says to insert the new subsection "immediately after the 'Seshat-BI is
+   unaffected' bullet." Done differently: a `###` heading placed mid-list would terminate the
+   Consequences bullet list and orphan the two bullets that follow it under the new heading. The
+   subsection therefore sits after the complete bullet list, and the "Seshat-BI is unaffected"
+   bullet carries an explicit pointer to it — which preserves the proximity the draft wanted
+   without breaking the document structure.
+2. **No `[DEC-BOUNDARY]` citation.** The draft's proposed text cites `[DEC-BOUNDARY]` three times.
+   **No such identifier exists or has been allocated** — see
+   [`identifier-survey.md`](identifier-survey.md), which reserves nothing. A governed document may
+   not cite an artifact identifier that does not exist, so those references became prose: "the
+   Khepri/Seshat-BI boundary decision." When that decision is authored and given a real
+   identifier, the citation can be made concrete by whichever package authors it.
 
 ---
 
