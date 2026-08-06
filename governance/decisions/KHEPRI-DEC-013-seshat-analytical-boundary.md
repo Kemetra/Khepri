@@ -316,8 +316,12 @@ relaxed profile.
   rather than silently resolved; this is that report, in governed form.
 - Roadmap §5.2's report-composition ownership is **partially rejected as already overtaken by
   an owner-approved Seshat decision**, and closed rather than reversed.
-- `KHEPRI-DEC-012` is unaffected and not superseded. Its amendment landed at `96b802a` (#102)
-  while it was still `proposed`, as this decision's ordering required.
+- `KHEPRI-DEC-012` is unaffected and not superseded. Its amendment was applied under PR #102,
+  while it was still `proposed`, as this decision's ordering required. **Cited by pull request
+  rather than by commit**: `main` takes squash merges, so the branch commit that carried the
+  amendment does not survive as a reachable SHA, and citing it would leave a reference that
+  resolves to nothing. §14 rule 10 forbids citing an unmerged commit; a squashed-away one is the
+  same defect arriving later.
 - Khepri's deployment gate is untouched and remains first. `KHEPRI-DEC-005` is accepted and
   unfundable; `KHEPRI-DEC-008` is `proposed`. **Nothing in this decision can be demonstrated to
   a customer until that clears.**
