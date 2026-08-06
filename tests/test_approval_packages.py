@@ -968,65 +968,47 @@ def approve_renewal_in_registry(root: Path, renewal_path: Path, renewal: dict) -
     write_yaml(decisions_path, decisions)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known defect: every approved package is validated as though it is the package "
-        "currently governing its artifacts, so two approved packages naming one artifact "
-        "cannot both pass. This makes supersession structurally impossible for any "
-        "artifact that already has an approved package -- see the four errors listed in "
-        "the docstring. Remove this marker with the fix."
-    ),
-)
-def test_approved_renewal_survives_a_later_supersession(tmp_path: Path) -> None:
-    """An approved package records history, so a later lifecycle move must not break it.
+# --- the supersession defect -------------------------------------------------
+#
+# The validator judges EVERY approved package as though it were the package currently
+# governing its artifacts. Two approved packages naming one artifact therefore cannot
+# both pass -- and supersession is exactly that situation. Four checks express the same
+# assumption, and superseding a once-renewed decision trips all four at once:
+#
+#   APP-003: KHEPRI-DEC-002 approved_at does not match package
+#   APP-003: KHEPRI-DEC-002 approval_ref must be governance/approvals/APP-003.yaml
+#   APP-003: renewal must preserve state 'superseded'
+#   APP-004: KHEPRI-DEC-002 does not currently use the superseded approval
+#
+# The last two cannot both be satisfied. APP-003 requires the registry to still point at
+# APP-003; APP-004 requires it to point at APP-004. No arrangement of correct files
+# satisfies both, which is what makes this structural rather than a matter of getting a
+# package right.
+#
+# Not hypothetical: KHEPRI-DEC-005 was renewed by APP-013, so KHEPRI-DEC-008 cannot be
+# accepted -- it supersedes DEC-005 and DEC-007, and superseding DEC-005 trips these
+# checks. Superseding only DEC-007 does validate, because APP-005 carries no
+# supersedes_approval_ref and is not a renewal, but shipping that half leaves two live
+# architecture decisions with contradictory deployment sections, which Constitution I
+# forbids. The one edit that clears it rewrites APP-013, and Constitution VI forbids
+# that: supersession is explicit and never rewrites prior authority.
+#
+# An earlier project note recorded supersession as unsupported because approval_packages
+# admitted no accepted -> superseded transition. That has since been fixed and
+# superseded_by is accepted, so the transition looks available if you read only the
+# lifecycle table. The conclusion held for a different reason, one layer down, and this
+# test pins that reason so it is not re-diagnosed from scratch a third time.
+#
+# The fix means deciding which package GOVERNS an artifact -- reasonably the one the
+# registry approval_ref names -- and checking registry agreement only for that one,
+# while earlier packages are checked for internal consistency and lifecycle
+# reachability instead.
 
-    A renewal re-attests an artifact at the state it held *then*. The validator instead
-    judges every approved package against the registry as it reads *now*, so the moment
-    an artifact legitimately moves on, the earlier package fails retroactively -- and no
-    correctly-formed new package can clear it.
 
-    **Four separate checks express the same wrong assumption.** Superseding a
-    once-renewed decision produces all of them at once:
-
-    ```text
-    APP-003: KHEPRI-DEC-002 approved_at does not match package
-    APP-003: KHEPRI-DEC-002 approval_ref must be governance/approvals/APP-003.yaml
-    APP-003: renewal must preserve state 'superseded'
-    APP-004: KHEPRI-DEC-002 does not currently use the superseded approval
-    ```
-
-    The last two are mutually unsatisfiable, which is what makes this structural rather
-    than cosmetic: `APP-003` demands the registry still point at `APP-003`, while
-    `APP-004` demands the registry point at `APP-004`. No arrangement of correct files
-    satisfies both.
-
-    **This is not hypothetical.** `KHEPRI-DEC-005` was renewed by `APP-013`, which makes
-    `KHEPRI-DEC-008` unacceptable: DEC-008 supersedes DEC-005 and DEC-007, and
-    superseding DEC-005 trips these checks. The only edit that would clear them rewrites
-    `APP-013`, which Constitution VI forbids -- "supersession is explicit and never
-    rewrites prior authority". So the mechanism the Constitution mandates cannot
-    currently be executed.
-
-    The onward move still has to be *recorded* -- a package entry must carry the
-    `accepted -> superseded` transition, and this test supplies one in `APP-004`. The
-    assertion is only that a recorded move does not retroactively invalidate the
-    packages that preceded it.
-
-    Fixing it means deciding which package *governs* an artifact -- reasonably the one
-    the registry's `approval_ref` names -- and validating registry agreement only for
-    that one, while earlier packages are checked for internal consistency and for
-    lifecycle reachability instead.
-    """
-    valid_repository(tmp_path)
-    _, _, renewal_path, renewal = approved_package_with_renewal(tmp_path)
-    approve_renewal_in_registry(tmp_path, renewal_path, renewal)
-
-    decisions_path = root_path(tmp_path, "decisions")
-    decisions = read_yaml(decisions_path)
-    successor = str(decisions["decisions"][0]["id"])  # type: ignore[index]
+def superseding_package(root: Path, successor: str) -> dict[str, object]:
+    """An approved package moving the renewed decision on to `superseded`."""
     document = "governance/decisions/KHEPRI-DEC-002.md"
-    superseding: dict[str, object] = {
+    package: dict[str, object] = {
         "schema_version": 1,
         "id": "APP-004",
         "title": "Supersede the renewed decision",
@@ -1038,7 +1020,7 @@ def test_approved_renewal_survives_a_later_supersession(tmp_path: Path) -> None:
             {
                 "id": "KHEPRI-DEC-002",
                 "document": document,
-                "document_sha256": document_digest(tmp_path / document),
+                "document_sha256": document_digest(root / document),
                 "from_state": "accepted",
                 "to_state": "superseded",
                 "superseded_by": successor,
@@ -1046,17 +1028,23 @@ def test_approved_renewal_survives_a_later_supersession(tmp_path: Path) -> None:
             }
         ],
     }
-    superseding["manifest_digest"] = manifest_digest(superseding)
-    superseding["approval"] = {
+    digest = manifest_digest(package)
+    package["manifest_digest"] = digest
+    package["approval"] = {
         "approved_by": "AHMED-SHAABAN",
         "approved_at": "2026-07-31",
-        "approved_manifest_digest": manifest_digest(superseding),
+        "approved_manifest_digest": digest,
         "evidence_ref": (
             "https://github.com/Kemetra/Khepri/pull/6#pullrequestreview-0000000001"
         ),
     }
-    write_yaml(tmp_path / "governance/approvals/APP-004.yaml", superseding)
+    return package
 
+
+def supersede_in_registry(root: Path, successor: str) -> None:
+    """Record the onward move, so the transition is registered rather than implied."""
+    decisions_path = root_path(root, "decisions")
+    decisions = read_yaml(decisions_path)
     decisions["decisions"][1].update(  # type: ignore[index]
         {
             "state": "superseded",
@@ -1066,6 +1054,39 @@ def test_approved_renewal_survives_a_later_supersession(tmp_path: Path) -> None:
         }
     )
     write_yaml(decisions_path, decisions)
+
+
+def registry_successor(root: Path) -> str:
+    decisions = read_yaml(root_path(root, "decisions"))
+    return str(decisions["decisions"][0]["id"])  # type: ignore[index]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Known defect: every approved package is validated as though it governs its "
+        "artifacts now, so supersession is structurally impossible for any artifact that "
+        "already has an approved package. See the comment block above. Remove this "
+        "marker with the fix."
+    ),
+)
+def test_approved_renewal_survives_a_later_supersession(tmp_path: Path) -> None:
+    """An approved package records history, so a later recorded move must not break it.
+
+    The onward move is registered here -- `APP-004` carries the
+    `accepted -> superseded` entry -- so this asserts only that a *recorded* move does
+    not retroactively invalidate the packages that preceded it.
+    """
+    valid_repository(tmp_path)
+    _, _, renewal_path, renewal = approved_package_with_renewal(tmp_path)
+    approve_renewal_in_registry(tmp_path, renewal_path, renewal)
+
+    successor = registry_successor(tmp_path)
+    write_yaml(
+        tmp_path / "governance/approvals/APP-004.yaml",
+        superseding_package(tmp_path, successor),
+    )
+    supersede_in_registry(tmp_path, successor)
 
     result = run_validator(tmp_path)
 
