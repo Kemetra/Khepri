@@ -30,7 +30,33 @@
 
 ---
 
-### Task 1: The per-artifact governing invariant
+> ## Executed 2026-08-06 — what actually happened
+>
+> The plan was followed and **Task 1 was dropped as unnecessary.** Writing its two tests
+> and running them proved both halves of the "new" invariant already existed:
+> `_state_errors` compares the governing package's `to_state` to the registry state, and
+> `_package_evidence_errors` requires every `approval_ref` to resolve to an approved
+> package containing the artifact — including the `APP-001-bootstrap.md` case this plan
+> flagged as a *critical real-world constraint* needing a `.yaml` guard. It needed none;
+> `BOOTSTRAP_EVIDENCE` already handles it.
+>
+> No `governing_packages.py` module was created. Task 2 needed only an inline comparison,
+> so `governs()` was never written either. Tasks 2–5 ran as planned, with two amendments:
+>
+> - `assert_invalid` matches **`stderr`**, not `stdout`. Every "not in `result.stdout`"
+>   assertion in Tasks 2–4 below would have passed vacuously. They were written against
+>   `stderr`.
+> - Removing the last `replaces_approval=True` caller left that parameter and
+>   `_replacement_matches` dead, so both were deleted — a simplification the plan did not
+>   anticipate. Net −41 lines against +103.
+>
+> Final counts: **1607 passed, 9 skipped, 0 xfailed** — not the 1609 predicted below,
+> because three planned tests turned out to be redundant. The `0 xfailed` is the assertion
+> that mattered.
+>
+> Tasks 1–5 are left as written, since a plan is a record of what was intended.
+
+### Task 1: The per-artifact governing invariant — DROPPED, see above
 
 Written first, because it is the backstop for every relaxation that follows. Landing the relaxations first would leave a window with no check at all.
 

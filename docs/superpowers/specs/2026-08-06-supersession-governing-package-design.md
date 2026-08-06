@@ -63,6 +63,25 @@ moves the artifact to `superseded`, which **does** end authority, so `replaces` 
 successor is refused as a replacement, and check 2 fires. The fix extends this existing index; it
 does not introduce a new mechanism.
 
+> **Correction, made during implementation and left visible.** §5 below claims that nothing
+> verifies an artifact's registry row against a real package, and calls for a new one.
+> **That was wrong.** Both halves already exist:
+>
+> - `_state_errors` (`approval_transition_validation.py:159-172`) already compares the
+>   governing package's `to_state` to the registry state. The first test written against
+>   the "new" check failed with that pre-existing message.
+> - `_package_evidence_errors` (`approval_renewals.py:235-249`) already requires every
+>   `approval_ref` to resolve to an approved package containing the artifact — and handles
+>   `APP-001-bootstrap.md` itself via `BOOTSTRAP_EVIDENCE`, the case §5 and the plan both
+>   expected to special-case.
+>
+> So no new module and no new check were written, and the fix is smaller and lower-risk
+> than designed. What was genuinely missing was a **test** for the second guard; that is
+> what shipped in its place. §5 is left as written because its *reasoning* — that
+> relaxing four checks demands a backstop — stayed correct even though its claim about
+> the codebase did not. Deleting it would hide the fact that the backstop was verified
+> rather than assumed.
+
 ## The design
 
 ### 1. A single governing predicate
