@@ -410,4 +410,5 @@ customer-defined formulas.
   commit, because a repository state in which the successor is accepted and the predecessors are
   not yet superseded is a state Constitution I forbids and the validator rejects.
 
-This decision remains proposed until its registry entry contains explicit approval evidence.
+Identity, lifecycle state, ownership, and approval evidence are authoritative in
+`governance/registries/decisions.yaml`.

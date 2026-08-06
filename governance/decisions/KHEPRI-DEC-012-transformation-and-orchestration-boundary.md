@@ -261,4 +261,5 @@ environment `KHEPRI-DEC-008` prices at approximately 675 USD per month and state
 cannot fund; `KHEPRI-DEC-008`, which replaces it with a provider-neutral capability contract,
 remains `proposed`. That is the first gate in front of everything else, including the beta.
 
-This decision remains proposed until its registry entry contains explicit approval evidence.
+Identity, lifecycle state, ownership, and approval evidence are authoritative in
+`governance/registries/decisions.yaml`.

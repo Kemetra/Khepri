@@ -363,4 +363,5 @@ belongs to the integration specification that does not yet exist. It is analysed
 
 ---
 
-This decision remains proposed until its registry entry contains explicit approval evidence.
+Identity, lifecycle state, ownership, and approval evidence are authoritative in
+`governance/registries/decisions.yaml`.
