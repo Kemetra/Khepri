@@ -999,10 +999,21 @@ def approve_renewal_in_registry(root: Path, renewal_path: Path, renewal: dict) -
 # lifecycle table. The conclusion held for a different reason, one layer down, and this
 # test pins that reason so it is not re-diagnosed from scratch a third time.
 #
-# The fix means deciding which package GOVERNS an artifact -- reasonably the one the
-# registry approval_ref names -- and checking registry agreement only for that one,
-# while earlier packages are checked for internal consistency and lifecycle
-# reachability instead.
+# FIXED. The history above is kept because it explains why four checks were arranged
+# this way; what follows is what now holds. An approved package is an immutable record,
+# the registry is the present, and exactly one approved package GOVERNS each artifact --
+# the one the registry names in approval_ref. Registry agreement is judged only for that
+# package; a package the registry has moved past is checked for lifecycle legality
+# instead. See docs/superpowers/plans/2026-08-06-supersession-governing-package.md.
+#
+# Two assumptions in that plan were wrong, and finding out cost less than assuming.
+# It proposed a new per-artifact invariant as the backstop for these relaxations. Both
+# halves already existed: _state_errors compares the governing package's to_state to the
+# registry state, and _package_evidence_errors requires every approval_ref to resolve to
+# an approved package containing the artifact -- including the APP-001-bootstrap.md case
+# the plan expected to have to special-case. So no new check was written. The second was
+# untested, which was the real gap, and
+# test_artifact_approval_ref_must_resolve_to_an_approved_package now pins it.
 
 
 def superseding_package(root: Path, successor: str) -> dict[str, object]:
@@ -1061,15 +1072,6 @@ def registry_successor(root: Path) -> str:
     return str(decisions["decisions"][0]["id"])  # type: ignore[index]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known defect: every approved package is validated as though it governs its "
-        "artifacts now, so supersession is structurally impossible for any artifact that "
-        "already has an approved package. See the comment block above. Remove this "
-        "marker with the fix."
-    ),
-)
 def test_approved_renewal_survives_a_later_supersession(tmp_path: Path) -> None:
     """An approved package records history, so a later recorded move must not break it.
 
@@ -1197,3 +1199,54 @@ def test_approval_digest_rejects_malformed_package_without_traceback(
     assert result.returncode == 1
     assert result.stderr == "ERROR approval-packages:APP-002.yaml: invalid YAML\n"
     assert "Traceback" not in result.stderr
+
+
+# The governing-package backstop, pinned before it is relied on.
+#
+# Supersession requires relaxing the checks that judge every approved package against
+# the current registry. What makes that safe is a guard that already exists and was
+# untested: _package_evidence_errors requires every artifact's approval_ref to resolve
+# to an approved package containing that artifact. Together with the to_state check
+# pinned above, it is the whole per-artifact invariant, so the relaxations below need
+# no replacement check -- only this test, so a later edit cannot remove the backstop
+# silently. See docs/superpowers/plans/2026-08-06-supersession-governing-package.md.
+
+
+def test_artifact_approval_ref_must_resolve_to_an_approved_package(
+    tmp_path: Path,
+) -> None:
+    valid_repository(tmp_path)
+    path, package = proposed_package(tmp_path)
+    approve_package(tmp_path, path, package)
+    decisions_path = root_path(tmp_path, "decisions")
+    decisions = read_yaml(decisions_path)
+    decisions["decisions"][1]["approval_ref"] = "governance/approvals/APP-404.yaml"  # type: ignore[index]
+    write_yaml(decisions_path, decisions)
+
+    result = run_validator(tmp_path)
+
+    assert_invalid(
+        result,
+        "approval-packages: KHEPRI-DEC-002 approval_ref must identify "
+        "an approved package containing the artifact",
+    )
+
+
+def test_superseded_package_is_not_rejudged_against_a_moved_registry(
+    tmp_path: Path,
+) -> None:
+    """A historical package records what was true, not a claim about the present."""
+    valid_repository(tmp_path)
+    _, _, renewal_path, renewal = approved_package_with_renewal(tmp_path)
+    approve_renewal_in_registry(tmp_path, renewal_path, renewal)
+    successor = registry_successor(tmp_path)
+    write_yaml(
+        tmp_path / "governance/approvals/APP-004.yaml",
+        superseding_package(tmp_path, successor),
+    )
+    supersede_in_registry(tmp_path, successor)
+
+    result = run_validator(tmp_path)
+
+    assert "approved_at does not match package" not in result.stderr
+    assert "approval_ref must be governance/approvals/APP-003.yaml" not in result.stderr
