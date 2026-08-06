@@ -1,0 +1,18 @@
+schema_version: 1
+id: DEL-005
+delegate: KHEPRI-AGENT
+granted_by: AHMED-SHAABAN
+instruction: 'i authorize you to handle the plan and merge prs and decide antd theses staff you are the captin now  iam busy no stop until mision setteled'
+granted_at: 2026-08-06
+session: 24ff0bc9-7c52-4d22-85ba-cec99dc35572
+scope:
+  kind: session
+  artifacts:
+    - KHEPRI-DEC-008
+    - KHEPRI-DEC-005
+    - KHEPRI-DEC-007
+    - KHEPRI-DEC-012
+    - KHEPRI-DEC-013
+    - RRA-009
+expires_at: 2026-08-06
+revoked: false
