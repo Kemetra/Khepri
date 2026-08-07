@@ -140,6 +140,141 @@ def metric_business_name(metric: str, language: str) -> str:
     return METRIC_WORDING[language][metric]
 
 
+# Customer-facing refusal messages -- docs/reporting/refusal-presentation.md §D.
+# Two tiers are required because a section refusal loses a whole analysis, while a
+# result refusal loses one metric and leaves the section standing. Each message
+# states what was unavailable, why, whether the rest of the report is unaffected,
+# which field would fix it, and how. The result tier is filled by the next slice.
+REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
+    "section": {
+        LANGUAGE_ENGLISH: {
+            "prior_window_absent": (
+                "Comparison with an earlier period — not available. Your file "
+                "covers a single period, so there is no earlier period inside it "
+                "to compare against. Everything else in this review is unaffected "
+                "and describes the period you supplied. To add comparison, export "
+                "a file that also covers the period you want to compare with — "
+                "the same months a year earlier, or the months immediately before."
+            ),
+            "required_input_unavailable": (
+                "This analysis — not available. The figures this analysis needs "
+                "are not present in the file. The rest of the review is "
+                "unaffected. Include the missing column in your export and this "
+                "becomes available."
+            ),
+            "aggregate_unavailable": (
+                "Sales concentration — not available. The totals this analysis "
+                "is built from could not be produced from the supplied rows. The "
+                "rest of the review is unaffected."
+            ),
+            "distinct_set_uncomputable": (
+                "Sales concentration — not available. Concentration compares "
+                "each product or branch against all the others, and the file "
+                "does not identify them distinctly enough to separate one from "
+                "another. The rest of the review is unaffected. Export with a "
+                "consistent product or branch name in every row and this "
+                "becomes available."
+            ),
+            "units_absent": (
+                "Growth drivers — not available. Splitting growth into price "
+                "and volume needs a quantity for each sale, and the file has "
+                "none. Revenue figures are unaffected — the review still shows "
+                "how much revenue changed, but not how much of that change came "
+                "from price rather than from volume. Include the quantity sold "
+                "in your export and this becomes available."
+            ),
+            "decomposition_not_additive": (
+                "Growth drivers — withheld. Price and volume effects were "
+                "calculated, but they do not add up to the total revenue "
+                "change. Rather than present a split that does not reconcile, "
+                "it is withheld. Revenue figures are unaffected and remain "
+                "correct. This usually means quantities and revenue in the "
+                "file are measured over different sets of rows."
+            ),
+            "transaction_identifier_absent": (
+                "Basket size — not available. Your file has no receipt or "
+                "invoice number, so there is no way to tell which rows belong "
+                "to the same sale. Counting rows instead would overstate "
+                "basket size wherever one sale spans several lines. The rest "
+                "of the review is unaffected. Export with the receipt number "
+                "included and this becomes available."
+            ),
+            "incomplete_transaction_identifiers": (
+                "Basket size — not available. Some rows carry a receipt number "
+                "and some do not. Basket size calculated from the rows that "
+                "have one would describe part of your sales and be presented "
+                "as if it described all of them. The rest of the review is "
+                "unaffected. Export with a receipt number on every row and "
+                "this becomes available."
+            ),
+        },
+        LANGUAGE_ARABIC: {
+            "prior_window_absent": (
+                "المقارنة بفترة سابقة — غير متاحة. يغطي ملفك فترة واحدة، فلا "
+                "توجد داخله فترة أسبق للمقارنة بها. وما عدا ذلك في هذا التقرير "
+                "غير متأثر، وهو يوصف الفترة التي قدّمتها. ولإتاحة المقارنة، "
+                "صدِّر ملفاً يغطي أيضاً الفترة التي تريد المقارنة بها — الأشهر "
+                "نفسها من العام السابق، أو الأشهر التي تسبقها مباشرة."
+            ),
+            "required_input_unavailable": (
+                "هذا التحليل — غير متاح. الأرقام التي يحتاجها هذا التحليل غير "
+                "موجودة في الملف. وما عدا ذلك في التقرير غير متأثر. أضِف العمود "
+                "الناقص إلى ملف التصدير ليصبح هذا التحليل متاحاً."
+            ),
+            "aggregate_unavailable": (
+                "تركّز المبيعات — غير متاح. الإجماليات التي يُبنى عليها هذا "
+                "التحليل لم يتسنَّ إنتاجها من الصفوف المقدَّمة. وما عدا ذلك في "
+                "التقرير غير متأثر."
+            ),
+            "distinct_set_uncomputable": (
+                "تركّز المبيعات — غير متاح. يقارن تحليل التركّز كل منتج أو فرع "
+                "بالبقية، والملف لا يحدّد هويتها بدرجة تكفي للتمييز بينها. وما "
+                "عدا ذلك في التقرير غير متأثر. صدِّر الملف باسم منتج أو فرع "
+                "ثابت في كل صف ليصبح هذا التحليل متاحاً."
+            ),
+            "units_absent": (
+                "محرّكات النمو — غير متاحة. يحتاج تقسيم النمو إلى سعر وكمية إلى "
+                "كمية مبيعة لكل عملية، وهي غير موجودة في الملف. أرقام الإيرادات "
+                "غير متأثرة — يبيّن التقرير مقدار تغيّر الإيرادات، لكن لا يبيّن "
+                "ما جاء منه من السعر وما جاء من الكمية. أضِف الكمية المبيعة إلى "
+                "ملف التصدير ليصبح هذا التحليل متاحاً."
+            ),
+            "decomposition_not_additive": (
+                "محرّكات النمو — محجوبة. حُسب أثر السعر وأثر الكمية، لكن مجموعهما "
+                "لا يساوي إجمالي تغيّر الإيرادات. وبدلاً من عرض تقسيم لا يتوازن، "
+                "حُجب. أرقام الإيرادات غير متأثرة وتبقى صحيحة. وغالباً ما يعني "
+                "ذلك أن الكميات والإيرادات في الملف مقيسة على مجموعتين مختلفتين "
+                "من الصفوف."
+            ),
+            "transaction_identifier_absent": (
+                "حجم سلة الشراء — غير متاح. لا يحتوي ملفك على رقم فاتورة أو "
+                "إيصال، فلا توجد طريقة لمعرفة أي الصفوف تنتمي إلى البيع نفسه. "
+                "وعدّ الصفوف بدلاً من ذلك سيضخّم حجم السلة في كل بيع يمتد على "
+                "عدة أسطر. وما عدا ذلك في التقرير غير متأثر. صدِّر الملف مع رقم "
+                "الإيصال ليصبح هذا التحليل متاحاً."
+            ),
+            "incomplete_transaction_identifiers": (
+                "حجم سلة الشراء — غير متاح. بعض الصفوف تحمل رقم إيصال وبعضها لا "
+                "يحمله. وحجم السلة المحسوب من الصفوف التي تحمله يوصف جزءاً من "
+                "مبيعاتك ويُعرض كأنه يوصفها كلها. وما عدا ذلك في التقرير غير "
+                "متأثر. صدِّر الملف مع رقم إيصال في كل صف ليصبح هذا التحليل "
+                "متاحاً."
+            ),
+        },
+    },
+    "result": {},
+}
+
+
+def refusal_message(reason: str, *, context: str, language: str) -> str:
+    """Return the customer message for one refusal reason at one tier.
+
+    Unknown reason codes, tiers, and languages raise instead of falling back to
+    internal identifiers or wording from the wrong refusal context.
+    """
+    return REFUSAL_WORDING[context][language][reason]
+
+
 # What each governed section is called. The page shows it as a heading, the printed
 # report as the heading a page break lands before, and the workbook as the title of the
 # chart drawn on that section's sheet -- which is also what makes that chart accessible:

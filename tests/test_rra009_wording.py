@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from khepri.rra.analysis.growth import GOVERNED_METRICS
+from khepri.rra.bundle import GOVERNED_SECTION_REASONS
 from khepri.rra.facts import (
     METRIC_AVERAGE_ORDER_VALUE,
     METRIC_AVERAGE_SELLING_PRICE,
@@ -31,6 +32,7 @@ _FACT_METRICS = (
     METRIC_RETURNS,
 )
 _GOVERNED_METRIC_CODES = frozenset(_FACT_METRICS) | frozenset(GOVERNED_METRICS)
+_SECTION_REFUSAL_CODES = frozenset(GOVERNED_SECTION_REASONS)
 
 
 def test_metric_wording_covers_every_governed_metric_in_every_language() -> None:
@@ -47,3 +49,33 @@ def test_metric_business_name_returns_reviewed_copy() -> None:
 def test_metric_business_name_refuses_an_unknown_code() -> None:
     with pytest.raises(KeyError):
         wording.metric_business_name("not_a_governed_metric", LANGUAGE_ENGLISH)
+
+
+def test_section_refusal_universe_is_eight_codes() -> None:
+    assert len(_SECTION_REFUSAL_CODES) == 8
+
+
+def test_refusal_wording_section_tier_covers_every_code_in_every_language() -> None:
+    for language in REQUIRED_LANGUAGES:
+        assert set(wording.REFUSAL_WORDING["section"][language]) == (
+            _SECTION_REFUSAL_CODES
+        )
+
+
+def test_refusal_message_states_the_rest_of_report_is_unaffected() -> None:
+    message = wording.refusal_message(
+        "prior_window_absent",
+        context="section",
+        language=LANGUAGE_ENGLISH,
+    )
+
+    assert "unaffected" in message.lower()
+
+
+def test_refusal_message_raises_on_unknown_code() -> None:
+    with pytest.raises(KeyError):
+        wording.refusal_message(
+            "not_a_code",
+            context="section",
+            language=LANGUAGE_ENGLISH,
+        )
