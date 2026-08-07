@@ -454,10 +454,21 @@ def test_no_internal_field_reaches_a_customer_surface() -> None:
     easy to leave behind -- the leak check reads visible text and would never have
     caught either.
     """
-    surface = _surface()
+    bundle = _bundle(ROWS[:2])
+    surface = HtmlReportRenderer().render_html(bundle)
     for language in REQUIRED_LANGUAGES:
-        assert "data-narrative-state" not in surface.documents[language], language
-        assert "data-narrative-state" not in surface.evidence[language], language
+        for document in (surface.documents[language], surface.evidence[language]):
+            assert "data-narrative-state" not in document, language
+            # The field name, not the value: `narrative_state` can be `refused`,
+            # which is also the CSS class a refused section's prose carries.
+            assert "narrative_state" not in document, language
+            # `section.state` is Internal too, and this bundle carries both a
+            # present and a refused section -- so `refused` reaching either
+            # document would be the leak, and `present` likewise.
+            for state in ("present", "refused"):
+                assert f"<code>{state}</code>" not in document, (state, language)
+    # And the refusal is still evidenced: the reason code is Audit-tier and stays.
+    assert "prior_window_absent" in surface.evidence[LANGUAGE_ENGLISH]
 
 
 def test_the_governed_disclosure_survives_verbatim() -> None:

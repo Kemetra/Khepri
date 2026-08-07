@@ -355,14 +355,19 @@ def test_both_readers_are_told_the_same_thing_about_the_commentary() -> None:
         assert bundle.narrative_state == state
         for language, document in surface.documents.items():
             assert bundle.disclosure(language) in document
-            # `narrative_state` is tier I -- Internal -- under RRA-009, so it
-            # reaches no customer surface: it says whether a provider produced
-            # prose, which means something only to someone operating Khepri. The
-            # governed disclosure stays; the operational attribute beside it does
-            # not, and the state is still readable as a provenance field where an
-            # auditor looks for it.
+            # `narrative_state` is tier I -- Internal -- under RRA-009, which
+            # renders an Internal field "on no customer surface, including the
+            # audit region". So it is absent from *both* documents rather than
+            # relocated: Internal is not a quieter Audit. The governed disclosure
+            # prose stays; the operational attribute beside it does not.
+            #
+            # Asserted on the attribute and on a provenance row rather than on the
+            # bare state string. `narrative_state` takes the value `refused`, which
+            # is also the CSS class on a refused section's prose -- a substring
+            # search reports that legitimate class as a leak.
             assert "data-narrative-state" not in document, language
-            assert state in surface.evidence[language], (state, language)
+            assert "narrative_state" not in document, language
+            assert "narrative_state" not in surface.evidence[language], language
 
 
 def test_the_page_furniture_is_one_table_with_one_key_set() -> None:

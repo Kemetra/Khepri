@@ -415,13 +415,19 @@ def _audit_region(
     cells: tuple[FigureCell, ...],
     provenance: tuple[tuple[str, str], ...],
 ) -> dict[str, object]:
-    """Group every existing audit value without computing or filtering it."""
+    """Group every existing audit value without computing or filtering it.
+
+    `section.state` is not carried. It is tier I -- Internal -- and RRA-009 renders
+    an Internal field on no customer surface including the audit region, so handing
+    it to the evidence template would be handing a consumer a field it must
+    remember not to render. A refused section is identifiable here by carrying a
+    reason, which is the Audit-tier evidence an auditor actually joins on.
+    """
     return {
         "figures": list(cells),
         "sections": [
             {
                 "section_id": section.section_id,
-                "state": section.state,
                 "reason": section.reason,
             }
             for section in bundle.sections
@@ -536,14 +542,15 @@ def _provenance(
     entries = {**{name: str(value) for name, value in document.items()}}
     entries["bundle_id"] = bundle.bundle_id
     entries["html_surface_version"] = HTML_SURFACE_VERSION
-    # The narrative state, as a governed provenance field rather than as a `data-`
-    # attribute on the customer's disclosure. It is Internal under RRA-009 and so
-    # reaches no *business* surface -- but it is a real operational fact about how
-    # the report was produced, and the workbook already records it here
-    # (`excel.py:701`). Recording it identically means the three surfaces answer
-    # "was there prose?" the same way, and that removing the attribute relocated
-    # the field rather than dropping it.
-    entries["narrative_state"] = bundle.narrative_state
+    # `narrative_state` is deliberately absent, and an earlier revision of this
+    # function was wrong to add it. It is tier I -- Internal -- and RRA-009 renders
+    # an Internal field "on no customer surface, including the audit region", so
+    # there is nowhere on either document it may go. Internal is not a quieter
+    # Audit: an Audit field is relocated, an Internal one is not rendered.
+    #
+    # `excel.py:701` writes it to the workbook's provenance sheet. That is a
+    # pre-existing divergence from this classification rather than a precedent to
+    # copy, and it belongs to the Excel slice.
     entries.update(extra)
     return tuple(sorted(entries.items()))
 
