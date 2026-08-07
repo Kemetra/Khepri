@@ -159,6 +159,12 @@ they belong in no customer-facing catalog — including the audit appendix.
 > `incomplete_transaction_identifiers` appearing in both (see §D.1). The 20
 > integrity codes are an internal correctness mechanism.
 
+> **Superseded 2026-08-07:** the shipped catalogue is **15 messages over 13 distinct codes**
+> (8 section + 7 result); `dimension_absent` and `negative_base` were added in `#121`. See
+> `refusal-presentation.md` §D.1's dated note. `RRA-009.md` still states 13/11 and is
+> digest-pinned by `APP-016`, so correcting it needs a renewal package.
+
+
 Also Internal: source module paths, stage telemetry, lease identifiers, job ids,
 session ids, storage keys.
 

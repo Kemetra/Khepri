@@ -8,14 +8,44 @@
 
 **Tech Stack:** Python 3.13, Jinja2 (`StrictUndefined`, unconditional autoescape), pytest. No new dependencies.
 
-## Prerequisite
+## Status as of 2026-08-07, `main` @ `b84aad9`
 
-**Plan 1 tasks 2–4 must land before this plan's Task 5.** Only `METRIC_WORDING` (plan 1 Task 1) is merged, at `e1747d3`. This plan consumes two accessors that do not exist yet:
+**Tasks 1–5 are built and merged**, by `#121` (`feat: separate business reporting from audit evidence`). The prerequisite this section originally recorded is discharged: plan 1 Tasks 2–4 landed in the same PR, so `refusal_message`, `caveat_message`, and `caveat_prose` all exist.
+
+Built and verifiable on `main`:
+
+- `HtmlSurface.evidence: dict[str, str]` with its own key-set guard (`html.py:220-224`), and `EVIDENCE_TEMPLATE_NAME` at `:73`
+- `templates/_evidence.html.j2` and `templates/report.evidence.html.j2`
+- The `audit` context grouping, the business metric names on cells, and refusal/caveat prose in the business body
+- `tests/test_rra009_business_audit_split.py` — **54 tests pass** together with `test_rra009_wording.py`
+
+**Tasks 6 and 7 remain, and are the executable work left in this plan:**
+
+| Outstanding | Evidence on `main` |
+|---|---|
+| Task 6 — restructure the business figure table | `report.html.j2:61-65` still renders the six identifier columns (`chrome.metric`, `chrome.kind`, `chrome.unit`, `chrome.citation`) |
+| Task 6 — remove the tooling hooks | `grep -c data-figure-id report.html.j2` returns **2** |
+| Task 6 — add the colophon and report reference | no `colophon` or `report_reference` in the template |
+| Task 7 — the PDF appendix | no `{% block appendix %}` in either template; `grep -n appendix` returns nothing |
+
+**Task 8 (test migration) is partly done** — `#121` updated `test_rra006_html_sections.py`, `test_rra006_html_surface.py`, `test_rra006_pdf_surface.py`, and `test_rra006_bundle_section_caveats.py`. Re-inventory before running it; Task 6's table restructure will break assertions the current suite still makes about the six-column table.
+
+**One correction to this plan's Gap 2 analysis.** It assumed every `<result>:<reason>` composite is result-tier. The shipped `caveat_prose` (`wording.py:595-607`) also handles a composite whose reason is a *section* reason by routing it to the section tier, and `_result_business_name` (`:610-616`) strips the `.mode` suffix so a mode-qualified identity cannot reach a reader — which this plan's Task 5 note would have allowed.
+
+**The result-refusal universe is 7 codes, not 5** (`dimension_absent`, `negative_base` were added), so the catalogue is 15 messages over 13 distinct codes rather than 13 over 11.
+
+**Arabic status:** every placeholder is filled, but by an agent rather than the owner. Owner review remains outstanding — see the corresponding note in the vocabulary plan.
+
+---
+
+## Prerequisite (discharged — retained for the record)
+
+**Plan 1 tasks 2–4 had to land before this plan's Task 5.** They did, in `#121`, alongside Tasks 1–5 here. This plan consumes:
 
 - `wording.refusal_message(reason: str, *, context: str, language: str) -> str` — plan 1 Tasks 2 and 3
 - `wording.caveat_message(code: str, language: str) -> str` — plan 1 Task 4
 
-Tasks 1–4 and 7–8 of this plan do not depend on them and may proceed in parallel with plan 1. **Do not re-define those tables here** — a second definition is a second place for the vocabulary to disagree.
+**Do not re-define those tables here** — a second definition is a second place for the vocabulary to disagree. That constraint still binds Tasks 6–7.
 
 ## Two vocabulary gaps found while verifying this plan, which change its scope
 

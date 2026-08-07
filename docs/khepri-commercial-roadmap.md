@@ -255,6 +255,18 @@ sample still exists. Reviving it needs no approval, only a decision.
 
 ## Phase 1 — Create a business-first reporting layer with separately accessible governed audit evidence
 
+> **Progress note added 2026-08-07 (`main` @ `b84aad9`).** This phase is under way. `RRA-009`
+> is `approved` (APP-016, 2026-08-06) and three implementation plans exist under
+> `docs/superpowers/plans/2026-08-07-rra009-*`: the vocabulary layer, the HTML/PDF split, and the
+> Excel split. The vocabulary layer and most of the HTML/PDF split are merged (`#117`, `#118`,
+> `#121`); the business figure table, the colophon, the PDF appendix, and the whole Excel
+> restructure remain. Each plan carries a dated status block with the specifics.
+>
+> The phase text below is left as drafted on 2026-08-04 rather than rewritten, for the reason
+> the "Authorized now" section already gives: a dated advisory that is edited to describe a later
+> state destroys the record of what was believed when it was written. Read the plans for current
+> status; read this for the reasoning that produced them.
+
 **Why before tenancy.** It is the cheapest *code* phase, needs no schema change, and it builds the
 artifact the golden sample already mocks. Doing it before tenancy means the deliverable is sellable
 before the expensive retention and identity work is committed.
