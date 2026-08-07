@@ -79,6 +79,26 @@ product's defensibility. Replacing pseudonymity with real accounts is a specific
 under `RCA` that must preserve every one of them, with tests, and it is not discharged by this
 decision.
 
+### 2a. The implementation-evidence requirement is carried forward, not dropped
+
+`KHEPRI-DEC-003` gates application implementation on four conditions, the fourth of which is that
+"the implementation slice links its specification and relevant reference assessments." A
+repository-wide search finds that requirement stated in `KHEPRI-DEC-003` and in `RRA-007` and
+nowhere else, so superseding `KHEPRI-DEC-003` without restating it would silently remove it for
+every future slice — which §3 claims this decision does not do.
+
+**The requirement is therefore restated here, binding `RCA` as it bound `RRA`:**
+
+An implementation slice under `RCA` may begin only after this decision is accepted and `RCA` is
+`active`; the relevant `RCA` specification is approved; a separately approved architecture decision
+has settled runtime and provider selection; and **the slice links its specification and the
+reference assessments relevant to it.**
+
+The registry has no mechanism for superseding a decision "in scope only" — a `superseded` decision
+is superseded whole. That is precisely why every obligation worth keeping has to be restated in the
+successor rather than left to be inherited, and it is why §2's table enumerates each control instead
+of describing the boundary in prose.
+
 ### 3. What this decision does not authorize
 
 - **No product code.** No commercial identity, billing, signup, workspace, or tenancy

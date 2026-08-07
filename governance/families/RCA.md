@@ -27,11 +27,11 @@
 - Any weakening of the privacy, isolation, validation, reconciliation, provenance, language parity,
   or deletion controls that `RRA-001`, `RRA-002`, and `RRA-006` fix. Commercialization does not
   relax them, and no `RCA` specification may propose that it does.
-- Analytical capabilities owned by `Kemetra/Seshat-BI`, including statistical inference Khepri does
-  not implement. That boundary is governed separately and is not settled by this charter.
+- Internal report-job queueing and report-job reliability, which `RRA.md` owns. This family's
+  queueing boundary is the customer-facing kind only.
 - Product implementation while this family remains proposed or its specifications remain draft.
-- Runtime, provider, or deployment selection, which `KHEPRI-DEC-008` governs and which remains a
-  separate gate.
+- Runtime, provider, and deployment selection, which a separately approved architecture decision
+  governs and which remains a distinct gate from anything this charter authorizes.
 
 The family is proposed. Its authoritative lifecycle state and approval evidence are recorded in
 `governance/registries/families.yaml`.

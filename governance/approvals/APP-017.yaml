@@ -22,16 +22,16 @@ exclusions:
   - Any change to the Owns section of governance/families/RRA.md
   - Any claim that the withdrawn commercial-validation gate was satisfied
   - Any claim that a human authority approved this package, absent that authority's evidence
-manifest_digest: sha256:e8050357212126860b1c91bde0f6e81f740e2ffa8783ebe6bc016d0c625a09b4
+manifest_digest: sha256:94d7247b5042a48fd7f625dd903f72deb6acce658f0429e0b4a0d8d85b201fe4
 artifacts:
   - id: KHEPRI-DEC-014
     document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md
-    document_sha256: sha256:70532687d515be09d7ec49a97093521cbaf264c3cf35938204f2efe68d322303
+    document_sha256: sha256:78a674744800dc3381e289cb46f2bdde16bde95a553ce1d17267794063b0df14
     from_state: proposed
     to_state: accepted
   - id: RCA
     document: governance/families/RCA.md
-    document_sha256: sha256:9ef5859d9026c59215c0ecdab99cfee2dd5e128096175188b8f44d5c1841c613
+    document_sha256: sha256:011d8950a297e2dd1d739d034ace60146ec49b50e909ef22e660d27b4fc23c69
     from_state: proposed
     to_state: active
   - id: KHEPRI-DEC-003

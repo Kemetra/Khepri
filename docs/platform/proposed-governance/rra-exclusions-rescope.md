@@ -39,8 +39,8 @@ No line in `## Owns` changes. `RRA` keeps every responsibility it has.
 > - Responsibilities of the `RCA — Retail Commercial Analysis` family: commercial authentication,
 >   user profiles, persistent customer workspaces, organizations, membership roles, billing,
 >   subscriptions, scheduling, public signup, agency portfolios, client switching, delegated access,
->   work queues, and white labeling. Those boundaries require separately approved specifications
->   under that family.
+>   customer-facing work queues, and white labeling. Those boundaries require separately approved
+>   specifications under that family.
 > - Forecasting, generic analysis, customer-authored formulas, and unsupported metrics. These are
 >   excluded from Khepri rather than allocated to another family.
 > - Runtime or provider selection before a separate architecture decision is accepted.
@@ -54,6 +54,7 @@ No line in `## Owns` changes. `RRA` keeps every responsibility it has.
 | Current | Replacement | Why |
 |---|---|---|
 | "Commercial authentication, … and public signup." + "Agency portfolios, … and white labeling." (two bullets, flat prohibitions) | One bullet naming `RCA` as the owner and requiring separately approved specifications | Removes the excluded-from-Khepri reading; adopts `FND.md`'s phrasing |
+| "…delegated access, work queues, and white labeling." | "…delegated access, **customer-facing** work queues, and white labeling." | **Qualification added, not a re-scope.** `KHEPRI-DEC-012:104-108` records that `RRA.md:14`'s bare `work queues` clause means *customer-facing* queues only: the internal report-job queue is owned by `RRA.md:8` ("Report-job reliability") and implemented in `jobs.py` and `job_persistence.py` under that authority. That decision states plainly that "reading it platform-wide would make shipped, approved code unauthorized." Carrying the clause unqualified into a bullet that assigns it to `RCA` would do exactly that, so the qualification `KHEPRI-DEC-012` already established is made explicit here. |
 | "Forecasting, generic analysis, customer-authored formulas, and unsupported metrics." | Same list, plus "excluded from Khepri rather than allocated to another family" | Prevents a later reader assuming `RCA` inherited them |
 | "Runtime or provider selection before a separate architecture decision is accepted." | Unchanged | `KHEPRI-DEC-008` still governs it and is still `proposed` |
 | "Product implementation while this family remains proposed or its specifications remain draft." | "Product implementation while this family's specifications remain draft." | The family is active; the "remains proposed" clause is dead text |
