@@ -665,6 +665,76 @@ def _result_business_name(result: str, language: str) -> str:
 # chart drawn on that section's sheet -- which is also what makes that chart accessible:
 # an embedded object with no programmatic text tells a screen reader nothing about which
 # analysis it belongs to.
+# What each business worksheet is called. Unlike a section sheet, whose name is an
+# address, a business sheet name is text a customer reads -- RRA-009 requires
+# business worksheets be "named by business meaning rather than from a section
+# identifier" -- so it is governed wording and lives here.
+#
+# The 21-character budget is not a style preference. Excel caps a name at 31 and
+# XlsxWriter raises at 32; both language suffixes are 10 characters. A name over
+# budget raises during a customer's render, so it is asserted below rather than
+# reviewed. `Discounts and Returns` is exactly 21 and has no headroom.
+BUSINESS_SHEET_NAMES: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "executive_summary": "Executive Summary",
+        "sales_performance": "Sales Performance",
+        "period_comparison": "Period Comparison",
+        "growth_drivers": "Growth Drivers",
+        "profitability": "Profitability",
+        "discounts_and_returns": "Discounts and Returns",
+        "branch_performance": "Branch Performance",
+        "basket": "Basket Analysis",
+    },
+    LANGUAGE_ARABIC: {
+        "executive_summary": "الملخص التنفيذي",
+        "sales_performance": "أداء المبيعات",
+        "period_comparison": "مقارنة الفترات",
+        "growth_drivers": "محركات النمو",
+        "profitability": "الربحية",
+        "discounts_and_returns": "الخصومات والمرتجعات",
+        "branch_performance": "أداء الفروع",
+        "basket": "تحليل سلة الشراء",
+    },
+}
+
+
+def _assert_business_sheet_names_complete() -> None:
+    """Every business worksheet named in every language, inside Excel's cap.
+
+    `excel_layout` is imported here rather than at module scope: it reads `facts`
+    and `growth`, while this module is imported by both surfaces, and hoisting the
+    import would widen this module's import graph for a guard that runs once.
+    """
+    from khepri.rra.rendering.excel_layout import (
+        BUSINESS_SHEETS,
+        MAX_SHEET_NAME_BUDGET,
+    )
+
+    expected = {sheet.key for sheet in BUSINESS_SHEETS}
+    for language, names in BUSINESS_SHEET_NAMES.items():
+        if set(names) != expected:
+            raise RuntimeError(
+                "every business worksheet needs a name in every language "
+                f"(language={language!r})"
+            )
+        if len(set(names.values())) != len(names):
+            # XlsxWriter refuses a duplicate name, and any name-based lookup would
+            # silently resolve to whichever sheet was written last.
+            raise RuntimeError(
+                f"business worksheet names must be distinct (language={language!r})"
+            )
+        for key, name in names.items():
+            if len(name) > MAX_SHEET_NAME_BUDGET:
+                raise RuntimeError(
+                    "business worksheet name exceeds the bilingual budget of "
+                    f"{MAX_SHEET_NAME_BUDGET} characters (language={language!r}, "
+                    f"sheet={key!r}, length={len(name)})"
+                )
+
+
+_assert_business_sheet_names_complete()
+
+
 SECTION_HEADINGS: dict[str, dict[str, str]] = {
     LANGUAGE_ENGLISH: {
         "overview": "Overview",
