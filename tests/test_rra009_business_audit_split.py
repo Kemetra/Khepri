@@ -47,6 +47,10 @@ def _context(language: str = LANGUAGE_ENGLISH) -> dict[str, object]:
     return build_context(bundle, language, build_cells(bundle, language))
 
 
+def _evidence(language: str = LANGUAGE_ENGLISH) -> str:
+    return _surface().evidence[language]
+
+
 def test_evidence_is_published_for_every_governed_language() -> None:
     surface = _surface()
 
@@ -172,3 +176,50 @@ def test_a_labelless_derived_metric_is_named_from_the_derived_table() -> None:
 @pytest.mark.parametrize(("metric", "expected"), _DERIVED_ARABIC_NAMES.items())
 def test_accepted_arabic_derived_metric_name(metric: str, expected: str) -> None:
     assert wording.business_metric_name(metric, LANGUAGE_ARABIC) == expected
+
+
+def test_evidence_page_carries_every_figure_identifier() -> None:
+    bundle = _bundle()
+    rendered = _evidence()
+
+    for figure in bundle.figures:
+        assert figure.figure_id in rendered, figure.figure_id
+
+
+def test_evidence_page_carries_every_citation_identifier() -> None:
+    bundle = _bundle()
+    rendered = _evidence()
+
+    for citation in {figure.citation_id for figure in bundle.figures}:
+        assert citation in rendered, citation
+
+
+def test_evidence_page_carries_the_raw_reason_code() -> None:
+    surface = _surface(ROWS[:2])
+
+    assert "prior_window_absent" in surface.evidence[LANGUAGE_ENGLISH]
+
+
+def test_evidence_page_carries_provenance() -> None:
+    rendered = _evidence()
+
+    assert "bundle_id" in rendered
+    assert "html_surface_version" in rendered
+
+
+def test_evidence_page_renders_in_both_languages() -> None:
+    for language in REQUIRED_LANGUAGES:
+        assert _evidence(language).strip()
+
+
+def test_evidence_page_escapes_customer_labels() -> None:
+    bundle = _bundle()
+    labelled = next(figure for figure in bundle.figures if figure.label is not None)
+    hostile = replace(labelled, label="<script>alert(1)</script>")
+    figures = tuple(hostile if figure is labelled else figure for figure in bundle.figures)
+    rendered = HtmlReportRenderer().render_html(
+        replace(bundle, figures=figures)
+    ).evidence[LANGUAGE_ENGLISH]
+
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert "<script>alert(1)</script>" not in rendered

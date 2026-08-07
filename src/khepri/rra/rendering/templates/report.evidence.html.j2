@@ -1,3 +1,4 @@
+{% from "_evidence.html.j2" import evidence %}
 {#
   The Technical Evidence page: one document per governed language, carrying the
   identifiers the business report does not show.
@@ -21,6 +22,7 @@
 <p>{{ chrome.evidence_intro }}</p>
 </header>
 <main id="evidence">
+{{ evidence(audit, chrome) }}
 </main>
 </body>
 </html>

@@ -103,6 +103,12 @@ _CHROME: dict[str, dict[str, str]] = {
             "Every figure in this report, the identifiers it is filed under, and "
             "the facts it cites. Forward this page to an auditor."
         ),
+        "figure_reference": "Figure",
+        "section_states": "Section states",
+        "section_column": "Section",
+        "state_column": "State",
+        "reason_column": "Reason",
+        "commentary_citations": "Commentary citations",
         # Three tables read from `wording` rather than held here: section headings,
         # chart descriptions, and the wording for every governed code a chart label can
         # carry. Each is read by more than one surface -- the workbook titles its native
@@ -139,6 +145,12 @@ _CHROME: dict[str, dict[str, str]] = {
             "كل رقم في هذا التقرير، والمعرّفات المسجّل بها، والحقائق التي يُسند "
             "إليها. أرسِل هذه الصفحة إلى المراجع."
         ),
+        "figure_reference": "المعرّف",
+        "section_states": "حالات الأقسام",
+        "section_column": "القسم",
+        "state_column": "الحالة",
+        "reason_column": "السبب",
+        "commentary_citations": "إسنادات التعليق",
         "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
         "labels": LABEL_WORDING[LANGUAGE_ARABIC],
