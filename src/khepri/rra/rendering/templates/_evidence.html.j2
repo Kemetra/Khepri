@@ -1,0 +1,104 @@
+{#
+  The audit-evidence region, authored once for the standalone Technical Evidence
+  page and the printed report appendix. Every value remains autoescaped.
+
+  Each caveat keeps its raw audit code beside the localized customer explanation;
+  the code remains evidence and the prose makes that evidence readable.
+#}
+{% macro evidence(audit, chrome, caveat_prose) %}
+<section id="evidence-figures" aria-labelledby="evidence-figures-heading">
+<h2 id="evidence-figures-heading">{{ chrome.figures }}</h2>
+<div class="scroller">
+<table>
+<caption>{{ chrome.figures_caption }}</caption>
+<thead>
+<tr>
+<th scope="col">{{ chrome.figure_reference }}</th>
+<th scope="col">{{ chrome.label }}</th>
+<th scope="col">{{ chrome.metric }}</th>
+<th scope="col">{{ chrome.kind }}</th>
+<th scope="col">{{ chrome.unit }}</th>
+<th scope="col">{{ chrome.value }}</th>
+<th scope="col">{{ chrome.citation }}</th>
+</tr>
+</thead>
+<tbody>
+{% for cell in audit.figures %}
+<tr>
+<th scope="row"><code>{{ cell.figure_id }}</code></th>
+<td>{% if cell.label is none %}{{ chrome.total }}{% else %}{{ cell.label }}{% endif %}</td>
+<td><code>{{ cell.metric }}</code></td>
+<td><code>{{ cell.kind }}</code></td>
+<td><code>{{ cell.unit_kind }}</code></td>
+<td class="figure">{{ cell.text }}</td>
+<td><code>{{ cell.citation_id }}</code></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</section>
+<section id="evidence-sections" aria-labelledby="evidence-sections-heading">
+<h2 id="evidence-sections-heading">{{ chrome.section_states }}</h2>
+<table>
+<thead>
+<tr>
+<th scope="col">{{ chrome.section_column }}</th>
+<th scope="col">{{ chrome.state_column }}</th>
+<th scope="col">{{ chrome.reason_column }}</th>
+</tr>
+</thead>
+<tbody>
+{% for entry in audit.sections %}
+<tr>
+<th scope="row"><code>{{ entry.section_id }}</code></th>
+<td><code>{{ entry.state }}</code></td>
+<td>{% if entry.reason %}<code>{{ entry.reason }}</code>{% else %}{{ chrome.none }}{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</section>
+<section id="evidence-caveats" aria-labelledby="evidence-caveats-heading">
+<h2 id="evidence-caveats-heading">{{ chrome.caveats }}</h2>
+{% if audit.caveats %}
+<dl class="caveats">
+{% for caveat in audit.caveats %}
+<dt><code>{{ caveat.code }}</code></dt>
+<dd>{{ caveat_prose[caveat.code] }}</dd>
+{% endfor %}
+</dl>
+{% else %}
+<p>{{ chrome.none }}</p>
+{% endif %}
+</section>
+<section id="evidence-citations" aria-labelledby="evidence-citations-heading">
+<h2 id="evidence-citations-heading">{{ chrome.citations }}</h2>
+<ul class="citations">
+{% for citation in audit.citations %}
+<li id="citation-{{ citation }}"><code>{{ citation }}</code></li>
+{% endfor %}
+</ul>
+</section>
+{% if audit.passages %}
+<section id="evidence-commentary" aria-labelledby="evidence-commentary-heading">
+<h2 id="evidence-commentary-heading">{{ chrome.commentary_citations }}</h2>
+{% for passage in audit.passages %}
+<p><code>{{ passage.section_id }}</code>: {{ chrome.cites }}
+{% for cited in passage.cited_fact_ids %}
+<code>{{ cited }}</code>
+{% endfor %}
+</p>
+{% endfor %}
+</section>
+{% endif %}
+<section id="evidence-provenance" aria-labelledby="evidence-provenance-heading">
+<h2 id="evidence-provenance-heading">{{ chrome.provenance }}</h2>
+<dl class="provenance">
+{% for name, value in audit.provenance %}
+<dt><code>{{ name }}</code></dt>
+<dd><code>{{ value }}</code></dd>
+{% endfor %}
+</dl>
+</section>
+{% endmacro %}

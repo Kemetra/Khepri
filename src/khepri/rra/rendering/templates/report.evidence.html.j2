@@ -1,0 +1,28 @@
+{% from "_evidence.html.j2" import evidence %}
+{#
+  The Technical Evidence page: one document per governed language, carrying the
+  identifiers the business report does not show.
+
+  The body comes from the shared evidence partial used by both this page and the
+  printed appendix.
+#}
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ chrome.evidence_title }}</title>
+<style>
+{% include stylesheet %}
+</style>
+</head>
+<body>
+<header>
+<h1>{{ chrome.evidence_title }}</h1>
+<p>{{ chrome.evidence_intro }}</p>
+</header>
+<main id="evidence">
+{{ evidence(audit, chrome, caveat_prose) }}
+</main>
+</body>
+</html>

@@ -59,7 +59,10 @@ from khepri.rra.rendering.charts import ChartView, build_chart
 from khepri.rra.rendering.wording import (
     CHART_DESCRIPTIONS,
     LABEL_WORDING,
+    REFUSAL_WORDING,
     SECTION_HEADINGS,
+    business_metric_name,
+    caveat_prose,
 )
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
@@ -67,6 +70,7 @@ HTML_SURFACE_VERSION = "rra006.html.v1"
 TEMPLATE_PACKAGE = "khepri.rra.rendering"
 TEMPLATE_DIRECTORY = "templates"
 TEMPLATE_NAME = "report.html.j2"
+EVIDENCE_TEMPLATE_NAME = "report.evidence.html.j2"
 STYLESHEET_NAME = "report.css"
 
 # The page's own furniture, in both governed languages. Headings and column
@@ -96,12 +100,21 @@ _CHROME: dict[str, dict[str, str]] = {
         "none": "None",
         "cites": "Cites",
         "chart_not_drawn": "No chart",
-        # Three tables read from `wording` rather than held here: section headings,
-        # chart descriptions, and the wording for every governed code a chart label can
-        # carry. Each is read by more than one surface -- the workbook titles its native
-        # chart with the section heading and takes its alternative text from the
-        # description -- and every copy would be a place the surfaces could drift into
-        # naming the same thing differently.
+        "evidence_title": "Technical evidence",
+        "evidence_intro": (
+            "Every figure in this report, the identifiers it is filed under, and "
+            "the facts it cites. Forward this page to an auditor."
+        ),
+        "figure_reference": "Figure",
+        "section_states": "Section states",
+        "section_column": "Section",
+        "state_column": "State",
+        "reason_column": "Reason",
+        "commentary_citations": "Commentary citations",
+        "refusal_prose": REFUSAL_WORDING["section"][LANGUAGE_ENGLISH],
+        # Shared customer wording is read from `wording` rather than copied here.
+        # Every duplicate would be a place for surfaces or languages to drift into
+        # naming the same section, chart, label, or refusal differently.
         "sections": SECTION_HEADINGS[LANGUAGE_ENGLISH],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ENGLISH],
         "labels": LABEL_WORDING[LANGUAGE_ENGLISH],
@@ -127,6 +140,18 @@ _CHROME: dict[str, dict[str, str]] = {
         "none": "لا يوجد",
         "cites": "يُسند إلى",
         "chart_not_drawn": "لا يوجد رسم",
+        "evidence_title": "الأدلة التقنية",
+        "evidence_intro": (
+            "كل رقم في هذا التقرير، والمعرّفات المسجّل بها، والحقائق التي يُسند "
+            "إليها. أرسِل هذه الصفحة إلى المراجع."
+        ),
+        "figure_reference": "المعرّف",
+        "section_states": "حالات الأقسام",
+        "section_column": "القسم",
+        "state_column": "الحالة",
+        "reason_column": "السبب",
+        "commentary_citations": "إسنادات التعليق",
+        "refusal_prose": REFUSAL_WORDING["section"][LANGUAGE_ARABIC],
         "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
         "labels": LABEL_WORDING[LANGUAGE_ARABIC],
@@ -150,6 +175,7 @@ class FigureCell:
     figure_id: str
     citation_id: str
     metric: str
+    metric_name: str | None
     kind: str
     unit_kind: str
     section: str
@@ -177,21 +203,33 @@ class NarrativePassage:
 
 @dataclass(frozen=True, slots=True)
 class HtmlSurface:
-    """The rendered pages, beside the claim `bundle.reconcile` will judge.
+    """The rendered regions, beside the claim `bundle.reconcile` will judge.
 
     Both are returned together because they are derived from one pass over the
     bundle. A renderer that built the claim separately from the page could
     reconcile perfectly while shipping a page that says something else.
+
+    `evidence` is a sibling of `documents` rather than more keys inside it.
+    RRA-009 requires the audit region be carried as a distinct web page, and
+    `documents` publishes exactly the governed languages. Both regions are
+    generated for every report; delivery decides which copy a customer receives.
     """
 
     content: SurfaceContent
     documents: dict[str, str]
+    evidence: dict[str, str]
 
     def __post_init__(self) -> None:
-        if set(self.documents) != set(REQUIRED_LANGUAGES):
-            raise ValueError("An HTML surface publishes exactly the governed languages.")
-        for language, document in self.documents.items():
-            _require_text(document, f"documents[{language}]")
+        _require_governed_documents(self.documents, "documents")
+        _require_governed_documents(self.evidence, "evidence")
+
+
+def _require_governed_documents(documents: dict[str, str], name: str) -> None:
+    if set(documents) != set(REQUIRED_LANGUAGES):
+        message = f"An HTML surface publishes exactly the governed languages in {name}."
+        raise ValueError(message)
+    for language, document in documents.items():
+        _require_text(document, f"{name}[{language}]")
 
 
 class HtmlReportRenderer:
@@ -216,16 +254,30 @@ class HtmlReportRenderer:
         return self.render_html(bundle).content
 
     def render_html(self, bundle: ReportBundle) -> HtmlSurface:
-        """Render both documents, and the claim about what they present."""
+        """Render both regions, and the claim about what they present."""
         template = self._environment.get_template(TEMPLATE_NAME)
+        evidence_template = self._environment.get_template(EVIDENCE_TEMPLATE_NAME)
         cells = {language: build_cells(bundle, language) for language in REQUIRED_LANGUAGES}
+        contexts = {
+            language: build_context(bundle, language, cells[language])
+            for language in REQUIRED_LANGUAGES
+        }
         documents = {
-            language: template.render(build_context(bundle, language, cells[language]))
+            language: template.render(contexts[language])
+            for language in REQUIRED_LANGUAGES
+        }
+        evidence = {
+            language: evidence_template.render(contexts[language])
             for language in REQUIRED_LANGUAGES
         }
         return HtmlSurface(
-            content=build_content(bundle, cells, output_size_bytes=_document_bytes(documents)),
+            content=build_content(
+                bundle,
+                cells,
+                output_size_bytes=_document_bytes(documents) + _document_bytes(evidence),
+            ),
             documents=documents,
+            evidence=evidence,
         )
 
 
@@ -313,6 +365,7 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
         figure_id=figure.figure_id,
         citation_id=figure.citation_id,
         metric=figure.metric,
+        metric_name=business_metric_name(figure.metric, language),
         kind=figure.kind,
         unit_kind=figure.unit_kind,
         section=figure.section,
@@ -337,6 +390,33 @@ def _row_label(label: str | None, language: str) -> str | None:
     return _CHROME[language]["labels"][f"label.{label}"]
 
 
+def _audit_region(
+    bundle: ReportBundle,
+    language: str,
+    cells: tuple[FigureCell, ...],
+    provenance: tuple[tuple[str, str], ...],
+) -> dict[str, object]:
+    """Group every existing audit value without computing or filtering it."""
+    return {
+        "figures": list(cells),
+        "sections": [
+            {
+                "section_id": section.section_id,
+                "state": section.state,
+                "reason": section.reason,
+            }
+            for section in bundle.sections
+        ],
+        "caveats": [
+            {"code": caveat.code, "section": caveat.section}
+            for caveat in bundle.caveats
+        ],
+        "citations": sorted({cell.citation_id for cell in cells}),
+        "passages": list(_passages(bundle.narrative, language)),
+        "provenance": provenance,
+    }
+
+
 def build_context(
     bundle: ReportBundle,
     language: str,
@@ -356,6 +436,7 @@ def build_context(
     reason the table is: everything in it has to be a governed version, a digest,
     or a count, and never anything derived from customer data.
     """
+    provenance = _provenance(bundle, extra_provenance or {})
     return {
         "language": language,
         "direction": LANGUAGE_DIRECTION[language],
@@ -368,12 +449,17 @@ def build_context(
         # whole dataset is qualified, and dropping it would leave `build_content`
         # claiming a caveat the page never showed.
         "caveats": [caveat for caveat in bundle.caveats if caveat.section is None],
+        "caveat_prose": {
+            caveat.code: caveat_prose(caveat.code, language)
+            for caveat in bundle.caveats
+        },
         "sections": _section_views(bundle, language, cells),
         "refused_state": SECTION_REFUSED,
         "cells": list(cells),
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
-        "provenance": _provenance(bundle, extra_provenance or {}),
+        "provenance": provenance,
+        "audit": _audit_region(bundle, language, cells, provenance),
     }
 
 

@@ -38,6 +38,7 @@ from khepri.rra.rendering import (
 )
 from khepri.rra.rendering import html as html_module
 from khepri.rra.rendering.html import STYLESHEET_NAME, TEMPLATE_NAME
+from khepri.rra.rendering.wording import caveat_prose
 
 ADAPTER_VERSION = "test.adapter.v1"
 
@@ -189,9 +190,15 @@ def test_the_web_surface_reports_the_size_of_the_documents_it_rendered() -> None
     # RRA-007 records output size per stage, and the size is only knowable here,
     # where the payload is. Checked against the documents themselves: a surface
     # reporting a number it did not measure is caught by this and nothing else.
+    # RRA-009 makes the business and evidence regions one generated web surface,
+    # so the measurement covers both document maps.
     surface = HtmlReportRenderer().render_html(ReportBundle.of(package()))
 
-    rendered = sum(len(document.encode("utf-8")) for document in surface.documents.values())
+    rendered = sum(
+        len(document.encode("utf-8"))
+        for region in (surface.documents, surface.evidence)
+        for document in region.values()
+    )
     assert surface.content.output_size_bytes == rendered
     assert rendered > 0
 
@@ -307,7 +314,7 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
             assert entry.renderings[language] in document
             assert entry.citation_id in document
         for caveat in bundle.caveats:
-            assert caveat.code in document
+            assert caveat_prose(caveat.code, language) in document
         # The governed disclosure, in full. A shortened or reworded one is not
         # the disclosure, and `bundle.reconcile` refuses it for the same reason.
         assert bundle.disclosure(language) in document

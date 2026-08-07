@@ -49,6 +49,7 @@ from khepri.rra.rendering.pdf import (
     PRINT_STYLESHEET_NAME,
     PdfSurface,
 )
+from khepri.rra.rendering.wording import caveat_prose
 
 ADAPTER_VERSION = "test.adapter.v1"
 
@@ -532,7 +533,7 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
             assert entry.renderings[language] in document
             assert entry.citation_id in document
         for caveat in bundle.caveats:
-            assert caveat.code in document
+            assert caveat_prose(caveat.code, language) in document
         assert bundle.disclosure(language) in document
 
 

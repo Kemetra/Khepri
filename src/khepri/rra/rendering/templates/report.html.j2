@@ -49,7 +49,7 @@
 <section id="{{ section.section_id }}" aria-labelledby="{{ section.section_id }}-heading">
 <h2 id="{{ section.section_id }}-heading">{{ chrome.sections[section.section_id] }}</h2>
 {% if section.state == refused_state %}
-<p class="refused" data-reason="{{ section.reason }}"><code>{{ section.reason }}</code></p>
+<p class="refused">{{ chrome.refusal_prose[section.reason] }}</p>
 {% else %}
 {% if section.chart %}{{ chart(section.chart, section.section_id, chrome) }}{% endif %}
 <div class="scroller">
@@ -83,7 +83,7 @@
 {% if section.caveats %}
 <ul class="caveats caveats--section">
 {% for code in section.caveats %}
-<li><code>{{ code }}</code></li>
+<li>{{ caveat_prose[code] }}</li>
 {% endfor %}
 </ul>
 {% endif %}
@@ -94,7 +94,7 @@
 {% if caveats %}
 <ul class="caveats">
 {% for caveat in caveats %}
-<li><code>{{ caveat.code }}</code></li>
+<li>{{ caveat_prose[caveat.code] }}</li>
 {% endfor %}
 </ul>
 {% else %}

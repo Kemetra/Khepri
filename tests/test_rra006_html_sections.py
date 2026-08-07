@@ -31,6 +31,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering.html import HtmlReportRenderer
+from khepri.rra.rendering.wording import caveat_prose, refusal_message
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 5)
@@ -133,7 +134,12 @@ def test_a_refused_section_renders_its_governed_reason() -> None:
     rendered = page(rows=ROWS[:2])
     assert f'<section id="{SECTION_COMPARISON}"' in rendered
     assert 'class="refused"' in rendered
-    assert "prior_window_absent" in rendered
+    assert "prior_window_absent" not in rendered
+    assert refusal_message(
+        "prior_window_absent",
+        context="section",
+        language=LANGUAGE_ENGLISH,
+    ) in rendered
 
 
 def test_a_drawable_section_renders_a_real_svg_element() -> None:
@@ -242,7 +248,9 @@ def test_an_undrawable_chart_says_so_inside_its_own_section() -> None:
     The caveat carries the distinction, and it is rendered under the section it
     qualifies rather than under the report's own caveats heading.
     """
-    assert CAVEAT_CHART_NOT_DRAWN in section_block(page(), undrawable_section())
+    assert caveat_prose(CAVEAT_CHART_NOT_DRAWN, LANGUAGE_ENGLISH) in section_block(
+        page(), undrawable_section()
+    )
 
 
 def test_both_languages_render_every_section() -> None:
