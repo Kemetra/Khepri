@@ -25,7 +25,6 @@ from khepri.rra.bundle import (
     CitedFigure,
     ReportBundle,
     Section,
-    StatedCaveat,
     StatedFigure,
     SurfaceContent,
     SurfaceLanguage,
@@ -41,7 +40,9 @@ from khepri.rra.rendering.excel import (
     EXCEL_SURFACE_VERSION,
     GOVERNED_LABELS,
     ExcelSurfaceRenderer,
+    _business_name,
 )
+from khepri.rra.rendering.wording import caveat_prose
 from tests import rra_workbooks
 
 # The size the stand-in web and PDF renderers report. They write no file, so
@@ -172,59 +173,78 @@ def _presented_language(
     appear anywhere on the sheet?" would answer yes for a dropped row whenever
     some other cell happened to carry the same number.
     """
-    name = excel._REPORT_SHEET[language]
+    # The audit trail, which is where RRA-009 put the identifier table this helper
+    # reads. It is the same table under the same headers, moved off the business
+    # sheets rather than rebuilt, so this reader is repointed and not rewritten.
+    name = excel._AUDIT_SHEET[language]
     rows = workbook.cells[name]
     headers = list(excel._FIGURE_COLUMNS[language])
-    caveats_at = rows.index([excel._CAVEATS_HEADING[language]])
     # The section comes from its own cell, never from a constant. Hardcoding the
     # overview here would have made every figure the four RRA-008 families place
     # read back as an overview figure, and this helper exists precisely so that a
     # workbook which says something other than the claim is caught.
     section_at = headers.index(excel._FIGURE_COLUMNS[language][2])
-    # Figures now live on the per-section sheets, so they are gathered by walking
-    # every sheet the index declares -- in the index's order, which is the governed
-    # section order. Reading only the index would rebuild a claim of no figures at
-    # all, and the surface would look like it published an empty report.
+    # One table now, not one per section. RRA-009 moved every identifier onto the
+    # audit trail, so the figures are read from that single block in the order it
+    # writes them -- which is `bundle.figures` order, the same order the claim
+    # states them in.
+    figures_at = rows.index(headers)
     stated = tuple(
         StatedFigure(figure_id=row[0], text=row[-1], section=row[section_at])
-        for section_id in _declared_sections(workbook, language)
-        for row in _section_figure_rows(workbook, language, section_id, headers)
+        for row in rows[figures_at + 1 :]
+        if row
     )
     return SurfaceLanguage(
         language=language,
         direction="rtl" if 'rightToLeft="1"' in workbook.sheets[name] else "ltr",
-        # Read from the index's sections block, not derived from the figure rows. A
-        # refused section has no figure to derive from, so deriving would silently
-        # drop it -- and the workbook would then present four sections while claiming
-        # five, which reconciliation cannot see because it never opens the file.
+        # Read from the audit trail's sections block, not derived from the figure
+        # rows. A refused section has no figure to derive from, so deriving would
+        # silently drop it -- and the workbook would then present four sections
+        # while claiming five, which reconciliation cannot see because it never
+        # opens the file.
         sections=_declared_sections(workbook, language),
         stated=stated,
-        # The sheet names the section a scoped caveat qualifies in the cell beside
-        # the code, so both are read back from the sheet and never from the bundle.
-        # A parser that ignored the second cell would rebuild every caveat as
-        # report-level and pass a workbook that told a reader the whole dataset was
-        # qualified by one analysis.
-        caveats=tuple(
-            StatedCaveat(
-                code=row[0],
-                section=row[1] if len(row) > 1 and row[1] else None,
-            )
-            for row in rows[caveats_at + 1 :]
-        ),
-        disclosure=next(
-            row[1] for row in rows if row[:1] == [excel._DISCLOSURE_HEADING[language]]
-        ),
+        # Empty, and deliberately so: this helper reads the sheets alone, and after
+        # RRA-009 the sheets no longer carry caveat *codes*. They carry customer
+        # prose on the limitations sheet, and prose cannot be parsed back into a
+        # code -- the mapping is one-way by design, and a result-tier refusal's
+        # message is composed from a figure's own identity.
+        #
+        # So the caller compares everything the file can still prove and asserts the
+        # caveats separately. `test_rra009_excel_split.py`'s
+        # `test_the_limitations_sheet_states_caveats_as_prose` is what holds that
+        # every caveat reaches the workbook.
+        caveats=(),
+        disclosure=_presented_disclosure(workbook, language),
     )
+
+
+def _presented_disclosure(
+    workbook: rra_workbooks.ReadWorkbook,
+    language: str,
+) -> str:
+    """The governed disclosure, read off the sheet that carries it."""
+    for rows in workbook.cells.values():
+        for row in rows:
+            if row[:1] == [excel._DISCLOSURE_HEADING[language]] and len(row) > 1:
+                return row[1]
+    return ""
 
 
 def _declared_sections(
     workbook: rra_workbooks.ReadWorkbook,
     language: str,
 ) -> tuple[str, ...]:
-    """The sections the index sheet names, in the order it names them."""
-    rows = workbook.cells[excel._REPORT_SHEET[language]]
-    start = rows.index(list(excel._SECTION_COLUMNS[language])) + 1
-    end = rows.index([excel._CAVEATS_HEADING[language]])
+    """The sections the audit trail names, in the order it names them.
+
+    The section table moved to the audit trail with RRA-009 and lost its `state`
+    column there -- `state` is Internal and reaches no customer surface -- so the
+    columns are `_AUDIT_SECTION_COLUMNS` and the block ends at the figures heading
+    rather than at the caveats one.
+    """
+    rows = workbook.cells[excel._AUDIT_SHEET[language]]
+    start = rows.index(list(excel._AUDIT_SECTION_COLUMNS[language])) + 1
+    end = rows.index([excel._FIGURES_HEADING[language]])
     return tuple(row[0] for row in rows[start:end])
 
 
@@ -313,8 +333,23 @@ def test_the_workbook_on_disk_presents_exactly_what_the_renderer_claims(tmp_path
     bundle = ReportBundle.of(package())
 
     content, workbook = rendered(bundle, tmp_path)
+    surface = presented(workbook)
 
-    assert presented(workbook) == content
+    # Compared field by field rather than whole. This test's purpose is unchanged --
+    # a renderer that returned a flawless claim and wrote an empty workbook must
+    # fail here -- but RRA-009 moved caveats onto the limitations sheet as customer
+    # prose, and prose cannot be parsed back into the codes a claim carries. Every
+    # other field is still compared exactly, and the caveats are asserted as prose
+    # by `test_both_languages_carry_the_same_figures_and_caveats`.
+    assert surface.bundle_id == content.bundle_id
+    assert surface.output_size_bytes == content.output_size_bytes
+    for read, claimed in zip(surface.languages, content.languages, strict=True):
+        assert read.language == claimed.language
+        assert read.direction == claimed.direction
+        assert read.sections == claimed.sections
+        assert read.stated == claimed.stated
+        assert read.disclosure == claimed.disclosure
+
     reconcile(content, bundle=bundle)
 
 
@@ -460,6 +495,20 @@ def _allowed_text(bundle: ReportBundle) -> set[str]:
         allowed |= set(figure.renderings.values())
         if figure.label is not None:
             allowed.add(figure.label)
+    # A business row's name is *composed* rather than looked up: governed wording for
+    # the measure and its kind, joined to the row's own label, which is bundle
+    # content. RRA-009 requires that composition -- a bucket emits a value and a
+    # row-count figure carrying the same metric and label, so a name that dropped
+    # either half would list two rows a reader cannot tell apart.
+    #
+    # Enumerating the composed forms here rather than widening the check keeps the
+    # guard's teeth: every part still has to come from the bundle or from governed
+    # wording, and a name assembled from anything else still fails.
+    allowed |= {
+        _business_name(figure, language)
+        for figure in bundle.figures
+        for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
+    }
     return allowed
 
 
@@ -474,11 +523,44 @@ def test_both_languages_carry_the_same_figures_and_caveats(tmp_path: Path) -> No
 
     english, arabic = surface.languages
     assert english.shown == arabic.shown
-    assert set(english.caveats) == set(arabic.caveats) == set(bundle.caveats)
-    assert bundle.caveats
     assert english.disclosure == bundle.disclosure(LANGUAGE_ENGLISH)
     assert arabic.disclosure == bundle.disclosure(LANGUAGE_ARABIC)
-    assert content == surface
+
+    # Caveat *parity* is still asserted, on the prose the workbook now carries
+    # instead of on the codes it used to. RRA-009 moved caveats to the limitations
+    # sheet as customer prose, so a code cannot be read back out of the file -- but
+    # the property this test defends is that neither language is missing one, and
+    # prose proves that just as well.
+    assert bundle.caveats
+    strings = _workbook_strings(workbook)
+    for caveat in bundle.caveats:
+        for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+            assert caveat_prose(caveat.code, language) in strings, (
+                caveat.code,
+                language,
+            )
+
+    # The claim carries the codes; the reconstruction from the file cannot. Compared
+    # field by field so the parts the file *does* prove are still compared exactly.
+    assert content.bundle_id == surface.bundle_id
+    assert content.output_size_bytes == surface.output_size_bytes
+    for claimed, read in zip(content.languages, surface.languages, strict=True):
+        assert claimed.language == read.language
+        assert claimed.direction == read.direction
+        assert claimed.sections == read.sections
+        assert claimed.stated == read.stated
+        assert claimed.disclosure == read.disclosure
+
+
+def _workbook_strings(workbook: rra_workbooks.ReadWorkbook) -> set[str]:
+    """Every text cell in the workbook, whichever sheet holds it."""
+    return {
+        cell
+        for rows in workbook.cells.values()
+        for row in rows
+        for cell in row
+        if cell
+    }
 
 
 def test_the_arabic_sheets_are_declared_right_to_left(tmp_path: Path) -> None:
@@ -486,7 +568,7 @@ def test_the_arabic_sheets_are_declared_right_to_left(tmp_path: Path) -> None:
 
     _, workbook = rendered(bundle, tmp_path)
 
-    for sheet in (excel._REPORT_SHEET, excel._CITATION_SHEET):
+    for sheet in (excel._AUDIT_SHEET, excel._LIMITATIONS_SHEET, excel._CITATION_SHEET):
         assert 'rightToLeft="1"' in workbook.sheets[sheet[LANGUAGE_ARABIC]]
         assert 'rightToLeft="1"' not in workbook.sheets[sheet[LANGUAGE_ENGLISH]]
 

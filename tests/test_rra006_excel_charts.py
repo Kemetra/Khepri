@@ -181,6 +181,24 @@ def chartdata_sheets() -> set[str]:
     return {excel._chartdata_sheet(language) for language in REQUIRED_LANGUAGES}
 
 
+def chart_sheet(section_id: str, language: str) -> str:
+    """The worksheet a section's chart is drawn onto.
+
+    RRA-009 replaced the per-section sheets with business worksheets, so a chart no
+    longer lands on `en_<section>` -- it lands on the *first* business sheet
+    presenting that section, which is the one a reader reaches first. Four sheets
+    present `overview`, which is why this resolves through the layout in reading
+    order rather than by building a name from the identifier.
+    """
+    from khepri.rra.rendering.excel_layout import BUSINESS_SHEETS
+    from khepri.rra.rendering.wording import BUSINESS_SHEET_NAMES
+
+    for sheet in BUSINESS_SHEETS:
+        if sheet.section == section_id:
+            return BUSINESS_SHEET_NAMES[language][sheet.key]
+    raise AssertionError(f"no business sheet presents {section_id!r}")
+
+
 def test_at_least_one_section_is_charted_so_nothing_below_is_vacuous() -> None:
     bundle, _ = rendered()
     assert charted(bundle)
@@ -257,7 +275,7 @@ def test_a_chart_is_drawn_on_every_charted_section_sheet_and_nowhere_else() -> N
     names = {section.section_id for section in charted(bundle)}
     for section_id in ORDERED_SECTIONS:
         for language in REQUIRED_LANGUAGES:
-            sheet = excel._section_sheet(section_id, language)
+            sheet = chart_sheet(section_id, language)
             if sheet not in workbook.cells:
                 continue
             drawn = workbook.charts(sheet)
@@ -275,7 +293,7 @@ def test_each_chart_is_the_kind_its_section_declares() -> None:
     for section in charted(bundle):
         assert section.chart is not None
         for language in REQUIRED_LANGUAGES:
-            xml = workbook.charts(excel._section_sheet(section.section_id, language))[0]
+            xml = workbook.charts(chart_sheet(section.section_id, language))[0]
             if section.chart.kind == CHART_LINE:
                 assert "<c:lineChart>" in xml, section.section_id
             else:
@@ -294,8 +312,8 @@ def test_the_arabic_category_axis_is_reversed_and_the_english_one_is_not() -> No
     bundle, workbook = rendered()
 
     for section in charted(bundle):
-        arabic = workbook.charts(excel._section_sheet(section.section_id, LANGUAGE_ARABIC))
-        english = workbook.charts(excel._section_sheet(section.section_id, LANGUAGE_ENGLISH))
+        arabic = workbook.charts(chart_sheet(section.section_id, LANGUAGE_ARABIC))
+        english = workbook.charts(chart_sheet(section.section_id, LANGUAGE_ENGLISH))
         assert 'val="maxMin"' in arabic[0], section.section_id
         assert 'val="maxMin"' not in english[0], section.section_id
 
@@ -314,7 +332,7 @@ def test_each_series_addresses_the_rows_its_section_declared() -> None:
 
     for section in charted(bundle):
         for language in REQUIRED_LANGUAGES:
-            xml = workbook.charts(excel._section_sheet(section.section_id, language))[0]
+            xml = workbook.charts(chart_sheet(section.section_id, language))[0]
             values = _series_range(xml, "val", "B")
             categories = _series_range(xml, "cat", "A")
             assert values[0] == excel._chartdata_sheet(language), section.section_id
@@ -356,7 +374,7 @@ def test_a_cumulative_share_curve_is_drawn_as_a_line() -> None:
     bundle, workbook = rendered(curve_bundle())
 
     for language in REQUIRED_LANGUAGES:
-        xml = workbook.charts(excel._section_sheet(SECTION_CONCENTRATION, language))[0]
+        xml = workbook.charts(chart_sheet(SECTION_CONCENTRATION, language))[0]
         assert "<c:lineChart>" in xml
         assert "<c:barChart>" not in xml
 
@@ -384,7 +402,7 @@ def test_each_chart_is_titled_with_its_section_heading_in_that_language() -> Non
     for section in charted(bundle):
         titles = set()
         for language in REQUIRED_LANGUAGES:
-            xml = workbook.charts(excel._section_sheet(section.section_id, language))[0]
+            xml = workbook.charts(chart_sheet(section.section_id, language))[0]
             heading = SECTION_HEADINGS[language][section.section_id]
             assert heading in xml, (section.section_id, language)
             titles.add(heading)
@@ -403,7 +421,7 @@ def test_each_chart_carries_alternative_text_naming_what_it_shows() -> None:
     for section in charted(bundle):
         assert section.chart is not None
         for language in REQUIRED_LANGUAGES:
-            drawing = workbook.drawings(excel._section_sheet(section.section_id, language))[0]
+            drawing = workbook.drawings(chart_sheet(section.section_id, language))[0]
             described = CHART_DESCRIPTIONS[language][
                 f"chart_description.{section.chart.kind}"
             ]
@@ -482,7 +500,14 @@ def test_an_undrawable_series_is_refused_here_exactly_as_the_page_refuses_it(
     assert build_chart(section.chart, bundle.figures, direction=DIRECTION_LTR) is None
 
     _, workbook = rendered(bundle)
-    assert workbook.charts(excel._section_sheet(SECTION_BASKET, LANGUAGE_ENGLISH)) == []
+    # No chart on any sheet. Asserted across the workbook rather than on the basket
+    # sheet by name: this fixture's metric is synthetic, so no business sheet claims
+    # it and none is written -- which is itself correct under RRA-009, since a sheet
+    # with no figure to present is omitted. What must hold is that nothing was
+    # plotted anywhere, and that is stronger than naming one sheet.
+    assert all(
+        workbook.charts(name) == [] for name in workbook.cells
+    ), "a chart was drawn for an undrawable series"
     # And no chart data sheet at all, so no number was written for a chart that is not
     # drawn.
     assert not chartdata_sheets() & set(workbook.cells)

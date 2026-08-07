@@ -39,6 +39,28 @@ def _shared_strings(bundle: ReportBundle, directory: Path) -> str:
         return archive.read("xl/sharedStrings.xml").decode()
 
 
+def _cells_of_sheet(
+    bundle: ReportBundle,
+    directory: Path,
+    *,
+    sheet_number: int,
+) -> list[str]:
+    """The text cells one worksheet wrote, resolved through the shared string table.
+
+    XlsxWriter writes every string cell as an index into `sharedStrings.xml`, so a
+    per-sheet assertion has to resolve them; reading the shared table alone says
+    what the *workbook* holds and never which sheet holds it, which is exactly the
+    distinction a business/audit separation test needs.
+    """
+    with zipfile.ZipFile(_workbook_bytes(bundle, directory)) as archive:
+        shared = re.findall(
+            r"<t[^>]*>(.*?)</t>", archive.read("xl/sharedStrings.xml").decode(), re.S
+        )
+        sheet = archive.read(f"xl/worksheets/sheet{sheet_number}.xml").decode()
+    indexes = [int(value) for value in re.findall(r"<v>(\d+)</v>", sheet)]
+    return [shared[index] for index in indexes if index < len(shared)]
+
+
 def test_the_rich_fixture_carries_every_leakage_metric() -> None:
     """Two business worksheets present exactly these, and the five-row fixture
     produces none of them. A bare `discount` column is not enough: `mapping.py`
@@ -220,3 +242,214 @@ def test_the_name_guard_refuses_a_name_over_budget(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="exceeds the bilingual budget"):
         wording._assert_business_sheet_names_complete()
+
+
+def test_business_sheets_come_before_the_audit_sheets(tmp_path: Path) -> None:
+    """Worksheet order *is* the information architecture: it is what a reader sees
+    on opening the file."""
+    from khepri.rra.rendering import wording
+
+    names = _sheet_names(rich_bundle(), tmp_path)
+    summary = names.index(
+        wording.BUSINESS_SHEET_NAMES[LANGUAGE_ENGLISH]["executive_summary"]
+    )
+
+    assert summary < names.index("Audit Trail")
+    assert summary < names.index("Provenance")
+    assert names.index("Data Limitations") < names.index("Audit Trail")
+
+
+def test_a_business_sheet_with_no_figure_is_absent(tmp_path: Path) -> None:
+    """A worksheet whose only content is an apology is worse than its absence, so
+    the business tab set varies by dataset. The audit sheets do not."""
+    from khepri.rra.rendering import wording
+
+    names = _sheet_names(_plain_bundle(), tmp_path)
+    profitability = wording.BUSINESS_SHEET_NAMES[LANGUAGE_ENGLISH]["profitability"]
+
+    assert profitability not in names
+    assert "Audit Trail" in names
+
+
+def test_a_business_sheet_appears_when_its_figures_exist(tmp_path: Path) -> None:
+    from khepri.rra.rendering import wording
+
+    names = _sheet_names(rich_bundle(), tmp_path)
+
+    assert wording.BUSINESS_SHEET_NAMES[LANGUAGE_ENGLISH]["profitability"] in names
+
+
+def test_every_business_sheet_is_written_in_both_languages(tmp_path: Path) -> None:
+    from khepri.rra.rendering import wording
+
+    names = _sheet_names(rich_bundle(), tmp_path)
+    for language in REQUIRED_LANGUAGES:
+        assert wording.BUSINESS_SHEET_NAMES[language]["executive_summary"] in names
+
+
+def test_the_audit_trail_carries_every_identifier(tmp_path: Path) -> None:
+    bundle = rich_bundle()
+    strings = _shared_strings(bundle, tmp_path)
+
+    for figure in bundle.figures:
+        assert figure.figure_id in strings, figure.figure_id
+        assert figure.citation_id in strings, figure.citation_id
+    for section in bundle.sections:
+        assert section.section_id in strings, section.section_id
+
+
+def test_no_business_sheet_carries_an_identifier_value(tmp_path: Path) -> None:
+    """The business figure table is two columns, and neither holds an identifier.
+
+    Asserted on the written cells of a business sheet rather than on column header
+    strings: "Figure" is the business name header *and* the audit trail's identifier
+    header -- the same word naming two different things -- so comparing headers
+    reports a false positive. What must be true is that no `figure_id` or
+    `citation_id` value appears on a business sheet.
+    """
+    bundle = rich_bundle()
+    business_cells = _cells_of_sheet(bundle, tmp_path, sheet_number=1)
+
+    assert business_cells, "the first business sheet wrote no cells"
+    identifiers = {figure.figure_id for figure in bundle.figures} | {
+        figure.citation_id for figure in bundle.figures
+    }
+    assert not (set(business_cells) & identifiers), sorted(
+        set(business_cells) & identifiers
+    )
+    # And it is genuinely the business sheet: it names a measure in business words.
+    assert "Revenue" in business_cells
+
+
+def test_the_section_state_reaches_no_worksheet(tmp_path: Path) -> None:
+    """`state` is Internal under RRA-009, so it is not written at all -- not even to
+    the audit trail. A row carrying a reason is a refused section by construction."""
+    strings = _shared_strings(_plain_bundle(), tmp_path)
+
+    for state in ("present", "refused"):
+        assert f">{state}<" not in strings, state
+
+
+def test_the_limitations_sheet_states_caveats_as_prose(tmp_path: Path) -> None:
+    from khepri.rra.rendering.wording import caveat_prose
+
+    bundle = _plain_bundle()
+    strings = _shared_strings(bundle, tmp_path)
+
+    assert bundle.caveats
+    for caveat in bundle.caveats:
+        assert caveat_prose(caveat.code, LANGUAGE_ENGLISH) in strings, caveat.code
+
+
+def test_the_limitations_sheet_states_refusals_as_prose(tmp_path: Path) -> None:
+    from khepri.rra.rendering.wording import refusal_message
+
+    bundle = ReportBundle.of(package_for(ROWS[:2]))
+    strings = _shared_strings(bundle, tmp_path)
+    refused = [section for section in bundle.sections if section.reason]
+
+    assert refused
+    for section in refused:
+        assert refusal_message(
+            section.reason, context="section", language=LANGUAGE_ENGLISH
+        ) in strings, section.section_id
+
+
+def test_every_charted_section_still_gets_a_chart(tmp_path: Path) -> None:
+    """`_draw_charts` skips a block whose business sheet was omitted, and that skip
+    is silent by design -- this is what keeps it from hiding a real loss."""
+    bundle = rich_bundle()
+    charted = [section for section in bundle.sections if section.chart is not None]
+
+    with zipfile.ZipFile(_workbook_bytes(bundle, tmp_path)) as archive:
+        parts = [
+            name
+            for name in archive.namelist()
+            if name.startswith("xl/charts/chart") and name.endswith(".xml")
+        ]
+
+    assert charted
+    assert len(parts) == len(charted) * len(REQUIRED_LANGUAGES)
+
+
+def test_the_chart_data_sheet_is_still_present(tmp_path: Path) -> None:
+    """`_series_range` addresses it by name and `excel.py` requires it visible on
+    APP-013 grounds. Reordering the workbook is exactly the change that breaks a
+    chart silently -- one pointing at a missing sheet renders empty."""
+    names = _sheet_names(rich_bundle(), tmp_path)
+
+    assert any("chartdata" in name for name in names)
+
+
+def test_the_workbook_still_reconciles(tmp_path: Path) -> None:
+    """The property the whole restructure rests on.
+
+    `reconcile` compares the `SurfaceContent` claim and never opens the file, so
+    every other test in this module could pass while the workbook silently stopped
+    reconciling -- and equally, reconciliation could keep passing while the file
+    lost a cell. Both directions are asserted, here and below.
+    """
+    from khepri.rra.bundle import reconcile
+
+    for bundle in (rich_bundle(), _plain_bundle()):
+        content = ExcelSurfaceRenderer(directory=tmp_path).render(bundle)
+        reconcile(content, bundle=bundle)
+
+
+def test_the_claim_still_states_every_figure(tmp_path: Path) -> None:
+    """A surface that relocated a figure and also stopped claiming it would
+    reconcile, and would have lost the figure."""
+    bundle = rich_bundle()
+    content = ExcelSurfaceRenderer(directory=tmp_path).render(bundle)
+
+    expected = {figure.figure_id for figure in bundle.figures}
+    for entry in content.languages:
+        assert {stated.figure_id for stated in entry.stated} == expected, entry.language
+
+
+def test_the_claim_still_states_every_section(tmp_path: Path) -> None:
+    bundle = rich_bundle()
+    content = ExcelSurfaceRenderer(directory=tmp_path).render(bundle)
+
+    for entry in content.languages:
+        assert entry.sections == bundle.section_ids, entry.language
+
+
+def test_every_figure_value_is_still_in_the_file(tmp_path: Path) -> None:
+    """The other direction: the claim could be complete while the workbook dropped
+    a cell, and reconciliation would never notice."""
+    bundle = rich_bundle()
+    strings = _shared_strings(bundle, tmp_path)
+
+    for figure in bundle.figures:
+        for language in REQUIRED_LANGUAGES:
+            assert figure.renderings[language] in strings, (
+                figure.figure_id,
+                language,
+            )
+
+
+def test_the_governed_disclosure_reaches_the_workbook(tmp_path: Path) -> None:
+    """RRA-009 carries it verbatim on every report.
+
+    It used to live on the index sheet, which the business sheets replaced -- so
+    removing that sheet without moving the disclosure would have dropped it from the
+    workbook entirely. This is the test that caught exactly that.
+    """
+    bundle = rich_bundle()
+    strings = _shared_strings(bundle, tmp_path)
+
+    for language in REQUIRED_LANGUAGES:
+        assert bundle.disclosure(language) in strings, language
+
+
+def test_regenerating_the_workbook_produces_the_same_sheets(tmp_path: Path) -> None:
+    """Deterministic regeneration. A sheet order that varied per run would make the
+    workbook's identity a function of something other than the data."""
+    bundle = rich_bundle()
+    one = tmp_path / "one"
+    two = tmp_path / "two"
+    one.mkdir()
+    two.mkdir()
+
+    assert _sheet_names(bundle, one) == _sheet_names(bundle, two)
