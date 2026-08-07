@@ -10,7 +10,6 @@ from khepri_gov.digests import document_digest
 from khepri_gov.lifecycle import (
     LIFECYCLE_TRANSITIONS,
     Artifact,
-    ends_authority,
 )
 
 BOOTSTRAP_EVIDENCE = "governance/approvals/APP-001-bootstrap.md"
@@ -151,7 +150,19 @@ def _preserves_state(item: EntryUnderReview) -> bool:
     to_state = item.entry.get("to_state")
     if from_state != to_state:
         return (from_state, to_state) in LIFECYCLE_TRANSITIONS[registry]
-    return from_state == artifact.get("state")
+    if artifact.get("approval_ref") == item.review.ref:
+        return from_state == artifact.get("state")
+    return _is_known_state(registry, from_state)
+
+
+def _is_known_state(registry: str, state: object) -> bool:
+    """A renewal the registry has moved past is checked for legality, not agreement.
+
+    Comparing it to the current state would re-judge a historical record against a
+    present it never claimed. What must still hold is that the state it names is one
+    the registry's lifecycle admits.
+    """
+    return any(state in edge for edge in LIFECYCLE_TRANSITIONS[registry])
 
 
 def _prior_package_errors(scope: RenewalScope, item: EntryUnderReview) -> list[str]:
@@ -187,9 +198,15 @@ def _current_evidence_errors(item: EntryUnderReview) -> list[str]:
 
 
 def _requires_prior_ref(item: EntryUnderReview) -> bool:
-    if item.review.is_proposed:
-        return True
-    return ends_authority(item.known[0], str(item.entry.get("to_state")))
+    """Only an unrecorded package can be checked against the registry it will change.
+
+    Once the transition is recorded the registry names this package, not the one it
+    supersedes, so requiring the older reference contradicts the check that the
+    registry agrees with its governing package. That `supersedes_approval_ref` names
+    an approved package containing the artifact is still required, by
+    `_prior_package_errors`, which reads packages rather than the registry.
+    """
+    return item.review.is_proposed
 
 
 def _legacy_evidence_errors(scope: RenewalScope, claims: ProposedClaims) -> list[str]:

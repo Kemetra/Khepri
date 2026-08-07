@@ -50,19 +50,14 @@ class TransitionKind:
 class ApprovedPackageIndex:
     packages: Mapping[str, Mapping[str, Any]]
 
-    def has_successor(
-        self,
-        package_ref: str,
-        ref: ArtifactRef,
-        replaces_approval: bool | None = None,
-    ) -> bool:
+    def has_successor(self, package_ref: str, ref: ArtifactRef) -> bool:
         for package in self.packages.values():
             if package.get("state") != "approved":
                 continue
             entries = package.get("artifacts")
             if not isinstance(entries, list):
                 continue
-            if self._matching_entry(entries, package_ref, ref, replaces_approval):
+            if self._matching_entry(entries, package_ref, ref):
                 return True
         return False
 
@@ -71,14 +66,11 @@ class ApprovedPackageIndex:
         entries: list[object],
         package_ref: str,
         ref: ArtifactRef,
-        replaces_approval: bool | None,
     ) -> bool:
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            if not _supersedes(entry, package_ref, ref):
-                continue
-            if _replacement_matches(entry, ref, replaces_approval):
+            if _supersedes(entry, package_ref, ref):
                 return True
         return False
 
@@ -91,17 +83,6 @@ def _supersedes(
     if entry.get("id") != ref.artifact_id:
         return False
     return entry.get("supersedes_approval_ref") == package_ref
-
-
-def _replacement_matches(
-    entry: Mapping[str, Any],
-    ref: ArtifactRef,
-    replaces_approval: bool | None,
-) -> bool:
-    if replaces_approval is None:
-        return True
-    replaces = not ends_authority(ref.registry, str(entry.get("to_state")))
-    return replaces == replaces_approval
 
 
 @dataclass
@@ -204,10 +185,21 @@ class TransitionValidator:
             return True
         if ends_authority(item.ref.registry, str(item.entry["to_state"])):
             return True
+        return self._is_historical(item)
+
+    def _is_historical(self, item: TransitionItem) -> bool:
+        """True when the registry has moved on from this package.
+
+        An approved package the registry no longer names is a record of what was
+        true, not a claim about the present, so the registry is not compared to it.
+        That the registry names *some* approved package containing the artifact is
+        guaranteed elsewhere, by `_package_evidence_errors`.
+        """
+        if item.artifact.get("approval_ref") == self.package.package_ref:
+            return False
         return self.approved_packages.has_successor(
             self.package.package_ref,
             item.ref,
-            replaces_approval=True,
         )
 
     def _approval_ref_errors(self, item: TransitionItem) -> list[str]:
