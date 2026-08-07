@@ -98,3 +98,8 @@ decisions:
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-013-seshat-analytical-boundary.md
+  - id: KHEPRI-DEC-014
+    title: Commercial boundary superseding the private-beta scope
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md

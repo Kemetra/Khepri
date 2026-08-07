@@ -1,0 +1,56 @@
+schema_version: 1
+id: APP-017
+title: Commercial family charter and the boundary that supersedes the private beta
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-014, activate the RCA -- Retail Commercial Analysis family depending on FND
+  and RRA, move KHEPRI-DEC-003 to superseded naming KHEPRI-DEC-014 while retaining its own
+  approval evidence, and renew the RRA family charter to re-express its Excludes as family
+  boundaries per the staged replacement text in
+  docs/platform/proposed-governance/rra-exclusions-rescope.md, correcting its stale closing
+  sentence in the same renewal.
+exclusions:
+  - Any change to governance/CONSTITUTION.md or the authorities registry
+  - Any delegation record, and any widening of a delegation's scope or expiry
+  - Any RCA specification, which this package neither allocates nor approves
+  - Any product application code, which requires an approved RCA specification first
+  - Any retention decision, which Constitution VII requires be separately approved
+  - Any deployment, provisioning, or spending authorization
+  - Any transition or approval of KHEPRI-DEC-008, KHEPRI-DEC-012, or KHEPRI-DEC-013
+  - Any weakening of RRA-001, RRA-002, or RRA-006 controls
+  - Any change to the Owns section of governance/families/RRA.md
+  - Any claim that the withdrawn commercial-validation gate was satisfied
+  - Any claim that a human authority approved this package, absent that authority's evidence
+manifest_digest: sha256:94d7247b5042a48fd7f625dd903f72deb6acce658f0429e0b4a0d8d85b201fe4
+artifacts:
+  - id: KHEPRI-DEC-014
+    document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md
+    document_sha256: sha256:78a674744800dc3381e289cb46f2bdde16bde95a553ce1d17267794063b0df14
+    from_state: proposed
+    to_state: accepted
+  - id: RCA
+    document: governance/families/RCA.md
+    document_sha256: sha256:011d8950a297e2dd1d739d034ace60146ec49b50e909ef22e660d27b4fc23c69
+    from_state: proposed
+    to_state: active
+  - id: KHEPRI-DEC-003
+    document: governance/decisions/KHEPRI-DEC-003-rra-private-beta.md
+    document_sha256: sha256:5df52d073bdd426832ac56e47b280e466fa122068d91577b9b3e1c376b3e4b50
+    from_state: accepted
+    to_state: superseded
+    superseded_by: KHEPRI-DEC-014
+    supersedes_approval_ref: governance/approvals/APP-002.yaml
+  # The RRA renewal carries the CURRENT digest of RRA.md, not the post-re-scope
+  # one, because a proposed package is validated against the files on disk
+  # (approval_packages.py:175-179) and the re-scope has deliberately not been
+  # applied -- KHEPRI-DEC-014 is proposed and carries no authority to edit an
+  # approved family charter. At approval time the order is: apply the
+  # replacement text from docs/platform/proposed-governance/rra-exclusions-rescope.md,
+  # recompute this digest, recompute manifest_digest, then approve.
+  - id: RRA
+    document: governance/families/RRA.md
+    document_sha256: sha256:8a1235a0d6b9e36a6446a1e1cfd3f7ef5db52ca7d9e0ed23bcffb18eded095d2
+    from_state: active
+    to_state: active
+    supersedes_approval_ref: governance/approvals/APP-002.yaml

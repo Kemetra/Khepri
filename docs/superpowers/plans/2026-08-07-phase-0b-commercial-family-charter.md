@@ -8,6 +8,25 @@
 
 **Tech Stack:** Markdown governance documents, YAML registries, `khepri-gov` CLI (`validate`, `document-digest`, `approval-digest`). No Python source changes, no tests, no dependencies.
 
+## Status as of 2026-08-07 — executed, with two mechanism corrections
+
+**All six tasks are done.** `KHEPRI-DEC-014`, `governance/families/RCA.md`, the staged re-scope, both registry entries, and `APP-017` exist; `khepri-gov validate` passes with everything unapproved. Nothing is approved and no existing lifecycle state changed — `KHEPRI-DEC-003` is still `accepted` with no `superseded_by`.
+
+**Two things this plan got wrong about the approval-package mechanism.** Both were found by running the validator, and both are corrected in the drafted `APP-017`:
+
+1. **A `to_state: superseded` entry needs two extra fields.** Task 6's package template omitted them and validation failed with `lifecycle transition for KHEPRI-DEC-003 must supersede prior approval evidence` and `KHEPRI-DEC-003 must name superseded_by`. An `accepted → superseded` transition is a *lifecycle* transition, so `_lacks_supersession` (`approval_transition_validation.py:296-300`) requires `supersedes_approval_ref`, and `_missing_authority_errors` (`lifecycle.py:175-184`) requires `superseded_by`. The entry needs both:
+
+   ```yaml
+       superseded_by: KHEPRI-DEC-014
+       supersedes_approval_ref: governance/approvals/APP-002.yaml
+   ```
+
+2. **A zeroed `document_sha256` is not valid, even in a `proposed` package.** Task 6 said to leave the `RRA` renewal digest as `sha256:0000…` because the post-re-scope bytes do not exist yet. Validation rejects that: `approval_packages.py:175-179` checks every `document_sha256` against the file on disk **when the package state is `proposed`**. The renewal therefore carries `RRA.md`'s *current* digest (`8a1235a0…`), and the approval-time sequence in Task 6 Step 3 becomes mandatory rather than advisory — apply the re-scope, recompute this digest, recompute `manifest_digest`, then approve.
+
+**The manifest digest changes on every artifact-list edit.** It was recomputed three times during execution. Treat `approval-digest` as the last step before approval, never an earlier one.
+
+---
+
 ## Global Constraints
 
 - **Change no lifecycle state.** No task in this plan edits a `state:` field, adds `approved_by`/`approved_at`/`approval_ref`, or sets `superseded_by`. Those are the approving package's to write, and only after a named authority approves it. Marking `KHEPRI-DEC-003` as `superseded` here would fail `khepri-gov validate` because its named successor would not yet be `accepted`.
