@@ -175,6 +175,16 @@ _ARABIC_SCRIPT = re.compile(r"[؀-ۿ]")
 _EASTERN_ARABIC_DIGITS = re.compile(r"[٠-٩]")
 
 
+def _refusal_wording_copy() -> dict[str, dict[str, dict[str, str]]]:
+    return {
+        tier: {
+            language: dict(entries)
+            for language, entries in table.items()
+        }
+        for tier, table in wording.REFUSAL_WORDING.items()
+    }
+
+
 def test_metric_wording_covers_every_governed_metric_in_every_language() -> None:
     assert len(_GOVERNED_METRIC_CODES) == 13
     for language in REQUIRED_LANGUAGES:
@@ -359,17 +369,29 @@ def test_metric_wording_guard_raises_on_incomplete_table(monkeypatch) -> None:
 
 
 def test_refusal_wording_guard_raises_on_incomplete_table(monkeypatch) -> None:
-    broken = {
-        tier: {
-            language: dict(entries)
-            for language, entries in table.items()
-        }
-        for tier, table in wording.REFUSAL_WORDING.items()
-    }
+    broken = _refusal_wording_copy()
     del broken["result"][LANGUAGE_ENGLISH][REASON_DIMENSION_ABSENT]
     monkeypatch.setattr(wording, "REFUSAL_WORDING", broken)
 
     with pytest.raises(RuntimeError, match="refusal"):
+        wording._assert_refusal_wording_complete()
+
+
+def test_refusal_wording_guard_raises_when_a_tier_is_missing(monkeypatch) -> None:
+    broken = _refusal_wording_copy()
+    del broken["section"]
+    monkeypatch.setattr(wording, "REFUSAL_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="tier"):
+        wording._assert_refusal_wording_complete()
+
+
+def test_refusal_wording_guard_raises_when_a_language_is_missing(monkeypatch) -> None:
+    broken = _refusal_wording_copy()
+    del broken["section"][LANGUAGE_ARABIC]
+    monkeypatch.setattr(wording, "REFUSAL_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="language"):
         wording._assert_refusal_wording_complete()
 
 

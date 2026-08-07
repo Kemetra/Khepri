@@ -408,23 +408,39 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
 }
 
 
+_REFUSAL_REASON_CODES = {
+    "section": set(GOVERNED_SECTION_REASONS),
+    "result": _RESULT_REASON_CODES,
+}
+_GOVERNED_LANGUAGES = {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}
+
+
 def _assert_refusal_wording_complete() -> None:
-    expected = {
-        "section": set(GOVERNED_SECTION_REASONS),
-        "result": _RESULT_REASON_CODES,
-    }
-    if set(REFUSAL_WORDING) != set(expected):
+    if set(REFUSAL_WORDING) != set(_REFUSAL_REASON_CODES):
         raise RuntimeError("refusal wording must cover every governed tier")
-    for tier, by_language in REFUSAL_WORDING.items():
-        if set(by_language) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
-            raise RuntimeError(f"refusal wording misses a language (tier={tier!r})")
-        for language, entries in by_language.items():
-            if set(entries) != expected[tier]:
-                message = (
-                    "every governed refusal reason needs a customer message in "
-                    f"every language (tier={tier!r}, language={language!r})"
-                )
-                raise RuntimeError(message)
+    for tier, reason_codes in _REFUSAL_REASON_CODES.items():
+        _assert_refusal_tier_complete(tier, reason_codes)
+
+
+def _assert_refusal_tier_complete(tier: str, reason_codes: set[str]) -> None:
+    by_language = REFUSAL_WORDING[tier]
+    if set(by_language) != _GOVERNED_LANGUAGES:
+        raise RuntimeError(f"refusal wording misses a language (tier={tier!r})")
+    for language in _GOVERNED_LANGUAGES:
+        _assert_refusal_language_complete(tier, language, reason_codes)
+
+
+def _assert_refusal_language_complete(
+    tier: str,
+    language: str,
+    reason_codes: set[str],
+) -> None:
+    if set(REFUSAL_WORDING[tier][language]) != reason_codes:
+        message = (
+            "every governed refusal reason needs a customer message in "
+            f"every language (tier={tier!r}, language={language!r})"
+        )
+        raise RuntimeError(message)
 
 
 _assert_refusal_wording_complete()
