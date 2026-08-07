@@ -8,6 +8,35 @@
 
 **Tech Stack:** Python 3.13, pytest. No new dependencies.
 
+---
+
+## Status as of 2026-08-07, `main` @ `b84aad9`
+
+**Tasks 1–4 are built and merged.** `#118`/`#117` landed Task 1; `#121` landed Tasks 2–4. `wording.py` now carries `METRIC_WORDING`, `REFUSAL_WORDING` (both tiers), `CAVEAT_WORDING`, `DERIVED_METRIC_WORDING`, and the accessors `metric_business_name`, `business_metric_name`, `refusal_message`, `caveat_message`, `caveat_prose`. Import guards `_assert_metric_wording_complete`, `_assert_refusal_wording_complete`, and `_assert_caveat_wording_complete` all exist and run at import, so **Task 7 is built too**. `tests/test_rra009_wording.py` carries the script-range and Eastern-numeral checks from Task 6.
+
+**What the implementation did differently, and better.** Recorded because the task bodies below describe the intended shape, not what shipped:
+
+- **The result-refusal universe is 7 codes, not 5.** `dimension_absent` and `negative_base` were added. So the customer-facing catalogue is **15 messages over 13 distinct codes** (8 section + 7 result, two codes in both tiers) — not the "13 messages over 11 codes" Task 3 and `docs/reporting/refusal-presentation.md` §D.1 both state. **Task 5 below is therefore obsolete**: it pinned `dimension_absent` as *not yet governed*, and it now is.
+- **`caveat_prose` handles a case this plan did not anticipate.** A composite `<result>:<reason>` code whose reason is a *section* reason routes to the section tier (`wording.py:600-601`) rather than being formatted as a result message. Plan 2's Gap 2 analysis assumed every composite was result-tier.
+- **`_result_business_name` (`wording.py:610-616`) strips the `.mode` suffix** before looking up a business name, so a mode-qualified result identity cannot leak onto the page. This plan's Task 3 note passed the raw result identity into `{metric}`, which would have shown `revenue_delta_percent.year_over_year` to a reader.
+
+**Every `__NEEDS_OWNER_AUTHORSHIP__` placeholder is gone** — `grep -c` returns 0. **This does not mean the Arabic is reviewed.** See the note below; it is the one item from this plan that still needs the owner.
+
+**Remaining from this plan:** nothing executable. Task 5 is obsolete; Tasks 1–4, 6, 7 are built.
+
+### The Arabic is filled but unreviewed, and that is a different status
+
+The ~30 strings this plan flagged for owner authorship were written by an agent, not by the owner. The import guards check **key-set completeness, not meaning**, and `docs/reporting/refusal-presentation.md` §D.5a states plainly that no test can verify an Arabic string *means* its English counterpart — which is why `RRA-005` asks for authorship rather than translation.
+
+Two provenances are mixed in the shipped tables and should not be conflated:
+
+- The **eight section-tier refusals** had drafts in §D.2a, so their Arabic has owner-adjacent provenance.
+- The **~25 others** (13 metric names, 12 caveats, 7 result refusals, 6 derived-metric names) had no draft at all.
+
+`tests/test_rra009_wording.py` pins several tables with `test_accepted_arabic_*_messages_are_pinned`, which locks the current strings against silent edits — a good guard, but pinning is not review. **Owner review of the Arabic remains outstanding**, and a reader of this plan should not take "placeholders resolved" as "parity achieved."
+
+---
+
 ## Global Constraints
 
 - Assert vocabulary completeness against the **exported tuples**, never against a `METRIC_` name-prefix scan — `growth.py` re-exports `facts.METRIC_UNITS`, so a prefix scan double-counts. Metric universe is `facts.py`'s ten `METRIC_*` constants ∪ `growth.GOVERNED_METRICS` (three items) = 13 keys.

@@ -8,15 +8,36 @@
 
 **Tech Stack:** Python 3.13, XlsxWriter, pytest. No new dependencies.
 
-## Prerequisite
+## Status as of 2026-08-07, `main` @ `b84aad9`
 
-**Plan 1 Tasks 2–4 must land before this plan's Task 6.** This plan consumes, with these exact signatures:
+**This plan is fully unblocked and entirely unbuilt.** Its prerequisite is discharged: `#121` landed plan 1 Tasks 2–4 and plan 2 Tasks 1–5, so all three accessors exist with **exactly** the signatures this plan cites, verified by `inspect.signature`:
 
-- `wording.business_metric_name(metric: str, language: str) -> str | None` — **plan 2 Task 3**
-- `wording.caveat_prose(code: str, language: str) -> str` — **plan 2 Task 5** (which itself needs plan 1 Task 4)
-- `wording.refusal_message(reason: str, *, context: str, language: str) -> str` — plan 1 Tasks 2–3
+```
+business_metric_name (metric: str, language: str) -> str | None
+caveat_prose         (code: str, language: str) -> str
+refusal_message      (reason: str, *, context: str, language: str) -> str
+```
 
-Tasks 1–5 and 7–8 do not depend on them. **Do not re-define any wording table here** — three definitions of the same vocabulary is three places for it to disagree.
+`excel.py` is untouched by any RRA-009 work — still one worksheet per governed section per language (`_section_sheet` at `:158`, `_write_section` called at `:345`). Every task below is available, and Tasks 4 and 6 no longer wait on anything.
+
+**Two corrections to facts this plan cites**, both from what `#121` shipped:
+
+- **The result-refusal universe is 7 codes, not 5.** `dimension_absent` and `negative_base` were added, so the customer-facing catalogue is 15 messages over 13 distinct codes. Task 6 reads `refusal_message` rather than enumerating codes, so no task body changes — but the count is worth knowing before writing a test that asserts one.
+- **`caveat_prose` handles more shapes than this plan assumed.** A composite `<result>:<reason>` whose reason is a *section* reason routes to the section tier (`wording.py:600-601`), and `_result_business_name` (`:610-616`) strips the `.mode` suffix so no mode-qualified identity reaches a cell. Task 6's limitations sheet gets that behaviour for free.
+
+**Arabic status:** the 8 business sheet names this plan adds (Task 3) still need writing, and the ~30 strings already shipped were filled by an agent rather than reviewed by the owner. See the vocabulary plan's status note — "placeholders resolved" is not "parity achieved."
+
+---
+
+## Prerequisite (discharged — retained for the record)
+
+This plan consumes, with these exact signatures:
+
+- `wording.business_metric_name(metric: str, language: str) -> str | None` — plan 2 Task 3, **built**
+- `wording.caveat_prose(code: str, language: str) -> str` — plan 2 Task 5, **built**
+- `wording.refusal_message(reason: str, *, context: str, language: str) -> str` — plan 1 Tasks 2–3, **built**
+
+**Do not re-define any wording table here** — three definitions of the same vocabulary is three places for it to disagree. That constraint still binds every task below.
 
 ---
 

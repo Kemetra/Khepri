@@ -30,6 +30,19 @@ the whole document.
 
 ## D.1 The catalog is 11 distinct codes, in 13 contexts — not 32
 
+> **Count superseded by implementation, 2026-08-07 (`main` @ `b84aad9`).** The shipped
+> vocabulary carries **15 messages over 13 distinct codes** — 8 section reasons and **7**
+> result reasons, still with two codes in both tiers. `dimension_absent` (recorded below as
+> not yet defined) and `negative_base` were added when the wording landed in `#121`.
+> Verify against the source of truth rather than this document:
+> `uv run python -c "from khepri.rra.rendering import wording as w; "`
+> `"r=set(w.REFUSAL_WORDING['result']['en']); s=set(w.REFUSAL_WORDING['section']['en']); "`
+> `"print(len(r), len(s), len(r|s))"`
+>
+> `governance/specifications/RRA-009.md` still states the 13/11 figure and **cannot be
+> corrected by editing it** — it is pinned by `document_sha256` in `APP-016`, so a change
+> requires a renewal approval package. The divergence is recorded here rather than hidden.
+
 Three vocabularies exist and only two are customer-facing.
 
 | Vocabulary | Count | Source | Customer-facing? |

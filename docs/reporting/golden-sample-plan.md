@@ -249,6 +249,12 @@ Both are corrections the package already made against itself, and both are the k
 reappear if not restated.
 
 1. **The customer-facing catalog is 11 distinct codes in 13 contexts — not 32, and not 13.**
+
+
+> **Superseded 2026-08-07:** the shipped catalogue is **15 messages over 13 distinct codes**
+> (8 section + 7 result); `dimension_absent` and `negative_base` were added in `#121`. See
+> `refusal-presentation.md` §D.1's dated note. `RRA-009.md` still states 13/11 and is
+> digest-pinned by `APP-016`, so correcting it needs a renewal package.
    8 section reasons plus 5 result reasons, with `required_input_unavailable` and
    `incomplete_transaction_identifiers` appearing in both, so the distinct union is 11 and each
    of those two needs two messages. The 20 `GOVERNED_REASONS` are bundle-integrity codes: when
