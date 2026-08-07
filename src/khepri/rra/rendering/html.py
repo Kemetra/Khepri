@@ -73,6 +73,11 @@ TEMPLATE_NAME = "report.html.j2"
 EVIDENCE_TEMPLATE_NAME = "report.evidence.html.j2"
 STYLESHEET_NAME = "report.css"
 
+# How much of the bundle identity the business region shows. Eight hex characters
+# is short enough to read over a phone and long enough that two reports a customer
+# holds at once will not collide. The full identity is in the audit region.
+REPORT_REFERENCE_WIDTH = 8
+
 # The page's own furniture, in both governed languages. Headings and column
 # names are the renderer's to write — they say nothing about the data — but they
 # are held here rather than in the template so that the two languages are one
@@ -86,8 +91,18 @@ _CHROME: dict[str, dict[str, str]] = {
         "about": "About this report",
         "figures": "Figures",
         "figures_caption": "Every figure in this report, beside the fact it cites",
+        "business_caption": "The figures in this section",
+        "business_figure": "Figure",
         "caveats": "Data caveats",
         "commentary": "Commentary",
+        # The colophon is the one place the business report names itself. It carries
+        # the short reference and says the evidence exists, because a report that
+        # never mentions its own evidence cannot be forwarded to an auditor by a
+        # reader who does not know there is any.
+        "colophon_reference": "Report reference",
+        "colophon_evidence": (
+            "Full calculation evidence and data lineage are available on request."
+        ),
         "citations": "Citations",
         "provenance": "Provenance and versions",
         "label": "Label",
@@ -126,8 +141,12 @@ _CHROME: dict[str, dict[str, str]] = {
         "about": "عن هذا التقرير",
         "figures": "الأرقام",
         "figures_caption": "كل رقم في هذا التقرير، بجانب الحقيقة التي يُسند إليها",
+        "business_caption": "أرقام هذا القسم",
+        "business_figure": "البيان",
         "caveats": "تحذيرات البيانات",
         "commentary": "التعليق",
+        "colophon_reference": "مرجع التقرير",
+        "colophon_evidence": "تتوفر أدلة الحساب الكاملة وسلسلة مصدر البيانات عند الطلب.",
         "citations": "الإسنادات",
         "provenance": "المصدر والإصدارات",
         "label": "التسمية",
@@ -459,8 +478,23 @@ def build_context(
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
         "provenance": provenance,
+        # The one identifier the business region carries. Derived from the bundle
+        # identity rather than invented, so a reader quoting it can be matched to
+        # the report -- and short enough to read aloud, which a digest is not. The
+        # full identity stays in the audit region, where an auditor needs it.
+        "report_reference": _report_reference(bundle),
         "audit": _audit_region(bundle, language, cells, provenance),
     }
+
+
+def _report_reference(bundle: ReportBundle) -> str:
+    """The short human reference a customer quotes when asking about a report.
+
+    A prefix of the bundle identity rather than a new identifier: a second
+    identifier would be a second thing to reconcile, and this one is already
+    content-addressed. Upper-cased because it is read aloud and transcribed.
+    """
+    return bundle.bundle_id[:REPORT_REFERENCE_WIDTH].upper()
 
 
 def _passages(

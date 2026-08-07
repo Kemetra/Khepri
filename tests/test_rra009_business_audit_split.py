@@ -264,3 +264,181 @@ def test_evidence_page_escapes_customer_labels() -> None:
 
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "<script>alert(1)</script>" not in rendered
+
+
+def test_the_business_body_shows_no_figure_or_citation_identifier() -> None:
+    """RRA-009 allows exactly one identifier in the business region, and it is
+    the short report reference -- not a figure id and not a citation id."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        for figure in bundle.figures:
+            assert figure.figure_id not in visible, (figure.figure_id, language)
+            assert figure.citation_id not in visible, (figure.citation_id, language)
+
+
+def test_the_business_body_carries_no_data_figure_id_attribute() -> None:
+    """Removed from the markup, not merely from the visible text.
+
+    `presentation-visibility-matrix.md` §A.2 draws the rule: an identifier may
+    survive in an attribute only where the reader uses it. An `id=` anchor is
+    navigation and survives; `data-figure-id` was a hook for tooling, and a
+    business report is not a tooling surface.
+    """
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        assert "data-figure-id" not in surface.documents[language], language
+
+
+def test_the_business_body_names_rows_in_business_language() -> None:
+    visible = _visible_text(_surface().documents[LANGUAGE_ENGLISH])
+    assert "Revenue" in visible
+
+
+def test_the_business_body_carries_the_report_reference() -> None:
+    """The one identifier the business region is allowed, and it is short enough
+    to read aloud -- which a digest is not."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    reference = bundle.bundle_id[:8].upper()
+    for language in REQUIRED_LANGUAGES:
+        assert reference in _visible_text(surface.documents[language]), language
+
+
+def test_the_business_body_points_at_the_evidence() -> None:
+    """A report that never mentions its own evidence cannot be forwarded to an
+    auditor by someone who does not know the evidence exists."""
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        assert "colophon" in surface.documents[language], language
+
+
+def test_business_figures_are_the_strings_the_bundle_produced() -> None:
+    """Relocation must not become reformatting. `html.py` leaves the renderer no
+    `Decimal` to format; this asserts the string survived the restructure."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        for figure in bundle.figures:
+            assert figure.renderings[language] in visible, (figure.figure_id, language)
+
+
+def test_the_business_body_drops_the_audit_only_column_headers() -> None:
+    """The six-column identifier table becomes a two-column business statement.
+
+    Asserted on the `<th scope="col">` cells rather than on the visible text.
+    A plain substring search over the rendered page reports a false positive: the
+    governed Arabic disclosure contains `الإسناد` as ordinary prose, and that
+    disclosure is immutable (`bundle.py` compares it in full), so the page is
+    correct and a text search is the wrong instrument. What must be true is that
+    no *column header* names an audit field.
+    """
+    from khepri.rra.rendering.html import _CHROME
+
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        business_headers = set(
+            re.findall(r'<th scope="col">([^<]+)</th>', surface.documents[language])
+        )
+        evidence_headers = set(
+            re.findall(r'<th scope="col">([^<]+)</th>', surface.evidence[language])
+        )
+        for key in ("metric", "kind", "unit", "citation"):
+            heading = _CHROME[language][key]
+            assert heading not in business_headers, (key, language)
+            assert heading in evidence_headers, (key, language)
+        # And the business table keeps exactly its two.
+        assert business_headers == {
+            _CHROME[language]["business_figure"],
+            _CHROME[language]["value"],
+        }, language
+
+
+def _printed_html(language: str = LANGUAGE_ENGLISH) -> str:
+    """The HTML the PDF printer would be handed, rendered without a browser.
+
+    `pdf.py` is deliberately verifiable with no Chromium -- rendering is expressed
+    against a `PagePrinter` port precisely so the surface can be asserted on with
+    a fake and no external binary. This asserts on the markup rather than on bytes.
+    """
+    from khepri.rra.rendering.html import build_environment
+    from khepri.rra.rendering.pdf import PDF_SURFACE_VERSION, PDF_TEMPLATE_NAME
+
+    bundle = _bundle()
+    template = build_environment().get_template(PDF_TEMPLATE_NAME)
+    context = build_context(
+        bundle,
+        language,
+        build_cells(bundle, language),
+        extra_provenance={"pdf_surface_version": PDF_SURFACE_VERSION},
+    )
+    context["print_stylesheet_name"] = "report.print.css"
+    context["fonts"] = []
+    return template.render(context)
+
+
+def test_the_printed_report_carries_the_appendix() -> None:
+    bundle = _bundle()
+    printed = _printed_html()
+    for figure in bundle.figures:
+        assert figure.figure_id in printed, figure.figure_id
+
+
+def test_the_printed_business_body_still_hides_identifiers() -> None:
+    """The appendix carries the identifiers and the body does not, in one
+    document -- so this is the assertion that the separation is real rather than
+    a matter of which file the reader happened to open."""
+    printed = _printed_html()
+    body = printed.split('id="appendix"')[0]
+    assert "data-figure-id" not in body
+
+
+def test_the_printed_appendix_carries_provenance() -> None:
+    printed = _printed_html()
+    appendix = printed.split('id="appendix"')[1]
+    assert "bundle_id" in appendix
+    assert "pdf_surface_version" in appendix
+
+
+def test_the_web_report_carries_no_appendix() -> None:
+    """The parent block stays empty on the screen surface: a web reader gets the
+    separate evidence document instead, and rendering both would put the audit
+    region inside the business page it was separated from."""
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        assert 'id="appendix"' not in surface.documents[language], language
+
+
+def test_a_row_with_both_a_name_and_a_label_shows_both() -> None:
+    """The defect this pins was found by an existing security test, not by this
+    file, and it was a real one.
+
+    An earlier version of the business table rendered `metric_name` in preference
+    to `label`. Four cells in this fixture carry both -- two `basket_attach_rate`
+    rows whose labels are `Water` and `Juice`, and the two `revenue_delta_*` rows
+    whose label is the comparison window. Showing the name alone rendered two
+    rows reading `Attach rate` with different numbers beside them, which is not a
+    presentation choice but a misstatement, and it silently dropped the
+    customer's own product name from the report.
+    """
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        for cell in build_cells(bundle, language):
+            if cell.metric_name and cell.label:
+                assert cell.metric_name in visible, (cell.metric, language)
+                assert cell.label in visible, (cell.metric, cell.label, language)
+
+
+def test_a_customer_label_reaches_the_business_body_escaped() -> None:
+    """A bucket label is customer text and must survive into the business report,
+    escaped rather than dropped -- absence would pass a naive injection check."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    labels = {cell.label for cell in build_cells(bundle, LANGUAGE_ENGLISH) if cell.label}
+    visible = _visible_text(surface.documents[LANGUAGE_ENGLISH])
+    for label in labels:
+        assert label in visible, label

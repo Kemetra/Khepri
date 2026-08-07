@@ -272,3 +272,36 @@ article {
     background: #1c232c;
   }
 }
+
+/*
+ * The business figure table. Two columns, so the name can take the measure it
+ * needs and the value stays readable beside it. Logical properties throughout,
+ * as everywhere in this sheet: one stylesheet lays out both reading directions
+ * and a mirrored copy would be a second place for them to drift.
+ */
+.figures th[scope="row"] {
+  font-weight: 500;
+  text-align: start;
+}
+
+.figures td.figure {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+/*
+ * The colophon: the one place the business report names itself. Set quietly --
+ * it is a reference a reader quotes when asking a question, not a finding.
+ */
+.colophon {
+  border-block-start: 1px solid currentColor;
+  font-size: 0.875rem;
+  margin-block-start: 2rem;
+  opacity: 0.75;
+  padding-block-start: 0.75rem;
+}
+
+.colophon p {
+  margin-block: 0.25rem;
+}

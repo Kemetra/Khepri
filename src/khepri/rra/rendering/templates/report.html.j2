@@ -40,8 +40,11 @@
 {% if passages %}
 <li><a href="#commentary">{{ chrome.commentary }}</a></li>
 {% endif %}
-<li><a href="#citations">{{ chrome.citations }}</a></li>
-<li><a href="#provenance">{{ chrome.provenance }}</a></li>
+{#
+  No citations or provenance entries: both sections moved to the audit region, and
+  a navigation link to an anchor this document no longer contains is a dead link.
+  The colophon is where a reader learns the evidence exists.
+#}
 </ul>
 </nav>
 <main id="report">
@@ -53,27 +56,42 @@
 {% else %}
 {% if section.chart %}{{ chart(section.chart, section.section_id, chrome) }}{% endif %}
 <div class="scroller">
-<table>
-<caption>{{ chrome.figures_caption }}</caption>
+<table class="figures">
+<caption>{{ chrome.business_caption }}</caption>
 <thead>
 <tr>
-<th scope="col">{{ chrome.label }}</th>
-<th scope="col">{{ chrome.metric }}</th>
-<th scope="col">{{ chrome.kind }}</th>
-<th scope="col">{{ chrome.unit }}</th>
+<th scope="col">{{ chrome.business_figure }}</th>
 <th scope="col">{{ chrome.value }}</th>
-<th scope="col">{{ chrome.citation }}</th>
 </tr>
 </thead>
 <tbody>
+{#
+  Two columns, and no `data-figure-id`. The identifier columns -- metric, kind,
+  unit, citation -- and the figure id itself all moved to the audit region, which
+  `_evidence.html.j2` renders from the same bundle. Nothing is dropped: reconcile
+  compares the surface *claim* and never this document, so relocation is
+  claim-neutral while deletion would not be.
+
+  **A row shows both its business name and its label when it has both**, and this
+  is load-bearing rather than cosmetic. A bucket figure carries the customer's own
+  product or branch in `label` while its metric supplies the name: `Attach rate`
+  appears once per product, so showing the name alone renders several identical
+  rows carrying different numbers -- unreadable, and a reader would be right to
+  call it a misstatement. `Revenue change` needs `Against the previous period` for
+  the same reason.
+
+  Neither field alone is sufficient either. Five governed metrics carry no label at
+  all and are named from the derived table, while a series row carries a period or
+  product and no governed name. So: name, then label, then whichever exists.
+#}
 {% for cell in section.cells %}
-<tr data-figure-id="{{ cell.figure_id }}">
-<th scope="row">{% if cell.label is none %}{{ chrome.total }}{% else %}{{ cell.label }}{% endif %}</th>
-<td>{{ cell.metric }}</td>
-<td>{{ cell.kind }}</td>
-<td>{{ cell.unit_kind }}</td>
-<td class="figure" data-figure-id="{{ cell.figure_id }}">{{ cell.text }}</td>
-<td><a href="#citation-{{ cell.citation_id }}"><code>{{ cell.citation_id }}</code></a></td>
+<tr>
+<th scope="row">
+{%- if cell.metric_name and cell.label %}{{ cell.metric_name }} — {{ cell.label }}
+{%- elif cell.metric_name %}{{ cell.metric_name }}
+{%- else %}{{ cell.label }}{% endif -%}
+</th>
+<td class="figure">{{ cell.text }}</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -104,35 +122,37 @@
 {% if passages %}
 <section id="commentary" aria-labelledby="commentary-heading">
 <h2 id="commentary-heading">{{ chrome.commentary }}</h2>
+{#
+  The prose, and not the fact identifiers it cites. `presentation-visibility-matrix.md`
+  §A.4 classifies `passage.cited_fact_ids` as Audit: the passage text is already
+  customer prose and is the one part of the original report that was, while the
+  identifiers beside it mean something only to someone auditing Khepri. The
+  passage-to-fact table is generated for every report in the audit region, so the
+  commentary remains cited -- the citation is one region over, not absent.
+#}
 {% for passage in passages %}
 <article id="passage-{{ passage.section_id }}">
 <p>{{ passage.text }}</p>
-<p class="cites">{{ chrome.cites }}:
-{% for cited in passage.cited_fact_ids %}
-<code>{{ cited }}</code>
-{% endfor %}
-</p>
 </article>
 {% endfor %}
 </section>
 {% endif %}
-<section id="citations" aria-labelledby="citations-heading">
-<h2 id="citations-heading">{{ chrome.citations }}</h2>
-<ul class="citations">
-{% for citation in citations %}
-<li id="citation-{{ citation }}"><code>{{ citation }}</code></li>
-{% endfor %}
-</ul>
-</section>
-<section id="provenance" aria-labelledby="provenance-heading">
-<h2 id="provenance-heading">{{ chrome.provenance }}</h2>
-<dl class="provenance">
-{% for name, value in provenance %}
-<dt><code>{{ name }}</code></dt>
-<dd><code>{{ value }}</code></dd>
-{% endfor %}
-</dl>
-</section>
+{#
+  The citations list and the provenance table are gone from here, not gone from the
+  report: `_evidence.html.j2` renders both, on the Technical Evidence page and in
+  the printed appendix. Every citation and every identity field survives, one
+  region over.
+#}
+<footer class="colophon">
+<p>{{ chrome.colophon_reference }} {{ report_reference }}</p>
+<p>{{ chrome.colophon_evidence }}</p>
+</footer>
+{#
+  Filled by the print surface only. The screen surface publishes the audit region
+  as a separate document, so a web reader who was not given the evidence page does
+  not find it appended to the report they were given.
+#}
+{% block appendix %}{% endblock %}
 </main>
 </body>
 </html>

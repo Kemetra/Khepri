@@ -121,8 +121,18 @@ def test_the_existing_sections_keep_their_place() -> None:
     # the bundle carrying narrative, and this one carries none. Asserting it here
     # would be asserting that a report without commentary links to a commentary
     # section it does not have.
-    for anchor in ("caveats", "citations", "provenance"):
+    #
+    # `citations` and `provenance` left this list under RRA-009, which moved both
+    # sections to the audit region. Their anchors are gone from the business page
+    # because the sections are -- a navigation link to an absent anchor is a dead
+    # link, not a preserved guarantee. The colophon is what now tells a reader the
+    # evidence exists, and `test_rra009_business_audit_split.py` asserts the
+    # evidence document carries both sections.
+    for anchor in ("caveats",):
         assert f'href="#{anchor}"' in rendered, anchor
+    for moved in ("citations", "provenance"):
+        assert f'href="#{moved}"' not in rendered, moved
+    assert "colophon" in rendered
 
 
 def test_a_refused_section_renders_its_governed_reason() -> None:
