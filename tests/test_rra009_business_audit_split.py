@@ -156,12 +156,26 @@ def test_every_row_has_something_to_be_called() -> None:
             assert cell.metric_name or cell.label, (cell.metric, language)
 
 
-def test_a_series_row_is_named_by_its_label_not_a_metric_name() -> None:
+def test_a_series_row_carries_both_a_measure_name_and_its_period() -> None:
+    """A series row needs both halves, and an earlier version of this test asserted
+    it needed only the label.
+
+    That was wrong and it hid a real defect: `revenue_by_period` shares every
+    label with `units_by_period`, so a label-only heading rendered `2026-01-05`
+    twice -- once beside a currency amount and once beside a count -- with the
+    differentiating `metric` sitting in the audit region where a reader cannot see
+    it. The label says *which period*; the name says *what is being measured*.
+    """
     cells = build_cells(_bundle(), LANGUAGE_ENGLISH)
     series = [cell for cell in cells if cell.metric == "revenue_by_period"]
 
     assert series, "fixture carries no revenue_by_period figure"
-    assert all(cell.metric_name is None and cell.label for cell in series)
+    assert all(cell.label for cell in series)
+    assert all(cell.metric_name for cell in series)
+    # And the two series that share labels are told apart by their names.
+    units = [cell for cell in cells if cell.metric == "units_by_period"]
+    assert units, "fixture carries no units_by_period figure"
+    assert {cell.metric_name for cell in series} != {cell.metric_name for cell in units}
 
 
 def test_a_labelless_derived_metric_is_named_from_the_derived_table() -> None:
@@ -479,3 +493,44 @@ def test_the_governed_disclosure_survives_verbatim() -> None:
     surface = HtmlReportRenderer().render_html(bundle)
     for language in REQUIRED_LANGUAGES:
         assert bundle.disclosure(language) in surface.documents[language], language
+
+
+def test_no_two_business_rows_read_the_same() -> None:
+    """Two rows a reader cannot tell apart are worse than an identifier column.
+
+    A bucket emits a `value` figure and a `rows` figure carrying the same metric
+    and the same label, and `revenue_by_period` shares every label with
+    `units_by_period`. `kind` and `metric` are the differentiators and both are
+    Audit-tier, so the business heading has to carry enough business language to
+    separate the rows without them -- otherwise the page shows `2026-01-09` four
+    times beside `90.00`, `1`, `4`, and `1`.
+    """
+    from collections import Counter
+
+    bundle = _bundle()
+    for language in REQUIRED_LANGUAGES:
+        headings = Counter(
+            f"{cell.metric_name or ''}|{cell.label or ''}"
+            for cell in build_cells(bundle, language)
+        )
+        repeated = {name: count for name, count in headings.items() if count > 1}
+        assert not repeated, (language, repeated)
+
+
+def test_a_row_count_is_named_as_a_row_count() -> None:
+    """The `rows` kind is what distinguishes a count from the value beside it, and
+    it is Audit-tier -- so its meaning has to reach the business page as words."""
+    bundle = _bundle()
+    for language in REQUIRED_LANGUAGES:
+        counts = [cell for cell in build_cells(bundle, language) if cell.kind == "rows"]
+        assert counts, "fixture carries no row-count figure"
+        qualifier = wording.kind_qualifier("rows", language)
+        assert qualifier
+        for cell in counts:
+            assert qualifier in (cell.metric_name or ""), (cell.metric, language)
+
+
+def test_a_plain_value_carries_no_kind_qualifier() -> None:
+    """"Revenue (amount)" on every row is noise. Only a row count qualifies."""
+    for language in REQUIRED_LANGUAGES:
+        assert wording.kind_qualifier("value", language) is None

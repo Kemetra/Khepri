@@ -34,6 +34,7 @@ from khepri.rra.bundle import (
     CAVEAT_CURVE_SAMPLED,
     GOVERNED_FIGURE_LABELS,
     GOVERNED_SECTION_REASONS,
+    KIND_ROWS,
     ORDERED_SECTIONS,
     CitedFigure,
 )
@@ -187,6 +188,16 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "concentration_ranked_values": "Ranked contribution",
         "revenue_delta_absolute": "Revenue change",
         "revenue_delta_percent": "Revenue percentage change",
+        # The four series and bucket metrics. Each row also carries its own
+        # label -- a period, a product -- but two of these share every label:
+        # `revenue_by_period` and `units_by_period` both name `2026-01-05`, and
+        # a reader given only the label sees one heading twice with a currency
+        # amount beside one and a count beside the other. The name says which
+        # measure the label is measuring.
+        "revenue_by_period": "Revenue",
+        "units_by_period": "Units sold",
+        "revenue_by_product": "Revenue",
+        "units_by_product": "Units sold",
     },
     LANGUAGE_ARABIC: {
         "basket_items_per_transaction": "عدد الأصناف لكل عملية بيع",
@@ -197,6 +208,30 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "concentration_ranked_values": "المساهمة حسب الترتيب",
         "revenue_delta_absolute": "تغير الإيرادات",
         "revenue_delta_percent": "نسبة تغير الإيرادات",
+        "revenue_by_period": "الإيرادات",
+        "units_by_period": "الوحدات المبيعة",
+        "revenue_by_product": "الإيرادات",
+        "units_by_product": "الوحدات المبيعة",
+    },
+}
+
+
+# What a figure's `kind` adds to its business name. `KIND_VALUE` adds nothing --
+# the value *is* the figure, and "Revenue (amount)" would be noise on every row.
+# `KIND_ROWS` counts the rows a bucket was computed from, which is a different
+# quantity in a different unit, and a bucket emits both: `_bucket` produces a
+# `value` figure and a `rows` figure carrying the same metric and the same label.
+#
+# Without this qualifier a customer reads the same name twice -- "Revenue by
+# period, 2026-01-09" beside `90.00` and again beside `1` -- with nothing on the
+# page saying which is which, because `kind` is Audit-tier and does not appear.
+# The raw code stays in the audit region; this is its customer wording.
+KIND_QUALIFIERS: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        KIND_ROWS: "rows counted",
+    },
+    LANGUAGE_ARABIC: {
+        KIND_ROWS: "عدد الصفوف المحتسبة",
     },
 }
 
@@ -211,6 +246,15 @@ def business_metric_name(metric: str, language: str) -> str | None:
     if governed is not None:
         return governed
     return DERIVED_METRIC_WORDING[language].get(metric)
+
+
+def kind_qualifier(kind: str, language: str) -> str | None:
+    """What a figure's kind adds to its name, or `None` when it adds nothing.
+
+    `None` for a plain value rather than an empty string, so a caller composes a
+    name by testing presence instead of stripping whitespace it did not intend.
+    """
+    return KIND_QUALIFIERS[language].get(kind)
 
 
 # Customer-facing refusal messages -- docs/reporting/refusal-presentation.md §D.

@@ -63,6 +63,7 @@ from khepri.rra.rendering.wording import (
     SECTION_HEADINGS,
     business_metric_name,
     caveat_prose,
+    kind_qualifier,
 )
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
@@ -384,13 +385,48 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
         figure_id=figure.figure_id,
         citation_id=figure.citation_id,
         metric=figure.metric,
-        metric_name=business_metric_name(figure.metric, language),
+        metric_name=_business_name(figure, language),
         kind=figure.kind,
         unit_kind=figure.unit_kind,
         section=figure.section,
         label=_row_label(figure.label, language),
         text=text,
     )
+
+
+def _business_name(figure: CitedFigure, language: str) -> str | None:
+    """A figure's customer-facing name, qualified by its kind where that matters.
+
+    A bucket emits two figures with the same metric and the same label -- the
+    value, and the count of rows it was computed from. `kind` is what separates
+    them and `kind` is Audit-tier, so without a qualifier here a reader sees one
+    name twice with two unrelated numbers beside it and nothing saying which is
+    which.
+
+    Only `KIND_ROWS` qualifies. A plain value needs no suffix: the value is the
+    figure, and "Revenue (amount)" on every row is noise that makes the report
+    harder to read rather than clearer.
+
+    Returns `None` only for a plain value with no governed name, which is the
+    signal that the row is named by its own label alone.
+
+    **The qualifier applies whether or not a governed name exists**, and that is
+    the whole point rather than a detail. The colliding rows in practice are
+    `revenue_by_period` and `units_by_period`, which have *no* metric name and are
+    named by their period label -- so returning early on a missing name left four
+    rows all reading `2026-01-09`, which is the defect this function was added to
+    fix.
+    """
+    name = business_metric_name(figure.metric, language)
+    qualifier = kind_qualifier(figure.kind, language)
+    if qualifier is None:
+        return name
+    if name is None:
+        # A row the label names, counting rows rather than stating the value. The
+        # label still appears beside this in the rendered heading, so "rows
+        # counted — 2026-01-09" reads correctly and is distinct from the value row.
+        return qualifier
+    return f"{name} ({qualifier})"
 
 
 def _row_label(label: str | None, language: str) -> str | None:
