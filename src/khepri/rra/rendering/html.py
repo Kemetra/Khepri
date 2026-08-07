@@ -374,6 +374,33 @@ def _row_label(label: str | None, language: str) -> str | None:
     return _CHROME[language]["labels"][f"label.{label}"]
 
 
+def _audit_region(
+    bundle: ReportBundle,
+    language: str,
+    cells: tuple[FigureCell, ...],
+    provenance: tuple[tuple[str, str], ...],
+) -> dict[str, object]:
+    """Group every existing audit value without computing or filtering it."""
+    return {
+        "figures": list(cells),
+        "sections": [
+            {
+                "section_id": section.section_id,
+                "state": section.state,
+                "reason": section.reason,
+            }
+            for section in bundle.sections
+        ],
+        "caveats": [
+            {"code": caveat.code, "section": caveat.section}
+            for caveat in bundle.caveats
+        ],
+        "citations": sorted({cell.citation_id for cell in cells}),
+        "passages": list(_passages(bundle.narrative, language)),
+        "provenance": provenance,
+    }
+
+
 def build_context(
     bundle: ReportBundle,
     language: str,
@@ -393,6 +420,7 @@ def build_context(
     reason the table is: everything in it has to be a governed version, a digest,
     or a count, and never anything derived from customer data.
     """
+    provenance = _provenance(bundle, extra_provenance or {})
     return {
         "language": language,
         "direction": LANGUAGE_DIRECTION[language],
@@ -410,7 +438,8 @@ def build_context(
         "cells": list(cells),
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
-        "provenance": _provenance(bundle, extra_provenance or {}),
+        "provenance": provenance,
+        "audit": _audit_region(bundle, language, cells, provenance),
     }
 
 
