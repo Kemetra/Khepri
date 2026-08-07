@@ -1,0 +1,34 @@
+schema_version: 1
+id: APP-015
+title: Transformation and orchestration tooling boundary accepted
+state: approved
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-012, settling that neither dbt nor Dagster is adopted into
+  Khepri, that Khepri's transformation stack remains Polars in process and its
+  job delivery remains PostgreSQL claim and redrive, and that Seshat-BI's
+  governed dbt and Dagster adapters stay where they are with Khepri consuming
+  neither.
+exclusions:
+  - Any change to governance/CONSTITUTION.md or the authorities registry
+  - Any delegation record, including DEL-005 which this package cites
+  - Any widening of DEL-005, whose scope and expiry this package cannot alter
+  - Any code change in Khepri or in Seshat-BI, which this decision does not authorize
+  - Any transition of KHEPRI-DEC-005, KHEPRI-DEC-007, KHEPRI-DEC-008 or KHEPRI-DEC-013
+  - Any amendment of RRA.md, any specification, or any family charter
+  - Any decision about a versioned analytical contract with Seshat-BI, which
+    KHEPRI-DEC-012 explicitly declines to reach
+  - Any claim that a human authority approved this package
+manifest_digest: sha256:fb39a6ce0ae0637b30ca18d8f9bacbb2272ec8d748e8fed7209d5ea591e29932
+approval:
+  approved_by: KHEPRI-AGENT
+  approved_at: 2026-08-06
+  approved_manifest_digest: sha256:fb39a6ce0ae0637b30ca18d8f9bacbb2272ec8d748e8fed7209d5ea591e29932
+  delegation_ref: governance/delegations/DEL-005.yaml
+  session: 24ff0bc9-7c52-4d22-85ba-cec99dc35572
+artifacts:
+  - id: KHEPRI-DEC-012
+    document: governance/decisions/KHEPRI-DEC-012-transformation-and-orchestration-boundary.md
+    document_sha256: sha256:2494fe8bd7902f186c02cd90d55ba80a4538da135923985385026aa47ee405c4
+    from_state: proposed
+    to_state: accepted
