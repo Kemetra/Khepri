@@ -28,9 +28,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from khepri.rra import facts
-from khepri.rra.analysis import growth
+from khepri.rra.analysis import basket, comparison, growth
 from khepri.rra.bundle import (
+    CAVEAT_CHART_NOT_DRAWN,
+    CAVEAT_CURVE_SAMPLED,
     GOVERNED_FIGURE_LABELS,
+    GOVERNED_SECTION_REASONS,
     ORDERED_SECTIONS,
     CitedFigure,
 )
@@ -126,13 +129,44 @@ _FACT_METRIC_CODES = {
     facts.METRIC_RETURNS,
 }
 _GOVERNED_METRIC_CODES = _FACT_METRIC_CODES | set(growth.GOVERNED_METRICS)
+_RESULT_REASON_CODES = {
+    facts.REASON_INPUT_UNAVAILABLE,
+    facts.REASON_ZERO_DENOMINATOR,
+    facts.REASON_RECONCILIATION_FAILED,
+    facts.REASON_INCOMPLETE_IDENTIFIERS,
+    facts.REASON_AMBIGUOUS_MAPPING,
+    basket.REASON_DIMENSION_ABSENT,
+    comparison.REASON_NEGATIVE_BASE,
+}
+_GOVERNED_CAVEAT_CODES = {
+    facts.CAVEAT_CURRENCY_NOT_DECLARED,
+    facts.CAVEAT_DUPLICATE_ROWS,
+    facts.CAVEAT_NEGATIVE_REVENUE,
+    facts.CAVEAT_RETURNS_NOT_NETTED,
+    facts.CAVEAT_NULL_MEASURE_INPUTS,
+    facts.CAVEAT_UNDATED_ROWS_EXCLUDED,
+    facts.CAVEAT_BUCKETS_TRUNCATED,
+    facts.CAVEAT_PERSONAL_VALUES_REDACTED,
+    facts.CAVEAT_DERIVED_OVER_MATCHED_ROWS,
+    CAVEAT_CHART_NOT_DRAWN,
+    CAVEAT_CURVE_SAMPLED,
+    growth.CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+}
 
-if set(METRIC_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
-    raise RuntimeError("metric business names must cover every governed language")
 
-for _language, _wording in METRIC_WORDING.items():
-    if set(_wording) != _GOVERNED_METRIC_CODES:
-        raise RuntimeError("every governed metric needs a business name in every language")
+def _assert_metric_wording_complete() -> None:
+    if set(METRIC_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("metric business names must cover every governed language")
+    for language, entries in METRIC_WORDING.items():
+        if set(entries) != _GOVERNED_METRIC_CODES:
+            message = (
+                "every governed metric needs a business name in every language "
+                f"(language={language!r})"
+            )
+            raise RuntimeError(message)
+
+
+_assert_metric_wording_complete()
 
 
 def metric_business_name(metric: str, language: str) -> str:
@@ -151,6 +185,8 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "concentration_top_quartile_share": "Share of sales, top quarter",
         "concentration_distinct_values": "Products or branches counted",
         "concentration_ranked_values": "Ranked contribution",
+        "revenue_delta_absolute": "Revenue change",
+        "revenue_delta_percent": "Revenue percentage change",
     },
     LANGUAGE_ARABIC: {
         "basket_items_per_transaction": "عدد الأصناف لكل عملية بيع",
@@ -159,6 +195,8 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "concentration_top_quartile_share": "حصة أعلى ربع من المبيعات",
         "concentration_distinct_values": "عدد المنتجات أو الفروع المحتسبة",
         "concentration_ranked_values": "المساهمة حسب الترتيب",
+        "revenue_delta_absolute": "تغير الإيرادات",
+        "revenue_delta_percent": "نسبة تغير الإيرادات",
     },
 }
 
@@ -179,7 +217,7 @@ def business_metric_name(metric: str, language: str) -> str | None:
 # Two tiers are required because a section refusal loses a whole analysis, while a
 # result refusal loses one metric and leaves the section standing. Each message
 # states what was unavailable, why, whether the rest of the report is unaffected,
-# which field would fix it, and how. The result tier is filled by the next slice.
+# which field would fix it, and how.
 REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
     "section": {
         LANGUAGE_ENGLISH: {
@@ -297,8 +335,99 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
             ),
         },
     },
-    "result": {},
+    "result": {
+        LANGUAGE_ENGLISH: {
+            "required_input_unavailable": (
+                "{metric} is not shown — the file does not contain {column}. "
+                "The other figures in this section are unaffected."
+            ),
+            "zero_denominator": (
+                "{metric} cannot be calculated for this period because the "
+                "figure it divides by is zero. The other figures in this "
+                "section are unaffected."
+            ),
+            "reconciliation_failed": (
+                "{metric} was calculated but did not reconcile against its "
+                "own inputs, so it is withheld rather than shown. The other "
+                "figures in this section are unaffected."
+            ),
+            "incomplete_transaction_identifiers": (
+                "{metric} is not shown — receipt numbers are missing from "
+                "some rows, so this would describe only part of your sales. "
+                "The other figures in this section are unaffected."
+            ),
+            "ambiguous_mapping": (
+                "{metric} is not shown — more than one column in the file "
+                "could be the {field} and it is not clear which. Rename or "
+                "remove the duplicate and this becomes available."
+            ),
+            "dimension_absent": (
+                "Attach rate is not shown — the file has no product or category "
+                "column to measure attachment against. Items per sale is unaffected."
+            ),
+            "negative_base": (
+                "{metric} is not shown — calculating a percentage change from a "
+                "negative starting value would reverse the apparent direction of "
+                "change. The absolute revenue change is unaffected."
+            ),
+        },
+        LANGUAGE_ARABIC: {
+            "required_input_unavailable": (
+                "{metric} غير معروض — لا يحتوي الملف على {column}. الأرقام "
+                "الأخرى في هذا القسم غير متأثرة."
+            ),
+            "zero_denominator": (
+                "يتعذر حساب {metric} لهذه الفترة لأن الرقم الذي يُقسم عليه "
+                "يساوي صفراً. الأرقام الأخرى في هذا القسم غير متأثرة."
+            ),
+            "reconciliation_failed": (
+                "حُسب {metric} لكنه لم يتطابق مع مدخلاته، لذلك حُجب بدلاً من "
+                "عرضه. الأرقام الأخرى في هذا القسم غير متأثرة."
+            ),
+            "incomplete_transaction_identifiers": (
+                "{metric} غير معروض — أرقام الإيصالات مفقودة من بعض الصفوف، "
+                "ولذلك سيصف هذا الرقم جزءاً من مبيعاتك فقط. الأرقام الأخرى "
+                "في هذا القسم غير متأثرة."
+            ),
+            "ambiguous_mapping": (
+                "{metric} غير معروض — قد يكون أكثر من عمود في الملف هو "
+                "{field}، ولا يمكن تحديد العمود الصحيح. أعد تسمية العمود "
+                "المكرر أو احذفه ليصبح هذا الرقم متاحاً."
+            ),
+            "dimension_absent": (
+                "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا "
+                "يحتوي الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد "
+                "الأصناف لكل عملية بيع غير متأثر."
+            ),
+            "negative_base": (
+                "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
+                "المعنى الظاهر للتغير. التغير المطلق في الإيرادات غير متأثر."
+            ),
+        },
+    },
 }
+
+
+def _assert_refusal_wording_complete() -> None:
+    expected = {
+        "section": set(GOVERNED_SECTION_REASONS),
+        "result": _RESULT_REASON_CODES,
+    }
+    if set(REFUSAL_WORDING) != set(expected):
+        raise RuntimeError("refusal wording must cover every governed tier")
+    for tier, by_language in REFUSAL_WORDING.items():
+        if set(by_language) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+            raise RuntimeError(f"refusal wording misses a language (tier={tier!r})")
+        for language, entries in by_language.items():
+            if set(entries) != expected[tier]:
+                message = (
+                    "every governed refusal reason needs a customer message in "
+                    f"every language (tier={tier!r}, language={language!r})"
+                )
+                raise RuntimeError(message)
+
+
+_assert_refusal_wording_complete()
 
 
 def refusal_message(reason: str, *, context: str, language: str) -> str:
@@ -308,6 +437,167 @@ def refusal_message(reason: str, *, context: str, language: str) -> str:
     internal identifiers or wording from the wrong refusal context.
     """
     return REFUSAL_WORDING[context][language][reason]
+
+
+# Customer prose for every governed caveat. Reconciliation compares caveat sets
+# for equality, so one missing entry is a refused report rather than a cosmetic gap.
+CAVEAT_WORDING: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "currency_not_declared": (
+            "Your file does not state which currency the amounts are in. "
+            "The figures are shown as supplied and have not been converted."
+        ),
+        "duplicate_rows_present": (
+            "Some rows in your file are exact duplicates of each other. "
+            "They have been counted as supplied — if they are genuine "
+            "repeat sales this is correct, and if they are an export error "
+            "the totals are overstated."
+        ),
+        "negative_revenue_present": (
+            "Some rows carry a negative sale amount. These are included as "
+            "supplied, which is correct if they are refunds recorded in the "
+            "sales file."
+        ),
+        "returns_not_netted": (
+            "Returns are reported separately and have not been subtracted "
+            "from revenue. Revenue here is gross of returns."
+        ),
+        "null_measure_inputs": (
+            "Some rows have no amount recorded. They are excluded from the "
+            "totals rather than counted as zero."
+        ),
+        "rows_without_time_field_excluded": (
+            "Some rows carry no date. They are excluded from anything "
+            "measured by period, so month-by-month figures cover slightly "
+            "fewer rows than the totals."
+        ),
+        "comparison_buckets_truncated": (
+            "Your file covers more periods than this comparison shows. The "
+            "comparison uses the most recent complete periods."
+        ),
+        "personal_values_redacted": (
+            "Values that appeared to identify individual people were "
+            "removed before analysis. No figure in this report depends on them."
+        ),
+        "derived_metrics_use_matched_rows": (
+            "Figures that combine two measures — such as average price — "
+            "use only the rows where both measures are present. They may "
+            "therefore cover fewer rows than either measure alone."
+        ),
+        "chart_not_drawn": (
+            "No chart is shown for this section. The figures beside it are complete."
+        ),
+        "curve_points_sampled": (
+            "The concentration curve is drawn from 100 evenly spaced points "
+            "across your full product range. The figures beside it use every row."
+        ),
+        "growth_interaction_assigned_to_price": (
+            "Where price and quantity both changed, the combined part of "
+            "the change is counted with the price effect. This is a stated "
+            "convention, applied the same way every time, so the two "
+            "effects still add exactly to the total."
+        ),
+    },
+    LANGUAGE_ARABIC: {
+        "currency_not_declared": (
+            "لا يحدد ملفك العملة المستخدمة للمبالغ. تُعرض الأرقام كما وردت "
+            "من دون تحويل."
+        ),
+        "duplicate_rows_present": (
+            "بعض صفوف ملفك مكررة بالكامل. احتُسبت كما وردت — إذا كانت مبيعات "
+            "متكررة فعلاً فهذا صحيح، وإذا كانت خطأ في التصدير فالإجماليات أعلى "
+            "من الواقع."
+        ),
+        "negative_revenue_present": (
+            "تتضمن بعض الصفوف قيمة بيع سالبة. أُدرجت كما وردت، وهذا صحيح إذا "
+            "كانت تمثل مبالغ مستردة مسجلة في ملف المبيعات."
+        ),
+        "returns_not_netted": (
+            "تُعرض المرتجعات بصورة منفصلة ولم تُطرح من الإيرادات. الإيرادات "
+            "هنا إجمالية قبل المرتجعات."
+        ),
+        "null_measure_inputs": (
+            "لا تحمل بعض الصفوف مبلغاً مسجلاً. استُبعدت من الإجماليات بدلاً "
+            "من احتسابها صفراً."
+        ),
+        "rows_without_time_field_excluded": (
+            "لا تحمل بعض الصفوف تاريخاً. استُبعدت من أي قياس حسب الفترة، لذلك "
+            "تغطي الأرقام الشهرية صفوفاً أقل قليلاً من الإجماليات."
+        ),
+        "comparison_buckets_truncated": (
+            "يغطي ملفك فترات أكثر مما تعرضه هذه المقارنة. تستخدم المقارنة "
+            "أحدث الفترات المكتملة."
+        ),
+        "personal_values_redacted": (
+            "أُزيلت قبل التحليل القيم التي بدت وكأنها تحدد أشخاصاً بعينهم. لا "
+            "يعتمد عليها أي رقم في هذا التقرير."
+        ),
+        "derived_metrics_use_matched_rows": (
+            "تستخدم الأرقام التي تجمع بين مقياسين — مثل متوسط السعر — الصفوف "
+            "التي يتوفر فيها المقياسان معاً فقط. ولذلك قد تغطي صفوفاً أقل من "
+            "كل مقياس منفرداً."
+        ),
+        "chart_not_drawn": (
+            "لا يظهر رسم بياني لهذا القسم. الأرقام المعروضة بجانبه مكتملة."
+        ),
+        "curve_points_sampled": (
+            "رُسم منحنى التركز باستخدام 100 نقطة موزعة بالتساوي على كامل "
+            "نطاق المنتجات. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
+        ),
+        "growth_interaction_assigned_to_price": (
+            "عندما تغير السعر والكمية معاً، احتُسب الجزء المشترك من التغير ضمن "
+            "أثر السعر. هذه قاعدة معلنة تُطبق بالطريقة نفسها كل مرة، ولذلك "
+            "يظل مجموع الأثرين مساوياً تماماً للتغير الإجمالي."
+        ),
+    },
+}
+
+
+def _assert_caveat_wording_complete() -> None:
+    if set(CAVEAT_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("caveat wording must cover every governed language")
+    for language, entries in CAVEAT_WORDING.items():
+        if set(entries) != _GOVERNED_CAVEAT_CODES:
+            message = (
+                "every governed caveat needs a customer message in every language "
+                f"(language={language!r})"
+            )
+            raise RuntimeError(message)
+
+
+_assert_caveat_wording_complete()
+
+
+def caveat_message(code: str, language: str) -> str:
+    """Return customer prose for one governed caveat code."""
+    return CAVEAT_WORDING[language][code]
+
+
+RESULT_CAVEAT_SEPARATOR = ":"
+
+
+def caveat_prose(code: str, language: str) -> str:
+    """Return prose for a caveat or a result-tier refusal travelling as one."""
+    if RESULT_CAVEAT_SEPARATOR not in code:
+        return caveat_message(code, language)
+    result, reason = code.rsplit(RESULT_CAVEAT_SEPARATOR, 1)
+    if reason in GOVERNED_SECTION_REASONS:
+        return refusal_message(reason, context="section", language=language)
+    metric = _result_business_name(result, language)
+    return refusal_message(reason, context="result", language=language).format(
+        metric=metric,
+        column=metric,
+        field=metric,
+    )
+
+
+def _result_business_name(result: str, language: str) -> str:
+    """Name a refused result without allowing its scope or code onto the page."""
+    metric = result.split(".", maxsplit=1)[0]
+    name = business_metric_name(metric, language)
+    if name is None:
+        raise KeyError(result)
+    return name
 
 
 # What each governed section is called. The page shows it as a heading, the printed
