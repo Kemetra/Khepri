@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from khepri.rra import facts
+from khepri.rra.analysis import growth
 from khepri.rra.bundle import (
     GOVERNED_FIGURE_LABELS,
     ORDERED_SECTIONS,
@@ -73,6 +75,69 @@ LABEL_WORDING: dict[str, dict[str, str]] = {
         "label.year_over_year": "مقابل الفترة نفسها من العام الماضي",
     },
 }
+
+# Business names for the governed metric codes. These are separate from
+# `LABEL_WORDING`: a metric name is report prose, while a label names a chart mark
+# or comparison mode. The renderers consume these strings without touching the
+# figure's value, so this table adds presentation vocabulary and no arithmetic.
+METRIC_WORDING: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "revenue": "Revenue",
+        "units": "Units sold",
+        "transactions": "Number of sales",
+        "average_order_value": "Average sale value",
+        "average_selling_price": "Average selling price",
+        "cost": "Cost of goods sold",
+        "gross_profit": "Gross profit",
+        "gross_margin": "Gross margin",
+        "discount": "Discounts given",
+        "returns": "Returns",
+        "growth_revenue_change": "Total revenue change",
+        "growth_price_effect": "Effect of price changes",
+        "growth_volume_effect": "Effect of volume changes",
+    },
+    LANGUAGE_ARABIC: {
+        "revenue": "الإيرادات",
+        "units": "الوحدات المبيعة",
+        "transactions": "عدد المبيعات",
+        "average_order_value": "متوسط قيمة البيع",
+        "average_selling_price": "متوسط سعر البيع",
+        "cost": "تكلفة المبيعات",
+        "gross_profit": "إجمالي الربح",
+        "gross_margin": "هامش الربح الإجمالي",
+        "discount": "الخصومات الممنوحة",
+        "returns": "المرتجعات",
+        "growth_revenue_change": "إجمالي تغير الإيرادات",
+        "growth_price_effect": "أثر تغير الأسعار",
+        "growth_volume_effect": "أثر تغير الكميات",
+    },
+}
+
+_FACT_METRIC_CODES = {
+    facts.METRIC_REVENUE,
+    facts.METRIC_UNITS,
+    facts.METRIC_TRANSACTIONS,
+    facts.METRIC_AVERAGE_ORDER_VALUE,
+    facts.METRIC_AVERAGE_SELLING_PRICE,
+    facts.METRIC_COST,
+    facts.METRIC_GROSS_PROFIT,
+    facts.METRIC_GROSS_MARGIN,
+    facts.METRIC_DISCOUNT,
+    facts.METRIC_RETURNS,
+}
+_GOVERNED_METRIC_CODES = _FACT_METRIC_CODES | set(growth.GOVERNED_METRICS)
+
+if set(METRIC_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+    raise RuntimeError("metric business names must cover every governed language")
+
+for _language, _wording in METRIC_WORDING.items():
+    if set(_wording) != _GOVERNED_METRIC_CODES:
+        raise RuntimeError("every governed metric needs a business name in every language")
+
+
+def metric_business_name(metric: str, language: str) -> str:
+    """Return a metric's business name, refusing unknown codes or languages."""
+    return METRIC_WORDING[language][metric]
 
 
 # What each governed section is called. The page shows it as a heading, the printed
