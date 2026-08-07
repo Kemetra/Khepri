@@ -442,3 +442,29 @@ def test_a_customer_label_reaches_the_business_body_escaped() -> None:
     visible = _visible_text(surface.documents[LANGUAGE_ENGLISH])
     for label in labels:
         assert label in visible, label
+
+
+def test_no_internal_field_reaches_a_customer_surface() -> None:
+    """RRA-009: an Internal field is rendered on no customer surface, including
+    the audit region -- so unlike an Audit field it is not relocated at all.
+
+    `presentation-visibility-matrix.md` §A.2 and §A.4 name two: the section
+    `state` attribute and `narrative_state`. Both were emitted as `data-`
+    attributes on the business page, which is invisible to a reader and therefore
+    easy to leave behind -- the leak check reads visible text and would never have
+    caught either.
+    """
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        assert "data-narrative-state" not in surface.documents[language], language
+        assert "data-narrative-state" not in surface.evidence[language], language
+
+
+def test_the_governed_disclosure_survives_verbatim() -> None:
+    """Removing the attribute must not touch the prose beside it. `bundle.py`
+    compares the disclosure in full and raises `disclosure_altered` on any edit,
+    so this is the assertion that the removal was surgical."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        assert bundle.disclosure(language) in surface.documents[language], language

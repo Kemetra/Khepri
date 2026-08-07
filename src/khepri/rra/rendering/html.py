@@ -536,6 +536,14 @@ def _provenance(
     entries = {**{name: str(value) for name, value in document.items()}}
     entries["bundle_id"] = bundle.bundle_id
     entries["html_surface_version"] = HTML_SURFACE_VERSION
+    # The narrative state, as a governed provenance field rather than as a `data-`
+    # attribute on the customer's disclosure. It is Internal under RRA-009 and so
+    # reaches no *business* surface -- but it is a real operational fact about how
+    # the report was produced, and the workbook already records it here
+    # (`excel.py:701`). Recording it identically means the three surfaces answer
+    # "was there prose?" the same way, and that removing the attribute relocated
+    # the field rather than dropping it.
+    entries["narrative_state"] = bundle.narrative_state
     entries.update(extra)
     return tuple(sorted(entries.items()))
 

@@ -555,7 +555,11 @@ def test_both_readers_are_told_the_same_thing_about_the_commentary() -> None:
         assert bundle.narrative_state == state
         for language, document in printer.printed.items():
             assert bundle.disclosure(language) in document
-            assert f'data-narrative-state="{state}"' in document
+            # Internal under RRA-009 and therefore on no customer surface. The
+            # printed report carries the state in its appendix's provenance table
+            # instead, which is where an auditor reads a governed field.
+            assert "data-narrative-state" not in document, language
+            assert state in document, (state, language)
 
 
 def test_a_hostile_label_is_escaped_rather_than_injected() -> None:

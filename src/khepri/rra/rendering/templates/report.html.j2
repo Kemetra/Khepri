@@ -28,7 +28,17 @@
 <a class="skip" href="#report">{{ chrome.skip }}</a>
 <header>
 <h1>{{ chrome.title }}</h1>
-<p class="disclosure" role="note" data-narrative-state="{{ narrative_state }}">{{ disclosure }}</p>
+{#
+  The disclosure, and not the narrative state beside it.
+  `presentation-visibility-matrix.md` §A.4 classifies `narrative_state` as tier I,
+  Internal: it says whether a provider produced prose, which means something only
+  to someone *operating* Khepri. RRA-009 renders an Internal field on no customer
+  surface, including the audit region, so it is not relocated -- it is simply not
+  rendered. It remains on the bundle, and `_provenance` carries it into the audit
+  region's provenance table where an auditor can read it as a governed field
+  rather than as a hidden attribute on customer prose.
+#}
+<p class="disclosure" role="note">{{ disclosure }}</p>
 </header>
 <nav aria-label="{{ chrome.navigation }}">
 <h2>{{ chrome.navigation }}</h2>

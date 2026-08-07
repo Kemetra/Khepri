@@ -350,12 +350,19 @@ def test_both_readers_are_told_the_same_thing_about_the_commentary() -> None:
             narrative=narrative,
             narrative_refused=refused,
         )
-        documents = HtmlReportRenderer().render_html(bundle).documents
+        surface = HtmlReportRenderer().render_html(bundle)
 
         assert bundle.narrative_state == state
-        for language, document in documents.items():
+        for language, document in surface.documents.items():
             assert bundle.disclosure(language) in document
-            assert f'data-narrative-state="{state}"' in document
+            # `narrative_state` is tier I -- Internal -- under RRA-009, so it
+            # reaches no customer surface: it says whether a provider produced
+            # prose, which means something only to someone operating Khepri. The
+            # governed disclosure stays; the operational attribute beside it does
+            # not, and the state is still readable as a provenance field where an
+            # auditor looks for it.
+            assert "data-narrative-state" not in document, language
+            assert state in surface.evidence[language], (state, language)
 
 
 def test_the_page_furniture_is_one_table_with_one_key_set() -> None:
