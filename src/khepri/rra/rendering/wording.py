@@ -140,6 +140,41 @@ def metric_business_name(metric: str, language: str) -> str:
     return METRIC_WORDING[language][metric]
 
 
+# Business names for figure metrics that are not governed metric codes and carry
+# no customer label of their own. This table stays separate from `METRIC_WORDING`
+# so the governed-vocabulary completeness guard above keeps its exact meaning.
+DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "basket_items_per_transaction": "Items per sale",
+        "basket_attach_rate": "Attach rate",
+        "concentration_top_decile_share": "Share of sales, top tenth",
+        "concentration_top_quartile_share": "Share of sales, top quarter",
+        "concentration_distinct_values": "Products or branches counted",
+        "concentration_ranked_values": "Ranked contribution",
+    },
+    LANGUAGE_ARABIC: {
+        "basket_items_per_transaction": "عدد الأصناف لكل عملية بيع",
+        "basket_attach_rate": "نسبة عمليات البيع التي تتضمن المنتج أو الفئة",
+        "concentration_top_decile_share": "حصة أعلى عُشر من المبيعات",
+        "concentration_top_quartile_share": "حصة أعلى ربع من المبيعات",
+        "concentration_distinct_values": "عدد المنتجات أو الفروع المحتسبة",
+        "concentration_ranked_values": "المساهمة حسب الترتيب",
+    },
+}
+
+
+def business_metric_name(metric: str, language: str) -> str | None:
+    """Return a business name, or `None` when the row's label names it.
+
+    The raw code is never a fallback: returning it would quietly expose an
+    internal identifier on a customer surface.
+    """
+    governed = METRIC_WORDING[language].get(metric)
+    if governed is not None:
+        return governed
+    return DERIVED_METRIC_WORDING[language].get(metric)
+
+
 # Customer-facing refusal messages -- docs/reporting/refusal-presentation.md §D.
 # Two tiers are required because a section refusal loses a whole analysis, while a
 # result refusal loses one metric and leaves the section standing. Each message

@@ -60,6 +60,7 @@ from khepri.rra.rendering.wording import (
     CHART_DESCRIPTIONS,
     LABEL_WORDING,
     SECTION_HEADINGS,
+    business_metric_name,
 )
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
@@ -161,6 +162,7 @@ class FigureCell:
     figure_id: str
     citation_id: str
     metric: str
+    metric_name: str | None
     kind: str
     unit_kind: str
     section: str
@@ -350,6 +352,7 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
         figure_id=figure.figure_id,
         citation_id=figure.citation_id,
         metric=figure.metric,
+        metric_name=business_metric_name(figure.metric, language),
         kind=figure.kind,
         unit_kind=figure.unit_kind,
         section=figure.section,
