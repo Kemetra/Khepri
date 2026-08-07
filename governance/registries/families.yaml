@@ -19,3 +19,11 @@ families:
     approved_by: AHMED-SHAABAN
     approved_at: 2026-07-29
     approval_ref: governance/approvals/APP-002.yaml
+  - id: RCA
+    name: Retail Commercial Analysis
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/families/RCA.md
+    depends_on:
+      - FND
+      - RRA
