@@ -38,13 +38,26 @@
 </table>
 </div>
 </section>
+{#
+  Section identifier and refusal reason, and not the section's `state`.
+
+  `presentation-visibility-matrix.md` §A.2 classifies `state` as tier I: whether a
+  section is `present` or `refused` is structural, and a reader infers it from the
+  prose -- or, here, from whether the row carries a reason. RRA-009 renders an
+  Internal field on no customer surface, "including the audit region", so the
+  column is not moved anywhere; it is not rendered.
+
+  Nothing an auditor needs is lost. The section identifier is the join key and the
+  governed reason code is the evidence, and a row carrying a reason is a refused
+  section by construction -- which is the same inference the business page's reader
+  makes from the refusal prose.
+#}
 <section id="evidence-sections" aria-labelledby="evidence-sections-heading">
 <h2 id="evidence-sections-heading">{{ chrome.section_states }}</h2>
 <table>
 <thead>
 <tr>
 <th scope="col">{{ chrome.section_column }}</th>
-<th scope="col">{{ chrome.state_column }}</th>
 <th scope="col">{{ chrome.reason_column }}</th>
 </tr>
 </thead>
@@ -52,7 +65,6 @@
 {% for entry in audit.sections %}
 <tr>
 <th scope="row"><code>{{ entry.section_id }}</code></th>
-<td><code>{{ entry.state }}</code></td>
 <td>{% if entry.reason %}<code>{{ entry.reason }}</code>{% else %}{{ chrome.none }}{% endif %}</td>
 </tr>
 {% endfor %}

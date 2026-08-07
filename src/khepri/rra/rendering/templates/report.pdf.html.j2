@@ -16,6 +16,7 @@
   would reach for an exemption.
 #}
 {% extends "report.html.j2" %}
+{% from "_evidence.html.j2" import evidence %}
 {% block embedded_fonts %}
 <style>
 {% for font in fonts %}
@@ -37,4 +38,26 @@
 <style>
 {% include print_stylesheet_name %}
 </style>
+{% endblock %}
+{#
+  The appendix, and the one thing this template adds to the report's body rather
+  than to its head.
+
+  Rendered from `_evidence.html.j2` -- the same macro the standalone Technical
+  Evidence page calls -- so the printed appendix and the served page cannot
+  disagree about a figure, a section state, or a provenance field. Authoring it
+  twice would be the drift the parent template's own header cites DEC-005
+  against, one directory down.
+
+  A printed report is one file, so the business body and the audit region travel
+  together and the separation is positional rather than by document: the appendix
+  begins on a fresh page after the colophon, and a reader who stops at the
+  colophon has read a complete business report.
+#}
+{% block appendix %}
+<section id="appendix" aria-labelledby="appendix-heading">
+<h2 id="appendix-heading">{{ chrome.evidence_title }}</h2>
+<p>{{ chrome.evidence_intro }}</p>
+</section>
+{{ evidence(audit, chrome, caveat_prose) }}
 {% endblock %}

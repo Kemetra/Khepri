@@ -165,4 +165,21 @@
     /* Long digests need the full measure on paper. */
     grid-template-columns: minmax(14rem, auto) 1fr;
   }
+  /*
+   * The appendix begins on a fresh page, stated rather than inherited.
+   *
+   * `main > section + section` above would already break here, because the
+   * appendix sections are direct children of `main` like every governed
+   * analysis. But that rule breaks *between analyses*, and this boundary is a
+   * different kind: everything before it is the business report a customer
+   * reads, and everything after it is the evidence an auditor reads. A reader
+   * who stops at the colophon has a complete document, which is only true if the
+   * appendix cannot begin on the same sheet as the colophon.
+   *
+   * Declared on the id so it survives a change to the sibling order, and so a
+   * reader of this sheet can see the intent rather than infer it.
+   */
+  #appendix {
+    break-before: page;
+  }
 }

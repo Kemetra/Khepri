@@ -306,25 +306,37 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
     # the renderer built: comparing the claims would only prove the renderer
     # agrees with itself.
     bundle = ReportBundle.of(package(), narrative=narrative_for())
-    documents = HtmlReportRenderer().render_html(bundle).documents
+    surface = HtmlReportRenderer().render_html(bundle)
+    documents = surface.documents
 
     assert bundle.caveats
     for language, document in documents.items():
         for entry in bundle.figures:
             assert entry.renderings[language] in document
-            assert entry.citation_id in document
+            # The citation identifier is Audit-tier under RRA-009 and reaches the
+            # evidence document rather than the business page. Asserted there, in
+            # the same loop, so parity still covers it: a citation present in one
+            # language's evidence and missing from the other's is the failure this
+            # test exists to catch, wherever the citation lives.
+            assert entry.citation_id in surface.evidence[language]
         for caveat in bundle.caveats:
             assert caveat_prose(caveat.code, language) in document
         # The governed disclosure, in full. A shortened or reworded one is not
         # the disclosure, and `bundle.reconcile` refuses it for the same reason.
         assert bundle.disclosure(language) in document
 
-    counts = {
-        language: document.count('data-figure-id="')
+    # `data-figure-id` is gone from the business page by design -- RRA-009 keeps an
+    # identifier in an attribute only where a reader uses one, and that hook served
+    # tooling. Parity is therefore counted on the figure rows the two languages
+    # actually render, which is the property the attribute count stood in for.
+    rows = {
+        language: document.count('<td class="figure">')
         for language, document in documents.items()
     }
-    assert counts[LANGUAGE_ARABIC] == counts[LANGUAGE_ENGLISH]
-    assert counts[LANGUAGE_ENGLISH] == 2 * len(bundle.figures)
+    assert rows[LANGUAGE_ARABIC] == rows[LANGUAGE_ENGLISH]
+    assert rows[LANGUAGE_ENGLISH] == len(bundle.figures)
+    for document in documents.values():
+        assert "data-figure-id" not in document
 
 
 def test_both_readers_are_told_the_same_thing_about_the_commentary() -> None:
@@ -338,12 +350,24 @@ def test_both_readers_are_told_the_same_thing_about_the_commentary() -> None:
             narrative=narrative,
             narrative_refused=refused,
         )
-        documents = HtmlReportRenderer().render_html(bundle).documents
+        surface = HtmlReportRenderer().render_html(bundle)
 
         assert bundle.narrative_state == state
-        for language, document in documents.items():
+        for language, document in surface.documents.items():
             assert bundle.disclosure(language) in document
-            assert f'data-narrative-state="{state}"' in document
+            # `narrative_state` is tier I -- Internal -- under RRA-009, which
+            # renders an Internal field "on no customer surface, including the
+            # audit region". So it is absent from *both* documents rather than
+            # relocated: Internal is not a quieter Audit. The governed disclosure
+            # prose stays; the operational attribute beside it does not.
+            #
+            # Asserted on the attribute and on a provenance row rather than on the
+            # bare state string. `narrative_state` takes the value `refused`, which
+            # is also the CSS class on a refused section's prose -- a substring
+            # search reports that legitimate class as a leak.
+            assert "data-narrative-state" not in document, language
+            assert "narrative_state" not in document, language
+            assert "narrative_state" not in surface.evidence[language], language
 
 
 def test_the_page_furniture_is_one_table_with_one_key_set() -> None:

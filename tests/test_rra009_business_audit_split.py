@@ -156,12 +156,26 @@ def test_every_row_has_something_to_be_called() -> None:
             assert cell.metric_name or cell.label, (cell.metric, language)
 
 
-def test_a_series_row_is_named_by_its_label_not_a_metric_name() -> None:
+def test_a_series_row_carries_both_a_measure_name_and_its_period() -> None:
+    """A series row needs both halves, and an earlier version of this test asserted
+    it needed only the label.
+
+    That was wrong and it hid a real defect: `revenue_by_period` shares every
+    label with `units_by_period`, so a label-only heading rendered `2026-01-05`
+    twice -- once beside a currency amount and once beside a count -- with the
+    differentiating `metric` sitting in the audit region where a reader cannot see
+    it. The label says *which period*; the name says *what is being measured*.
+    """
     cells = build_cells(_bundle(), LANGUAGE_ENGLISH)
     series = [cell for cell in cells if cell.metric == "revenue_by_period"]
 
     assert series, "fixture carries no revenue_by_period figure"
-    assert all(cell.metric_name is None and cell.label for cell in series)
+    assert all(cell.label for cell in series)
+    assert all(cell.metric_name for cell in series)
+    # And the two series that share labels are told apart by their names.
+    units = [cell for cell in cells if cell.metric == "units_by_period"]
+    assert units, "fixture carries no units_by_period figure"
+    assert {cell.metric_name for cell in series} != {cell.metric_name for cell in units}
 
 
 def test_a_labelless_derived_metric_is_named_from_the_derived_table() -> None:
@@ -264,3 +278,259 @@ def test_evidence_page_escapes_customer_labels() -> None:
 
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "<script>alert(1)</script>" not in rendered
+
+
+def test_the_business_body_shows_no_figure_or_citation_identifier() -> None:
+    """RRA-009 allows exactly one identifier in the business region, and it is
+    the short report reference -- not a figure id and not a citation id."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        for figure in bundle.figures:
+            assert figure.figure_id not in visible, (figure.figure_id, language)
+            assert figure.citation_id not in visible, (figure.citation_id, language)
+
+
+def test_the_business_body_carries_no_data_figure_id_attribute() -> None:
+    """Removed from the markup, not merely from the visible text.
+
+    `presentation-visibility-matrix.md` §A.2 draws the rule: an identifier may
+    survive in an attribute only where the reader uses it. An `id=` anchor is
+    navigation and survives; `data-figure-id` was a hook for tooling, and a
+    business report is not a tooling surface.
+    """
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        assert "data-figure-id" not in surface.documents[language], language
+
+
+def test_the_business_body_names_rows_in_business_language() -> None:
+    visible = _visible_text(_surface().documents[LANGUAGE_ENGLISH])
+    assert "Revenue" in visible
+
+
+def test_the_business_body_carries_the_report_reference() -> None:
+    """The one identifier the business region is allowed, and it is short enough
+    to read aloud -- which a digest is not."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    reference = bundle.bundle_id[:8].upper()
+    for language in REQUIRED_LANGUAGES:
+        assert reference in _visible_text(surface.documents[language]), language
+
+
+def test_the_business_body_points_at_the_evidence() -> None:
+    """A report that never mentions its own evidence cannot be forwarded to an
+    auditor by someone who does not know the evidence exists."""
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        assert "colophon" in surface.documents[language], language
+
+
+def test_business_figures_are_the_strings_the_bundle_produced() -> None:
+    """Relocation must not become reformatting. `html.py` leaves the renderer no
+    `Decimal` to format; this asserts the string survived the restructure."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        for figure in bundle.figures:
+            assert figure.renderings[language] in visible, (figure.figure_id, language)
+
+
+def test_the_business_body_drops_the_audit_only_column_headers() -> None:
+    """The six-column identifier table becomes a two-column business statement.
+
+    Asserted on the `<th scope="col">` cells rather than on the visible text.
+    A plain substring search over the rendered page reports a false positive: the
+    governed Arabic disclosure contains `الإسناد` as ordinary prose, and that
+    disclosure is immutable (`bundle.py` compares it in full), so the page is
+    correct and a text search is the wrong instrument. What must be true is that
+    no *column header* names an audit field.
+    """
+    from khepri.rra.rendering.html import _CHROME
+
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        business_headers = set(
+            re.findall(r'<th scope="col">([^<]+)</th>', surface.documents[language])
+        )
+        evidence_headers = set(
+            re.findall(r'<th scope="col">([^<]+)</th>', surface.evidence[language])
+        )
+        for key in ("metric", "kind", "unit", "citation"):
+            heading = _CHROME[language][key]
+            assert heading not in business_headers, (key, language)
+            assert heading in evidence_headers, (key, language)
+        # And the business table keeps exactly its two.
+        assert business_headers == {
+            _CHROME[language]["business_figure"],
+            _CHROME[language]["value"],
+        }, language
+
+
+def _printed_html(language: str = LANGUAGE_ENGLISH) -> str:
+    """The HTML the PDF printer would be handed, rendered without a browser.
+
+    `pdf.py` is deliberately verifiable with no Chromium -- rendering is expressed
+    against a `PagePrinter` port precisely so the surface can be asserted on with
+    a fake and no external binary. This asserts on the markup rather than on bytes.
+    """
+    from khepri.rra.rendering.html import build_environment
+    from khepri.rra.rendering.pdf import PDF_SURFACE_VERSION, PDF_TEMPLATE_NAME
+
+    bundle = _bundle()
+    template = build_environment().get_template(PDF_TEMPLATE_NAME)
+    context = build_context(
+        bundle,
+        language,
+        build_cells(bundle, language),
+        extra_provenance={"pdf_surface_version": PDF_SURFACE_VERSION},
+    )
+    context["print_stylesheet_name"] = "report.print.css"
+    context["fonts"] = []
+    return template.render(context)
+
+
+def test_the_printed_report_carries_the_appendix() -> None:
+    bundle = _bundle()
+    printed = _printed_html()
+    for figure in bundle.figures:
+        assert figure.figure_id in printed, figure.figure_id
+
+
+def test_the_printed_business_body_still_hides_identifiers() -> None:
+    """The appendix carries the identifiers and the body does not, in one
+    document -- so this is the assertion that the separation is real rather than
+    a matter of which file the reader happened to open."""
+    printed = _printed_html()
+    body = printed.split('id="appendix"')[0]
+    assert "data-figure-id" not in body
+
+
+def test_the_printed_appendix_carries_provenance() -> None:
+    printed = _printed_html()
+    appendix = printed.split('id="appendix"')[1]
+    assert "bundle_id" in appendix
+    assert "pdf_surface_version" in appendix
+
+
+def test_the_web_report_carries_no_appendix() -> None:
+    """The parent block stays empty on the screen surface: a web reader gets the
+    separate evidence document instead, and rendering both would put the audit
+    region inside the business page it was separated from."""
+    surface = _surface()
+    for language in REQUIRED_LANGUAGES:
+        assert 'id="appendix"' not in surface.documents[language], language
+
+
+def test_a_row_with_both_a_name_and_a_label_shows_both() -> None:
+    """The defect this pins was found by an existing security test, not by this
+    file, and it was a real one.
+
+    An earlier version of the business table rendered `metric_name` in preference
+    to `label`. Four cells in this fixture carry both -- two `basket_attach_rate`
+    rows whose labels are `Water` and `Juice`, and the two `revenue_delta_*` rows
+    whose label is the comparison window. Showing the name alone rendered two
+    rows reading `Attach rate` with different numbers beside them, which is not a
+    presentation choice but a misstatement, and it silently dropped the
+    customer's own product name from the report.
+    """
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        for cell in build_cells(bundle, language):
+            if cell.metric_name and cell.label:
+                assert cell.metric_name in visible, (cell.metric, language)
+                assert cell.label in visible, (cell.metric, cell.label, language)
+
+
+def test_a_customer_label_reaches_the_business_body_escaped() -> None:
+    """A bucket label is customer text and must survive into the business report,
+    escaped rather than dropped -- absence would pass a naive injection check."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    labels = {cell.label for cell in build_cells(bundle, LANGUAGE_ENGLISH) if cell.label}
+    visible = _visible_text(surface.documents[LANGUAGE_ENGLISH])
+    for label in labels:
+        assert label in visible, label
+
+
+def test_no_internal_field_reaches_a_customer_surface() -> None:
+    """RRA-009: an Internal field is rendered on no customer surface, including
+    the audit region -- so unlike an Audit field it is not relocated at all.
+
+    `presentation-visibility-matrix.md` §A.2 and §A.4 name two: the section
+    `state` attribute and `narrative_state`. Both were emitted as `data-`
+    attributes on the business page, which is invisible to a reader and therefore
+    easy to leave behind -- the leak check reads visible text and would never have
+    caught either.
+    """
+    bundle = _bundle(ROWS[:2])
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        for document in (surface.documents[language], surface.evidence[language]):
+            assert "data-narrative-state" not in document, language
+            # The field name, not the value: `narrative_state` can be `refused`,
+            # which is also the CSS class a refused section's prose carries.
+            assert "narrative_state" not in document, language
+            # `section.state` is Internal too, and this bundle carries both a
+            # present and a refused section -- so `refused` reaching either
+            # document would be the leak, and `present` likewise.
+            for state in ("present", "refused"):
+                assert f"<code>{state}</code>" not in document, (state, language)
+    # And the refusal is still evidenced: the reason code is Audit-tier and stays.
+    assert "prior_window_absent" in surface.evidence[LANGUAGE_ENGLISH]
+
+
+def test_the_governed_disclosure_survives_verbatim() -> None:
+    """Removing the attribute must not touch the prose beside it. `bundle.py`
+    compares the disclosure in full and raises `disclosure_altered` on any edit,
+    so this is the assertion that the removal was surgical."""
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+    for language in REQUIRED_LANGUAGES:
+        assert bundle.disclosure(language) in surface.documents[language], language
+
+
+def test_no_two_business_rows_read_the_same() -> None:
+    """Two rows a reader cannot tell apart are worse than an identifier column.
+
+    A bucket emits a `value` figure and a `rows` figure carrying the same metric
+    and the same label, and `revenue_by_period` shares every label with
+    `units_by_period`. `kind` and `metric` are the differentiators and both are
+    Audit-tier, so the business heading has to carry enough business language to
+    separate the rows without them -- otherwise the page shows `2026-01-09` four
+    times beside `90.00`, `1`, `4`, and `1`.
+    """
+    from collections import Counter
+
+    bundle = _bundle()
+    for language in REQUIRED_LANGUAGES:
+        headings = Counter(
+            f"{cell.metric_name or ''}|{cell.label or ''}"
+            for cell in build_cells(bundle, language)
+        )
+        repeated = {name: count for name, count in headings.items() if count > 1}
+        assert not repeated, (language, repeated)
+
+
+def test_a_row_count_is_named_as_a_row_count() -> None:
+    """The `rows` kind is what distinguishes a count from the value beside it, and
+    it is Audit-tier -- so its meaning has to reach the business page as words."""
+    bundle = _bundle()
+    for language in REQUIRED_LANGUAGES:
+        counts = [cell for cell in build_cells(bundle, language) if cell.kind == "rows"]
+        assert counts, "fixture carries no row-count figure"
+        qualifier = wording.kind_qualifier("rows", language)
+        assert qualifier
+        for cell in counts:
+            assert qualifier in (cell.metric_name or ""), (cell.metric, language)
+
+
+def test_a_plain_value_carries_no_kind_qualifier() -> None:
+    """"Revenue (amount)" on every row is noise. Only a row count qualifies."""
+    for language in REQUIRED_LANGUAGES:
+        assert wording.kind_qualifier("value", language) is None

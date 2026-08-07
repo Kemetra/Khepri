@@ -63,6 +63,7 @@ from khepri.rra.rendering.wording import (
     SECTION_HEADINGS,
     business_metric_name,
     caveat_prose,
+    kind_qualifier,
 )
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
@@ -72,6 +73,11 @@ TEMPLATE_DIRECTORY = "templates"
 TEMPLATE_NAME = "report.html.j2"
 EVIDENCE_TEMPLATE_NAME = "report.evidence.html.j2"
 STYLESHEET_NAME = "report.css"
+
+# How much of the bundle identity the business region shows. Eight hex characters
+# is short enough to read over a phone and long enough that two reports a customer
+# holds at once will not collide. The full identity is in the audit region.
+REPORT_REFERENCE_WIDTH = 8
 
 # The page's own furniture, in both governed languages. Headings and column
 # names are the renderer's to write — they say nothing about the data — but they
@@ -86,8 +92,18 @@ _CHROME: dict[str, dict[str, str]] = {
         "about": "About this report",
         "figures": "Figures",
         "figures_caption": "Every figure in this report, beside the fact it cites",
+        "business_caption": "The figures in this section",
+        "business_figure": "Figure",
         "caveats": "Data caveats",
         "commentary": "Commentary",
+        # The colophon is the one place the business report names itself. It carries
+        # the short reference and says the evidence exists, because a report that
+        # never mentions its own evidence cannot be forwarded to an auditor by a
+        # reader who does not know there is any.
+        "colophon_reference": "Report reference",
+        "colophon_evidence": (
+            "Full calculation evidence and data lineage are available on request."
+        ),
         "citations": "Citations",
         "provenance": "Provenance and versions",
         "label": "Label",
@@ -126,8 +142,12 @@ _CHROME: dict[str, dict[str, str]] = {
         "about": "عن هذا التقرير",
         "figures": "الأرقام",
         "figures_caption": "كل رقم في هذا التقرير، بجانب الحقيقة التي يُسند إليها",
+        "business_caption": "أرقام هذا القسم",
+        "business_figure": "البيان",
         "caveats": "تحذيرات البيانات",
         "commentary": "التعليق",
+        "colophon_reference": "مرجع التقرير",
+        "colophon_evidence": "تتوفر أدلة الحساب الكاملة وسلسلة مصدر البيانات عند الطلب.",
         "citations": "الإسنادات",
         "provenance": "المصدر والإصدارات",
         "label": "التسمية",
@@ -365,13 +385,48 @@ def _cell(figure: CitedFigure, language: str) -> FigureCell:
         figure_id=figure.figure_id,
         citation_id=figure.citation_id,
         metric=figure.metric,
-        metric_name=business_metric_name(figure.metric, language),
+        metric_name=_business_name(figure, language),
         kind=figure.kind,
         unit_kind=figure.unit_kind,
         section=figure.section,
         label=_row_label(figure.label, language),
         text=text,
     )
+
+
+def _business_name(figure: CitedFigure, language: str) -> str | None:
+    """A figure's customer-facing name, qualified by its kind where that matters.
+
+    A bucket emits two figures with the same metric and the same label -- the
+    value, and the count of rows it was computed from. `kind` is what separates
+    them and `kind` is Audit-tier, so without a qualifier here a reader sees one
+    name twice with two unrelated numbers beside it and nothing saying which is
+    which.
+
+    Only `KIND_ROWS` qualifies. A plain value needs no suffix: the value is the
+    figure, and "Revenue (amount)" on every row is noise that makes the report
+    harder to read rather than clearer.
+
+    Returns `None` only for a plain value with no governed name, which is the
+    signal that the row is named by its own label alone.
+
+    **The qualifier applies whether or not a governed name exists**, and that is
+    the whole point rather than a detail. The colliding rows in practice are
+    `revenue_by_period` and `units_by_period`, which have *no* metric name and are
+    named by their period label -- so returning early on a missing name left four
+    rows all reading `2026-01-09`, which is the defect this function was added to
+    fix.
+    """
+    name = business_metric_name(figure.metric, language)
+    qualifier = kind_qualifier(figure.kind, language)
+    if qualifier is None:
+        return name
+    if name is None:
+        # A row the label names, counting rows rather than stating the value. The
+        # label still appears beside this in the rendered heading, so "rows
+        # counted — 2026-01-09" reads correctly and is distinct from the value row.
+        return qualifier
+    return f"{name} ({qualifier})"
 
 
 def _row_label(label: str | None, language: str) -> str | None:
@@ -396,13 +451,19 @@ def _audit_region(
     cells: tuple[FigureCell, ...],
     provenance: tuple[tuple[str, str], ...],
 ) -> dict[str, object]:
-    """Group every existing audit value without computing or filtering it."""
+    """Group every existing audit value without computing or filtering it.
+
+    `section.state` is not carried. It is tier I -- Internal -- and RRA-009 renders
+    an Internal field on no customer surface including the audit region, so handing
+    it to the evidence template would be handing a consumer a field it must
+    remember not to render. A refused section is identifiable here by carrying a
+    reason, which is the Audit-tier evidence an auditor actually joins on.
+    """
     return {
         "figures": list(cells),
         "sections": [
             {
                 "section_id": section.section_id,
-                "state": section.state,
                 "reason": section.reason,
             }
             for section in bundle.sections
@@ -459,8 +520,23 @@ def build_context(
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
         "provenance": provenance,
+        # The one identifier the business region carries. Derived from the bundle
+        # identity rather than invented, so a reader quoting it can be matched to
+        # the report -- and short enough to read aloud, which a digest is not. The
+        # full identity stays in the audit region, where an auditor needs it.
+        "report_reference": _report_reference(bundle),
         "audit": _audit_region(bundle, language, cells, provenance),
     }
+
+
+def _report_reference(bundle: ReportBundle) -> str:
+    """The short human reference a customer quotes when asking about a report.
+
+    A prefix of the bundle identity rather than a new identifier: a second
+    identifier would be a second thing to reconcile, and this one is already
+    content-addressed. Upper-cased because it is read aloud and transcribed.
+    """
+    return bundle.bundle_id[:REPORT_REFERENCE_WIDTH].upper()
 
 
 def _passages(
@@ -502,6 +578,15 @@ def _provenance(
     entries = {**{name: str(value) for name, value in document.items()}}
     entries["bundle_id"] = bundle.bundle_id
     entries["html_surface_version"] = HTML_SURFACE_VERSION
+    # `narrative_state` is deliberately absent, and an earlier revision of this
+    # function was wrong to add it. It is tier I -- Internal -- and RRA-009 renders
+    # an Internal field "on no customer surface, including the audit region", so
+    # there is nowhere on either document it may go. Internal is not a quieter
+    # Audit: an Audit field is relocated, an Internal one is not rendered.
+    #
+    # `excel.py:701` writes it to the workbook's provenance sheet. That is a
+    # pre-existing divergence from this classification rather than a precedent to
+    # copy, and it belongs to the Excel slice.
     entries.update(extra)
     return tuple(sorted(entries.items()))
 
