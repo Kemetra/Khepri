@@ -3,8 +3,8 @@
   The Technical Evidence page: one document per governed language, carrying the
   identifiers the business report does not show.
 
-  The body is filled in a later RRA-009 slice through the shared evidence partial
-  used by both this page and the printed appendix.
+  The body comes from the shared evidence partial used by both this page and the
+  printed appendix.
 #}
 <!doctype html>
 <html lang="{{ language }}" dir="{{ direction }}">
@@ -22,7 +22,7 @@
 <p>{{ chrome.evidence_intro }}</p>
 </header>
 <main id="evidence">
-{{ evidence(audit, chrome) }}
+{{ evidence(audit, chrome, caveat_prose) }}
 </main>
 </body>
 </html>

@@ -59,8 +59,10 @@ from khepri.rra.rendering.charts import ChartView, build_chart
 from khepri.rra.rendering.wording import (
     CHART_DESCRIPTIONS,
     LABEL_WORDING,
+    REFUSAL_WORDING,
     SECTION_HEADINGS,
     business_metric_name,
+    caveat_prose,
 )
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
@@ -109,12 +111,10 @@ _CHROME: dict[str, dict[str, str]] = {
         "state_column": "State",
         "reason_column": "Reason",
         "commentary_citations": "Commentary citations",
-        # Three tables read from `wording` rather than held here: section headings,
-        # chart descriptions, and the wording for every governed code a chart label can
-        # carry. Each is read by more than one surface -- the workbook titles its native
-        # chart with the section heading and takes its alternative text from the
-        # description -- and every copy would be a place the surfaces could drift into
-        # naming the same thing differently.
+        "refusal_prose": REFUSAL_WORDING["section"][LANGUAGE_ENGLISH],
+        # Shared customer wording is read from `wording` rather than copied here.
+        # Every duplicate would be a place for surfaces or languages to drift into
+        # naming the same section, chart, label, or refusal differently.
         "sections": SECTION_HEADINGS[LANGUAGE_ENGLISH],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ENGLISH],
         "labels": LABEL_WORDING[LANGUAGE_ENGLISH],
@@ -151,6 +151,7 @@ _CHROME: dict[str, dict[str, str]] = {
         "state_column": "الحالة",
         "reason_column": "السبب",
         "commentary_citations": "إسنادات التعليق",
+        "refusal_prose": REFUSAL_WORDING["section"][LANGUAGE_ARABIC],
         "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
         "labels": LABEL_WORDING[LANGUAGE_ARABIC],
@@ -448,6 +449,10 @@ def build_context(
         # whole dataset is qualified, and dropping it would leave `build_content`
         # claiming a caveat the page never showed.
         "caveats": [caveat for caveat in bundle.caveats if caveat.section is None],
+        "caveat_prose": {
+            caveat.code: caveat_prose(caveat.code, language)
+            for caveat in bundle.caveats
+        },
         "sections": _section_views(bundle, language, cells),
         "refused_state": SECTION_REFUSED,
         "cells": list(cells),

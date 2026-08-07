@@ -2,10 +2,10 @@
   The audit-evidence region, authored once for the standalone Technical Evidence
   page and the printed report appendix. Every value remains autoescaped.
 
-  Caveats carry their raw audit code in this intermediate slice. Task 5 adds the
-  customer prose after the governed caveat vocabulary exists.
+  Each caveat keeps its raw audit code beside the localized customer explanation;
+  the code remains evidence and the prose makes that evidence readable.
 #}
-{% macro evidence(audit, chrome) %}
+{% macro evidence(audit, chrome, caveat_prose) %}
 <section id="evidence-figures" aria-labelledby="evidence-figures-heading">
 <h2 id="evidence-figures-heading">{{ chrome.figures }}</h2>
 <div class="scroller">
@@ -65,7 +65,7 @@
 <dl class="caveats">
 {% for caveat in audit.caveats %}
 <dt><code>{{ caveat.code }}</code></dt>
-<dd><code>{{ caveat.code }}</code></dd>
+<dd>{{ caveat_prose[caveat.code] }}</dd>
 {% endfor %}
 </dl>
 {% else %}

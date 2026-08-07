@@ -26,9 +26,11 @@ from khepri.rra.bundle import (
     StatedCaveat,
     reconcile,
 )
+from khepri.rra.facts import CAVEAT_BUCKETS_TRUNCATED
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
+from khepri.rra.rendering.wording import caveat_prose
 from tests.test_rra006_bundle import language_of, package, surface_of
 
 
@@ -222,7 +224,12 @@ def test_a_surface_places_a_scoped_caveat_rather_than_refusing_it(
     # per-section sheet slice moves it onto that sheet.
     scoped = replace(
         bundle_of(),
-        caveats=(StatedCaveat(code="window_truncated", section=SECTION_OVERVIEW),),
+        caveats=(
+            StatedCaveat(
+                code=CAVEAT_BUCKETS_TRUNCATED,
+                section=SECTION_OVERVIEW,
+            ),
+        ),
     )
     rendered = render(scoped)  # type: ignore[operator]
     assert rendered is not None
@@ -233,11 +240,18 @@ def test_the_page_places_a_scoped_caveat_inside_the_section_it_qualifies() -> No
     # heading would tell a reader the whole dataset is qualified.
     scoped = replace(
         bundle_of(),
-        caveats=(StatedCaveat(code="window_truncated", section=SECTION_OVERVIEW),),
+        caveats=(
+            StatedCaveat(
+                code=CAVEAT_BUCKETS_TRUNCATED,
+                section=SECTION_OVERVIEW,
+            ),
+        ),
     )
     page = HtmlReportRenderer().render_html(scoped).documents[LANGUAGE_ENGLISH]
 
     section_at = page.index(f'<section id="{SECTION_OVERVIEW}"')
     caveats_at = page.index('<section id="caveats"')
-    code_at = page.index("window_truncated")
-    assert section_at < code_at < caveats_at
+    prose_at = page.index(
+        caveat_prose(CAVEAT_BUCKETS_TRUNCATED, LANGUAGE_ENGLISH)
+    )
+    assert section_at < prose_at < caveats_at

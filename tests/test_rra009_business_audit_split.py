@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 import pytest
@@ -49,6 +50,10 @@ def _context(language: str = LANGUAGE_ENGLISH) -> dict[str, object]:
 
 def _evidence(language: str = LANGUAGE_ENGLISH) -> str:
     return _surface().evidence[language]
+
+
+def _visible_text(document: str) -> str:
+    return re.sub(r"<[^>]+>", " ", document)
 
 
 def test_evidence_is_published_for_every_governed_language() -> None:
@@ -198,6 +203,42 @@ def test_evidence_page_carries_the_raw_reason_code() -> None:
     surface = _surface(ROWS[:2])
 
     assert "prior_window_absent" in surface.evidence[LANGUAGE_ENGLISH]
+
+
+def test_business_page_states_a_refusal_as_customer_prose_not_a_code() -> None:
+    surface = _surface(ROWS[:2])
+
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        assert "prior_window_absent" not in visible
+        assert wording.refusal_message(
+            "prior_window_absent",
+            context="section",
+            language=language,
+        ) in visible
+
+
+def test_business_page_states_every_caveat_as_customer_prose_not_a_code() -> None:
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+
+    for language in REQUIRED_LANGUAGES:
+        visible = _visible_text(surface.documents[language])
+        for caveat in bundle.caveats:
+            assert caveat.code not in visible
+            assert wording.caveat_prose(caveat.code, language) in visible
+
+
+def test_evidence_page_keeps_each_caveat_code_beside_customer_prose() -> None:
+    bundle = _bundle()
+    surface = HtmlReportRenderer().render_html(bundle)
+
+    for language in REQUIRED_LANGUAGES:
+        rendered = surface.evidence[language]
+        visible = _visible_text(rendered)
+        for caveat in bundle.caveats:
+            assert caveat.code in rendered
+            assert wording.caveat_prose(caveat.code, language) in visible
 
 
 def test_evidence_page_carries_provenance() -> None:

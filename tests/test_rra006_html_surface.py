@@ -38,6 +38,7 @@ from khepri.rra.rendering import (
 )
 from khepri.rra.rendering import html as html_module
 from khepri.rra.rendering.html import STYLESHEET_NAME, TEMPLATE_NAME
+from khepri.rra.rendering.wording import caveat_prose
 
 ADAPTER_VERSION = "test.adapter.v1"
 
@@ -313,7 +314,7 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
             assert entry.renderings[language] in document
             assert entry.citation_id in document
         for caveat in bundle.caveats:
-            assert caveat.code in document
+            assert caveat_prose(caveat.code, language) in document
         # The governed disclosure, in full. A shortened or reworded one is not
         # the disclosure, and `bundle.reconcile` refuses it for the same reason.
         assert bundle.disclosure(language) in document
