@@ -1,6 +1,37 @@
 # `[FAM-COMMERCIAL]` charter (DRAFT) and the required `RRA.md` re-scope
 
-**Draft for owner review. Not a governed artifact. No identifier or family code is allocated.**
+> **Progress note added 2026-08-08 (`main` @ `04acba3`).** This draft was promoted and approved
+> as `APP-017` (2026-08-08). `RCA` — the code this draft argued for and this repository's
+> registries adopted — is `active` in `families.yaml`, `depends_on: [FND, RRA]`; `KHEPRI-DEC-014`
+> (the decision this draft calls `[DEC-COMMERCIAL]`) is `accepted`; and the `RRA.md` re-scope in
+> Part 2 landed as a renewal (`APP-017` superseding `APP-002`'s pin), matching
+> [`rra-exclusions-rescope.md`](rra-exclusions-rescope.md)'s staged text verbatim.
+>
+> **The landed `governance/families/RCA.md` is not byte-identical to Part 1 below.** Two
+> differences, found comparing the two texts directly:
+>
+> - The landed Excludes carries an explicit bullet — "Internal report-job queueing and
+>   report-job reliability, which `RRA.md` owns. This family's queueing boundary is the
+>   customer-facing kind only" — that Part 1 does not have. This is the same
+>   `KHEPRI-DEC-012`-derived qualification `rra-exclusions-rescope.md` applies to `RRA.md`'s
+>   own work-queues clause, carried into `RCA.md` for consistency.
+> - The landed runtime/provider Excludes bullet reads "Runtime, provider, and deployment
+>   selection, which a separately approved architecture decision governs and which remains a
+>   distinct gate from anything this charter authorizes," reworded from Part 1's shorter
+>   "Runtime, provider, or deployment selection, which `KHEPRI-DEC-008` governs and which
+>   remains a separate gate."
+>
+> Neither difference changes what the family owns. Part 1 below is left as drafted, since it is
+> the record of what was proposed; it is not what was approved. Read `governance/families/RCA.md`
+> directly for the governed text.
+>
+> **One defect survives the promotion, unfixed.** `RCA.md`'s closing line still reads "The family
+> is proposed" against `families.yaml`'s `state: active` — the exact staleness this draft's Part
+> 2 corrected in `RRA.md`. `RCA.md` is now itself digest-pinned by `APP-017`, so this cannot be
+> fixed as an edit; it needs its own renewal package, which no one has drafted.
+>
+> **Draft for owner review. Not a governed artifact. No identifier or family code is allocated.**
+> (True when written; superseded by the paragraphs above.)
 
 `[FAM-COMMERCIAL]` and `<CODE>` are **planning placeholders**. `docs/khepri-commercial-roadmap.md`
 proposes **RCA** (Retail Commercial Analysis) as the code and argues for it against widening

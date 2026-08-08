@@ -1,7 +1,12 @@
 # Proposed re-scope of `governance/families/RRA.md`
 
-**Status:** staged replacement text for owner approval. Applies nothing. `RRA.md` is unchanged and
-remains pinned by `APP-002`.
+**Status:** staged replacement text, **applied 2026-08-08.** `RRA.md` was renewed under `APP-017`
+(PR #126, `43f9bfd`) and its pin moved from `APP-002` to `APP-017`. `RRA.md` on disk today hashes
+to `sha256:d335f5f67398a3ef7b1617238ae28f4292097807dab89b2c3539f1599f2253e4`, and its `## Excludes`
+block and closing line match the replacement text below **verbatim** — diffed and confirmed while
+updating this note. This document's staged text is retained rather than deleted because it is now
+the record of what was proposed and approved, not a live pending draft; do not treat anything
+below as still pending.
 
 `KHEPRI-DEC-014` §4 requires this re-scope, and requires it be carried by a renewal package rather
 than an edit. `governance/families/RRA.md` is pinned at
@@ -95,3 +100,8 @@ otherwise. The digest is computed from the edited file, so the sequencing at app
 
 That order is not optional. A digest taken before the edit pins bytes that no longer exist, and the
 validator fails closed on it.
+
+**Executed 2026-08-08, in this order.** PR #126 (`43f9bfd`) applied the replacement, recomputed
+both digests, and PR #126's approval flip (`APP-017` to `approved`, all four registry transitions
+in one commit) followed. The Seshat boundary bullet was correctly omitted, per the note above:
+`KHEPRI-DEC-013` was still `proposed` at approval time and remains `proposed` today.
