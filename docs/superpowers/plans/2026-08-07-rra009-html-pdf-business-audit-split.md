@@ -36,6 +36,21 @@ Built and verifiable on `main`:
 
 **Arabic status:** every placeholder is filled, but by an agent rather than the owner. Owner review remains outstanding — see the corresponding note in the vocabulary plan.
 
+## Status as of 2026-08-08, `main` @ `954387b` — this plan is fully executed
+
+**Tasks 6 and 7 landed in `#124`** (`feat: present the business report as findings, and append the evidence`). The block above is retained unedited because it records what was true at `b84aad9`; this block supersedes it. Every outstanding row in that table is now discharged, verified on `954387b`:
+
+| Was outstanding at `b84aad9` | Evidence on `954387b` |
+|---|---|
+| Task 6 — restructure the business figure table | `report.html.j2` no longer renders the six identifier columns |
+| Task 6 — remove the tooling hooks | `grep -c data-figure-id report.html.j2` returns **1**, the navigation anchor RRA-009 explicitly permits, not the two tooling hooks |
+| Task 6 — colophon and report reference | `colophon` appears 4×, `report_reference` 1× |
+| Task 7 — the PDF appendix | `report.html.j2:165` carries `{% block appendix %}`, filled by `report.pdf.html.j2` |
+
+**Task 8 (test migration) is complete.** `#124` updated `test_rra006_html_sections.py`, `test_rra006_html_surface.py`, `test_rra006_pdf_sections.py`, and `test_rra006_pdf_surface.py`, and extended `test_rra009_business_audit_split.py` by 274 lines. The full suite is **1711 passed, 9 skipped** on `954387b`, with `khepri-gov validate` and `ruff check .` both clean.
+
+**Nothing in this plan remains executable.** What remains for RRA-009 as a whole is owner-gated and recorded in the vocabulary plan's 2026-08-08 block.
+
 ---
 
 ## Prerequisite (discharged — retained for the record)

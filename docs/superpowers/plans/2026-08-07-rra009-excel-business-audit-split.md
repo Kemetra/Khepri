@@ -27,6 +27,23 @@ refusal_message      (reason: str, *, context: str, language: str) -> str
 
 **Arabic status:** the 8 business sheet names this plan adds (Task 3) still need writing, and the ~30 strings already shipped were filled by an agent rather than reviewed by the owner. See the vocabulary plan's status note — "placeholders resolved" is not "parity achieved."
 
+## Status as of 2026-08-08, `main` @ `954387b` — this plan is fully executed
+
+**Every task landed in `#125`** (`feat: order the workbook by business meaning, and move every identifier`). The block above is retained unedited because it records what was true at `b84aad9`, where this plan was "fully unblocked and entirely unbuilt"; this block supersedes it.
+
+What shipped, verified on `954387b`:
+
+- **`excel_layout.py` is new** (142 lines) and carries the presentation-grouping layer this plan's Architecture section called for as "data, not logic": `BUSINESS_SHEETS` is 8 entries — `executive_summary`, `sales_performance`, `period_comparison`, `growth_drivers`, `profitability`, `discounts_and_returns`, `branch_performance`, `basket` — each named by business meaning rather than from a section identifier, as RRA-009 requires.
+- **The bilingual sheet names live in `wording.py`**, not in `excel_layout.py`, as `BUSINESS_SHEET_NAMES` guarded at import by `_assert_business_sheet_names_complete` and `_assert_language_sheet_names`. This keeps the single-definition constraint this plan's Prerequisite section insists on — the vocabulary has one home.
+- **The audit sheets are last**: `_AUDIT_SHEET` is `{en: "Audit Trail", ar: "سجل المراجعة"}` (`excel.py:235`) and `_PROVENANCE_SHEET` is `"Provenance"` (`:155`), both ordered after every business sheet.
+- **`tests/test_rra009_excel_split.py` is new — 32 tests, all passing.** `#125` also migrated `test_rra006_excel_charts.py`, `test_rra006_excel_sections.py`, and `test_rra006_excel_surface.py`, and added `tests/rra009_fixtures.py`.
+
+Full suite on `954387b`: **1711 passed, 9 skipped**, with `khepri-gov validate` and `ruff check .` clean.
+
+**The Arabic sheet names are written but not owner-reviewed**, which is the same status as the ~30 strings this plan's earlier block flagged. That is one item on the outstanding owner list, not an executable task.
+
+**Nothing in this plan remains executable.**
+
 ---
 
 ## Prerequisite (discharged — retained for the record)
