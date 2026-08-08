@@ -105,11 +105,25 @@ from khepri.rra.bundle import (
     is_drawable,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.rendering.excel_layout import (
+    BUSINESS_SHEETS,
+    BusinessSheet,
+)
 from khepri.rra.rendering.wording import (
+    BUSINESS_SHEET_NAMES,
+    CAVEAT_WORDING,
     CHART_DESCRIPTIONS,
+    DERIVED_METRIC_WORDING,
+    KIND_QUALIFIERS,
     LABEL_WORDING,
+    METRIC_WORDING,
+    REFUSAL_WORDING,
     SECTION_HEADINGS,
+    business_metric_name,
     category_of,
+    caveat_prose,
+    kind_qualifier,
+    refusal_message,
     worded,
 )
 
@@ -133,6 +147,10 @@ WORKBOOK_OPTIONS = {
 
 # Written in this order so the workbook is deterministic.
 LANGUAGES = (LANGUAGE_ENGLISH, LANGUAGE_ARABIC)
+
+# Which business sheet carries the governed disclosure. Read from the layout rather
+# than named here, so reordering the sheets moves the disclosure with the first one.
+FIRST_BUSINESS_SHEET = BUSINESS_SHEETS[0].key
 
 _PROVENANCE_SHEET = "Provenance"
 _PROVENANCE_FIELD = "field"
@@ -204,6 +222,26 @@ _FIGURE_COLUMNS = {
         "القيمة",
     ),
 }
+# The business figure table: what the row is called, and what it is. Two columns,
+# because every other column on the old section sheet was an identifier.
+_BUSINESS_COLUMNS = {
+    LANGUAGE_ENGLISH: ("Figure", "Value"),
+    LANGUAGE_ARABIC: ("البيان", "القيمة"),
+}
+
+# The audit sheets, ordered after every business sheet. Their names are addresses
+# rather than translations for the reason a section sheet's was: a reader following
+# a reference, or a tool reading the file, needs the same name in both workbooks.
+_AUDIT_SHEET = {LANGUAGE_ENGLISH: "Audit Trail", LANGUAGE_ARABIC: "سجل المراجعة"}
+_LIMITATIONS_SHEET = {
+    LANGUAGE_ENGLISH: "Data Limitations",
+    LANGUAGE_ARABIC: "حدود البيانات",
+}
+_LIMITATIONS_HEADING = {
+    LANGUAGE_ENGLISH: "What this review does not cover",
+    LANGUAGE_ARABIC: "ما لا يشمله هذا التقرير",
+}
+
 # A section per row, refused ones included. The figure table can only show the
 # sections that have figures, so a refused analysis would be invisible in the
 # workbook while `_content_language` still claimed it -- and reconciliation compares
@@ -213,6 +251,13 @@ _SECTIONS_HEADING = {LANGUAGE_ENGLISH: "Sections", LANGUAGE_ARABIC: "الأقس�
 _SECTION_COLUMNS = {
     LANGUAGE_ENGLISH: ("Section", "State", "Reason"),
     LANGUAGE_ARABIC: ("القسم", "الحالة", "السبب"),
+}
+# The audit trail's section table. Two columns, not three: `state` is Internal
+# under RRA-009's classification and reaches no customer surface including this
+# one, and a row carrying a reason is a refused section by construction.
+_AUDIT_SECTION_COLUMNS = {
+    LANGUAGE_ENGLISH: ("Section", "Reason"),
+    LANGUAGE_ARABIC: ("القسم", "السبب"),
 }
 _CITATION_COLUMNS = {
     LANGUAGE_ENGLISH: ("Citation", "Fact", "Metric", "Unit"),
@@ -277,6 +322,46 @@ GOVERNED_LABELS = frozenset(
     }
     | set(_SECTIONS_HEADING.values())
     | set(GOVERNED_SECTION_STATES)
+    # The business and audit sheet names, their column headers, and the limitations
+    # heading. Every literal a cell may hold that did not come from the bundle
+    # belongs here, so "did the renderer invent this text?" stays decidable.
+    | {name for names in BUSINESS_SHEET_NAMES.values() for name in names.values()}
+    | {
+        text
+        for mapping in (_AUDIT_SHEET, _LIMITATIONS_SHEET, _LIMITATIONS_HEADING)
+        for text in mapping.values()
+    }
+    | {
+        header
+        for mapping in (_BUSINESS_COLUMNS, _AUDIT_SECTION_COLUMNS)
+        for headers in mapping.values()
+        for header in headers
+    }
+    # Business metric names, the derived-label names, and the row-count qualifier.
+    # These are governed wording this module puts in a cell, exactly as the chart
+    # categories below are, so they belong in this set for the same reason: a cell
+    # is either bundle content or a member of this.
+    | {
+        text
+        for table in (METRIC_WORDING, DERIVED_METRIC_WORDING, KIND_QUALIFIERS)
+        for names in table.values()
+        for text in names.values()
+    }
+    # Refusal and caveat prose is governed wording too. Resolved per bundle rather
+    # than enumerable at import -- a composite `<result>:<reason>` caveat code is
+    # built from a figure's own identity -- so the limitations sheet's prose is
+    # admitted by `_governed_prose` at write time instead.
+    | {
+        message
+        for tier in REFUSAL_WORDING.values()
+        for messages in tier.values()
+        for message in messages.values()
+    }
+    | {
+        message
+        for messages in CAVEAT_WORDING.values()
+        for message in messages.values()
+    }
     # Chart categories. A bucket's category is the customer's own value and is bundle
     # content; a scalar's is a governed metric or mode name, which is this renderer
     # putting text in a cell and therefore belongs in this set. The wording is the one
@@ -339,19 +424,105 @@ class ExcelSurfaceRenderer:
 
 
 def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:
+    """Business worksheets first, then the limitations, then the audit region.
+
+    Order *is* the information architecture in a workbook: it is what a reader sees
+    on opening the file. A customer lands on the executive summary rather than on a
+    grid of identifiers, and an auditor finds every identifier on the sheets after
+    them.
+
+    The chart data sheet keeps its position at the end of each language's run, for
+    the reason it always had: a chart is inserted into a worksheet object, so the
+    sheets it draws onto have to exist first, and `_series_range` addresses the data
+    sheet by name.
+    """
     for language in LANGUAGES:
-        _write_report(workbook, bundle, language)
-        sheets = {
-            section.section_id: _write_section(workbook, bundle, language, section)
-            for section in bundle.sections
-        }
+        written: list[tuple[BusinessSheet, Worksheet]] = []
+        for sheet in BUSINESS_SHEETS:
+            worksheet = _write_business_sheet(workbook, bundle, language, sheet)
+            if worksheet is not None:
+                written.append((sheet, worksheet))
+        _write_limitations(workbook, bundle, language)
+        _write_audit_trail(workbook, bundle, language)
         _write_citations(workbook, bundle, language)
-        # Last of the language's sheets, and after the sections it draws onto. A chart
-        # is inserted into a worksheet object, so the section sheets have to exist
-        # first; putting the data sheet at the end also keeps a reader landing on the
-        # index and the analyses rather than on the machinery.
-        _draw_charts(workbook, bundle, language, sheets)
+        _draw_charts(workbook, bundle, language, written)
     _write_provenance(workbook, bundle)
+
+
+def _write_business_sheet(
+    workbook: Workbook,
+    bundle: ReportBundle,
+    language: str,
+    sheet: BusinessSheet,
+) -> Worksheet | None:
+    """One business worksheet, or nothing when it has no figure to present.
+
+    Returning `None` rather than an empty sheet is deliberate: a worksheet whose
+    only content is an apology is worse than its absence, and a customer whose
+    export carries no cost column is owed a workbook without a Profitability tab
+    rather than one with an empty one. The refusal is not lost -- it reaches the
+    customer as prose on the limitations sheet.
+
+    The consequence, stated because it surprises a reader of the file: the business
+    tab count varies by dataset. The audit sheets do not.
+    """
+    figures = [figure for figure in bundle.figures if figure.metric in sheet.metrics]
+    if not figures:
+        return None
+    worksheet = _sheet(workbook, BUSINESS_SHEET_NAMES[language][sheet.key], language)
+    worksheet.set_column(0, 0, _LABEL_WIDTH * 2)
+    worksheet.set_column(1, 1, _VALUE_WIDTH)
+
+    row = 0
+    if sheet.key == FIRST_BUSINESS_SHEET:
+        # The governed disclosure, on the sheet a reader opens first.
+        #
+        # RRA-009 requires it carried verbatim on every report, and the old index
+        # sheet is where it used to live -- so removing that sheet without moving the
+        # disclosure would have dropped it from the workbook entirely. It is written
+        # once rather than on all eight sheets: repeating it would be this module
+        # deciding a governed text is decoration.
+        row = _write_row(
+            worksheet,
+            row,
+            (_DISCLOSURE_HEADING[language], bundle.disclosure(language)),
+        )
+        row += 1
+
+    row = _write_row(worksheet, row, _BUSINESS_COLUMNS[language])
+    for figure in figures:
+        row = _write_row(worksheet, row, _business_cells(figure, language))
+    return worksheet
+
+
+def _business_cells(figure: CitedFigure, language: str) -> tuple[str, ...]:
+    """One figure as a business row: what it is called, and what it is.
+
+    No identifier column, no metric code, no kind and no unit -- RRA-009 puts each
+    of those in the audit region, and a business sheet carrying one would be the
+    identifier ledger with a friendlier tab name.
+
+    The name is composed the same way the web surface composes it, and for the same
+    reason: a bucket emits a value figure and a row-count figure carrying the same
+    metric and the same label, so a name that ignored `kind` would list two rows a
+    reader cannot tell apart. `business_metric_name` returns `None` for a metric no
+    table names, and those rows are named by their own label.
+    """
+    return (_business_name(figure, language), figure.renderings[language])
+
+
+def _business_name(figure: CitedFigure, language: str) -> str:
+    """A figure's business row name: its measure, its kind, and its label."""
+    name = business_metric_name(figure.metric, language)
+    qualifier = kind_qualifier(figure.kind, language)
+    if qualifier is not None:
+        name = f"{name} ({qualifier})" if name else qualifier
+    if figure.label is None:
+        # A scalar. Every scalar the bundle renders has a governed or derived name,
+        # which `test_every_rendered_metric_is_named_or_labelled` holds.
+        return name or figure.metric
+    label = worded(category_of(figure), language) if figure.label else figure.label
+    return f"{name} — {label}" if name else label
 
 
 def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
@@ -379,6 +550,63 @@ def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> No
         # section is still named beside the code, because the index is where a reader
         # sees every caveat at once and a bare code there cannot say what it qualifies.
         row = _write_row(sheet, row, _caveat_cells(caveat))
+
+
+def _write_audit_trail(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
+    """Every identifier the business sheets do not carry, on one sheet.
+
+    This is the ledger the section sheets used to be, moved rather than rebuilt:
+    the columns are `_FIGURE_COLUMNS` and the section columns unchanged, so a figure
+    a reader could quote before is a figure they can quote now, under the same
+    headers.
+
+    Ordered after every business sheet. A refused section keeps its row here for the
+    reason it kept its sheet before -- a missing row is the one disclosure a reader
+    cannot tell apart from an analysis nobody ran -- and it is identifiable by
+    carrying a reason. The section's `state` is not written: the visibility matrix
+    classifies it Internal, and RRA-009 renders an Internal field on no customer
+    surface, including this one.
+    """
+    sheet = _sheet(workbook, _AUDIT_SHEET[language], language)
+    sheet.set_column(0, 0, _LABEL_WIDTH)
+    sheet.set_column(1, len(_FIGURE_COLUMNS[language]) - 1, _VALUE_WIDTH)
+
+    row = _write_row(sheet, 0, (_SECTIONS_HEADING[language],))
+    row = _write_row(sheet, row, _AUDIT_SECTION_COLUMNS[language])
+    for section in bundle.sections:
+        row = _write_row(sheet, row, (section.section_id, section.reason))
+
+    row = _write_row(sheet, row + 1, (_FIGURES_HEADING[language],))
+    row = _write_row(sheet, row, _FIGURE_COLUMNS[language])
+    for figure in bundle.figures:
+        row = _write_row(sheet, row, _figure_cells(figure, language))
+
+
+def _write_limitations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
+    """Every refusal and every caveat, in the customer's language, as prose.
+
+    Ordered last among the business sheets and before the audit sheets: it is
+    business content -- a customer needs to know what the report does not cover --
+    but it is what a reader consults after the findings rather than before them.
+
+    Every caveat is present, not a curated subset. `_reconcile_language` compares
+    caveat sets for equality, so a friendlier subset is a refused report rather than
+    a tidier sheet.
+    """
+    sheet = _sheet(workbook, _LIMITATIONS_SHEET[language], language)
+    sheet.set_column(0, 0, _LABEL_WIDTH * 4)
+
+    row = _write_row(sheet, 0, (_LIMITATIONS_HEADING[language],))
+    for section in bundle.sections:
+        if section.reason is None:
+            continue
+        row = _write_row(
+            sheet,
+            row + 1,
+            (refusal_message(section.reason, context="section", language=language),),
+        )
+    for caveat in bundle.caveats:
+        row = _write_row(sheet, row + 1, (caveat_prose(caveat.code, language),))
 
 
 def _write_section(
@@ -467,9 +695,16 @@ def _draw_charts(
     workbook: Workbook,
     bundle: ReportBundle,
     language: str,
-    sheets: dict[str, Worksheet],
+    written: list[tuple[BusinessSheet, Worksheet]],
 ) -> None:
-    """Write one language's chart data, then draw each series onto its section sheet.
+    """Write one language's chart data, then draw each series onto its sheet.
+
+    Takes an ordered list of the business sheets actually written rather than a
+    section-keyed mapping. Four business sheets present the `overview` section, so a
+    dict keyed by section would keep only the last of them and a chart for that
+    section would land on whichever sheet was written last. The list preserves
+    reading order, and a block draws onto the first sheet presenting its section --
+    the one a reader reaches first.
 
     The insertion result is checked rather than discarded. `insert_chart` reports a
     refusal by return value, and a dropped chart would leave the sheet looking like a
@@ -477,7 +712,22 @@ def _draw_charts(
     could not be drawn.
     """
     for block in _write_chartdata(workbook, bundle, language):
-        placed = sheets[block.section_id].insert_chart(
+        target = next(
+            (
+                worksheet
+                for sheet, worksheet in written
+                if sheet.section == block.section_id
+            ),
+            None,
+        )
+        if target is None:
+            # A charted section whose business sheet was omitted has no figures to
+            # plot, so no chart is being lost. `_chart_blocks` already declines to
+            # yield a block for an unresolvable chart; this is the second line of
+            # the same rule, and a KeyError here would fail the whole workbook over
+            # a picture.
+            continue
+        placed = target.insert_chart(
             _CHART_ANCHOR_ROW,
             _CHART_ANCHOR_COLUMN,
             _chart_for(workbook, block, language),
