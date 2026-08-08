@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-017
 title: Commercial family charter and the boundary that supersedes the private beta
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Accept KHEPRI-DEC-014, activate the RCA -- Retail Commercial Analysis family depending on FND
@@ -23,6 +23,11 @@ exclusions:
   - Any claim that the withdrawn commercial-validation gate was satisfied
   - Any claim that a human authority approved this package, absent that authority's evidence
 manifest_digest: sha256:973005946719e77080d15377dc89fa82bbb8fa0635bbc6b1d575bf9308462d7a
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-08
+  approved_manifest_digest: sha256:973005946719e77080d15377dc89fa82bbb8fa0635bbc6b1d575bf9308462d7a
+  evidence_ref: https://github.com/Kemetra/Khepri/issues/43#issuecomment-5227073490
 artifacts:
   - id: KHEPRI-DEC-014
     document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md

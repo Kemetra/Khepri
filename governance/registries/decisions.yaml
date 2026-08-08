@@ -18,12 +18,13 @@ decisions:
     approval_ref: governance/approvals/APP-002.yaml
   - id: KHEPRI-DEC-003
     title: Retail Reporting Automation private beta boundary
-    state: accepted
+    state: superseded
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-003-rra-private-beta.md
     approved_by: AHMED-SHAABAN
     approved_at: 2026-07-29
     approval_ref: governance/approvals/APP-002.yaml
+    superseded_by: KHEPRI-DEC-014
   - id: KHEPRI-DEC-004
     title: Atomic approval packages and bounded implementation authority
     state: accepted
@@ -100,6 +101,9 @@ decisions:
     document: governance/decisions/KHEPRI-DEC-013-seshat-analytical-boundary.md
   - id: KHEPRI-DEC-014
     title: Commercial boundary superseding the private-beta scope
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-08
+    approval_ref: governance/approvals/APP-017.yaml
