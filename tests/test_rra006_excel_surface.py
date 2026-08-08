@@ -472,7 +472,8 @@ def test_a_total_the_bundle_never_published_appears_nowhere(tmp_path: Path) -> N
     assert unpublished not in workbook.texts
 
 
-def _allowed_text(bundle: ReportBundle) -> set[str]:
+def _allowed_identity_text(bundle: ReportBundle) -> set[str]:
+    """Report-level vocabulary: identity, governed labels, and the disclosure."""
     identity = bundle.identity.as_document()
     allowed = set(GOVERNED_LABELS)
     allowed |= set(identity)
@@ -488,28 +489,50 @@ def _allowed_text(bundle: ReportBundle) -> set[str]:
     allowed |= {
         section.reason for section in bundle.sections if section.reason is not None
     }
-    allowed |= {bundle.disclosure(language) for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)}
+    allowed |= {
+        bundle.disclosure(language) for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
+    }
+    return allowed
+
+
+def _allowed_figure_text(bundle: ReportBundle) -> set[str]:
+    """Every figure's own identifiers, unit, renderings, and label."""
+    allowed: set[str] = set()
     for figure in bundle.figures:
         allowed |= {figure.figure_id, figure.citation_id, figure.fact_id, figure.metric}
         allowed.add(figure.unit_kind)
         allowed |= set(figure.renderings.values())
         if figure.label is not None:
             allowed.add(figure.label)
-    # A business row's name is *composed* rather than looked up: governed wording for
-    # the measure and its kind, joined to the row's own label, which is bundle
-    # content. RRA-009 requires that composition -- a bucket emits a value and a
-    # row-count figure carrying the same metric and label, so a name that dropped
-    # either half would list two rows a reader cannot tell apart.
-    #
-    # Enumerating the composed forms here rather than widening the check keeps the
-    # guard's teeth: every part still has to come from the bundle or from governed
-    # wording, and a name assembled from anything else still fails.
-    allowed |= {
+    return allowed
+
+
+def _allowed_business_names(bundle: ReportBundle) -> set[str]:
+    """The composed business row names, enumerated rather than admitted wholesale.
+
+    A business row's name is *composed* rather than looked up: governed wording for
+    the measure and its kind, joined to the row's own label, which is bundle
+    content. RRA-009 requires that composition -- a bucket emits a value and a
+    row-count figure carrying the same metric and label, so a name that dropped
+    either half would list two rows a reader cannot tell apart.
+
+    Enumerating the composed forms here rather than widening the check keeps the
+    guard's teeth: every part still has to come from the bundle or from governed
+    wording, and a name assembled from anything else still fails.
+    """
+    return {
         _business_name(figure, language)
         for figure in bundle.figures
         for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH)
     }
-    return allowed
+
+
+def _allowed_text(bundle: ReportBundle) -> set[str]:
+    return (
+        _allowed_identity_text(bundle)
+        | _allowed_figure_text(bundle)
+        | _allowed_business_names(bundle)
+    )
 
 
 # --- language parity and layout -------------------------------------------

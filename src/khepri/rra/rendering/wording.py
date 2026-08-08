@@ -698,6 +698,33 @@ BUSINESS_SHEET_NAMES: dict[str, dict[str, str]] = {
 }
 
 
+def _assert_language_sheet_names(
+    language: str,
+    names: dict[str, str],
+    expected: set[str],
+    budget: int,
+) -> None:
+    """One language's business worksheet names: complete, distinct, inside the cap."""
+    if set(names) != expected:
+        raise RuntimeError(
+            "every business worksheet needs a name in every language "
+            f"(language={language!r})"
+        )
+    if len(set(names.values())) != len(names):
+        # XlsxWriter refuses a duplicate name, and any name-based lookup would
+        # silently resolve to whichever sheet was written last.
+        raise RuntimeError(
+            f"business worksheet names must be distinct (language={language!r})"
+        )
+    for key, name in names.items():
+        if len(name) > budget:
+            raise RuntimeError(
+                "business worksheet name exceeds the bilingual budget of "
+                f"{budget} characters (language={language!r}, "
+                f"sheet={key!r}, length={len(name)})"
+            )
+
+
 def _assert_business_sheet_names_complete() -> None:
     """Every business worksheet named in every language, inside Excel's cap.
 
@@ -712,24 +739,7 @@ def _assert_business_sheet_names_complete() -> None:
 
     expected = {sheet.key for sheet in BUSINESS_SHEETS}
     for language, names in BUSINESS_SHEET_NAMES.items():
-        if set(names) != expected:
-            raise RuntimeError(
-                "every business worksheet needs a name in every language "
-                f"(language={language!r})"
-            )
-        if len(set(names.values())) != len(names):
-            # XlsxWriter refuses a duplicate name, and any name-based lookup would
-            # silently resolve to whichever sheet was written last.
-            raise RuntimeError(
-                f"business worksheet names must be distinct (language={language!r})"
-            )
-        for key, name in names.items():
-            if len(name) > MAX_SHEET_NAME_BUDGET:
-                raise RuntimeError(
-                    "business worksheet name exceeds the bilingual budget of "
-                    f"{MAX_SHEET_NAME_BUDGET} characters (language={language!r}, "
-                    f"sheet={key!r}, length={len(name)})"
-                )
+        _assert_language_sheet_names(language, names, expected, MAX_SHEET_NAME_BUDGET)
 
 
 _assert_business_sheet_names_complete()
