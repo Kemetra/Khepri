@@ -1,0 +1,23 @@
+schema_version: 1
+id: DEL-006
+delegate: KHEPRI-AGENT
+granted_by: AHMED-SHAABAN
+instruction: 'I delegate approval of RCA and RRA specifications and decisions to KHEPRI-AGENT for 90 days.'
+granted_at: 2026-08-08
+session: 6134c8eb-facc-48a9-a912-1d917b589f37
+scope:
+  kind: standing
+  artifacts:
+    - RCA-001
+    - RRA-001
+    - RRA-002
+    - RRA-003
+    - RRA-004
+    - RRA-005
+    - RRA-006
+    - RRA-007
+    - RRA-008
+    - RRA-009
+    - KHEPRI-DEC-015
+expires_at: 2026-11-06
+revoked: false
