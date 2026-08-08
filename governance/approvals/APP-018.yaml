@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-018
 title: Commercial identity retention under Constitution VII
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Accept KHEPRI-DEC-015, which fixes the retention, deletion, secret-handling, logging, and
@@ -23,10 +23,21 @@ exclusions:
   - Any weakening of RRA-001, RRA-002, or RRA-006 controls
   - Any organization or account deletion capability, which RCA-001 excludes
   - Any claim that a human authority approved this package, absent that authority's evidence
-manifest_digest: sha256:c0a3653cb8413dbfa9de738d2a92bef03e7638a00b9a170b563d3e44cb2a7ca8
+manifest_digest: sha256:15a1fefb24290a89f1660772b34dd2215a98489436f3f50318cf069547b72167
+# Approved under DEL-006, the standing delegation recorded on 2026-08-08 and merged at 7e03e76.
+# Constitution VIII requires a delegated approval record the DELEGATE's identifier and never the
+# human authority's, so approved_by is KHEPRI-AGENT. The owner's instruction to accept this
+# decision was given in session 6134c8eb-facc-48a9-a912-1d917b589f37; the delegation record is
+# the attestation of it that Article VIII accepts as sufficient.
+approval:
+  approved_by: KHEPRI-AGENT
+  approved_at: 2026-08-09
+  approved_manifest_digest: sha256:15a1fefb24290a89f1660772b34dd2215a98489436f3f50318cf069547b72167
+  delegation_ref: governance/delegations/DEL-006.yaml
+  session: 6134c8eb-facc-48a9-a912-1d917b589f37
 artifacts:
   - id: KHEPRI-DEC-015
     document: governance/decisions/KHEPRI-DEC-015-commercial-identity-retention.md
-    document_sha256: sha256:e0adabd053581e2c5cc2d8e145ebe72914b2128bf8407f97888e61e2eb728db1
+    document_sha256: sha256:41ab09f48a78b29ef88be5538f0aae1c3157783b3d1d461eff15db73b7c6bfcb
     from_state: proposed
     to_state: accepted
