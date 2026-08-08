@@ -70,8 +70,8 @@ describes what remains, if anything, after the end trigger fires.
 
 | Data class | Purpose | Active retention | End trigger | Post-trigger state | Deletion rule | Backup rule | Anchor |
 |---|---|---|---|---|---|---|---|
-| **Account** | Establish one durable authenticated actor | While the account exists | Account disabled (`FR-008`); deletion is not authorized here | Record persists, non-authenticating; retains only fields still serving a named purpose | No deletion path authorized by this decision — see §6 | Bounded backups; restore must not re-enable a disabled account (§8) | `FR-001`, `FR-008` |
-| **Login identity (email)** | Authentication, account recovery, and addressing an invitation to a person | While the account exists | Account disabled | Retained **only** while needed for recovery and duplicate prevention (`A-1` makes uniqueness a product rule) | Not deleted independently of the account | Bounded backups | `FR-001`, `FR-005`, `FR-019`, `A-1` |
+| **Account** | Establish one durable authenticated actor | While enabled; **24 months** after disablement | Elapse of 24 months from disablement (§2b) | Non-authenticating record until the horizon elapses, then minimized to an opaque tombstone | Identity fields purged at the horizon (§2b) | Bounded backups; restore must not re-enable a disabled account (§8) | `FR-001`, `FR-008` |
+| **Login identity (email)** | Authentication, account recovery, and addressing an invitation to a person | While enabled; **24 months** after disablement | Elapse of 24 months from disablement (§2b) | **Purged.** Nothing remains | Purged at the horizon, not retained for duplicate prevention beyond it | Bounded backups | `FR-001`, `FR-005`, `FR-019`, `A-1` |
 | **Credential verifier (hash)** | Verify an authentication attempt | While the account is enabled | Account disabled, or credential replaced | **Destroyed** on replacement; destroyed on disablement | Immediate, non-recoverable | Superseded verifiers must not survive in backups beyond the bounded backup horizon | `FR-002` |
 | **Authentication session** | Carry one authenticated actor and at most one active organization | Until expiry or revocation | Expiry; revocation; recovery completion (`FR-007`); account disablement (`FR-008`) | Record may persist only until purged; it authorizes nothing from the trigger instant | Purge on or after the trigger; **retention never delays revocation** (§5) | Restore must not reactivate a revoked or expired session (§8) | `FR-003`, `FR-007`, `FR-008`, `FR-030` |
 | **Recovery request** | Permit one account recovery | Until first use or expiry | Use; expiry; replacement by a newer request | Verifier **destroyed**; a content-free event record may remain as security evidence | Verifier destroyed immediately at the trigger | Used or expired verifiers must not be restorable as usable | `FR-005`, `FR-007` |
@@ -108,6 +108,40 @@ than role-change events would create exactly that asymmetry, and the two are inv
 **What twelve months is not.** It is not derived from `KHEPRI-DEC-007`'s seven days, which was
 anchored to the S3 object expiry for retail content and does not transfer. It is a horizon chosen
 for this data class on its own terms, and a later decision may revise it on evidence.
+
+### 2b. Disabled accounts are minimized after twenty-four months
+
+A disabled account's record and login identity are retained for **twenty-four months from
+disablement**, then the identity fields are purged and only an opaque tombstone remains.
+
+**Why a horizon is required rather than deferred.** Disablement is terminal under `RCA-001`, which
+excludes deletion. A terminal state with no horizon is not "retention pending a later decision" —
+it is indefinite retention by omission. Former users' email addresses would be held forever while
+this decision claimed to bound retention, which is precisely the reading §10 requires it to
+refuse. A retention decision that leaves its one terminal state unbounded has not done its job.
+
+**Why twenty-four months.** It is long enough that a disabled account can be re-enabled after a
+dispute, an erroneous disablement, or a lapsed commercial relationship, and long enough to outlast
+the twelve-month audit horizon so that audit evidence never outlives the subject it refers to. It
+is short enough that Khepri is not a permanent archive of people who stopped using it.
+
+**What remains after the horizon: an opaque tombstone.** It holds an opaque account identifier and
+the disablement timestamp — **no email address, no credential verifier, no profile data**. Its
+only purposes are to keep `FR-014` audit events referentially meaningful for the remainder of
+their own twelve-month horizon, and to satisfy §8 item 5 so a restore cannot resurrect the account
+as active. It is subject to §4's minimization rule like every other class.
+
+**This does not create the deletion capability `RCA-001` excludes.** The exclusion concerns a
+*customer-invoked* operation — "delete my account" as a product feature, with the blast radius
+`RCA-001` §Exclusions and §6 both describe. This is a *policy-driven minimization* of data whose
+purpose has expired, which is what Constitution VII requires of every retained class and is not a
+feature any customer invokes. A later deletion specification remains necessary and remains
+governed by §6.
+
+**A-1 is preserved.** Email uniqueness holds across all *live* accounts. Once a disabled account's
+email is purged, that address may be registered again — by the same person or another — because no
+account claims it any longer. Uniqueness is a constraint over existing identities, not a permanent
+reservation of every address Khepri has ever seen.
 
 ### 3. Purpose limitation
 
@@ -159,8 +193,11 @@ keep authority alive because a record still exists.
 
 ### 6. Deletion, and what this decision does not authorize
 
-`RCA-001` **excludes** organization deletion and account deletion, and this decision does not add
-them. Disablement is the terminal state this decision governs.
+`RCA-001` **excludes** organization deletion and account deletion as customer-invoked operations,
+and this decision does not add them. Disablement is the terminal state this decision governs, and
+§2b bounds it: a disabled account is minimized to an opaque tombstone after twenty-four months.
+That minimization is policy-driven expiry of data whose purpose has ended — required of every
+class by Constitution VII — not the deletion feature `RCA-001` withholds.
 
 A later deletion specification, if one is ever approved, must respect the following. These are
 constraints on future work, not authorizations:
@@ -177,13 +214,22 @@ constraints on future work, not authorizations:
 Logs must not become a shadow identity database. Per `FR-040`, identity, membership, and
 authorization records are logged content-free.
 
-**Never logged:** credentials, credential verifiers, recovery secrets, invitation secrets, session
-identifiers or other bearer material, and retail content of any kind.
+**Never logged:** credentials, credential verifiers, recovery secrets, invitation secrets, **the
+session identifier or any other bearer material**, and retail content of any kind. This admits no
+exception. A value that can be replayed to authenticate must never reach a log, and a
+twelve-month log horizon would otherwise widen the exposure of that value by twelve months.
 
 **Logged only where a security or audit purpose requires it, in the narrowest sufficient form:**
-opaque account, organization, membership, and session identifiers; event type; outcome; timestamp.
-An opaque identifier is preferred to an email address in every case where it is sufficient, which
-is every case this decision contemplates.
+opaque account, organization, and membership identifiers; the **session correlation identifier**
+defined below; event type; outcome; timestamp. An opaque identifier is preferred to an email
+address in every case where it is sufficient, which is every case this decision contemplates.
+
+**The session correlation identifier is not the session identifier.** A security investigation
+needs to group events belonging to one session, so a per-session correlation value is authorized
+for that purpose — but it is a **separate, non-bearer** value that confers no authority and cannot
+be presented to authenticate. It must not be the session identifier, and it must not be derivable
+from it. Where these two rules could be read as competing, the prohibition governs: if an
+implementation cannot log a value without logging bearer material, it does not log it.
 
 Log retention is bounded by the twelve-month security-audit horizon (§2a). Logs are not a
 retention loophole: a field this decision forbids retaining in a record may not be retained by
@@ -277,9 +323,11 @@ because `RCA-001` excludes them.
 - Audit retention is fixed at twelve months (§2a). No class this decision authorizes is retained
   indefinitely, which is what makes it coherent to accept: a retention decision with unbounded
   audit retention would authorize the very indefinite retention it must refuse.
-- Two owner decisions remain open and neither blocks acceptance. `OD-2` is discharged by the
-  deletion specification `RCA-001` defers; `OD-3` is an input to `KHEPRI-DEC-008` and cannot be
-  settled before a runtime exists.
+- Disabled-account retention is fixed at twenty-four months (§2b), so the one terminal state this
+  decision governs is bounded rather than indefinite.
+- One owner decision remains open and does not block acceptance. `OD-3` is an input to
+  `KHEPRI-DEC-008` and cannot be settled before a runtime exists; every horizon this decision
+  authorizes is bounded without it.
 
 ## Owner decisions required
 
@@ -288,30 +336,11 @@ Three values cannot be derived from repository evidence and are **not invented h
 **OD-1 (audit retention) is settled at twelve months and is recorded in §2a, not here, because it
 is no longer an open question.** Two decisions remain open, and neither blocks acceptance.
 
-```text
-OWNER DECISION REQUIRED  (OD-2)
-
-Data class:        Account (disabled); login identity of a disabled account
-Decision needed:   How long a disabled account's record and email are retained
-Why a fixed duration is necessary:
-    Disablement is a terminal state under RCA-001, which excludes deletion. Without a
-    horizon the record is retained forever by omission, which is exactly the indefinite
-    retention §10 requires this decision to refuse.
-Existing repository precedent:
-    None. No prior decision contemplates a durable account at all.
-Recommended duration:
-    Retain while disabled, pending the deletion specification RCA-001 defers. State the
-    horizon as an explicit obligation on that future specification rather than a number
-    invented before the deletion semantics exist.
-Alternative:
-    A fixed horizon now (e.g. 24 months) after which a disabled account is purged, which
-    creates a deletion path RCA-001 deliberately excludes and would exceed this slice.
-Risk if shorter:
-    A re-enablement path and duplicate-prevention under A-1 both break if the record is
-    gone; a purged email could be re-registered by a different person.
-Risk if longer:
-    Indefinite retention of the email addresses of people who have stopped using Khepri.
-```
+**OD-2 (disabled-account horizon) is settled at twenty-four months and is recorded in §2b.** It
+was raised in review that deferring it would let this decision clear `RCA-001`'s retention
+precondition while production retained former users' identity data indefinitely — governance
+recording the opposite of the fact. That objection was correct, and the horizon is now fixed
+rather than deferred. One decision remains open.
 
 ```text
 OWNER DECISION REQUIRED  (OD-3)
@@ -338,10 +367,11 @@ Risk if longer:
     retained for correspondingly longer to prevent it.
 ```
 
-`OD-2` and `OD-3` are settled by naming the successor obligation rather than a number, as each
-block records, and neither blocks acceptance of this decision. Every retention horizon this
-decision actually authorizes is bounded: audit at twelve months (§2a), every other class by its
-lifecycle, and backups by the horizon `KHEPRI-DEC-008` must fix before any deployment exists.
+`OD-3` is settled by naming the successor obligation rather than a number, as its block records,
+and does not block acceptance. Every retention horizon this decision actually authorizes is
+bounded: audit at twelve months (§2a), disabled accounts at twenty-four months (§2b), every other
+class by its lifecycle, and backups by the horizon `KHEPRI-DEC-008` must fix before any deployment
+exists. No class is retained indefinitely.
 
 ## Explicit non-authorizations
 

@@ -23,10 +23,10 @@ exclusions:
   - Any weakening of RRA-001, RRA-002, or RRA-006 controls
   - Any organization or account deletion capability, which RCA-001 excludes
   - Any claim that a human authority approved this package, absent that authority's evidence
-manifest_digest: sha256:7e267fd697a8aa38c1124df6e518a23e204af4e52134ae4b41df8f46e957003c
+manifest_digest: sha256:c0a3653cb8413dbfa9de738d2a92bef03e7638a00b9a170b563d3e44cb2a7ca8
 artifacts:
   - id: KHEPRI-DEC-015
     document: governance/decisions/KHEPRI-DEC-015-commercial-identity-retention.md
-    document_sha256: sha256:c45cf23b59c2ce8bbb82b6bf6aa8cb46f8d9c25d3a7002a3ee566d66cc778612
+    document_sha256: sha256:e0adabd053581e2c5cc2d8e145ebe72914b2128bf8407f97888e61e2eb728db1
     from_state: proposed
     to_state: accepted
