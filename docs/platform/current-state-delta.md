@@ -25,6 +25,47 @@ that is reserved rather than scheduled.
 
 ---
 
+## I. Progress note added 2026-08-08 (`main` @ `04acba3`)
+
+This report was written against base commit `c7d78b2` (2026-08-04/05) and several of its
+findings have since been overtaken by governed transitions. Rather than edit the findings in
+place — which would misrepresent what was known when each section was written — this section
+records what changed and points back to the sections it affects.
+
+- **§A finding 5 / §G.3 (`KHEPRI-DEC-012` is `proposed`, not accepted).** No longer current.
+  `KHEPRI-DEC-012` is `accepted` (`APP-015`, 2026-08-06). The amend-then-accept sequencing §G.3
+  argued for is exactly what happened, in that order.
+- **§A finding 3 / §B.3 (Phase 1 design package awaiting approval).** `RRA-009` is `approved`
+  (`APP-016`, 2026-08-06) and its implementation is merged (PRs `#117`, `#118`, `#121`, `#124`,
+  `#125`). `RRA-009` remains `approved`, not `implemented`, in the registry — the code is
+  merged, but the specification's lifecycle state has not been flipped, and no artifact in this
+  repository asserts otherwise.
+- **§C row 2 (Khepri commercial family, "Not drafted, not registered, not approved").** All
+  three are now false. `RCA` (Retail Commercial Analysis) is `active` in `families.yaml`,
+  `depends_on: [FND, RRA]`, approved under `APP-017` (2026-08-08). `KHEPRI-DEC-014` — the
+  boundary decision this row anticipated — is `accepted` under the same package, and
+  `KHEPRI-DEC-003` moved to `superseded`, naming it. See
+  [`khepri-commercial-roadmap.md`](../khepri-commercial-roadmap.md) Phase 0B's progress note for
+  detail. This makes commercial-family specifications *specifiable*, not *implementable* — no
+  `RCA-*` specification exists, and no provisioning or spend is authorized.
+- **§E.5 (the `RRA.md` renewal, anticipated).** Executed. `RRA.md` was renewed in the same
+  `APP-017` package: its Excludes are re-expressed as family boundaries (naming `RCA` rather than
+  stating flat prohibitions), and `KHEPRI-DEC-003`'s supersession was recorded in the registry
+  only, never in the pinned document body, exactly as this section required. `RRA.md`'s pin
+  moved from `APP-002` to `APP-017`; the digest quoted throughout this document
+  (`sha256:8a1235a0d6…`) is the pre-renewal digest and no longer matches the file on disk.
+- **§F (blocked by governance).** The listed phases (7, 10, 11) are no longer blocked by the
+  absence of an owning family — `RCA` now owns them. They remain blocked by the absence of an
+  approved `RCA` specification, which `AGENTS.md` still requires before any implementation.
+- **§G.7 (`RRA.md` prose vs. registry mismatch).** Resolved. The `APP-017` renewal corrected the
+  stale "The family is proposed" closing sentence to match `families.yaml`'s `state: active`.
+- **Not resolved by any of the above.** `KHEPRI-DEC-008` and `KHEPRI-DEC-013` are still
+  `proposed`; §E.1's deployment gate is unchanged and still blocks everything it always blocked.
+  The Seshat boundary (`[DEC-BOUNDARY]`/`KHEPRI-DEC-013`) is still undecided, so §G.1, §G.2,
+  §G.4, §G.5, and the whole-program deferral above are unaffected.
+
+---
+
 ## A. Summary — the six findings that change the plan
 
 | # | Finding | Consequence for the roadmap |

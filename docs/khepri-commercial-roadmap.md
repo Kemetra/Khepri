@@ -148,6 +148,33 @@ forbids weakening controls to improve latency.
 
 ## Phase 0B — Charter the commercial family
 
+> **Progress note added 2026-08-08 (`main` @ `04acba3`).** This phase's exit criterion is met.
+> `KHEPRI-DEC-014` is `accepted` (`APP-017`, 2026-08-08) and `RCA` is `active` in
+> `families.yaml`, `depends_on: [FND, RRA]`. `KHEPRI-DEC-003` moved to `superseded`, naming
+> `KHEPRI-DEC-014` and retaining its own `APP-002` approval evidence. `RRA` was renewed in the
+> same atomic package: its Excludes are re-expressed as family boundaries per `FND.md`'s
+> phrasing, and its stale "The family is proposed" closing sentence was corrected. All four
+> transitions landed together in PR #126 (`43f9bfd`), matching the atomic shape Phase 0B's steps
+> below describe.
+>
+> **The approval was human, not delegated.** `APP-017` records `approved_by: AHMED-SHAABAN` with
+> an `evidence_ref` (a GitHub issue comment), not a `delegation_ref`. `DEL-005` had expired
+> 2026-08-06 and was not used.
+>
+> **What this does and does not unlock, in `KHEPRI-DEC-014`'s own words:** "Every roadmap phase
+> from 1 onward becomes specifiable once `RCA` is `active`. None becomes implementable until its
+> own specification is approved." No `RCA-*` specification exists yet. No provisioning or spend
+> is authorized — the deployment gate (`KHEPRI-DEC-008`, still `proposed`) is untouched and
+> remains first. The commercial-validation premise (withdrawn G5, see Phase 0C above) is not
+> revisited by this decision and must not be read as validated by it — `KHEPRI-DEC-014` says so
+> itself: "a later reader must not mistake the existence of this decision for validation of the
+> thesis behind it."
+>
+> The phase text below is left as drafted on 2026-08-04 rather than rewritten, for the reason
+> already given for Phase 1: a dated advisory that is edited to describe a later state destroys
+> the record of what was believed when it was written. Read this note and `KHEPRI-DEC-014` for
+> current status; read the text below for the reasoning that produced the charter.
+
 **Why separate from 0A.** It shares no files and no evidence with 0A and can proceed in
 parallel. It is the gate for every phase from 1 onward.
 

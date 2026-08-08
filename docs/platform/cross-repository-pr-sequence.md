@@ -65,6 +65,33 @@ granted: they answered different questions. G4 asked whether the sample is good 
 whether anyone would pay for what makes it good. `APP-016` carries the override in its `scope`
 accordingly, and any later package approving a successor to `RRA-009` must carry it too.
 
+### Progress note added 2026-08-08 (`main` @ `04acba3`)
+
+**`KHEPRI-DEC-012` is accepted.** `APP-015`, 2026-08-06. Stop condition 8 below is closed: the
+digest pinned by that package is the reviewed text. §3's `G-b` (revision, no transition) and
+`G-b2` (acceptance) both executed in that sequence — amend while `proposed`, then accept.
+
+**`G-f` — the commercial family charter — executed as `APP-017`, 2026-08-08.** All four
+transitions `§3 G-f` names landed atomically in one package: `[FAM-COMMERCIAL]` (now `RCA`)
+`proposed` → `active`; the `RRA` renewal (`active` → `active`, re-pointing `approval_ref` from
+`APP-002` to `APP-017`); `[DEC-COMMERCIAL]` (now `KHEPRI-DEC-014`) `proposed` → `accepted`; and
+`KHEPRI-DEC-003` `accepted` → `superseded`, naming `KHEPRI-DEC-014`. The approval was **human**:
+`APP-017` records `approved_by: AHMED-SHAABAN` with an `evidence_ref`
+(https://github.com/Kemetra/Khepri/issues/43#issuecomment-5227073490), not a `delegation_ref`.
+`DEL-005` had expired 2026-08-06 and was not used. Stop condition 4 (`APP-002` renewal not
+approved) is closed for this specific renewal.
+
+**What `G-f`'s completion does and does not open.** `RCA` being `active` makes an `RCA`
+specification approvable; it does not make one exist. No `RCA-*` specification is registered.
+`I1` (report layer against synthetic fixtures) was already ungated by G4/G5 as recorded above and
+is unaffected by `G-f`. `G1` (deployment/environment) is unchanged and still first — `G-f` shares
+no artifact with it.
+
+**The commercial-validation override is not revisited by this transition.** `KHEPRI-DEC-014`
+states explicitly that it does not rest on prospect validation and that its own existence must
+not be cited as evidence for the commercial thesis. G5 stays withdrawn, per the record above; this
+note does not reopen it.
+
 **G4 was the last gate on `G-g → I1`, and it is now granted (above).** `I1` — the implementation
 of `RRA-009` against local synthetic fixtures — is therefore ungated: `G1` was never on this chain,
 and no other gate is. It is the sole chain here that produces something a customer can see, and

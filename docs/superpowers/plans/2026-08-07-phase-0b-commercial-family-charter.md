@@ -8,6 +8,46 @@
 
 **Tech Stack:** Markdown governance documents, YAML registries, `khepri-gov` CLI (`validate`, `document-digest`, `approval-digest`). No Python source changes, no tests, no dependencies.
 
+## Status as of 2026-08-08 — approved (`main` @ `04acba3`)
+
+**The owner approved `APP-017` on 2026-08-08**, via a GitHub issue comment
+(https://github.com/Kemetra/Khepri/issues/43#issuecomment-5227073490), transcribed into PR #126
+(`43f9bfd`). `approved_by: AHMED-SHAABAN` with an `evidence_ref` — a **human** approval, not a
+delegation. `DEL-005` had expired 2026-08-06 (as this plan's Global Constraints already noted)
+and was not used; no delegation covered this package at any point.
+
+All four transitions this plan's Task 6 drafted landed atomically in one commit: `KHEPRI-DEC-014`
+`proposed` → `accepted`; `RCA` `proposed` → `active`; `KHEPRI-DEC-003` `accepted` → `superseded`,
+naming `KHEPRI-DEC-014`; and the `RRA` renewal, `active` → `active`, re-pointing `approval_ref`
+from `APP-002` to `APP-017`. The "What the owner must do next" section below is therefore
+complete through step 4. Step 5 resolved itself: `KHEPRI-DEC-013` was still `proposed` at
+approval time, so the Seshat bullet was correctly dropped from the `RRA.md` re-scope, exactly as
+that section anticipated.
+
+**What this plan's own exit criterion — "four artifacts drafted, `khepri-gov validate` green,
+nothing approved" — does not cover, now that approval has happened:** the roadmap's exit
+criterion ("`RCA` is `active` in `families.yaml` with approval evidence, and the superseding
+decision is `accepted`") is now met. `RCA` being `active` makes Phase 1 onward *specifiable*; it
+does not make any of them *implementable* — no `RCA-*` specification exists, `KHEPRI-DEC-008`
+(deployment) is still `proposed`, and the commercial-validation premise (G5, withdrawn
+2026-08-06) is not revisited by this approval. `KHEPRI-DEC-014` itself says so: its existence
+must not be read as validating the thesis behind the phase ordering.
+
+**The Self-Review's kill test is still not discharged.** "Write the pricing page copy before
+writing the family charter" was flagged for the owner at review time, not completed by this
+plan, and remains undone — no pricing page copy exists in this repository as of this note.
+Approval of the charter does not retroactively satisfy it.
+
+**One thing this plan's Task 3 got right that later drifted, and one defect that survived
+promotion.** The landed `governance/families/RCA.md` differs from Task 3 Step 1's draft text in
+two places — an added internal-report-job-queue exclusion bullet and a reworded runtime/provider
+bullet — recorded in detail in
+[`docs/platform/proposed-governance/family-charter-draft-commercial.md`](../../platform/proposed-governance/family-charter-draft-commercial.md).
+Separately, `RCA.md`'s closing line still reads "The family is proposed" against
+`families.yaml`'s `state: active` — the same defect this plan's Task 4 fixed in `RRA.md`. It is
+unfixed in `RCA.md`, and `RCA.md` is now itself pinned by `APP-017`, so it needs a renewal, not
+an edit.
+
 ## Status as of 2026-08-07 — executed, with two mechanism corrections
 
 **All six tasks are done.** `KHEPRI-DEC-014`, `governance/families/RCA.md`, the staged re-scope, both registry entries, and `APP-017` exist; `khepri-gov validate` passes with everything unapproved. Nothing is approved and no existing lifecycle state changed — `KHEPRI-DEC-003` is still `accepted` with no `superseded_by`.

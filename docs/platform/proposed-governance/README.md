@@ -4,6 +4,23 @@
 `governance/` was created or modified; no registry entry exists; no identifier is allocated;
 no approval state changed. `uv run khepri-gov validate` passes unchanged.
 
+> **Progress note added 2026-08-08 (`main` @ `04acba3`).** Two of the four drafts below have
+> since been promoted and approved. `KHEPRI-DEC-012-amendment.md` and
+> `family-charter-draft-commercial.md` are no longer pending: `KHEPRI-DEC-012` was amended then
+> accepted (`APP-015`, 2026-08-06), and the commercial charter was approved as `APP-017`
+> (2026-08-08), landing `KHEPRI-DEC-014` (accepted), `RCA` (active), and the renewal of `RRA.md`
+> in one atomic package — see
+> [`khepri-commercial-roadmap.md`](../../khepri-commercial-roadmap.md) Phase 0B and
+> [`cross-repository-pr-sequence.md`](../cross-repository-pr-sequence.md) §0 for the gate status
+> that package closed. This directory's own text below (the placeholder table, the sequencing
+> constraint, the digest hazard example) is left as drafted rather than rewritten, since it
+> describes the state before promotion; read it for the reasoning, and the two notes above for
+> current status. `decision-draft-seshat-boundary.md` remains an unpromoted draft — no
+> `[DEC-BOUNDARY]` decision exists — and `identifier-survey.md` still describes a registry state
+> that has since moved (`KHEPRI-DEC-012` is no longer the highest *unaccepted* decision, and
+> `RCA`/`KHEPRI-DEC-014` are no longer placeholders); neither is corrected here, per the same
+> no-rewrite rule.
+
 Each draft states its intended target path and the exact registry block it would need.
 Promoting one is a single owner-directed move.
 
