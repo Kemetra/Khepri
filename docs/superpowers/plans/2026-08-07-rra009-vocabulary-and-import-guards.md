@@ -35,6 +35,47 @@ Two provenances are mixed in the shipped tables and should not be conflated:
 
 `tests/test_rra009_wording.py` pins several tables with `test_accepted_arabic_*_messages_are_pinned`, which locks the current strings against silent edits — a good guard, but pinning is not review. **Owner review of the Arabic remains outstanding**, and a reader of this plan should not take "placeholders resolved" as "parity achieved."
 
+## Status as of 2026-08-08, `main` @ `954387b` — RRA-009 implementation is complete across all three plans
+
+This plan was already fully executed at `b84aad9`. The block above stands. What is new is that the *other two* RRA-009 plans are now executed as well — `#124` landed the HTML/PDF Tasks 6–7, `#125` landed the whole Excel restructure — so this block records the family-wide position rather than a change to this plan.
+
+Gates on `954387b`: `khepri-gov validate` **passed**, `ruff check .` **passed**, `pytest` **1711 passed, 9 skipped**.
+
+### One finding that is not executable: the approved spec text no longer matches the code
+
+`governance/specifications/RRA-009.md:53-55` requires the customer-facing catalogue to cover "eight section reasons and five result reasons, being thirteen messages over eleven distinct codes, with two codes appearing in both contexts."
+
+Measured from the shipped `REFUSAL_WORDING` on `954387b`:
+
+```
+section codes: 8
+result codes:  7   (dimension_absent, negative_base)
+distinct: 13   messages: 15
+both tiers: incomplete_transaction_identifiers, required_input_unavailable
+```
+
+So **15 messages over 13 distinct codes**. The implementation is *more* complete than the specification — the two extra codes are genuinely governed reasons, not invented ones — but an approved specification and its implementation disagree on a counted requirement, and that is a governance defect regardless of which side is more generous.
+
+**It cannot be corrected as a housekeeping edit.** `governance/approvals/APP-016.yaml` pins
+
+```
+document_sha256: sha256:7f4248e0b2377d5965df36085ea4b58592f104fb8b0f84420509b63b705c316d
+```
+
+and `uv run khepri-gov document-digest governance/specifications/RRA-009.md` returns that exact digest today. Any edit fails validation as *RRA-009 changed without renewal*. Correcting the sentence requires a **renewal approval package approved by a named authority** — the identical mechanism `docs/khepri-commercial-roadmap.md:546-557` records for `KHEPRI-DEC-005`'s stale closing sentence, and the one `docs/superpowers/plans/2026-08-07-phase-0b-commercial-family-charter.md` uses for `RRA.md`.
+
+**No live delegation covers it.** `DEL-005` expired `2026-08-06`, and `APP-015.yaml:18` excludes "Any amendment of RRA.md, any specification, or any family charter."
+
+### What remains for RRA-009, all owner-gated
+
+| Pending | Why it needs the owner |
+|---|---|
+| `RRA-009` `approved → implemented` in `specifications.yaml` | `KHEPRI-DEC-009` (standing authorization for milestone transitions) is `rejected`, so no flip is self-authorizable |
+| Renewal correcting the 13-over-11 count to 15-over-13 | pinned document, no live delegation |
+| Owner review of the Arabic prose | ~30 agent-written strings; import guards check key-set completeness, not meaning |
+
+Note that **G4, the golden-sample approval, was granted on 2026-08-06** and is recorded in `APP-016`'s scope. The Arabic review outstanding here is of prose written *after* that grant, so it is a separate item and not a reopening of G4.
+
 ---
 
 ## Global Constraints
