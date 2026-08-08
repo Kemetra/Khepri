@@ -107,3 +107,8 @@ decisions:
     approved_by: AHMED-SHAABAN
     approved_at: 2026-08-08
     approval_ref: governance/approvals/APP-017.yaml
+  - id: KHEPRI-DEC-015
+    title: Commercial identity retention under Constitution VII
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-015-commercial-identity-retention.md
