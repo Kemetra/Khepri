@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-017
 title: Commercial family charter and the boundary that supersedes the private beta
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Accept KHEPRI-DEC-014, activate the RCA -- Retail Commercial Analysis family depending on FND
@@ -22,7 +22,12 @@ exclusions:
   - Any change to the Owns section of governance/families/RRA.md
   - Any claim that the withdrawn commercial-validation gate was satisfied
   - Any claim that a human authority approved this package, absent that authority's evidence
-manifest_digest: sha256:94d7247b5042a48fd7f625dd903f72deb6acce658f0429e0b4a0d8d85b201fe4
+manifest_digest: sha256:973005946719e77080d15377dc89fa82bbb8fa0635bbc6b1d575bf9308462d7a
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-08
+  approved_manifest_digest: sha256:973005946719e77080d15377dc89fa82bbb8fa0635bbc6b1d575bf9308462d7a
+  evidence_ref: https://github.com/Kemetra/Khepri/issues/43#issuecomment-5227073490
 artifacts:
   - id: KHEPRI-DEC-014
     document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md
@@ -41,16 +46,16 @@ artifacts:
     to_state: superseded
     superseded_by: KHEPRI-DEC-014
     supersedes_approval_ref: governance/approvals/APP-002.yaml
-  # The RRA renewal carries the CURRENT digest of RRA.md, not the post-re-scope
-  # one, because a proposed package is validated against the files on disk
-  # (approval_packages.py:175-179) and the re-scope has deliberately not been
-  # applied -- KHEPRI-DEC-014 is proposed and carries no authority to edit an
-  # approved family charter. At approval time the order is: apply the
-  # replacement text from docs/platform/proposed-governance/rra-exclusions-rescope.md,
-  # recompute this digest, recompute manifest_digest, then approve.
+  # The RRA renewal now carries the POST-re-scope digest. The replacement text
+  # from docs/platform/proposed-governance/rra-exclusions-rescope.md was applied
+  # to governance/families/RRA.md on 2026-08-08 and this digest recomputed from
+  # the edited file, per the sequence that document's Mechanism section fixes:
+  # apply the replacement, recompute this digest, recompute manifest_digest,
+  # then approve. The package remains proposed and carries no approval block;
+  # applying the edit is mechanical preparation and grants nothing.
   - id: RRA
     document: governance/families/RRA.md
-    document_sha256: sha256:8a1235a0d6b9e36a6446a1e1cfd3f7ef5db52ca7d9e0ed23bcffb18eded095d2
+    document_sha256: sha256:d335f5f67398a3ef7b1617238ae28f4292097807dab89b2c3539f1599f2253e4
     from_state: active
     to_state: active
     supersedes_approval_ref: governance/approvals/APP-002.yaml
