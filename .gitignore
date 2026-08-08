@@ -8,6 +8,20 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .claude/worktrees/
+# Machine-local agent configuration. The Spec Kit installer warns that agent
+# folders may hold credentials or auth tokens.
+.claude/settings.local.json
+.claude/skills/
+
+# GitHub Spec Kit scaffold, installed per-machine with `specify init --here`.
+# Deliberately untracked: its vendored PowerShell helpers carry cyclomatic
+# complexity far above this repository's CodeScene thresholds (common.ps1's
+# Resolve-TemplateContent is 52 against a threshold of 9), and AGENTS.md
+# requires every new file to score 10.00. Vendoring third-party tooling into
+# that gate would either fail the gate or force an exclusion that weakens it
+# for everything else. The CLI is reinstallable and carries its own templates,
+# so nothing here is a project artifact.
+.specify/
 tests/.pytest_tmp*/
 dist/
 build/
