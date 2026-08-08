@@ -1,0 +1,32 @@
+schema_version: 1
+id: APP-018
+title: Commercial identity retention under Constitution VII
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-015, which fixes the retention, deletion, secret-handling, logging, and
+  backup rules for the commercial identity and authorization data RCA-001 requires. Acceptance
+  clears exactly one of RCA-001's four implementation preconditions -- the Constitution VII
+  retention decision named in its precondition 3 -- and clears no other.
+exclusions:
+  - Any change to governance/CONSTITUTION.md or the authorities registry
+  - Any delegation record, and any widening of a delegation's scope or expiry
+  - Any approval or lifecycle transition of RCA-001, which remains draft
+  - Any product application code, which requires an approved RCA specification first
+  - Any transition or approval of KHEPRI-DEC-008, which remains proposed
+  - Any deployment, provisioning, provider selection, or spending authorization
+  - Any retention authority over retail uploads, derived facts, narratives, or report bundles,
+    which remain governed by RRA-002 and are unchanged
+  - Any authorization of persistent workspaces, report history, or multi-dataset storage
+  - Any authorization of billing, subscriptions, agency portfolios, or recurring delivery
+  - Any authorization of marketing, profiling, product analytics, or AI use of retained data
+  - Any weakening of RRA-001, RRA-002, or RRA-006 controls
+  - Any organization or account deletion capability, which RCA-001 excludes
+  - Any claim that a human authority approved this package, absent that authority's evidence
+manifest_digest: sha256:7e267fd697a8aa38c1124df6e518a23e204af4e52134ae4b41df8f46e957003c
+artifacts:
+  - id: KHEPRI-DEC-015
+    document: governance/decisions/KHEPRI-DEC-015-commercial-identity-retention.md
+    document_sha256: sha256:c45cf23b59c2ce8bbb82b6bf6aa8cb46f8d9c25d3a7002a3ee566d66cc778612
+    from_state: proposed
+    to_state: accepted
