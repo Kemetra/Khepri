@@ -403,5 +403,4 @@ This decision authorizes **none** of the following, and no reading of it may cla
 ---
 
 Identity, lifecycle state, ownership, and approval evidence are authoritative in
-`governance/registries/decisions.yaml`. This decision is `proposed` and carries no authority until
-accepted.
+`governance/registries/decisions.yaml`.
