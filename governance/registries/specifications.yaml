@@ -127,13 +127,16 @@ specifications:
     approval_ref: governance/approvals/APP-016.yaml
   - id: RCA-001
     title: Commercial Identity, Organizations, and Authorization
-    state: draft
+    state: approved
     family: RCA
     owner: AHMED-SHAABAN
     document: governance/specifications/RCA-001.md
     depends_on:
       - RRA-001
       - RRA-002
+    approved_by: KHEPRI-AGENT
+    approved_at: 2026-08-09
+    approval_ref: governance/approvals/APP-020.yaml
   - id: FND-003
     title: Delegated Approval Records
     state: implemented
