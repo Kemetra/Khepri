@@ -123,8 +123,8 @@ specifications:
     depends_on:
       - RRA-006
     approved_by: KHEPRI-AGENT
-    approved_at: 2026-08-06
-    approval_ref: governance/approvals/APP-016.yaml
+    approved_at: 2026-08-09
+    approval_ref: governance/approvals/APP-019.yaml
   - id: RCA-001
     title: Commercial Identity, Organizations, and Authorization
     state: draft
