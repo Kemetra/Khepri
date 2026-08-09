@@ -4,10 +4,13 @@ title: RRA-009 renewal correcting the customer-facing refusal catalogue counts
 state: approved
 owner: AHMED-SHAABAN
 scope: >-
-  Renew RRA-009 at approved, correcting the one paragraph whose counts no longer describe the
+  Renew RRA-009 at approved, correcting the two passages whose counts no longer describe the
   implemented catalogue. The approved text stated "eight section reasons and five result reasons,
-  being thirteen messages over eleven distinct codes"; the shipped catalogue is eight section
-  reasons and seven result reasons, being fifteen messages over thirteen distinct codes. The
+  being thirteen messages over eleven distinct codes" under "### Refusals", and "all thirteen
+  refusal messages present in both languages" under "## Verification"; the shipped catalogue is
+  eight section reasons and seven result reasons, being fifteen messages over thirteen distinct
+  codes. The Verification clause is rewritten to enumerate the catalogue from the constant sets
+  rather than to carry any count at all. The
   divergence is additive and arrived through approved slices: `ambiguous_mapping` came with the
   RRA-004 mapping work and `negative_base` with the RRA-008 comparison work, each adding a result
   reason and its bilingual prose. Every other claim in the paragraph was and remains true,
@@ -21,7 +24,13 @@ exclusions:
   - Any delegation record, including DEL-006 which this package cites, and any widening of its
     scope or expiry
   - Any advance of RRA-009 beyond approved; the state is unchanged on both sides of the renewal
-  - Any change to RRA-009 outside the refusal-catalogue paragraph under "### Refusals"
+  - >-
+    Any change to RRA-009 outside the two passages that carry the stale counts, being the
+    refusal-catalogue bullet under "### Refusals" and the refusal-message clause under
+    "## Verification". The Verification sentence said "all thirteen refusal messages present in
+    both languages", the same falsehood a second time, three lines from the new rule forbidding
+    uncomputable counts. Correcting one and leaving the other would have left the renewal failing
+    at its own stated purpose.
   - Any new figure, aggregate, analysis family, metric, chart kind, or reason code
   - Any removal, renaming, or re-spelling of an existing governed reason code
   - Any product application code, and any claim that code must change; the code is correct and the
@@ -31,11 +40,11 @@ exclusions:
   - Any deployment, provisioning, provider selection, or spending authorization
   - Any claim that the withdrawn commercial-validation gate was satisfied
   - Any claim that a human authority approved this package
-manifest_digest: sha256:3712acacebe548c1bf79bcf5bb626819eac3a0cf49ff31450236e7234a20c319
+manifest_digest: sha256:92f41bedb7f9e9f829ad18e633c4f3edd4c97934b0d4fb15156ace136514d29e
 approval:
   approved_by: KHEPRI-AGENT
   approved_at: 2026-08-09
-  approved_manifest_digest: sha256:3712acacebe548c1bf79bcf5bb626819eac3a0cf49ff31450236e7234a20c319
+  approved_manifest_digest: sha256:92f41bedb7f9e9f829ad18e633c4f3edd4c97934b0d4fb15156ace136514d29e
   delegation_ref: governance/delegations/DEL-006.yaml
   session: c01c22d3-5cdc-4a39-8fbb-ee1885d8c91c
 artifacts:
@@ -47,7 +56,7 @@ artifacts:
   # this digest, recompute manifest_digest, then approve.
   - id: RRA-009
     document: governance/specifications/RRA-009.md
-    document_sha256: sha256:d3cdf3abe11fdced94aecb5a2d506a970d5c85f015cd8ba62d5f2a6b1da26971
+    document_sha256: sha256:b50fe16de8d817a640bbeffc440f2fa487491b6e352293636a367c5aa2128ade
     from_state: approved
     to_state: approved
     supersedes_approval_ref: governance/approvals/APP-016.yaml
