@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from khepri_gov.delegation import (
     is_reserved_file,
     load_delegations,
     package_delegation_errors,
+    reserved_artifact_errors,
     reserved_file_violations,
 )
 
@@ -334,3 +336,67 @@ def test_record_covers_named_artifact_only() -> None:
 
     assert record.covers("FND-003") is True
     assert record.covers("RRA-001") is False
+
+
+# Constitution 1.2.0, Article VIII (KHEPRI-DEC-016). Before this amendment
+# KHEPRI-DEC-008 authorized deployment from a decision document, which is not a
+# reserved path, so is_reserved_file() returned False and DEL-007's wildcard
+# scope reached it. Nothing but the delegate's own restraint held that gate.
+
+DEPLOYMENT_ENTRY = ("decisions", {"id": "KHEPRI-DEC-008", "consequence": "deployment"})
+PRIVACY_ENTRY = ("decisions", {"id": "KHEPRI-DEC-015", "consequence": "privacy"})
+NEUTRAL_ENTRY = ("decisions", {"id": "KHEPRI-DEC-001", "consequence": "none"})
+UNCLASSIFIED_ENTRY = ("decisions", {"id": "KHEPRI-DEC-099", "consequence": "invented"})
+FAMILY_ENTRY = ("families", {"id": "RCA"})
+
+AFTER = date(2026, 8, 11)
+BEFORE = date(2026, 8, 9)
+
+
+@pytest.mark.parametrize(
+    "known,artifact_id",
+    [
+        (DEPLOYMENT_ENTRY, "KHEPRI-DEC-008"),
+        (PRIVACY_ENTRY, "KHEPRI-DEC-015"),
+    ],
+)
+def test_delegate_may_not_approve_a_reserved_consequence(
+    known: tuple[str, dict[str, Any]],
+    artifact_id: str,
+) -> None:
+    errors = reserved_artifact_errors(
+        "pkg", [{"id": artifact_id}], {artifact_id: known}, AFTER
+    )
+
+    assert len(errors) == 1
+    assert artifact_id in errors[0]
+
+
+def test_delegate_may_approve_a_neutral_consequence() -> None:
+    assert reserved_artifact_errors(
+        "pkg", [{"id": "KHEPRI-DEC-001"}], {"KHEPRI-DEC-001": NEUTRAL_ENTRY}, AFTER
+    ) == []
+
+
+def test_an_unrecognised_consequence_is_reserved() -> None:
+    """Article V: unknown states block progress."""
+    errors = reserved_artifact_errors(
+        "pkg", [{"id": "KHEPRI-DEC-099"}], {"KHEPRI-DEC-099": UNCLASSIFIED_ENTRY}, AFTER
+    )
+
+    assert len(errors) == 1
+    assert "unrecognised consequence" in errors[0]
+
+
+def test_the_amendment_is_prospective() -> None:
+    """Clause 7: an approval recorded before 1.2.0 is not reopened."""
+    assert reserved_artifact_errors(
+        "pkg", [{"id": "KHEPRI-DEC-008"}], {"KHEPRI-DEC-008": DEPLOYMENT_ENTRY}, BEFORE
+    ) == []
+
+
+def test_families_carry_no_consequence_and_are_not_reserved_by_absence() -> None:
+    """Clause 5 mandates the field on decisions and specifications only."""
+    assert reserved_artifact_errors(
+        "pkg", [{"id": "RCA"}], {"RCA": FAMILY_ENTRY}, AFTER
+    ) == []

@@ -27,6 +27,7 @@ def successor(document: str, state: str = "proposed") -> dict[str, object]:
     return {
         "id": "KHEPRI-DEC-002",
         "title": "Successor decision",
+        "consequence": "none",
         "state": state,
         "owner": "AHMED-SHAABAN",
         "document": document,

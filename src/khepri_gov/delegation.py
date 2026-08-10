@@ -19,6 +19,18 @@ RESERVED_FILES = (
     "governance/CONSTITUTION.md",
     "governance/registries/authorities.yaml",
 )
+
+# Constitution 1.2.0, Article VIII (KHEPRI-DEC-016). An artifact whose recorded
+# consequence is one of these is reserved regardless of where its document lives.
+RESERVED_CONSEQUENCES = frozenset(
+    {"deployment", "spend", "provider-selection", "privacy"}
+)
+UNRESERVED_CONSEQUENCE = "none"
+CONSEQUENCE_VALUES = RESERVED_CONSEQUENCES | {UNRESERVED_CONSEQUENCE}
+
+# KHEPRI-DEC-016 clause 7: prospective only. Approvals recorded before this date
+# are not reopened by a classification that did not exist when they were made.
+CONSEQUENCE_AMENDMENT_DATE = date(2026, 8, 10)
 RECORD_REQUIRED_FIELDS = {
     "schema_version",
     "id",
@@ -389,7 +401,14 @@ def package_delegation_errors(
         context.records,
         [str(entry.get("id")) for entry in entries],
     )
-    errors.extend(reserved_artifact_errors(label, entries, context.known_artifacts))
+    errors.extend(
+        reserved_artifact_errors(
+            label,
+            entries,
+            context.known_artifacts,
+            _as_date(approval.get("approved_at")),
+        )
+    )
     return errors
 
 
@@ -404,12 +423,15 @@ def reserved_artifact_errors(
     label: str,
     entries: Iterable[Mapping[str, Any]],
     known_artifacts: Mapping[str, tuple[str, Mapping[str, Any]]],
+    approved_at: date | None = None,
 ) -> list[str]:
     errors: list[str] = []
     for entry in entries:
         artifact_id = str(entry.get("id"))
         errors.extend(_reserved_document_errors(label, entry))
-        errors.extend(_reserved_decision_errors(label, artifact_id, known_artifacts))
+        errors.extend(
+            _reserved_decision_errors(label, artifact_id, known_artifacts, approved_at)
+        )
     return errors
 
 
@@ -426,15 +448,58 @@ def _reserved_decision_errors(
     label: str,
     artifact_id: str,
     known_artifacts: Mapping[str, tuple[str, Mapping[str, Any]]],
+    approved_at: date | None = None,
 ) -> list[str]:
     known = known_artifacts.get(artifact_id)
     if known is None:
         return []
-    if known[1].get("alters_reserved_set") is not True:
+    entry = known[1]
+    if entry.get("alters_reserved_set") is True:
+        return [
+            f"{label}: a delegate may not approve {artifact_id}, which alters "
+            "the reserved set"
+        ]
+    if approved_at is not None and approved_at < CONSEQUENCE_AMENDMENT_DATE:
+        # KHEPRI-DEC-016 clause 7: the amendment is prospective. An approval
+        # recorded before Constitution 1.2.0 is not reopened by a classification
+        # that did not exist when it was made.
         return []
+    return _reserved_consequence_errors(label, artifact_id, entry)
+
+
+def _reserved_consequence_errors(
+    label: str,
+    artifact_id: str,
+    entry: Mapping[str, Any],
+) -> list[str]:
+    """Article VIII: an artifact's recorded consequence may reserve it.
+
+    Constitution 1.2.0 places deployment, spend, provider or runtime selection,
+    and privacy, retention, or data-boundary changes in the reserved set. Before
+    this, deployment lived in a decision document rather than a reserved path, so
+    ``is_reserved_file()`` returned False for it and a wildcard delegation reached
+    it. An artifact recording no consequence is reserved, not exempt.
+    """
+    if "consequence" not in entry:
+        # KHEPRI-DEC-016 clause 5 mandates the field on decisions and
+        # specifications only. Family charters carry no consequence because the
+        # ratified decision does not require one of them, so their absence here
+        # is the decision's scope rather than an unclassified artifact. Extending
+        # the field to families needs its own decision; treating them as reserved
+        # on the strength of a clause that does not name them would be the
+        # delegate widening a boundary the owner did not ratify.
+        return []
+    consequence = entry.get("consequence")
+    if consequence == UNRESERVED_CONSEQUENCE:
+        return []
+    if consequence in RESERVED_CONSEQUENCES:
+        return [
+            f"{label}: a delegate may not approve {artifact_id}, whose recorded "
+            f"consequence is {consequence}"
+        ]
     return [
-        f"{label}: a delegate may not approve {artifact_id}, which alters "
-        "the reserved set"
+        f"{label}: a delegate may not approve {artifact_id}, which records an "
+        f"unrecognised consequence {consequence!r}"
     ]
 
 

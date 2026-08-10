@@ -2,6 +2,7 @@ schema_version: 1
 decisions:
   - id: KHEPRI-DEC-001
     title: Khepri authority and predecessor reference policy
+    consequence: none
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-001-successor-reference-policy.md
@@ -10,6 +11,7 @@ decisions:
     approval_ref: governance/approvals/APP-001-bootstrap.md
   - id: KHEPRI-DEC-002
     title: Selective predecessor assessment and re-specification protocol
+    consequence: none
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-002-selective-transfer-protocol.md
@@ -18,6 +20,7 @@ decisions:
     approval_ref: governance/approvals/APP-002.yaml
   - id: KHEPRI-DEC-003
     title: Retail Reporting Automation private beta boundary
+    consequence: none
     state: superseded
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-003-rra-private-beta.md
@@ -27,6 +30,7 @@ decisions:
     superseded_by: KHEPRI-DEC-014
   - id: KHEPRI-DEC-004
     title: Atomic approval packages and bounded implementation authority
+    consequence: none
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-004-atomic-approval-packages.md
@@ -35,6 +39,7 @@ decisions:
     approval_ref: governance/approvals/APP-002.yaml
   - id: KHEPRI-DEC-005
     title: RRA private-beta runtime and provider architecture
+    consequence: provider-selection
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md
@@ -43,6 +48,7 @@ decisions:
     approval_ref: governance/approvals/APP-013.yaml
   - id: KHEPRI-DEC-006
     title: RRA beta benchmark workload and environment
+    consequence: spend
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
@@ -51,6 +57,7 @@ decisions:
     approval_ref: governance/approvals/APP-004.yaml
   - id: KHEPRI-DEC-007
     title: RRA private-beta and benchmark infrastructure sizing
+    consequence: spend
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
@@ -59,11 +66,13 @@ decisions:
     approval_ref: governance/approvals/APP-005.yaml
   - id: KHEPRI-DEC-008
     title: RRA private-beta portable runtime and target selection
+    consequence: deployment
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
   - id: KHEPRI-DEC-009
     title: Standing authorization for specification milestone transitions
+    consequence: none
     state: rejected
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-009-standing-authorization.md
@@ -72,6 +81,7 @@ decisions:
     approval_ref: governance/approvals/APP-010.yaml
   - id: KHEPRI-DEC-010
     title: Spoken delegation to a named non-human authority
+    consequence: none
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-010-spoken-delegation.md
@@ -80,6 +90,7 @@ decisions:
     approval_ref: governance/approvals/APP-010.yaml
   - id: KHEPRI-DEC-011
     title: Constitution 1.1.0, delegation articles
+    consequence: none
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-011-constitution-delegation-articles.md
@@ -88,6 +99,7 @@ decisions:
     approval_ref: governance/approvals/APP-011.yaml
   - id: KHEPRI-DEC-012
     title: Transformation and orchestration tooling boundary
+    consequence: none
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-012-transformation-and-orchestration-boundary.md
@@ -96,11 +108,13 @@ decisions:
     approval_ref: governance/approvals/APP-015.yaml
   - id: KHEPRI-DEC-013
     title: Seshat-BI analytical dependency and ownership boundary
+    consequence: none
     state: proposed
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-013-seshat-analytical-boundary.md
   - id: KHEPRI-DEC-014
     title: Commercial boundary superseding the private-beta scope
+    consequence: none
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md
@@ -109,6 +123,7 @@ decisions:
     approval_ref: governance/approvals/APP-017.yaml
   - id: KHEPRI-DEC-015
     title: Commercial identity retention under Constitution VII
+    consequence: privacy
     state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-015-commercial-identity-retention.md
@@ -117,6 +132,10 @@ decisions:
     approval_ref: governance/approvals/APP-018.yaml
   - id: KHEPRI-DEC-016
     title: Reserved set by consequence
-    state: proposed
+    consequence: none
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-016-reserved-set-by-consequence.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-10
+    approval_ref: governance/approvals/APP-023.yaml
