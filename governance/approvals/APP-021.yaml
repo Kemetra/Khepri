@@ -1,0 +1,50 @@
+schema_version: 1
+id: APP-021
+title: RCA family charter renewal replacing a self-disarming implementation exclusion
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Renew the RCA family charter at active, correcting two passages that approval of RCA-001 made
+  false or vacuous. The charter excluded "Product implementation while this family remains proposed
+  or its specifications remain draft". The family went active at APP-017 and RCA-001 was approved at
+  APP-020, so both conditions are now false and that exclusion stopped excluding anything at the
+  exact moment it was needed. It is replaced by an exclusion stated against the governing
+  specification's implementation preconditions, which are real gates rather than lifecycle states,
+  and which approval does not clear. The charter also closed with "The family is proposed", which
+  APP-017 had already falsified. Nothing else in the charter changes; no Owns entry, no other
+  Excludes entry, and no boundary against RRA or FND is touched.
+exclusions:
+  - Any change to governance/CONSTITUTION.md or the authorities registry
+  - Any delegation record, and any widening of a delegation's scope or expiry
+  - Any advance or retreat of the RCA family beyond active; the state is unchanged on both sides
+  - Any change to the charter's Owns section, or to any Excludes entry other than the two passages
+    named in scope
+  - Any transition or approval of RCA-001, which is already approved at APP-020 and is unchanged
+  - Any product application code; this renewal restores an exclusion rather than relaxing one
+  - Any authorization to implement RCA-001, whose preconditions 2 and 4 remain unmet
+  - Any transition or approval of KHEPRI-DEC-008, which remains proposed and gates deployment
+  - Any deployment, provisioning, provider selection, runtime choice, or spending authorization
+  - Any weakening of RRA-001, RRA-002, or RRA-006 privacy, isolation, or deletion controls
+  - Any authorization of billing, subscriptions, agency portfolios, workspaces, or recurring
+    delivery, which the charter names as owned but which each still require their own approved
+    specification
+  - Any claim that the withdrawn commercial-validation gate was satisfied
+manifest_digest: sha256:d7752172dfe9ab620673df270903daf5eaa413b32be6336f29174cdff10e100b
+artifacts:
+  # A renewal, not an advance: RCA was made active by APP-017 against
+  # document_sha256 sha256:011d8950..., which pinned the pre-approval text. Editing
+  # the charter detaches it from that pin, so it must be re-approved against the
+  # corrected bytes to stay governed. from_state and to_state are both active and
+  # this entry carries supersedes_approval_ref, which is what makes the validator
+  # classify it as a renewal rather than an unsupported no-op transition.
+  #
+  # The digest below was recomputed from the edited file, in the fixed order: apply
+  # the edits, recompute this document_sha256, recompute manifest_digest, then
+  # approve. This package is authored at proposed and carries NO approval block.
+  # Preparing it grants nothing.
+  - id: RCA
+    document: governance/families/RCA.md
+    document_sha256: sha256:e6c3e0dc2591af1b29b7b453ca4d203c2efa15ee3584f56d3b6634139e441183
+    from_state: active
+    to_state: active
+    supersedes_approval_ref: governance/approvals/APP-017.yaml
