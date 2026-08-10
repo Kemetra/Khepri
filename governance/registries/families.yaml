@@ -16,9 +16,9 @@ families:
     document: governance/families/RRA.md
     depends_on:
       - FND
-    approved_by: AHMED-SHAABAN
-    approved_at: 2026-08-08
-    approval_ref: governance/approvals/APP-017.yaml
+    approved_by: KHEPRI-AGENT
+    approved_at: 2026-08-10
+    approval_ref: governance/approvals/APP-022.yaml
   - id: RCA
     name: Retail Commercial Analysis
     state: active
