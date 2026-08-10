@@ -17,7 +17,16 @@
 - Forecasting, generic analysis, customer-authored formulas, and unsupported metrics. These are
   excluded from Khepri rather than allocated to another family.
 - Runtime or provider selection before a separate architecture decision is accepted.
-- Product implementation while this family's specifications remain draft.
+  <!-- lifecycle-ok: acceptance of that decision is the intended gate rather than an
+  incidental state, so this exclusion is discharged by the decision that authorizes the
+  selection, not disarmed by an unrelated transition -->
+
+- Product implementation until the implementation preconditions of the governing `RRA`
+  specification are met. This exclusion is stated against those gates rather than against a
+  lifecycle state, because a charter condition of the form "while this family's specifications
+  remain draft" stops excluding anything at the moment the first specification is approved, which
+  is exactly when the exclusion is needed. Neither this family being `active` nor a specification
+  being `approved` is authority to implement.
 
 The family's authoritative lifecycle state and approval evidence are recorded in
 `governance/registries/families.yaml`.

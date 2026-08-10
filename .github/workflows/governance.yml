@@ -42,6 +42,24 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
 
+  lifecycle-guard:
+    name: lifecycle-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: "0.10.11"
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --frozen
+      # A rule conditioned on a lifecycle state disarms itself when that state
+      # flips. No digest check catches it: the document bytes never change. This
+      # is the APP-021 defect class, which also survived undetected in RRA.md
+      # until this guard was written.
+      - run: uv run khepri-gov lifecycle-guard
+
   delegation-guard:
     name: delegation-guard
     runs-on: ubuntu-latest

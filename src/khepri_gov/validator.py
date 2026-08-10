@@ -10,6 +10,10 @@ import yaml
 
 from khepri_gov.approval_packages import validate_approval_packages
 from khepri_gov.lifecycle import decision_supersession_errors
+from khepri_gov.lifecycle_conditions import (
+    lifecycle_condition_errors,
+    scan_repository,
+)
 
 SCHEMA_VERSION = 1
 REGISTRY_NAMES = ("authorities", "decisions", "families", "specifications")
@@ -580,4 +584,5 @@ def validate_repository(root: Path) -> list[str]:
     if assessments is not None:
         _validate_reference_assessments(root, assessments, registries, errors)
     errors.extend(validate_approval_packages(root, registries))
+    errors.extend(lifecycle_condition_errors(scan_repository(root)))
     return errors

@@ -1,0 +1,66 @@
+schema_version: 1
+id: APP-022
+title: RRA family charter renewal replacing a self-disarming implementation exclusion
+state: approved
+owner: AHMED-SHAABAN
+scope: >-
+  Renew the RRA family charter at active, correcting one passage that the family's own progress
+  made vacuous. The charter excluded "Product implementation while this family's specifications
+  remain draft". RRA is active and all nine of its specifications are approved, with none in draft,
+  so that condition is false and the exclusion stopped excluding anything at the exact moment it
+  was needed. It is replaced by an exclusion stated against the governing specification's
+  implementation preconditions, which are real gates rather than lifecycle states, and which
+  approval does not clear. This is the same defect APP-021 corrected in the RCA charter, in the
+  same words, and it survived undetected in the sibling charter because nothing checked for the
+  shape. The lifecycle-guard added alongside this renewal is what found it. A second Excludes
+  entry, "Runtime or provider selection before a separate architecture decision is accepted", is
+  annotated rather than rewritten: acceptance of that decision is the intended gate rather than an
+  incidental state, so the exclusion is discharged by the decision that authorizes the selection
+  rather than disarmed by an unrelated transition. It carries an inline lifecycle-ok annotation
+  recording that reasoning, which the guard reports rather than suppresses silently. Nothing else
+  in the charter changes; no Owns entry, no other Excludes entry, and no boundary against RCA or
+  FND is touched.
+exclusions:
+  - Any change to governance/CONSTITUTION.md or the authorities registry
+  - Any delegation record, and any widening of a delegation's scope or expiry
+  - Any advance or retreat of the RRA family beyond active; the state is unchanged on both sides
+  - Any change to the charter's Owns section, or to any Excludes entry other than the two passages
+    named in scope
+  - Any transition or approval of any RRA specification, all nine of which remain approved and
+    unchanged
+  - Any product application code; this renewal restores an exclusion rather than relaxing one
+  - Any authorization to implement any RRA specification
+  - Any transition or approval of KHEPRI-DEC-008, which remains proposed and gates deployment
+  - Any deployment, provisioning, provider selection, runtime choice, or spending authorization
+  - Any weakening of the privacy, isolation, validation, reconciliation, provenance, language
+    parity, or deletion controls that RRA-001, RRA-002, and RRA-006 fix
+manifest_digest: sha256:6fe4e19bc0ed7fcbebaa6e60cb60d7088eb91a62c41eba76990fcf73f20f7db2
+# Approved under DEL-007, the standing delegation recorded on 2026-08-10 and merged at 5373566.
+# A family charter is not in the Article VIII reserved set, so this approval is within scope; the
+# same basis on which APP-021 was approved at #138.
+#
+# Constitution VIII requires a delegated approval record the DELEGATE's identifier and never the
+# human authority's, so approved_by is KHEPRI-AGENT and not AHMED-SHAABAN.
+approval:
+  approved_by: KHEPRI-AGENT
+  approved_at: 2026-08-10
+  approved_manifest_digest: sha256:6fe4e19bc0ed7fcbebaa6e60cb60d7088eb91a62c41eba76990fcf73f20f7db2
+  delegation_ref: governance/delegations/DEL-007.yaml
+  session: 128b7625-b462-4866-af33-75cedee09933
+artifacts:
+  # A renewal, not an advance: RRA was made active by APP-017 against a
+  # document_sha256 that pinned the pre-correction text. Editing the charter
+  # detaches it from that pin, so it must be re-approved against the corrected
+  # bytes to stay governed. from_state and to_state are both active and this entry
+  # carries supersedes_approval_ref, which is what makes the validator classify it
+  # as a renewal rather than an unsupported no-op transition.
+  #
+  # The digest below was recomputed from the edited file, in the fixed order: apply
+  # the edit, recompute this document_sha256, recompute manifest_digest, then
+  # approve.
+  - id: RRA
+    document: governance/families/RRA.md
+    document_sha256: sha256:73bef48a1110321bb69bc64cda732ba2cf05f5e987cdc11d2847e5b7f51e89cd
+    from_state: active
+    to_state: active
+    supersedes_approval_ref: governance/approvals/APP-017.yaml

@@ -13,6 +13,10 @@ from khepri_gov.approval_packages import (
     manifest_digest,
 )
 from khepri_gov.delegation import delegate_ids, delegated_commit_errors
+from khepri_gov.lifecycle_conditions import (
+    lifecycle_condition_errors,
+    scan_repository,
+)
 from khepri_gov.validator import validate_repository
 
 
@@ -26,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
             "document-digest",
             "approval-digest",
             "delegation-guard",
+            "lifecycle-guard",
         ],
     )
     parser.add_argument("path", type=Path, nargs="?")
@@ -54,6 +59,22 @@ def _run_delegation_guard(root: Path) -> int:
         return 1
     print("Delegation guard passed.")
     return 0
+
+
+def _report_errors(errors: Sequence[str], passed: str) -> int:
+    for error in errors:
+        print(f"ERROR {error}", file=sys.stderr)
+    if errors:
+        return 1
+    print(passed)
+    return 0
+
+
+def _run_lifecycle_guard(root: Path) -> int:
+    findings = scan_repository(root.resolve())
+    for note in (f.message() for f in findings if f.is_suppressed):
+        print(f"NOTE {note}")
+    return _report_errors(lifecycle_condition_errors(findings), "Lifecycle guard passed.")
 
 
 def _run_validate(root: Path) -> int:
@@ -101,16 +122,27 @@ def _run_digest(command: str, root: Path, requested: Path | None) -> int:
     return _run_approval_digest(path)
 
 
+# Commands that operate on the whole repository and reject a path argument.
+REPOSITORY_COMMANDS = {
+    "validate": _run_validate,
+    "delegation-guard": _run_delegation_guard,
+    "lifecycle-guard": _run_lifecycle_guard,
+}
+# delegation-guard reads its changed paths from stdin, so a path argument is
+# meaningless rather than wrong; it is not rejected here for compatibility.
+PATHLESS_COMMANDS = ("validate", "lifecycle-guard")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
-    if arguments.command == "validate":
-        if arguments.path is not None:
-            parser.error("validate does not accept a path")
-        return _run_validate(arguments.root)
-    if arguments.command == "delegation-guard":
-        return _run_delegation_guard(arguments.root)
-    return _run_digest(arguments.command, arguments.root, arguments.path)
+    command = arguments.command
+    if command in PATHLESS_COMMANDS and arguments.path is not None:
+        parser.error(f"{command} does not accept a path")
+    runner = REPOSITORY_COMMANDS.get(command)
+    if runner is not None:
+        return runner(arguments.root)
+    return _run_digest(command, arguments.root, arguments.path)
 
 
 if __name__ == "__main__":
