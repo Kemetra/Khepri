@@ -81,6 +81,7 @@ def add_proposed_decision(root: Path) -> str:
         {
             "id": "KHEPRI-DEC-002",
             "title": "Atomic packages",
+            "consequence": "none",
             "state": "proposed",
             "owner": "AHMED-SHAABAN",
             "document": document,
@@ -625,6 +626,7 @@ def add_rra_graph(root: Path) -> list[dict[str, object]]:
             {
                 "id": "RRA-001",
                 "title": "First",
+                "consequence": "none",
                 "state": "draft",
                 "family": "RRA",
                 "owner": "AHMED-SHAABAN",
@@ -634,6 +636,7 @@ def add_rra_graph(root: Path) -> list[dict[str, object]]:
             {
                 "id": "RRA-002",
                 "title": "Second",
+                "consequence": "none",
                 "state": "draft",
                 "family": "RRA",
                 "owner": "AHMED-SHAABAN",

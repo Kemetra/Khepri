@@ -79,6 +79,7 @@ def valid_repository(root: Path) -> None:
     _write_registry(registry, "decisions", {"decisions": [{
         "id": "KHEPRI-DEC-001",
         "title": "Successor policy",
+        "consequence": "none",
         "state": "accepted",
         "owner": "AHMED-SHAABAN",
         "document": documents[1],
@@ -96,6 +97,7 @@ def valid_repository(root: Path) -> None:
     _write_registry(registry, "specifications", {"specifications": [{
         "id": "FND-001",
         "title": "Governance Kernel and Repository Controls",
+        "consequence": "none",
         "state": "approved",
         "family": "FND",
         "owner": "AHMED-SHAABAN",

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import yaml
 
 from khepri_gov.approval_packages import validate_approval_packages
+from khepri_gov.delegation import CONSEQUENCE_VALUES
 from khepri_gov.lifecycle import decision_supersession_errors
 from khepri_gov.lifecycle_conditions import (
     lifecycle_condition_errors,
@@ -585,4 +586,25 @@ def validate_repository(root: Path) -> list[str]:
         _validate_reference_assessments(root, assessments, registries, errors)
     errors.extend(validate_approval_packages(root, registries))
     errors.extend(lifecycle_condition_errors(scan_repository(root)))
+    _validate_consequences(registries, errors)
     return errors
+
+
+def _validate_consequences(
+    registries: dict[str, list[Artifact]],
+    errors: list[str],
+) -> None:
+    """Article VIII: every decision and specification records a consequence.
+
+    Fail closed on a missing or unrecognised value, per Article V — an
+    unclassified artifact is an unknown state, and unknown states block progress.
+    """
+    for name in ("decisions", "specifications"):
+        for artifact in registries.get(name, []):
+            value = artifact.get("consequence")
+            if value in CONSEQUENCE_VALUES:
+                continue
+            errors.append(
+                f"{name}:{artifact.get('id')}: consequence must be one of "
+                f"{sorted(CONSEQUENCE_VALUES)}; an artifact recording none is reserved"
+            )

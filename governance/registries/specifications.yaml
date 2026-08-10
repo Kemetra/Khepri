@@ -2,6 +2,7 @@ schema_version: 1
 specifications:
   - id: FND-001
     title: Governance Kernel and Repository Controls
+    consequence: none
     state: verified
     family: FND
     owner: AHMED-SHAABAN
@@ -12,6 +13,7 @@ specifications:
     approval_ref: governance/approvals/APP-001-bootstrap.md
   - id: FND-002
     title: Governed Lifecycle Transitions
+    consequence: none
     state: implemented
     family: FND
     owner: AHMED-SHAABAN
@@ -23,6 +25,7 @@ specifications:
     approval_ref: governance/approvals/APP-008.yaml
   - id: RRA-001
     title: Beta Invitations and Isolated Sessions
+    consequence: none
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -33,6 +36,7 @@ specifications:
     approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-002
     title: Governed File Intake and Deletion Lifecycle
+    consequence: privacy
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -44,6 +48,7 @@ specifications:
     approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-003
     title: Retail Data Profiling and Admissibility
+    consequence: none
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -55,6 +60,7 @@ specifications:
     approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-004
     title: Deterministic Retail Fact Package
+    consequence: none
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -66,6 +72,7 @@ specifications:
     approval_ref: governance/approvals/APP-014.yaml
   - id: RRA-005
     title: Grounded Arabic and English Narrative
+    consequence: privacy
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -77,6 +84,7 @@ specifications:
     approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-006
     title: Unified Web PDF and Excel Report Bundle
+    consequence: privacy
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -89,6 +97,7 @@ specifications:
     approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-007
     title: Reliable Report Operations and Performance Evidence
+    consequence: privacy
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -105,6 +114,7 @@ specifications:
     approval_ref: governance/approvals/APP-002.yaml
   - id: RRA-008
     title: Comparative and Concentration Retail Analysis
+    consequence: none
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -116,6 +126,7 @@ specifications:
     approval_ref: governance/approvals/APP-006.yaml
   - id: RRA-009
     title: Business-First Report Presentation with Separated Audit Evidence
+    consequence: none
     state: approved
     family: RRA
     owner: AHMED-SHAABAN
@@ -127,6 +138,7 @@ specifications:
     approval_ref: governance/approvals/APP-019.yaml
   - id: RCA-001
     title: Commercial Identity, Organizations, and Authorization
+    consequence: privacy
     state: approved
     family: RCA
     owner: AHMED-SHAABAN
@@ -139,6 +151,7 @@ specifications:
     approval_ref: governance/approvals/APP-020.yaml
   - id: FND-003
     title: Delegated Approval Records
+    consequence: none
     state: implemented
     family: FND
     owner: AHMED-SHAABAN

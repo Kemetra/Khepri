@@ -150,6 +150,7 @@ class LifecycleRepo:
         successor: dict[str, object] = {
             "id": "KHEPRI-DEC-003",
             "title": "Superseding decision",
+            "consequence": "none",
             "state": "proposed",
             "owner": "AHMED-SHAABAN",
             "document": document,
@@ -237,6 +238,7 @@ class LifecycleRepo:
                 {
                     "id": "KHEPRI-DEC-002",
                     "title": "Lifecycle decision",
+                    "consequence": "none",
                     "state": "proposed",
                     "owner": "AHMED-SHAABAN",
                     "document": "governance/decisions/KHEPRI-DEC-002.md",
@@ -258,6 +260,7 @@ class LifecycleRepo:
                 {
                     "id": "FND-002",
                     "title": "Lifecycle specification",
+                    "consequence": "none",
                     "state": "draft",
                     "family": "FND",
                     "owner": "AHMED-SHAABAN",

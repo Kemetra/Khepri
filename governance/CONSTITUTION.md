@@ -1,10 +1,10 @@
 # Khepri Constitution
 
-Version: 1.1.0
+Version: 1.2.0
 
 Ratified: 2026-07-29
 
-Amended: 2026-08-02 (KHEPRI-DEC-011)
+Amended: 2026-08-10 (KHEPRI-DEC-016)
 
 Authority: Ahmed Shaaban, Product Owner
 
@@ -63,9 +63,13 @@ approval package and in every registry entry it materialises. It never records a
 identifier. Human and delegated approvals remain distinguishable by inspection.
 
 The reserved set is this constitution; the authorities registry, including a delegate's own record,
-role, and active flag; every delegation record, including its creation, extension, and renewal; and
-the acceptance of any decision that alters the reserved set. No delegation reaches the reserved set,
-and an authority that could widen its own authority is unbounded however narrowly it begins.
+role, and active flag; every delegation record, including its creation, extension, and renewal; the
+acceptance of any decision that alters the reserved set; and any artifact whose recorded consequence
+is deployment, spending, provider or runtime selection, or a change to a privacy, retention, or data
+boundary. An artifact's consequence is recorded in its authoritative registry entry and is not
+inferred from its prose. An artifact that records no consequence is reserved. No delegation reaches
+the reserved set, and an authority that could widen its own authority is unbounded however narrowly
+it begins.
 
 A delegation granted without an explicit duration covers only the session in which it was given. A
 standing delegation expires no later than ninety days after it is recorded and does not renew
