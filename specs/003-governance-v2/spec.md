@@ -35,19 +35,36 @@ Governance was not measured before it was amended. It is now.
 | Specifications approved | 13 | — |
 | Specifications implemented or verified | 3 | 10 approved specs authorize no shipped behaviour |
 | Approval packages | 20 | — |
-| Packages correcting governance's own drift | 4 (`APP-018`,`019`,`020`,`021`) | 20% of all ceremony repairs the ceremony |
+| Packages correcting governance's own drift | 4 (`APP-018`,`019`,`020`,`021`) | 20% of all ceremony repairs the ceremony — **and each was mandated by a working guardrail, not caused by a missing one** |
 | Enforcement code | 2,488 lines | For 20 packages: ~124 lines per package approved |
 
 ### The three distinct problems, which have three different costs
 
-**Problem 1 — digest drift.** `APP-018` through `APP-021` share one root cause: a document is
-edited, and the registry keeps pinning the superseded hash; or a rule is conditioned on a lifecycle
-state that later flips, disarming itself. `APP-021` is the pure case — an exclusion reading *"while
-this family remains proposed"* stopped excluding anything the moment the family went active.
+**Problem 1 — drift remediation cost.** `APP-018` through `APP-021` share one root cause: a
+governed document is edited after its approval package was approved, so the digest that package
+pinned no longer matches the file.
 
-This is **a missing pre-commit check, not a governance flaw.** A hook that recomputes
-`document_sha256` for every registry-pinned document and fails on mismatch retires the entire
-class. No amendment. Highest value item in this feature.
+**Corrected 2026-08-10 — the original claim here was false.** This section first asserted drift was
+"a missing pre-commit check." It is not missing. `approval_renewals.py::_document_changed` already
+detects it, follows `approval_ref`, and `validate` already runs in CI on every pull request. Tested
+directly: appending one line to `governance/families/RCA.md` produces
+
+```
+ERROR approval-packages:APP-021: governed document for RCA changed without renewal
+```
+
+and the same for `RRA-009`/`APP-019`. Detection is complete and general.
+
+So `APP-018`..`APP-021` are **not** evidence of a missing guardrail. They are evidence the
+guardrail works and that its **remedy** is a full approval package. The real question is not *how
+is drift detected* but *must every detected drift cost a package*, which is a consequence-gating
+question and belongs to W3, not to a hook.
+
+What genuinely remains here is narrower: a rule whose normative force is conditioned on a lifecycle
+state silently disarms when that state flips. `APP-021` is the pure case — an exclusion reading
+*"while this family remains proposed"* stopped excluding anything the moment the family went
+active. **No check detects this**, and it is not the same defect as digest drift: the bytes never
+changed, so no digest could have caught it.
 
 **Problem 2 — harness blocks.** Every hard stop in the 2026-08-10 session came from the Claude Code
 permission classifier, never from `khepri-gov`. Allowlist fix. No amendment. Carried from spec 002
@@ -144,15 +161,18 @@ the agent stops immediately, does not resist or defer, and prior transitions sta
 
 ## Functional requirements
 
-### Must have — digest and drift enforcement (no amendment)
+### Must have — drift enforcement (no amendment)
 
-- **FR-001** A pre-commit check MUST recompute `document_sha256` for every registry-pinned document
-  and fail on any mismatch, naming artifact, expected, and actual.
-- **FR-002** The same check MUST run in CI, so the guarantee does not depend on local hooks.
+- **FR-001** ~~Pre-commit digest check~~ **ALREADY SATISFIED.**
+  `approval_renewals.py::_document_changed` detects drift against `approval_ref`. Verified by
+  direct test on `RCA`/`APP-021` and `RRA-009`/`APP-019`. No work required.
+- **FR-002** ~~Same check in CI~~ **ALREADY SATISFIED.** `validate` runs as its own CI job
+  (`.github/workflows/governance.yml:29`) on every pull request. No work required.
 - **FR-003** Validation MUST reject governance prose whose normative force is conditioned on a
-  lifecycle state that can flip beneath it (the `APP-021` defect class).
-- **FR-004** When an agent edits a pinned document it MUST recompute and update the pin in the same
-  commit, never as a follow-up package.
+  lifecycle state that can flip beneath it (the `APP-021` defect class). **This is the only
+  unbuilt item in W1.** It is distinct from digest drift: the document bytes never change, so no
+  digest check can detect it.
+- **FR-004** ~~Pin updated in same commit~~ **ALREADY SATISFIED** by the same mechanism as FR-001.
 
 ### Must have — harness autonomy (no amendment)
 

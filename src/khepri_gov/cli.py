@@ -13,6 +13,10 @@ from khepri_gov.approval_packages import (
     manifest_digest,
 )
 from khepri_gov.delegation import delegate_ids, delegated_commit_errors
+from khepri_gov.lifecycle_conditions import (
+    lifecycle_condition_errors,
+    scan_repository,
+)
 from khepri_gov.validator import validate_repository
 
 
@@ -26,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
             "document-digest",
             "approval-digest",
             "delegation-guard",
+            "lifecycle-guard",
         ],
     )
     parser.add_argument("path", type=Path, nargs="?")
@@ -53,6 +58,20 @@ def _run_delegation_guard(root: Path) -> int:
             print(f"ERROR {violation}", file=sys.stderr)
         return 1
     print("Delegation guard passed.")
+    return 0
+
+
+def _run_lifecycle_guard(root: Path) -> int:
+    findings = scan_repository(root.resolve())
+    for finding in findings:
+        if finding.is_suppressed:
+            print(f"NOTE {finding.message()}")
+    errors = lifecycle_condition_errors(findings)
+    if errors:
+        for error in errors:
+            print(f"ERROR {error}", file=sys.stderr)
+        return 1
+    print("Lifecycle guard passed.")
     return 0
 
 
@@ -110,6 +129,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_validate(arguments.root)
     if arguments.command == "delegation-guard":
         return _run_delegation_guard(arguments.root)
+    if arguments.command == "lifecycle-guard":
+        if arguments.path is not None:
+            parser.error("lifecycle-guard does not accept a path")
+        return _run_lifecycle_guard(arguments.root)
     return _run_digest(arguments.command, arguments.root, arguments.path)
 
 
