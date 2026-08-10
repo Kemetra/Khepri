@@ -114,6 +114,76 @@ def test_multiple_findings_are_each_reported() -> None:
     assert len(scan_text("RCA.md", text)) == 2
 
 
+def test_condition_spanning_a_markdown_wrap_is_flagged() -> None:
+    """Formatting alone must not bypass the gate."""
+    text = """# RCA
+
+## Excludes
+
+- Product implementation while this family
+  remains draft.
+"""
+
+    assert len(scan_text("RCA.md", text)) == 1
+
+
+def test_equivalent_conditional_introducers_are_flagged() -> None:
+    for introducer in ("if", "when", "unless", "once", "whenever"):
+        text = f"""# RCA
+
+## Excludes
+
+- Product implementation {introducer} this family is proposed.
+"""
+
+        assert len(scan_text("RCA.md", text)) == 1, introducer
+
+
+def test_blank_suppression_reason_does_not_suppress() -> None:
+    text = """# RCA
+
+## Excludes
+
+- Product implementation while this family remains proposed. <!-- lifecycle-ok:   -->
+"""
+
+    findings = scan_text("RCA.md", text)
+
+    assert len(findings) == 1
+    assert not findings[0].is_suppressed
+    assert lifecycle_condition_errors(findings) != []
+
+
+def test_a_neighbouring_bullets_suppression_does_not_disarm_this_one() -> None:
+    text = """# RCA
+
+## Excludes
+
+- Product implementation while this family remains proposed.
+- Something unrelated <!-- lifecycle-ok: this one was considered -->
+"""
+
+    findings = scan_text("RCA.md", text)
+    flagged = [f for f in findings if not f.is_suppressed]
+
+    assert len(flagged) == 1
+    assert flagged[0].line == 5
+
+
+def test_unreadable_document_fails_closed(tmp_path: Path) -> None:
+    from khepri_gov.lifecycle_conditions import scan_document
+
+    document = tmp_path / "governance" / "families"
+    document.mkdir(parents=True)
+    (document / "BAD.md").write_bytes(b"\xff\xfe invalid utf-8")
+
+    findings = scan_document(tmp_path, "governance/families/BAD.md")
+
+    assert len(findings) == 1
+    assert lifecycle_condition_errors(findings) != []
+    assert "could not be read" in findings[0].message()
+
+
 def test_repository_scan_returns_findings_with_paths() -> None:
     findings = scan_repository(REPOSITORY_ROOT)
 

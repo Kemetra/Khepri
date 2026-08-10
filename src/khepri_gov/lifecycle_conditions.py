@@ -48,18 +48,43 @@ LIFECYCLE_STATES = (
 _STATES = "|".join(LIFECYCLE_STATES)
 
 # "while ... remains|is <state>" and "until ... is|are <state>".
-CONDITION_PATTERN = re.compile(
-    rf"\b(?:while|until|as long as|so long as)\b[^.]{{0,80}}?"
-    rf"\b(?:remains?|is|are|stays?)\b\s+`?(?:{_STATES})`?",
-    re.IGNORECASE,
+# Any conditional introducer disarms the same way. Restricting this to "while"
+# would let a one-word rephrasing ("if this family is proposed") bypass the gate.
+INTRODUCERS = (
+    "while",
+    "until",
+    "unless",
+    "if",
+    "when",
+    "whenever",
+    "as long as",
+    "so long as",
+    "for as long as",
+    "before",
+    "after",
+    "once",
 )
 
-# An author who has considered the flip and accepted it writes this inline.
+_INTRODUCERS = "|".join(sorted(INTRODUCERS, key=len, reverse=True))
+
+# Bullets wrap, so this must tolerate newlines between the introducer and the
+# state. It stops at a sentence boundary to avoid spanning unrelated clauses.
+CONDITION_PATTERN = re.compile(
+    rf"\b(?:{_INTRODUCERS})\b[^.]{{0,120}}?"
+    rf"\b(?:remains?|is|are|stays?|becomes?|were|was)\b\s+`?(?:{_STATES})`?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# An author who has considered the flip and accepted it writes this inline. The
+# reason is mandatory: a bare marker would disable a fail-closed rule silently.
 SUPPRESSION_PATTERN = re.compile(
-    r"<!--\s*lifecycle-ok:\s*(.+?)\s*-->", re.IGNORECASE | re.DOTALL
+    r"<!--\s*lifecycle-ok:\s*(\S.*?)\s*-->", re.IGNORECASE | re.DOTALL
 )
 
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.*)$")
+
+# Sentinel heading for a document that could not be read at all.
+UNREADABLE_HEADING = "<unreadable>"
 
 
 @dataclass(frozen=True)
@@ -77,6 +102,11 @@ class LifecycleFinding:
         return self.suppressed_reason is not None
 
     def message(self) -> str:
+        if self.heading == UNREADABLE_HEADING:
+            return (
+                f"{self.path}: governed document could not be read as UTF-8 text "
+                f"and cannot be checked for lifecycle-conditioned rules"
+            )
         if self.suppressed_reason is not None:
             return (
                 f"{self.path}:{self.line}: lifecycle-conditioned rule under "
@@ -109,61 +139,101 @@ def _strip_quotations(text: str) -> str:
     return re.sub(r"[“][^”]*[”]", blank, without_double, flags=re.DOTALL)
 
 
-def _bullet_span(lines: list[str], index: int) -> int:
-    """Count continuation lines belonging to the bullet starting at ``index``.
+BULLET_PATTERN = re.compile(r"^\s*[-*+]\s+")
 
-    A bullet continues while following lines are indented and non-empty; a blank
-    line, a new bullet, or a heading ends it.
+
+def _bullet_end(lines: list[str], start: int) -> int:
+    """Return the exclusive end index of the bullet beginning at ``start``.
+
+    A bullet continues while following lines are indented and non-empty. A blank
+    line, a new bullet, or a heading ends it — and the terminator is excluded, so
+    a neighbouring bullet's suppression comment cannot disarm this one.
     """
-    span = 1
-    for line in lines[index:]:
+    end = start + 1
+    for line in lines[start + 1 :]:
         stripped = line.strip()
-        if not stripped or stripped.startswith(("-", "*", "#")):
+        if not stripped or BULLET_PATTERN.match(line) or stripped.startswith("#"):
             break
         if not line.startswith((" ", "\t")):
             break
-        span += 1
-    return span
+        end += 1
+    return end
 
 
 def scan_text(path: str, text: str) -> list[LifecycleFinding]:
-    """Return every lifecycle-conditioned rule in a document's normative sections."""
+    """Return every lifecycle-conditioned rule in a document's normative sections.
+
+    Bullets are scanned whole rather than line by line: a Markdown wrap between
+    an introducer and its state would otherwise bypass the gate on formatting
+    alone.
+    """
     findings: list[LifecycleFinding] = []
     heading = ""
     raw_lines = text.splitlines()
-    scan_lines = _strip_quotations(text).splitlines()
-    for index, line in enumerate(raw_lines, start=1):
+    document = _Document(path, raw_lines, _strip_quotations(text).splitlines())
+    index = 0
+    while index < len(raw_lines):
+        line = raw_lines[index]
         match = HEADING_PATTERN.match(line)
         if match is not None:
             heading = match.group(2).strip()
+            index += 1
             continue
-        if not _is_normative(heading):
+        if not _is_normative(heading) or not BULLET_PATTERN.match(line):
+            index += 1
             continue
-        if not CONDITION_PATTERN.search(scan_lines[index - 1]):
-            continue
-        # A suppression comment may wrap onto following lines, so search from the
-        # flagged line to the end of its bullet rather than the line alone.
-        suppression = SUPPRESSION_PATTERN.search(
-            "\n".join(raw_lines[index - 1 : index + _bullet_span(raw_lines, index)])
-        )
-        findings.append(
-            LifecycleFinding(
-                path=path,
-                line=index,
-                heading=heading,
-                text=line.strip(),
-                suppressed_reason=suppression.group(1) if suppression else None,
-            )
-        )
+        end = _bullet_end(raw_lines, index)
+        finding = document.bullet_finding(heading, index, end)
+        if finding is not None:
+            findings.append(finding)
+        index = end
     return findings
 
 
+@dataclass(frozen=True)
+class _Document:
+    """One document's raw and quotation-stripped views, indexed identically."""
+
+    path: str
+    raw_lines: list[str]
+    scan_lines: list[str]
+
+    def bullet_finding(
+        self,
+        heading: str,
+        start: int,
+        end: int,
+    ) -> LifecycleFinding | None:
+        if not CONDITION_PATTERN.search("\n".join(self.scan_lines[start:end])):
+            return None
+        suppression = SUPPRESSION_PATTERN.search("\n".join(self.raw_lines[start:end]))
+        return LifecycleFinding(
+            path=self.path,
+            line=start + 1,
+            heading=heading,
+            text=self.raw_lines[start].strip(),
+            suppressed_reason=suppression.group(1) if suppression else None,
+        )
+
+
 def scan_document(root: Path, relative: str) -> list[LifecycleFinding]:
+    """Scan one document, failing closed when it cannot be read.
+
+    Constitution V: malformed data blocks progress. Treating an unreadable
+    governed document as an empty clean one would let it pass unexamined.
+    """
     path = root / relative
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
-        return []
+        return [
+            LifecycleFinding(
+                path=relative,
+                line=1,
+                heading=UNREADABLE_HEADING,
+                text="",
+            )
+        ]
     return scan_text(relative, text)
 
 

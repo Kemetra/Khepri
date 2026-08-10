@@ -12,14 +12,19 @@ scope: >-
   implementation preconditions, which are real gates rather than lifecycle states, and which
   approval does not clear. This is the same defect APP-021 corrected in the RCA charter, in the
   same words, and it survived undetected in the sibling charter because nothing checked for the
-  shape. The lifecycle-guard added alongside this renewal is what found it. Nothing else in the
-  charter changes; no Owns entry, no other Excludes entry, and no boundary against RCA or FND is
-  touched.
+  shape. The lifecycle-guard added alongside this renewal is what found it. A second Excludes
+  entry, "Runtime or provider selection before a separate architecture decision is accepted", is
+  annotated rather than rewritten: acceptance of that decision is the intended gate rather than an
+  incidental state, so the exclusion is discharged by the decision that authorizes the selection
+  rather than disarmed by an unrelated transition. It carries an inline lifecycle-ok annotation
+  recording that reasoning, which the guard reports rather than suppresses silently. Nothing else
+  in the charter changes; no Owns entry, no other Excludes entry, and no boundary against RCA or
+  FND is touched.
 exclusions:
   - Any change to governance/CONSTITUTION.md or the authorities registry
   - Any delegation record, and any widening of a delegation's scope or expiry
   - Any advance or retreat of the RRA family beyond active; the state is unchanged on both sides
-  - Any change to the charter's Owns section, or to any Excludes entry other than the one passage
+  - Any change to the charter's Owns section, or to any Excludes entry other than the two passages
     named in scope
   - Any transition or approval of any RRA specification, all nine of which remain approved and
     unchanged
@@ -29,7 +34,7 @@ exclusions:
   - Any deployment, provisioning, provider selection, runtime choice, or spending authorization
   - Any weakening of the privacy, isolation, validation, reconciliation, provenance, language
     parity, or deletion controls that RRA-001, RRA-002, and RRA-006 fix
-manifest_digest: sha256:4a3665419fedfa3188c382a43acbb3d593c29ae4f1cbdcf4e6c8a21a196ddc52
+manifest_digest: sha256:6fe4e19bc0ed7fcbebaa6e60cb60d7088eb91a62c41eba76990fcf73f20f7db2
 # Approved under DEL-007, the standing delegation recorded on 2026-08-10 and merged at 5373566.
 # A family charter is not in the Article VIII reserved set, so this approval is within scope; the
 # same basis on which APP-021 was approved at #138.
@@ -39,7 +44,7 @@ manifest_digest: sha256:4a3665419fedfa3188c382a43acbb3d593c29ae4f1cbdcf4e6c8a21a
 approval:
   approved_by: KHEPRI-AGENT
   approved_at: 2026-08-10
-  approved_manifest_digest: sha256:4a3665419fedfa3188c382a43acbb3d593c29ae4f1cbdcf4e6c8a21a196ddc52
+  approved_manifest_digest: sha256:6fe4e19bc0ed7fcbebaa6e60cb60d7088eb91a62c41eba76990fcf73f20f7db2
   delegation_ref: governance/delegations/DEL-007.yaml
   session: 128b7625-b462-4866-af33-75cedee09933
 artifacts:
@@ -55,7 +60,7 @@ artifacts:
   # approve.
   - id: RRA
     document: governance/families/RRA.md
-    document_sha256: sha256:a6ffae54d7b83ec9b6288aadbe91ad5f731204000396f345dd4622ce6de6f441
+    document_sha256: sha256:73bef48a1110321bb69bc64cda732ba2cf05f5e987cdc11d2847e5b7f51e89cd
     from_state: active
     to_state: active
     supersedes_approval_ref: governance/approvals/APP-017.yaml
