@@ -29,9 +29,14 @@
   relax them, and no `RCA` specification may propose that it does.
 - Internal report-job queueing and report-job reliability, which `RRA.md` owns. This family's
   queueing boundary is the customer-facing kind only.
-- Product implementation while this family remains proposed or its specifications remain draft.
+- Product implementation until the implementation preconditions of the governing `RCA`
+  specification are met. This exclusion is stated against those gates rather than against a
+  lifecycle state, because a charter condition of the form "while this family remains proposed or
+  its specifications remain draft" stops excluding anything at the moment the family goes active
+  and its first specification is approved, which is exactly when the exclusion is needed. Neither
+  this charter being `active` nor a specification being `approved` is authority to implement.
 - Runtime, provider, and deployment selection, which a separately approved architecture decision
   governs and which remains a distinct gate from anything this charter authorizes.
 
-The family is proposed. Its authoritative lifecycle state and approval evidence are recorded in
+Its authoritative lifecycle state and approval evidence are recorded in
 `governance/registries/families.yaml`.
