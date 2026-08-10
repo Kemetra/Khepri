@@ -184,6 +184,49 @@ def test_unreadable_document_fails_closed(tmp_path: Path) -> None:
     assert "could not be read" in findings[0].message()
 
 
+def test_exclusions_heading_is_normative() -> None:
+    """Twelve of thirteen specifications use 'Exclusions', not 'Excludes'."""
+    text = """# RRA-001
+
+## Exclusions
+
+- Product implementation while this specification remains draft.
+"""
+
+    assert len(scan_text("RRA-001.md", text)) == 1
+
+
+def test_subsections_inherit_normative_scope() -> None:
+    """RCA-001 nests '### Accounts' under '## Requirements'."""
+    text = """# RCA-001
+
+## Requirements
+
+### Accounts
+
+- The account is created only while this specification remains draft.
+"""
+
+    assert len(scan_text("RCA-001.md", text)) == 1
+
+
+def test_normative_scope_ends_at_a_sibling_heading() -> None:
+    text = """# RCA-001
+
+## Requirements
+
+### Accounts
+
+- A real requirement.
+
+## Context
+
+- This was written while the family remains proposed.
+"""
+
+    assert scan_text("RCA-001.md", text) == []
+
+
 def test_repository_scan_returns_findings_with_paths() -> None:
     findings = scan_repository(REPOSITORY_ROOT)
 

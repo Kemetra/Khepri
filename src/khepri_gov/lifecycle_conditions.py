@@ -30,7 +30,20 @@ GOVERNED_DOCUMENT_GLOBS = (
 
 # Sections whose bullets carry normative force. A lifecycle mention in Context
 # or Consequences prose describes; a mention in Excludes governs.
-NORMATIVE_HEADINGS = ("excludes", "owns", "requirements", "constraints")
+#
+# Both "Excludes" (family charters) and "Exclusions" (specifications) appear in
+# this repository, and twelve of thirteen specifications use the latter, so
+# matching only one form left that entire class unchecked.
+NORMATIVE_HEADINGS = (
+    "excludes",
+    "exclusions",
+    "owns",
+    "requirements",
+    "constraints",
+    "implementation preconditions",
+    "operational gate",
+    "stable contract",
+)
 
 LIFECYCLE_STATES = (
     "proposed",
@@ -124,6 +137,27 @@ def _is_normative(heading: str) -> bool:
     return any(normalised.startswith(name) for name in NORMATIVE_HEADINGS)
 
 
+def _heading_scope(
+    match: re.Match[str],
+    heading: str,
+    normative_level: int | None,
+) -> tuple[str, int | None]:
+    """Track whether the current heading sits inside a normative section.
+
+    A subsection inherits its parent's normative force: bullets under
+    ``## Requirements`` → ``### Accounts`` govern exactly as those directly under
+    ``## Requirements`` do. Scope ends only at a heading of equal or shallower
+    depth that is not itself normative.
+    """
+    level = len(match.group(1))
+    title = match.group(2).strip()
+    if _is_normative(title):
+        return title, level
+    if normative_level is not None and level > normative_level:
+        return title, normative_level
+    return title, None
+
+
 def _strip_quotations(text: str) -> str:
     """Blank quoted spans so prose *describing* the defect is not flagged as one.
 
@@ -171,15 +205,18 @@ def scan_text(path: str, text: str) -> list[LifecycleFinding]:
     heading = ""
     raw_lines = text.splitlines()
     document = _Document(path, raw_lines, _strip_quotations(text).splitlines())
+    normative_level: int | None = None
     index = 0
     while index < len(raw_lines):
         line = raw_lines[index]
         match = HEADING_PATTERN.match(line)
         if match is not None:
-            heading = match.group(2).strip()
+            heading, normative_level = _heading_scope(
+                match, heading, normative_level
+            )
             index += 1
             continue
-        if not _is_normative(heading) or not BULLET_PATTERN.match(line):
+        if normative_level is None or not BULLET_PATTERN.match(line):
             index += 1
             continue
         end = _bullet_end(raw_lines, index)

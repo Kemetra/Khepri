@@ -32,10 +32,18 @@ Governance was not measured before it was amended. It is now.
 overstated the case for this redesign. They are restated below with the erroneous values shown,
 because a diagnosis that quietly improves its own evidence is worth less than one that does not.
 
+Commit counts are reproducible only against a stated ref, since the branch under review adds
+governance commits as it goes. All figures below are measured at `origin/main`:
+
+```
+git rev-list --count origin/main -- governance/   # 51
+git rev-list --count origin/main -- src/khepri/   # 57
+```
+
 | Signal | Value | Reading |
 |---|---|---|
-| Commits touching `governance/` on `main` | **53** *(first stated 72)* | — |
-| Commits touching `src/khepri/` on `main` | **57** *(first stated 58)* | **Product commits outnumber governance commits.** The original figures came from `git log --all`, which counts abandoned branches; on the reviewed history the ratio reverses |
+| Commits touching `governance/` on `origin/main` | **51** *(first stated 72, then 53)* | — |
+| Commits touching `src/khepri/` on `origin/main` | **57** *(first stated 58)* | **Product commits outnumber governance commits.** The original figures came from `git log --all`, which counts abandoned branches; on the reviewed history the ratio reverses |
 | Specifications approved | 13 | — |
 | Specifications implemented or verified | 3 | 10 approved specs authorize no shipped behaviour |
 | Approval packages | 20 | — |
