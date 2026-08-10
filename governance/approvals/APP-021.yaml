@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-021
 title: RCA family charter renewal replacing a self-disarming implementation exclusion
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Renew the RCA family charter at active, correcting two passages that approval of RCA-001 made
@@ -30,6 +30,22 @@ exclusions:
     specification
   - Any claim that the withdrawn commercial-validation gate was satisfied
 manifest_digest: sha256:d7752172dfe9ab620673df270903daf5eaa413b32be6336f29174cdff10e100b
+# Approved under DEL-007, the standing delegation recorded on 2026-08-10 and merged at 5373566.
+# When this package was authored it stated that DEL-006 did not reach a family charter and that
+# owner approval was therefore required. That was true of DEL-006, whose scope enumerated eleven
+# artifact identifiers and named no charter. DEL-007 supersedes that enumeration with the wildcard
+# scope, and a family charter is not in the Article VIII reserved set, so the authority now exists
+# where it did not. The digest below is the one this package has carried unchanged since it was
+# authored, and governance/families/RCA.md still hashes to the document_sha256 pinned in artifacts.
+#
+# Constitution VIII requires a delegated approval record the DELEGATE's identifier and never the
+# human authority's, so approved_by is KHEPRI-AGENT and not AHMED-SHAABAN.
+approval:
+  approved_by: KHEPRI-AGENT
+  approved_at: 2026-08-10
+  approved_manifest_digest: sha256:d7752172dfe9ab620673df270903daf5eaa413b32be6336f29174cdff10e100b
+  delegation_ref: governance/delegations/DEL-007.yaml
+  session: 128b7625-b462-4866-af33-75cedee09933
 artifacts:
   # A renewal, not an advance: RCA was made active by APP-017 against
   # document_sha256 sha256:011d8950..., which pinned the pre-approval text. Editing
