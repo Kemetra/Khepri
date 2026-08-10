@@ -115,3 +115,8 @@ decisions:
     approved_by: KHEPRI-AGENT
     approved_at: 2026-08-09
     approval_ref: governance/approvals/APP-018.yaml
+  - id: KHEPRI-DEC-016
+    title: Reserved set by consequence
+    state: proposed
+    owner: AHMED-SHAABAN
+    document: governance/decisions/KHEPRI-DEC-016-reserved-set-by-consequence.md

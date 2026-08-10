@@ -113,7 +113,24 @@ final text, clause 3 is withdrawn and the feature ships W1+W2 only.
 Mechanical application of DEC-016's quoted text to `CONSTITUTION.md`, plus the registry entry.
 Nothing composed at this step.
 
-### W3.0 Two blockers found in review — resolve before T-303
+### W3.0-RESOLVED — clause 3 withdrawn, and what that removes
+
+**T-302 ran and closed the gate.** Article II sentence 3 enumerates automation's modes
+exhaustively — *"it grants approval only as a named delegate, only within a recorded delegation"* —
+with no third mode for a package-free transition, and Article V rejects a passing check as the sole
+warrant. Clause 3 and FR-010 are **withdrawn**.
+
+**Blocker 2 below is thereby moot.** Nothing goes package-free, so `_validate_authorities` and
+`renewal_and_legacy_evidence_errors` need no replacement evidence model. Removed from scope.
+
+**Blocker 1 survives and is still required**, because FR-009 stands on its own: it changes *who*
+must approve, which Article II fully permits.
+
+**The amendment is now:** add privacy/retention/data-boundary to the reserved set, introduce the
+`consequence:` registry field that makes it machine-checkable, and restate the four preservation
+clauses verbatim. Smaller than specified, and coherent where the original was not.
+
+### W3.0 Two blockers found in review — Blocker 1 only (Blocker 2 moot, see above)
 
 Both were raised against this plan and both are correct. W3 cannot deliver FR-010 without them.
 
