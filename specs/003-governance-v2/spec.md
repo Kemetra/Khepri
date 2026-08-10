@@ -21,22 +21,32 @@ do the full speckit chain / i authorize you you take captin chair now"
 This directory is Spec Kit working material. Constitution I permits one authoritative
 representation per governed fact, so **nothing here governs anything**. The governed instruments
 this feature proposes are `KHEPRI-DEC-016` (the decision, carrying complete replacement text) and
-`APP-022` (the package the owner ratifies). Both are authored at `proposed` with **no approval
+`APP-023` (the package the owner ratifies). Both are authored at `proposed` with **no approval
 block**.
 
 ## The diagnosis
 
 Governance was not measured before it was amended. It is now.
 
+**Corrected 2026-08-10 after review.** Two figures in the original table were wrong, and both
+overstated the case for this redesign. They are restated below with the erroneous values shown,
+because a diagnosis that quietly improves its own evidence is worth less than one that does not.
+
 | Signal | Value | Reading |
 |---|---|---|
-| Commits touching `governance/` | 72 | — |
-| Commits touching `src/khepri/` | 58 | Governance costs more than the product it governs |
+| Commits touching `governance/` on `main` | **53** *(first stated 72)* | — |
+| Commits touching `src/khepri/` on `main` | **57** *(first stated 58)* | **Product commits outnumber governance commits.** The original figures came from `git log --all`, which counts abandoned branches; on the reviewed history the ratio reverses |
 | Specifications approved | 13 | — |
 | Specifications implemented or verified | 3 | 10 approved specs authorize no shipped behaviour |
 | Approval packages | 20 | — |
-| Packages correcting governance's own drift | 4 (`APP-018`,`019`,`020`,`021`) | 20% of all ceremony repairs the ceremony — **and each was mandated by a working guardrail, not caused by a missing one** |
+| Packages that are pure drift repair | **2** — `APP-019`, `APP-021` *(first stated 4)* | `APP-018` (`proposed`→`accepted`) and `APP-020` (`draft`→`approved`) are genuine state advances that would exist without any drift. Only state-preserving renewals count |
 | Enforcement code | 2,488 lines | For 20 packages: ~124 lines per package approved |
+
+**What survives the correction.** The claim "governance costs more than the product it governs" does
+**not** survive, and is withdrawn. What does survive: 10 of 13 approved specifications authorize no
+shipped behaviour, and 2,488 lines of enforcement serve 20 packages. The drift-repair burden is
+real but half what was claimed — 2 of 20, not 4 of 20 — which weakens the urgency of W3 without
+touching W1, whose value was never the count.
 
 ### The three distinct problems, which have three different costs
 
@@ -228,12 +238,16 @@ the agent stops immediately, does not resist or defer, and prior transitions sta
 - **SC-005** Every act remains attributable by inspection to owner or agent, with **no**
   indistinguishable case.
 - **SC-006** All delegated authority is revocable in **one** action, effective immediately.
-- **SC-007** Governance commits fall below product commits over the next 30 days, reversing the
-  current 72:58.
+- **SC-007** ~~Governance commits fall below product commits~~ **WITHDRAWN.** The measurement that
+  motivated it was wrong: on `main` the ratio is already 53:57 in product's favour, so the
+  criterion was satisfied before the feature began and measures nothing. Replaced by **SC-007a**:
+  the number of state-preserving renewal packages (`APP-019`, `APP-021` class) over the next 30
+  days is **zero**, since `lifecycle-guard` and the existing drift check now catch both causes
+  before a package is needed.
 
 ## Assumptions
 
-- **A-001** The owner's instruction authorizes *drafting* the amendment, not enacting it. `APP-022`
+- **A-001** The owner's instruction authorizes *drafting* the amendment, not enacting it. `APP-023`
   carries no approval block.
 - **A-002** Attribution is worth keeping even though it cannot prove personhood — it is the one
   guarantee still true, and `KHEPRI-DEC-010` already conceded the rest.
@@ -262,7 +276,7 @@ the agent stops immediately, does not resist or defer, and prior transitions sta
 
 ## The one thing that remains the owner's
 
-`APP-022` must be authored at `proposed` with **no approval block**. An agent-approved amendment
+`APP-023` must be authored at `proposed` with **no approval block**. An agent-approved amendment
 shrinking the agent's own reserved set is precisely the artifact bootstrap containment exists to
 prevent — and it would be indistinguishable, in the record, from an agent that decided this alone.
 The owner's ratification is the single act that makes the whole design legitimate rather than

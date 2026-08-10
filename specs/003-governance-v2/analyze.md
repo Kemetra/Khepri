@@ -104,6 +104,43 @@ The sequencing in `plan.md` is a hedge against exactly that.
 | No duplicated source of truth | ✓ after F-2 |
 | Owner-blocking items isolated | ✓ T-307 only |
 
+### F-7 — Two measurements overstated the case ⚠ **CORRECTED**
+
+Review found both headline figures wrong, and **both errors ran in the direction that favoured this
+redesign**:
+
+- Commit ratio came from `git log --all`, counting abandoned branches. On `main` it is **53
+  governance : 57 product** — product *outnumbers* governance, reversing the stated conclusion.
+  The claim is withdrawn and `SC-007` with it.
+- Drift-repair count included `APP-018` (`proposed`→`accepted`) and `APP-020` (`draft`→`approved`),
+  which are genuine state advances. Only state-preserving renewals qualify: **2 of 20, not 4**.
+
+Recorded rather than silently amended. A diagnosis that quietly improves its own evidence is worth
+less than one that does not — and measuring after deciding is exactly how bias enters, which is
+what happened here.
+
+### F-8 — W3 is materially larger than planned ⚠ **HIGH**
+
+Two blockers, both raised in review, both correct:
+
+1. **No machine-readable consequence classification.** `is_reserved_file()` classifies paths;
+   nothing classifies *consequence*. Inferring it from prose is ambiguous because existing
+   decisions mention deployment/spend both to authorize and to exclude. Scenario 2 cannot be
+   implemented without a `consequence:` registry field validated fail-closed.
+2. **Package-free transitions break existing validators.** `_validate_authorities` and
+   `renewal_and_legacy_evidence_errors` both require `approval_ref` to name an approved package.
+   FR-010 needs a replacement evidence model, not just narrowed delegation checks.
+
+W3 is therefore a schema change **plus** an evidence-model change **plus** the amendment — not
+"amend Article VIII and widen two helpers". Recorded in `plan.md` W3.0.
+
+### F-9 — `APP-022` collided with shipped work ✓ **RESOLVED**
+
+W1 consumed `APP-022` for the RRA renewal, and it is now authoritative approval evidence in
+`families.yaml`. The chain reserved that ID for the amendment. Reusing it would have destroyed
+RRA's evidence; the amendment is renumbered `APP-023`, with a note to re-confirm the next unused ID
+at authoring time rather than trusting a number written in advance.
+
 ## Open risk carried into execution
 
 **T-302 is the gate.** Everything in W3 downstream of it assumes the Article V distinction can be

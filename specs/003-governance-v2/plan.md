@@ -17,7 +17,7 @@ W3 lands.
 W1 digest+drift ──┐
                   ├──> both land without owner action
 W2 harness      ──┘
-                        W3 amendment ──> requires APP-022 ratification
+                        W3 amendment ──> requires APP-023 ratification
 ```
 
 ## W1 — Digest and drift enforcement (no owner action)
@@ -101,7 +101,7 @@ approval act* for artifacts whose consequences are reversible, leaving the agent
 authority under Article II with CI as evidence. If this distinction cannot be drawn cleanly in the
 final text, clause 3 is withdrawn and the feature ships W1+W2 only.
 
-### W3.2 `APP-022` — the package
+### W3.2 `APP-023` — the package
 
 - `artifacts:` → `KHEPRI-DEC-016`, `proposed → accepted`
 - `state: proposed`, **no `approval:` block**
@@ -113,6 +113,37 @@ final text, clause 3 is withdrawn and the feature ships W1+W2 only.
 Mechanical application of DEC-016's quoted text to `CONSTITUTION.md`, plus the registry entry.
 Nothing composed at this step.
 
+### W3.0 Two blockers found in review — resolve before T-303
+
+Both were raised against this plan and both are correct. W3 cannot deliver FR-010 without them.
+
+**Blocker 1 — "reserved by consequence" has no machine-readable representation.** `is_reserved_file()`
+classifies *paths*; `reserved_artifact_errors()` recognises reserved paths and the
+`alters_reserved_set` flag. Neither can decide whether a decision authorizes deployment, spend,
+provider selection, or a privacy boundary. Inferring that from prose is ambiguous — existing
+decisions mention those terms both to authorize **and** to explicitly exclude them, so a keyword
+match would misfire in both directions.
+
+*Resolution:* the amendment must introduce an authoritative **`consequence:` field** on decision and
+specification registry entries, drawn from a closed vocabulary (`deployment`, `spend`,
+`provider-selection`, `privacy`, `none`), validated fail-closed — an entry lacking the field is
+reserved, not exempt. Scenario 2 is unimplementable without it.
+
+**Blocker 2 — package-free transitions break existing validators.** T-309 only widens the
+reserved-file helpers, but the *first* non-reserved transition performed without a package will
+still fail `khepri-gov validate`: `_validate_authorities` requires approval fields, and
+`renewal_and_legacy_evidence_errors` requires `approval_ref` to name an approved package containing
+the artifact.
+
+*Resolution:* the amendment must also define the **replacement evidence model** for package-free
+transitions — what a registry entry records instead of `approval_ref` (commit SHA and CI run, at
+minimum) — and T-309 must update both validators. Otherwise FR-010 is text that the tooling
+contradicts, which is the `KHEPRI-DEC-011` inversion in reverse.
+
+**Consequence for sequencing:** W3 is materially larger than first planned. It is no longer "amend
+Article VIII and widen two helpers"; it is a schema change plus an evidence-model change plus the
+amendment. This strengthens the case for shipping W1+W2 independently.
+
 ### W3.4 Enforcement follow-through (FR-017)
 
 `is_reserved_file()` and `reserved_artifact_errors()` widen to the new categories; package
@@ -123,7 +154,7 @@ unamended constitution would build machinery the governing document forbids").
 ## Ordering constraint
 
 W3.1/W3.2 may be *drafted* now — that is what the owner instructed. W3.3/W3.4 execute **only**
-after `APP-022` is ratified. The agent must not transcribe or widen enforcement on the strength of
+after `APP-023` is ratified. The agent must not transcribe or widen enforcement on the strength of
 having drafted the decision.
 
 ## Verification

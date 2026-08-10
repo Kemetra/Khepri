@@ -62,11 +62,14 @@ Legend: `[ ]` pending · `[~]` blocked on owner · **[P]** parallelisable with s
       carrying complete replacement text for Article VIII (FR-009..015). *Depends: T-302.*
 - [ ] **T-304** Register `KHEPRI-DEC-016` in `governance/registries/decisions.yaml` at `proposed`.
       *Depends: T-303.*
-- [ ] **T-305** Author `governance/approvals/APP-022.yaml` at `state: proposed` with **no approval
+- [ ] **T-305** Author `governance/approvals/APP-023.yaml` at `state: proposed` with **no approval
       block**. `document_sha256` first, then `manifest_digest`. *Depends: T-303, T-304.*
+      **`APP-022` is taken** — W1 consumed it for the RRA charter renewal, and it is the
+      authoritative approval evidence in `families.yaml`. Reusing the ID would destroy that
+      evidence. Confirm the next unused ID at authoring time rather than trusting this number.
 - [ ] **T-306** Gate run, then PR — describing precisely what ratification would authorize.
       *Depends: T-305.*
-- [~] **T-307** **OWNER: ratify `APP-022`.** The single blocking item. Cannot be delegated —
+- [~] **T-307** **OWNER: ratify `APP-023`.** The single blocking item. Cannot be delegated —
       Article VIII reserves the constitution, and an agent-approved amendment shrinking the agent's
       own reserved set is exactly what bootstrap containment prevents. *Depends: T-306.*
 - [ ] **T-308** Transcribe DEC-016's quoted text into `CONSTITUTION.md` (v1.2.0) and flip the
@@ -81,7 +84,9 @@ Legend: `[ ]` pending · `[~]` blocked on owner · **[P]** parallelisable with s
 ## Post-amendment
 
 - [ ] **T-401** `DEL-007` expiry warning ahead of 2026-11-08 (FR-016). Independent of W3.
-- [ ] **T-402** Measure SC-007 at +30 days: governance commits below product commits (from 72:58).
+- [ ] **T-402** Measure **SC-007a** at +30 days: zero state-preserving renewal packages
+      (`APP-019`/`APP-021` class). The original SC-007 was withdrawn — its 72:58 ratio came from
+      `git log --all`; on `main` it is 53:57 and already in product's favour.
 
 ---
 
@@ -100,5 +105,5 @@ FR-001..008 — which is where the measured friction actually was.
 
 1. **T-307 blocks T-308.** No transcription, no enforcement widening, on the strength of having
    drafted the decision. Drafting is not ratification.
-2. **`APP-022` carries no approval block.** If a draft ever grows one, that is the failure mode
+2. **`APP-023` carries no approval block.** If a draft ever grows one, that is the failure mode
    this entire design exists to prevent.
