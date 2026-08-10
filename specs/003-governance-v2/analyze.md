@@ -33,7 +33,31 @@ head is the drift this feature exists to prevent. The matrix above is now the ci
 
 ## Consistency findings
 
-### F-1 — Article V tension is the feature's single point of failure ⚠ **HIGH**
+### F-1 — Article V tension ✓ **RESOLVED: clause 3 withdrawn**
+
+**Outcome, 2026-08-10.** The distinction did not survive drafting. Tested against the text rather
+than assumed:
+
+- **Article II sentence 3** enumerates automation's modes exhaustively — *"it grants approval only
+  as a named delegate, only within a recorded delegation."* Two `only`s, no third mode. FR-010
+  required inventing one.
+- **Article V** closes the fallback: with no approval act, the transition's sole warrant is the
+  green check, which is precisely what *"a passing technical check is not approval"* rejects.
+- **FR-009 does not rescue it.** Reserved-versus-not decides *who* approves, never *whether* an
+  approval act occurs.
+
+This was the gate, and it closed. **Recording it as a result rather than a failure**: the check
+worked exactly as `plan.md` T-302 specified, before any constitutional text was written.
+
+**Two consequences.** First, review's Blocker 2 (`_validate_authorities` and
+`renewal_and_legacy_evidence_errors` requiring `approval_ref`) **disappears** — nothing goes
+package-free, so no replacement evidence model is needed. That is the largest scope reduction in
+the feature. Second, what remains is smaller and more defensible: FR-009 plus the verbatim
+preservation clauses.
+
+*Original finding, retained for the record:*
+
+### F-1a — Article V tension was the feature's single point of failure ⚠ **HIGH (historical)**
 
 FR-010 says non-reserved artifacts need no approval package. Article V says *"a passing technical
 check is not approval."* Read carelessly, clause 3 promotes CI to approver — exactly what Article V

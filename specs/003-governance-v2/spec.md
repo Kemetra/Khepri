@@ -208,8 +208,27 @@ the agent stops immediately, does not resist or defer, and prior transitions sta
 - **FR-009** Article VIII's reserved set MUST be restated by consequence: deployment, spend,
   provider and runtime selection, privacy/retention/data-boundary decisions, the constitution, the
   authorities registry, every delegation record, and any decision altering the reserved set.
-- **FR-010** Artifacts outside the reserved set MUST NOT require an approval package. Agent commit
-  plus green CI is sufficient authority.
+- **FR-010** ~~Artifacts outside the reserved set MUST NOT require an approval package; agent commit
+  plus green CI is sufficient authority.~~ **WITHDRAWN 2026-08-10 on constitutional grounds.**
+
+  Article II sentence 3 enumerates automation's modes exhaustively: *"Automation validates and
+  reports; it grants approval only as a named delegate, only within a recorded delegation, and
+  never under a human authority's identifier."* Two `only`s, and **no third mode**. This
+  requirement needed one — an artifact transitioning with no approval act at all.
+
+  The intended defence was that CI would be *evidence* rather than *approver*. It does not hold: if
+  no approval act occurs, the transition's sole warrant **is** the passing check, and Article V
+  names exactly that — *"Silence or a passing technical check is not approval."*
+
+  FR-009 does not rescue it either. Reserved-versus-not decides **who** must approve; it never
+  decides **whether** an approval act occurs.
+
+  **The affirmative reason, not just the prohibition.** Measured rather than assumed: a delegated
+  approval is a five-line block written in the same pass as the artifact, and under `DEL-007` it
+  costs the owner nothing — `APP-021` and `APP-022` were both approved with no owner involvement.
+  So this requirement was never buying friction reduction. It was buying the removal of a record
+  that costs one commit to produce, at the price of the repository's ability to say who authorized
+  a transition. That is a bad trade independent of what the Constitution permits.
 - **FR-011** Attribution MUST survive verbatim. `approved_by: KHEPRI-AGENT` never records a human
   identifier; human and delegated acts stay distinguishable by inspection. **Non-negotiable.**
 - **FR-012** Bootstrap containment MUST survive verbatim: no delegation reaches the reserved set,
