@@ -1,0 +1,204 @@
+schema_version: 2
+artifacts:
+  - type: family
+    id: FND
+    state: active
+    document: governance/families/FND.md
+    depends_on: []
+  - type: family
+    id: RRA
+    state: active
+    document: governance/families/RRA.md
+    depends_on:
+      - FND
+  - type: family
+    id: RCA
+    state: active
+    document: governance/families/RCA.md
+    depends_on:
+      - FND
+      - RRA
+
+  - type: decision
+    id: KHEPRI-DEC-001
+    state: active
+    document: governance/decisions/KHEPRI-DEC-001-successor-reference-policy.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-002
+    state: active
+    document: governance/decisions/KHEPRI-DEC-002-selective-transfer-protocol.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-003
+    state: retired
+    document: governance/decisions/KHEPRI-DEC-003-rra-private-beta.md
+    depends_on: []
+    superseded_by: KHEPRI-DEC-014
+  - type: decision
+    id: KHEPRI-DEC-004
+    state: active
+    document: governance/decisions/KHEPRI-DEC-004-atomic-approval-packages.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-005
+    state: active
+    document: governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-006
+    state: active
+    document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-007
+    state: active
+    document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-008
+    state: retired
+    document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-009
+    state: retired
+    document: governance/decisions/KHEPRI-DEC-009-standing-authorization.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-010
+    state: active
+    document: governance/decisions/KHEPRI-DEC-010-spoken-delegation.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-011
+    state: active
+    document: governance/decisions/KHEPRI-DEC-011-constitution-delegation-articles.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-012
+    state: active
+    document: governance/decisions/KHEPRI-DEC-012-transformation-and-orchestration-boundary.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-013
+    state: retired
+    document: governance/decisions/KHEPRI-DEC-013-seshat-analytical-boundary.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-014
+    state: active
+    document: governance/decisions/KHEPRI-DEC-014-commercial-boundary.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-015
+    state: active
+    document: governance/decisions/KHEPRI-DEC-015-commercial-identity-retention.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-016
+    state: active
+    document: governance/decisions/KHEPRI-DEC-016-reserved-set-by-consequence.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-017
+    state: active
+    document: governance/decisions/KHEPRI-DEC-017-minimal-single-owner-governance.md
+    depends_on: []
+
+  - type: specification
+    id: FND-001
+    state: active
+    document: governance/specifications/FND-001.md
+    depends_on:
+      - FND
+  - type: specification
+    id: FND-002
+    state: active
+    document: governance/specifications/FND-002.md
+    depends_on:
+      - FND
+      - FND-001
+  - type: specification
+    id: FND-003
+    state: active
+    document: governance/specifications/FND-003.md
+    depends_on:
+      - FND
+      - FND-002
+  - type: specification
+    id: RRA-001
+    state: active
+    document: governance/specifications/RRA-001.md
+    depends_on:
+      - RRA
+  - type: specification
+    id: RRA-002
+    state: active
+    document: governance/specifications/RRA-002.md
+    depends_on:
+      - RRA
+      - RRA-001
+  - type: specification
+    id: RRA-003
+    state: active
+    document: governance/specifications/RRA-003.md
+    depends_on:
+      - RRA
+      - RRA-002
+  - type: specification
+    id: RRA-004
+    state: active
+    document: governance/specifications/RRA-004.md
+    depends_on:
+      - RRA
+      - RRA-003
+  - type: specification
+    id: RRA-005
+    state: active
+    document: governance/specifications/RRA-005.md
+    depends_on:
+      - RRA
+      - RRA-004
+  - type: specification
+    id: RRA-006
+    state: active
+    document: governance/specifications/RRA-006.md
+    depends_on:
+      - RRA
+      - RRA-004
+      - RRA-005
+  - type: specification
+    id: RRA-007
+    state: active
+    document: governance/specifications/RRA-007.md
+    depends_on:
+      - RRA
+      - RRA-001
+      - RRA-002
+      - RRA-003
+      - RRA-004
+      - RRA-005
+      - RRA-006
+  - type: specification
+    id: RRA-008
+    state: active
+    document: governance/specifications/RRA-008.md
+    depends_on:
+      - RRA
+      - RRA-004
+  - type: specification
+    id: RRA-009
+    state: active
+    document: governance/specifications/RRA-009.md
+    depends_on:
+      - RRA
+      - RRA-006
+  - type: specification
+    id: RCA-001
+    state: active
+    document: governance/specifications/RCA-001.md
+    depends_on:
+      - RCA
+      - RRA-001
+      - RRA-002

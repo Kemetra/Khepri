@@ -9,6 +9,11 @@ from khepri_gov.validator import validate_repository
 from tests.governance_support import decision, valid_artifacts, write_raw_registry, write_registry
 
 
+def test_repository_registry_is_valid() -> None:
+    root = Path(__file__).parents[1]
+    assert validate_repository(root) == []
+
+
 def test_valid_registry_passes(tmp_path: Path) -> None:
     write_registry(tmp_path, valid_artifacts())
     assert validate_repository(tmp_path) == []
