@@ -2,6 +2,9 @@
 
 - Audited at: 2026-08-04
 - Audited commit: `0b1ae35` on `main`, clean working tree
+- Refreshed at: 2026-08-11 against `d247ef1` — counts, the section 5 hotspot table, and the
+  section 1.2 traceability gaps were re-measured. The analysis and its conclusions are unchanged;
+  only the figures and the closed gaps were corrected.
 - Method: read-only inspection of `src/`, `tests/`, `governance/`, `pyproject.toml`
 - Status: **advisory analysis, not a governed artifact.** It approves nothing, records no
   approval, and creates no authority. Where it states a governance fact, the registry named
@@ -26,10 +29,10 @@ Package sizes are source lines, excluding tests.
 | `khepri.runtime` | 5 | Production composition roots for web and worker roles | **none** |
 | `khepri.infra` | 10 | AWS CDK infrastructure definition | RRA-002, RRA-007 |
 | `khepri.local` | 9 | Local development wiring; excluded from the built wheel | RRA-001, 002, 006, 007 |
-| `khepri_gov` | 9 | Governance validation tooling; the `khepri-gov` CLI | **none** |
+| `khepri_gov` | 11 | Governance validation tooling; the `khepri-gov` CLI | **none** |
 
-Total: ~24,525 source lines against 27,324 test lines across 81 `test_*.py` files plus 5 support
-modules, holding 1,273 test functions. The test-to-source ratio is above 1:1.
+Total: ~26,371 source lines against 29,692 test lines across 85 `test_*.py` files plus 5 support
+modules, holding 1,396 test functions. The test-to-source ratio is above 1:1.
 
 ### 1.1 What each package can and cannot do
 
@@ -76,25 +79,26 @@ carries local credentials and would hand the image the two entry points the Dock
 deliberately withholds. `local/worker.py` drives the worker from PostgreSQL with no queue in
 front — which matters for section 3.
 
-**`khepri_gov` — the governance kernel.** 9 files, 2,479 lines, zero spec references because it
-validates registries generically. `validator.py` (562 lines) checks registry shape, authority,
-ISO dates, global ID uniqueness, family relationships, dependency cycles, and reference
-assessments. `delegation.py` (458 lines) enforces the Constitution VIII reserved set.
+**`khepri_gov` — the governance kernel.** 11 files, 3,083 lines, zero spec references because it
+validates registries generically. `validator.py` (439 lines) checks registry shape, authority,
+ISO dates, global ID uniqueness, family relationships, and dependency cycles.
+`reference_assessments.py` holds the reference-assessment rules, extracted from `validator.py` by
+`#142`. `lifecycle_conditions.py` enforces lifecycle-conditioned exclusions, added by `#139`.
+`delegation.py` (526 lines) enforces the Constitution VIII reserved set.
 `approval_transition_validation.py` classifies supersession and renewal. This package is the
 subject of section 6's central claim.
 
-### 1.2 Two inventory gaps worth recording
+### 1.2 Two inventory gaps worth recording — one since closed
 
-**`RRA-005` is referenced in zero source modules.** Every other approved RRA specification is
-cited somewhere in `src/`. `narrative.py` — the apparent RRA-005 implementation — cites RRA-006
-only. `tests/test_rra005_narrative.py` exists with 106 test functions, the largest single test
-file in the repo. The capability is implemented and tested; the traceability comment is
-missing. This is a documentation gap, not a capability gap, and it is worth closing because
-RRA-005 is load-bearing for the differentiation argument in section 6.
+**~~`RRA-005` is referenced in zero source modules.~~ Closed.** `5117fa3` (#94) added the citation;
+`src/khepri/rra/narrative.py:3` now opens "This module implements RRA-005." The observation was
+true only of the audited commit `0b1ae35`.
 
-**`FND-001`, `FND-002`, and `FND-003` are referenced in zero source modules.** Their only
-non-test reference is `.github/workflows/governance.yml:60`. The FND specifications govern the
-governance kernel, and `khepri_gov` implements them without naming them.
+**`FND-002` and `FND-003` are referenced in zero source modules.** Their only non-test reference
+is `.github/workflows/governance.yml:60`. The FND specifications govern the governance kernel, and
+`khepri_gov` largely implements them without naming them. `FND-001` is now partially closed:
+`src/khepri_gov/reference_assessments.py:3` cites it, added by `#142`. The remaining gap is real
+and worth closing the same way — one docstring line per module, no governance change required.
 
 ---
 
@@ -115,12 +119,14 @@ Declared runtime dependencies and where they are actually used.
 | `alembic` | none in `src/` | Used outside `src/`: `migrations/env.py` and 9 version files. Runtime-declared for `alembic upgrade head`. Correct. |
 | `psycopg` | none | Present only as a SQLAlchemy driver string. Loaded at connect time. Correct. |
 | `uvicorn` | none | A container command string only. Invoked as a process. Correct. |
-| `fastexcel` | **none by name anywhere** | Functionally required — it is the engine `polars.read_excel` uses at `profiling.py:294` — but never named in `src/`, `tests/`, or `scripts/`. |
+| `fastexcel` | ~~none by name anywhere~~ **named at `profiling.py:286-289`** | Functionally required — it is the engine `polars.read_excel` uses — and `5117fa3` (#94) added the docstring naming it and explaining that removing it would break the call rather than tidy a manifest. |
 
-**Two undeclared direct imports.** `pydantic` is imported at `rra/api.py:8` and
-`rra/report_api.py:34` but is **not** a declared dependency in `pyproject.toml`; it resolves
-transitively through FastAPI. `botocore` is imported at `runtime/wiring.py:12` and resolves
-through boto3. Both are named in `KHEPRI-DEC-005`/`DEC-008` as part of the approved stack, so
+**~~Two undeclared direct imports.~~ Closed by `5117fa3` (#94).** Both are now declared at
+`pyproject.toml:20,27` (`botocore>=1.43.58,<2`, `pydantic>=2.11,<3`), above a comment naming the
+direct import sites. The original finding, true at `0b1ae35`, read: `pydantic` is imported at
+`rra/api.py:8` and `rra/report_api.py:34` but is **not** a declared dependency in
+`pyproject.toml`; it resolves transitively through FastAPI. `botocore` is imported at
+`runtime/wiring.py:12` and resolves through boto3. Both are named in `KHEPRI-DEC-005`/`DEC-008` as part of the approved stack, so
 the governance intent is clear and the declaration is missing. A transitive resolution that
 works today is not a pin, and a FastAPI major bump could remove it.
 
@@ -342,6 +348,19 @@ code. No slice implementing billing, signup, or a persistent workspace can be au
 the current family document, and `AGENTS.md` forbids implementing ahead of an approved
 specification.
 
+**Resolved 2026-08-08, and the gate moved rather than opened.** `KHEPRI-DEC-014` chartered a new
+family, `RCA`, rather than deleting `RRA`'s exclusions — Constitution I forbids one document
+asserting both "invite-only pseudonymous beta" and "commercial multi-tenant service." `RCA` is
+`active` and owns identity, organizations, workspaces, multi-dataset accumulation, billing,
+signup, agency tenancy, and recurring delivery. `RCA-001` is `approved` (`APP-020`). So the
+paragraph above is no longer the binding constraint: the excluded capabilities are now
+specifiable.
+
+They are still not implementable. `RCA-001`'s precondition 2 requires an approved runtime and
+provider selection, and `KHEPRI-DEC-008` remains `proposed` — the deployment gate this audit
+already identified as first is still closed and is now the *only* thing in the way. Lifecycle
+state is authoritative in `governance/registries/`, not here.
+
 ---
 
 ## 5. Complexity hotspots
@@ -349,15 +368,20 @@ specification.
 Under the CI rule that every new file must score CodeScene Code Health 10.00 and no tracked
 hotspot may decline, file size is a governance risk and not only a style question.
 
-| File | Size | Assessment |
-|---|---|---|
-| `rra/bundle.py` | 80.6 KB | **Largest. Mixed.** Holds reconciliation, the all-or-nothing surface rule, and bilingual assembly — "all arithmetic happens once here, in both languages." The single-place property is deliberate and valuable. But 80 KB is roughly four times the next-largest module, and reconciliation, assembly, and the surface contract are separable concerns. A candidate for extraction, done carefully. |
-| `rra/narrative.py` | 66.3 KB | **Mostly irreducible.** Implements RRA-005: provider contract, request projection through `_REQUEST_SCHEMA` (a positive projection rather than a blocklist), response validation against supplied fact IDs, citation checking, bilingual parity enforcement, refusal handling. Each is a governed requirement. The 106-test file corroborates the surface breadth. |
-| `rra/persistence.py` | 33.6 KB | **Irreducible for its kind.** 8 ORM row classes and 5 repositories. Large because it is a schema, and schemas are wide rather than deep. |
-| `rra/facts.py` | 32.8 KB | **Irreducible.** The `FactPackage` and every governed KPI with documented zero/null/currency/sign/duplicate/return semantics. |
-| `rendering/excel.py` | 33.7 KB | **Mostly irreducible.** Transcription plus formula-injection and URL-interpretation suppression. Governed output safety. |
-| `rra/mapping.py` | 27.0 KB | Semantic inference with confidence and evidence. Rule-table shaped. |
-| `rra/profiling.py` | 23.9 KB | Type inference plus PII detection across six shapes. |
+Size alone was the original proxy. Code Health scores are added below because the gate measures
+health, not bytes, and the two diverge: `rendering/excel.py` is large and green, while
+`khepri_gov/validator.py` was small and the least healthy file in the repository.
+
+| File | Size | Health | Assessment |
+|---|---|---|---|
+| `rra/bundle.py` | 80 KB | 7.78 | **Largest. Mixed.** Holds reconciliation, the all-or-nothing surface rule, and bilingual assembly — "all arithmetic happens once here, in both languages." The single-place property is deliberate and valuable. But 80 KB is roughly four times the next-largest module, and reconciliation, assembly, and the surface contract are separable concerns. A candidate for extraction, done carefully. |
+| `rra/narrative.py` | 68 KB | 6.06 | **Mostly irreducible.** Implements RRA-005: provider contract, request projection through `_REQUEST_SCHEMA` (a positive projection rather than a blocklist), response validation against supplied fact IDs, citation checking, bilingual parity enforcement, refusal handling. Each is a governed requirement. The 106-test file corroborates the surface breadth. |
+| `rra/persistence.py` | 36 KB | 9.38 | **Irreducible for its kind.** 8 ORM row classes and 5 repositories. Large because it is a schema, and schemas are wide rather than deep. |
+| `rra/facts.py` | 36 KB | 7.05 | **Irreducible.** The `FactPackage` and every governed KPI with documented zero/null/currency/sign/duplicate/return semantics. |
+| `rendering/excel.py` | 44 KB | 9.68 | **Mostly irreducible.** Transcription plus formula-injection and URL-interpretation suppression. Governed output safety. Largest green file — size is not the signal. |
+| `rra/mapping.py` | 28 KB | 7.41 | Semantic inference with confidence and evidence. Rule-table shaped. |
+| `rra/profiling.py` | 24 KB | 7.11 | Type inference plus PII detection across six shapes. |
+| `khepri_gov/validator.py` | 16 KB | 6.33 | **Still yellow, and small.** Was 4.69 — the least healthy file in the repository — until `#142` extracted its reference-assessment rules. `_validate_shape` (cc=25) and `_validate_authorities` (cc=18) remain. The counter-example to size-as-proxy. |
 
 `analysis/` is the counter-example that proves decomposition is achievable here: its
 `__init__.py` states the four families were split into four modules specifically to stay under
@@ -368,6 +392,20 @@ the semantics are large, and shrinking them would scatter rules that must be rea
 `bundle.py` is the one case where size looks like accumulated responsibility rather than
 irreducible domain, and it is also the file most central to the differentiation claim — which
 argues for touching it deliberately and with evidence, not opportunistically.
+
+**Correction to that pattern, recorded 2026-08-11.** Size is a weak proxy for health.
+`rendering/excel.py` is the largest green file at 44 KB / 9.68, while `khepri_gov/validator.py`
+was the *least* healthy in the repository at 4.69 despite being one of the smallest. The original
+table ranked by size and therefore omitted `validator.py` entirely. What actually drives the score
+is per-function complexity: `validator.py` held a single function at cyclomatic complexity 48 with
+four levels of nesting. `#142` extracted it to `khepri_gov/reference_assessments.py` (10.00) and
+lifted the file to 6.33 without changing any governed refusal string.
+
+**Two consequences for anyone reading this to plan work.** The already-approved yellow files are
+grandfathered — the gate is *new files at 10.00* plus *no tracked hotspot may decline*, not
+*every file at 10.00* — so a partial refactor that reshuffles smells can block every open pull
+request until it is undone. And local CodeScene does not reproduce the server thresholds, so every
+score in this table is indicative only; CI is the authority.
 
 ---
 
@@ -380,7 +418,7 @@ agencies/consultants, whose differentiator is **auditable, defensible analysis**
 
 | Asset | Why it survives commercialization |
 |---|---|
-| `khepri_gov` (2,479 lines) | Provider-agnostic, product-agnostic. Validates registries, lifecycle, delegation. Nothing about it is beta-shaped. |
+| `khepri_gov` (3,083 lines) | Provider-agnostic, product-agnostic. Validates registries, lifecycle, delegation. Nothing about it is beta-shaped. |
 | `facts.py` + `FactPackage` | Immutable, versioned, content-addressed, sole source for every surface. This is the audit trail. |
 | `analysis/` (all four families) | RRA-008 analysis over a package. Buyer-agnostic. |
 | `narrative.py` + adapter contract | Grounded bilingual prose with citation validation and refusal. Replaceable provider behind a Protocol. |
@@ -389,7 +427,7 @@ agencies/consultants, whose differentiator is **auditable, defensible analysis**
 | `profiling.py`, `mapping.py`, `admissibility.py` | Intake intelligence and PII detection. |
 | `jobs.py` + `job_persistence.py` | Leases, retries, orphan recovery, dead-lettering. Scales by process count. |
 | `telemetry*.py` | Content-free operational evidence. |
-| Test suite (27,324 lines) | The reason any of the above can be changed with confidence. |
+| Test suite (29,692 lines) | The reason any of the above can be changed with confidence. |
 
 ### 6.2 Beta-only scaffolding — replace, and expect it to be load-bearing
 
@@ -419,7 +457,7 @@ from one immutable versioned package, that no uncited claim survived validation,
 input reproduces the same `bundle_id`, and that a partial render is recorded as a refusal
 rather than delivered as a report. Those are enforced at type boundaries
 (`DeliveryRecord.__post_init__` refuses a record naming fewer than every required surface) and
-proven by 1,273 tests. Reproducing them is not a matter of adding nodes to a graph; it is the
+proven by 1,396 tests. Reproducing them is not a matter of adding nodes to a graph; it is the
 work of building the invariants.
 
 **The AR/EN parity requirement compounds it.** RRA-005 requires equal factual and caveat
@@ -468,7 +506,7 @@ The commercially binding limits are one-dataset-per-session and no cross-run his
    orchestration proposal must engage that argument.
 4. **The moat is the governance layer, and it is already built and tested.** Immutable
    content-addressed fact packages, one package behind every surface, citation validation,
-   refusal over fabrication, content-free evidence, 1,273 tests. Make it visible; do not
+   refusal over fabrication, content-free evidence, 1,396 tests. Make it visible; do not
    rebuild it.
 5. **The binding limits are retention and tenancy, not orchestration.** One dataset per
    session and no cross-run history are what stop a mid-market customer from getting value.
