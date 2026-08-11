@@ -1,17 +1,16 @@
-# DECISION-ID: Title
+# KHEPRI-DEC-NNN: Title
 
 ## Context
 
-State the bounded problem and evidence.
+State the bounded problem and relevant evidence.
 
 ## Decision
 
-State exactly what is authorized.
+State the chosen boundary precisely.
 
 ## Consequences
 
-State boundaries, follow-up obligations, and superseded decisions.
+State trade-offs, exclusions, and any artifact this decision supersedes.
 
-Add the authoritative entry to `governance/registries/decisions.yaml` with one lifecycle
-state: `proposed`, `accepted`, `rejected`, or `superseded`. An accepted decision must include
-`approved_by`, `approved_at`, and `approval_ref`.
+Add the document to `governance/registry.yaml` as an `active` or `retired` decision. A proposed
+decision stays on its branch until the owner merges it.

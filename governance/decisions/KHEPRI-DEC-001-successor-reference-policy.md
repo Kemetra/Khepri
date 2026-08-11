@@ -21,10 +21,10 @@ family only. Product families and runtime technology remain deferred.
 
 ## Consequences
 
-- Every carried-forward idea requires a new Khepri artifact and approval.
-- Conflicts resolve in favor of Khepri's constitution and registries.
-- Updating the reference pin requires a new accepted Khepri decision.
+- Every carried-forward idea requires a new Khepri artifact merged by the owner.
+- Conflicts resolve in favor of Khepri's constitution and registry.
+- Updating the reference pin requires a new active Khepri decision.
 - No change to Seshat-Platform is authorized by this decision.
 
-Identity, lifecycle state, ownership, and approval evidence are authoritative in
-`governance/registries/decisions.yaml`.
+Identity, state, document, dependencies, and supersession are authoritative in
+`governance/registry.yaml`.

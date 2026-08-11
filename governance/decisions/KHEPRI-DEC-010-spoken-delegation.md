@@ -1,5 +1,7 @@
 # KHEPRI-DEC-010: Spoken delegation to a named non-human authority
 
+> Retired by KHEPRI-DEC-017. This document records the former delegation model and is historical.
+
 ## Context
 
 The owner has asked four times, in increasingly plain terms, for the ability to delegate approval

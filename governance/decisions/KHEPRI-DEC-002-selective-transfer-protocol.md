@@ -1,5 +1,7 @@
 # KHEPRI-DEC-002: Selective predecessor assessment and re-specification protocol
 
+> Retired by KHEPRI-DEC-017. This document records the former assessment model and is historical.
+
 ## Context
 
 The pinned Seshat repository contains useful problem statements, but it is not authoritative

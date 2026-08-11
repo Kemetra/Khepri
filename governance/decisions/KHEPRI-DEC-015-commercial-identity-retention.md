@@ -402,5 +402,5 @@ This decision authorizes **none** of the following, and no reading of it may cla
 
 ---
 
-Identity, lifecycle state, ownership, and approval evidence are authoritative in
-`governance/registries/decisions.yaml`.
+Identity, state, document, dependencies, and supersession are authoritative in
+`governance/registry.yaml`.

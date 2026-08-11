@@ -1,5 +1,7 @@
 # KHEPRI-DEC-005: RRA private-beta runtime and provider architecture
 
+> Retired and superseded by `KHEPRI-DEC-008`.
+
 ## Context
 
 The approved RRA specifications require final technology and provider selections before product
@@ -189,4 +191,5 @@ forecasting, or customer-defined formulas.
 - PostgreSQL 17, browser, provider, and dependency upgrades require compatibility, numerical
   integrity, bilingual parity, deletion, recovery, and performance evidence.
 
-This decision remains proposed until its registry entry contains explicit approval evidence.
+This decision is historical. Current state and supersession are recorded in
+`governance/registry.yaml`.

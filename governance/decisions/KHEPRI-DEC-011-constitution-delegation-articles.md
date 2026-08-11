@@ -1,5 +1,7 @@
 # KHEPRI-DEC-011: Constitution 1.1.0, delegation articles
 
+> Retired by KHEPRI-DEC-017. This document records a former constitution and is historical.
+
 ## Context
 
 `KHEPRI-DEC-010` is accepted. It adopted spoken delegation and stated the amended text of the
