@@ -1,7 +1,7 @@
 schema_version: 1
 id: APP-024
 title: Accept the portable runtime decision and supersede the provider-specific architecture
-state: proposed
+state: approved
 owner: AHMED-SHAABAN
 scope: >-
   Accept KHEPRI-DEC-008, replacing the provider-specific runtime architecture with a
@@ -28,6 +28,11 @@ exclusions:
   - Any claim that the withdrawn commercial-validation gate was satisfied
   - Any claim that a human authority approved this package, absent that authority's evidence
 manifest_digest: sha256:31ac572aa74b66f9f93df8f06c6f3598484408ecf767a1b4897307084f225c38
+approval:
+  approved_by: AHMED-SHAABAN
+  approved_at: 2026-08-11
+  approved_manifest_digest: sha256:31ac572aa74b66f9f93df8f06c6f3598484408ecf767a1b4897307084f225c38
+  evidence_ref: https://github.com/Kemetra/Khepri/issues/145#issuecomment-5253422447
 artifacts:
   - id: KHEPRI-DEC-008
     document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md

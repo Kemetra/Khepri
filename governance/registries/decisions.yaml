@@ -40,12 +40,13 @@ decisions:
   - id: KHEPRI-DEC-005
     title: RRA private-beta runtime and provider architecture
     consequence: provider-selection
-    state: accepted
+    state: superseded
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md
     approved_by: KHEPRI-AGENT
     approved_at: 2026-08-03
-    approval_ref: governance/approvals/APP-013.yaml
+    approval_ref: governance/approvals/APP-024.yaml
+    superseded_by: KHEPRI-DEC-008
   - id: KHEPRI-DEC-006
     title: RRA beta benchmark workload and environment
     consequence: spend
@@ -58,18 +59,22 @@ decisions:
   - id: KHEPRI-DEC-007
     title: RRA private-beta and benchmark infrastructure sizing
     consequence: spend
-    state: accepted
+    state: superseded
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
     approved_by: AHMED-SHAABAN
     approved_at: 2026-07-31
     approval_ref: governance/approvals/APP-005.yaml
+    superseded_by: KHEPRI-DEC-008
   - id: KHEPRI-DEC-008
     title: RRA private-beta portable runtime and target selection
     consequence: deployment
-    state: proposed
+    state: accepted
     owner: AHMED-SHAABAN
     document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
+    approved_by: AHMED-SHAABAN
+    approved_at: 2026-08-11
+    approval_ref: governance/approvals/APP-024.yaml
   - id: KHEPRI-DEC-009
     title: Standing authorization for specification milestone transitions
     consequence: none
