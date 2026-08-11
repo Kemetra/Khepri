@@ -73,9 +73,12 @@ its family as a dependency instead of carrying a second relationship field.
 
 Existing authoritative artifacts are migrated as follows:
 
-- accepted decisions and active families become active;
+- decisions whose requirements remain operative and active families become active;
+- decisions dedicated to predecessor assessment, approval packages, delegation, and the former
+  reserved set become retired with this migration as their successor;
 - superseded, rejected, or still-proposed decisions become retired;
-- approved, implemented, or verified specifications become active;
+- specifications whose requirements remain operative become active, while lifecycle-transition
+  and delegation specifications become retired;
 - retired specifications and families remain retired;
 - current cross-artifact dependencies are retained, with each specification also depending on its
   family.
@@ -157,4 +160,3 @@ remain simple enough to score 10.00.
 - Every retained governed document appears exactly once in the unified registry.
 - Product behavior and product tests are unchanged.
 - All required local checks pass from a clean worktree.
-

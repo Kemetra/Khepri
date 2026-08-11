@@ -27,10 +27,13 @@ removed record and its original context.
 
 ## Migration
 
-- Accepted decisions become active.
+- Decisions whose requirements remain operative become active. Decisions dedicated to the removed
+  assessment, approval-package, delegation, and reserved-set mechanisms become retired and name
+  this decision as their successor.
 - Superseded, rejected, and unaccepted proposed decisions become retired.
 - Active families remain active.
-- Approved, implemented, and verified specifications become active.
+- Specifications whose requirements remain operative become active. The lifecycle-transition and
+  delegation specifications become retired.
 - Each specification names its family through `depends_on`.
 - `KHEPRI-DEC-003` retains its successor link to `KHEPRI-DEC-014`.
 

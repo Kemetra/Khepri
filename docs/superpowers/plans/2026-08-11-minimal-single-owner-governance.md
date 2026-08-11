@@ -178,8 +178,9 @@ Expected: FAIL because `governance/registry.yaml` does not exist.
 - [ ] **Step 3: Create schema-version-2 registry data**
 
 Migrate the three families, sixteen existing decisions, and thirteen specifications. Add
-`KHEPRI-DEC-017` as an active decision. Map accepted decisions and all authority-bearing families
-and specifications to `active`; map proposed, rejected, and superseded decisions to `retired`.
+`KHEPRI-DEC-017` as an active decision. Keep operative decisions, families, and specifications
+`active`; retire proposed, rejected, superseded, assessment, approval-package, delegation, and
+reserved-set artifacts whose mechanisms this migration removes.
 Preserve `KHEPRI-DEC-003.superseded_by: KHEPRI-DEC-014`. Add each specification's family ID to
 its `depends_on` list.
 

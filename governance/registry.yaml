@@ -26,9 +26,10 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-002
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-002-selective-transfer-protocol.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-017
   - type: decision
     id: KHEPRI-DEC-003
     state: retired
@@ -37,14 +38,16 @@ artifacts:
     superseded_by: KHEPRI-DEC-014
   - type: decision
     id: KHEPRI-DEC-004
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-004-atomic-approval-packages.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-017
   - type: decision
     id: KHEPRI-DEC-005
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-008
   - type: decision
     id: KHEPRI-DEC-006
     state: active
@@ -52,12 +55,13 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-007
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-008
   - type: decision
     id: KHEPRI-DEC-008
-    state: retired
+    state: active
     document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
     depends_on: []
   - type: decision
@@ -67,14 +71,16 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-010
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-010-spoken-delegation.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-017
   - type: decision
     id: KHEPRI-DEC-011
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-011-constitution-delegation-articles.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-017
   - type: decision
     id: KHEPRI-DEC-012
     state: active
@@ -97,9 +103,10 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-016
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-016-reserved-set-by-consequence.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-017
   - type: decision
     id: KHEPRI-DEC-017
     state: active
@@ -114,14 +121,14 @@ artifacts:
       - FND
   - type: specification
     id: FND-002
-    state: active
+    state: retired
     document: governance/specifications/FND-002.md
     depends_on:
       - FND
       - FND-001
   - type: specification
     id: FND-003
-    state: active
+    state: retired
     document: governance/specifications/FND-003.md
     depends_on:
       - FND
