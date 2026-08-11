@@ -1,439 +1,330 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import yaml
 
-from khepri_gov.approval_packages import validate_approval_packages
-from khepri_gov.delegation import CONSEQUENCE_VALUES
-from khepri_gov.lifecycle import decision_supersession_errors
-from khepri_gov.lifecycle_conditions import (
-    lifecycle_condition_errors,
-    scan_repository,
-)
-from khepri_gov.reference_assessments import (
-    REVIEW_EVIDENCE_FIELDS,
-    load_reference_assessments,
-    validate_reference_assessments,
-)
+SCHEMA_VERSION = 2
+REGISTRY_PATH = Path("governance/registry.yaml")
+TOP_LEVEL_FIELDS = {"schema_version", "artifacts"}
+ARTIFACT_FIELDS = {"type", "id", "state", "document", "depends_on"}
+OPTIONAL_FIELDS = {"superseded_by"}
+ARTIFACT_TYPES = {"decision", "family", "specification"}
+ARTIFACT_STATES = {"active", "retired"}
 
-SCHEMA_VERSION = 1
-REGISTRY_NAMES = ("authorities", "decisions", "families", "specifications")
-STATE_VOCABULARIES = {
-    "decisions": {"proposed", "accepted", "rejected", "superseded"},
-    "families": {"proposed", "active", "retired"},
-    "specifications": {"draft", "approved", "implemented", "verified", "retired"},
-}
-APPROVED_STATES = {
-    "decisions": {"accepted", "superseded"},
-    "families": {"active", "retired"},
-    "specifications": {"approved", "implemented", "verified", "retired"},
-}
-REQUIRED_FIELDS = {
-    "authorities": {"id", "name", "roles", "active", "document", "human"},
-    "decisions": {"id", "title", "state", "owner", "document"},
-    "families": {"id", "name", "state", "owner", "document", "depends_on"},
-    "specifications": {
-        "id",
-        "title",
-        "state",
-        "family",
-        "owner",
-        "document",
-        "depends_on",
-    },
-}
-APPROVAL_FIELDS = ("approved_by", "approved_at", "approval_ref")
-
-Artifact = dict[str, Any]
+Artifact = Mapping[str, Any]
+ArtifactIndex = dict[str, Artifact]
 
 
-def _load_registry(root: Path, name: str, errors: list[str]) -> list[Artifact] | None:
-    path = root / "governance" / "registries" / f"{name}.yaml"
-    if not path.is_file():
-        errors.append(f"{name}: registry does not exist")
-        return None
+def validate_repository(root: Path) -> list[str]:
+    errors: list[str] = []
+    artifacts = _load_artifacts(root, errors)
+    if artifacts is None:
+        return errors
+    index = _validate_artifacts(root, artifacts, errors)
+    _validate_dependencies(artifacts, index, errors)
+    _validate_cycles(artifacts, index, errors)
+    _validate_family_links(artifacts, index, errors)
+    _validate_supersession(artifacts, index, errors)
+    return errors
+
+
+def _load_artifacts(root: Path, errors: list[str]) -> list[Artifact] | None:
+    path = root / REGISTRY_PATH
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, yaml.YAMLError):
-        errors.append(f"{name}: invalid YAML")
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        errors.append(f"registry: file does not exist: {REGISTRY_PATH.as_posix()}")
         return None
-    if not isinstance(data, dict):
-        errors.append(f"{name}: registry root must be a mapping")
+    except (OSError, UnicodeError):
+        errors.append(f"registry: cannot read: {REGISTRY_PATH.as_posix()}")
         return None
-    version = data.get("schema_version")
-    if type(version) is not int or version != SCHEMA_VERSION:
-        errors.append(
-            f"{name}: unsupported schema_version {version!r}; "
-            f"expected integer {SCHEMA_VERSION}"
-        )
-    artifacts = data.get(name)
-    if not isinstance(artifacts, list):
-        errors.append(f"{name}: '{name}' must be a list")
+    except yaml.YAMLError:
+        errors.append("registry: invalid YAML")
         return None
-    if not all(isinstance(artifact, dict) for artifact in artifacts):
-        errors.append(f"{name}: every entry must be a mapping")
+    if not isinstance(loaded, dict):
+        errors.append("registry: root must be a mapping")
         return None
-    return artifacts
+    _report_field_errors("registry", loaded, set(), TOP_LEVEL_FIELDS, errors)
+    version = loaded.get("schema_version")
+    if version != SCHEMA_VERSION:
+        errors.append(f"registry: unsupported schema_version {version!r}".replace("None", "null"))
+        return None
+    artifacts = loaded.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        errors.append("registry: artifacts must be a non-empty list")
+        return None
+    mappings: list[Artifact] = []
+    for index, artifact in enumerate(artifacts):
+        if not isinstance(artifact, dict):
+            errors.append(f"registry: artifact[{index}] must be a mapping")
+            continue
+        mappings.append(artifact)
+    return mappings
 
 
-def _artifact_label(registry: str, artifact: Artifact, index: int) -> str:
-    artifact_id = artifact.get("id")
-    if isinstance(artifact_id, str) and artifact_id:
-        return f"{registry}:{artifact_id}"
-    return f"{registry}:entry-{index + 1}"
-
-
-def _validate_shape(
+def _validate_artifacts(
     root: Path,
-    registry: str,
     artifacts: list[Artifact],
     errors: list[str],
-) -> None:
-    seen_ids: set[str] = set()
-    for index, artifact in enumerate(artifacts):
-        label = _artifact_label(registry, artifact, index)
-        for field in sorted(REQUIRED_FIELDS[registry]):
-            if field not in artifact:
-                errors.append(f"{label}: missing required field '{field}'")
-
+) -> ArtifactIndex:
+    index: ArtifactIndex = {}
+    documents: set[str] = set()
+    for position, artifact in enumerate(artifacts):
+        fallback = f"artifact[{position}]"
         artifact_id = artifact.get("id")
-        if not isinstance(artifact_id, str) or not artifact_id.strip():
-            errors.append(f"{label}: id must be a non-empty string")
-        elif artifact_id in seen_ids:
-            errors.append(f"{label}: duplicate id")
-        else:
-            seen_ids.add(artifact_id)
-
-        if registry in STATE_VOCABULARIES:
-            state = artifact.get("state")
-            if not isinstance(state, str) or state not in STATE_VOCABULARIES[registry]:
-                errors.append(f"{label}: invalid state {state!r}")
-
-        _validate_document(root, label, artifact.get("document"), errors)
-
-        if registry == "authorities":
-            if not isinstance(artifact.get("active"), bool):
-                errors.append(f"{label}: active must be a boolean")
-            if not isinstance(artifact.get("human"), bool):
-                errors.append(f"{label}: human must be a boolean")
-            roles = artifact.get("roles")
-            if not isinstance(roles, list) or not roles or not all(
-                isinstance(role, str) and role for role in roles
-            ):
-                errors.append(f"{label}: roles must be a non-empty list of strings")
-        elif not isinstance(artifact.get("owner"), str):
-            errors.append(f"{label}: owner must be a string")
-
-        if registry in {"families", "specifications"}:
-            dependencies = artifact.get("depends_on")
-            if not isinstance(dependencies, list) or not all(
-                isinstance(dependency, str) and dependency for dependency in dependencies
-            ):
-                errors.append(f"{label}: depends_on must be a list of ids")
+        label = artifact_id if _filled_text(artifact_id) else fallback
+        _report_field_errors(
+            f"registry: {fallback}", artifact, ARTIFACT_FIELDS, OPTIONAL_FIELDS, errors
+        )
+        _validate_values(label, fallback, artifact, errors)
+        _record_identity(label, artifact_id, artifact, index, errors)
+        _record_document(root, label, artifact.get("document"), documents, errors)
+    return index
 
 
-def _validate_document(
-    root: Path,
+def _report_field_errors(
     label: str,
-    document: object,
+    item: Mapping[str, Any],
+    required: set[str],
+    optional: set[str],
     errors: list[str],
 ) -> None:
-    if not isinstance(document, str) or not document:
-        errors.append(f"{label}: document must be a non-empty relative path")
-        return
-    document_path = Path(document)
-    if document_path.is_absolute():
-        errors.append(f"{label}: document must be a relative path: {document}")
-        return
-    resolved_root = root.resolve()
-    resolved_document = (root / document_path).resolve()
-    if not resolved_document.is_relative_to(resolved_root):
-        errors.append(f"{label}: document escapes repository root: {document}")
-    elif not resolved_document.is_file():
-        errors.append(f"{label}: document does not exist: {document}")
+    missing = sorted(required - item.keys())
+    unknown = sorted(item.keys() - required - optional)
+    if missing:
+        errors.append(f"{label}: missing fields: {', '.join(missing)}")
+    if unknown:
+        errors.append(f"{label}: unknown fields: {', '.join(unknown)}")
 
 
-def _authority_ids(registries: dict[str, list[Artifact]]) -> tuple[set[str], set[str]]:
-    known: set[str] = set()
-    active: set[str] = set()
-    for authority in registries.get("authorities", []):
-        authority_id = authority.get("id")
-        if isinstance(authority_id, str):
-            known.add(authority_id)
-            if authority.get("active") is True:
-                active.add(authority_id)
-    return known, active
-
-
-def _validate_authorities(
-    root: Path,
-    registries: dict[str, list[Artifact]],
+def _validate_values(
+    label: str,
+    fallback: str,
+    artifact: Artifact,
     errors: list[str],
 ) -> None:
-    known, active = _authority_ids(registries)
-    for registry in ("decisions", "families", "specifications"):
-        for index, artifact in enumerate(registries.get(registry, [])):
-            label = _artifact_label(registry, artifact, index)
-            owner = artifact.get("owner")
-            if isinstance(owner, str) and owner not in known:
-                errors.append(f"{label}: unknown owner {owner!r}")
-            elif isinstance(owner, str) and owner not in active:
-                errors.append(f"{label}: owner {owner!r} is inactive")
-
-            state = artifact.get("state")
-            if not isinstance(state, str) or state not in APPROVED_STATES[registry]:
-                continue
-            for field in APPROVAL_FIELDS:
-                if field not in artifact or artifact[field] in ("", None):
-                    errors.append(f"{label}: missing approval field '{field}'")
-            approved_by = artifact.get("approved_by")
-            if approved_by not in ("", None) and not isinstance(approved_by, str):
-                errors.append(f"{label}: approved_by must be a string authority id")
-            elif isinstance(approved_by, str) and approved_by not in known:
-                errors.append(f"{label}: unknown approver {approved_by!r}")
-            elif isinstance(approved_by, str) and approved_by not in active:
-                errors.append(f"{label}: approver {approved_by!r} is inactive")
-            _validate_iso_date(
-                label,
-                "approved_at",
-                artifact.get("approved_at"),
-                errors,
-            )
-            _validate_approval_ref(
-                root,
-                label,
-                artifact.get("approval_ref"),
-                errors,
-            )
+    if not _filled_text(artifact.get("id")):
+        errors.append(f"registry: {fallback}: id must be a non-empty string")
+    _validate_vocabulary(label, "type", artifact.get("type"), ARTIFACT_TYPES, errors)
+    _validate_vocabulary(label, "state", artifact.get("state"), ARTIFACT_STATES, errors)
+    dependencies = artifact.get("depends_on")
+    if not _identifier_list(dependencies):
+        errors.append(f"registry: {label}: depends_on must be a list of identifiers")
+    successor = artifact.get("superseded_by")
+    if "superseded_by" in artifact and not _filled_text(successor):
+        errors.append(f"registry: {label}: superseded_by must be a non-empty identifier")
 
 
-def _validate_iso_date(
+def _validate_vocabulary(
     label: str,
     field: str,
     value: object,
+    allowed: set[str],
     errors: list[str],
 ) -> None:
-    if value in (None, ""):
-        return
-    if isinstance(value, (date, datetime)):
-        return
-    if isinstance(value, str):
-        try:
-            date.fromisoformat(value)
-        except ValueError:
-            errors.append(f"{label}: {field} must be an ISO 8601 date")
-        return
-    errors.append(f"{label}: {field} must be an ISO 8601 date")
+    if not isinstance(value, str):
+        errors.append(f"registry: {label}: {field} must be a string")
+    elif value not in allowed:
+        errors.append(f"registry: {label}: unsupported {field} {value!r}")
 
 
-def _validate_approval_ref(
+def _record_identity(
+    label: str,
+    artifact_id: object,
+    artifact: Artifact,
+    index: ArtifactIndex,
+    errors: list[str],
+) -> None:
+    if not _filled_text(artifact_id):
+        return
+    if artifact_id in index:
+        errors.append(f"registry: duplicate id {artifact_id!r}")
+        return
+    index[artifact_id] = artifact
+
+
+def _record_document(
     root: Path,
     label: str,
-    approval_ref: object,
+    document: object,
+    documents: set[str],
     errors: list[str],
 ) -> None:
-    if approval_ref in (None, ""):
+    if not _filled_text(document):
+        errors.append(f"registry: {label}: document must be a non-empty string")
         return
-    if not isinstance(approval_ref, str):
-        errors.append(f"{label}: approval_ref must be a URL or repository-relative path")
+    path = Path(document)
+    if path.is_absolute() or ".." in path.parts:
+        errors.append(f"registry: {label}: document must be a repository-relative Markdown path")
         return
-    parsed = urlparse(approval_ref)
-    if parsed.scheme in {"https", "http"} and parsed.netloc:
+    if path.suffix.lower() != ".md":
+        errors.append(f"registry: {label}: document must be a Markdown file")
         return
-    reference_path = Path(approval_ref)
-    if (
-        reference_path.is_absolute()
-        or not (root / reference_path).resolve().is_relative_to(root.resolve())
-        or not (root / reference_path).is_file()
-    ):
-        errors.append(f"{label}: approval_ref does not resolve to evidence: {approval_ref}")
-
-
-def _validate_global_ids(
-    registries: dict[str, list[Artifact]],
-    errors: list[str],
-) -> None:
-    seen: dict[str, str] = {}
-    for registry in REGISTRY_NAMES:
-        for index, artifact in enumerate(registries.get(registry, [])):
-            artifact_id = artifact.get("id")
-            if not isinstance(artifact_id, str) or not artifact_id:
-                continue
-            previous = seen.get(artifact_id)
-            if previous is not None and previous != registry:
-                label = _artifact_label(registry, artifact, index)
-                errors.append(f"{label}: id collides with {previous}")
-            else:
-                seen[artifact_id] = registry
-
-
-def _validate_family_relationships(
-    registries: dict[str, list[Artifact]],
-    errors: list[str],
-) -> None:
-    families = {
-        family["id"]: family
-        for family in registries.get("families", [])
-        if isinstance(family.get("id"), str)
-    }
-    for index, specification in enumerate(registries.get("specifications", [])):
-        label = _artifact_label("specifications", specification, index)
-        family_id = specification.get("family")
-        if not isinstance(family_id, str):
-            errors.append(f"{label}: family must be a string id")
-            continue
-        if family_id not in families:
-            errors.append(f"{label}: unknown family {family_id!r}")
-            continue
-        specification_state = specification.get("state")
-        family_state = families[family_id].get("state")
-        if specification_state in APPROVED_STATES["specifications"] and family_state != "active":
-            errors.append(f"{label}: family {family_id!r} is not active")
-        elif specification_state == "draft" and family_state not in {"proposed", "active"}:
-            errors.append(
-                f"{label}: draft family {family_id!r} must be proposed or active"
-            )
-        specification_id = specification.get("id")
-        if isinstance(specification_id, str) and not specification_id.startswith(
-            f"{family_id}-"
-        ):
-            errors.append(f"{label}: id must use family prefix '{family_id}-'")
+    if document in documents:
+        errors.append(f"registry: duplicate document {document!r}")
+    documents.add(document)
+    if not (root / path).is_file():
+        errors.append(f"registry: {label}: document does not exist: {document}")
 
 
 def _validate_dependencies(
-    registry: str,
     artifacts: list[Artifact],
+    index: ArtifactIndex,
     errors: list[str],
 ) -> None:
-    known = {
-        artifact["id"]
-        for artifact in artifacts
-        if isinstance(artifact.get("id"), str)
-    }
-    graph: dict[str, list[str]] = {}
-    for index, artifact in enumerate(artifacts):
+    for artifact in artifacts:
         artifact_id = artifact.get("id")
         dependencies = artifact.get("depends_on")
-        if not isinstance(artifact_id, str) or not isinstance(dependencies, list):
+        if not _filled_text(artifact_id) or not _identifier_list(dependencies):
             continue
-        valid_dependencies: list[str] = []
-        for dependency in dependencies:
-            if not isinstance(dependency, str):
-                continue
-            if dependency not in known:
-                label = _artifact_label(registry, artifact, index)
-                errors.append(f"{label}: unknown dependency {dependency!r}")
-            else:
-                valid_dependencies.append(dependency)
-        graph[artifact_id] = valid_dependencies
+        seen: set[str] = set()
+        for dependency_id in dependencies:
+            _validate_dependency(artifact, artifact_id, dependency_id, index, seen, errors)
+
+
+def _validate_dependency(
+    artifact: Artifact,
+    artifact_id: str,
+    dependency_id: str,
+    index: ArtifactIndex,
+    seen: set[str],
+    errors: list[str],
+) -> None:
+    if dependency_id in seen:
+        errors.append(f"registry: {artifact_id}: duplicate dependency {dependency_id!r}")
+    seen.add(dependency_id)
+    if dependency_id == artifact_id:
+        errors.append(f"registry: {artifact_id}: cannot depend on itself")
+        return
+    dependency = index.get(dependency_id)
+    if dependency is None:
+        errors.append(f"registry: {artifact_id}: unknown dependency {dependency_id!r}")
+        return
+    if artifact.get("state") == "active" and dependency.get("state") == "retired":
+        errors.append(
+            f"registry: {artifact_id}: active artifact depends on retired artifact "
+            f"{dependency_id!r}"
+        )
+
+
+def _validate_cycles(
+    artifacts: list[Artifact],
+    index: ArtifactIndex,
+    errors: list[str],
+) -> None:
+    graph = {
+        artifact_id: _known_dependencies(artifact, index)
+        for artifact_id, artifact in index.items()
+    }
     cycle = _find_cycle(graph)
     if cycle:
-        errors.append(f"{registry}: dependency cycle: {' -> '.join(cycle)}")
+        errors.append(f"registry: dependency cycle: {' -> '.join(cycle)}")
 
 
-def _find_cycle(graph: dict[str, list[str]]) -> list[str]:
-    visited: set[str] = set()
-    active: list[str] = []
-    active_set: set[str] = set()
-
-    def visit(node: str) -> list[str]:
-        if node in active_set:
-            start = active.index(node)
-            return [*active[start:], node]
-        if node in visited:
-            return []
-        active.append(node)
-        active_set.add(node)
-        for dependency in graph.get(node, []):
-            cycle = visit(dependency)
-            if cycle:
-                return cycle
-        active.pop()
-        active_set.remove(node)
-        visited.add(node)
+def _known_dependencies(artifact: Artifact, index: ArtifactIndex) -> list[str]:
+    dependencies = artifact.get("depends_on")
+    if not _identifier_list(dependencies):
         return []
+    return [item for item in dependencies if item in index]
 
-    for node in graph:
-        cycle = visit(node)
+
+def _find_cycle(graph: Mapping[str, list[str]]) -> list[str]:
+    visited: set[str] = set()
+    stack: list[str] = []
+    active: set[str] = set()
+    for artifact_id in graph:
+        cycle = _visit(artifact_id, graph, visited, stack, active)
         if cycle:
             return cycle
     return []
 
 
-def _validate_review_evidence(
-    root: Path,
-    label: str,
-    assessment: Artifact,
+def _visit(
+    artifact_id: str,
+    graph: Mapping[str, list[str]],
+    visited: set[str],
+    stack: list[str],
+    active: set[str],
+) -> list[str]:
+    if artifact_id in active:
+        start = stack.index(artifact_id)
+        return stack[start:] + [artifact_id]
+    if artifact_id in visited:
+        return []
+    visited.add(artifact_id)
+    active.add(artifact_id)
+    stack.append(artifact_id)
+    for dependency_id in graph.get(artifact_id, []):
+        cycle = _visit(dependency_id, graph, visited, stack, active)
+        if cycle:
+            return cycle
+    stack.pop()
+    active.remove(artifact_id)
+    return []
+
+
+def _validate_family_links(
+    artifacts: list[Artifact],
+    index: ArtifactIndex,
     errors: list[str],
 ) -> None:
-    for field in REVIEW_EVIDENCE_FIELDS:
-        if field not in assessment or assessment[field] in ("", None):
-            errors.append(f"{label}: missing review evidence field '{field}'")
-    reviewer = assessment.get("reviewed_by")
-    if reviewer not in ("", None) and (
-        not isinstance(reviewer, str) or not reviewer.strip()
-    ):
-        errors.append(f"{label}: reviewed_by must be a non-empty string")
-    _validate_iso_date(
-        label,
-        "reviewed_at",
-        assessment.get("reviewed_at"),
-        errors,
-    )
-    _validate_approval_ref(root, label, assessment.get("review_ref"), errors)
-
-
-def validate_repository(root: Path) -> list[str]:
-    root = root.resolve()
-    errors: list[str] = []
-    registries: dict[str, list[Artifact]] = {}
-    for name in REGISTRY_NAMES:
-        artifacts = _load_registry(root, name, errors)
-        if artifacts is None:
+    for artifact in artifacts:
+        if artifact.get("type") != "specification":
             continue
-        registries[name] = artifacts
-        _validate_shape(root, name, artifacts, errors)
-
-    _validate_global_ids(registries, errors)
-    errors.extend(decision_supersession_errors(registries))
-    _validate_authorities(root, registries, errors)
-    _validate_family_relationships(registries, errors)
-    for registry in ("families", "specifications"):
-        _validate_dependencies(registry, registries.get(registry, []), errors)
-    assessments = load_reference_assessments(root, errors)
-    if assessments is not None:
-
-        def review_evidence(label: str, assessment: Artifact, errs: list[str]) -> None:
-            _validate_review_evidence(root, label, assessment, errs)
-
-        validate_reference_assessments(
-            assessments, registries, review_evidence, errors
-        )
-    errors.extend(validate_approval_packages(root, registries))
-    errors.extend(lifecycle_condition_errors(scan_repository(root)))
-    _validate_consequences(registries, errors)
-    return errors
+        artifact_id = artifact.get("id")
+        dependencies = _known_dependencies(artifact, index)
+        families = [item for item in dependencies if index[item].get("type") == "family"]
+        if _filled_text(artifact_id) and len(families) != 1:
+            errors.append(
+                f"registry: {artifact_id}: specification must depend on exactly one family"
+            )
 
 
-def _validate_consequences(
-    registries: dict[str, list[Artifact]],
+def _validate_supersession(
+    artifacts: list[Artifact],
+    index: ArtifactIndex,
     errors: list[str],
 ) -> None:
-    """Article VIII: every decision and specification records a consequence.
+    for artifact in artifacts:
+        if "superseded_by" not in artifact:
+            continue
+        _validate_successor(artifact, index, errors)
 
-    Fail closed on a missing or unrecognised value, per Article V — an
-    unclassified artifact is an unknown state, and unknown states block progress.
-    """
-    for name in ("decisions", "specifications"):
-        for artifact in registries.get(name, []):
-            value = artifact.get("consequence")
-            if value in CONSEQUENCE_VALUES:
-                continue
-            errors.append(
-                f"{name}:{artifact.get('id')}: consequence must be one of "
-                f"{sorted(CONSEQUENCE_VALUES)}; an artifact recording none is reserved"
-            )
+
+def _validate_successor(
+    artifact: Artifact,
+    index: ArtifactIndex,
+    errors: list[str],
+) -> None:
+    artifact_id = artifact.get("id")
+    successor_id = artifact.get("superseded_by")
+    if not _filled_text(artifact_id) or not _filled_text(successor_id):
+        return
+    if artifact.get("state") != "retired":
+        errors.append(f"registry: {artifact_id}: only retired artifacts may name superseded_by")
+        return
+    if successor_id == artifact_id:
+        errors.append(f"registry: {artifact_id}: cannot supersede itself")
+        return
+    successor = index.get(successor_id)
+    if successor is None:
+        errors.append(f"registry: {artifact_id}: unknown successor {successor_id!r}")
+        return
+    if successor.get("type") != artifact.get("type"):
+        errors.append(
+            f"registry: {artifact_id}: successor {successor_id!r} must have type "
+            f"{artifact.get('type')!r}"
+        )
+    if successor.get("state") != "active":
+        errors.append(f"registry: {artifact_id}: successor {successor_id!r} must be active")
+
+
+def _identifier_list(value: object) -> bool:
+    return isinstance(value, list) and all(_filled_text(item) for item in value)
+
+
+def _filled_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
