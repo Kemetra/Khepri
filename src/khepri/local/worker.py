@@ -1,22 +1,21 @@
 """Drive `ReportWorker` from PostgreSQL, with no queue in front of it.
 
-**Why there is no local SQS.** `KHEPRI-DEC-007` makes PostgreSQL the owner of
-idempotency and leases, and SQS the delivery mechanism only: the visibility timeout
-and the database lease are deliberately the same 300 seconds so that neither is
-load-bearing alone. A local substitute for the queue would therefore be faking the
-part that carries no authority while the real authority sits in the database
-already. So this polls the job store for a claimable job and synthesizes the
-`ReportJobMessage` that `ReportWorker.process` takes.
+**This is no longer a local-only shape.** `KHEPRI-DEC-008` replaced the message
+broker with PostgreSQL claim-and-redrive everywhere, so the deployed worker now
+claims jobs the same way this one does. What was written as a deliberate local
+simplification turned out to be the design the whole system moved to: the database
+always owned idempotency, leases, and the attempt limit, and the broker only carried
+delivery.
 
-That is a genuine difference from the deployed design, and it is stated rather than
-hidden: locally there is no dead-letter queue and no `maxReceiveCount`. The
-database's own `max_attempts` still bounds retries and still records
-`DEAD_LETTER_RETRIES_EXHAUSTED`, because that half lives in `job_persistence`.
+The remaining difference is narrow. `khepri.rra.claim_queue.ClaimingReportQueue`
+offers the settle operations a worker loop needs -- heartbeat, acknowledge, retry --
+while this polls and lets `ReportWorker` settle directly. Both reach the same rows
+through the same repository.
 
-**One job at a time.** `KHEPRI-DEC-007` sets in-task concurrency to exactly 1, and
-this holds to it — not because a local loop needs the guarantee, but because a
-local run that behaved differently from the deployed one would teach the wrong
-thing about how the pipeline behaves under load.
+**One job at a time.** In-task concurrency is exactly 1, and this holds to it -- not
+because a local loop needs the guarantee, but because a local run that behaved
+differently from the deployed one would teach the wrong thing about how the pipeline
+behaves under load.
 """
 
 from __future__ import annotations
