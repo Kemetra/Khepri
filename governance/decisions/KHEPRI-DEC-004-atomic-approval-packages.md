@@ -1,5 +1,7 @@
 # KHEPRI-DEC-004: Atomic approval packages and bounded implementation authority
 
+> Retired by KHEPRI-DEC-017. This document records the former approval model and is historical.
+
 ## Context
 
 Khepri requires explicit named-human approval, but repeating one coherent approval decision

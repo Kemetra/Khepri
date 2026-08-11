@@ -14,11 +14,15 @@ uv run ruff check .
 uv run pytest
 ```
 
-## Human approval
+## Owner decision
 
-- Approved artifacts:
-- Approved by:
-- Approved at:
-- Approval reference:
+- [ ] Merge this pull request to approve the changes on `main`.
+- [ ] Close it without merging to reject the proposal.
 
-Technical checks report consistency; they do not grant approval.
+Until the owner merges it, this pull request is a proposal. Technical checks report consistency;
+they do not grant approval.
+
+## Parallel-slice collision notes
+
+- Alembic sibling migration status:
+- Stacked-branch rebase status:

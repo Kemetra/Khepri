@@ -1,5 +1,7 @@
 # KHEPRI-DEC-008: RRA private-beta portable runtime and target selection
 
+> Active. Supersedes `KHEPRI-DEC-005` and `KHEPRI-DEC-007`.
+
 ## Context
 
 `KHEPRI-DEC-005` selected Amazon Web Services in `me-central-1` as the private-beta runtime, and
@@ -404,11 +406,8 @@ customer-defined formulas.
   `approval-packages:APP-005: KHEPRI-DEC-007 must be at to_state 'accepted'`, and
   `approval-packages:APP-013: renewal must preserve state 'superseded'`.
 
-  The approval package accepting this decision must therefore contain three artifacts: this
-  decision moving `proposed → accepted`, `KHEPRI-DEC-005` moving `accepted → superseded` with
-  `superseded_by: KHEPRI-DEC-008`, and `KHEPRI-DEC-007` moving the same way. All of it lands in one
-  commit, because a repository state in which the successor is accepted and the predecessors are
-  not yet superseded is a state Constitution I forbids and the validator rejects.
+  The transition was accepted atomically on 2026-08-11: this decision became active while
+  `KHEPRI-DEC-005` and `KHEPRI-DEC-007` became retired and pointed here as their successor.
 
-Identity, lifecycle state, ownership, and approval evidence are authoritative in
-`governance/registries/decisions.yaml`.
+Identity, lifecycle state, dependencies, and supersession are authoritative in
+`governance/registry.yaml`. Git history retains the transition evidence.

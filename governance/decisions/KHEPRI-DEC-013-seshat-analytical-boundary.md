@@ -1,5 +1,7 @@
 # KHEPRI-DEC-013: Seshat-BI analytical dependency and ownership boundary
 
+> Retired during the schema-version-2 migration. This unaccepted proposal is historical.
+
 ## Context
 
 The owner supplied a master roadmap on 2026-08-05 directing that Khepri and `Kemetra/Seshat-BI`

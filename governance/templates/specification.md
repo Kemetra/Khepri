@@ -16,6 +16,5 @@ List what this specification does not authorize.
 
 List reproducible evidence commands or artifacts.
 
-Add the authoritative entry to `governance/registries/specifications.yaml` with one lifecycle
-state: `draft`, `approved`, `implemented`, `verified`, or `retired`. Approved-or-later
-entries must include `approved_by`, `approved_at`, and `approval_ref`.
+Add the document to `governance/registry.yaml` as an `active` or `retired` specification and
+include exactly one family in `depends_on`.

@@ -1,5 +1,8 @@
 # Khepri capability and framework audit
 
+> Historical snapshot. It predates KHEPRI-DEC-017 and the unified registry; use
+> `governance/registry.yaml` for current governance state.
+
 - Audited at: 2026-08-04
 - Audited commit: `0b1ae35` on `main`, clean working tree
 - Refreshed at: 2026-08-11 against `d247ef1` — counts, the section 5 hotspot table, and the

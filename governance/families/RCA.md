@@ -22,21 +22,15 @@
 - Repository governance, artifact identifiers, registries, and fail-closed validation. Those are
   `FND`'s.
 - Forecasting, customer-authored formulas, and generic non-retail analysis. These are excluded from
-  Khepri rather than reassigned between families, and admitting one requires a separately approved
-  decision and family amendment.
+  Khepri rather than reassigned between families, and admitting one requires an active decision
+  and family amendment.
 - Any weakening of the privacy, isolation, validation, reconciliation, provenance, language parity,
   or deletion controls that `RRA-001`, `RRA-002`, and `RRA-006` fix. Commercialization does not
   relax them, and no `RCA` specification may propose that it does.
 - Internal report-job queueing and report-job reliability, which `RRA.md` owns. This family's
   queueing boundary is the customer-facing kind only.
-- Product implementation until the implementation preconditions of the governing `RCA`
-  specification are met. This exclusion is stated against those gates rather than against a
-  lifecycle state, because a charter condition of the form "while this family remains proposed or
-  its specifications remain draft" stops excluding anything at the moment the family goes active
-  and its first specification is approved, which is exactly when the exclusion is needed. Neither
-  this charter being `active` nor a specification being `approved` is authority to implement.
-- Runtime, provider, and deployment selection, which a separately approved architecture decision
-  governs and which remains a distinct gate from anything this charter authorizes.
+- Product implementation outside a small, verifiable slice linked to an active `RCA`
+  specification and satisfying that specification's preconditions.
+- Runtime, provider, and deployment selection outside an active architecture decision.
 
-Its authoritative lifecycle state and approval evidence are recorded in
-`governance/registries/families.yaml`.
+Its state and dependencies are authoritative in `governance/registry.yaml`.

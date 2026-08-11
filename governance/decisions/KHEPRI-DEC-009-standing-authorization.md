@@ -1,5 +1,7 @@
 # KHEPRI-DEC-009: Standing authorization for specification milestone transitions
 
+> Retired during the schema-version-2 migration. This rejected proposal is historical.
+
 ## Context
 
 Seven structured approval packages have been approved, `APP-002` through `APP-008`. Each required

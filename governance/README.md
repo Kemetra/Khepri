@@ -1,52 +1,46 @@
-# Governance artifacts
+# Governance
 
-The registries in `registries/` are the machine-readable source of truth:
+Khepri uses a minimal governance model for a repository with one owner.
 
-- `authorities.yaml` names people who may own or approve artifacts.
-- `decisions.yaml` records decision identity, state, ownership, and approval.
-- `families.yaml` records product-family identity, state, ownership, dependencies, and
-  approval.
-- `specifications.yaml` records specification identity, state, family, ownership,
-  dependencies, and approval.
-- `reference-assessments.yaml` records the exact pinned predecessor provenance, technical
-  disposition, newly written Khepri targets, and review evidence for all 42 capability
-  references.
+## Authority
 
-Documents under `authorities/`, `decisions/`, `families/`, and `specifications/` explain
-intent and boundaries. Technical reference-review evidence is under `reference-reviews/`.
-Templates under `templates/` define the minimum review shape.
+Ahmed Shaaban is the sole repository owner and decision authority. Work on branches and pull
+requests is proposed. A change becomes approved and governing when the owner merges it to `main`;
+the Git record is the evidence.
 
-The registry schema version is closed. Change it only through an accepted decision and a
-validator update that can reject unsupported input.
+## Source of truth
 
-## Atomic approval packages
+[`registry.yaml`](registry.yaml) is the only authoritative artifact index. Each entry contains:
 
-YAML files under `approvals/` are digest-locked structured approval evidence. They do not
-replace the lifecycle state or approval fields in the authoritative registries. A proposed
-package locks its ordered manifest and governed documents but grants no authority. An approved
-package must carry exact, traceable evidence from its named active owner and must be
-materialized atomically into every listed registry entry.
+- `type`: `decision`, `family`, or `specification`;
+- `id`: unique stable identifier;
+- `state`: `active` or `retired`;
+- `document`: one repository-relative Markdown document;
+- `depends_on`: known artifact identifiers;
+- `superseded_by`: optional active successor for a retired artifact.
 
-Calculate exact digests with:
+A specification depends on exactly one family. An active artifact cannot depend on a retired one.
+Markdown explains intent but cannot override registry state.
 
-```text
-uv run khepri-gov document-digest governance/path/to/document.md
-uv run khepri-gov approval-digest governance/approvals/APP-NNN.yaml
-```
+## Workflow
 
-One-action approval evidence must identify the authority, package ID, and complete manifest
-digest. Automation and passing checks are never approval. `APP-001-bootstrap.md` is the only
-legacy unstructured Markdown approval; all later repository-local approval packages use YAML.
-`KHEPRI-DEC-004` accepts this mechanism. `APP-002.yaml` records its first dependency-closed
-approval and the exact evidence used to materialize it.
+1. Create a branch.
+2. Edit the governed document and registry entry together.
+3. Run `uv run khepri-gov validate`, `uv run ruff check .`, and `uv run pytest`.
+4. Review the pull request as a complete, independently verifiable slice.
+5. The owner merges it to `main`, making it approved and governing.
 
-## Current transfer boundary
+Drafts do not live in the registry on `main`. Retired artifacts remain as context and may name an
+active successor. Removed approval and delegation records remain available in Git history rather
+than an archive directory.
 
-`KHEPRI-DEC-002`, `KHEPRI-DEC-003`, `KHEPRI-DEC-004`, the `RRA` family, and `RRA-001` through
-`RRA-007` are approved through `APP-002`. Product application code remains blocked until a
-separate architecture decision accepts the final runtime and provider selections. Beta launch
-still requires a separate authorization defining client count and observation period.
+## Validator
 
-The 42 technical assessments were performed by automation against the exact pinned blobs.
-Their `reviewed` state means the references have a recorded disposition, not that any Khepri
-target was approved.
+`uv run khepri-gov validate` reports all safely discoverable errors and exits non-zero for unknown
+schemas or fields, invalid values, missing documents, duplicate identities, dependency defects,
+family-link defects, or invalid supersession. It never grants approval.
+
+## Templates
+
+Use the decision, family, and specification templates only as concise writing aids. Adding a
+document without its registry entry does not make it governed.

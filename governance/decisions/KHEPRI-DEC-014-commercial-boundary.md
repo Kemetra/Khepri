@@ -118,34 +118,18 @@ of describing the boundary in prose.
 "billing is excluded" is ambiguous between excluded-from-RRA and excluded-from-Khepri, and
 Constitution I requires one authoritative representation per governed fact.
 
-This decision requires that `RRA.md`'s Excludes be re-expressed as family boundaries in the
-approval package that accepts this decision, following `FND.md`'s existing phrasing. The
-replacement text is staged at `docs/platform/proposed-governance/rra-exclusions-rescope.md`.
-
-**`RRA.md` is pinned by `document_sha256` in `APP-002`**, so this is a renewal rather than an edit —
-the same mechanism `APP-013` used for `KHEPRI-DEC-005`. The renewal preserves `RRA`'s `active` state
-and names `APP-002` as the package it supersedes.
-
-The re-scope also corrects `RRA.md`'s stale closing sentence, which reads "The family is proposed"
-against a registry recording `state: active`. It is corrected in the same renewal rather than as a
-separate edit, because a pinned document admits no drive-by fix.
-
-**The re-scope is a consequence of acceptance, not of proposal, and is not applied here.** While
-this decision is `proposed` it carries no authority, and editing an approved family charter on the
-strength of an unaccepted decision is the borrowed-authority failure Constitution III forbids.
+This decision requires `RRA.md`'s exclusions to be expressed as family boundaries, following
+`FND.md`'s phrasing. The current RRA charter carries that re-scope. Future boundary changes update
+the charter and registry together and become governing only when the owner merges them to `main`.
 
 ## Consequences
 
-- `KHEPRI-DEC-003` moves to `superseded` and names this decision as `superseded_by`, retaining its
-  own approval evidence. That transition happens **in the accepting package**, not here: the
-  governance validator requires a successor be `accepted` before it can be named, so proposing this
-  decision cannot and must not touch `KHEPRI-DEC-003`'s registry entry.
+- `KHEPRI-DEC-003` is retired and names this active decision as `superseded_by`.
 - `RRA` remains `active` with every specification under it unchanged. The private beta is a governed
   product boundary that continues to exist, not a phase that ended.
-- One follow-up obligation: the `RRA.md` re-scope renewal in §4, carried in the same approval
-  package. It is **not** discharged by this decision being proposed.
-- Every roadmap phase from 1 onward becomes specifiable once `RCA` is `active`. None becomes
-  implementable until its own specification is approved.
+- The `RRA.md` re-scope in §4 is complete.
+- Every roadmap phase from 1 onward is specifiable while `RCA` is active. Product code still
+  requires an active specification and a bounded implementation slice.
 - The deployment gate is untouched and remains first.
 - `KHEPRI-DEC-012` and `KHEPRI-DEC-013` are unaffected and not superseded.
 - The commercial thesis behind the phase ordering remains an untested assumption, as recorded in
@@ -153,5 +137,5 @@ strength of an unaccepted decision is the borrowed-authority failure Constitutio
 
 ---
 
-Identity, lifecycle state, ownership, and approval evidence are authoritative in
-`governance/registries/decisions.yaml`.
+Identity, state, document, dependencies, and supersession are authoritative in
+`governance/registry.yaml`.

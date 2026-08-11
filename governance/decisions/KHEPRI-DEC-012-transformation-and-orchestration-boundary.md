@@ -86,15 +86,15 @@ data warehouse this clause excludes. A Dagster daemon with its own run storage i
 always-on process, which is the microservice boundary it excludes.
 
 **State the consequence honestly, because the owner asked for these tools.** This is not a flat
-prohibition. `KHEPRI-DEC-005` is `accepted`, so adopting either tool requires **superseding its
+prohibition. `KHEPRI-DEC-005` is active, so adopting either tool requires **superseding its
 application-stack section** — the same mechanism `KHEPRI-DEC-008` used to replace its deployment
 section. The question is therefore not "may we" but "is the supersession worth its cost." This
 decision answers no, on the evidence below, and records what would change that answer.
 
 One clause is deliberately *not* relied on. `governance/families/RRA.md` excludes "Runtime or
 provider selection **before a separate architecture decision is accepted**." That exclusion is
-conditional and its condition is satisfied: `KHEPRI-DEC-005` is accepted in
-`governance/registries/decisions.yaml`. Reading it as a standing prohibition on runtime selection
+conditional and its condition is satisfied: `KHEPRI-DEC-005` is active in
+`governance/registry.yaml`. Reading it as a standing prohibition on runtime selection
 drops the qualifier that carries its meaning, so it is recorded here as lapsed rather than cited
 as authority.
 
@@ -261,5 +261,5 @@ environment `KHEPRI-DEC-008` prices at approximately 675 USD per month and state
 cannot fund; `KHEPRI-DEC-008`, which replaces it with a provider-neutral capability contract,
 remains `proposed`. That is the first gate in front of everything else, including the beta.
 
-Identity, lifecycle state, ownership, and approval evidence are authoritative in
-`governance/registries/decisions.yaml`.
+Identity, state, document, dependencies, and supersession are authoritative in
+`governance/registry.yaml`.

@@ -1,5 +1,8 @@
 # Khepri commercial roadmap: private beta to sellable analysis service
 
+> Historical snapshot. It predates KHEPRI-DEC-017 and the unified registry; use
+> `governance/registry.yaml` for current governance state.
+
 - Drafted at: 2026-08-04
 - Base commit: `0b1ae35` on `main`
 - Refreshed at: 2026-08-11 against `d247ef1` — Phase 0B is complete and the phase map now says so.

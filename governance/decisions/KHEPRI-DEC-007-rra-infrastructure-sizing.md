@@ -1,5 +1,7 @@
 # KHEPRI-DEC-007: RRA private-beta and benchmark infrastructure sizing
 
+> Retired and superseded by `KHEPRI-DEC-008`.
+
 ## Context
 
 `KHEPRI-DEC-005` selects services. It does not size them. `KHEPRI-DEC-006` records that gap as
@@ -280,4 +282,5 @@ This decision does not authorize:
 - Nothing here produces or implies performance evidence. No benchmark has been run, no objective
   has been met, and a green CI run remains evidence of consistency only.
 
-This decision remains proposed until its registry entry contains explicit approval evidence.
+This decision is historical. Current state and supersession are recorded in
+`governance/registry.yaml`.

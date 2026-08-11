@@ -29,11 +29,11 @@ for the `RRA-007` completion objective during the private beta.
 - `benchmark_id` is the literal string `KHEPRI-BMK-001`.
 - `workload_digest` and `environment_digest` are computed as defined under "Digest
   computation".
-- `approval_ref` is the repository-relative path of the approved YAML approval package that
-  accepts this decision and its two descriptors under `KHEPRI-DEC-004`.
+- `approval_ref` is the immutable Git commit identifier or URL for the owner-merged change that
+  activates the benchmark identity and its descriptors.
 
-No `BenchmarkIdentity` for a governed run may be constructed before that approval package
-exists in an approved state. Placeholder identity values in tests are fixtures, not authority.
+No `BenchmarkIdentity` for a governed run may be constructed before that change is merged to
+`main`. Placeholder identity values in tests are fixtures, not authority.
 
 ### Governed descriptor artifacts
 
@@ -43,8 +43,8 @@ The benchmark is defined by two governed YAML documents:
 - `governance/benchmarks/KHEPRI-BMK-001-environment.yaml`
 
 This decision fixes their required content and the digest rule over them. It does not add them:
-this slice ships no code and no descriptor. They are added by a later specification-linked
-slice and approved with this decision, or in a package that supersedes its approval.
+this slice ships no code and no descriptor. They are added by a later specification-linked slice
+and become governing when the owner merges that change to `main`.
 
 `governance/benchmarks/` is a new directory that `governance/README.md` does not yet enumerate,
 and the identifier is deliberately prefixed `KHEPRI-` rather than `RRA-` so that it cannot be
@@ -286,19 +286,10 @@ carrying infrastructure authority, and recorded in the environment descriptor.
 
 ### Digest computation
 
-Both digests reuse the existing digest discipline unchanged, so that two people computing them
-independently get the same value.
-
-```text
-uv run khepri-gov document-digest governance/benchmarks/KHEPRI-BMK-001-workload.yaml
-uv run khepri-gov document-digest governance/benchmarks/KHEPRI-BMK-001-environment.yaml
-```
-
-`workload_digest` is the verbatim first line of the first command's output and
-`environment_digest` the verbatim first line of the second. Each is `sha256:` followed by the
-lowercase hexadecimal SHA-256 of the file's exact bytes, as implemented by `document_digest` in
-`src/khepri_gov/approval_packages.py`. Neither value is transformed, re-serialized, truncated,
-or normalized before it is placed in a `BenchmarkIdentity`.
+Both digests use the same rule so that independent calculations agree. Each is `sha256:` followed
+by the lowercase hexadecimal SHA-256 of the descriptor's exact bytes. Neither value is
+transformed, re-serialized, truncated, or normalized before it is placed in a
+`BenchmarkIdentity`.
 
 Because the digest is over bytes, both descriptors are written under a fixed byte discipline:
 UTF-8 without BOM, `\n` line endings, no trailing whitespace, exactly one final newline, no tab
@@ -306,9 +297,8 @@ indentation, the YAML 1.2 safe subset only, and top-level keys in the order this
 them. A formatting-only edit is a material change, because it produces a different digest and
 invalidates prior evidence.
 
-The same commands compute the document digests that the approval package for this decision and
-its descriptors must carry, and `uv run khepri-gov approval-digest` computes that package's
-manifest digest.
+The owner-merged change records the resulting identity values and supplies its immutable Git
+reference as `approval_ref`.
 
 ### The existing harness does not yet satisfy this decision
 
@@ -423,8 +413,8 @@ This decision does not authorize:
   workload, a named environment, and a named approval.
 - Changing the workload or the environment changes a descriptor's bytes, changes its digest,
   changes the `BenchmarkIdentity`, and invalidates all prior evidence by the identity check in
-  `src/khepri/rra/performance.py`. Such a change requires a new or superseding decision and a
-  new approval package; it is never a configuration edit.
+  `src/khepri/rra/performance.py`. Such a change requires a new or superseding owner-merged
+  decision; it is never an unreviewed configuration edit.
 - Benchmark evidence remains content-free and cannot be correlated to any customer, because the
   entire population is synthetic and every sample record carries only opaque identifiers,
   sizes, durations, and a completion flag.

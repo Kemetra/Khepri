@@ -1,5 +1,7 @@
 # KHEPRI-DEC-016: Reserved set by consequence
 
+> Retired by KHEPRI-DEC-017. This document records the former delegation boundary and is historical.
+
 ## Context
 
 Article VIII defines the reserved set by artifact class: this constitution, the authorities

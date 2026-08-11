@@ -5,144 +5,25 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-import yaml
-
-from khepri_gov.approval_packages import (
-    document_digest,
-    load_package,
-    manifest_digest,
-)
-from khepri_gov.delegation import delegate_ids, delegated_commit_errors
-from khepri_gov.lifecycle_conditions import (
-    lifecycle_condition_errors,
-    scan_repository,
-)
 from khepri_gov.validator import validate_repository
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="khepri-gov")
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument(
-        "command",
-        choices=[
-            "validate",
-            "document-digest",
-            "approval-digest",
-            "delegation-guard",
-            "lifecycle-guard",
-        ],
-    )
-    parser.add_argument("path", type=Path, nargs="?")
+    parser.add_argument("command", choices=["validate"])
     return parser
 
 
-def _authority_records(root: Path) -> list[dict[str, object]]:
-    path = root / "governance" / "registries" / "authorities.yaml"
-    try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, yaml.YAMLError):
-        return []
-    if not isinstance(loaded, dict):
-        return []
-    records = loaded.get("authorities")
-    return records if isinstance(records, list) else []
-
-
-def _run_delegation_guard(root: Path) -> int:
-    changed = [line.strip() for line in sys.stdin.read().splitlines() if line.strip()]
-    delegates = delegate_ids(_authority_records(root))
-    violations = delegated_commit_errors(root, changed, delegates)
-    if violations:
-        for violation in violations:
-            print(f"ERROR {violation}", file=sys.stderr)
-        return 1
-    print("Delegation guard passed.")
-    return 0
-
-
-def _report_errors(errors: Sequence[str], passed: str) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = build_parser().parse_args(argv)
+    errors = validate_repository(arguments.root)
     for error in errors:
         print(f"ERROR {error}", file=sys.stderr)
     if errors:
         return 1
-    print(passed)
-    return 0
-
-
-def _run_lifecycle_guard(root: Path) -> int:
-    findings = scan_repository(root.resolve())
-    for note in (f.message() for f in findings if f.is_suppressed):
-        print(f"NOTE {note}")
-    return _report_errors(lifecycle_condition_errors(findings), "Lifecycle guard passed.")
-
-
-def _run_validate(root: Path) -> int:
-    errors = validate_repository(root)
-    if errors:
-        for error in errors:
-            print(f"ERROR {error}", file=sys.stderr)
-        return 1
     print("Governance validation passed.")
     return 0
-
-
-def _resolve_digest_path(root: Path, requested: Path | None) -> Path | None:
-    if requested is None:
-        print("ERROR digest command requires a path", file=sys.stderr)
-        return None
-    path = (root / requested).resolve()
-    if not path.is_relative_to(root):
-        print("ERROR path does not resolve to a repository file", file=sys.stderr)
-        return None
-    if not path.is_file():
-        print("ERROR path does not resolve to a repository file", file=sys.stderr)
-        return None
-    return path
-
-
-def _run_approval_digest(path: Path) -> int:
-    package, errors = load_package(path)
-    if errors:
-        for error in errors:
-            print(f"ERROR {error}", file=sys.stderr)
-        return 1
-    assert package is not None
-    print(manifest_digest(package))
-    return 0
-
-
-def _run_digest(command: str, root: Path, requested: Path | None) -> int:
-    path = _resolve_digest_path(root.resolve(), requested)
-    if path is None:
-        return 1
-    if command == "document-digest":
-        print(document_digest(path))
-        return 0
-    return _run_approval_digest(path)
-
-
-# Commands that operate on the whole repository and reject a path argument.
-REPOSITORY_COMMANDS = {
-    "validate": _run_validate,
-    "delegation-guard": _run_delegation_guard,
-    "lifecycle-guard": _run_lifecycle_guard,
-}
-# delegation-guard reads its changed paths from stdin, so a path argument is
-# meaningless rather than wrong; it is not rejected here for compatibility.
-PATHLESS_COMMANDS = ("validate", "lifecycle-guard")
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = build_parser()
-    arguments = parser.parse_args(argv)
-    command = arguments.command
-    if command in PATHLESS_COMMANDS and arguments.path is not None:
-        parser.error(f"{command} does not accept a path")
-    runner = REPOSITORY_COMMANDS.get(command)
-    if runner is not None:
-        return runner(arguments.root)
-    return _run_digest(command, arguments.root, arguments.path)
 
 
 if __name__ == "__main__":

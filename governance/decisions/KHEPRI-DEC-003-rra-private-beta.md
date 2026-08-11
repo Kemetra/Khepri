@@ -1,5 +1,7 @@
 # KHEPRI-DEC-003: Retail Reporting Automation private beta boundary
 
+> Retired and superseded by KHEPRI-DEC-014. This document is historical.
+
 ## Context
 
 Khepri needs a narrow first customer outcome that tests retail-report value while limiting
