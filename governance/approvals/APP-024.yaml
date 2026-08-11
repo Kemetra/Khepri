@@ -1,0 +1,56 @@
+schema_version: 1
+id: APP-024
+title: Accept the portable runtime decision and supersede the provider-specific architecture
+state: proposed
+owner: AHMED-SHAABAN
+scope: >-
+  Accept KHEPRI-DEC-008, replacing the provider-specific runtime architecture with a
+  provider-neutral capability contract, and move KHEPRI-DEC-005 and KHEPRI-DEC-007 to superseded
+  naming KHEPRI-DEC-008 while each retains its own approval evidence. This package authorizes the
+  portability work KHEPRI-DEC-008 already defines and nothing beyond it. It selects no provider,
+  no region, and no residency commitment, and it authorizes no provisioning, no deployment, no
+  spending, and no beta launch -- KHEPRI-DEC-008 disclaims each of those in its own words, and the
+  target-selection artifact it mandates is a separate reserved artifact that this package neither
+  contains nor approves.
+exclusions:
+  - Any change to governance/CONSTITUTION.md or the authorities registry
+  - Any delegation record, and any widening of a delegation's scope or expiry
+  - Selection of a provider, region, or residency commitment, which the separately approved
+    target-selection artifact KHEPRI-DEC-008 mandates is the only place to record
+  - Any provisioning, deployment, environment creation, or beta launch authorization
+  - Any spending authorization or financial commitment
+  - Any retention, privacy, or data-boundary change under Constitution VII
+  - Any RCA or RRA specification, and any product application code
+  - Any claim that RCA-001 becomes implementable on this package alone; its precondition 4 and
+    the target-selection artifact remain outstanding
+  - Any edit to the prose of KHEPRI-DEC-005, whose document digest APP-013 binds and whose stale
+    closing sentence requires its own renewal package
+  - Any claim that the withdrawn commercial-validation gate was satisfied
+  - Any claim that a human authority approved this package, absent that authority's evidence
+manifest_digest: sha256:31ac572aa74b66f9f93df8f06c6f3598484408ecf767a1b4897307084f225c38
+artifacts:
+  - id: KHEPRI-DEC-008
+    document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
+    document_sha256: sha256:6b07522b978c6418ad7958cf3b94f0f384cc0053b786301a5fcfc3e8f74f6ac9
+    from_state: proposed
+    to_state: accepted
+  # KHEPRI-DEC-005 names AWS me-central-1 and is the provider-specific architecture that
+  # KHEPRI-DEC-008 replaces with a capability contract. Its digest below is unchanged from the one
+  # APP-013 binds, evidencing that this package supersedes the document rather than editing it.
+  - id: KHEPRI-DEC-005
+    document: governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md
+    document_sha256: sha256:2214cd1246eebfb61464369903a03b706bf1ed9e2194fde1dc74cd5197e37eeb
+    from_state: accepted
+    to_state: superseded
+    superseded_by: KHEPRI-DEC-008
+    supersedes_approval_ref: governance/approvals/APP-013.yaml
+  # KHEPRI-DEC-007 fixes sizing against the superseded provider-specific environment.
+  # KHEPRI-DEC-008 requires the mandated target-selection artifact to re-issue those values, so
+  # this transition retires the old sizing rather than restating it.
+  - id: KHEPRI-DEC-007
+    document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
+    document_sha256: sha256:3dab9d2609f6ea592c38b86be7a2e72352a43546cec73726b403631aaaaa60a7
+    from_state: accepted
+    to_state: superseded
+    superseded_by: KHEPRI-DEC-008
+    supersedes_approval_ref: governance/approvals/APP-005.yaml
