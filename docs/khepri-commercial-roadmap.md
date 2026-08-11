@@ -2,11 +2,21 @@
 
 - Drafted at: 2026-08-04
 - Base commit: `0b1ae35` on `main`
+- Refreshed at: 2026-08-11 against `d247ef1` — Phase 0B is complete and the phase map now says so.
+  The sequencing and its reasoning are unchanged.
 - Inputs: `docs/khepri-capability-audit.md`,
   `governance/decisions/KHEPRI-DEC-012-transformation-and-orchestration-boundary.md`
 - Status: **advisory plan, not a governed artifact.** It approves nothing, records no approval,
   creates no authority, and authorizes no implementation. Every phase names the governance
   artifact that must be approved before its code may be written.
+
+**Where this stands on 2026-08-11.** Phase 0B is **done**: `KHEPRI-DEC-014` chartered the `RCA`
+family (`active`, `APP-017`), `KHEPRI-DEC-015` settled commercial-identity retention (`accepted`,
+`APP-018`), and `RCA-001` — commercial identity, organizations, and authorization — is `approved`
+at `APP-020`. **Phase 0A-gov is not done, and it is now the only thing gating implementation.**
+`KHEPRI-DEC-008` is still `proposed`, so `RCA-001`'s precondition 2 is unmet and no commercial
+slice is authorizable. The lifecycle state of every artifact named here is authoritative in
+`governance/registries/`, not in this document.
 
 ## Target
 
@@ -18,7 +28,7 @@ consultants**, whose differentiator is **auditable, defensible analysis**.
 Khepri's moat is not the report; it is that every number on every surface is traceable to one
 immutable versioned package, that no uncited claim survives validation, that the same input
 reproduces the same bundle identity, and that a partial render is recorded as a refusal rather
-than delivered as a report. That is built and tested today (1,273 tests) and it is invisible to
+than delivered as a report. That is built and tested today (1,396 tests) and it is invisible to
 a buyer. The commercial task is to make it visible and to remove the two limits that stop a
 paying customer from getting value — one dataset per session, and a seven-day expiry that
 deletes the baseline any comparison needs. Neither limit is an orchestration problem, and
@@ -45,15 +55,15 @@ Every row is governance-gated before it is code-gated.
 
 ## Phase map
 
-Phase 0A-gov and 0B are governance. **0A-spend is real money** and is separated for that reason.
-Phase 0C is withdrawn (see below). Phase 1 is the first code a buyer would notice. Sequencing is chosen for earliest
-revenue signal, not architectural completeness.
+Phase 0A-gov and 0B are governance; **0B is complete**. **0A-spend is real money** and is separated
+for that reason. Phase 0C is withdrawn (see below). Phase 1 is the first code a buyer would notice.
+Sequencing is chosen for earliest revenue signal, not architectural completeness.
 
 | Phase | Name | Gate artifact | Parallel with |
 |---|---|---|---|
-| **0A-gov** | Accept DEC-008, select the target | DEC-008 accepted + target-selection artifact | 0B |
-| **0A-spend** | Provision and benchmark | Owner authorizes ~174-235 USD/month | 0B |
-| **0B** | Charter the commercial family | New family + superseding decision | 0A |
+| **0A-gov** | Accept DEC-008, select the target | DEC-008 accepted + target-selection artifact | — |
+| **0A-spend** | Provision and benchmark | Owner authorizes ~174-235 USD/month | — |
+| ~~**0B**~~ | ~~Charter the commercial family~~ — **DONE 2026-08-09** (`RCA` active, `RCA-001` approved) | — | — |
 | ~~**0C**~~ | ~~Test the thesis with a mock~~ — **WITHDRAWN 2026-08-06** | — | — |
 | **1** | Business-first reporting layer + separated audit evidence | Design package approved, then spec under new family | — |
 | **2** | Durable identity and workspaces | Specs; supersedes RRA-001 boundary | — |
@@ -163,9 +173,14 @@ forbids weakening controls to improve latency.
 >
 > **What this does and does not unlock, in `KHEPRI-DEC-014`'s own words:** "Every roadmap phase
 > from 1 onward becomes specifiable once `RCA` is `active`. None becomes implementable until its
-> own specification is approved." No `RCA-*` specification exists yet. No provisioning or spend
-> is authorized — the deployment gate (`KHEPRI-DEC-008`, still `proposed`) is untouched and
-> remains first. The commercial-validation premise (withdrawn G5, see Phase 0C above) is not
+> own specification is approved." No provisioning or spend is authorized — the deployment gate
+> (`KHEPRI-DEC-008`, still `proposed`) is untouched and remains first.
+>
+> **Superseded 2026-08-09:** the sentence "No `RCA-*` specification exists yet" no longer holds.
+> `RCA-001` (commercial identity, organizations, and authorization) is `approved` at `APP-020`,
+> and `KHEPRI-DEC-015` is `accepted` at `APP-018`. That satisfies `RCA-001`'s preconditions 1 and
+> 3. It remains unimplementable: precondition 2 requires an approved runtime and provider
+> selection, and `KHEPRI-DEC-008` is still `proposed`. The commercial-validation premise (withdrawn G5, see Phase 0C above) is not
 > revisited by this decision and must not be read as validated by it — `KHEPRI-DEC-014` says so
 > itself: "a later reader must not mistake the existence of this decision for validation of the
 > thesis behind it."
@@ -619,7 +634,8 @@ reasoning the digest binding exists to stop.
 
 The moat is already built and nobody can see it, and Phase 0C — which would have tested that whole
 thesis with a mock before any charter or schema existed — is withdrawn by owner election, so the
-thesis now rests on judgment rather than evidence. Everything expensive is gated behind two
-governance approvals and one spending decision, none of which code can substitute for. The binding limits are retention
+thesis now rests on judgment rather than evidence. Everything expensive is gated behind one
+remaining governance approval — `KHEPRI-DEC-008`, since Phase 0B closed on 2026-08-09 — and one
+spending decision, neither of which code can substitute for. The binding limits are retention
 and tenancy — one dataset per session, and a seven-day expiry that deletes the comparison baseline
 — and `KHEPRI-DEC-012` records that no orchestrator is coming to fix either.
