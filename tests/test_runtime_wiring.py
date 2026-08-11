@@ -45,7 +45,7 @@ def settings() -> RuntimeSettings:
 def runtime_stack():
     return build_stack(
         settings(),
-        clients=RuntimeClients(s3=AwsClientStub(), sqs=AwsClientStub()),
+        clients=RuntimeClients(s3=AwsClientStub()),
         clock=lambda: NOW,
     )
 

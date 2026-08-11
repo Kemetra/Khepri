@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.rra.api import create_app
 from khepri.rra.bundle import SurfaceRenderer
+from khepri.rra.claim_queue import ClaimingReportQueue, ClaimPolicy
 from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
 from khepri.rra.delivery_persistence import SqlDeliveryStore
@@ -43,9 +44,14 @@ from khepri.rra.report_services import (
 )
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
-from khepri.rra.sqs_queue import SqsReportPublisher
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.config import RuntimeSettings
+
+# The web role publishes but never claims, so this identity appears in no lease. It
+# is required because `ClaimPolicy` refuses an anonymous worker, and a name that is
+# obviously not a worker is better here than one that could be mistaken for one.
+PUBLISHER_ID = "web-publisher"
+PUBLISHER_LEASE_FOR = timedelta(seconds=300)
 
 
 def utc_now() -> datetime:
@@ -55,7 +61,6 @@ def utc_now() -> datetime:
 @dataclass(frozen=True, slots=True)
 class RuntimeClients:
     s3: Any
-    sqs: Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +93,6 @@ def build_clients(settings: RuntimeSettings) -> RuntimeClients:
     retries = Config(retries={"max_attempts": 3, "mode": "standard"})
     return RuntimeClients(
         s3=boto3.client("s3", region_name=settings.region, config=retries),
-        sqs=boto3.client("sqs", region_name=settings.region, config=retries),
     )
 
 
@@ -158,9 +162,13 @@ def build_report_services(stack: RuntimeStack) -> ReportServices:
     return ReportServices(
         jobs=QueuedReportRequestService(
             requests=requests,
-            publisher=SqsReportPublisher(
-                client=stack.clients.sqs,
-                queue_url=stack.settings.queue_url,
+            publisher=ClaimingReportQueue(
+                jobs=stack.reports.jobs,
+                factory=stack.factory,
+                policy=ClaimPolicy(
+                    worker_id=PUBLISHER_ID,
+                    lease_for=PUBLISHER_LEASE_FOR,
+                ),
             ),
         ),
         bundles=DeliveredBundleAdapter(

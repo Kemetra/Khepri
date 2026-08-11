@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from khepri.rra.claim_queue import ClaimedDelivery
 from khepri.rra.jobs import (
     JOB_DEAD_LETTERED,
     JOB_QUEUED,
@@ -12,9 +13,8 @@ from khepri.rra.jobs import (
     JOB_SUCCEEDED,
     ReportJob,
 )
-from khepri.rra.sqs_queue import QueueDelivery
 from khepri.rra.worker import ReportExecutionFailed, ReportJobMessage
-from khepri.runtime.worker import LEASE_FOR, RETRY_DELAY, SqsWorkerLoop
+from khepri.runtime.worker import LEASE_FOR, RETRY_DELAY, ClaimWorkerLoop
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -37,29 +37,28 @@ def job(state: str) -> ReportJob:
     )
 
 
-DELIVERY = QueueDelivery(
-    message=ReportJobMessage(job_id="job_alpha"),
-    receipt_handle="receipt_alpha",
-)
+DELIVERY = ClaimedDelivery(message=ReportJobMessage(job_id="job_alpha"))
 
 
 class QueueStub:
-    def __init__(self, delivery: QueueDelivery | None = DELIVERY) -> None:
+    def __init__(self, delivery: ClaimedDelivery | None = DELIVERY) -> None:
         self.delivery = delivery
         self.receives = 0
-        self.acknowledged: list[QueueDelivery] = []
-        self.heartbeats: list[QueueDelivery] = []
+        self.acknowledged: list[ClaimedDelivery] = []
+        self.heartbeats: list[ClaimedDelivery] = []
 
-    def receive(self) -> QueueDelivery | None:
+    def receive(self, *, now: datetime) -> ClaimedDelivery | None:
         self.receives += 1
         delivery, self.delivery = self.delivery, None
         return delivery
 
-    def acknowledge(self, delivery: QueueDelivery) -> None:
+    def acknowledge(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob:
         self.acknowledged.append(delivery)
+        return job(JOB_SUCCEEDED)
 
-    def heartbeat(self, delivery: QueueDelivery) -> None:
+    def heartbeat(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob:
         self.heartbeats.append(delivery)
+        return job(JOB_RUNNING)
 
 
 class WorkerStub:
@@ -94,8 +93,8 @@ class ReaderStub:
         return self.found
 
 
-def loop(queue: QueueStub, worker: WorkerStub, reader: ReaderStub) -> SqsWorkerLoop:
-    return SqsWorkerLoop(queue=queue, worker=worker, jobs=reader)
+def loop(queue: QueueStub, worker: WorkerStub, reader: ReaderStub) -> ClaimWorkerLoop:
+    return ClaimWorkerLoop(queue=queue, worker=worker, jobs=reader, clock=lambda: NOW)
 
 
 def test_empty_receive_does_no_work() -> None:
@@ -105,28 +104,43 @@ def test_empty_receive_does_no_work() -> None:
     assert queue.acknowledged == []
 
 
-def test_successful_processing_acknowledges_the_delivery() -> None:
+def test_successful_processing_settles_the_delivery() -> None:
+    """The worker completed the job, so the loop does not complete it twice.
+
+    `ReportWorker.process` settles through the same repository, so re-acknowledging
+    would find no active lease. This is the claim-queue equivalent of deleting an
+    already-deleted message, and it is skipped rather than attempted.
+    """
+    queue = QueueStub()
+    settled = loop(queue, WorkerStub(job(JOB_SUCCEEDED)), ReaderStub(job(JOB_SUCCEEDED)))
+
+    assert settled.run_once() is True
+    assert queue.acknowledged == []
+
+
+def test_a_completed_job_the_reader_has_not_caught_up_on_is_acknowledged() -> None:
     queue = QueueStub()
 
-    assert loop(queue, WorkerStub(job(JOB_SUCCEEDED)), ReaderStub()).run_once() is True
+    loop(queue, WorkerStub(job(JOB_SUCCEEDED)), ReaderStub(None)).run_once()
+
     assert queue.acknowledged == [DELIVERY]
 
 
-def test_duplicate_delivery_is_acknowledged_only_when_postgresql_says_succeeded() -> None:
+def test_duplicate_delivery_is_settled_only_when_postgresql_says_succeeded() -> None:
     queue = QueueStub()
     reader = ReaderStub(job(JOB_SUCCEEDED))
 
     loop(queue, WorkerStub(None), reader).run_once()
 
-    assert reader.lookups == ["job_alpha"]
-    assert queue.acknowledged == [DELIVERY]
+    assert reader.lookups == ["job_alpha", "job_alpha"]
+    assert queue.acknowledged == []
 
 
 @pytest.mark.parametrize(
     "state",
     [JOB_QUEUED, JOB_RUNNING, JOB_RETRYABLE, JOB_DEAD_LETTERED],
 )
-def test_non_succeeded_duplicate_is_left_for_sqs_redrive(state: str) -> None:
+def test_non_succeeded_duplicate_is_left_for_redrive(state: str) -> None:
     queue = QueueStub()
 
     loop(queue, WorkerStub(None), ReaderStub(job(state))).run_once()
@@ -134,7 +148,7 @@ def test_non_succeeded_duplicate_is_left_for_sqs_redrive(state: str) -> None:
     assert queue.acknowledged == []
 
 
-def test_recorded_execution_failure_does_not_acknowledge_or_stop_the_loop() -> None:
+def test_recorded_execution_failure_does_not_settle_or_stop_the_loop() -> None:
     queue = QueueStub()
 
     processed = loop(
@@ -147,7 +161,7 @@ def test_recorded_execution_failure_does_not_acknowledge_or_stop_the_loop() -> N
     assert queue.acknowledged == []
 
 
-def test_worker_heartbeat_extends_the_sqs_delivery_visibility() -> None:
+def test_worker_heartbeat_extends_the_claim() -> None:
     queue = QueueStub()
 
     loop(queue, WorkerStub(job(JOB_SUCCEEDED), pulse=True), ReaderStub()).run_once()

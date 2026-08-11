@@ -1,17 +1,24 @@
-"""One-at-a-time SQS driver for the approved bounded report worker role."""
+"""One-at-a-time claim driver for the approved bounded report worker role.
+
+`KHEPRI-DEC-008` replaced the message broker with PostgreSQL claim-and-redrive, so
+this loop claims a job rather than receiving a message. The shape is unchanged: claim
+one delivery, process it, settle it, repeat. What changed is that there is one clock
+instead of two -- the lease is the only thing making a job invisible to another
+worker, where before a visibility timeout and a database lease had to agree.
+"""
 
 from __future__ import annotations
 
 import socket
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from khepri.rra.claim_queue import ClaimedDelivery, ClaimingReportQueue, ClaimPolicy
 from khepri.rra.jobs import JOB_SUCCEEDED, LeaseLost, ReportJob
 from khepri.rra.rendering.chromium import launch_chromium
 from khepri.rra.report_services import JobReader
-from khepri.rra.sqs_queue import QueueDelivery, SqsReportQueue
 from khepri.rra.worker import (
     ReportExecutionFailed,
     ReportJobMessage,
@@ -27,11 +34,11 @@ WORKBOOK_DIRECTORY = Path("/tmp/khepri-workbooks")
 
 
 class QueuePort(Protocol):
-    def receive(self) -> QueueDelivery | None: ...
+    def receive(self, *, now: datetime) -> ClaimedDelivery | None: ...
 
-    def heartbeat(self, delivery: QueueDelivery) -> None: ...
+    def heartbeat(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob: ...
 
-    def acknowledge(self, delivery: QueueDelivery) -> None: ...
+    def acknowledge(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob: ...
 
 
 class WorkerPort(Protocol):
@@ -47,32 +54,52 @@ class JobReaderPort(Protocol):
     def find(self, job_id: str) -> ReportJob | None: ...
 
 
-class SqsWorkerLoop:
-    """Long-poll and settle one source delivery at a time."""
+class ClaimWorkerLoop:
+    """Claim and settle one job at a time."""
 
-    def __init__(self, *, queue: QueuePort, worker: WorkerPort, jobs: JobReaderPort) -> None:
+    def __init__(
+        self,
+        *,
+        queue: QueuePort,
+        worker: WorkerPort,
+        jobs: JobReaderPort,
+        clock: Callable[[], datetime],
+    ) -> None:
         self._queue = queue
         self._worker = worker
         self._jobs = jobs
+        self._clock = clock
 
     def run_once(self) -> bool:
-        delivery = self._queue.receive()
+        delivery = self._queue.receive(now=self._clock())
         if delivery is None:
             return False
         try:
             completed = self._worker.process(
                 delivery.message,
-                heartbeat=lambda: self._queue.heartbeat(delivery),
+                heartbeat=lambda: self._queue.heartbeat(delivery, now=self._clock()),
             )
         except (LeaseLost, ReportExecutionFailed):
             return True
         if completed is not None or self._already_succeeded(delivery.message.job_id):
-            self._queue.acknowledge(delivery)
+            self._settle(delivery)
         return True
 
     def run_forever(self) -> None:
         while True:
             self.run_once()
+
+    def _settle(self, delivery: ClaimedDelivery) -> None:
+        """Complete the job unless the worker already did.
+
+        `ReportWorker.process` completes through the same repository, so a job it
+        finished is already `succeeded` and acknowledging again would find no active
+        lease. Acknowledging only an unsettled delivery keeps this idempotent.
+        """
+        found = self._jobs.find(delivery.message.job_id)
+        if found is not None and found.state == JOB_SUCCEEDED:
+            return
+        self._queue.acknowledge(delivery, now=self._clock())
 
     def _already_succeeded(self, job_id: str) -> bool:
         found = self._jobs.find(job_id)
@@ -85,24 +112,29 @@ def build_worker_loop(
     printer: object,
     workbooks: Path = WORKBOOK_DIRECTORY,
     worker_id: str | None = None,
-) -> SqsWorkerLoop:
-    queue = SqsReportQueue(
-        client=stack.clients.sqs,
-        queue_url=stack.settings.queue_url,
-        dead_letter_queue_url=stack.settings.dead_letter_queue_url,
-        visibility_timeout_seconds=int(LEASE_FOR.total_seconds()),
+) -> ClaimWorkerLoop:
+    identity = worker_id or f"worker-{socket.gethostname()}"
+    queue = ClaimingReportQueue(
+        jobs=stack.reports.jobs,
+        factory=stack.factory,
+        policy=ClaimPolicy(worker_id=identity, lease_for=LEASE_FOR),
     )
     worker = ReportWorker(
         jobs=stack.reports.jobs,
         handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
         clock=stack.clock,
         policy=WorkerPolicy(
-            worker_id=worker_id or f"worker-{socket.gethostname()}",
+            worker_id=identity,
             lease_for=LEASE_FOR,
             retry_delay=RETRY_DELAY,
         ),
     )
-    return SqsWorkerLoop(queue=queue, worker=worker, jobs=JobReader(stack.factory))
+    return ClaimWorkerLoop(
+        queue=queue,
+        worker=worker,
+        jobs=JobReader(stack.factory),
+        clock=stack.clock,
+    )
 
 
 def main() -> None:
