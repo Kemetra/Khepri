@@ -2,8 +2,12 @@
 
 > ## ⚠️ AMENDED AFTER IMPLEMENTATION
 >
-> Implemented in PR #148. Three amendments were made during review; **the shipped code is
-> the authority where it disagrees with this document.**
+> Implemented in PR #148, **which is a proposal until the repository owner merges it to
+> `main`** (`AGENTS.md`: a branch or pull request is a proposal; a change becomes governing
+> only on merge). Three amendments were made during review. Where the branch disagrees with
+> this document, **the code is the current proposal** and this document is out of date —
+> neither is authority, and `governance/registry.yaml` remains authoritative for artifact
+> state.
 >
 > 1. **Account disablement is NOT in this slice.** The data flow below shows
 >    `Account(..., disabled=False)` and the testing section references a disabled account.

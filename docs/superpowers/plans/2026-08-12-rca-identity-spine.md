@@ -2,10 +2,15 @@
 
 > ## ⚠️ EXECUTED AND SUPERSEDED — do not execute this plan again
 >
-> This plan was executed to completion in PR #148. It is kept as the historical record of
-> what was planned; **the shipped code is the authority, not this document.**
+> This plan was executed to completion in PR #148, **which is a proposal until the repository
+> owner merges it to `main`** (`AGENTS.md`: a branch or pull request is a proposal; a change
+> becomes governing only on merge). Nothing here or in the branch governs anything yet.
 >
-> **The plan diverges from what shipped in one significant way.** Tasks 2 and 5 below
+> It is kept as the historical record of what was planned. Where it disagrees with the code
+> on the branch, **the code is the current proposal** and this document is out of date —
+> neither is authority. `governance/registry.yaml` remains authoritative for artifact state.
+>
+> **The plan diverges from the branch in one significant way.** Tasks 2 and 5 below
 > specify `disable_account`, a `disabled` field, and `update_account`. Those were
 > implemented, reviewed, and then **deliberately removed** (commit `9507580`). Account
 > disablement sits at the intersection of four requirements this slice does not implement —
