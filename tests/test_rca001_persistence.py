@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -12,9 +13,11 @@ from khepri.rca.errors import AuthenticationFailed, OrganizationCreationFailed
 from khepri.rca.isolation import IsolationService
 from khepri.rca.organizations import Membership, Organization, OrganizationService
 from khepri.rca.persistence import (
+    AccountRow,
     Base,
     IsolationScopeRow,
     MembershipRow,
+    OrganizationRow,
     SqlAccountStore,
     SqlOrganizationStore,
 )
@@ -75,6 +78,35 @@ def test_duplicate_email_is_rejected_by_the_database(factory: sessionmaker) -> N
         service.create_account(EMAIL, "another credential")
 
 
+def test_disabling_an_account_persists_and_blocks_authentication(factory: sessionmaker) -> None:
+    service = AccountService(SqlAccountStore(factory))
+    account = service.create_account(EMAIL, CREDENTIAL)
+    assert service.authenticate(EMAIL, CREDENTIAL).account_id == account.account_id
+
+    service.disable_account(account.account_id)
+
+    with pytest.raises(AuthenticationFailed):
+        service.authenticate(EMAIL, CREDENTIAL)
+
+    # Read through a brand-new store instance so a silently-uncommitted write (e.g. if
+    # `update_account` used `self._factory()` instead of `self._factory.begin()`) cannot
+    # hide behind session-local state and must actually be visible in the database.
+    fresh_store = SqlAccountStore(factory)
+    assert fresh_store.get_account(account.account_id).disabled is True
+
+
+def test_update_account_on_a_missing_account_is_a_no_op(factory: sessionmaker) -> None:
+    service = AccountService(SqlAccountStore(factory))
+    account = service.create_account(EMAIL, CREDENTIAL)
+
+    store = SqlAccountStore(factory)
+    store.update_account(replace(account, account_id="acc_does_not_exist", disabled=True))
+
+    with factory() as database:
+        assert database.execute(select(func.count()).select_from(AccountRow)).scalar() == 1
+    assert store.get_account(account.account_id).disabled is False
+
+
 def test_organization_creation_round_trips(factory: sessionmaker) -> None:
     store = SqlOrganizationStore(factory)
     account = AccountService(SqlAccountStore(factory)).create_account(EMAIL, CREDENTIAL)
@@ -124,9 +156,11 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
     assert store.create_organization(doomed, orphan, scope) is False
 
     with factory() as database:
+        assert database.execute(select(func.count()).select_from(OrganizationRow)).scalar() == 1
         assert database.execute(select(func.count()).select_from(MembershipRow)).scalar() == 1
         assert database.execute(select(func.count()).select_from(IsolationScopeRow)).scalar() == 1
         assert database.get(IsolationScopeRow, "org_doomed") is None
+        assert database.get(OrganizationRow, "org_doomed") is None
 
 
 def test_service_converts_a_failed_write_into_a_uniform_refusal(factory: sessionmaker) -> None:
