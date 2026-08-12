@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from khepri.rca.accounts import Account, AccountService, hash_credential
+from khepri.rca.accounts import Account, AccountService, KdfParams, hash_credential
 from khepri.rca.errors import AuthenticationFailed
 
 EMAIL = "owner@example.test"
@@ -54,15 +54,13 @@ def test_credential_is_never_stored_in_recoverable_form() -> None:
     assert secret not in account.credential_digest
     assert CREDENTIAL not in repr(account)
     # The salt must participate: the same credential under a different salt differs.
-    assert account.credential_digest != hash_credential(
-        CREDENTIAL, b"0" * 16, n=2**15, r=8, p=1
-    )
+    assert account.credential_digest != hash_credential(CREDENTIAL, b"0" * 16)
 
 
 def test_credential_digest_records_its_work_factor() -> None:
     service = _service()
     account = service.create_account(EMAIL, CREDENTIAL)
-    assert (account.kdf_n, account.kdf_r, account.kdf_p) == (2**15, 8, 1)
+    assert (account.kdf.n, account.kdf.r, account.kdf.p) == (2**15, 8, 1)
     assert len(account.credential_salt) == 16
     assert len(account.credential_digest) == 32
 
@@ -135,7 +133,7 @@ def test_duplicate_email_is_refused_uniformly() -> None:
 
 def test_hash_credential_is_deterministic_for_a_fixed_salt() -> None:
     salt = b"0123456789abcdef"
-    first = hash_credential(CREDENTIAL, salt, n=2**14, r=8, p=1)
-    second = hash_credential(CREDENTIAL, salt, n=2**14, r=8, p=1)
+    first = hash_credential(CREDENTIAL, salt, KdfParams(n=2**14))
+    second = hash_credential(CREDENTIAL, salt, KdfParams(n=2**14))
     assert first == second
-    assert hash_credential("other", salt, n=2**14, r=8, p=1) != first
+    assert hash_credential("other", salt, KdfParams(n=2**14)) != first

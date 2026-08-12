@@ -27,6 +27,39 @@ def _resolve_relative(package: str, level: int, module: str | None) -> str:
     return base
 
 
+def _imports_rca_submodule(node: ast.ImportFrom) -> bool:
+    """True when the node is ``from <package-that-is-khepri> import rca``."""
+    return any(alias.name == "rca" for alias in node.names)
+
+
+def _import_offense(node: ast.Import) -> str | None:
+    for alias in node.names:
+        if _is_rca_target(alias.name):
+            return f"line {node.lineno}: import {alias.name}"
+    return None
+
+
+def _import_from_offense(node: ast.ImportFrom, package: str) -> str | None:
+    """Describe an offending ``from ... import ...``, or None when it is clean.
+
+    Absolute and relative forms differ only in how the target is resolved, so both
+    collapse onto the same two checks: the target IS khepri.rca (or below it), or the
+    target is ``khepri`` and one of the names is ``rca``.
+    """
+    if node.level == 0:
+        resolved = node.module or ""
+        spelling = resolved
+    else:
+        resolved = _resolve_relative(package, node.level, node.module)
+        spelling = f"{'.' * node.level}{node.module or ''}"
+
+    if _is_rca_target(resolved):
+        return f"line {node.lineno}: from {spelling} import ..."
+    if resolved == "khepri" and _imports_rca_submodule(node):
+        return f"line {node.lineno}: from {spelling or '.' * node.level} import rca"
+    return None
+
+
 def find_rca_import_offenses(source: str, package: str) -> list[str]:
     """Return a description for each import in ``source`` that reaches into khepri.rca.
 
@@ -34,33 +67,15 @@ def find_rca_import_offenses(source: str, package: str) -> list[str]:
     a plain module or ``khepri.rra.analysis`` for a module inside that subpackage.
     """
     offenses: list[str] = []
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                if _is_rca_target(alias.name):
-                    offenses.append(f"line {node.lineno}: import {alias.name}")
+            offense = _import_offense(node)
         elif isinstance(node, ast.ImportFrom):
-            if node.level == 0:
-                module = node.module or ""
-                if _is_rca_target(module):
-                    offenses.append(f"line {node.lineno}: from {module} import ...")
-                elif module == "khepri":
-                    for alias in node.names:
-                        if alias.name == "rca":
-                            offenses.append(f"line {node.lineno}: from khepri import rca")
-            else:
-                resolved = _resolve_relative(package, node.level, node.module)
-                if _is_rca_target(resolved):
-                    dots = "." * node.level
-                    target = f"{dots}{node.module or ''}"
-                    offenses.append(f"line {node.lineno}: from {target} import ...")
-                elif resolved == "khepri":
-                    for alias in node.names:
-                        if alias.name == "rca":
-                            offenses.append(
-                                f"line {node.lineno}: from {'.' * node.level} import rca"
-                            )
+            offense = _import_from_offense(node, package)
+        else:
+            continue
+        if offense is not None:
+            offenses.append(offense)
     return offenses
 
 

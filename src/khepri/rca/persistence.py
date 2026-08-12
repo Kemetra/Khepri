@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-from khepri.rca.accounts import Account
+from khepri.rca.accounts import Account, KdfParams
 from khepri.rca.organizations import IsolationScope, Membership, Organization
 
 
@@ -99,9 +99,7 @@ def _account_from_row(row: AccountRow) -> Account:
         email=row.email,
         credential_salt=row.credential_salt,
         credential_digest=row.credential_digest,
-        kdf_n=row.kdf_n,
-        kdf_r=row.kdf_r,
-        kdf_p=row.kdf_p,
+        kdf=KdfParams(n=row.kdf_n, r=row.kdf_r, p=row.kdf_p),
         disabled=row.disabled,
     )
 
@@ -136,9 +134,9 @@ class SqlAccountStore:
                         email=account.email,
                         credential_salt=account.credential_salt,
                         credential_digest=account.credential_digest,
-                        kdf_n=account.kdf_n,
-                        kdf_r=account.kdf_r,
-                        kdf_p=account.kdf_p,
+                        kdf_n=account.kdf.n,
+                        kdf_r=account.kdf.r,
+                        kdf_p=account.kdf.p,
                         disabled=account.disabled,
                     )
                 )

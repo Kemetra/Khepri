@@ -22,29 +22,43 @@ _DUMMY_SALT = b"\x00" * SALT_BYTES
 
 
 @dataclass(frozen=True, slots=True)
+class KdfParams:
+    """The scrypt cost parameters a digest was produced with.
+
+    Stored alongside each digest so the work factor can be raised later without
+    invalidating existing records.
+    """
+
+    n: int = KDF_N
+    r: int = KDF_R
+    p: int = KDF_P
+
+
+DEFAULT_KDF = KdfParams()
+
+
+@dataclass(frozen=True, slots=True)
 class Account:
     account_id: str
     email: str
     credential_salt: bytes
     credential_digest: bytes
-    kdf_n: int
-    kdf_r: int
-    kdf_p: int
+    kdf: KdfParams
     disabled: bool = False
 
 
 # scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
 # default. Without an explicit maxmem, hashlib.scrypt raises
 # ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
-def hash_credential(credential: str, salt: bytes, *, n: int, r: int, p: int) -> bytes:
+def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
     return hashlib.scrypt(
         credential.encode(),
         salt=salt,
-        n=n,
-        r=r,
-        p=p,
+        n=kdf.n,
+        r=kdf.r,
+        p=kdf.p,
         dklen=KDF_DKLEN,
-        maxmem=128 * n * r * 2,
+        maxmem=128 * kdf.n * kdf.r * 2,
     )
 
 
@@ -58,10 +72,8 @@ class AccountService:
             account_id=f"acc_{secrets.token_urlsafe(18)}",
             email=email,
             credential_salt=salt,
-            credential_digest=hash_credential(credential, salt, n=KDF_N, r=KDF_R, p=KDF_P),
-            kdf_n=KDF_N,
-            kdf_r=KDF_R,
-            kdf_p=KDF_P,
+            credential_digest=hash_credential(credential, salt, DEFAULT_KDF),
+            kdf=DEFAULT_KDF,
         )
         if not self._store.add_account(account):
             raise AuthenticationFailed(AUTHENTICATION_FAILURE)
@@ -72,15 +84,9 @@ class AccountService:
         if account is None:
             # Pay the same scrypt cost as a real rejection so a missing account cannot be
             # distinguished from a wrong credential by wall-clock timing (FR-004).
-            hash_credential(credential, _DUMMY_SALT, n=KDF_N, r=KDF_R, p=KDF_P)
+            hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
             self._reject()
-        candidate = hash_credential(
-            credential,
-            account.credential_salt,
-            n=account.kdf_n,
-            r=account.kdf_r,
-            p=account.kdf_p,
-        )
+        candidate = hash_credential(credential, account.credential_salt, account.kdf)
         if not hmac.compare_digest(candidate, account.credential_digest):
             self._reject()
         if account.disabled:

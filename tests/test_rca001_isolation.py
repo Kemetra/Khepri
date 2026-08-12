@@ -91,6 +91,22 @@ def test_distinct_organizations_resolve_to_distinct_scopes() -> None:
     )
 
 
+def _leaked_windows(sources: tuple[str, ...], owner_id: str, size: int = 8) -> list[str]:
+    """Return every ``size``-character substring of any source that appears in owner_id.
+
+    A whole-string containment check is too weak: ``owner_id`` is only 28 characters, so a
+    longer identifier can never appear in it and the assertion would pass vacuously. A
+    sliding window catches *partial* derivation, which is the real risk under FR-032.
+    Sources shorter than ``size`` yield no windows, which is the correct no-op.
+    """
+    return [
+        source[start : start + size]
+        for source in sources
+        for start in range(len(source) - size + 1)
+        if source[start : start + size] in owner_id
+    ]
+
+
 def test_no_commercial_identifier_appears_in_a_resolved_scope() -> None:
     _, organizations, isolation = _fixture()
     for name in ADVERSARIAL_NAMES:
@@ -99,12 +115,9 @@ def test_no_commercial_identifier_appears_in_a_resolved_scope() -> None:
         body = owner_id.removeprefix("own_")
         assert organization.organization_id not in owner_id
         assert ACCOUNT not in owner_id
-        if name and len(name) <= len(body):
-            assert name.lower() not in body.lower()
-        for source in (organization.organization_id, ACCOUNT, name):
-            for start in range(len(source) - 7):
-                window = source[start : start + 8]
-                assert window not in owner_id
+        plausible_substring = bool(name) and len(name) <= len(body)
+        assert not plausible_substring or name.lower() not in body.lower()
+        assert _leaked_windows((organization.organization_id, ACCOUNT, name), owner_id) == []
 
 
 def test_scope_is_not_reproducible_from_organization_data() -> None:
