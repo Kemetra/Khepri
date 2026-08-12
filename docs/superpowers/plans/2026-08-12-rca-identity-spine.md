@@ -1,5 +1,29 @@
 # RCA-001 Commercial Identity Spine Implementation Plan
 
+> ## ⚠️ EXECUTED AND SUPERSEDED — do not execute this plan again
+>
+> This plan was executed to completion in PR #148. It is kept as the historical record of
+> what was planned; **the shipped code is the authority, not this document.**
+>
+> **The plan diverges from what shipped in one significant way.** Tasks 2 and 5 below
+> specify `disable_account`, a `disabled` field, and `update_account`. Those were
+> implemented, reviewed, and then **deliberately removed** (commit `9507580`). Account
+> disablement sits at the intersection of four requirements this slice does not implement —
+> `KHEPRI-DEC-015`'s 24-month retention horizon and opaque tombstone, `FR-008`'s session
+> revocation, and `FR-013`'s final-owner guard — and shipping it without them produced an
+> account that stranded its organization without an acting owner and retained its login
+> identity indefinitely. It has its own slice: **issue #149**.
+>
+> Following the disablement steps below would reintroduce exactly those defects.
+>
+> Two further corrections landed after this plan was written:
+> - **Email canonicalization** (`RCA-001` A-1) — not in this plan; added in `9507580`.
+> - **FR-004 uniformity is asserted by call shape, not wall-clock or nominal work.** Every
+>   authentication path issues exactly one `DEFAULT_KDF` scrypt call. Timing measurements
+>   proved flaky on shared CI runners, and summing `n*r*p` cannot see that scrypt is
+>   memory-hard (two calls at `n=2**14` and one at `n=2**15` have equal nominal cost but
+>   differ in practice — within 0.4% on one CPU, 0.14s vs 0.23s on another).
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the durable account, organization, and stable opaque isolation-scope mapping that

@@ -11,7 +11,6 @@ from khepri.rca.accounts import (
     AccountService,
     KdfParams,
     hash_credential,
-    shortfall_schedule,
 )
 from khepri.rca.errors import AuthenticationFailed
 
@@ -109,28 +108,28 @@ def _rejection_work(
     monkeypatch: pytest.MonkeyPatch,
     cases: tuple[tuple[str, str, str], ...],
 ) -> dict[str, int]:
-    """Total scrypt work each rejection path performs, keyed by label.
+    """The DEFAULT_KDF hash calls each rejection path issues, keyed by label.
 
-    Counts work instead of measuring wall-clock: "every path spends the same" is a
-    deterministic property, and timing it is flaky on shared CI runners where neighbouring
-    jobs contend for CPU. A wall-clock version of this measured 1.001x locally and 1.37x in
-    CI — a false failure, since the work performed was identical both times.
+    Records which parameters each path hashes at, rather than measuring wall-clock (flaky on
+    shared CI runners) or summing nominal n*r*p (which cannot see that scrypt is memory-hard,
+    so 2 calls at n=2**14 and 1 at n=2**15 have equal nominal cost but different real cost —
+    measured within 0.4% on one CPU and 0.14s vs 0.23s on another).
     """
-    work: dict[str, list[int]] = {}
+    calls: dict[str, list[KdfParams]] = {}
     real_hash = accounts_module.hash_credential
     current = ""
 
     def _recording(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
-        work[current].append(kdf.n * kdf.r * kdf.p)
+        calls[current].append(kdf)
         return real_hash(credential, salt, kdf)
 
     monkeypatch.setattr(accounts_module, "hash_credential", _recording)
     for label, email, credential in cases:
         current = label
-        work[current] = []
+        calls[current] = []
         with pytest.raises(AuthenticationFailed):
             service.authenticate(email, credential)
-    return {label: sum(costs) for label, costs in work.items()}
+    return {label: [k for k in issued if k == DEFAULT_KDF] for label, issued in calls.items()}
 
 
 def test_every_rejection_path_spends_the_same_work(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -152,8 +151,7 @@ def test_every_rejection_path_spends_the_same_work(monkeypatch: pytest.MonkeyPat
         ),
     )
 
-    assert len(set(totals.values())) == 1, f"rejection cost is not uniform: {totals}"
-    assert totals["missing"] == DEFAULT_KDF.n * DEFAULT_KDF.r * DEFAULT_KDF.p
+    assert {label: len(issued) for label, issued in totals.items()} == dict.fromkeys(totals, 1)
 
 
 def test_duplicate_email_is_refused_uniformly() -> None:
@@ -201,33 +199,49 @@ def test_the_stored_address_is_canonical() -> None:
     assert account.email == EMAIL
 
 
-@pytest.mark.parametrize("stored_n", [2**14, 2**13, 2**12, 2**11])
-def test_padding_covers_the_full_deficit_for_every_older_work_factor(stored_n: int) -> None:
-    """A single rounded step only pays a power-of-two share of the deficit.
+def test_a_legacy_record_still_issues_exactly_one_default_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The invariant is the SHAPE of the work, not its nominal sum.
 
-    At a stored n=2**13 against a default of 2**15 that covered 75% of the required work,
-    and at 2**12 only 62% — an existence oracle in exactly the range this padding exists to
-    close. Decomposing the deficit into one hash per set bit covers it exactly.
+    Summing `n*r*p` treats two hashes at n=2**14 as equal to one at n=2**15. scrypt is
+    memory-hard, so they are not: 2x16 MiB behaves differently from 1x32 MiB, measured
+    within 0.4% on one CPU and 0.14s vs 0.23s on another. Asserting that every path issues
+    exactly one DEFAULT_KDF call closes that gap by construction.
+
+    The legacy path additionally issues one cheaper stored-factor call, so it runs SLOWER
+    than a missing account (measured 200ms vs 128ms), never faster. Only a faster response
+    would reveal that an account is absent, so the residual is in the safe direction.
+    Eliminating it needs re-hashing legacy records on successful login, which requires a
+    write path and is deferred with the rest of the account-mutation surface.
     """
-    stored = KdfParams(n=stored_n)
-    stored_cost = stored.n * stored.r * stored.p
-    padding_cost = sum(step.n * step.r * step.p for step in shortfall_schedule(stored))
-    default_cost = DEFAULT_KDF.n * DEFAULT_KDF.r * DEFAULT_KDF.p
+    store = MemoryAccountStore()
+    service = AccountService(store)
+    legacy_kdf = KdfParams(n=2**14)
+    salt = secrets.token_bytes(16)
+    store.add_account(
+        Account(
+            account_id="acc_legacy",
+            email="legacy@example.test",
+            credential_salt=salt,
+            credential_digest=hash_credential(CREDENTIAL, salt, legacy_kdf),
+            kdf=legacy_kdf,
+        )
+    )
 
-    assert stored_cost + padding_cost == default_cost
+    issued: list[KdfParams] = []
+    real_hash = accounts_module.hash_credential
 
+    def _recording(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
+        issued.append(kdf)
+        return real_hash(credential, salt, kdf)
 
-def test_a_current_factor_record_needs_no_padding() -> None:
-    assert shortfall_schedule(DEFAULT_KDF) == ()
-    assert shortfall_schedule(KdfParams(n=DEFAULT_KDF.n * 2)) == ()
+    monkeypatch.setattr(accounts_module, "hash_credential", _recording)
+    with pytest.raises(AuthenticationFailed):
+        service.authenticate("legacy@example.test", "wrong credential")
 
-
-def test_hash_credential_is_deterministic_for_a_fixed_salt() -> None:
-    salt = b"0123456789abcdef"
-    first = hash_credential(CREDENTIAL, salt, KdfParams(n=2**14))
-    second = hash_credential(CREDENTIAL, salt, KdfParams(n=2**14))
-    assert first == second
-    assert hash_credential("other", salt, KdfParams(n=2**14)) != first
+    assert issued.count(DEFAULT_KDF) == 1, f"expected one default-parameter hash: {issued}"
+    assert all(k.n <= DEFAULT_KDF.n for k in issued), "no path may exceed the default factor"
 
 
 def test_a_legacy_work_factor_does_not_reveal_account_existence(
@@ -268,5 +282,4 @@ def test_a_legacy_work_factor_does_not_reveal_account_existence(
         ),
     )
 
-    assert len(set(totals.values())) == 1, f"rejection cost is not uniform: {totals}"
-    assert totals["missing"] == DEFAULT_KDF.n * DEFAULT_KDF.r * DEFAULT_KDF.p
+    assert {label: len(issued) for label, issued in totals.items()} == dict.fromkeys(totals, 1)

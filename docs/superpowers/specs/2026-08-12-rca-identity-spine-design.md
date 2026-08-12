@@ -1,6 +1,25 @@
 # RCA-001 Slice 1 — Commercial Identity Spine and Isolation Bridge
 
-**Date:** 2026-08-12
+> ## ⚠️ AMENDED AFTER IMPLEMENTATION
+>
+> Implemented in PR #148. Three amendments were made during review; **the shipped code is
+> the authority where it disagrees with this document.**
+>
+> 1. **Account disablement is NOT in this slice.** The data flow below shows
+>    `Account(..., disabled=False)` and the testing section references a disabled account.
+>    Disablement was implemented, reviewed, and removed (`9507580`): it requires
+>    `KHEPRI-DEC-015`'s 24-month retention horizon and opaque tombstone, `FR-008`'s session
+>    revocation, and `FR-013`'s final-owner guard, none of which this slice scopes. Tracked
+>    in issue #149. FR-004 uniformity is therefore asserted across the missing-account and
+>    wrong-credential paths, not the disabled path.
+> 2. **Email canonicalization was missing.** `RCA-001` A-1 requires one identity per address,
+>    but a case-sensitive unique constraint admitted `owner@example.test` beside
+>    `owner@EXAMPLE.TEST`. Both storage and lookup now canonicalize.
+> 3. **FR-004 uniformity is asserted by call shape.** Every authentication path issues
+>    exactly one `DEFAULT_KDF` scrypt call. Wall-clock assertions proved flaky on shared CI
+>    runners, and summing nominal `n*r*p` cannot detect that scrypt is memory-hard.
+>
+> **Date:** 2026-08-12
 **Specification:** `RCA-001` (active in `governance/registry.yaml`)
 **Requirements covered:** FR-001, FR-002, FR-004, FR-009, FR-010, FR-014, FR-031, FR-032,
 FR-033, FR-035, FR-037, FR-039, FR-040
