@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import time
 
 import pytest
@@ -137,3 +138,46 @@ def test_hash_credential_is_deterministic_for_a_fixed_salt() -> None:
     second = hash_credential(CREDENTIAL, salt, KdfParams(n=2**14))
     assert first == second
     assert hash_credential("other", salt, KdfParams(n=2**14)) != first
+
+
+def test_a_legacy_work_factor_does_not_reveal_account_existence() -> None:
+    """FR-004 must survive a KDF upgrade, which is what KdfParams exists to support.
+
+    A record stored at an older, cheaper work factor verifies faster than the default the
+    missing-account path pays. Without padding, raising DEFAULT_KDF would make a legacy
+    account's rejection observably cheaper than a nonexistent one.
+    """
+    store = MemoryAccountStore()
+    service = AccountService(store)
+    legacy_kdf = KdfParams(n=2**14)
+    salt = secrets.token_bytes(16)
+    store.add_account(
+        Account(
+            account_id="acc_legacy",
+            email="legacy@example.test",
+            credential_salt=salt,
+            credential_digest=hash_credential(CREDENTIAL, salt, legacy_kdf),
+            kdf=legacy_kdf,
+        )
+    )
+    service.create_account(EMAIL, CREDENTIAL)
+
+    def _best_of_3(email: str, credential: str) -> float:
+        best = float("inf")
+        for _ in range(3):
+            start = time.perf_counter()
+            with pytest.raises(AuthenticationFailed):
+                service.authenticate(email, credential)
+            best = min(best, time.perf_counter() - start)
+        return best
+
+    timings = (
+        _best_of_3("missing@example.test", CREDENTIAL),
+        _best_of_3("legacy@example.test", "wrong credential"),
+        _best_of_3(EMAIL, "wrong credential"),
+    )
+    # A tighter bound than the other timing test uses, and deliberately so: a legacy record
+    # at n=2**14 verifies in about half the default's time, which lands at ~0.496 unpadded —
+    # just inside a 0.5 bound. Measured 0.66 with the padding in place. Verified by mutation:
+    # removing _pad_legacy_verification fails this assertion, but would pass at 0.5.
+    assert min(timings) > max(timings) * 0.6

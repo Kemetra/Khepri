@@ -50,6 +50,13 @@ class Account:
 # scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
 # default. Without an explicit maxmem, hashlib.scrypt raises
 # ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
+def _is_cheaper_than_default(kdf: KdfParams) -> bool:
+    """True when verifying against ``kdf`` costs less than the current default would."""
+    stored = (kdf.n, kdf.r, kdf.p)
+    default = (DEFAULT_KDF.n, DEFAULT_KDF.r, DEFAULT_KDF.p)
+    return any(value < baseline for value, baseline in zip(stored, default, strict=True))
+
+
 def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
     return hashlib.scrypt(
         credential.encode(),
@@ -86,6 +93,7 @@ class AccountService:
             # distinguished from a wrong credential by wall-clock timing (FR-004).
             hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
             self._reject()
+        self._pad_legacy_verification(account.kdf)
         candidate = hash_credential(credential, account.credential_salt, account.kdf)
         if not hmac.compare_digest(candidate, account.credential_digest):
             self._reject()
@@ -98,6 +106,20 @@ class AccountService:
         if account is None:
             return
         self._store.update_account(replace(account, disabled=True))
+
+    @staticmethod
+    def _pad_legacy_verification(kdf: KdfParams) -> None:
+        """Spend the shortfall when a record's stored work factor is below the default.
+
+        Verifying a legacy record costs less than the current default, and the
+        missing-account path always pays the default. Without this padding, raising
+        `DEFAULT_KDF` would make an old account's rejection observably cheaper than a
+        nonexistent one and reveal which is which — the exact oracle FR-004 forbids, and a
+        live risk because `KdfParams` exists precisely to support that upgrade.
+        """
+        if not _is_cheaper_than_default(kdf):
+            return
+        hash_credential("", _DUMMY_SALT, DEFAULT_KDF)
 
     @staticmethod
     def _reject() -> None:
