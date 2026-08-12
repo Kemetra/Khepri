@@ -29,11 +29,14 @@ class AccountRow(Base):
 
     account_id: Mapped[str] = mapped_column(String, primary_key=True)
     email: Mapped[str] = mapped_column(String, nullable=False)
-    credential_salt: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    credential_digest: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    kdf_n: Mapped[int] = mapped_column(Integer, nullable=False)
-    kdf_r: Mapped[int] = mapped_column(Integer, nullable=False)
-    kdf_p: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Nullable because KHEPRI-DEC-015 requires the credential verifier to be DESTROYED on
+    # account disablement ("immediate, non-recoverable"). A disabled account must be
+    # representable with no verifier at all, so these cannot be NOT NULL.
+    credential_salt: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    credential_digest: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    kdf_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kdf_r: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kdf_p: Mapped[int | None] = mapped_column(Integer, nullable=True)
     disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
@@ -93,13 +96,22 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
+def _kdf_from_row(row: AccountRow) -> KdfParams | None:
+    """None once the verifier has been destroyed on disablement (KHEPRI-DEC-015)."""
+    stored = (row.kdf_n, row.kdf_r, row.kdf_p)
+    if None in stored:
+        return None
+    n, r, p = stored
+    return KdfParams(n=n, r=r, p=p)
+
+
 def _account_from_row(row: AccountRow) -> Account:
     return Account(
         account_id=row.account_id,
         email=row.email,
         credential_salt=row.credential_salt,
         credential_digest=row.credential_digest,
-        kdf=KdfParams(n=row.kdf_n, r=row.kdf_r, p=row.kdf_p),
+        kdf=_kdf_from_row(row),
         disabled=row.disabled,
     )
 
@@ -164,6 +176,13 @@ class SqlAccountStore:
             if row is None:
                 return
             row.disabled = account.disabled
+            # The verifier must be written, not just the flag: destruction on disablement is
+            # a DEC-015 retention requirement, and it only takes effect if it persists.
+            row.credential_salt = account.credential_salt
+            row.credential_digest = account.credential_digest
+            row.kdf_n = account.kdf.n if account.kdf else None
+            row.kdf_r = account.kdf.r if account.kdf else None
+            row.kdf_p = account.kdf.p if account.kdf else None
 
 
 class SqlOrganizationStore:

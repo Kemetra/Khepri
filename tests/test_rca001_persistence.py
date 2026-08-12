@@ -170,6 +170,50 @@ def test_service_converts_a_failed_write_into_a_uniform_refusal(factory: session
         service.create_organization("Acme", "acc_does_not_exist", now=NOW)
 
 
+def test_disabling_destroys_the_credential_verifier_in_the_database(
+    factory: sessionmaker,
+) -> None:
+    """KHEPRI-DEC-015 retains the verifier only while the account is enabled.
+
+    Its retention matrix requires destruction to be immediate and non-recoverable at
+    disablement. Asserting on the row rather than the dataclass is the point: destruction
+    only counts if it reaches storage, where backups and offline guessing would find it.
+    """
+    service = AccountService(SqlAccountStore(factory))
+    account = service.create_account(EMAIL, CREDENTIAL)
+
+    with factory() as database:
+        row = database.get(AccountRow, account.account_id)
+        assert row is not None
+        assert row.credential_digest is not None
+
+    service.disable_account(account.account_id)
+
+    with factory() as database:
+        row = database.get(AccountRow, account.account_id)
+        assert row is not None
+        assert row.disabled is True
+        assert row.credential_salt is None
+        assert row.credential_digest is None
+        assert (row.kdf_n, row.kdf_r, row.kdf_p) == (None, None, None)
+
+
+def test_authentication_against_a_destroyed_verifier_is_refused(factory: sessionmaker) -> None:
+    service = AccountService(SqlAccountStore(factory))
+    account = service.create_account(EMAIL, CREDENTIAL)
+    service.disable_account(account.account_id)
+
+    with pytest.raises(AuthenticationFailed):
+        service.authenticate(EMAIL, CREDENTIAL)
+
+
+def test_the_schema_permits_an_account_with_no_verifier(factory: sessionmaker) -> None:
+    """The columns must be nullable, or DEC-015's required end state is unrepresentable."""
+    columns = {column.name: column for column in AccountRow.__table__.columns}
+    for name in ("credential_salt", "credential_digest", "kdf_n", "kdf_r", "kdf_p"):
+        assert columns[name].nullable, f"{name} must be nullable to allow verifier destruction"
+
+
 def test_no_rca_table_references_an_rra_table() -> None:
     for table in Base.metadata.tables.values():
         assert table.name.startswith("rca_")

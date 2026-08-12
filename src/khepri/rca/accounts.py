@@ -41,20 +41,48 @@ DEFAULT_KDF = KdfParams()
 class Account:
     account_id: str
     email: str
-    credential_salt: bytes
-    credential_digest: bytes
-    kdf: KdfParams
+    # All three are None once the verifier has been destroyed. KHEPRI-DEC-015 retains the
+    # credential verifier only "while the account is enabled" and requires immediate,
+    # non-recoverable destruction on disablement or replacement.
+    credential_salt: bytes | None
+    credential_digest: bytes | None
+    kdf: KdfParams | None
     disabled: bool = False
+
+    @property
+    def has_verifier(self) -> bool:
+        return (
+            self.credential_salt is not None
+            and self.credential_digest is not None
+            and self.kdf is not None
+        )
 
 
 # scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
 # default. Without an explicit maxmem, hashlib.scrypt raises
 # ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
-def _is_cheaper_than_default(kdf: KdfParams) -> bool:
-    """True when verifying against ``kdf`` costs less than the current default would."""
-    stored = (kdf.n, kdf.r, kdf.p)
-    default = (DEFAULT_KDF.n, DEFAULT_KDF.r, DEFAULT_KDF.p)
-    return any(value < baseline for value, baseline in zip(stored, default, strict=True))
+def _scrypt_cost(kdf: KdfParams) -> int:
+    """Relative cost of one scrypt call. Work scales with ``n * r * p``."""
+    return kdf.n * kdf.r * kdf.p
+
+
+def _shortfall_params(kdf: KdfParams) -> KdfParams | None:
+    """Parameters costing the difference between ``kdf`` and the default, or None.
+
+    Returns None when the stored parameters already cost at least the default, so no
+    padding is needed. Otherwise returns a `KdfParams` whose cost is the remainder, keeping
+    the total spent on a legacy verification equal to one default-cost hash.
+
+    The remainder is carried on ``n`` because scrypt requires ``n`` to be a power of two
+    greater than one. Rounding down to a power of two makes the padding slightly cheap
+    rather than slightly expensive, and the residual is far below the measurement noise a
+    remote attacker can resolve.
+    """
+    deficit = _scrypt_cost(DEFAULT_KDF) - _scrypt_cost(kdf)
+    if deficit <= 0:
+        return None
+    n = 1 << max(1, (deficit // (DEFAULT_KDF.r * DEFAULT_KDF.p)).bit_length() - 1)
+    return KdfParams(n=n, r=DEFAULT_KDF.r, p=DEFAULT_KDF.p)
 
 
 def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
@@ -93,6 +121,14 @@ class AccountService:
             # distinguished from a wrong credential by wall-clock timing (FR-004).
             hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
             self._reject()
+        if not account.has_verifier:
+            # The verifier was destroyed at disablement (KHEPRI-DEC-015). Pay the default
+            # cost anyway so this is indistinguishable from a wrong credential (FR-004).
+            hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
+            self._reject()
+        assert account.credential_salt is not None  # narrowed by has_verifier
+        assert account.credential_digest is not None
+        assert account.kdf is not None
         self._pad_legacy_verification(account.kdf)
         candidate = hash_credential(credential, account.credential_salt, account.kdf)
         if not hmac.compare_digest(candidate, account.credential_digest):
@@ -102,24 +138,44 @@ class AccountService:
         return account
 
     def disable_account(self, account_id: str) -> None:
+        """Disable the account and destroy its credential verifier in one write.
+
+        KHEPRI-DEC-015 retains the verifier only while the account is enabled, and requires
+        destruction to be immediate and non-recoverable at disablement. Clearing it in the
+        same update as the flag means no window exists where a disabled account still holds
+        a guessable verifier.
+        """
         account = self._store.get_account(account_id)
         if account is None:
             return
-        self._store.update_account(replace(account, disabled=True))
+        self._store.update_account(
+            replace(
+                account,
+                disabled=True,
+                credential_salt=None,
+                credential_digest=None,
+                kdf=None,
+            )
+        )
 
     @staticmethod
     def _pad_legacy_verification(kdf: KdfParams) -> None:
-        """Spend the shortfall when a record's stored work factor is below the default.
+        """Spend only the SHORTFALL between a record's stored cost and the default.
 
-        Verifying a legacy record costs less than the current default, and the
-        missing-account path always pays the default. Without this padding, raising
-        `DEFAULT_KDF` would make an old account's rejection observably cheaper than a
-        nonexistent one and reveal which is which — the exact oracle FR-004 forbids, and a
-        live risk because `KdfParams` exists precisely to support that upgrade.
+        Every rejection path must cost the same total. A record stored at an older, cheaper
+        work factor verifies for less than the default that the missing-account path always
+        pays, so the difference has to be made up — otherwise raising `DEFAULT_KDF`, the
+        upgrade `KdfParams` exists to support, would make a legacy account's rejection
+        observably cheaper than a nonexistent one.
+
+        Adding a *whole* default-cost hash overshoots and leaks in the other direction: the
+        legacy path would then cost the stored hash plus a full default, measured at 1.49x
+        the missing-account path. Uniformity is two-sided, so this pays the remainder only.
         """
-        if not _is_cheaper_than_default(kdf):
+        shortfall = _shortfall_params(kdf)
+        if shortfall is None:
             return
-        hash_credential("", _DUMMY_SALT, DEFAULT_KDF)
+        hash_credential("", _DUMMY_SALT, shortfall)
 
     @staticmethod
     def _reject() -> None:

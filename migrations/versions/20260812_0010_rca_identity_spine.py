@@ -29,13 +29,17 @@ def _account_columns() -> tuple[sa.Column, ...]:
     return (
         sa.Column("account_id", sa.String(), nullable=False),
         sa.Column("email", sa.String(), nullable=False),
-        sa.Column("credential_salt", sa.LargeBinary(), nullable=False),
-        sa.Column("credential_digest", sa.LargeBinary(), nullable=False),
+        # Nullable by requirement, not by omission: KHEPRI-DEC-015 retains the credential
+        # verifier only "while the account is enabled" and requires immediate,
+        # non-recoverable destruction on disablement or replacement. A disabled account must
+        # therefore be representable with no verifier at all.
+        sa.Column("credential_salt", sa.LargeBinary(), nullable=True),
+        sa.Column("credential_digest", sa.LargeBinary(), nullable=True),
         # The scrypt cost parameters this digest was produced with, so the work factor can
-        # be raised later without invalidating existing records.
-        sa.Column("kdf_n", sa.Integer(), nullable=False),
-        sa.Column("kdf_r", sa.Integer(), nullable=False),
-        sa.Column("kdf_p", sa.Integer(), nullable=False),
+        # be raised later without invalidating existing records. Cleared with the verifier.
+        sa.Column("kdf_n", sa.Integer(), nullable=True),
+        sa.Column("kdf_r", sa.Integer(), nullable=True),
+        sa.Column("kdf_p", sa.Integer(), nullable=True),
         sa.Column("disabled", sa.Boolean(), nullable=False),
     )
 

@@ -176,8 +176,11 @@ def test_a_legacy_work_factor_does_not_reveal_account_existence() -> None:
         _best_of_3("legacy@example.test", "wrong credential"),
         _best_of_3(EMAIL, "wrong credential"),
     )
-    # A tighter bound than the other timing test uses, and deliberately so: a legacy record
-    # at n=2**14 verifies in about half the default's time, which lands at ~0.496 unpadded —
-    # just inside a 0.5 bound. Measured 0.66 with the padding in place. Verified by mutation:
-    # removing _pad_legacy_verification fails this assertion, but would pass at 0.5.
-    assert min(timings) > max(timings) * 0.6
+    # Uniformity is TWO-SIDED, so bound the spread rather than just the floor. A one-sided
+    # `min > max * 0.6` accepted an earlier fix that overshot: paying a whole default-cost
+    # hash on top of the legacy hash made the legacy path 1.49x the missing-account path —
+    # still an oracle, just inverted (1/1.49 = 0.67, which cleared a 0.6 floor).
+    #
+    # Unpadded the spread is ~2.0x; overshooting it was ~1.5x; paying only the shortfall
+    # measures ~1.00x. A 1.3x ceiling rejects both failure modes with margin for noise.
+    assert max(timings) / min(timings) < 1.3
