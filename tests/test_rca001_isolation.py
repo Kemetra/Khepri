@@ -68,7 +68,6 @@ def test_resolve_scope_returns_a_string_not_a_session_scope() -> None:
 
     owner_id = isolation.resolve_scope(ACCOUNT, organization.organization_id)
     assert isinstance(owner_id, str)
-    assert not hasattr(owner_id, "session_id")
 
 
 def test_scope_is_stable_across_repeated_resolutions() -> None:
@@ -100,8 +99,12 @@ def test_no_commercial_identifier_appears_in_a_resolved_scope() -> None:
         body = owner_id.removeprefix("own_")
         assert organization.organization_id not in owner_id
         assert ACCOUNT not in owner_id
-        if name:
+        if name and len(name) <= len(body):
             assert name.lower() not in body.lower()
+        for source in (organization.organization_id, ACCOUNT, name):
+            for start in range(len(source) - 7):
+                window = source[start : start + 8]
+                assert window not in owner_id
 
 
 def test_scope_is_not_reproducible_from_organization_data() -> None:
@@ -140,7 +143,7 @@ def test_non_member_is_refused() -> None:
 
 
 def test_refusals_are_uniform_and_content_free() -> None:
-    _, organizations, isolation = _fixture()
+    store, organizations, isolation = _fixture()
     organization = organizations.create_organization("Acme", ACCOUNT, now=NOW)
 
     messages = []
@@ -152,6 +155,12 @@ def test_refusals_are_uniform_and_content_free() -> None:
         with pytest.raises(ScopeAccessDenied) as caught:
             isolation.resolve_scope(account_id, organization_id)
         messages.append(str(caught.value))
+
+    del store.scopes[organization.organization_id]
+    assert store.get_membership(organization.organization_id, ACCOUNT) is not None
+    with pytest.raises(ScopeAccessDenied) as caught:
+        isolation.resolve_scope(ACCOUNT, organization.organization_id)
+    messages.append(str(caught.value))
 
     assert len(set(messages)) == 1
     assert "org_does_not_exist" not in messages[0]
