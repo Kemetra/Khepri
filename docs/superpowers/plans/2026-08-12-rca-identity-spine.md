@@ -80,7 +80,7 @@ boundary. Tasks 2, 3, 4 use in-memory fakes only, so they need no database.
 **Interfaces:**
 - Consumes: nothing.
 - Produces: `AuthenticationFailed`, `OrganizationCreationFailed`, `ScopeAccessDenied`,
-  `_AUTHENTICATION_FAILURE`, `_SCOPE_FAILURE`; `AccountStore` and `OrganizationStore` protocols
+  `AUTHENTICATION_FAILURE`, `SCOPE_FAILURE`; `AccountStore` and `OrganizationStore` protocols
   (their methods are fully specified in Tasks 2 and 3).
 
 - [ ] **Step 1: Create the package marker**
@@ -96,9 +96,9 @@ Create `src/khepri/rca/__init__.py` as an empty file (0 bytes).
 ```python
 from __future__ import annotations
 
-_AUTHENTICATION_FAILURE = "Credentials are invalid or unavailable."
-_SCOPE_FAILURE = "Scope is invalid or unavailable."
-_ORGANIZATION_FAILURE = "Organization could not be created."
+AUTHENTICATION_FAILURE = "Credentials are invalid or unavailable."
+SCOPE_FAILURE = "Scope is invalid or unavailable."
+ORGANIZATION_FAILURE = "Organization could not be created."
 
 
 class AuthenticationFailed(PermissionError):
@@ -180,7 +180,7 @@ git commit --no-gpg-sign -m "feat(rca): add package skeleton and uniform refusal
 - Test: `tests/test_rca001_accounts.py`
 
 **Interfaces:**
-- Consumes: `AuthenticationFailed`, `_AUTHENTICATION_FAILURE` from `khepri.rca.errors`.
+- Consumes: `AuthenticationFailed`, `AUTHENTICATION_FAILURE` from `khepri.rca.errors`.
 - Produces:
   - `Account` frozen dataclass: `account_id: str`, `email: str`, `credential_salt: bytes`,
     `credential_digest: bytes`, `kdf_n: int`, `kdf_r: int`, `kdf_p: int`, `disabled: bool = False`
@@ -331,7 +331,7 @@ import secrets
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from khepri.rca.errors import AuthenticationFailed, _AUTHENTICATION_FAILURE
+from khepri.rca.errors import AUTHENTICATION_FAILURE, AuthenticationFailed
 
 if TYPE_CHECKING:
     from khepri.rca.stores import AccountStore
@@ -387,7 +387,7 @@ class AccountService:
             kdf_p=KDF_P,
         )
         if not self._store.add_account(account):
-            raise AuthenticationFailed(_AUTHENTICATION_FAILURE)
+            raise AuthenticationFailed(AUTHENTICATION_FAILURE)
         return account
 
     def authenticate(self, email: str, credential: str) -> Account:
@@ -415,7 +415,7 @@ class AccountService:
 
     @staticmethod
     def _reject() -> None:
-        raise AuthenticationFailed(_AUTHENTICATION_FAILURE)
+        raise AuthenticationFailed(AUTHENTICATION_FAILURE)
 ```
 
 Note on `_reject`: the credential comparison runs **before** the disabled check so that a disabled
@@ -449,7 +449,7 @@ git commit --no-gpg-sign -m "feat(rca): add durable accounts with scrypt credent
 - Test: `tests/test_rca001_organizations.py`
 
 **Interfaces:**
-- Consumes: `OrganizationCreationFailed`, `_ORGANIZATION_FAILURE` from `khepri.rca.errors`;
+- Consumes: `OrganizationCreationFailed`, `ORGANIZATION_FAILURE` from `khepri.rca.errors`;
   `OrganizationStore` from `khepri.rca.stores`.
 - Produces:
   - `Organization` frozen dataclass: `organization_id: str`, `name: str`, `created_at: datetime`
@@ -585,7 +585,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from khepri.rca.errors import OrganizationCreationFailed, _ORGANIZATION_FAILURE
+from khepri.rca.errors import ORGANIZATION_FAILURE, OrganizationCreationFailed
 
 if TYPE_CHECKING:
     from khepri.rca.stores import OrganizationStore
@@ -652,7 +652,7 @@ class OrganizationService:
             owner_id=allocate_owner_id(),
         )
         if not self._store.create_organization(organization, membership, scope):
-            raise OrganizationCreationFailed(_ORGANIZATION_FAILURE)
+            raise OrganizationCreationFailed(ORGANIZATION_FAILURE)
         return organization
 ```
 
@@ -687,7 +687,7 @@ git commit --no-gpg-sign -m "feat(rca): add organizations with atomic owner memb
 - Test: `tests/test_rca001_isolation.py`
 
 **Interfaces:**
-- Consumes: `ScopeAccessDenied`, `_SCOPE_FAILURE` from `khepri.rca.errors`;
+- Consumes: `ScopeAccessDenied`, `SCOPE_FAILURE` from `khepri.rca.errors`;
   `OrganizationStore` from `khepri.rca.stores`; `OrganizationService` from
   `khepri.rca.organizations`.
 - Produces: `IsolationService(store: OrganizationStore)` with
@@ -878,7 +878,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from khepri.rca.errors import ScopeAccessDenied, _SCOPE_FAILURE
+from khepri.rca.errors import SCOPE_FAILURE, ScopeAccessDenied
 
 if TYPE_CHECKING:
     from khepri.rca.stores import OrganizationStore
@@ -899,10 +899,10 @@ class IsolationService:
     def resolve_scope(self, account_id: str, organization_id: str) -> str:
         membership = self._store.get_membership(organization_id, account_id)
         if membership is None:
-            raise ScopeAccessDenied(_SCOPE_FAILURE)
+            raise ScopeAccessDenied(SCOPE_FAILURE)
         scope = self._store.get_scope(organization_id)
         if scope is None:
-            raise ScopeAccessDenied(_SCOPE_FAILURE)
+            raise ScopeAccessDenied(SCOPE_FAILURE)
         return scope.owner_id
 ```
 
