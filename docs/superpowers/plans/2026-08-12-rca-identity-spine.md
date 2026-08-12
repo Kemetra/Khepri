@@ -26,8 +26,13 @@ organization and stored**, never derived from organization data. Scope resolutio
 - **Do not write to any `rra_*` table.** All new tables are prefixed `rca_`.
 - **Never derive the isolation scope** from an email, organization name, slug, account identifier,
   or any human-readable identifier (FR-032). Allocate with `secrets.token_urlsafe(18)`.
-- **Credential KDF:** `hashlib.scrypt(n=2**15, r=8, p=1, dklen=32)` with a 16-byte
-  `secrets.token_bytes(16)` salt. Store `n`, `r`, `p` alongside each digest.
+- **Credential KDF:** `hashlib.scrypt(n=2**15, r=8, p=1, dklen=32, maxmem=128*n*r*2)` with a
+  16-byte `secrets.token_bytes(16)` salt. Store `n`, `r`, `p` alongside each digest.
+  **`maxmem` is mandatory at this work factor** — scrypt needs `128*n*r` = 64 MiB, over OpenSSL's
+  32 MiB default, and omitting it raises
+  `ValueError("[digital envelope routines] memory limit exceeded")`. Verified on this machine:
+  ~121 ms per hash. If a task's tests fail with that error, add `maxmem` — **do not lower `n`**,
+  which would silently reverse a deliberate security decision.
 - **Uniform refusals:** one module-level message constant per refusal class; identical message
   regardless of which check failed (FR-004, FR-025, FR-034).
 - **Content-free logging:** never log an email, organization name, or credential material (FR-040).
@@ -57,7 +62,7 @@ organization and stored**, never derived from organization data. Scope resolutio
 | `tests/test_rca001_accounts.py` | FR-001, FR-002, FR-004 (Task 2). |
 | `tests/test_rca001_organizations.py` | FR-009, FR-010, FR-014 (Task 3). |
 | `tests/test_rca001_isolation.py` | FR-031, FR-032, FR-033, FR-034, FR-035 (Task 4). |
-| `tests/test_rca001_persistence.py` | Store round-trip + atomicity (Task 5). |
+| `tests/test_rca001_persistence.py` | Store round-trip, FK enforcement, FR-010 atomicity (Task 5). |
 | `tests/test_rca001_boundary.py` | FR-039 import direction + RRA independence (Task 6). |
 
 Task order is dependency order: errors → accounts → organizations → isolation → persistence →
@@ -116,10 +121,11 @@ Note: `AuthenticationFailed` and `ScopeAccessDenied` subclass `PermissionError`,
 ```python
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from khepri.rca.accounts import Account
-from khepri.rca.organizations import IsolationScope, Membership, Organization
+if TYPE_CHECKING:
+    from khepri.rca.accounts import Account
+    from khepri.rca.organizations import IsolationScope, Membership, Organization
 
 
 class AccountStore(Protocol):
@@ -149,11 +155,14 @@ class OrganizationStore(Protocol):
 atomically. `add_account` returns `bool` (False on duplicate email) rather than raising, so the
 caller controls the uniform refusal.
 
-- [ ] **Step 4: Verify it imports**
+The record imports sit under `if TYPE_CHECKING:` deliberately. Protocols need those names only for
+annotations, `from __future__ import annotations` defers their evaluation, and this keeps
+`stores.py` importable from this task onward — before `accounts.py` and `organizations.py` exist.
 
-Run: `./.venv/Scripts/python.exe -c "import khepri.rca.errors"`
-Expected: no output, exit 0. (`stores.py` will not import until Tasks 2–3 create `accounts.py` and
-`organizations.py`; that is expected and is resolved in Task 3.)
+- [ ] **Step 4: Verify both modules import**
+
+Run: `./.venv/Scripts/python.exe -c "import khepri.rca.errors, khepri.rca.stores"`
+Expected: no output, exit 0.
 
 - [ ] **Step 5: Commit**
 
@@ -236,8 +245,17 @@ def test_create_account_establishes_durable_identity() -> None:
 def test_credential_is_never_stored_in_recoverable_form() -> None:
     service = _service()
     account = service.create_account(EMAIL, CREDENTIAL)
-    blob = repr(account).encode() + account.credential_digest + account.credential_salt
-    assert CREDENTIAL.encode() not in blob
+    secret = CREDENTIAL.encode()
+
+    assert secret not in account.credential_digest
+    assert secret not in account.credential_salt
+    assert CREDENTIAL not in repr(account)
+    for field in (account.account_id, account.email):
+        assert CREDENTIAL not in field
+    # The salt must participate: the same credential under a different salt differs.
+    assert account.credential_digest != hash_credential(
+        CREDENTIAL, b"0" * 16, n=2**15, r=8, p=1
+    )
 
 
 def test_credential_digest_records_its_work_factor() -> None:
@@ -323,6 +341,10 @@ KDF_R = 8
 KDF_P = 1
 KDF_DKLEN = 32
 SALT_BYTES = 16
+# scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
+# default. Without an explicit maxmem, hashlib.scrypt raises
+# ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
+KDF_MAXMEM = 128 * KDF_N * KDF_R * 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,6 +367,7 @@ def hash_credential(credential: str, salt: bytes, *, n: int, r: int, p: int) -> 
         r=r,
         p=p,
         dklen=KDF_DKLEN,
+        maxmem=128 * n * r * 2,
     )
 
 
@@ -638,10 +661,10 @@ class OrganizationService:
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_rca001_organizations.py -q`
 Expected: 6 passed.
 
-- [ ] **Step 5: Verify `stores.py` now imports**
+- [ ] **Step 5: Verify the whole package imports**
 
-Run: `./.venv/Scripts/python.exe -c "import khepri.rca.stores"`
-Expected: no output, exit 0. (Task 1 left this module unimportable; it resolves here.)
+Run: `./.venv/Scripts/python.exe -c "import khepri.rca.accounts, khepri.rca.organizations, khepri.rca.stores"`
+Expected: no output, exit 0.
 
 - [ ] **Step 6: Lint**
 
@@ -928,55 +951,93 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from khepri.rca.accounts import AccountService
-from khepri.rca.errors import OrganizationCreationFailed
+from khepri.rca.errors import AuthenticationFailed, OrganizationCreationFailed
 from khepri.rca.isolation import IsolationService
-from khepri.rca.organizations import OrganizationService
-from khepri.rca.persistence import Base, SqlAccountStore, SqlOrganizationStore
+from khepri.rca.organizations import Membership, Organization, OrganizationService
+from khepri.rca.persistence import (
+    Base,
+    IsolationScopeRow,
+    MembershipRow,
+    SqlAccountStore,
+    SqlOrganizationStore,
+)
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 EMAIL = "owner@example.test"
 CREDENTIAL = "correct horse battery staple"
 
 
-@pytest.fixture(name="factory")
-def _factory():
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+def _factory() -> sessionmaker:
+    """Build an in-memory engine with foreign keys actually enforced.
+
+    Two non-obvious requirements, both matching `tests/test_rra001_persistence.py`:
+    `StaticPool` plus `check_same_thread=False`, because every new connection to
+    `sqlite+pysqlite://` otherwise gets a fresh empty database and `create_all` would be
+    invisible; and an explicit `PRAGMA foreign_keys=ON` per connection, because SQLite
+    defaults it to OFF and every ForeignKeyConstraint would be inert.
+    """
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(connection, _record) -> None:
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(engine)
-    return sessionmaker(engine)
+    return sessionmaker(engine, expire_on_commit=False)
 
 
-def test_account_round_trips(factory) -> None:
+@pytest.fixture(name="factory")
+def _factory_fixture() -> sessionmaker:
+    return _factory()
+
+
+def test_foreign_keys_are_enforced(factory: sessionmaker) -> None:
+    """Guards the fixture itself. Without the pragma the atomicity test below is vacuous."""
+    with factory() as database:
+        enforced = database.execute(select(func.count()).select_from(MembershipRow)).scalar()
+        assert enforced == 0
+        assert database.connection().exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+
+
+def test_account_round_trips(factory: sessionmaker) -> None:
     service = AccountService(SqlAccountStore(factory))
     created = service.create_account(EMAIL, CREDENTIAL)
     assert service.authenticate(EMAIL, CREDENTIAL).account_id == created.account_id
 
 
-def test_duplicate_email_is_rejected_by_the_database(factory) -> None:
-    from khepri.rca.errors import AuthenticationFailed
-
+def test_duplicate_email_is_rejected_by_the_database(factory: sessionmaker) -> None:
     service = AccountService(SqlAccountStore(factory))
     service.create_account(EMAIL, CREDENTIAL)
     with pytest.raises(AuthenticationFailed):
         service.create_account(EMAIL, "another credential")
 
 
-def test_organization_creation_round_trips(factory) -> None:
+def test_organization_creation_round_trips(factory: sessionmaker) -> None:
     store = SqlOrganizationStore(factory)
-    accounts = AccountService(SqlAccountStore(factory))
-    account = accounts.create_account(EMAIL, CREDENTIAL)
+    account = AccountService(SqlAccountStore(factory)).create_account(EMAIL, CREDENTIAL)
 
-    organization = OrganizationService(store).create_organization("Acme", account.account_id, now=NOW)
-    owner_id = IsolationService(store).resolve_scope(account.account_id, organization.organization_id)
+    organization = OrganizationService(store).create_organization(
+        "Acme", account.account_id, now=NOW
+    )
+    owner_id = IsolationService(store).resolve_scope(
+        account.account_id, organization.organization_id
+    )
     assert owner_id.startswith("own_")
 
 
-def test_scope_survives_a_new_store_instance(factory) -> None:
-    accounts = AccountService(SqlAccountStore(factory))
-    account = accounts.create_account(EMAIL, CREDENTIAL)
+def test_scope_survives_a_new_store_instance(factory: sessionmaker) -> None:
+    account = AccountService(SqlAccountStore(factory)).create_account(EMAIL, CREDENTIAL)
     organization = OrganizationService(SqlOrganizationStore(factory)).create_organization(
         "Acme", account.account_id, now=NOW
     )
@@ -990,22 +1051,37 @@ def test_scope_survives_a_new_store_instance(factory) -> None:
     assert first == second
 
 
-def test_creation_is_atomic_on_conflict(factory) -> None:
+def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmaker) -> None:
+    """Drive the real store path: a membership naming a nonexistent account trips the FK."""
     store = SqlOrganizationStore(factory)
-    accounts = AccountService(SqlAccountStore(factory))
-    account = accounts.create_account(EMAIL, CREDENTIAL)
+    account = AccountService(SqlAccountStore(factory)).create_account(EMAIL, CREDENTIAL)
+    OrganizationService(store).create_organization("Acme", account.account_id, now=NOW)
+
+    doomed = Organization(organization_id="org_doomed", name="Doomed", created_at=NOW)
+    orphan = Membership(
+        organization_id="org_doomed",
+        account_id="acc_does_not_exist",
+        role="owner",
+        changed_by="acc_does_not_exist",
+        changed_at=NOW,
+    )
+    from khepri.rca.organizations import IsolationScope
+
+    scope = IsolationScope(organization_id="org_doomed", owner_id="own_doomed")
+
+    assert store.create_organization(doomed, orphan, scope) is False
+
+    with factory() as database:
+        assert database.execute(select(func.count()).select_from(MembershipRow)).scalar() == 1
+        assert database.execute(select(func.count()).select_from(IsolationScopeRow)).scalar() == 1
+        assert database.get(IsolationScopeRow, "org_doomed") is None
+
+
+def test_service_converts_a_failed_write_into_a_uniform_refusal(factory: sessionmaker) -> None:
+    store = SqlOrganizationStore(factory)
     service = OrganizationService(store)
-    first = service.create_organization("Acme", account.account_id, now=NOW)
-
     with pytest.raises(OrganizationCreationFailed):
-        store.create_organization_raising_duplicate(first, account.account_id, NOW)
-
-    # The failed attempt left no orphan membership or scope row.
-    with factory() as session:
-        from khepri.rca.persistence import IsolationScopeRow, MembershipRow
-
-        assert session.query(MembershipRow).count() == 1
-        assert session.query(IsolationScopeRow).count() == 1
+        service.create_organization("Acme", "acc_does_not_exist", now=NOW)
 
 
 def test_no_rca_table_references_an_rra_table() -> None:
@@ -1016,8 +1092,9 @@ def test_no_rca_table_references_an_rra_table() -> None:
                 assert not element.target_fullname.startswith("rra_")
 ```
 
-Note: SQLite is used here for speed and because these tests assert store *semantics*, not
-Postgres-specific behaviour. `create_all` builds the schema, so no migration is needed for tests.
+SQLite is used here because these tests assert store *semantics*, not Postgres-specific behaviour,
+and `Base.metadata.create_all` builds the schema so no migration is needed. The engine setup
+mirrors `tests/test_rra001_persistence.py:23`.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -1117,20 +1194,76 @@ class IsolationScopeRow(Base):
     owner_id: Mapped[str] = mapped_column(String, nullable=False)
 ```
 
-Then the two stores. `SqlAccountStore` implements `add_account` (returning `False` on
-`IntegrityError` after `session.rollback()`), `get_account_by_email`, `get_account`,
-`update_account`. `SqlOrganizationStore` implements `create_organization` — **all three rows added
-inside one `with factory() as session:` block committed once**, returning `False` on
-`IntegrityError` — plus `get_membership`, `get_scope`, and the test helper
-`create_organization_raising_duplicate(organization, account_id, now)` which attempts to re-insert
-an existing organization id and raises `OrganizationCreationFailed`.
+Then the two stores. Both take a `sessionmaker` and store it as `self._factory`.
 
-Each store method converts rows to the frozen dataclasses from Tasks 2–3; never return a Row.
+**Use `self._factory.begin()`, not `self._factory()`.** This is the pattern at
+`src/khepri/rra/persistence.py:327`. `begin()` returns a context manager that **commits on clean
+exit and rolls back on exception**; plain `self._factory()` yields a Session whose `__exit__` only
+*closes*, so writes would be silently discarded. Wrap the whole block in `try/except IntegrityError`
+and return `False` — by the time the exception surfaces, `begin()` has already rolled back.
+
+`SqlAccountStore`:
+
+```python
+class SqlAccountStore:
+    def __init__(self, factory: sessionmaker) -> None:
+        self._factory = factory
+
+    def add_account(self, account: Account) -> bool:
+        try:
+            with self._factory.begin() as database:
+                database.add(
+                    AccountRow(
+                        account_id=account.account_id,
+                        email=account.email,
+                        credential_salt=account.credential_salt,
+                        credential_digest=account.credential_digest,
+                        kdf_n=account.kdf_n,
+                        kdf_r=account.kdf_r,
+                        kdf_p=account.kdf_p,
+                        disabled=account.disabled,
+                    )
+                )
+        except IntegrityError:
+            return False
+        return True
+```
+
+Plus `get_account_by_email(email)` (a `select(AccountRow).where(AccountRow.email == email)`),
+`get_account(account_id)` (`database.get(AccountRow, account_id)`), and `update_account(account)`
+(fetch the row inside `begin()` and assign `disabled`). Each read converts the row into the frozen
+`Account` from Task 2 — **never return a Row**, because it is bound to a closed Session.
+
+`SqlOrganizationStore.create_organization` adds all three rows inside **one** `begin()` block so
+they commit together or not at all (FR-010):
+
+```python
+    def create_organization(
+        self,
+        organization: Organization,
+        membership: Membership,
+        scope: IsolationScope,
+    ) -> bool:
+        try:
+            with self._factory.begin() as database:
+                database.add(OrganizationRow(...))
+                database.add(MembershipRow(...))
+                database.add(IsolationScopeRow(...))
+        except IntegrityError:
+            return False
+        return True
+```
+
+Plus `get_membership(organization_id, account_id)` and `get_scope(organization_id)`, both converting
+rows to the frozen dataclasses from Task 3.
+
+Note the flush ordering: SQLAlchemy sorts inserts by table dependency, so `OrganizationRow` lands
+before the rows referencing it even though all three are added in one block.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_rca001_persistence.py -q`
-Expected: 6 passed.
+Expected: 8 passed.
 
 - [ ] **Step 5: Lint**
 
@@ -1197,8 +1330,13 @@ broken. If it fails, an earlier task violated the import direction.)
 - [ ] **Step 3: Run the FR-039 regression — the whole existing suite**
 
 Run: `./.venv/Scripts/python.exe -m pytest -q`
-Expected: **1561 + 32 new = 1593 passed, 9 skipped.** The 1561 pre-existing tests must pass
-unmodified. If any previously-passing RRA test now fails, FR-039 is violated — stop and fix.
+
+Expected: **all 1561 pre-existing tests still pass, 9 still skipped**, plus the new
+`test_rca001_*` tests. The gate is that no previously-passing test fails — if any RRA test now
+fails, FR-039 is violated: stop and fix rather than adjusting the test. Do not treat a specific
+total as the gate; the new-test count shifts as tasks are refined.
+
+Takes about 3.5 minutes (the RRA Postgres tests dominate). Run it in the background.
 
 - [ ] **Step 4: Governance validation and lint**
 

@@ -140,6 +140,13 @@ Recording the parameters in the design is deliberate: a work factor chosen by co
 decision made by omission. Store `n`, `r`, `p` alongside each digest so the factor can be raised
 later without invalidating existing records.
 
+**`maxmem` must be passed explicitly at this work factor.** scrypt requires `128 * n * r` bytes —
+64 MiB at `n=2**15, r=8` — which exceeds OpenSSL's 32 MiB default, so `hashlib.scrypt` raises
+`ValueError("[digital envelope routines] memory limit exceeded")` without it. Measured on this
+machine: ~121 ms per hash at `n=2**15` versus ~65 ms at `n=2**14`. The existing invitation call
+site very likely uses `n=2**14` because it sits under the default limit. Every authentication pays
+the 121 ms, which is acceptable for a login path and is the point of the cost.
+
 Credentials are stored as salt + digest only — no reversible form, never logged, never returned.
 
 ### Uniform refusals (FR-004, FR-034, FR-040)
