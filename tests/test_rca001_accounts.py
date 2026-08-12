@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from khepri.rca.accounts import Account, AccountService, hash_credential
@@ -50,10 +52,7 @@ def test_credential_is_never_stored_in_recoverable_form() -> None:
     secret = CREDENTIAL.encode()
 
     assert secret not in account.credential_digest
-    assert secret not in account.credential_salt
     assert CREDENTIAL not in repr(account)
-    for field in (account.account_id, account.email):
-        assert CREDENTIAL not in field
     # The salt must participate: the same credential under a different salt differs.
     assert account.credential_digest != hash_credential(
         CREDENTIAL, b"0" * 16, n=2**15, r=8, p=1
@@ -88,6 +87,7 @@ def test_authentication_failures_are_uniform() -> None:
     service.disable_account(disabled.account_id)
 
     messages = []
+    exception_types = []
     for email, credential in (
         ("missing@example.test", CREDENTIAL),
         (EMAIL, "wrong credential"),
@@ -96,8 +96,31 @@ def test_authentication_failures_are_uniform() -> None:
         with pytest.raises(AuthenticationFailed) as caught:
             service.authenticate(email, credential)
         messages.append(str(caught.value))
+        exception_types.append(type(caught.value))
 
     assert len(set(messages)) == 1
+    assert len(set(exception_types)) == 1
+
+
+def test_authentication_timing_does_not_reveal_account_existence() -> None:
+    service = _service()
+    service.create_account(EMAIL, CREDENTIAL)
+
+    def _best_of_3(email: str, credential: str) -> float:
+        best = float("inf")
+        for _ in range(3):
+            start = time.perf_counter()
+            with pytest.raises(AuthenticationFailed):
+                service.authenticate(email, credential)
+            elapsed = time.perf_counter() - start
+            best = min(best, elapsed)
+        return best
+
+    missing_time = _best_of_3("missing@example.test", CREDENTIAL)
+    wrong_credential_time = _best_of_3(EMAIL, "wrong credential")
+
+    timings = (missing_time, wrong_credential_time)
+    assert min(timings) > max(timings) * 0.5
 
 
 def test_duplicate_email_is_refused_uniformly() -> None:

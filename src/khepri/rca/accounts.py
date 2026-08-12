@@ -16,10 +16,9 @@ KDF_R = 8
 KDF_P = 1
 KDF_DKLEN = 32
 SALT_BYTES = 16
-# scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
-# default. Without an explicit maxmem, hashlib.scrypt raises
-# ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
-KDF_MAXMEM = 128 * KDF_N * KDF_R * 2
+# A fixed dummy salt used to pay the same scrypt cost for a missing account as for a
+# wrong-credential rejection, so account existence is not revealed through timing (FR-004).
+_DUMMY_SALT = b"\x00" * SALT_BYTES
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +33,9 @@ class Account:
     disabled: bool = False
 
 
+# scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
+# default. Without an explicit maxmem, hashlib.scrypt raises
+# ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
 def hash_credential(credential: str, salt: bytes, *, n: int, r: int, p: int) -> bytes:
     return hashlib.scrypt(
         credential.encode(),
@@ -68,6 +70,9 @@ class AccountService:
     def authenticate(self, email: str, credential: str) -> Account:
         account = self._store.get_account_by_email(email)
         if account is None:
+            # Pay the same scrypt cost as a real rejection so a missing account cannot be
+            # distinguished from a wrong credential by wall-clock timing (FR-004).
+            hash_credential(credential, _DUMMY_SALT, n=KDF_N, r=KDF_R, p=KDF_P)
             self._reject()
         candidate = hash_credential(
             credential,
