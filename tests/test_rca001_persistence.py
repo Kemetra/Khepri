@@ -16,6 +16,7 @@ from khepri.rca.organizations import (
     Membership,
     Organization,
     OrganizationService,
+    allocate_owner_id,
 )
 from khepri.rca.persistence import (
     AccountRow,
@@ -198,7 +199,7 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
         changed_by="acc_does_not_exist",
         changed_at=NOW,
     )
-    scope = IsolationScope(organization_id="org_doomed", owner_id="own_doomed")
+    scope = IsolationScope(organization_id="org_doomed", owner_id=allocate_owner_id())
 
     assert store.create_organization(doomed, orphan, scope) is False
 
@@ -238,12 +239,40 @@ def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker
                 changed_by=other.account_id,
                 changed_at=NOW,
             ),
-            IsolationScope(organization_id=scope_org, owner_id="own_new"),
+            IsolationScope(organization_id=scope_org, owner_id=allocate_owner_id()),
         )
 
     with factory() as database:
         assert database.execute(select(func.count()).select_from(OrganizationRow)).scalar() == 1
         assert database.get(OrganizationRow, "org_new") is None
+
+
+@pytest.mark.parametrize(
+    "untrusted",
+    [
+        "owner@example.test",  # an email — the exact FR-032 case
+        "acme-pharmacy",  # an organization slug
+        "Acme Pharmacy",  # an organization name
+        "org_abc123",  # another artifact's identifier
+        "own_short",  # right prefix, wrong shape
+    ],
+)
+def test_an_untrusted_isolation_key_cannot_be_persisted(untrusted: str) -> None:
+    """FR-032/FR-033 must hold for callers that bypass `OrganizationService`.
+
+    Verified before the invariant existed: a direct store caller could persist
+    `owner@example.test` as the isolation key, and `resolve_scope` handed that email back as
+    the analytical boundary. The check lives on `IsolationScope` itself rather than in the
+    store, so there is no layer at which it can be bypassed — the value cannot be
+    constructed, let alone written.
+    """
+    with pytest.raises(ValueError, match="allocated opaque key"):
+        IsolationScope(organization_id="org_1", owner_id=untrusted)
+
+
+def test_an_allocated_isolation_key_is_accepted() -> None:
+    scope = IsolationScope(organization_id="org_1", owner_id=allocate_owner_id())
+    assert scope.owner_id.startswith("own_")
 
 
 def test_service_converts_a_failed_write_into_a_uniform_refusal(factory: sessionmaker) -> None:
