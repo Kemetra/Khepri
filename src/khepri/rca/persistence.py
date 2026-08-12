@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-from khepri.rca.accounts import Account, KdfParams
+from khepri.rca.accounts import Account, KdfParams, canonical_email
 from khepri.rca.organizations import IsolationScope, Membership, Organization
 
 
@@ -132,6 +132,17 @@ def _scope_from_row(row: IsolationScopeRow) -> IsolationScope:
 
 
 class SqlAccountStore:
+    """Persistence for accounts.
+
+    Canonicalizes the email address on both write and read. `AccountService` also
+    canonicalizes, but the store cannot rely on that: an importer, a backfill, or any other
+    internal caller reaching `add_account` directly would otherwise persist `Owner@Example.Test`
+    verbatim, and the case-sensitive unique constraint would admit it beside
+    `owner@example.test` — two durable identities for one mailbox, in violation of `RCA-001`
+    A-1, with the mixed-case row unreachable through canonicalized service lookups.
+    Enforcing it at the boundary that owns the constraint makes the invariant unconditional.
+    """
+
     def __init__(self, factory: sessionmaker) -> None:
         self._factory = factory
 
@@ -141,7 +152,7 @@ class SqlAccountStore:
                 database.add(
                     AccountRow(
                         account_id=account.account_id,
-                        email=account.email,
+                        email=canonical_email(account.email),
                         credential_salt=account.credential_salt,
                         credential_digest=account.credential_digest,
                         kdf_n=account.kdf.n,
@@ -155,7 +166,9 @@ class SqlAccountStore:
 
     def get_account_by_email(self, email: str) -> Account | None:
         with self._factory() as database:
-            row = database.scalar(select(AccountRow).where(AccountRow.email == email))
+            row = database.scalar(
+                select(AccountRow).where(AccountRow.email == canonical_email(email))
+            )
             if row is None:
                 return None
             return _account_from_row(row)

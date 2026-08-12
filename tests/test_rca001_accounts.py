@@ -129,7 +129,7 @@ def _rejection_work(
         calls[current] = []
         with pytest.raises(AuthenticationFailed):
             service.authenticate(email, credential)
-    return {label: [k for k in issued if k == DEFAULT_KDF] for label, issued in calls.items()}
+    return calls
 
 
 def test_every_rejection_path_spends_the_same_work(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,7 +151,7 @@ def test_every_rejection_path_spends_the_same_work(monkeypatch: pytest.MonkeyPat
         ),
     )
 
-    assert {label: len(issued) for label, issued in totals.items()} == dict.fromkeys(totals, 1)
+    assert totals == dict.fromkeys(totals, [DEFAULT_KDF])
 
 
 def test_duplicate_email_is_refused_uniformly() -> None:
@@ -199,21 +199,22 @@ def test_the_stored_address_is_canonical() -> None:
     assert account.email == EMAIL
 
 
-def test_a_legacy_record_still_issues_exactly_one_default_hash(
+def test_a_record_at_a_non_default_work_factor_is_refused_uniformly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The invariant is the SHAPE of the work, not its nominal sum.
+    """This slice verifies at exactly one work factor, which is what makes FR-004 hold.
 
-    Summing `n*r*p` treats two hashes at n=2**14 as equal to one at n=2**15. scrypt is
-    memory-hard, so they are not: 2x16 MiB behaves differently from 1x32 MiB, measured
-    within 0.4% on one CPU and 0.14s vs 0.23s on another. Asserting that every path issues
-    exactly one DEFAULT_KDF call closes that gap by construction.
+    Three earlier attempts to support per-record factors all leaked, because a cheaper
+    stored factor cannot be made to cost the same as the default without re-hashing the
+    record — and that needs a write path this slice does not have. Padding the nominal
+    `n*r*p` shortfall ignored that scrypt is memory-hard (two calls at n=2**14 versus one at
+    n=2**15 measured within 0.4% on one CPU and 0.14s versus 0.23s on another); padding a
+    full default cost overshot to 1.49x; verifying at the stored factor plus one default
+    hash still cost about 1.5x.
 
-    The legacy path additionally issues one cheaper stored-factor call, so it runs SLOWER
-    than a missing account (measured 200ms vs 128ms), never faster. Only a faster response
-    would reveal that an account is absent, so the residual is in the safe direction.
-    Eliminating it needs re-hashing legacy records on successful login, which requires a
-    write path and is deferred with the rest of the account-mutation surface.
+    So a non-default record is refused — even with the correct credential — and the refusal
+    performs the identical single hash every other path performs. The upgrade path lands
+    with the write path in the lifecycle slice.
     """
     store = MemoryAccountStore()
     service = AccountService(store)
@@ -228,58 +229,34 @@ def test_a_legacy_record_still_issues_exactly_one_default_hash(
             kdf=legacy_kdf,
         )
     )
-
-    issued: list[KdfParams] = []
-    real_hash = accounts_module.hash_credential
-
-    def _recording(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
-        issued.append(kdf)
-        return real_hash(credential, salt, kdf)
-
-    monkeypatch.setattr(accounts_module, "hash_credential", _recording)
-    with pytest.raises(AuthenticationFailed):
-        service.authenticate("legacy@example.test", "wrong credential")
-
-    assert issued.count(DEFAULT_KDF) == 1, f"expected one default-parameter hash: {issued}"
-    assert all(k.n <= DEFAULT_KDF.n for k in issued), "no path may exceed the default factor"
-
-
-def test_a_legacy_work_factor_does_not_reveal_account_existence(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """FR-004 must survive a KDF upgrade, which is what KdfParams exists to support.
-
-    A record stored at an older, cheaper work factor verifies faster than the default the
-    missing-account path pays. Without padding, raising DEFAULT_KDF would make a legacy
-    account's rejection observably cheaper than a nonexistent one.
-    """
-    store = MemoryAccountStore()
-    service = AccountService(store)
-    legacy_kdf = KdfParams(n=2**14)
-    salt = secrets.token_bytes(16)
     store.add_account(
         Account(
-            account_id="acc_legacy",
-            email="legacy@example.test",
-            credential_salt=salt,
-            credential_digest=hash_credential(CREDENTIAL, salt, legacy_kdf),
-            kdf=legacy_kdf,
+            account_id="acc_bare",
+            email="bare@example.test",
+            credential_salt=None,
+            credential_digest=None,
+            kdf=None,
         )
     )
     service.create_account(EMAIL, CREDENTIAL)
 
-    # Uniformity is TWO-SIDED, which an earlier one-sided bound missed: paying a whole
-    # default-cost hash on top of the legacy hash made the legacy path 1.49x the
-    # missing-account path — still an oracle, just inverted, and 1/1.49 cleared a 0.6 floor.
-    # Comparing exact work totals catches both the undershoot and the overshoot.
-    totals = _rejection_work(
+    # The load-bearing assertion: a non-default record does not authenticate, even with the
+    # right credential. Without this, relaxing the work-factor check would keep the call
+    # shape uniform (so the assertion below still passes) while silently reintroducing the
+    # cheap-verification timing leak.
+    with pytest.raises(AuthenticationFailed):
+        service.authenticate("legacy@example.test", CREDENTIAL)
+
+    issued = _rejection_work(
         service,
         monkeypatch,
         (
             ("missing", "missing@example.test", CREDENTIAL),
-            ("legacy", "legacy@example.test", "wrong credential"),
-            ("current", EMAIL, "wrong credential"),
+            ("legacy_correct_credential", "legacy@example.test", CREDENTIAL),
+            ("no_verifier", "bare@example.test", CREDENTIAL),
+            ("wrong_credential", EMAIL, "wrong credential"),
         ),
     )
 
-    assert {label: len(issued) for label, issued in totals.items()} == dict.fromkeys(totals, 1)
+    # The same operation on every path, not merely the same total cost.
+    assert issued == dict.fromkeys(issued, [DEFAULT_KDF])

@@ -93,6 +93,27 @@ def canonical_email(email: str) -> str:
     return email.strip().lower()
 
 
+def _is_verifiable(account: Account | None) -> bool:
+    """True only for a record this slice can verify: present, complete, at the default factor."""
+    return account is not None and account.has_verifier and account.kdf == DEFAULT_KDF
+
+
+def _verifiable_salt(account: Account | None) -> bytes:
+    """The record's salt, or a fixed dummy so an unverifiable record costs the same."""
+    if _is_verifiable(account):
+        assert account is not None and account.credential_salt is not None
+        return account.credential_salt
+    return _DUMMY_SALT
+
+
+def _verifiable_digest(account: Account | None) -> bytes | None:
+    """The digest to compare against, or None when the record cannot be verified here."""
+    if _is_verifiable(account):
+        assert account is not None
+        return account.credential_digest
+    return None
+
+
 def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
     return hashlib.scrypt(
         credential.encode(),
@@ -123,60 +144,32 @@ class AccountService:
         return account
 
     def authenticate(self, email: str, credential: str) -> Account:
-        """Verify a credential, performing exactly one scrypt call at `DEFAULT_KDF`.
+        """Verify a credential with exactly one scrypt call at `DEFAULT_KDF`, on every path.
 
-        Every path — missing account, verifier-less row, wrong credential, success — runs
-        one hash at the same parameters. That is a stronger invariant than "the same total
-        work", and it has to be: two hashes at `n=2**14` and one at `n=2**15` sum to the
-        same `n*r*p`, but scrypt's cost is memory-hard, so 2x16 MiB and 1x32 MiB are not
-        interchangeable. On one CPU they measured within 0.4%, on another 0.14s versus 0.23s.
-        Counting nominal work cannot see that difference; performing an identical operation
-        makes it impossible.
+        Missing account, verifier-less row, wrong credential, success — all four perform the
+        identical operation, so none is distinguishable from another by cost (FR-004).
 
-        A record stored at an older work factor is therefore verified at its own parameters
-        AND NOT padded — instead the whole comparison is skipped when the stored factor is
-        not the default, and the record is re-hashed to the default on the way through. See
-        `_verify_against` for how that stays constant-shape.
+        **This slice supports exactly one work factor**, and that is what makes the property
+        hold rather than merely be approximated. Three earlier attempts to support
+        per-record factors all leaked: padding the nominal `n*r*p` shortfall ignored that
+        scrypt is memory-hard (two calls at `n=2**14` versus one at `n=2**15` measured
+        within 0.4% on one CPU and 0.14s versus 0.23s on another); padding a full default
+        cost overshot to 1.49x; verifying at the stored factor plus one default hash still
+        cost about 1.5x. Each was a workaround for the real gap — a legacy record can only
+        be made uniform by re-hashing it to the current default on successful login, and
+        that needs a write path.
+
+        So `KdfParams` is stored per record but only `DEFAULT_KDF` is ever used to verify.
+        A record at any other factor is refused, uniformly, rather than verified cheaply.
+        The upgrade path lands with the write path in the lifecycle slice.
         """
         account = self._store.get_account_by_email(canonical_email(email))
-        if account is None or not account.has_verifier:
-            # Perform the identical operation a real verification would, so a missing or
-            # verifier-less record is indistinguishable from a wrong credential (FR-004).
-            hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
+        expected = _verifiable_digest(account)
+        candidate = hash_credential(credential, _verifiable_salt(account), DEFAULT_KDF)
+        if expected is None or not hmac.compare_digest(candidate, expected):
             self._reject()
-        assert account.credential_salt is not None  # narrowed by has_verifier
-        assert account.credential_digest is not None
-        assert account.kdf is not None
-        if not self._verify_against(account, credential):
-            self._reject()
+        assert account is not None  # a digest was recovered, so the account exists
         return account
-
-    @staticmethod
-    def _verify_against(account: Account, credential: str) -> bool:
-        """One scrypt call at `DEFAULT_KDF`, whatever the record's stored parameters.
-
-        A record at the current default is verified directly. A legacy record cannot be —
-        its digest was produced at different parameters — so it is verified at its stored
-        factor and the result is combined with one default-parameter hash over a fixed
-        salt. Both branches therefore issue exactly one `DEFAULT_KDF` call, and the legacy
-        branch's extra stored-factor call is strictly cheaper than the default, so it cannot
-        make a legacy record's rejection *dearer* than a missing one either.
-
-        This is a deliberate second-best. The right answer is to re-hash legacy records to
-        the default on successful authentication, which needs a write path — deferred to the
-        lifecycle slice with the rest of the account-mutation surface.
-        """
-        assert account.credential_salt is not None
-        assert account.credential_digest is not None
-        assert account.kdf is not None
-        if account.kdf == DEFAULT_KDF:
-            candidate = hash_credential(credential, account.credential_salt, DEFAULT_KDF)
-            return hmac.compare_digest(candidate, account.credential_digest)
-
-        legacy = hash_credential(credential, account.credential_salt, account.kdf)
-        matched = hmac.compare_digest(legacy, account.credential_digest)
-        hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
-        return matched
 
     @staticmethod
     def _reject() -> None:

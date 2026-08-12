@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime
 
 import pytest
@@ -7,7 +8,7 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from khepri.rca.accounts import AccountService
+from khepri.rca.accounts import DEFAULT_KDF, Account, AccountService, hash_credential
 from khepri.rca.errors import AuthenticationFailed, OrganizationCreationFailed
 from khepri.rca.isolation import IsolationService
 from khepri.rca.organizations import Membership, Organization, OrganizationService
@@ -93,8 +94,9 @@ def test_an_account_round_trips_through_a_new_store_instance(factory: sessionmak
     assert restored.kdf == account.kdf
 
 
-def test_a_canonicalized_duplicate_is_refused_by_the_database(factory: sessionmaker) -> None:
-    """A-1 uniqueness must hold at the storage boundary, not only in the service."""
+def test_a_canonicalized_duplicate_is_refused_through_the_service(
+    factory: sessionmaker,
+) -> None:
     service = AccountService(SqlAccountStore(factory))
     service.create_account(EMAIL, CREDENTIAL)
 
@@ -103,6 +105,50 @@ def test_a_canonicalized_duplicate_is_refused_by_the_database(factory: sessionma
 
     with factory() as database:
         assert database.execute(select(func.count()).select_from(AccountRow)).scalar() == 1
+
+
+def test_the_store_canonicalizes_without_the_service(factory: sessionmaker) -> None:
+    """A-1 must hold for callers that bypass `AccountService` entirely.
+
+    An importer, a backfill, or any other internal caller reaching `add_account` directly
+    would otherwise persist a mixed-case address verbatim beside its canonical twin — two
+    durable identities for one mailbox, with the mixed-case row unreachable through
+    canonicalized service lookups. This calls the store directly, which is what an earlier
+    version of this test only appeared to do: it routed both inserts through the service, so
+    the store's own behaviour was never exercised.
+    """
+    store = SqlAccountStore(factory)
+    salt = secrets.token_bytes(16)
+    digest = hash_credential(CREDENTIAL, salt, DEFAULT_KDF)
+
+    assert store.add_account(
+        Account(
+            account_id="acc_canonical",
+            email=EMAIL,
+            credential_salt=salt,
+            credential_digest=digest,
+            kdf=DEFAULT_KDF,
+        )
+    )
+    # Same mailbox, different casing, straight into the store.
+    assert not store.add_account(
+        Account(
+            account_id="acc_variant",
+            email="Owner@EXAMPLE.Test",
+            credential_salt=salt,
+            credential_digest=digest,
+            kdf=DEFAULT_KDF,
+        )
+    )
+
+    with factory() as database:
+        assert database.execute(select(func.count()).select_from(AccountRow)).scalar() == 1
+
+    # And the stored row is reachable by any casing, because lookup canonicalizes too.
+    for variant in (EMAIL, "OWNER@example.test", "  Owner@Example.Test  "):
+        found = store.get_account_by_email(variant)
+        assert found is not None, variant
+        assert found.account_id == "acc_canonical"
 
 
 def test_organization_creation_round_trips(factory: sessionmaker) -> None:
