@@ -191,6 +191,18 @@ class SqlOrganizationStore:
         membership: Membership,
         scope: IsolationScope,
     ) -> bool:
+        """Write the organization, its owner membership, and its isolation scope atomically.
+
+        The three records form one aggregate, so their identifiers must agree. Foreign keys
+        alone do not enforce that: a membership naming a *different* existing organization
+        satisfies every constraint, and the new organization commits with no owner. Verified
+        — that produced an orphan organization, which FR-013's "never zero owner-role
+        members" forbids from the moment of creation.
+        """
+        if membership.organization_id != organization.organization_id:
+            return False
+        if scope.organization_id != organization.organization_id:
+            return False
         try:
             with self._factory.begin() as database:
                 database.add(

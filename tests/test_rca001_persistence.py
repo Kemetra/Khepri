@@ -11,7 +11,12 @@ from sqlalchemy.pool import StaticPool
 from khepri.rca.accounts import DEFAULT_KDF, Account, AccountService, hash_credential
 from khepri.rca.errors import AuthenticationFailed, OrganizationCreationFailed
 from khepri.rca.isolation import IsolationService
-from khepri.rca.organizations import Membership, Organization, OrganizationService
+from khepri.rca.organizations import (
+    IsolationScope,
+    Membership,
+    Organization,
+    OrganizationService,
+)
 from khepri.rca.persistence import (
     AccountRow,
     Base,
@@ -193,8 +198,6 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
         changed_by="acc_does_not_exist",
         changed_at=NOW,
     )
-    from khepri.rca.organizations import IsolationScope
-
     scope = IsolationScope(organization_id="org_doomed", owner_id="own_doomed")
 
     assert store.create_organization(doomed, orphan, scope) is False
@@ -205,6 +208,42 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
         assert database.execute(select(func.count()).select_from(IsolationScopeRow)).scalar() == 1
         assert database.get(IsolationScopeRow, "org_doomed") is None
         assert database.get(OrganizationRow, "org_doomed") is None
+
+
+def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker) -> None:
+    """The three records form one aggregate; foreign keys alone do not enforce that.
+
+    A membership naming a different EXISTING organization satisfies every constraint, so the
+    new organization would commit with no owner — an orphan, which FR-013 forbids from the
+    moment of creation. Note the account must differ from the existing owner: with the same
+    account the composite primary key collides and the write fails for an unrelated reason,
+    which is what made an earlier version of this check pass by accident.
+    """
+    accounts = AccountService(SqlAccountStore(factory))
+    owner = accounts.create_account(EMAIL, CREDENTIAL)
+    other = accounts.create_account("other@example.test", CREDENTIAL)
+    store = SqlOrganizationStore(factory)
+    existing = OrganizationService(store).create_organization("First", owner.account_id, now=NOW)
+
+    for membership_org, scope_org in (
+        (existing.organization_id, "org_new"),  # membership points elsewhere
+        ("org_new", existing.organization_id),  # scope points elsewhere
+    ):
+        assert not store.create_organization(
+            Organization(organization_id="org_new", name="New", created_at=NOW),
+            Membership(
+                organization_id=membership_org,
+                account_id=other.account_id,
+                role="owner",
+                changed_by=other.account_id,
+                changed_at=NOW,
+            ),
+            IsolationScope(organization_id=scope_org, owner_id="own_new"),
+        )
+
+    with factory() as database:
+        assert database.execute(select(func.count()).select_from(OrganizationRow)).scalar() == 1
+        assert database.get(OrganizationRow, "org_new") is None
 
 
 def test_service_converts_a_failed_write_into_a_uniform_refusal(factory: sessionmaker) -> None:
