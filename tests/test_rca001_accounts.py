@@ -105,6 +105,8 @@ def test_authentication_failures_are_uniform() -> None:
 def test_authentication_timing_does_not_reveal_account_existence() -> None:
     service = _service()
     service.create_account(EMAIL, CREDENTIAL)
+    disabled = service.create_account("off@example.test", CREDENTIAL)
+    service.disable_account(disabled.account_id)
 
     def _best_of_3(email: str, credential: str) -> float:
         best = float("inf")
@@ -118,8 +120,9 @@ def test_authentication_timing_does_not_reveal_account_existence() -> None:
 
     missing_time = _best_of_3("missing@example.test", CREDENTIAL)
     wrong_credential_time = _best_of_3(EMAIL, "wrong credential")
+    disabled_time = _best_of_3("off@example.test", CREDENTIAL)
 
-    timings = (missing_time, wrong_credential_time)
+    timings = (missing_time, wrong_credential_time, disabled_time)
     assert min(timings) > max(timings) * 0.5
 
 
