@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import secrets
-import time
 
 import pytest
 
-from khepri.rca.accounts import Account, AccountService, KdfParams, hash_credential
+from khepri.rca import accounts as accounts_module
+from khepri.rca.accounts import (
+    DEFAULT_KDF,
+    Account,
+    AccountService,
+    KdfParams,
+    hash_credential,
+)
 from khepri.rca.errors import AuthenticationFailed
 
 EMAIL = "owner@example.test"
@@ -101,28 +107,59 @@ def test_authentication_failures_are_uniform() -> None:
     assert len(set(exception_types)) == 1
 
 
-def test_authentication_timing_does_not_reveal_account_existence() -> None:
+def _rejection_work(
+    service: AccountService,
+    monkeypatch: pytest.MonkeyPatch,
+    cases: tuple[tuple[str, str, str], ...],
+) -> dict[str, int]:
+    """Total scrypt work each rejection path performs, keyed by label.
+
+    Counts work instead of measuring wall-clock: "every path spends the same" is a
+    deterministic property, and timing it is flaky on shared CI runners where neighbouring
+    jobs contend for CPU. A wall-clock version of this measured 1.001x locally and 1.37x in
+    CI — a false failure, since the work performed was identical both times.
+    """
+    work: dict[str, list[int]] = {}
+    real_hash = accounts_module.hash_credential
+    current = ""
+
+    def _recording(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
+        work[current].append(kdf.n * kdf.r * kdf.p)
+        return real_hash(credential, salt, kdf)
+
+    monkeypatch.setattr(accounts_module, "hash_credential", _recording)
+    for label, email, credential in cases:
+        current = label
+        work[current] = []
+        with pytest.raises(AuthenticationFailed):
+            service.authenticate(email, credential)
+    return {label: sum(costs) for label, costs in work.items()}
+
+
+def test_every_rejection_path_spends_the_same_work(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FR-004: a refusal must not reveal which check failed, including via cost.
+
+    The missing-account path returns before any verifier exists, the disabled path returns
+    after its verifier was destroyed, and the wrong-credential path hashes for real. All
+    three must cost the same, or the difference is an account-enumeration oracle.
+    """
     service = _service()
     service.create_account(EMAIL, CREDENTIAL)
     disabled = service.create_account("off@example.test", CREDENTIAL)
     service.disable_account(disabled.account_id)
 
-    def _best_of_3(email: str, credential: str) -> float:
-        best = float("inf")
-        for _ in range(3):
-            start = time.perf_counter()
-            with pytest.raises(AuthenticationFailed):
-                service.authenticate(email, credential)
-            elapsed = time.perf_counter() - start
-            best = min(best, elapsed)
-        return best
+    totals = _rejection_work(
+        service,
+        monkeypatch,
+        (
+            ("missing", "missing@example.test", CREDENTIAL),
+            ("wrong_credential", EMAIL, "wrong credential"),
+            ("disabled", "off@example.test", CREDENTIAL),
+        ),
+    )
 
-    missing_time = _best_of_3("missing@example.test", CREDENTIAL)
-    wrong_credential_time = _best_of_3(EMAIL, "wrong credential")
-    disabled_time = _best_of_3("off@example.test", CREDENTIAL)
-
-    timings = (missing_time, wrong_credential_time, disabled_time)
-    assert min(timings) > max(timings) * 0.5
+    assert len(set(totals.values())) == 1, f"rejection cost is not uniform: {totals}"
+    assert totals["missing"] == DEFAULT_KDF.n * DEFAULT_KDF.r * DEFAULT_KDF.p
 
 
 def test_duplicate_email_is_refused_uniformly() -> None:
@@ -140,7 +177,9 @@ def test_hash_credential_is_deterministic_for_a_fixed_salt() -> None:
     assert hash_credential("other", salt, KdfParams(n=2**14)) != first
 
 
-def test_a_legacy_work_factor_does_not_reveal_account_existence() -> None:
+def test_a_legacy_work_factor_does_not_reveal_account_existence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """FR-004 must survive a KDF upgrade, which is what KdfParams exists to support.
 
     A record stored at an older, cheaper work factor verifies faster than the default the
@@ -162,25 +201,19 @@ def test_a_legacy_work_factor_does_not_reveal_account_existence() -> None:
     )
     service.create_account(EMAIL, CREDENTIAL)
 
-    def _best_of_3(email: str, credential: str) -> float:
-        best = float("inf")
-        for _ in range(3):
-            start = time.perf_counter()
-            with pytest.raises(AuthenticationFailed):
-                service.authenticate(email, credential)
-            best = min(best, time.perf_counter() - start)
-        return best
-
-    timings = (
-        _best_of_3("missing@example.test", CREDENTIAL),
-        _best_of_3("legacy@example.test", "wrong credential"),
-        _best_of_3(EMAIL, "wrong credential"),
+    # Uniformity is TWO-SIDED, which an earlier one-sided bound missed: paying a whole
+    # default-cost hash on top of the legacy hash made the legacy path 1.49x the
+    # missing-account path — still an oracle, just inverted, and 1/1.49 cleared a 0.6 floor.
+    # Comparing exact work totals catches both the undershoot and the overshoot.
+    totals = _rejection_work(
+        service,
+        monkeypatch,
+        (
+            ("missing", "missing@example.test", CREDENTIAL),
+            ("legacy", "legacy@example.test", "wrong credential"),
+            ("current", EMAIL, "wrong credential"),
+        ),
     )
-    # Uniformity is TWO-SIDED, so bound the spread rather than just the floor. A one-sided
-    # `min > max * 0.6` accepted an earlier fix that overshot: paying a whole default-cost
-    # hash on top of the legacy hash made the legacy path 1.49x the missing-account path —
-    # still an oracle, just inverted (1/1.49 = 0.67, which cleared a 0.6 floor).
-    #
-    # Unpadded the spread is ~2.0x; overshooting it was ~1.5x; paying only the shortfall
-    # measures ~1.00x. A 1.3x ceiling rejects both failure modes with margin for noise.
-    assert max(timings) / min(timings) < 1.3
+
+    assert len(set(totals.values())) == 1, f"rejection cost is not uniform: {totals}"
+    assert totals["missing"] == DEFAULT_KDF.n * DEFAULT_KDF.r * DEFAULT_KDF.p
