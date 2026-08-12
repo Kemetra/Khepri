@@ -11,6 +11,7 @@ from khepri.rca.accounts import (
     AccountService,
     KdfParams,
     hash_credential,
+    shortfall_schedule,
 )
 from khepri.rca.errors import AuthenticationFailed
 
@@ -50,7 +51,6 @@ def test_create_account_establishes_durable_identity() -> None:
     account = service.create_account(EMAIL, CREDENTIAL)
     assert account.account_id.startswith("acc_")
     assert account.email == EMAIL
-    assert account.disabled is False
 
 
 def test_credential_is_never_stored_in_recoverable_form() -> None:
@@ -88,15 +88,12 @@ def test_authenticate_succeeds_with_correct_credential() -> None:
 def test_authentication_failures_are_uniform() -> None:
     service = _service()
     service.create_account(EMAIL, CREDENTIAL)
-    disabled = service.create_account("off@example.test", CREDENTIAL)
-    service.disable_account(disabled.account_id)
 
     messages = []
     exception_types = []
     for email, credential in (
         ("missing@example.test", CREDENTIAL),
         (EMAIL, "wrong credential"),
-        ("off@example.test", CREDENTIAL),
     ):
         with pytest.raises(AuthenticationFailed) as caught:
             service.authenticate(email, credential)
@@ -139,14 +136,12 @@ def _rejection_work(
 def test_every_rejection_path_spends_the_same_work(monkeypatch: pytest.MonkeyPatch) -> None:
     """FR-004: a refusal must not reveal which check failed, including via cost.
 
-    The missing-account path returns before any verifier exists, the disabled path returns
-    after its verifier was destroyed, and the wrong-credential path hashes for real. All
-    three must cost the same, or the difference is an account-enumeration oracle.
+    The missing-account path returns before any verifier exists and the wrong-credential
+    path hashes for real. Both must cost the same, or the difference is an
+    account-enumeration oracle.
     """
     service = _service()
     service.create_account(EMAIL, CREDENTIAL)
-    disabled = service.create_account("off@example.test", CREDENTIAL)
-    service.disable_account(disabled.account_id)
 
     totals = _rejection_work(
         service,
@@ -154,7 +149,6 @@ def test_every_rejection_path_spends_the_same_work(monkeypatch: pytest.MonkeyPat
         (
             ("missing", "missing@example.test", CREDENTIAL),
             ("wrong_credential", EMAIL, "wrong credential"),
-            ("disabled", "off@example.test", CREDENTIAL),
         ),
     )
 
@@ -167,6 +161,65 @@ def test_duplicate_email_is_refused_uniformly() -> None:
     service.create_account(EMAIL, CREDENTIAL)
     with pytest.raises(AuthenticationFailed):
         service.create_account(EMAIL, "another credential")
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "owner@EXAMPLE.TEST",
+        "OWNER@example.test",
+        "Owner@Example.Test",
+        "  owner@example.test  ",
+    ],
+)
+def test_the_same_mailbox_cannot_hold_two_accounts(variant: str) -> None:
+    """A-1: one durable identity per email address.
+
+    The domain is case-insensitive, so storing variants verbatim under a case-sensitive
+    unique constraint would admit two accounts for one mailbox and make recovery and
+    invitation addressing ambiguous.
+    """
+    service = _service()
+    service.create_account(EMAIL, CREDENTIAL)
+    with pytest.raises(AuthenticationFailed):
+        service.create_account(variant, "another credential")
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ["owner@EXAMPLE.TEST", "OWNER@example.test", "  Owner@Example.Test  "],
+)
+def test_authentication_accepts_any_casing_of_the_registered_address(variant: str) -> None:
+    service = _service()
+    created = service.create_account(EMAIL, CREDENTIAL)
+    assert service.authenticate(variant, CREDENTIAL).account_id == created.account_id
+
+
+def test_the_stored_address_is_canonical() -> None:
+    service = _service()
+    account = service.create_account("  Owner@EXAMPLE.Test  ", CREDENTIAL)
+    assert account.email == EMAIL
+
+
+@pytest.mark.parametrize("stored_n", [2**14, 2**13, 2**12, 2**11])
+def test_padding_covers_the_full_deficit_for_every_older_work_factor(stored_n: int) -> None:
+    """A single rounded step only pays a power-of-two share of the deficit.
+
+    At a stored n=2**13 against a default of 2**15 that covered 75% of the required work,
+    and at 2**12 only 62% — an existence oracle in exactly the range this padding exists to
+    close. Decomposing the deficit into one hash per set bit covers it exactly.
+    """
+    stored = KdfParams(n=stored_n)
+    stored_cost = stored.n * stored.r * stored.p
+    padding_cost = sum(step.n * step.r * step.p for step in shortfall_schedule(stored))
+    default_cost = DEFAULT_KDF.n * DEFAULT_KDF.r * DEFAULT_KDF.p
+
+    assert stored_cost + padding_cost == default_cost
+
+
+def test_a_current_factor_record_needs_no_padding() -> None:
+    assert shortfall_schedule(DEFAULT_KDF) == ()
+    assert shortfall_schedule(KdfParams(n=DEFAULT_KDF.n * 2)) == ()
 
 
 def test_hash_credential_is_deterministic_for_a_fixed_salt() -> None:

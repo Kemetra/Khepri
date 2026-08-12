@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKeyConstraint,
     Integer,
@@ -29,15 +28,15 @@ class AccountRow(Base):
 
     account_id: Mapped[str] = mapped_column(String, primary_key=True)
     email: Mapped[str] = mapped_column(String, nullable=False)
-    # Nullable because KHEPRI-DEC-015 requires the credential verifier to be DESTROYED on
-    # account disablement ("immediate, non-recoverable"). A disabled account must be
-    # representable with no verifier at all, so these cannot be NOT NULL.
+    # Nullable so an account with no verifier is representable. KHEPRI-DEC-015 requires the
+    # credential verifier to be DESTROYED ("immediate, non-recoverable") on disablement or
+    # replacement. Disablement is a later slice; declaring the columns nullable now means
+    # that slice needs no migration to satisfy the retention rule.
     credential_salt: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     credential_digest: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     kdf_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kdf_r: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kdf_p: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class OrganizationRow(Base):
@@ -112,7 +111,6 @@ def _account_from_row(row: AccountRow) -> Account:
         credential_salt=row.credential_salt,
         credential_digest=row.credential_digest,
         kdf=_kdf_from_row(row),
-        disabled=row.disabled,
     )
 
 
@@ -149,7 +147,6 @@ class SqlAccountStore:
                         kdf_n=account.kdf.n,
                         kdf_r=account.kdf.r,
                         kdf_p=account.kdf.p,
-                        disabled=account.disabled,
                     )
                 )
         except IntegrityError:
@@ -169,20 +166,6 @@ class SqlAccountStore:
             if row is None:
                 return None
             return _account_from_row(row)
-
-    def update_account(self, account: Account) -> None:
-        with self._factory.begin() as database:
-            row = database.get(AccountRow, account.account_id)
-            if row is None:
-                return
-            row.disabled = account.disabled
-            # The verifier must be written, not just the flag: destruction on disablement is
-            # a DEC-015 retention requirement, and it only takes effect if it persists.
-            row.credential_salt = account.credential_salt
-            row.credential_digest = account.credential_digest
-            row.kdf_n = account.kdf.n if account.kdf else None
-            row.kdf_r = account.kdf.r if account.kdf else None
-            row.kdf_p = account.kdf.p if account.kdf else None
 
 
 class SqlOrganizationStore:

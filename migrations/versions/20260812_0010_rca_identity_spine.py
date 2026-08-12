@@ -31,8 +31,9 @@ def _account_columns() -> tuple[sa.Column, ...]:
         sa.Column("email", sa.String(), nullable=False),
         # Nullable by requirement, not by omission: KHEPRI-DEC-015 retains the credential
         # verifier only "while the account is enabled" and requires immediate,
-        # non-recoverable destruction on disablement or replacement. A disabled account must
-        # therefore be representable with no verifier at all.
+        # non-recoverable destruction on disablement or replacement. Account disablement is
+        # a later slice, but declaring these nullable now means that slice can destroy a
+        # verifier without a schema migration.
         sa.Column("credential_salt", sa.LargeBinary(), nullable=True),
         sa.Column("credential_digest", sa.LargeBinary(), nullable=True),
         # The scrypt cost parameters this digest was produced with, so the work factor can
@@ -40,7 +41,6 @@ def _account_columns() -> tuple[sa.Column, ...]:
         sa.Column("kdf_n", sa.Integer(), nullable=True),
         sa.Column("kdf_r", sa.Integer(), nullable=True),
         sa.Column("kdf_p", sa.Integer(), nullable=True),
-        sa.Column("disabled", sa.Boolean(), nullable=False),
     )
 
 

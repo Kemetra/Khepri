@@ -14,8 +14,6 @@ class AccountStore(Protocol):
 
     def get_account(self, account_id: str) -> Account | None: ...
 
-    def update_account(self, account: Account) -> None: ...
-
 
 class OrganizationStore(Protocol):
     def create_organization(

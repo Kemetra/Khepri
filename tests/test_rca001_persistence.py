@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -78,33 +77,32 @@ def test_duplicate_email_is_rejected_by_the_database(factory: sessionmaker) -> N
         service.create_account(EMAIL, "another credential")
 
 
-def test_disabling_an_account_persists_and_blocks_authentication(factory: sessionmaker) -> None:
-    service = AccountService(SqlAccountStore(factory))
-    account = service.create_account(EMAIL, CREDENTIAL)
-    assert service.authenticate(EMAIL, CREDENTIAL).account_id == account.account_id
+def test_an_account_round_trips_through_a_new_store_instance(factory: sessionmaker) -> None:
+    """Reads must come from the database, not session-local state.
 
-    service.disable_account(account.account_id)
+    A brand-new store instance cannot see an uncommitted write — for example if `add_account`
+    used `self._factory()` instead of `self._factory.begin()`, which closes without
+    committing — so this is what proves the row actually landed.
+    """
+    account = AccountService(SqlAccountStore(factory)).create_account(EMAIL, CREDENTIAL)
+
+    restored = SqlAccountStore(factory).get_account(account.account_id)
+    assert restored is not None
+    assert restored.email == EMAIL
+    assert restored.credential_digest == account.credential_digest
+    assert restored.kdf == account.kdf
+
+
+def test_a_canonicalized_duplicate_is_refused_by_the_database(factory: sessionmaker) -> None:
+    """A-1 uniqueness must hold at the storage boundary, not only in the service."""
+    service = AccountService(SqlAccountStore(factory))
+    service.create_account(EMAIL, CREDENTIAL)
 
     with pytest.raises(AuthenticationFailed):
-        service.authenticate(EMAIL, CREDENTIAL)
-
-    # Read through a brand-new store instance so a silently-uncommitted write (e.g. if
-    # `update_account` used `self._factory()` instead of `self._factory.begin()`) cannot
-    # hide behind session-local state and must actually be visible in the database.
-    fresh_store = SqlAccountStore(factory)
-    assert fresh_store.get_account(account.account_id).disabled is True
-
-
-def test_update_account_on_a_missing_account_is_a_no_op(factory: sessionmaker) -> None:
-    service = AccountService(SqlAccountStore(factory))
-    account = service.create_account(EMAIL, CREDENTIAL)
-
-    store = SqlAccountStore(factory)
-    store.update_account(replace(account, account_id="acc_does_not_exist", disabled=True))
+        service.create_account("Owner@EXAMPLE.Test", "another credential")
 
     with factory() as database:
         assert database.execute(select(func.count()).select_from(AccountRow)).scalar() == 1
-    assert store.get_account(account.account_id).disabled is False
 
 
 def test_organization_creation_round_trips(factory: sessionmaker) -> None:
@@ -170,48 +168,43 @@ def test_service_converts_a_failed_write_into_a_uniform_refusal(factory: session
         service.create_organization("Acme", "acc_does_not_exist", now=NOW)
 
 
-def test_disabling_destroys_the_credential_verifier_in_the_database(
+def test_authentication_against_a_stored_row_with_no_verifier_is_refused(
     factory: sessionmaker,
 ) -> None:
-    """KHEPRI-DEC-015 retains the verifier only while the account is enabled.
+    """A verifier-less row must refuse, not crash, and must pay the same cost.
 
-    Its retention matrix requires destruction to be immediate and non-recoverable at
-    disablement. Asserting on the row rather than the dataclass is the point: destruction
-    only counts if it reaches storage, where backups and offline guessing would find it.
+    Account disablement is a later slice, but the state it produces — a row whose verifier
+    was destroyed per KHEPRI-DEC-015 — is already representable, so authentication has to
+    handle it now rather than raising on a None digest.
     """
     service = AccountService(SqlAccountStore(factory))
     account = service.create_account(EMAIL, CREDENTIAL)
 
-    with factory() as database:
+    with factory.begin() as database:
         row = database.get(AccountRow, account.account_id)
         assert row is not None
-        assert row.credential_digest is not None
-
-    service.disable_account(account.account_id)
-
-    with factory() as database:
-        row = database.get(AccountRow, account.account_id)
-        assert row is not None
-        assert row.disabled is True
-        assert row.credential_salt is None
-        assert row.credential_digest is None
-        assert (row.kdf_n, row.kdf_r, row.kdf_p) == (None, None, None)
-
-
-def test_authentication_against_a_destroyed_verifier_is_refused(factory: sessionmaker) -> None:
-    service = AccountService(SqlAccountStore(factory))
-    account = service.create_account(EMAIL, CREDENTIAL)
-    service.disable_account(account.account_id)
+        row.credential_salt = None
+        row.credential_digest = None
+        row.kdf_n = row.kdf_r = row.kdf_p = None
 
     with pytest.raises(AuthenticationFailed):
         service.authenticate(EMAIL, CREDENTIAL)
 
+    restored = SqlAccountStore(factory).get_account(account.account_id)
+    assert restored is not None
+    assert restored.has_verifier is False
 
-def test_the_schema_permits_an_account_with_no_verifier(factory: sessionmaker) -> None:
-    """The columns must be nullable, or DEC-015's required end state is unrepresentable."""
+
+def test_the_schema_permits_an_account_with_no_verifier() -> None:
+    """The columns must be nullable, or DEC-015's required end state is unrepresentable.
+
+    Asserted here rather than left to the disablement slice so that slice inherits a schema
+    it can satisfy without a migration.
+    """
     columns = {column.name: column for column in AccountRow.__table__.columns}
     for name in ("credential_salt", "credential_digest", "kdf_n", "kdf_r", "kdf_p"):
         assert columns[name].nullable, f"{name} must be nullable to allow verifier destruction"
+    assert "disabled" not in columns, "account lifecycle is deferred to its own slice"
 
 
 def test_no_rca_table_references_an_rra_table() -> None:

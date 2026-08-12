@@ -1,9 +1,23 @@
+"""Durable commercial identity: accounts and credential verification (`RCA-001` slice 1).
+
+Covers FR-001 (durable account), FR-002 (verifier stored only as a salted hash), FR-004
+(uniform, content-free refusals), and A-1 (one identity per email address).
+
+**Account lifecycle is deliberately NOT in this slice.** Disablement sits at the
+intersection of three requirements this slice does not implement — `KHEPRI-DEC-015`'s
+24-month retention horizon and opaque tombstone, `FR-008`'s session revocation, and
+`FR-013`'s final-owner guard — and implementing it without them produced a disabled account
+that stranded its organization and retained its login identity indefinitely. It gets its own
+slice, with a design first. The verifier columns are already nullable so that slice needs no
+migration to destroy a verifier.
+"""
+
 from __future__ import annotations
 
 import hashlib
 import hmac
 import secrets
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from khepri.rca.errors import AUTHENTICATION_FAILURE, AuthenticationFailed
@@ -41,13 +55,14 @@ DEFAULT_KDF = KdfParams()
 class Account:
     account_id: str
     email: str
-    # All three are None once the verifier has been destroyed. KHEPRI-DEC-015 retains the
-    # credential verifier only "while the account is enabled" and requires immediate,
-    # non-recoverable destruction on disablement or replacement.
+    # Nullable so the schema can represent an account with no verifier. KHEPRI-DEC-015
+    # retains the credential verifier only "while the account is enabled" and requires
+    # immediate, non-recoverable destruction on disablement or replacement. Disablement
+    # itself is not in this slice (see the module docstring), but the shape it requires is,
+    # so the lifecycle slice does not need a migration to introduce it.
     credential_salt: bytes | None
     credential_digest: bytes | None
     kdf: KdfParams | None
-    disabled: bool = False
 
     @property
     def has_verifier(self) -> bool:
@@ -61,28 +76,50 @@ class Account:
 # scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
 # default. Without an explicit maxmem, hashlib.scrypt raises
 # ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
+def canonical_email(email: str) -> str:
+    """Canonical form used for both storage and lookup, so uniqueness is meaningful.
+
+    `RCA-001` A-1 requires one durable identity per email address. The domain is
+    case-insensitive per RFC 1035, so `owner@example.test` and `owner@EXAMPLE.TEST` are the
+    same mailbox; storing both verbatim under a case-sensitive unique constraint would admit
+    two accounts for one address and make recovery and invitation addressing ambiguous.
+
+    The local part is lowercased too. RFC 5321 permits it to be case-sensitive, but no
+    mainstream provider treats it that way, and admitting `Owner@` beside `owner@` as
+    distinct identities would be a footgun rather than a feature. Surrounding whitespace is
+    stripped; nothing else is normalised, so provider-specific rules such as Gmail's dots
+    and `+` tags are deliberately out of scope.
+    """
+    return email.strip().lower()
+
+
 def _scrypt_cost(kdf: KdfParams) -> int:
     """Relative cost of one scrypt call. Work scales with ``n * r * p``."""
     return kdf.n * kdf.r * kdf.p
 
 
-def _shortfall_params(kdf: KdfParams) -> KdfParams | None:
-    """Parameters costing the difference between ``kdf`` and the default, or None.
+def shortfall_schedule(kdf: KdfParams) -> tuple[KdfParams, ...]:
+    """Padding hashes whose combined cost exactly covers the deficit against the default.
 
-    Returns None when the stored parameters already cost at least the default, so no
-    padding is needed. Otherwise returns a `KdfParams` whose cost is the remainder, keeping
-    the total spent on a legacy verification equal to one default-cost hash.
+    Empty when the stored parameters already cost at least the default.
 
-    The remainder is carried on ``n`` because scrypt requires ``n`` to be a power of two
-    greater than one. Rounding down to a power of two makes the padding slightly cheap
-    rather than slightly expensive, and the residual is far below the measurement noise a
-    remote attacker can resolve.
+    A single rounded-down step is not enough. scrypt requires ``n`` to be a power of two, so
+    one step can only ever pay a power-of-two share of the deficit: at a stored ``n=2**13``
+    against a default of ``2**15`` that covered 75% of the required work, and at ``2**12``
+    only 62% — an existence oracle in exactly the range this padding exists to close. Since
+    every deficit is a sum of distinct powers of two, decomposing it into one hash per set
+    bit covers it exactly, with no residual.
     """
     deficit = _scrypt_cost(DEFAULT_KDF) - _scrypt_cost(kdf)
     if deficit <= 0:
-        return None
-    n = 1 << max(1, (deficit // (DEFAULT_KDF.r * DEFAULT_KDF.p)).bit_length() - 1)
-    return KdfParams(n=n, r=DEFAULT_KDF.r, p=DEFAULT_KDF.p)
+        return ()
+    unit = DEFAULT_KDF.r * DEFAULT_KDF.p
+    steps = deficit // unit
+    return tuple(
+        KdfParams(n=1 << bit, r=DEFAULT_KDF.r, p=DEFAULT_KDF.p)
+        for bit in range(steps.bit_length())
+        if steps >> bit & 1 and bit >= 1
+    )
 
 
 def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
@@ -105,7 +142,7 @@ class AccountService:
         salt = secrets.token_bytes(SALT_BYTES)
         account = Account(
             account_id=f"acc_{secrets.token_urlsafe(18)}",
-            email=email,
+            email=canonical_email(email),
             credential_salt=salt,
             credential_digest=hash_credential(credential, salt, DEFAULT_KDF),
             kdf=DEFAULT_KDF,
@@ -115,15 +152,15 @@ class AccountService:
         return account
 
     def authenticate(self, email: str, credential: str) -> Account:
-        account = self._store.get_account_by_email(email)
+        account = self._store.get_account_by_email(canonical_email(email))
         if account is None:
             # Pay the same scrypt cost as a real rejection so a missing account cannot be
             # distinguished from a wrong credential by wall-clock timing (FR-004).
             hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
             self._reject()
         if not account.has_verifier:
-            # The verifier was destroyed at disablement (KHEPRI-DEC-015). Pay the default
-            # cost anyway so this is indistinguishable from a wrong credential (FR-004).
+            # No verifier stored. Pay the default cost anyway so this is indistinguishable
+            # from a wrong credential (FR-004).
             hash_credential(credential, _DUMMY_SALT, DEFAULT_KDF)
             self._reject()
         assert account.credential_salt is not None  # narrowed by has_verifier
@@ -133,34 +170,11 @@ class AccountService:
         candidate = hash_credential(credential, account.credential_salt, account.kdf)
         if not hmac.compare_digest(candidate, account.credential_digest):
             self._reject()
-        if account.disabled:
-            self._reject()
         return account
-
-    def disable_account(self, account_id: str) -> None:
-        """Disable the account and destroy its credential verifier in one write.
-
-        KHEPRI-DEC-015 retains the verifier only while the account is enabled, and requires
-        destruction to be immediate and non-recoverable at disablement. Clearing it in the
-        same update as the flag means no window exists where a disabled account still holds
-        a guessable verifier.
-        """
-        account = self._store.get_account(account_id)
-        if account is None:
-            return
-        self._store.update_account(
-            replace(
-                account,
-                disabled=True,
-                credential_salt=None,
-                credential_digest=None,
-                kdf=None,
-            )
-        )
 
     @staticmethod
     def _pad_legacy_verification(kdf: KdfParams) -> None:
-        """Spend only the SHORTFALL between a record's stored cost and the default.
+        """Spend exactly the SHORTFALL between a record's stored cost and the default.
 
         Every rejection path must cost the same total. A record stored at an older, cheaper
         work factor verifies for less than the default that the missing-account path always
@@ -170,12 +184,11 @@ class AccountService:
 
         Adding a *whole* default-cost hash overshoots and leaks in the other direction: the
         legacy path would then cost the stored hash plus a full default, measured at 1.49x
-        the missing-account path. Uniformity is two-sided, so this pays the remainder only.
+        the missing-account path. Uniformity is two-sided, so this pays the remainder only,
+        and pays all of it — see `shortfall_schedule` for why one step is not enough.
         """
-        shortfall = _shortfall_params(kdf)
-        if shortfall is None:
-            return
-        hash_credential("", _DUMMY_SALT, shortfall)
+        for step in shortfall_schedule(kdf):
+            hash_credential("", _DUMMY_SALT, step)
 
     @staticmethod
     def _reject() -> None:
