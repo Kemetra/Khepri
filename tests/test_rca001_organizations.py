@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import pytest
+
+from khepri.rca.errors import OrganizationCreationFailed
+from khepri.rca.organizations import (
+    OWNER_ROLE,
+    IsolationScope,
+    Membership,
+    Organization,
+    OrganizationService,
+    allocate_owner_id,
+)
+
+NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+ACCOUNT = "acc_creator"
+
+
+class MemoryOrganizationStore:
+    def __init__(self, *, fail_on_create: bool = False) -> None:
+        self.organizations: dict[str, Organization] = {}
+        self.memberships: dict[tuple[str, str], Membership] = {}
+        self.scopes: dict[str, IsolationScope] = {}
+        self.fail_on_create = fail_on_create
+
+    def create_organization(
+        self,
+        organization: Organization,
+        membership: Membership,
+        scope: IsolationScope,
+    ) -> bool:
+        if self.fail_on_create:
+            return False
+        self.organizations[organization.organization_id] = organization
+        self.memberships[(membership.organization_id, membership.account_id)] = membership
+        self.scopes[scope.organization_id] = scope
+        return True
+
+    def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
+        return self.memberships.get((organization_id, account_id))
+
+    def get_scope(self, organization_id: str) -> IsolationScope | None:
+        return self.scopes.get(organization_id)
+
+
+def test_creating_an_organization_makes_the_creator_an_owner() -> None:
+    store = MemoryOrganizationStore()
+    service = OrganizationService(store)
+    organization = service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
+
+    membership = store.get_membership(organization.organization_id, ACCOUNT)
+    assert membership is not None
+    assert membership.role == OWNER_ROLE
+
+
+def test_membership_creation_is_attributable() -> None:
+    store = MemoryOrganizationStore()
+    service = OrganizationService(store)
+    organization = service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
+
+    membership = store.get_membership(organization.organization_id, ACCOUNT)
+    assert membership is not None
+    assert membership.changed_by == ACCOUNT
+    assert membership.changed_at == NOW
+
+
+def test_creation_allocates_an_isolation_scope() -> None:
+    store = MemoryOrganizationStore()
+    service = OrganizationService(store)
+    organization = service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
+
+    scope = store.get_scope(organization.organization_id)
+    assert scope is not None
+    assert scope.owner_id.startswith("own_")
+
+
+def test_failed_creation_leaves_nothing_behind() -> None:
+    store = MemoryOrganizationStore(fail_on_create=True)
+    service = OrganizationService(store)
+    with pytest.raises(OrganizationCreationFailed):
+        service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
+
+    assert store.organizations == {}
+    assert store.memberships == {}
+    assert store.scopes == {}
+
+
+def test_allocated_owner_ids_are_distinct() -> None:
+    assert len({allocate_owner_id() for _ in range(200)}) == 200
+
+
+def test_owner_id_shape_matches_the_rra_beta_shape() -> None:
+    owner_id = allocate_owner_id()
+    assert owner_id.startswith("own_")
+    assert len(owner_id) == len("own_") + 24
