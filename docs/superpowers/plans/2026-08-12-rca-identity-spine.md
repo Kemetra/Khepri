@@ -1257,8 +1257,28 @@ they commit together or not at all (FR-010):
 Plus `get_membership(organization_id, account_id)` and `get_scope(organization_id)`, both converting
 rows to the frozen dataclasses from Task 3.
 
-Note the flush ordering: SQLAlchemy sorts inserts by table dependency, so `OrganizationRow` lands
-before the rows referencing it even though all three are added in one block.
+**Insert ordering needs an explicit `flush()` — this plan's original claim was wrong.** SQLAlchemy
+does NOT sort inserts by foreign-key dependency absent `relationship()` declarations; it orders by
+mapper registration. Verified during Task 5: `rca_isolation_scopes` was inserted before
+`rca_organizations` and tripped the FK on a legitimate write (3 of 8 tests failed).
+
+The fix is a `database.flush()` after adding `OrganizationRow` and before adding the two rows that
+reference it, **inside the same `begin()` block**:
+
+```python
+        try:
+            with self._factory.begin() as database:
+                database.add(OrganizationRow(...))
+                database.flush()          # parent must exist before its children
+                database.add(MembershipRow(...))
+                database.add(IsolationScopeRow(...))
+        except IntegrityError:
+            return False
+```
+
+This preserves FR-010 atomicity: a flush writes within the open transaction, it does not commit.
+Verified directly — a later-row FK violation rolls the flushed parent row back too, leaving
+`orgs=0 memberships=0 scopes=0` after a failed `create_organization`.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
