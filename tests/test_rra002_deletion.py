@@ -107,6 +107,7 @@ class MemoryDeletionRepository(DeletionRepository):
         self,
         job: DeletionJob,
         *,
+        now: datetime,
         next_retry_at: datetime,
     ) -> bool:
         return False
@@ -197,6 +198,7 @@ class PublishingRepository(MemoryDeletionRepository):
         self,
         job: DeletionJob,
         *,
+        now: datetime,
         next_retry_at: datetime,
     ) -> bool:
         self.job = replace(job, state="retryable", next_retry_at=next_retry_at)

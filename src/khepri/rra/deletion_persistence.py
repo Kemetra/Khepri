@@ -16,6 +16,7 @@ from khepri.rra.persistence import (
     DeletionJobRow,
     FactPackageRow,
     UploadRow,
+    _utc,
 )
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 
@@ -27,6 +28,7 @@ def defer_for_publication(
     database: Session,
     deletion: DeletionJobRow,
     session_id: str,
+    now: datetime,
     next_retry_at: datetime,
 ) -> bool:
     from khepri.rra.job_persistence import ReportJobRow  # noqa: PLC0415
@@ -40,8 +42,8 @@ def defer_for_publication(
         )
     )
     _settle_unleased(report_jobs, completed_at=deletion.requested_at)
-    if _needs_drain(deletion, report_jobs):
-        return _defer(deletion, next_retry_at=next_retry_at)
+    if _needs_drain(deletion, report_jobs, now=now):
+        return _defer_drain(deletion, next_retry_at=next_retry_at)
     terminal = {JOB_SUCCEEDED, JOB_DEAD_LETTERED}
     if all(candidate.state in terminal for candidate in report_jobs):
         return False
@@ -69,20 +71,30 @@ def _settle_unleased(
 def _needs_drain(
     deletion: DeletionJobRow,
     report_jobs: list[ReportJobRow],
+    *,
+    now: datetime,
 ) -> bool:
     from khepri.rra.jobs import DEAD_LETTER_RETRIES_EXHAUSTED  # noqa: PLC0415
 
-    if deletion.next_retry_at is not None:
-        return False
-    return any(
+    exhausted = any(
         candidate.dead_letter_reason == DEAD_LETTER_RETRIES_EXHAUSTED
         for candidate in report_jobs
     )
+    if not exhausted or deletion.attempt_count > 0:
+        return False
+    retry_at = _utc(deletion.next_retry_at)
+    return retry_at is None or retry_at > now
 
 
 def _defer(deletion: DeletionJobRow, *, next_retry_at: datetime) -> bool:
     deletion.state = "retryable"
     deletion.next_retry_at = next_retry_at
+    return True
+
+
+def _defer_drain(deletion: DeletionJobRow, *, next_retry_at: datetime) -> bool:
+    if deletion.next_retry_at is None:
+        _defer(deletion, next_retry_at=next_retry_at)
     return True
 
 

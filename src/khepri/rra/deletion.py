@@ -116,6 +116,7 @@ class DeletionRepository(Protocol):
         self,
         job: DeletionJob,
         *,
+        now: datetime,
         next_retry_at: datetime,
     ) -> bool: ...
 
@@ -185,10 +186,9 @@ class DeletionService:
         )
         if job.state == "complete":
             return job
-        if job.next_retry_at is not None and job.next_retry_at > now:
-            raise DeletionRetryRequired("Content deletion must be retried.")
         if self._deletions.defer_for_publication(
             job,
+            now=now,
             next_retry_at=now + _RETRY_DELAY,
         ):
             raise DeletionRetryRequired("Content deletion must be retried.")

@@ -651,6 +651,7 @@ class SqlDeletionRepository:
         self,
         job: DeletionJob,
         *,
+        now: datetime,
         next_retry_at: datetime,
     ) -> bool:
         from khepri.rra.deletion_persistence import (  # noqa: PLC0415
@@ -663,6 +664,7 @@ class SqlDeletionRepository:
                 database,
                 deletion,
                 job.session_id,
+                now,
                 next_retry_at,
             )
 
