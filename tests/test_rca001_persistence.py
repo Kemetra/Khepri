@@ -182,12 +182,17 @@ def test_the_store_canonicalizes_without_the_service(factory: sessionmaker) -> N
     )
 
     assert store.add_account(
-        Account._from_storage(account_id="acc_canonical", email=EMAIL, verifier=verifier)
+        Account._from_storage(
+            account_id="acc_canonical", email=EMAIL, verifier=verifier, disabled_at=None
+        )
     )
     # Same mailbox, different casing, straight into the store.
     assert not store.add_account(
         Account._from_storage(
-            account_id="acc_variant", email="Owner@EXAMPLE.Test", verifier=verifier
+            account_id="acc_variant",
+            email="Owner@EXAMPLE.Test",
+            verifier=verifier,
+            disabled_at=None,
         )
     )
 
@@ -208,7 +213,7 @@ def test_organization_creation_round_trips(factory: sessionmaker) -> None:
     organization = OrganizationService(store).create_organization(
         "Acme", account.account_id, now=NOW
     )
-    owner_id = IsolationService(store).resolve_scope(
+    owner_id = IsolationService(store, SqlAccountStore(factory)).resolve_scope(
         account.account_id, organization.organization_id
     )
     assert owner_id.startswith("own_")
@@ -220,12 +225,12 @@ def test_scope_survives_a_new_store_instance(factory: sessionmaker) -> None:
         "Acme", account.account_id, now=NOW
     )
 
-    first = IsolationService(SqlOrganizationStore(factory)).resolve_scope(
-        account.account_id, organization.organization_id
-    )
-    second = IsolationService(SqlOrganizationStore(factory)).resolve_scope(
-        account.account_id, organization.organization_id
-    )
+    first = IsolationService(
+        SqlOrganizationStore(factory), SqlAccountStore(factory)
+    ).resolve_scope(account.account_id, organization.organization_id)
+    second = IsolationService(
+        SqlOrganizationStore(factory), SqlAccountStore(factory)
+    ).resolve_scope(account.account_id, organization.organization_id)
     assert first == second
 
 
@@ -339,7 +344,7 @@ def test_records_reject_construction_outside_a_door() -> None:
             changed_at=NOW,
         )
     with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
-        Account(account_id="acc_1", email=EMAIL, verifier=None)
+        Account(account_id="acc_1", email=EMAIL, verifier=None, disabled_at=None)
 
 
 @pytest.mark.parametrize(

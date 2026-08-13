@@ -9,6 +9,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     UniqueConstraint,
+    func,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -16,7 +17,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from khepri.rca.accounts import Account, canonical_email
 from khepri.rca.credentials import KdfParams, Verifier
-from khepri.rca.organizations import IsolationScope, Membership, Organization
+from khepri.rca.organizations import OWNER_ROLE, IsolationScope, Membership, Organization
 from khepri.rca.records import assert_sealed
 
 
@@ -29,7 +30,18 @@ class AccountRow(Base):
     __table_args__ = (UniqueConstraint("email", name="uq_rca_account_email"),)
 
     account_id: Mapped[str] = mapped_column(String, primary_key=True)
-    email: Mapped[str] = mapped_column(String, nullable=False)
+    # Nullable so KHEPRI-DEC-015 §2b's post-horizon tombstone is representable: 24 months after
+    # disablement the identity fields are purged and only an opaque identifier and the
+    # disablement timestamp remain. A NOT NULL email would also hold the A-1 uniqueness
+    # reservation forever, which §2b explicitly releases ("that address may be registered
+    # again ... because no account claims it any longer").
+    #
+    # The unique constraint still expresses A-1 correctly: SQL treats NULLs as distinct, so many
+    # purged rows coexist while live addresses stay unique.
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    # NULL means enabled. The 24-month horizon in §2b is computed from this, and account state is
+    # derived from it rather than duplicated into a boolean that could disagree.
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Nullable so an account with no verifier is representable. KHEPRI-DEC-015 requires the
     # credential verifier to be DESTROYED ("immediate, non-recoverable") on disablement or
     # replacement. Disablement is a later slice; declaring the columns nullable now means
@@ -97,6 +109,11 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
+def _canonical_or_none(email: str | None) -> str | None:
+    """Canonicalize a live address; leave a purged tombstone's NULL alone (KHEPRI-DEC-015 §2b)."""
+    return None if email is None else canonical_email(email)
+
+
 def _verifier_from_row(row: AccountRow) -> Verifier | None:
     """None once the verifier has been destroyed on disablement (KHEPRI-DEC-015).
 
@@ -117,6 +134,7 @@ def _account_from_row(row: AccountRow) -> Account:
         account_id=row.account_id,
         email=row.email,
         verifier=_verifier_from_row(row),
+        disabled_at=_utc(row.disabled_at),
     )
 
 
@@ -164,16 +182,42 @@ class SqlAccountStore:
                 database.add(
                     AccountRow(
                         account_id=account.account_id,
-                        email=canonical_email(account.email),
+                        email=_canonical_or_none(account.email),
                         credential_salt=None if verifier is None else verifier.salt,
                         credential_digest=None if verifier is None else verifier.digest,
                         kdf_n=None if verifier is None else verifier.kdf.n,
                         kdf_r=None if verifier is None else verifier.kdf.r,
                         kdf_p=None if verifier is None else verifier.kdf.p,
+                        disabled_at=account.disabled_at,
                     )
                 )
         except IntegrityError:
             return False
+        return True
+
+    def save_account(self, account: Account) -> bool:
+        """Write an existing account's current state back, as one row update.
+
+        Every verifier column moves together with the record's `verifier`, so a partially
+        destroyed verifier cannot be written — which is what makes KHEPRI-DEC-015's "immediate,
+        non-recoverable" destruction hold at the boundary rather than only in the domain type.
+
+        Returns False when the row does not exist, so a caller cannot mistake a no-op for a
+        successful write. The lifecycle service turns that into a uniform refusal.
+        """
+        assert_sealed(account)
+        verifier = account.verifier
+        with self._factory.begin() as database:
+            row = database.get(AccountRow, account.account_id)
+            if row is None:
+                return False
+            row.email = _canonical_or_none(account.email)
+            row.credential_salt = None if verifier is None else verifier.salt
+            row.credential_digest = None if verifier is None else verifier.digest
+            row.kdf_n = None if verifier is None else verifier.kdf.n
+            row.kdf_r = None if verifier is None else verifier.kdf.r
+            row.kdf_p = None if verifier is None else verifier.kdf.p
+            row.disabled_at = account.disabled_at
         return True
 
     def get_account_by_email(self, email: str) -> Account | None:
@@ -184,6 +228,23 @@ class SqlAccountStore:
             if row is None:
                 return None
             return _account_from_row(row)
+
+    def accounts_disabled_before(self, horizon: datetime) -> list[Account]:
+        """Disabled, not-yet-purged accounts whose 24-month horizon has elapsed.
+
+        `email.is_not(None)` is what makes the sweep idempotent: a purged row no longer matches,
+        so repeated passes do no repeated work and the count a pass reports is the work it
+        actually did.
+        """
+        with self._factory() as database:
+            rows = database.scalars(
+                select(AccountRow).where(
+                    AccountRow.disabled_at.is_not(None),
+                    AccountRow.disabled_at < horizon,
+                    AccountRow.email.is_not(None),
+                )
+            ).all()
+            return [_account_from_row(row) for row in rows]
 
     def get_account(self, account_id: str) -> Account | None:
         with self._factory() as database:
@@ -263,3 +324,32 @@ class SqlOrganizationStore:
             if row is None:
                 return None
             return _scope_from_row(row)
+
+    def memberships_for_account(self, account_id: str) -> list[Membership]:
+        with self._factory() as database:
+            rows = database.scalars(
+                select(MembershipRow).where(MembershipRow.account_id == account_id)
+            ).all()
+            return [_membership_from_row(row) for row in rows]
+
+    def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int:
+        """How many owner-role members this organization would still have without that account.
+
+        Phrased as the remaining count rather than the total because that is the question FR-013
+        actually asks. The alternative — return the total and let the caller compare against one —
+        pushes "is this account an owner?" into the service, where it has to be decided a second
+        time and can disagree with the row this query saw.
+        """
+        with self._factory() as database:
+            return (
+                database.execute(
+                    select(func.count())
+                    .select_from(MembershipRow)
+                    .where(
+                        MembershipRow.organization_id == organization_id,
+                        MembershipRow.role == OWNER_ROLE,
+                        MembershipRow.account_id != excluding_account_id,
+                    )
+                ).scalar()
+                or 0
+            )

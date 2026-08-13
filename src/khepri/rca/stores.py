@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from khepri.rca.accounts import Account
     from khepri.rca.organizations import IsolationScope, Membership, Organization
 
@@ -10,9 +12,13 @@ if TYPE_CHECKING:
 class AccountStore(Protocol):
     def add_account(self, account: Account) -> bool: ...
 
+    def save_account(self, account: Account) -> bool: ...
+
     def get_account_by_email(self, email: str) -> Account | None: ...
 
     def get_account(self, account_id: str) -> Account | None: ...
+
+    def accounts_disabled_before(self, horizon: datetime) -> list[Account]: ...
 
 
 class OrganizationStore(Protocol):
@@ -26,3 +32,7 @@ class OrganizationStore(Protocol):
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None: ...
 
     def get_scope(self, organization_id: str) -> IsolationScope | None: ...
+
+    def memberships_for_account(self, account_id: str) -> list[Membership]: ...
+
+    def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int: ...
