@@ -94,13 +94,11 @@ class ReportArtifactPublisher:
         deliveries: DeliveryReader,
         objects: ArtifactObjectStore,
         now: Callable[[], datetime],
-        new_attempt_id: Callable[[], str] | None = None,
     ) -> None:
         self._repository = repository
         self._deliveries = deliveries
         self._objects = objects
         self._now = now
-        self._new_attempt_id = new_attempt_id or _new_attempt_id
 
     def find_delivery(self, job_id: str) -> DeliveryRecord | None:
         record = self._deliveries.find_delivery(job_id)
@@ -134,7 +132,7 @@ class ReportArtifactPublisher:
                 boundary=boundary,
                 record=publication.delivery.record,
                 created_at=created_at,
-                attempt_id=_require_attempt_id(self._new_attempt_id()),
+                attempt_id=_require_attempt_id(_new_attempt_id()),
             )
             artifacts = self._store_all(context, publication.artifacts, created_keys)
             return self._repository.commit(publication, artifacts)

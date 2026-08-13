@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import pytest
 from sqlalchemy import select
 
+import khepri.rra.artifact_publication as artifact_publication
 from khepri.rra.artifact_persistence import ReportArtifactRow, SqlArtifactRepository
 from khepri.rra.artifact_publication import (
     ArtifactUnavailable,
@@ -70,7 +71,7 @@ def _stored_value(request: ObjectWrite) -> tuple[bytes, str, str]:
     return request.content, request.media_type, request.sha256_hex
 
 
-def _publisher(objects: MemoryObjects, *, attempt_id: str = "a" * 32):
+def _publisher(objects: MemoryObjects):
     test = harness()
     return (
         test,
@@ -79,7 +80,6 @@ def _publisher(objects: MemoryObjects, *, attempt_id: str = "a" * 32):
             deliveries=test.store,
             objects=objects,
             now=lambda: NOW,
-            new_attempt_id=lambda: attempt_id,
         ),
     )
 
@@ -128,7 +128,8 @@ def test_failure_on_artifact_four_removes_only_this_attempt_and_commits_nothing(
         assert list(database.scalars(select(ReportArtifactRow))) == []
 
 
-def test_rollback_never_deletes_a_preexisting_verified_object() -> None:
+def test_rollback_never_deletes_a_preexisting_verified_object(monkeypatch) -> None:
+    monkeypatch.setattr(artifact_publication, "_new_attempt_id", lambda: "a" * 32)
     objects = MemoryObjects(fail_on=4)
     test, publisher = _publisher(objects)
     publication = _publication(test)
@@ -173,7 +174,6 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
         deliveries=test.store,
         objects=objects,
         now=lambda: NOW,
-        new_attempt_id=lambda: "a" * 32,
     )
 
     with pytest.raises(ArtifactUnavailable, match="unavailable") as raised:
@@ -184,17 +184,18 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
     assert objects.values == {}
 
 
-def test_late_rollback_preserves_a_concurrent_publication() -> None:
+def test_late_rollback_preserves_a_concurrent_publication(monkeypatch) -> None:
     objects = MemoryObjects()
     test = harness()
     inner = SqlArtifactRepository(test.factory)
     publication = _publication(test)
+    attempt_ids = iter(("a" * 32, "b" * 32))
+    monkeypatch.setattr(artifact_publication, "_new_attempt_id", lambda: next(attempt_ids))
     winner = ReportArtifactPublisher(
         repository=inner,
         deliveries=test.store,
         objects=objects,
         now=lambda: NOW,
-        new_attempt_id=lambda: "b" * 32,
     )
 
     class ConcurrentRepository:
@@ -216,7 +217,6 @@ def test_late_rollback_preserves_a_concurrent_publication() -> None:
         deliveries=test.store,
         objects=objects,
         now=lambda: NOW,
-        new_attempt_id=lambda: "a" * 32,
     )
 
     with pytest.raises(ArtifactUnavailable):
