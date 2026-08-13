@@ -5,8 +5,14 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20260813_0011"
-down_revision: str | None = "20260812_0010"
+# Renumbered from 20260813_0011 when this slice met `20260813_0011_rca_account_lifecycle` on
+# `main`. Both slices were cut from 20260812_0010 in parallel and both claimed 0011, which
+# Alembic reports as a `UserWarning` rather than an error -- the chain then carries two heads
+# with the same id and one revision silently shadows the other. AGENTS.md gives the rule: the
+# second slice to merge re-points. The two migrations touch disjoint tables (`rca_accounts`
+# there, `rra_*` here), so ordering them is safe.
+revision: str = "20260813_0012"
+down_revision: str | None = "20260813_0011"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -8,32 +8,10 @@ from khepri.rca import accounts as accounts_module
 from khepri.rca.accounts import Account, AccountService
 from khepri.rca.credentials import DEFAULT_KDF, KdfParams, Verifier, hash_credential
 from khepri.rca.errors import AuthenticationFailed
+from tests.rca_fakes import MemoryAccountStore
 
 EMAIL = "owner@example.test"
 CREDENTIAL = "correct horse battery staple"
-
-
-class MemoryAccountStore:
-    def __init__(self) -> None:
-        self.accounts: dict[str, Account] = {}
-
-    def add_account(self, account: Account) -> bool:
-        if any(existing.email == account.email for existing in self.accounts.values()):
-            return False
-        self.accounts[account.account_id] = account
-        return True
-
-    def get_account_by_email(self, email: str) -> Account | None:
-        for account in self.accounts.values():
-            if account.email == email:
-                return account
-        return None
-
-    def get_account(self, account_id: str) -> Account | None:
-        return self.accounts.get(account_id)
-
-    def update_account(self, account: Account) -> None:
-        self.accounts[account.account_id] = account
 
 
 def _service() -> AccountService:
@@ -245,6 +223,7 @@ def test_a_record_at_a_non_default_work_factor_is_refused_uniformly(
                 digest=hash_credential(CREDENTIAL, salt, legacy_kdf),
                 kdf=legacy_kdf,
             ),
+            disabled_at=None,
         )
     )
     store.add_account(
@@ -252,6 +231,7 @@ def test_a_record_at_a_non_default_work_factor_is_refused_uniformly(
             account_id="acc_bare",
             email="bare@example.test",
             verifier=None,
+            disabled_at=None,
         )
     )
     service.create_account(EMAIL, CREDENTIAL)

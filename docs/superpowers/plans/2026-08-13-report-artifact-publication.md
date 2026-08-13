@@ -17,7 +17,9 @@
 - Require a complete reconciled bundle before any artifact becomes retrievable.
 - Store artifacts under the owning session's seven-day expiry and immediate deletion boundary.
 - Object keys contain only opaque identifiers and closed vocabulary.
-- New migration revision is `20260813_0011` with `down_revision = "20260812_0010"`.
+- New migration revision is `20260813_0012` with `down_revision = "20260813_0011"`.
+  Planned as `20260813_0011` on `20260812_0010`; renumbered when the account lifecycle slice
+  claimed `0011` on `main` first. File paths below still read `0011` as written at the time.
 - Run `uv run khepri-gov validate`, `uv run ruff check .`, and `uv run pytest` before handoff.
 
 ---
