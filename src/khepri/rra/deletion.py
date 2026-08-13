@@ -132,6 +132,8 @@ class DeletionRepository(Protocol):
 class DeletionObjectStore(Protocol):
     def abort_multipart_uploads(self, prefix: str) -> None: ...
 
+    def delete_prefix(self, prefix: str) -> None: ...
+
     def delete(self, key: str) -> None: ...
 
 
@@ -177,12 +179,6 @@ class DeletionService:
         if job.state == "complete":
             return job
         targets = self._deletions.get_targets(job)
-        if not targets:
-            return self._deletions.complete(
-                job=job,
-                evidence=(),
-                completed_at=now,
-            )
         for target in targets:
             assert_same_scope(job.scope, target.scope)
 
@@ -190,7 +186,12 @@ class DeletionService:
         evidence: list[DeletionEvidence] = []
         try:
             self._objects.abort_multipart_uploads(prefix)
+            self._objects.delete_prefix(prefix)
         except Exception as error:
+            if not targets:
+                raise DeletionRetryRequired(
+                    "Content deletion must be retried."
+                ) from error
             evidence = [
                 self._evidence(
                     job=job,
@@ -206,6 +207,13 @@ class DeletionService:
                 evidence=tuple(evidence),
                 now=now,
                 error=error,
+            )
+
+        if not targets:
+            return self._deletions.complete(
+                job=job,
+                evidence=(),
+                completed_at=now,
             )
 
         failed = False

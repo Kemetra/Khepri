@@ -64,6 +64,11 @@ class MemoryObjectStore:
     def abort_multipart_uploads(self, prefix: str) -> None:
         return None
 
+    def delete_prefix(self, prefix: str) -> None:
+        for key in tuple(self.objects):
+            if key.startswith(prefix):
+                self.objects.pop(key)
+
     def delete(self, key: str) -> None:
         self.objects.pop(key, None)
 

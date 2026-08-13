@@ -145,10 +145,14 @@ class MemoryDeletionObjectStore:
         self.failures = failures
         self.fail_keys = fail_keys or set()
         self.abort_prefixes: list[str] = []
+        self.deleted_prefixes: list[str] = []
         self.deleted_keys: list[str] = []
 
     def abort_multipart_uploads(self, prefix: str) -> None:
         self.abort_prefixes.append(prefix)
+
+    def delete_prefix(self, prefix: str) -> None:
+        self.deleted_prefixes.append(prefix)
 
     def delete(self, key: str) -> None:
         self.deleted_keys.append(key)
@@ -210,6 +214,7 @@ def test_successful_deletion_records_only_content_free_evidence() -> None:
     assert result.attempt_count == 1
     assert repository.target is None
     assert objects.abort_prefixes == ["owners/own_alpha/sessions/ses_alpha/"]
+    assert objects.deleted_prefixes == ["owners/own_alpha/sessions/ses_alpha/"]
     assert objects.deleted_keys == [
         "owners/own_alpha/sessions/ses_alpha/inputs/upl_alpha"
     ]
@@ -327,3 +332,4 @@ def test_session_without_content_completes_without_fabricated_evidence() -> None
     assert result.attempt_count == 0
     assert repository.evidence == []
     assert objects.deleted_keys == []
+    assert objects.deleted_prefixes == ["owners/own_alpha/sessions/ses_alpha/"]

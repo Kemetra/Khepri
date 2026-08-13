@@ -6,6 +6,7 @@
   <div class="indeterminate" role="progressbar" aria-label="Report generation in progress"><span></span></div>
   <ol id="durable-stages" class="stages"><li>Upload and review</li><li>Confirmed facts</li><li>Report generation</li><li>Complete publication</li></ol>
   <p id="processing-status" aria-live="polite"></p>
+  <button id="processing-recovery" class="text-button" hidden>{{ copy.delete }}</button>
 </section>
 {% endblock %}
 {% block script %}<script type="module" src="/beta/assets/processing.js"></script>{% endblock %}

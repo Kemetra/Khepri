@@ -51,6 +51,11 @@ class LifecycleMemoryObjectStore:
     def abort_multipart_uploads(self, prefix: str) -> None:
         self.abort_prefixes.append(prefix)
 
+    def delete_prefix(self, prefix: str) -> None:
+        for key in tuple(self.objects):
+            if key.startswith(prefix):
+                self.objects.pop(key)
+
     def delete(self, key: str) -> None:
         if self.delete_failures:
             self.delete_failures -= 1

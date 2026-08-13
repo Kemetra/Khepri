@@ -272,6 +272,35 @@ def test_delete_fails_closed_if_s3_reports_versioned_delete_semantics() -> None:
         store.delete(KEY)
 
 
+def test_prefix_cleanup_deletes_orphaned_objects_and_confirms_empty_scope() -> None:
+    store, stubber = store_and_stubber()
+    prefix = "owners/own_alpha/sessions/ses_alpha/"
+    orphan = f"{prefix}reports/bundle/web_business_en"
+    list_parameters = {
+        "Bucket": BUCKET,
+        "Prefix": prefix,
+        "ExpectedBucketOwner": OWNER_ACCOUNT,
+    }
+    stubber.add_response(
+        "list_objects_v2",
+        {"IsTruncated": False, "Contents": [{"Key": orphan}]},
+        list_parameters,
+    )
+    stubber.add_response(
+        "delete_object",
+        {},
+        {"Bucket": BUCKET, "Key": orphan, "ExpectedBucketOwner": OWNER_ACCOUNT},
+    )
+    stubber.add_response(
+        "list_objects_v2",
+        {"IsTruncated": False, "Contents": []},
+        list_parameters,
+    )
+
+    with stubber:
+        store.delete_prefix(prefix)
+
+
 def test_multipart_cleanup_aborts_and_confirms_every_upload_under_prefix() -> None:
     store, stubber = store_and_stubber()
     prefix = "owners/own_alpha/sessions/ses_alpha/"

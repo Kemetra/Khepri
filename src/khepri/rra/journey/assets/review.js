@@ -15,7 +15,7 @@ const load = async () => {
     row.append(cell(candidate?.safe_label), cell(mapping.semantic), cell(mapping.state), cell(candidate?.evidence?.join(" · ")));
     table.append(row);
   }
-  confirm.disabled = !(profile.admissible && profile.mappings.filter((item) => item.requirement === "required").every((item) => item.state === "resolved"));
+  confirm.disabled = !(profile.admissible && profile.mappings.filter((item) => item.requirement === "required").every((item) => item.state === "mapped"));
 };
 
 confirm.addEventListener("click", async () => {

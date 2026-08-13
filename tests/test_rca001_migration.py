@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from alembic import command
@@ -135,6 +136,35 @@ def test_report_artifact_migration_downgrades_cleanly(sqlite_url: str) -> None:
     _run_artifact(sqlite_url, "upgrade")
     _run_artifact(sqlite_url, "downgrade")
     assert "rra_report_artifacts" not in inspect(create_engine(sqlite_url)).get_table_names()
+
+
+def test_artifact_migration_requeues_live_legacy_deliveries() -> None:
+    module = _artifact_migration_module()
+    operation = Mock()
+    token = module.op
+    try:
+        module.op = operation
+        module._requeue_deliveries_without_artifacts()  # noqa: SLF001
+    finally:
+        module.op = token
+    statement = str(operation.execute.call_args.args[0])
+    assert "SET state = 'queued'" in statement
+    assert "state = 'succeeded'" in statement
+    assert "content_expires_at > CURRENT_TIMESTAMP" in statement
+
+
+def test_artifact_downgrade_discards_incompatible_report_evidence() -> None:
+    module = _artifact_migration_module()
+    operation = Mock()
+    token = module.op
+    try:
+        module.op = operation
+        module._discard_report_artifact_evidence()  # noqa: SLF001
+    finally:
+        module.op = token
+    statement = str(operation.execute.call_args.args[0])
+    assert "DELETE FROM rra_deletion_evidence" in statement
+    assert "target_kind = 'report_artifact'" in statement
 
 
 def test_upgrade_creates_every_rca_table(sqlite_url: str) -> None:

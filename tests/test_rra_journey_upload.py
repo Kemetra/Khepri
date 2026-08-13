@@ -29,6 +29,14 @@ def test_invitation_fragment_is_redeemed_cleared_and_never_persisted() -> None:
     assert "resume()" in script
 
 
+def test_bootstrap_profiles_an_upload_whose_response_was_interrupted() -> None:
+    script = _script()
+    assert "state?.upload_present && !state.profile_present" in script
+    assert script.rindex('api("/api/v1/beta/profile"') < script.rindex(
+        'routeFor("review")'
+    )
+
+
 def test_consent_precedes_raw_xhr_upload_and_profile_request() -> None:
     script = _script()
     assert script.index("/api/v1/beta/consent") < script.index("await upload()")

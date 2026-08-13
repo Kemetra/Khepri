@@ -60,6 +60,11 @@ class MemoryObjects:
     def abort_multipart_uploads(self, prefix: str) -> None:
         self.aborted.append(prefix)
 
+    def delete_prefix(self, prefix: str) -> None:
+        for key in tuple(self.values):
+            if key.startswith(prefix):
+                self.values.pop(key)
+
 
 def _stored_value(request: ObjectWrite) -> tuple[bytes, str, str]:
     return request.content, request.media_type, request.sha256_hex

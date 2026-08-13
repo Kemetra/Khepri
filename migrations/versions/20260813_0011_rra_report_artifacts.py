@@ -13,6 +13,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     _create_artifact_table()
+    _requeue_deliveries_without_artifacts()
     _replace_deletion_evidence_constraints(
         current_unique="uq_evidence_deletion_attempt",
         replacement_unique="uq_evidence_deletion_attempt_target",
@@ -27,6 +28,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    _discard_report_artifact_evidence()
     _replace_deletion_evidence_constraints(
         current_unique="uq_evidence_deletion_attempt_target",
         replacement_unique="uq_evidence_deletion_attempt",
@@ -34,6 +36,44 @@ def downgrade() -> None:
         unique_columns=("deletion_id", "attempt_number"),
     )
     _drop_artifact_table()
+
+
+def _requeue_deliveries_without_artifacts() -> None:
+    op.execute(
+        sa.text(
+            """
+            UPDATE rra_report_jobs
+            SET state = 'queued',
+                available_at = CURRENT_TIMESTAMP,
+                attempt_count = 0,
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                completed_at = NULL,
+                dead_letter_reason = NULL
+            WHERE state = 'succeeded'
+              AND EXISTS (
+                  SELECT 1 FROM rra_report_deliveries delivery
+                  WHERE delivery.job_id = rra_report_jobs.job_id
+              )
+              AND EXISTS (
+                  SELECT 1 FROM rra_beta_sessions session
+                  WHERE session.session_id = rra_report_jobs.session_id
+                    AND session.content_expires_at > CURRENT_TIMESTAMP
+                    AND session.deletion_requested_at IS NULL
+                    AND session.content_deleted_at IS NULL
+              )
+            """
+        )
+    )
+
+
+def _discard_report_artifact_evidence() -> None:
+    op.execute(
+        sa.text(
+            "DELETE FROM rra_deletion_evidence "
+            "WHERE target_kind = 'report_artifact'"
+        )
+    )
 
 
 def _replace_deletion_evidence_constraints(

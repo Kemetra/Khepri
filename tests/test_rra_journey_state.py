@@ -52,3 +52,17 @@ def test_snapshot_refuses_a_complete_bundle_without_a_succeeded_job() -> None:
             generated_at=NOW,
             bundle_complete=True,
         )
+
+
+def test_dead_letter_reason_is_safe_journey_recovery_state() -> None:
+    found = snapshot(
+        content_expires_at=NOW + timedelta(days=7),
+        resources=JourneyResources(
+            package_present=True,
+            job_id="job_alpha",
+            job_state="dead_lettered",
+            job_reason="retries_exhausted",
+        ),
+    )
+    assert found.step == "processing"
+    assert found.job_reason == "retries_exhausted"

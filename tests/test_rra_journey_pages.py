@@ -32,8 +32,20 @@ def test_only_allowlisted_local_assets_are_served() -> None:
     test = client()
     css = test.get("/beta/assets/journey.css")
     assert css.status_code == 200
-    assert "immutable" in css.headers["cache-control"]
+    assert css.headers["cache-control"] == "public, max-age=0, must-revalidate"
     typeface = test.get("/beta/assets/NotoSansArabic-Regular-arabic.woff2")
     assert typeface.status_code == 200
     assert typeface.headers["content-type"] == "font/woff2"
     assert test.get("/beta/assets/../routes.py").status_code == 404
+
+
+def test_expired_page_is_a_closed_local_journey_state() -> None:
+    response = client().get("/beta/en/expired")
+    assert response.status_code == 200
+    assert 'data-step="expired"' in response.text
+
+
+def test_common_module_routes_an_unavailable_session_to_expired() -> None:
+    script = client().get("/beta/assets/common.js").text
+    assert 'current !== "expired"' in script
+    assert 'location.replace(routeFor("expired"))' in script

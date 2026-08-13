@@ -78,7 +78,11 @@ const bootstrap = async () => {
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   try {
     if (invitation) await api("/api/v1/beta/sessions/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation }) });
-    await resume();
+    const state = await resume();
+    if (state?.upload_present && !state.profile_present) {
+      await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requested_semantics: [] }) });
+      location.replace(routeFor("review"));
+    }
   } catch (error) {
     message(language === "ar" ? "الدعوة غير متاحة." : "This invitation is unavailable.");
   }

@@ -27,6 +27,8 @@ class S3Client(Protocol):
 
     def list_multipart_uploads(self, **kwargs: object) -> dict[str, Any]: ...
 
+    def list_objects_v2(self, **kwargs: object) -> dict[str, Any]: ...
+
     def abort_multipart_upload(self, **kwargs: object) -> dict[str, Any]: ...
 
 
@@ -168,6 +170,32 @@ class S3EncryptedObjectStore:
 
     def delete(self, key: str) -> None:
         self._delete_unversioned(key)
+
+    def delete_prefix(self, prefix: str) -> None:
+        base = {
+            "Bucket": self._bucket,
+            "Prefix": prefix,
+            "ExpectedBucketOwner": self._expected_bucket_owner,
+        }
+        parameters: dict[str, object] = dict(base)
+        while True:
+            response = self._client.list_objects_v2(**parameters)
+            for item in response.get("Contents") or []:
+                key = item.get("Key")
+                if not isinstance(key, str) or not key.startswith(prefix):
+                    raise StoragePolicyViolation(
+                        "S3 returned an object outside the deletion scope."
+                    )
+                self._delete_unversioned(key)
+            if response.get("IsTruncated") is not True:
+                break
+            token = response.get("NextContinuationToken")
+            if not isinstance(token, str):
+                raise StoragePolicyViolation("S3 object pagination is incomplete.")
+            parameters = {**base, "ContinuationToken": token}
+        confirmation = self._client.list_objects_v2(**base)
+        if confirmation.get("Contents") or confirmation.get("IsTruncated") is True:
+            raise StoragePolicyViolation("S3 objects remain after prefix cleanup.")
 
     def abort_multipart_uploads(self, prefix: str) -> None:
         base_parameters = {

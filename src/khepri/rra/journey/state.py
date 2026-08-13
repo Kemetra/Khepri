@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from khepri.rra.artifact_persistence import ReportArtifactRow
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.job_persistence import ReportJobRow
-from khepri.rra.jobs import JOB_STATES
+from khepri.rra.jobs import DEAD_LETTER_REASONS, JOB_STATES
 from khepri.rra.persistence import (
     BetaSessionRow,
     DatasetProfileRow,
@@ -24,6 +24,7 @@ from khepri.rra.pipeline import GOVERNED_REASONS
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 
 JOURNEY_STEPS = frozenset({"upload", "review", "processing", "report"})
+JOURNEY_REASONS = GOVERNED_REASONS | DEAD_LETTER_REASONS
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +122,7 @@ class SqlJourneyReader:
                     package_present=_exists(database, FactPackageRow, session_id),
                     job_id=None if job is None else job.job_id,
                     job_state=None if job is None else job.state,
+                    job_reason=None if job is None else job.dead_letter_reason,
                     row_count=None if profile is None else profile.row_count,
                     generated_at=(
                         None if delivery is None else _utc(delivery.generated_at)
@@ -143,7 +145,7 @@ def _validate_governed_state(state: JourneySnapshot) -> None:
     )
     _validate_optional_member(
         state.job_reason,
-        GOVERNED_REASONS,
+        JOURNEY_REASONS,
         "Journey job reason is not governed.",
     )
 
@@ -276,6 +278,7 @@ def _exists(database: Session, model: type, session_id: str) -> bool:
 
 __all__ = [
     "JOURNEY_STEPS",
+    "JOURNEY_REASONS",
     "JourneyReader",
     "JourneyResources",
     "JourneySnapshot",

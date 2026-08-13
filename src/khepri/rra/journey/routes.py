@@ -37,6 +37,7 @@ _TEMPLATES = {
     "review": "review.html.j2",
     "processing": "processing.html.j2",
     "report": "report.html.j2",
+    "expired": "expired.html.j2",
 }
 
 
@@ -83,7 +84,7 @@ class JourneyEndpoints:
             content=content,
             media_type=media_type,
             headers={
-                "Cache-Control": "public, max-age=31536000, immutable",
+                "Cache-Control": "public, max-age=0, must-revalidate",
                 "X-Content-Type-Options": "nosniff",
             },
         )
