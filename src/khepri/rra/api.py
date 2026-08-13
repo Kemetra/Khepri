@@ -24,6 +24,7 @@ from khepri.rra.intake import (
     UploadMetadata,
     UploadTooLarge,
 )
+from khepri.rra.journey.routes import JourneyServices, add_journey_routes
 from khepri.rra.mapping import KNOWN_SEMANTICS
 from khepri.rra.packages import (
     FactPackageRecord,
@@ -151,6 +152,7 @@ def create_app(
     profiling_service: ProfilingService | None = None,
     package_service: FactPackageService | None = None,
     report_services: ReportServices | None = None,
+    journey_services: JourneyServices | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Khepri RRA", docs_url=None, redoc_url=None)
 
@@ -400,6 +402,7 @@ def create_app(
     # collaborators were supplied. Same conditional contract as every group
     # above, one function deeper -- see `report_api.add_report_routes`.
     add_report_routes(app, services=report_services, clock=clock)
+    add_journey_routes(app, services=journey_services, clock=clock)
 
     if deletion_service is not None:
 
