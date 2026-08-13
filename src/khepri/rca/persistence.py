@@ -125,7 +125,7 @@ def _membership_from_row(row: MembershipRow) -> Membership:
 
 
 def _scope_from_row(row: IsolationScopeRow) -> IsolationScope:
-    return IsolationScope(
+    return IsolationScope.restore(
         organization_id=row.organization_id,
         owner_id=row.owner_id,
     )

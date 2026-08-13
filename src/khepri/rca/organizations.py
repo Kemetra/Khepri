@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -29,47 +29,7 @@ class Membership:
     changed_at: datetime
 
 
-@dataclass(frozen=True, slots=True)
-class IsolationScope:
-    organization_id: str
-    owner_id: str
-
-    def __post_init__(self) -> None:
-        """Reject anything that is not a freshly allocated opaque key.
-
-        FR-032/FR-033 are the reason this slice exists, and validating only in
-        `OrganizationService` left them unenforced for any caller reaching the store
-        directly — an importer or backfill could persist `owner@example.test` as the
-        isolation key, and `resolve_scope` would hand an email address back as the analytical
-        boundary. Verified before this check existed.
-
-        Putting the invariant on the type means no layer can bypass it: there is no way to
-        construct an `IsolationScope` that the store would then persist.
-        """
-        if not _is_allocated_owner_id(self.owner_id):
-            raise ValueError("owner_id must be an allocated opaque key (see allocate_owner_id)")
-
-
 _OWNER_ID_PREFIX = "own_"
-# secrets.token_urlsafe(18) yields 24 characters from the URL-safe base64 alphabet.
-_OWNER_ID_BODY = 24
-_OWNER_ID_ALPHABET = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-)
-
-
-def _is_allocated_owner_id(owner_id: str) -> bool:
-    """Shape check for a key produced by `allocate_owner_id`.
-
-    Shape is all that can be checked after the fact — the value is random by construction,
-    so there is nothing to recompute. It is enough to exclude every commercial identifier
-    FR-032 names: an email, an organization name, a slug, and a human-readable identifier all
-    fail either the prefix, the length, or the alphabet.
-    """
-    if not owner_id.startswith(_OWNER_ID_PREFIX):
-        return False
-    body = owner_id.removeprefix(_OWNER_ID_PREFIX)
-    return len(body) == _OWNER_ID_BODY and set(body) <= _OWNER_ID_ALPHABET
 
 
 def allocate_owner_id() -> str:
@@ -79,6 +39,43 @@ def allocate_owner_id() -> str:
     commercial identifier can appear in it or be recovered from it (FR-032, FR-033).
     """
     return f"{_OWNER_ID_PREFIX}{secrets.token_urlsafe(18)}"
+
+
+@dataclass(frozen=True, slots=True)
+class IsolationScope:
+    """An organization's opaque isolation key. The key cannot be supplied by a caller.
+
+    FR-032/FR-033 are the reason this slice exists, and enforcing them anywhere other than
+    here left a gap. Validating in `OrganizationService` missed every caller reaching the
+    store directly — verified: such a caller could persist `owner@example.test`, and
+    `resolve_scope` handed that email back as the analytical boundary. Validating the key's
+    *shape* then missed `own_AcmePharmacy000000000000`, which is 24 characters of the
+    accepted alphabet and still copied straight from an organization name.
+
+    Shape cannot establish provenance, so this type does not check provenance — it owns it.
+    `owner_id` is allocated in `__post_init__` and there is no parameter to override it, so
+    no layer can construct a scope carrying an untrusted key.
+    """
+
+    organization_id: str
+    owner_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "owner_id", allocate_owner_id())
+
+    @classmethod
+    def restore(cls, organization_id: str, owner_id: str) -> IsolationScope:
+        """Rebuild a scope from storage, preserving the key that was allocated originally.
+
+        Reading must not mint a new key: FR-035 requires one organization to resolve to a
+        *stable* scope for its lifetime. This is the only way to set `owner_id` from outside,
+        and it exists for the persistence read path — a store converting a row it previously
+        wrote. It asserts nothing about the value because the value came from the database;
+        the guarantee is that nothing but an allocation could have put it there.
+        """
+        scope = cls(organization_id=organization_id)
+        object.__setattr__(scope, "owner_id", owner_id)
+        return scope
 
 
 class OrganizationService:
@@ -104,10 +101,7 @@ class OrganizationService:
             changed_by=creator_account_id,
             changed_at=now,
         )
-        scope = IsolationScope(
-            organization_id=organization.organization_id,
-            owner_id=allocate_owner_id(),
-        )
+        scope = IsolationScope(organization_id=organization.organization_id)
         if not self._store.create_organization(organization, membership, scope):
             raise OrganizationCreationFailed(ORGANIZATION_FAILURE)
         return organization
