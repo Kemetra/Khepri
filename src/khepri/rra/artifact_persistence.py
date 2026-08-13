@@ -219,6 +219,21 @@ class SqlArtifactRepository:
             _validate_stored_set(artifacts, delivery=delivery)
             return True
 
+    def is_committed(self, artifacts: tuple[StoredArtifact, ...]) -> bool:
+        """Prove that the exact object-writing attempt committed atomically."""
+        if not artifacts:
+            return False
+        with self._factory() as database:
+            job_id = artifacts[0].job_id
+            delivery = database.get(ReportDeliveryRow, job_id)
+            stored = tuple(_from_row(row) for row in _rows(database, job_id))
+            if delivery is None or not stored:
+                return False
+            _validate_stored_set(stored, delivery=delivery)
+            expected = {item.artifact_kind: item for item in artifacts}
+            actual = {item.artifact_kind: item for item in stored}
+            return actual == expected
+
     def find_in_session(
         self,
         *,

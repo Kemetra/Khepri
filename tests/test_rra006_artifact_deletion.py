@@ -10,7 +10,16 @@ from khepri.rra.artifact_persistence import ReportArtifactRow, SqlArtifactReposi
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.deletion import DeletionRetryRequired, DeletionService, DeletionTarget
 from khepri.rra.intake import CSV_MEDIA_TYPE, UploadMetadata
-from khepri.rra.jobs import LeaseAction
+from khepri.rra.job_persistence import ReportJobRow
+from khepri.rra.jobs import (
+    DEAD_LETTER_CONTENT_DELETED,
+    JOB_QUEUED,
+    JOB_RETRYABLE,
+    EnqueueJob,
+    FailureRequest,
+    LeaseAction,
+    LeaseRequest,
+)
 from khepri.rra.persistence import (
     SqlDeletionRepository,
     SqlSessionStore,
@@ -115,6 +124,62 @@ def test_sql_deletion_defers_while_a_report_publication_is_in_flight() -> None:
 
     assert objects.aborted == []
     assert objects.deleted == []
+
+
+@pytest.mark.parametrize("job_state", [JOB_QUEUED, JOB_RETRYABLE])
+def test_sql_deletion_settles_an_unleased_report_before_cleanup(job_state: str) -> None:
+    test = harness()
+    queued_at = test.session.created_at
+    deletion_at = queued_at + timedelta(minutes=3)
+    test.jobs.enqueue(
+        EnqueueJob(
+            scope=test.scope,
+            job_id="job_alpha",
+            idempotency_key="c" * 64,
+            queued_at=queued_at,
+            max_attempts=3,
+        )
+    )
+    if job_state == JOB_RETRYABLE:
+        leased = test.jobs.lease(
+            LeaseRequest(
+                job_id="job_alpha",
+                worker_id="worker_alpha",
+                now=queued_at,
+                lease_for=timedelta(minutes=1),
+            )
+        )
+        assert leased is not None
+        test.jobs.fail(
+            FailureRequest(
+                lease=LeaseAction(
+                    job_id="job_alpha",
+                    worker_id="worker_alpha",
+                    now=queued_at,
+                ),
+                retry_at=queued_at + timedelta(minutes=2),
+            )
+        )
+    objects = MemoryObjects()
+    service = DeletionService(
+        sessions=SqlSessionStore(test.factory),
+        deletions=SqlDeletionRepository(test.factory),
+        objects=objects,
+        new_deletion_id=lambda: "del_alpha",
+    )
+
+    result = service.delete_session_content(
+        session_id=test.session.session_id,
+        reason="immediate",
+        now=deletion_at,
+    )
+
+    assert result.state == "complete"
+    with test.factory() as database:
+        report = database.get(ReportJobRow, "job_alpha")
+        assert report is not None
+        assert report.state == "dead_lettered"
+        assert report.dead_letter_reason == DEAD_LETTER_CONTENT_DELETED
 
 
 def test_one_object_failure_keeps_metadata_retryable_then_finishes_safely() -> None:

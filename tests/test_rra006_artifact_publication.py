@@ -162,6 +162,9 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
         def has_complete(self, job_id: str) -> bool:
             return inner.has_complete(job_id)
 
+        def is_committed(self, artifacts) -> bool:
+            return False
+
         def boundary(self, publication, *, created_at):
             return inner.boundary(publication, created_at=created_at)
 
@@ -186,6 +189,79 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
     assert objects.values == {}
 
 
+def test_lost_commit_acknowledgement_preserves_the_committed_objects() -> None:
+    objects = MemoryObjects()
+    test = harness()
+    inner = SqlArtifactRepository(test.factory)
+
+    class AmbiguousRepository:
+        def has_complete(self, job_id: str) -> bool:
+            return inner.has_complete(job_id)
+
+        def boundary(self, publication, *, created_at):
+            return inner.boundary(publication, created_at=created_at)
+
+        def commit(self, publication, artifacts, **context):
+            inner.commit(publication, artifacts, **context)
+            raise RuntimeError("commit acknowledgement was lost")
+
+        def is_committed(self, artifacts):
+            return inner.is_committed(artifacts)
+
+        def find_in_session(self, **details):
+            return inner.find_in_session(**details)
+
+    publisher = ReportArtifactPublisher(
+        repository=AmbiguousRepository(),
+        deliveries=test.store,
+        objects=objects,
+        now=lambda: NOW,
+    )
+    publication = _publication(test)
+
+    result = publisher.publish(publication)
+
+    assert result == publication.delivery.record
+    assert len(objects.values) == 7
+    assert objects.deleted == []
+
+
+def test_unavailable_commit_reconciliation_preserves_objects_fail_closed() -> None:
+    objects = MemoryObjects()
+    test = harness()
+    inner = SqlArtifactRepository(test.factory)
+
+    class UnavailableRepository:
+        def has_complete(self, job_id: str) -> bool:
+            return inner.has_complete(job_id)
+
+        def boundary(self, publication, *, created_at):
+            return inner.boundary(publication, created_at=created_at)
+
+        def commit(self, publication, artifacts, **context):
+            raise RuntimeError("commit provider detail")
+
+        def is_committed(self, artifacts):
+            raise RuntimeError("reconciliation provider detail")
+
+        def find_in_session(self, **details):
+            return inner.find_in_session(**details)
+
+    publisher = ReportArtifactPublisher(
+        repository=UnavailableRepository(),
+        deliveries=test.store,
+        objects=objects,
+        now=lambda: NOW,
+    )
+
+    with pytest.raises(ArtifactUnavailable, match="unavailable") as raised:
+        publisher.publish(_publication(test))
+
+    assert "provider" not in str(raised.value)
+    assert len(objects.values) == 7
+    assert objects.deleted == []
+
+
 def test_late_rollback_preserves_a_concurrent_publication(monkeypatch) -> None:
     objects = MemoryObjects()
     test = harness()
@@ -203,6 +279,9 @@ def test_late_rollback_preserves_a_concurrent_publication(monkeypatch) -> None:
     class ConcurrentRepository:
         def has_complete(self, job_id: str) -> bool:
             return inner.has_complete(job_id)
+
+        def is_committed(self, artifacts) -> bool:
+            return inner.is_committed(artifacts)
 
         def boundary(self, publication, *, created_at):
             return inner.boundary(publication, created_at=created_at)

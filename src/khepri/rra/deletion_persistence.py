@@ -26,13 +26,25 @@ def defer_for_publication(
     next_retry_at: datetime,
 ) -> bool:
     from khepri.rra.job_persistence import ReportJobRow  # noqa: PLC0415
-    from khepri.rra.jobs import JOB_DEAD_LETTERED, JOB_SUCCEEDED  # noqa: PLC0415
-
-    report_jobs = database.scalars(
-        select(ReportJobRow)
-        .where(ReportJobRow.session_id == session_id)
-        .with_for_update()
+    from khepri.rra.jobs import (  # noqa: PLC0415
+        DEAD_LETTER_CONTENT_DELETED,
+        JOB_DEAD_LETTERED,
+        JOB_SUCCEEDED,
+        orphanable,
     )
+
+    report_jobs = list(
+        database.scalars(
+            select(ReportJobRow)
+            .where(ReportJobRow.session_id == session_id)
+            .with_for_update()
+        )
+    )
+    for candidate in report_jobs:
+        if orphanable(candidate.state):
+            candidate.state = JOB_DEAD_LETTERED
+            candidate.dead_letter_reason = DEAD_LETTER_CONTENT_DELETED
+            candidate.completed_at = deletion.requested_at
     terminal = {JOB_SUCCEEDED, JOB_DEAD_LETTERED}
     if all(candidate.state in terminal for candidate in report_jobs):
         return False

@@ -63,6 +63,8 @@ class DeliveryReader(Protocol):
 class ArtifactRepository(Protocol):
     def has_complete(self, job_id: str) -> bool: ...
 
+    def is_committed(self, artifacts: tuple[StoredArtifact, ...]) -> bool: ...
+
     def boundary(
         self,
         publication: ReportPublication,
@@ -138,6 +140,25 @@ class ReportArtifactPublisher:
                 attempt_id=_require_attempt_id(_new_attempt_id()),
             )
             artifacts = self._store_all(context, publication.artifacts, created_keys)
+        except Exception as error:
+            self._rollback(created_keys)
+            raise ArtifactUnavailable("Report artifacts are unavailable.") from error
+        return self._commit_or_reconcile(
+            publication,
+            artifacts,
+            boundary=boundary,
+            created_keys=created_keys,
+        )
+
+    def _commit_or_reconcile(
+        self,
+        publication: ReportPublication,
+        artifacts: tuple[StoredArtifact, ...],
+        *,
+        boundary: ArtifactBoundary,
+        created_keys: list[str],
+    ) -> DeliveryRecord:
+        try:
             return self._repository.commit(
                 publication,
                 artifacts,
@@ -145,6 +166,14 @@ class ReportArtifactPublisher:
                 committed_at=self._now(),
             )
         except Exception as error:
+            try:
+                committed = self._repository.is_committed(artifacts)
+            except Exception as reconciliation_error:
+                raise ArtifactUnavailable(
+                    "Report artifacts are unavailable."
+                ) from reconciliation_error
+            if committed:
+                return publication.delivery.record
             self._rollback(created_keys)
             raise ArtifactUnavailable("Report artifacts are unavailable.") from error
 
