@@ -13,6 +13,11 @@ from __future__ import annotations
 from datetime import datetime
 
 from khepri.rca.accounts import Account
+from khepri.rca.errors import (
+    OWNER_CHANGE_APPLIED,
+    OWNER_CHANGE_FINAL_OWNER,
+    OWNER_CHANGE_NOT_APPLICABLE,
+)
 from khepri.rca.organizations import OWNER_ROLE, IsolationScope, Membership, Organization
 
 
@@ -59,16 +64,26 @@ class MemoryAccountStore:
 class MemoryOrganizationStore:
     """The organization store.
 
-    `count_owners` needs account state, which the SQL store gets from a join. Set `accounts` to
-    a `MemoryAccountStore` to mirror that; left unset, every membership holder is treated as
-    live, which is the right default for tests that never disable anyone.
+    `accounts` is **required**, not optional. `count_owners` needs account state, which the SQL
+    store gets from a join, and an earlier version defaulted it to `None` and then treated every
+    membership holder as live. That is precisely the semantics the join was added to defeat, so
+    the default let a test pass against the fake and fail against `SqlOrganizationStore` on the
+    one case FR-013 turns on. Requiring the argument converts a convention into an obligation the
+    type enforces.
+
+    `fail_on_create` models a store that refuses the write, for the caller that needs to see
+    `OrganizationCreationFailed`. It replaces a second class of the same name that shadowed this
+    one from a test module and implemented a narrower subset of the protocol.
     """
 
-    def __init__(self, accounts: MemoryAccountStore | None = None) -> None:
+    def __init__(
+        self, accounts: MemoryAccountStore, *, fail_on_create: bool = False
+    ) -> None:
         self.organizations: dict[str, Organization] = {}
         self.memberships: dict[tuple[str, str], Membership] = {}
         self.scopes: dict[str, IsolationScope] = {}
         self.accounts = accounts
+        self.fail_on_create = fail_on_create
 
     def create_organization(
         self,
@@ -76,10 +91,34 @@ class MemoryOrganizationStore:
         membership: Membership,
         scope: IsolationScope,
     ) -> bool:
+        if self.fail_on_create:
+            return False
         self.organizations[organization.organization_id] = organization
         self.memberships[(membership.organization_id, membership.account_id)] = membership
         self.scopes[scope.organization_id] = scope
         return True
+
+    def apply_owner_reducing_change(self, account_id: str, updated: Account) -> str:
+        """Guard and write with no interleaving, mirroring the SQL store's outcomes.
+
+        A single-threaded dictionary cannot interleave, so this models the *sequential* contract
+        only and must never be read as concurrency evidence. Proving that two overlapping callers
+        cannot both pass needs two real PostgreSQL connections -- see
+        `tests/test_rca001_concurrent_final_owner.py`.
+
+        What it must match exactly is the outcome vocabulary, because every test that asserts a
+        refusal against this fake is only meaningful if the real store refuses the same cases.
+        """
+        if self.accounts.get_account(account_id) is None:
+            return OWNER_CHANGE_NOT_APPLICABLE
+        for membership in self.memberships_for_account(account_id):
+            if membership.role != OWNER_ROLE:
+                continue
+            if self.count_owners(membership.organization_id, excluding_account_id=account_id) == 0:
+                return OWNER_CHANGE_FINAL_OWNER
+        if not self.accounts.save_account(updated):
+            return OWNER_CHANGE_NOT_APPLICABLE
+        return OWNER_CHANGE_APPLIED
 
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
         return self.memberships.get((organization_id, account_id))
@@ -112,7 +151,5 @@ class MemoryOrganizationStore:
         )
 
     def _can_act(self, account_id: str) -> bool:
-        if self.accounts is None:
-            return True
         account = self.accounts.get_account(account_id)
         return account is not None and account.can_authenticate

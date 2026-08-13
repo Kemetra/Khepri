@@ -32,7 +32,7 @@ def test_assert_account_active_refuses_disabled_purged_and_missing() -> None:
     account, a tombstone, and an account that never existed are indistinguishable here.
     """
     accounts = MemoryAccountStore()
-    lifecycle = LifecycleService(accounts, MemoryOrganizationStore())
+    lifecycle = LifecycleService(accounts, MemoryOrganizationStore(accounts))
     live = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
     doomed = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
 
@@ -66,7 +66,7 @@ def test_lifecycle_state_cannot_be_changed_by_copying() -> None:
     """
     accounts = MemoryAccountStore()
     account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    disabled = LifecycleService(accounts, MemoryOrganizationStore()).disable_account(
+    disabled = LifecycleService(accounts, MemoryOrganizationStore(accounts)).disable_account(
         account.account_id, now=NOW
     )
 

@@ -7,46 +7,17 @@ import pytest
 from khepri.rca.errors import OrganizationCreationFailed
 from khepri.rca.organizations import (
     OWNER_ROLE,
-    IsolationScope,
-    Membership,
-    Organization,
     OrganizationService,
     allocate_owner_id,
 )
+from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 ACCOUNT = "acc_creator"
 
 
-class MemoryOrganizationStore:
-    def __init__(self, *, fail_on_create: bool = False) -> None:
-        self.organizations: dict[str, Organization] = {}
-        self.memberships: dict[tuple[str, str], Membership] = {}
-        self.scopes: dict[str, IsolationScope] = {}
-        self.fail_on_create = fail_on_create
-
-    def create_organization(
-        self,
-        organization: Organization,
-        membership: Membership,
-        scope: IsolationScope,
-    ) -> bool:
-        if self.fail_on_create:
-            return False
-        self.organizations[organization.organization_id] = organization
-        self.memberships[(membership.organization_id, membership.account_id)] = membership
-        self.scopes[scope.organization_id] = scope
-        return True
-
-    def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
-        return self.memberships.get((organization_id, account_id))
-
-    def get_scope(self, organization_id: str) -> IsolationScope | None:
-        return self.scopes.get(organization_id)
-
-
 def test_creating_an_organization_makes_the_creator_an_owner() -> None:
-    store = MemoryOrganizationStore()
+    store = MemoryOrganizationStore(MemoryAccountStore())
     service = OrganizationService(store)
     organization = service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
 
@@ -56,7 +27,7 @@ def test_creating_an_organization_makes_the_creator_an_owner() -> None:
 
 
 def test_membership_creation_is_attributable() -> None:
-    store = MemoryOrganizationStore()
+    store = MemoryOrganizationStore(MemoryAccountStore())
     service = OrganizationService(store)
     organization = service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
 
@@ -67,7 +38,7 @@ def test_membership_creation_is_attributable() -> None:
 
 
 def test_creation_allocates_an_isolation_scope() -> None:
-    store = MemoryOrganizationStore()
+    store = MemoryOrganizationStore(MemoryAccountStore())
     service = OrganizationService(store)
     organization = service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
 
@@ -77,7 +48,7 @@ def test_creation_allocates_an_isolation_scope() -> None:
 
 
 def test_failed_creation_leaves_nothing_behind() -> None:
-    store = MemoryOrganizationStore(fail_on_create=True)
+    store = MemoryOrganizationStore(MemoryAccountStore(), fail_on_create=True)
     service = OrganizationService(store)
     with pytest.raises(OrganizationCreationFailed):
         service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)

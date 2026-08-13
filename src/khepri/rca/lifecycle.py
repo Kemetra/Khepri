@@ -24,10 +24,11 @@ from typing import TYPE_CHECKING
 from khepri.rca.errors import (
     ACCOUNT_FAILURE,
     FINAL_OWNER_FAILURE,
+    OWNER_CHANGE_APPLIED,
+    OWNER_CHANGE_FINAL_OWNER,
     AccountOperationFailed,
     FinalOwnerProtected,
 )
-from khepri.rca.organizations import OWNER_ROLE
 
 if TYPE_CHECKING:
     from khepri.rca.accounts import Account
@@ -62,26 +63,22 @@ def _months_before(moment: datetime, months: int) -> datetime:
 class LifecycleService:
     """Disable, re-enable, and gate accounts, with the FR-013 guard.
 
-    **Known limitation: the guard and the write are not in one transaction.** `disable_account`
-    reads the account, counts effective owners through the *organization* store, and writes
-    through the *account* store — three round trips, each on its own session. Two concurrent
-    disablements of a two-owner organization can therefore both pass the check before either
-    writes, and both commit, leaving zero owners.
+    **The guard and the write are one transaction (`#155`, closed).** `disable_account` computes
+    the disabled account, then hands it to `apply_owner_reducing_change`, which locks the
+    account's owner-role memberships, counts effective owners on the locked rows, and either
+    writes or refuses -- all inside one transaction. Competing owner-reducing operations on the
+    same organization block at the lock and therefore observe each other's writes.
 
-    This is recorded rather than fixed here because fixing it properly needs one transaction
-    spanning both stores — either a shared session passed through the store protocols, or
-    `SELECT ... FOR UPDATE` on the membership rows — and that is a change to the store seam that
-    every RCA service shares, not a change to this service. Doing it inside this slice would mean
-    redesigning the persistence boundary in a review loop, which is the failure mode #148 already
-    demonstrated and #151 was opened to end.
+    Before that, the guard and the write were three round trips on three sessions. Two
+    concurrent disablements could both count a live co-owner, both pass, and both commit.
+    `tests/test_rca001_concurrent_final_owner.py` reproduced it deterministically against
+    PostgreSQL: three contending owners left the organization with zero.
 
-    What *is* closed here is the sequential path, which needed no concurrency at all: disabling a
-    two-owner organization's owners one after another passed the guard both times, because
-    `count_owners` counted membership rows rather than owners who can act. See
-    `SqlOrganizationStore.count_owners`.
-
-    Scope of the remaining risk: a single-process local stack with no concurrent callers cannot
-    hit it. It must be closed before any deployment serves concurrent requests.
+    **Why the store decides rather than this service.** The invariant is an organization-level
+    question and the lock belongs on the membership rows, so the check and the write have to sit
+    together in persistence. What stays here is the *translation* -- an outcome becomes
+    `FinalOwnerProtected` or `AccountOperationFailed` -- so the whole refusal vocabulary,
+    including FR-013's deliberately non-uniform message, lives in one place.
     """
 
     def __init__(self, accounts: AccountStore, organizations: OrganizationStore) -> None:
@@ -97,11 +94,16 @@ class LifecycleService:
         account = self._accounts.get_account(account_id)
         if account is None or account.is_purged:
             raise AccountOperationFailed(ACCOUNT_FAILURE)
-        self._refuse_if_final_owner(account_id)
         if account.disabled_at is not None:
             return account  # already disabled; idempotent, and the horizon keeps its original start
+        # Built before the transaction opens, deliberately. `Account.disabled` goes through a
+        # door, and `records.py` records that a door authorizes the thread rather than one call
+        # -- so holding one across a lock wait would be a far wider grant than it looks.
         disabled = account.disabled(now=now)
-        if not self._accounts.save_account(disabled):
+        outcome = self._organizations.apply_owner_reducing_change(account_id, disabled)
+        if outcome == OWNER_CHANGE_FINAL_OWNER:
+            raise FinalOwnerProtected(FINAL_OWNER_FAILURE)
+        if outcome != OWNER_CHANGE_APPLIED:
             raise AccountOperationFailed(ACCOUNT_FAILURE)
         return disabled
 
@@ -148,22 +150,6 @@ class LifecycleService:
         if account is None or not account.can_act:
             raise AccountOperationFailed(ACCOUNT_FAILURE)
         return account
-
-    def _refuse_if_final_owner(self, account_id: str) -> None:
-        """Refuse when this account is the last owner-role member of any organization (`FR-013`).
-
-        Checks every organization the account belongs to, not just one. An account that owns two
-        organizations and is the final owner of the second must be refused, and a check that
-        stopped at the first would let that through.
-        """
-        for membership in self._organizations.memberships_for_account(account_id):
-            if membership.role != OWNER_ROLE:
-                continue
-            remaining = self._organizations.count_owners(
-                membership.organization_id, excluding_account_id=account_id
-            )
-            if remaining == 0:
-                raise FinalOwnerProtected(FINAL_OWNER_FAILURE)
 
 
 @dataclass(frozen=True, slots=True)

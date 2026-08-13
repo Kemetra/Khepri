@@ -5,13 +5,19 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import sessionmaker
 
-from khepri.rca.accounts import AccountService
+from khepri.rca.accounts import Account, AccountService
 from khepri.rca.errors import FinalOwnerProtected
 from khepri.rca.lifecycle import AccountRetentionSweeper
 from khepri.rca.organizations import OWNER_ROLE, OrganizationService
-from khepri.rca.persistence import MembershipRow
+from khepri.rca.persistence import (
+    MembershipRow,
+    SqlAccountStore,
+    SqlOrganizationStore,
+    owner_memberships_for_update,
+)
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -234,3 +240,83 @@ def test_a_re_enabled_owner_without_a_credential_does_not_count(
 
     with pytest.raises(FinalOwnerProtected):
         stack.lifecycle.disable_account(stack.second.account_id, now=NOW)
+
+
+# --- the guard and the write are one transaction (#155) ------------------------------------
+
+
+def test_the_owner_membership_query_locks_its_rows_on_postgresql() -> None:
+    """`R1-02` Invariant A: the lock is assertable without a database.
+
+    The reason this test exists rather than trusting the implementation: SQLite emits no
+    `FOR UPDATE` and SQLAlchemy silently omits it for that dialect, so if the lock were dropped
+    the entire RCA suite would stay green while #155 returned. Compiling the statement against
+    the PostgreSQL dialect is the only evidence available in a suite that runs on SQLite.
+
+    Mutation-checked: deleting `.with_for_update()` from `owner_memberships_for_update` fails
+    this test and nothing else in this file.
+    """
+    statement = owner_memberships_for_update("acc_example")
+
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "FOR UPDATE" in sql
+    assert "rca_memberships.account_id =" in sql
+    assert "rca_memberships.role =" in sql, "only owner rows are locked, not every membership"
+
+
+@pytest.mark.parametrize(
+    ("email", "verifier", "disabled_at", "counts"),
+    [
+        ("live@example.test", True, None, True),
+        ("verifierless@example.test", False, None, False),
+        ("disabled@example.test", True, NOW, False),
+        (None, False, NOW, False),
+    ],
+    ids=["enabled-with-verifier", "enabled-without-verifier", "disabled", "purged-tombstone"],
+)
+def test_the_sql_predicate_and_can_authenticate_agree(
+    factory: sessionmaker, email, verifier, disabled_at, counts
+) -> None:
+    """`R1-02` Invariant B: the effective-owner rule agrees in SQL and in Python.
+
+    The rule is expressed twice — as `Account.can_authenticate`, and as the SQL conditions the
+    owner count applies. They agree today by review, which is how two copies of a rule drift.
+    This asserts they agree state by state, so moving one without the other fails here.
+
+    The four states are not arbitrary. Enabled-without-verifier is the case that already caused
+    a real defect, and the purged tombstone survives only because `fk_rca_membership_account`
+    is RESTRICT, so both are exactly where the two expressions could disagree.
+    """
+    accounts = SqlAccountStore(factory)
+    organizations = SqlOrganizationStore(factory)
+    holder = AccountService(accounts).create_account("holder@example.test", CREDENTIAL)
+    organization = OrganizationService(organizations).create_organization(
+        "Acme", holder.account_id, now=NOW
+    )
+    subject = AccountService(accounts).create_account("subject@example.test", CREDENTIAL)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=subject.account_id,
+                role=OWNER_ROLE,
+                changed_by=holder.account_id,
+                changed_at=NOW,
+            )
+        )
+
+    stored = Account._from_storage(
+        account_id=subject.account_id,
+        email=email,
+        verifier=subject.verifier if verifier else None,
+        disabled_at=disabled_at,
+    )
+    accounts.save_account(stored)
+
+    counted = organizations.count_owners(
+        organization.organization_id, excluding_account_id=holder.account_id
+    )
+
+    assert stored.can_authenticate is counts, "the Python predicate"
+    assert (counted == 1) is counts, "and the SQL predicate, on the same account"
