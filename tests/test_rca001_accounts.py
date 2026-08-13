@@ -240,7 +240,7 @@ def test_a_record_at_a_non_default_work_factor_is_refused_uniformly(
         Account._from_storage(
             account_id="acc_legacy",
             email="legacy@example.test",
-            verifier=Verifier.from_storage(
+            verifier=Verifier._from_storage(
                 salt=salt,
                 digest=hash_credential(CREDENTIAL, salt, legacy_kdf),
                 kdf=legacy_kdf,

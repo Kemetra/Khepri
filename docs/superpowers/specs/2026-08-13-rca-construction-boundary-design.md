@@ -58,26 +58,73 @@ exposes exactly two construction doors.
 | Creation | `Record.create(...)` | service layer | allocates identifiers, validates invariants, derives verifiers |
 | Reconstruction | `Record._from_storage(...)` | `persistence.py` only | preserves stored values verbatim, asserts nothing |
 
-Mechanism: each record keeps `@dataclass(frozen=True, slots=True)` and gains
+Mechanism: **the capability belongs to the call, not to the object.** Each record keeps
+`@dataclass(frozen=True, slots=True)`, subclasses `Sealed`, and builds instances inside a
+`through_door()` context manager. `Sealed.__post_init__` raises `TypeError` unless a door is
+open on the current thread (a re-entrant depth counter on a `threading.local`, so nested
+construction works and one thread cannot authorize another).
+
+### Round five: why the capability is not a field
+
+The first implementation made it an instance field holding a module-private sentinel, with
+`compare=False, repr=False, kw_only=True`. Independent review of that commit (`fca3252`) found
+a third door, and the exploit was reproduced end to end before the fix:
 
 ```python
-_token: object = field(kw_only=True, compare=False, repr=False, default=None)
+forged = dataclasses.replace(IsolationScope.create(org), owner_id="own_VictimPharmacyInc000000")
+store.create_organization(org, membership, forged)   # returns True, commits
+isolation.resolve_scope(...)                          # -> "own_VictimPharmacyInc000000"
 ```
 
-with a `__post_init__` that raises `TypeError` unless `_token` is the module-private sentinel.
-`kw_only=True` sidesteps the default/non-default field-ordering rule; `compare=False` and
-`repr=False` keep the sentinel out of `__eq__`, `__hash__`, and `__repr__`.
+`dataclasses.replace` rebuilds an instance by reading every field the caller did not override
+and calling `cls(**fields)` — so it copied the sentinel forward onto a record whose isolation
+key had just been substituted. That is **verbatim the round-2 defect from #148** (an
+organization name inside the "opaque" key), reachable again through one idiomatic stdlib call.
 
-All of this was validated empirically before any refactor
-(scratch probe, 2026-08-13, all eleven checks passing): sentinel excluded from equality and
-repr, records still hashable, `kw_only` ordering legal, direct construction rejected,
-`create()` refusing an `owner_id` argument, and `_from_storage` preserving a stored key.
+The error was certifying *"this object came through a door"* when what needs certifying is
+*"this call is a door"*. A field is per-instance state, and `replace` copies per-instance
+state. Moving the capability into the call stack leaves nothing to copy forward.
+
+This also removed a trap the field design had set for the next two slices: on a frozen
+dataclass, `dataclasses.replace(account, verifier=None)` is the obvious way to write #149's
+verifier destruction, and `dataclasses.replace(membership, role="owner")` the obvious way to
+write #150's role transition. Both produced sealed, store-acceptable records. Both are now
+refused, which forces those slices to express a change as an operation rather than a field
+assignment — the correct shape for them anyway.
+
+Note that a `__replace__` method would **not** have fixed this: `dataclasses.replace` calls
+`cls(**changes)` directly and never consults `obj.__replace__`, so defining one blocks
+`copy.replace` while leaving `dataclasses.replace` exactly as open. Verified.
+
+### Substitution is blocked; faithful duplication is not
+
+`copy.copy`, `copy.deepcopy`, and `pickle` are deliberately **not** blocked. On a slotted
+dataclass they allocate via `__class__.__new__` and restore state through `__reduce_ex__`,
+never calling `__init__`, so no check applies — blocking them would mean fighting the pickle
+protocol. It is also unnecessary: they reproduce every field verbatim and expose no parameter
+through which a caller's value can enter, so a copy of a legitimate record is a legitimate
+record. The property that matters is that **substitution** is refused, not duplication. A test
+pins this distinction so a future change making a copy protocol field-substitutable fails.
+
+### `Verifier` is sealed too
+
+Review also found that sealing the records was not enough while `Verifier` stayed open.
+`Account._from_storage` accepts whatever `Verifier` it is handed without re-deriving — it must,
+since a stored digest is the only thing a candidate can be compared against — so an unsealed
+`Verifier` let an in-package caller choose credential material for an account whose own
+provenance check then passed. The two-door rule has to reach the material, not only the record
+that carries it.
 
 ### What this is not
 
-`object.__setattr__` still bypasses `frozen`, and any module can import a name beginning with
-an underscore. **Python has no private construction.** The guarantee is that a bypass must be
-*deliberate and conspicuous*, not that it is impossible.
+`object.__setattr__` still bypasses `frozen`, and any module can call `through_door()` itself.
+**Python has no private construction.** The guarantee is that a bypass must be *deliberate and
+conspicuous*, not that it is impossible.
+
+`dataclasses.replace` was precisely the opposite — an accidental, idiomatic bypass — which is
+what made it worth a redesign rather than a documented caveat. That is the line: a mechanism
+that a careful engineer could trip over while writing ordinary code is a defect; one that
+requires reaching for `object.__setattr__` is a documented limit.
 
 Docstrings must therefore say "unmistakable", never "unbypassable". The existing docstring at
 `organizations.py:56-57` — "no layer can construct a scope carrying an untrusted key" — is an
@@ -181,7 +228,18 @@ survived review. Three specific cases, all identified before the refactor:
    (`:154` and `:262`) so an unfired recorder fails loudly.
 
 Every guard added by this slice is mutation-tested: break the guard, confirm the test goes red,
-restore it. A guard whose test still passes when the guard is removed is not a guard.
+restore it. A guard whose test still passes when the guard is removed is not a guard. **9/9
+mutations caught**, including a deliberate re-introduction of the round-five forgery.
+
+Mutation testing found one real gap on its first run: the partial-verifier guard in
+`_verifier_from_row` had no test defending it, because no existing test writes a
+partially-populated row. Flipping `any` to `all` left the whole suite green. That is exactly
+the guard #149 leans on hardest, so it now has a parametrized test over each way a row can be
+half-destroyed.
+
+**Mutation testing cannot find a missing guard**, only an untested one — it perturbs code that
+exists. The `dataclasses.replace` hole was invisible to it and was caught by adversarial
+review instead. Both were needed; neither would have sufficed.
 
 New coverage: direct construction of each of the four records raises; `create()` signatures
 exclude stored-only fields; `_from_storage` round-trips verbatim; a store rejects a record that
@@ -193,8 +251,14 @@ credential (finding 2, asserted directly).
 The owner authorized unattended execution after selecting Q1–Q6 and went offline. These were
 decided during implementation and are flagged for audit:
 
-- **Sentinel over `__init_subclass__`, metaclasses, or a separate builder class.** Smallest
-  change that closes both findings; keeps records as plain dataclasses.
+- **Call-scoped capability over `__init_subclass__`, metaclasses, or builder classes.**
+  Smallest change that closes the findings while keeping records as plain dataclasses. Chosen
+  after the instance-field version failed review; see "Round five" above.
+- **`threading.local` rather than a module global.** A store may be used from several threads,
+  and one thread's construction must not authorize another's.
+- **Copy protocols left alone** rather than blocked via `__reduce__`. Reasoned above: they
+  cannot substitute a field, so they add no exposure, and overriding them would fight the
+  pickle protocol for no security gain.
 - **`allocate_owner_id` stays public** while `hash_credential` moves. Asymmetric, but they
   differ: the former protects no invariant and is tested directly for distinctness; the latter
   is the operation finding 2 is about.

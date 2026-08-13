@@ -109,7 +109,7 @@ def _verifier_from_row(row: AccountRow) -> Verifier | None:
     if any(part is None for part in stored):
         return None
     salt, digest, n, r, p = stored
-    return Verifier.from_storage(salt=salt, digest=digest, kdf=KdfParams(n=n, r=r, p=p))
+    return Verifier._from_storage(salt=salt, digest=digest, kdf=KdfParams(n=n, r=r, p=p))
 
 
 def _account_from_row(row: AccountRow) -> Account:

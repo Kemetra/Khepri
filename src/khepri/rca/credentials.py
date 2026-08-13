@@ -19,6 +19,8 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 
+from khepri.rca.records import Sealed, through_door
+
 KDF_N = 2**15
 KDF_R = 8
 KDF_P = 1
@@ -68,13 +70,20 @@ def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) 
 
 
 @dataclass(frozen=True, slots=True)
-class Verifier:
+class Verifier(Sealed):
     """A salted credential verifier: everything needed to check a credential, and nothing more.
 
     The credential itself is never held. `KHEPRI-DEC-015` requires the verifier to be destroyed
     immediately and non-recoverably on disablement or replacement, which is why an account holds
-    this as an optional whole rather than three independently-nullable columns: destruction is
-    then "set the verifier to None", one assignment that cannot be done by halves.
+    this as an optional whole rather than three independently-nullable columns: destruction
+    replaces the whole verifier with `None` and cannot be done by halves.
+
+    Sealed for the same reason the records that carry it are. `Account._from_storage` accepts
+    any `Verifier` it is handed without re-deriving — it must, since a stored digest is the
+    only thing a candidate can be compared against — so an unsealed `Verifier` would let any
+    in-package caller build credential material of its choosing and hand it to a record whose
+    own provenance check would then pass. The two-door rule has to reach the material, not
+    only the record that holds it.
     """
 
     salt: bytes
@@ -86,22 +95,24 @@ class Verifier:
         """Produce a verifier for a new or replacement credential, at the current default factor.
 
         Allocates the salt from a CSPRNG. There is deliberately no parameter for the salt or the
-        digest: this is the only supported way to obtain a verifier for a credential, so a
-        caller cannot substitute credential-derived material for a real derivation.
+        digest: this is the only supported way to obtain a verifier for a *new* credential, so
+        a caller cannot substitute chosen material for a real derivation (FR-002).
         """
         salt = secrets.token_bytes(SALT_BYTES)
-        return cls(
-            salt=salt,
-            digest=hash_credential(credential, salt, DEFAULT_KDF),
-            kdf=DEFAULT_KDF,
-        )
+        with through_door():
+            return cls(
+                salt=salt,
+                digest=hash_credential(credential, salt, DEFAULT_KDF),
+                kdf=DEFAULT_KDF,
+            )
 
     @classmethod
-    def from_storage(cls, salt: bytes, digest: bytes, kdf: KdfParams) -> Verifier:
+    def _from_storage(cls, salt: bytes, digest: bytes, kdf: KdfParams) -> Verifier:
         """Rebuild a verifier from stored columns, preserving them verbatim.
 
         Reading must not re-derive: the stored digest is the only thing a candidate can be
         compared against. Asserts nothing about the values, because they came from the database
         and the guarantee is that nothing but `derive` could have put them there.
         """
-        return cls(salt=salt, digest=digest, kdf=kdf)
+        with through_door():
+            return cls(salt=salt, digest=digest, kdf=kdf)

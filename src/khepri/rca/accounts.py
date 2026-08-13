@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from khepri.rca.credentials import DEFAULT_KDF, DUMMY_SALT, Verifier, hash_credential
 from khepri.rca.errors import AUTHENTICATION_FAILURE, AuthenticationFailed
-from khepri.rca.records import SEALED, Sealed, sealed_field
+from khepri.rca.records import Sealed, through_door
 
 if TYPE_CHECKING:
     from khepri.rca.stores import AccountStore
@@ -40,7 +40,6 @@ class Account(Sealed):
     # destruction is a single assignment and a partially-destroyed verifier is unrepresentable.
     # Disablement itself is #149; the shape it needs is here, so it needs no migration.
     verifier: Verifier | None
-    _token: object = sealed_field()
 
     @property
     def has_verifier(self) -> bool:
@@ -53,17 +52,18 @@ class Account(Sealed):
         Takes the credential, not a verifier: there is no parameter through which
         caller-supplied digest material can become a new account's stored verifier.
         """
-        return cls(
-            account_id=f"acc_{secrets.token_urlsafe(18)}",
-            email=canonical_email(email),
-            verifier=Verifier.derive(credential),
-            _token=SEALED,
-        )
+        with through_door():
+            return cls(
+                account_id=f"acc_{secrets.token_urlsafe(18)}",
+                email=canonical_email(email),
+                verifier=Verifier.derive(credential),
+            )
 
     @classmethod
     def _from_storage(cls, account_id: str, email: str, verifier: Verifier | None) -> Account:
         """Rebuild an account from stored columns, preserving them verbatim."""
-        return cls(account_id=account_id, email=email, verifier=verifier, _token=SEALED)
+        with through_door():
+            return cls(account_id=account_id, email=email, verifier=verifier)
 
 
 def canonical_email(email: str) -> str:

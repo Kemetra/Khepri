@@ -21,67 +21,127 @@ fixes, because each answers "who guards this?" for one record while leaving the 
 The distinction the fourth round backed into — that creation and reconstruction are different
 operations needing different doors — is made explicit here, and applied uniformly.
 
+## Substitution is not a door; faithful copying is harmless
+
+`dataclasses.replace` and `copy.replace` rebuild an instance by calling the constructor from
+ordinary code, so neither is a door and both are refused. That is the load-bearing rule:
+producing a *modified* record means going through `create` or `_from_storage` again. A role
+change and a verifier destruction are **operations**, not field assignments, and #150 and #149
+respectively must write them as such.
+
+`copy.copy`, `copy.deepcopy`, and `pickle` are a different case and are **not** blocked. On a
+slotted dataclass they allocate with `__class__.__new__` and restore state through
+`__reduce_ex__`, never calling `__init__`, so no check applies — blocking them would mean
+fighting the pickle protocol. It is also unnecessary: they reproduce every field verbatim and
+offer no parameter through which a caller's value can enter, so a copy of a legitimate record
+is a legitimate record. The distinction that matters is substitution, not duplication.
+
+None of this was true of the first version of this module; see the comment on `_opening` for
+the forgery it permitted.
+
 ## What this does NOT claim
 
 **Python has no private construction.** `object.__setattr__` still mutates a frozen instance,
-and nothing stops a module importing `SEALED`. Verified, not assumed.
+and nothing stops a module calling `through_door()` itself. Verified, not assumed.
 
 The guarantee is that bypassing a door must be *deliberate and conspicuous* — never something
-a caller does by accident while writing ordinary-looking code. Docstrings in this package
-therefore say "unmistakable", never "unbypassable". The removed docstring on `IsolationScope`
-claimed "no layer can construct a scope carrying an untrusted key", which was untrue at the
-moment it was written, and reviewers trusting it is part of why #148's rounds continued.
+a caller does by accident while writing ordinary-looking code. `dataclasses.replace` was
+precisely such an accident, which is what made it worth fixing rather than documenting.
+
+Docstrings in this package therefore say "unmistakable", never "unbypassable". The removed
+docstring on `IsolationScope` claimed "no layer can construct a scope carrying an untrusted
+key", which was untrue at the moment it was written, and reviewers trusting it is part of why
+#148's rounds continued.
 """
 
 from __future__ import annotations
 
-from dataclasses import field
-from typing import Any
-
-# The capability that distinguishes a door from a direct call. Module-private by convention;
-# see the module docstring on what that is and is not worth.
-SEALED = object()
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 _MISUSE = (
     "records in khepri.rca are constructed through create() or _from_storage(), "
-    "not by calling the class directly"
+    "not by calling the class directly or by copying an existing instance"
 )
 
+# The capability is a property of the *call*, not of the object.
+#
+# The first version of this module made it an instance field carrying a module-private
+# sentinel. That was wrong, and wrong in the exact way #148's rounds were wrong: it certified
+# "this object came through a door" when what needs certifying is "this call is a door".
+# `dataclasses.replace(scope, owner_id="own_VictimPharmacyInc000000")` copies every field the
+# caller did not override — including the sentinel — onto a record whose remaining fields it
+# just rewrote, producing a forgery that `assert_sealed` accepted. Verified before this fix:
+# the forged scope committed through `SqlOrganizationStore.create_organization` and
+# `resolve_scope` handed the organization's own name back as the analytical boundary.
+#
+# Thread-local rather than a plain module global because a store may be used from several
+# threads, and one thread's construction must not authorize another's.
+_opening = threading.local()
 
-def sealed_field() -> Any:
-    """The sentinel field every sealed record carries.
 
-    `kw_only=True` keeps this default-valued field from forcing defaults onto the fields
-    declared before it, which is otherwise a `TypeError` at class-definition time.
-    `compare=False` and `repr=False` keep it out of `__eq__`, `__hash__`, and `__repr__`, so a
-    record created through one door equals the same record rebuilt through the other — which
-    persistence round-trip tests depend on.
+@contextmanager
+def _door() -> Iterator[None]:
+    """Mark the dynamic extent of a construction door.
+
+    Re-entrant by depth count: `Organization.create` may construct nested records, and an
+    inner door closing must not revoke the outer one.
     """
-    return field(kw_only=True, compare=False, repr=False, default=None)
+    depth = getattr(_opening, "depth", 0)
+    _opening.depth = depth + 1
+    try:
+        yield
+    finally:
+        _opening.depth = depth
+
+
+def _is_open() -> bool:
+    return getattr(_opening, "depth", 0) > 0
 
 
 class Sealed:
     """Mixin giving a frozen dataclass the two-door construction rule.
 
-    Subclasses declare their fields plus `_token: object = sealed_field()`, and provide
-    `create` and `_from_storage` classmethods that pass `_token=SEALED`.
+    Subclasses declare their fields normally — no sentinel field — and build instances inside
+    `through_door()` from their `create` and `_from_storage` classmethods.
+
+    Because the capability lives in the call stack rather than on the instance, there is
+    nothing for `dataclasses.replace` or `copy.replace` to carry forward: both call the
+    constructor from outside a door and are refused. Modifying a sealed record therefore means
+    building a new one through a door, which is what #149 (verifier destruction) and #150
+    (role transitions) must do. See the module docstring for why the copy protocols are a
+    different case and are deliberately left alone.
     """
 
     __slots__ = ()
 
     def __post_init__(self) -> None:
-        if getattr(self, "_token", None) is not SEALED:
+        if not _is_open():
             raise TypeError(_MISUSE)
 
 
+@contextmanager
+def through_door() -> Iterator[None]:
+    """Open a construction door for the duration of the block.
+
+    Every `create` and `_from_storage` in this package wraps its constructor call in this.
+    """
+    with _door():
+        yield
+
+
 def assert_sealed(*records: object) -> None:
-    """Confirm records reached a persistence boundary through a construction door.
+    """Confirm records reached a persistence boundary as instances of a sealed type.
 
     The stores are internal to `khepri.rca` (#151 Q1), so this is a programming-error check,
-    not input validation — it is deliberately an assertion about provenance rather than about
-    field contents. Checking contents is what #148's round 2 already proved insufficient:
-    shape cannot establish where a value came from.
+    not input validation — it asserts the type discipline held, not that field contents look
+    right. Checking contents is what #148's round 2 already proved insufficient: shape cannot
+    establish where a value came from.
+
+    With the capability moved into the call stack, an instance of a `Sealed` subclass can only
+    exist if a door was open when it was built, so the type itself is now the evidence.
     """
     for record in records:
-        if getattr(record, "_token", None) is not SEALED:
+        if not isinstance(record, Sealed):
             raise TypeError(_MISUSE)

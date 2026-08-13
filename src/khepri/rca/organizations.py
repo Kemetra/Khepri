@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from khepri.rca.errors import ORGANIZATION_FAILURE, OrganizationCreationFailed
-from khepri.rca.records import SEALED, Sealed, sealed_field
+from khepri.rca.records import Sealed, through_door
 
 if TYPE_CHECKING:
     from khepri.rca.stores import OrganizationStore
@@ -19,22 +19,20 @@ class Organization(Sealed):
     organization_id: str
     name: str
     created_at: datetime
-    _token: object = sealed_field()
 
     @classmethod
     def create(cls, name: str, *, now: datetime) -> Organization:
-        return cls(
-            organization_id=f"org_{secrets.token_urlsafe(18)}",
-            name=name,
-            created_at=now,
-            _token=SEALED,
-        )
+        with through_door():
+            return cls(
+                organization_id=f"org_{secrets.token_urlsafe(18)}",
+                name=name,
+                created_at=now,
+            )
 
     @classmethod
     def _from_storage(cls, organization_id: str, name: str, created_at: datetime) -> Organization:
-        return cls(
-            organization_id=organization_id, name=name, created_at=created_at, _token=SEALED
-        )
+        with through_door():
+            return cls(organization_id=organization_id, name=name, created_at=created_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +51,6 @@ class Membership(Sealed):
     role: str
     changed_by: str
     changed_at: datetime
-    _token: object = sealed_field()
 
     @classmethod
     def create(
@@ -65,14 +62,14 @@ class Membership(Sealed):
         changed_by: str,
         now: datetime,
     ) -> Membership:
-        return cls(
-            organization_id=organization_id,
-            account_id=account_id,
-            role=role,
-            changed_by=changed_by,
-            changed_at=now,
-            _token=SEALED,
-        )
+        with through_door():
+            return cls(
+                organization_id=organization_id,
+                account_id=account_id,
+                role=role,
+                changed_by=changed_by,
+                changed_at=now,
+            )
 
     @classmethod
     def _from_storage(
@@ -83,14 +80,14 @@ class Membership(Sealed):
         changed_by: str,
         changed_at: datetime,
     ) -> Membership:
-        return cls(
-            organization_id=organization_id,
-            account_id=account_id,
-            role=role,
-            changed_by=changed_by,
-            changed_at=changed_at,
-            _token=SEALED,
-        )
+        with through_door():
+            return cls(
+                organization_id=organization_id,
+                account_id=account_id,
+                role=role,
+                changed_by=changed_by,
+                changed_at=changed_at,
+            )
 
 
 _OWNER_ID_PREFIX = "own_"
@@ -123,19 +120,16 @@ class IsolationScope(Sealed):
 
     organization_id: str
     owner_id: str
-    _token: object = sealed_field()
 
     @classmethod
     def create(cls, organization_id: str) -> IsolationScope:
-        return cls(
-            organization_id=organization_id,
-            owner_id=allocate_owner_id(),
-            _token=SEALED,
-        )
+        with through_door():
+            return cls(organization_id=organization_id, owner_id=allocate_owner_id())
 
     @classmethod
     def _from_storage(cls, organization_id: str, owner_id: str) -> IsolationScope:
-        return cls(organization_id=organization_id, owner_id=owner_id, _token=SEALED)
+        with through_door():
+            return cls(organization_id=organization_id, owner_id=owner_id)
 
 
 class OrganizationService:

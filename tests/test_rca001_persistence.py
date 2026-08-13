@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import copy
+import dataclasses
 import inspect
+import pickle
 import secrets
 from datetime import UTC, datetime
 
@@ -99,7 +102,7 @@ def test_an_account_round_trips_through_a_new_store_instance(factory: sessionmak
     assert restored.email == EMAIL
     assert restored.verifier == account.verifier
     # A record rebuilt through the reconstruction door equals the one the creation door made:
-    # the sentinel is excluded from equality, so round-tripping is not door-dependent.
+    # the capability lives in the call stack, not in a field, so equality is door-independent.
     assert restored == account
 
 
@@ -174,7 +177,7 @@ def test_the_store_canonicalizes_without_the_service(factory: sessionmaker) -> N
     """
     store = SqlAccountStore(factory)
     salt = secrets.token_bytes(16)
-    verifier = Verifier.from_storage(
+    verifier = Verifier._from_storage(
         salt=salt, digest=hash_credential(CREDENTIAL, salt, DEFAULT_KDF), kdf=DEFAULT_KDF
     )
 
@@ -339,19 +342,106 @@ def test_records_reject_construction_outside_a_door() -> None:
         Account(account_id="acc_1", email=EMAIL, verifier=None)
 
 
-def test_a_store_refuses_a_record_that_did_not_come_through_a_door(
-    factory: sessionmaker,
-) -> None:
-    """The persistence boundary checks provenance, not field contents.
+@pytest.mark.parametrize(
+    "clone",
+    [
+        pytest.param(dataclasses.replace, id="dataclasses_replace"),
+        pytest.param(copy.replace, id="copy_replace"),
+    ],
+)
+def test_copying_a_sealed_record_is_not_a_door(clone) -> None:
+    """Round five of #148, found by review of this very change and fixed here.
+
+    The first version of this slice made the construction capability an instance *field*
+    holding a module-private sentinel. `dataclasses.replace` copies every field the caller
+    does not override — including that sentinel — onto a record whose other fields it has just
+    rewritten. So a caller could take a legitimately created scope, substitute the isolation
+    key, and produce a forgery that the persistence boundary accepted:
+
+        forged = dataclasses.replace(IsolationScope.create(org), owner_id="own_AcmePharmacy...")
+
+    Verified before the fix: that scope committed through `SqlOrganizationStore` and
+    `resolve_scope` handed the organization's own name back as the analytical boundary — the
+    exact FR-032/FR-033 defect #148 spent four rounds closing, reachable again through one
+    idiomatic stdlib call.
+
+    The capability now lives in the call stack instead, so there is no field to carry forward
+    and every copy protocol lands outside a door. This matters most for the slices that follow:
+    `replace(account, verifier=None)` is the obvious way to write #149's verifier destruction,
+    and `replace(membership, role="owner")` the obvious way to write #150's role transition.
+    Both must be refused, or those slices reintroduce this hole while looking correct.
+    """
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(IsolationScope.create("org_1"), owner_id="own_AcmePharmacy000000000000")
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(Account.create(EMAIL, CREDENTIAL), verifier=None)
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(
+            Membership.create("org_1", "acc_1", "member", changed_by="acc_1", now=NOW),
+            role="owner",
+        )
+
+
+@pytest.mark.parametrize(
+    "duplicate",
+    [
+        pytest.param(copy.copy, id="copy"),
+        pytest.param(copy.deepcopy, id="deepcopy"),
+        pytest.param(lambda record: pickle.loads(pickle.dumps(record)), id="pickle"),
+    ],
+)
+def test_duplicating_a_sealed_record_reproduces_it_faithfully(duplicate) -> None:
+    """The copy protocols are permitted, and this is why that is safe.
+
+    `copy`, `deepcopy`, and `pickle` do **not** go through `__init__` on a slotted dataclass:
+    they allocate with `__class__.__new__` and restore state through `__reduce_ex__`, so
+    `__post_init__` never runs and no door check applies. Blocking them would mean fighting
+    the pickle protocol.
+
+    It is unnecessary, and the reason is the difference between these and `dataclasses.replace`
+    — which is blocked. `replace` lets a caller *substitute* a field while keeping everything
+    else, which is how the round-five forgery worked. These reproduce every field verbatim,
+    and a faithful copy of a legitimate record is a legitimate record: there is no input
+    through which a caller's value can enter. This test pins that distinction, so a future
+    change that makes a copy protocol field-substitutable fails here.
+    """
+    scope = IsolationScope.create("org_1")
+    duplicated = duplicate(scope)
+    assert duplicated == scope
+    assert duplicated.owner_id == scope.owner_id
+    assert duplicated.organization_id == scope.organization_id
+
+
+def test_a_store_refuses_a_record_of_the_wrong_type(factory: sessionmaker) -> None:
+    """The persistence boundary checks the type discipline held, not field contents.
 
     Checking contents is what #148's round 2 already proved insufficient: a value's shape
-    cannot establish where it came from. `object.__setattr__` is the deliberate, conspicuous
-    bypass the sealed form permits — this asserts the store still refuses its output.
+    cannot establish where it came from. Since a `Sealed` instance can only exist if a door was
+    open when it was built, the type is now the evidence.
     """
-    smuggled = Account.create(EMAIL, CREDENTIAL)
-    object.__setattr__(smuggled, "_token", None)
+
+    @dataclasses.dataclass(frozen=True, slots=True)
+    class LookalikeAccount:
+        account_id: str = "acc_1"
+        email: str = EMAIL
+        verifier: object = None
+
     with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
-        SqlAccountStore(factory).add_account(smuggled)
+        SqlAccountStore(factory).add_account(LookalikeAccount())  # type: ignore[arg-type]
+
+
+def test_a_verifier_cannot_be_built_outside_a_door() -> None:
+    """Sealing must reach the credential material, not only the record that carries it.
+
+    `Account._from_storage` accepts whatever `Verifier` it is handed without re-deriving — it
+    must, since a stored digest is the only thing a candidate can be compared against. An
+    unsealed `Verifier` would therefore let an in-package caller choose the credential material
+    for an account whose own provenance check then passed (FR-002).
+    """
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        Verifier(salt=b"", digest=CREDENTIAL.encode(), kdf=DEFAULT_KDF)
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        dataclasses.replace(Verifier.derive(CREDENTIAL), digest=CREDENTIAL.encode())
 
 
 def test_every_scope_allocates_a_distinct_opaque_key() -> None:
