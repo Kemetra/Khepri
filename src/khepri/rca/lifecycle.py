@@ -126,7 +126,7 @@ class LifecycleService:
         that never existed are indistinguishable here.
         """
         account = self._accounts.get_account(account_id)
-        if account is None or account.is_purged or not account.is_enabled:
+        if account is None or not account.can_act:
             raise AccountOperationFailed(ACCOUNT_FAILURE)
         return account
 

@@ -113,4 +113,4 @@ class MemoryOrganizationStore:
         if self.accounts is None:
             return True
         account = self.accounts.get_account(account_id)
-        return account is not None and account.is_enabled and not account.is_purged
+        return account is not None and account.can_act

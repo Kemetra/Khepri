@@ -63,6 +63,18 @@ class Account(Sealed):
         """True once §2b has minimized this record to a tombstone."""
         return self.email is None
 
+    @property
+    def can_act(self) -> bool:
+        """True only for an account permitted to authenticate, hold authority, or own anything.
+
+        The single definition of "live". Four call sites need this judgment — authentication,
+        scope resolution, the lifecycle chokepoint, and FR-013's owner count — and expressing it
+        separately at each is how they drift apart. That is not hypothetical: FR-013's guard
+        counted owner-role rows without consulting account state, so a disabled account went on
+        counting as an owner and two ordinary calls could strand an organization.
+        """
+        return self.is_enabled and not self.is_purged
+
     @classmethod
     def create(cls, email: str, credential: str) -> Account:
         """Establish a durable identity with a freshly derived verifier (FR-001, FR-002).
@@ -187,7 +199,7 @@ def _is_verifiable(account: Account | None) -> bool:
     """
     return (
         account is not None
-        and account.is_enabled
+        and account.can_act
         and account.verifier is not None
         and account.verifier.kdf == DEFAULT_KDF
     )
