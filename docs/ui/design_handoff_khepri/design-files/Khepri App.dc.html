@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/nocturne-3819359e-e402-4ee9-a5e9-8d624afd2a9b/styles.css">
+<script src="_ds/nocturne-3819359e-e402-4ee9-a5e9-8d624afd2a9b/_ds_bundle.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --font-heading: 'IBM Plex Sans Arabic', Inter, system-ui, sans-serif;
+    --font-body: 'IBM Plex Sans Arabic', Inter, system-ui, sans-serif;
+  }
+  body { margin: 0; background: #101220; }
+  h1, h2, h3, h4, h5, h6 { letter-spacing: 0; line-height: 1.35; }
+  p, .card-body, .text-muted { line-height: 1.75; }
+  .table th, .table td { line-height: 1.7; }
+  .tag { white-space: nowrap; }
+  /* Light document surface: muted text needs a real ramp step, not a 55% mix of the ink. */
+  [data-surface="doc"] .text-muted,
+  [data-surface="doc"] .table th { color: var(--color-neutral-700); }
+  .btn { white-space: nowrap; }
+  label, .field label { letter-spacing: 0; }
+  @keyframes khepri-sheen { 0% { transform: translateX(120%); } 100% { transform: translateX(-820%); } }
+</style>
+</helmet>
+
+<div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Inter, system-ui, sans-serif; background: #101220; color: var(--color-text); padding: clamp(16px, 2.2vw, 40px) clamp(16px, 2.2vw, 40px) 96px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; gap: var(--space-8);">
+
+  <div style="width: min(1520px, 100%); display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-8); flex-wrap: wrap;">
+    <div dir="ltr" style="display: flex; flex-direction: column; gap: 2px;">
+      <h6 style="margin: 0; color: var(--color-accent);">Khepri · Nocturne</h6>
+      <h3 style="margin: 0;">Product UI mockups</h3>
+    </div>
+    <div style="display: flex; gap: var(--space-2); flex-wrap: wrap;">
+      <button class="btn btn-secondary" onClick="{{ goHome }}" style="{{ tabHome }}">الرئيسية</button>
+      <button class="btn btn-secondary" onClick="{{ goUpload }}" style="{{ tabUpload }}">رفع البيانات</button>
+      <button class="btn btn-secondary" onClick="{{ goQuality }}" style="{{ tabQuality }}">مراجعة الجودة</button>
+      <button class="btn btn-secondary" onClick="{{ goConfig }}" style="{{ tabConfig }}">إعداد التقرير</button>
+      <button class="btn btn-secondary" onClick="{{ goRunning }}" style="{{ tabRunning }}">جاري الإنشاء</button>
+      <button class="btn btn-secondary" onClick="{{ goReport }}" style="{{ tabReport }}">التقرير النهائي</button>
+    </div>
+  </div>
+
+  <div style="width: min(1520px, 100%); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-lg); background: var(--color-bg);">
+
+    <div style="display: flex; align-items: center; gap: var(--space-6); padding: 0 var(--space-6); height: 60px; background: var(--color-neutral-900);">
+      <div style="display: flex; align-items: center; gap: var(--space-2); margin-inline-end: var(--space-8);">
+        <span class="ph-fill ph-bug-beetle" style="font-size: 22px; color: var(--color-accent);"></span>
+        <span dir="ltr" style="font-family: var(--font-heading); font-weight: 600; font-size: 19px; letter-spacing: 0.01em;">Khepri</span>
+      </div>
+      <nav style="display: flex; align-items: center; gap: var(--space-6); font-size: 14px;">
+        <span style="{{ navHome }}">الرئيسية</span>
+        <span style="{{ navReports }}">التقارير</span>
+        <span style="{{ navSources }}">مصادر البيانات</span>
+        <span style="color: color-mix(in srgb, var(--color-text) 62%, transparent);">التنبيهات</span>
+        <span style="color: color-mix(in srgb, var(--color-text) 62%, transparent);">الإعدادات</span>
+      </nav>
+      <div style="margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-4);">
+        <span class="ph ph-question" style="font-size: 19px; color: color-mix(in srgb, var(--color-text) 62%, transparent);"></span>
+        <span class="ph ph-bell" style="font-size: 19px; color: color-mix(in srgb, var(--color-text) 62%, transparent);"></span>
+        <div style="display: flex; align-items: center; gap: var(--space-2); padding: 5px var(--space-3) 5px var(--space-2); border: 1px solid var(--color-divider); border-radius: var(--radius-md);">
+          <span class="ph ph-caret-down" style="font-size: 13px; color: color-mix(in srgb, var(--color-text) 55%, transparent);"></span>
+          <span style="font-size: 13px;">أحمد</span>
+          <span style="width: 24px; height: 24px; border-radius: 50%; background: var(--color-accent-800); color: var(--color-accent-100); display: grid; place-items: center; font-size: 11px;">أ</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: stretch; min-height: 880px;">
+
+      <div style="flex: 1; padding: var(--space-8); display: flex; flex-direction: column; gap: var(--space-6); min-width: 0;">
+
+        <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: var(--space-8);">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-8); align-items: center;">
+              <div style="display: flex; flex-direction: column; gap: var(--space-4); padding-inline-start: var(--space-4);">
+                <h1 style="margin: 0; font-size: 46px;">مرحبًا بك في <span dir="ltr" style="color: var(--color-accent);">Khepri</span></h1>
+                <h4 style="margin: 0; color: var(--color-accent-300); font-weight: 500;">حوّل ملفات Excel و CSV إلى تقارير تنفيذية واضحة وقابلة للمراجعة</h4>
+                <p class="text-muted" style="margin: 0; font-size: 15px; line-height: 1.75; max-width: 54ch; text-wrap: pretty;">يساعد Khepri فرق الأعمال على تحويل بياناتهم إلى رؤى موثوقة وتقارير جاهزة للمشاركة، مع تتبع كامل للمصدر، وسجل تدقيق لا يمكن تغييره، وبيئة آمنة تُلبي أعلى معايير حوكمة البيانات.</p>
+                <div style="display: flex; gap: var(--space-3); margin-top: var(--space-2);">
+                  <button class="btn btn-primary" onClick="{{ goUpload }}" style="padding: 11px 22px; font-size: 15px;"><span class="ph ph-cloud-arrow-up" style="font-size: 18px;"></span>ابدأ برفع ملف</button>
+                  <button class="btn btn-secondary" onClick="{{ goReport }}" style="padding: 11px 22px; font-size: 15px;"><span class="ph ph-file-text" style="font-size: 18px;"></span>شاهد مثال تقرير</button>
+                </div>
+                <div class="text-muted" style="display: flex; align-items: center; gap: var(--space-2); font-size: 12px;">
+                  <span class="ph ph-lock-simple"></span>
+                  <span>بياناتك آمنة ومشفرة ولا تُستخدم لأي تدريب أو مشاركة.</span>
+                </div>
+              </div>
+
+              <div class="card elev-md" style="padding: 0; overflow: hidden; gap: 0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-6); flex-wrap: wrap;">
+                  <div style="display: flex; flex-direction: column;">
+                    <div style="font-family: var(--font-heading); font-size: 17px; white-space: nowrap;">تقرير الأداء التنفيذي</div>
+                    <div class="text-muted" style="font-size: 12px;">مايو 2024</div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: var(--space-2);">
+                    <span class="tag tag-accent">تم التحديث 10:30 ص</span>
+                    <button class="btn btn-secondary" style="font-size: 12px;"><span class="ph ph-download-simple"></span>تصدير</button>
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--color-divider);">
+                  <div style="background: var(--color-surface); padding: var(--space-4) var(--space-4);">
+                    <div class="text-muted" style="font-size: 11px;">إجمالي الإيرادات</div>
+                    <div style="font-family: var(--font-heading); font-size: 24px; margin-top: 4px;">12.84</div>
+                    <div class="text-muted" style="font-size: 10px;">مليون ر.س</div>
+                    <div style="font-size: 11px; color: var(--color-accent-300); margin-top: 6px;">↑ 13.7% عن الشهر السابق</div>
+                  </div>
+                  <div style="background: var(--color-surface); padding: var(--space-4);">
+                    <div class="text-muted" style="font-size: 11px;">صافي الربح</div>
+                    <div style="font-family: var(--font-heading); font-size: 24px; margin-top: 4px;">2.31</div>
+                    <div class="text-muted" style="font-size: 10px;">مليون ر.س</div>
+                    <div style="font-size: 11px; color: var(--color-accent-300); margin-top: 6px;">↑ 16.4% عن الشهر السابق</div>
+                  </div>
+                  <div style="background: var(--color-surface); padding: var(--space-4);">
+                    <div class="text-muted" style="font-size: 11px;">هامش الربح</div>
+                    <div style="font-family: var(--font-heading); font-size: 24px; margin-top: 4px;">18.0%</div>
+                    <div class="text-muted" style="font-size: 10px;">من الإيرادات</div>
+                    <div style="font-size: 11px; color: var(--color-accent-300); margin-top: 6px;">↑ 1.8 نقطة مئوية</div>
+                  </div>
+                  <div style="background: var(--color-surface); padding: var(--space-4);">
+                    <div class="text-muted" style="font-size: 11px;">عدد العملاء الجدد</div>
+                    <div style="font-family: var(--font-heading); font-size: 24px; margin-top: 4px;">1,248</div>
+                    <div class="text-muted" style="font-size: 10px;">عميل</div>
+                    <div style="font-size: 11px; color: var(--color-accent-300); margin-top: 6px;">↑ 11.2% عن الشهر السابق</div>
+                  </div>
+                </div>
+                <div style="padding: var(--space-6); display: grid; grid-template-columns: 1.15fr 1fr; gap: var(--space-6);">
+                  <div style="display: flex; flex-direction: column; gap: var(--space-3);">
+                    <div class="text-muted" style="font-size: 12px;">الإيرادات حسب الشهر (مليون ر.س)</div>
+                    <svg viewBox="0 0 320 130" style="width: 100%; height: auto; display: block;" aria-label="الإيرادات حسب الشهر">
+                      <polyline points="10,110 60,96 110,84 160,66 210,52 260,32 310,16" fill="none" stroke="var(--color-accent-500)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+                      <polyline points="10,110 60,96 110,84 160,66 210,52 260,32 310,16 310,126 10,126" fill="var(--color-accent-500)" fill-opacity="0.10" stroke="none"></polyline>
+                      <line x1="10" y1="126" x2="310" y2="126" stroke="var(--color-neutral-400)" stroke-width="1"></line>
+                    </svg>
+                    <div dir="ltr" class="text-muted" style="display: flex; justify-content: space-between; font-size: 10px;">
+                      <span>نوفمبر</span><span>ديسمبر</span><span>يناير</span><span>فبراير</span><span>مارس</span><span>أبريل</span><span>مايو</span>
+                    </div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: var(--space-3);">
+                    <div class="text-muted" style="font-size: 12px;">أعلى المنتجات أداءً</div>
+                    <table class="table" style="font-size: 12px;">
+                      <tbody>
+                        <tr><td style="padding: 5px var(--space-2);">حلول الأعمال</td><td dir="ltr" style="padding: 5px var(--space-2); text-align: end;">4,520,000</td><td style="padding: 5px var(--space-2); text-align: end; color: var(--color-accent-300);">↑ 24.3%</td></tr>
+                        <tr><td style="padding: 5px var(--space-2);">التحليلات المتقدمة</td><td dir="ltr" style="padding: 5px var(--space-2); text-align: end;">3,210,000</td><td style="padding: 5px var(--space-2); text-align: end; color: var(--color-accent-300);">↑ 19.6%</td></tr>
+                        <tr><td style="padding: 5px var(--space-2);">تكامل الأنظمة</td><td dir="ltr" style="padding: 5px var(--space-2); text-align: end;">2,180,000</td><td style="padding: 5px var(--space-2); text-align: end; color: var(--color-accent-300);">↑ 11.8%</td></tr>
+                        <tr><td style="padding: 5px var(--space-2);">الدعم الاحترافي</td><td dir="ltr" style="padding: 5px var(--space-2); text-align: end;">1,410,000</td><td style="padding: 5px var(--space-2); text-align: end; color: var(--color-accent-300);">↑ 8.7%</td></tr>
+                        <tr><td style="padding: 5px var(--space-2);">أخرى</td><td dir="ltr" style="padding: 5px var(--space-2); text-align: end;">1,520,000</td><td style="padding: 5px var(--space-2); text-align: end; color: var(--color-accent-300);">↑ 5.2%</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-6);">
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                <div style="display: flex; align-items: center; gap: var(--space-2);">
+                  <span class="ph ph-shield-check" style="font-size: 18px; color: var(--color-accent);"></span>
+                  <div class="card-title">موثوق من فرق الأعمال</div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                  <div style="display: flex; gap: var(--space-3);">
+                    <span class="ph ph-lock-key" style="font-size: 17px; color: var(--color-accent-400); margin-top: 2px;"></span>
+                    <div>
+                      <div style="font-size: 14px; color: var(--color-accent-300);">أمان على مستوى المؤسسات</div>
+                      <div class="text-muted" style="font-size: 12px; line-height: 1.6;">تشفير من طرف إلى طرف، وضوابط وصول دقيقة، وسجل تدقيق كامل لكل تعديل.</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: var(--space-3);">
+                    <span class="ph ph-globe" style="font-size: 17px; color: var(--color-accent-400); margin-top: 2px;"></span>
+                    <div>
+                      <div style="font-size: 14px; color: var(--color-accent-300);">دعم باللغة العربية</div>
+                      <div class="text-muted" style="font-size: 12px; line-height: 1.6;">واجهة وتجربة مصممة خصيصًا لفرق العمل في المنطقة، مع دعم فني محلي.</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: var(--space-3);">
+                    <span class="ph ph-share-network" style="font-size: 17px; color: var(--color-accent-400); margin-top: 2px;"></span>
+                    <div>
+                      <div style="font-size: 14px; color: var(--color-accent-300);">جاهز للتصدير والمشاركة</div>
+                      <div class="text-muted" style="font-size: 12px; line-height: 1.6;">تصدير إلى PDF و Excel و PowerPoint ومشاركة آمنة مع التحكم في الصلاحيات.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-6);">
+                <div style="display: flex; align-items: center; gap: var(--space-2);">
+                  <span class="ph ph-sparkle" style="font-size: 18px; color: var(--color-accent);"></span>
+                  <div class="card-title">ثلاث خطوات من البيانات إلى تقرير تنفيذي</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); text-align: center;">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: var(--space-2);">
+                    <span style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--color-accent); color: var(--color-accent); display: grid; place-items: center; font-size: 13px;">1</span>
+                    <span class="ph ph-cloud-arrow-up" style="font-size: 24px; color: var(--color-accent-400);"></span>
+                    <div style="font-size: 13px;">ارفع ملف</div>
+                    <div class="text-muted" style="font-size: 11px;">Excel أو CSV</div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: var(--space-2);">
+                    <span style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--color-divider); color: color-mix(in srgb, var(--color-text) 70%, transparent); display: grid; place-items: center; font-size: 13px;">2</span>
+                    <span class="ph ph-columns" style="font-size: 24px; color: var(--color-accent-400);"></span>
+                    <div style="font-size: 13px;">نحن نحلل وننظف</div>
+                    <div class="text-muted" style="font-size: 11px;">توحيد، تحقق، وربط البيانات</div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: var(--space-2);">
+                    <span style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--color-divider); color: color-mix(in srgb, var(--color-text) 70%, transparent); display: grid; place-items: center; font-size: 13px;">3</span>
+                    <span class="ph ph-file-text" style="font-size: 24px; color: var(--color-accent-400);"></span>
+                    <div style="font-size: 13px;">تقرير تنفيذي جاهز</div>
+                    <div class="text-muted" style="font-size: 11px;">مؤشرات، رسوم بيانية، وجداول قابلة للمراجعة</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                <div style="display: flex; align-items: center; gap: var(--space-2);">
+                  <span class="ph ph-flag" style="font-size: 18px; color: var(--color-accent);"></span>
+                  <div class="card-title">خطواتك للانطلاق</div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                  <div style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--color-accent) 10%, transparent);">
+                    <span class="ph-fill ph-check-circle" style="font-size: 20px; color: var(--color-accent);"></span>
+                    <div>
+                      <div style="font-size: 14px; color: var(--color-accent-300);">ارفع ملف Excel أو CSV</div>
+                      <div class="text-muted" style="font-size: 12px;">ابدأ بتحويل بياناتك إلى رؤى</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3);">
+                    <span class="ph ph-circle" style="font-size: 20px; color: var(--color-neutral-700);"></span>
+                    <div>
+                      <div style="font-size: 14px;">مراجعة الأعمدة والبيانات</div>
+                      <div class="text-muted" style="font-size: 12px;">تأكد من صحة البيانات وربط الحقول</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3);">
+                    <span class="ph ph-circle" style="font-size: 20px; color: var(--color-neutral-700);"></span>
+                    <div>
+                      <div style="font-size: 14px;">إنشاء تقريرك الأول</div>
+                      <div class="text-muted" style="font-size: 12px;">احصل على تقرير تنفيذي جاهز للمشاركة</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <sc-if value="{{ showTrust }}" hint-placeholder-val="{{ true }}">
+              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-6); padding: var(--space-6); border-radius: var(--radius-md); box-shadow: var(--shadow-sm);">
+                <div style="display: flex; align-items: center; gap: var(--space-3);">
+                  <span class="ph ph-file-lock" style="font-size: 20px; color: var(--color-accent-400);"></span>
+                  <div><div style="font-size: 13px;">سجل تدقيق غير قابل للتغيير</div><div class="text-muted" style="font-size: 11px;">لكل العمليات والتعديلات</div></div>
+                </div>
+                <div style="display: flex; align-items: center; gap: var(--space-3);">
+                  <span class="ph ph-hard-drives" style="font-size: 20px; color: var(--color-accent-400);"></span>
+                  <div><div style="font-size: 13px;">استضافة آمنة</div><div class="text-muted" style="font-size: 11px;">في مراكز بيانات معتمدة</div></div>
+                </div>
+                <div style="display: flex; align-items: center; gap: var(--space-3);">
+                  <span class="ph ph-user-circle" style="font-size: 20px; color: var(--color-accent-400);"></span>
+                  <div><div style="font-size: 13px;">امتثال للخصوصية</div><div class="text-muted" style="font-size: 11px;" dir="ltr">PDPL</div></div>
+                </div>
+                <div style="display: flex; align-items: center; gap: var(--space-3);">
+                  <span class="ph ph-lock-simple" style="font-size: 20px; color: var(--color-accent-400);"></span>
+                  <div><div style="font-size: 13px;">تشفير البيانات</div><div class="text-muted" style="font-size: 11px;" dir="ltr">AES-256</div></div>
+                </div>
+                <div style="display: flex; align-items: center; gap: var(--space-3);">
+                  <span class="ph ph-seal-check" style="font-size: 20px; color: var(--color-accent-400);"></span>
+                  <div><div style="font-size: 13px;" dir="ltr">ISO 27001</div><div class="text-muted" style="font-size: 11px;">معتمد</div></div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isUpload }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: var(--space-6);">
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4);">
+              <span class="ph ph-cloud-arrow-up" style="font-size: 26px; color: var(--color-accent); margin-top: 6px;"></span>
+              <div>
+                <h2 style="margin: 0;">رفع البيانات</h2>
+                <p class="text-muted" style="margin: 4px 0 0; font-size: 14px;">استورد ملفات Excel و CSV بأمان لبدء التحليل والتقارير.</p>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-6);">
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-2);">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div class="text-muted" style="font-size: 12px;">الملفات قيد الفحص</div>
+                  <span class="ph ph-clock" style="font-size: 18px; color: var(--color-accent-400);"></span>
+                </div>
+                <div style="font-family: var(--font-heading); font-size: 30px;">8</div>
+                <div class="text-muted" style="font-size: 11px;">↑ 14.3% عن الشهر الماضي</div>
+              </div>
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-2);">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div class="text-muted" style="font-size: 12px;">عمليات الاستيراد الناجحة</div>
+                  <span class="ph ph-check-circle" style="font-size: 18px; color: var(--color-accent-400);"></span>
+                </div>
+                <div style="font-family: var(--font-heading); font-size: 30px;">104</div>
+                <div class="text-muted" style="font-size: 11px;">↑ 16.7% عن الشهر الماضي</div>
+              </div>
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-2);">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div class="text-muted" style="font-size: 12px;">اجمالي عمليات الرفع</div>
+                  <span class="ph ph-upload-simple" style="font-size: 18px; color: var(--color-accent-400);"></span>
+                </div>
+                <div style="font-family: var(--font-heading); font-size: 30px;">128</div>
+                <div class="text-muted" style="font-size: 11px;">↑ 18.2% عن الشهر الماضي</div>
+              </div>
+            </div>
+
+            <div class="card elev-sm" style="padding: var(--space-8); gap: var(--space-6);">
+              <div class="card-title">رفع ملف جديد</div>
+              <div style="display: grid; grid-template-columns: 1fr 1px 1.35fr; gap: var(--space-8);">
+                <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                  <div class="text-muted" style="font-size: 13px;">اختر نوع الملف المراد استيراده</div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+                    <div style="border: 1px solid var(--color-accent); border-radius: var(--radius-md); padding: var(--space-4); display: flex; align-items: center; gap: var(--space-3); background: color-mix(in srgb, var(--color-accent) 10%, transparent);">
+                      <span class="ph ph-file-xls" style="font-size: 26px; color: var(--color-accent);"></span>
+                      <div><div dir="ltr" style="font-size: 15px;">Excel</div><div dir="ltr" class="text-muted" style="font-size: 11px;">.xlsx, .xls</div></div>
+                    </div>
+                    <div style="border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: var(--space-4); display: flex; align-items: center; gap: var(--space-3);">
+                      <span class="ph ph-file-csv" style="font-size: 26px; color: var(--color-neutral-400);"></span>
+                      <div><div dir="ltr" style="font-size: 15px;">CSV</div><div dir="ltr" class="text-muted" style="font-size: 11px;">.csv</div></div>
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-4); border-radius: var(--radius-md); box-shadow: var(--shadow-sm);">
+                    <span class="ph ph-shield-check" style="font-size: 18px; color: var(--color-accent-400);"></span>
+                    <div class="text-muted" style="font-size: 12px; line-height: 1.6;">جميع الملفات تعالج بشكل آمن ولا يتم تخزينها خارج بيئة Khepri.</div>
+                  </div>
+                </div>
+
+                <div style="background: var(--color-divider);"></div>
+
+                <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                  <div style="border: 1px dashed color-mix(in srgb, var(--color-accent) 55%, transparent); border-radius: var(--radius-lg); padding: var(--space-8); display: flex; flex-direction: column; align-items: center; gap: var(--space-3); background: color-mix(in srgb, var(--color-accent) 5%, transparent);">
+                    <span class="ph ph-cloud-arrow-up" style="font-size: 42px; color: var(--color-accent);"></span>
+                    <div style="font-size: 16px;">اسحب الملف هنا وأفلته للرفع</div>
+                    <div class="text-muted" style="font-size: 13px;">أو اختر ملفًا من جهازك أو من OneDrive</div>
+                    <div style="display: flex; gap: var(--space-3); margin-top: var(--space-2);">
+                      <button class="btn btn-primary" onClick="{{ goQuality }}"><span class="ph ph-file-arrow-up"></span>اختيار ملف</button>
+                      <button class="btn btn-secondary"><span class="ph ph-cloud"></span>استيراد من OneDrive</button>
+                    </div>
+                  </div>
+                  <div class="text-muted" style="display: flex; align-items: center; gap: var(--space-2); font-size: 12px;">
+                    <span class="ph ph-info"></span>
+                    <span>الحد الأقصى لحجم الملف: 50 ميجابايت · ملف Excel بورقة واحدة</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card elev-sm" style="padding: var(--space-6) var(--space-6) var(--space-4); gap: var(--space-4);">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div class="card-title">أحدث الملفات</div>
+                <button class="btn btn-ghost" style="font-size: 13px;">عرض الكل</button>
+              </div>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>اسم الملف</th>
+                    <th>المصدر</th>
+                    <th>حجم الملف</th>
+                    <th>تاريخ الرفع</th>
+                    <th>الحالة</th>
+                    <th>رفع بواسطة</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span dir="ltr">مبيعات_الربع_الثاني.xlsx</span></td>
+                    <td dir="ltr">Excel</td>
+                    <td dir="ltr">2.4 MB</td>
+                    <td>20 مايو 2024 · 10:30 ص</td>
+                    <td><span class="tag tag-accent">تم الرفع</span></td>
+                    <td>أحمد محمد</td>
+                    <td style="text-align: end;"><span class="ph ph-dots-three" style="color: var(--color-neutral-400);"></span></td>
+                  </tr>
+                  <tr>
+                    <td><span dir="ltr">العملاء_المحتملون.csv</span></td>
+                    <td dir="ltr">CSV</td>
+                    <td dir="ltr">1.8 MB</td>
+                    <td>20 مايو 2024 · 09:50 ص</td>
+                    <td><span class="tag tag-neutral">قيد الفحص</span></td>
+                    <td>سارة خالد</td>
+                    <td style="text-align: end;"><span class="ph ph-dots-three" style="color: var(--color-neutral-400);"></span></td>
+                  </tr>
+                  <tr>
+                    <td><span dir="ltr">المخزون_والطلبات.xlsx</span></td>
+                    <td dir="ltr">Excel</td>
+                    <td dir="ltr">3.1 MB</td>
+                    <td>19 مايو 2024 · 04:20 م</td>
+                    <td><span class="tag tag-accent">تم الرفع</span></td>
+                    <td>أحمد محمد</td>
+                    <td style="text-align: end;"><span class="ph ph-dots-three" style="color: var(--color-neutral-400);"></span></td>
+                  </tr>
+                  <tr>
+                    <td><span dir="ltr">بيانات_غير_صحيحة.csv</span></td>
+                    <td dir="ltr">CSV</td>
+                    <td dir="ltr">1.2 MB</td>
+                    <td>19 مايو 2024 · 11:15 ص</td>
+                    <td><span class="tag tag-outline"><span class="ph ph-warning" style="margin-inline-end: 4px;"></span>فشل الاستيراد</span></td>
+                    <td>مريم علي</td>
+                    <td style="text-align: end;"><span class="ph ph-dots-three" style="color: var(--color-neutral-400);"></span></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div style="text-align: center;"><button class="btn btn-ghost" style="font-size: 13px;">عرض كل السجلات</button></div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isQuality }}" hint-placeholder-val="{{ true }}">
+          <div data-surface="doc" style="--color-bg: #e4e7f5; --color-surface: #f3f5fe; --color-text: #292b31; --color-divider: color-mix(in srgb, #292b31 16%, transparent); --color-neutral-100: #595d6c; --color-neutral-200: #3f424d; --color-neutral-400: #75798c; --color-neutral-600: #75798c; --color-neutral-800: #e4e7f5; --color-neutral-900: #f3f5fe; --color-accent-100: #5d5294; --color-accent-200: #423a6a; --color-accent-300: #796cbf; --color-accent-400: #796cbf; --color-accent-800: #e7e5fe; --color-accent: #796cbf; --shadow-sm: 0 0 0 1px #cfd3e5; --shadow-md: 0 0 0 1px #cfd3e5, 0 6px 18px rgba(41,43,49,0.10); --shadow-lg: 0 0 0 1px #b2b6ca, 0 16px 40px rgba(41,43,49,0.14); background: var(--color-bg); color: var(--color-text); flex: 1; margin: calc(var(--space-8) * -1); padding: var(--space-8); display: flex; flex-direction: column; gap: var(--space-6);">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-8);">
+              <div>
+                <h2 style="margin: 0;">مراجعة الأعمدة والتحقق من الجودة</h2>
+                <p class="text-muted" style="margin: 4px 0 0; font-size: 14px;">تحقق من جودة البيانات وربط الأعمدة بالمجالات المستهدفة قبل اعتماد المعالجة.</p>
+              </div>
+              <div class="card elev-sm" style="padding: var(--space-4); gap: 2px; min-width: 240px;">
+                <div style="display: flex; align-items: center; gap: var(--space-2);">
+                  <span class="ph ph-file-xls" style="font-size: 20px; color: var(--color-accent);"></span>
+                  <span dir="ltr" style="font-size: 14px;">مبيعات_أبريل_2024</span>
+                </div>
+                <div class="text-muted" style="font-size: 11px;"><span dir="ltr">Excel · 2.4 MB</span> · تم الرفع قبل 3 دقائق</div>
+                <button class="btn btn-ghost" style="font-size: 12px; align-self: flex-start;">عرض تفاصيل الملف</button>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-6); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); font-size: 13px;">
+              <div style="display: flex; align-items: center; gap: var(--space-2); color: var(--color-accent);"><span class="ph-fill ph-check-circle" style="font-size: 17px;"></span>رفع الملف</div>
+              <div style="flex: 1; height: 1px; background: var(--color-divider);"></div>
+              <div style="display: flex; align-items: center; gap: var(--space-2); color: var(--color-accent);"><span class="ph-fill ph-check-circle" style="font-size: 17px;"></span>التحقق من الجودة</div>
+              <div style="flex: 1; height: 1px; background: var(--color-divider);"></div>
+              <div style="display: flex; align-items: center; gap: var(--space-2);"><span style="width: 20px; height: 20px; border-radius: 50%; background: var(--color-accent); color: var(--color-bg); display: grid; place-items: center; font-size: 11px;">3</span>ربط الأعمدة</div>
+              <div style="flex: 1; height: 1px; background: var(--color-divider);"></div>
+              <div class="text-muted" style="display: flex; align-items: center; gap: var(--space-2);"><span style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--color-divider); display: grid; place-items: center; font-size: 11px;">4</span>إعداد التقرير</div>
+              <div style="flex: 1; height: 1px; background: var(--color-divider);"></div>
+              <div class="text-muted" style="display: flex; align-items: center; gap: var(--space-2);"><span style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--color-divider); display: grid; place-items: center; font-size: 11px;">5</span>التسليم</div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: var(--space-6); align-items: start;">
+              <div style="display: flex; flex-direction: column; gap: var(--space-6);">
+                <div class="card elev-sm" style="padding: 0; gap: 0; overflow: hidden;">
+                  <div style="display: flex; align-items: center; gap: var(--space-6); padding: 0 var(--space-6); border-bottom: 1px solid var(--color-divider);">
+                    <span style="font-size: 13px; padding: var(--space-4) 0; color: var(--color-accent); box-shadow: inset 0 -2px 0 var(--color-accent);">معاينة البيانات</span>
+                    <span class="text-muted" style="font-size: 13px; padding: var(--space-4) 0;">ملخص الجودة</span>
+                  </div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-6);">
+                    <div style="display: flex; align-items: center; gap: var(--space-3);">
+                      <span class="ph ph-eye" style="color: var(--color-neutral-400);"></span>
+                      <span class="text-muted" style="font-size: 12px;">عرض أول</span>
+                      <span class="input" style="width: auto; min-height: 30px; padding: 3px 10px; font-size: 12px;">100</span>
+                      <span class="text-muted" style="font-size: 12px;">من أصل 7,542 صف</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: var(--space-3);">
+                      <span class="input" style="width: 190px; min-height: 30px; padding: 4px 10px; font-size: 12px; color: color-mix(in srgb, var(--color-text) 45%, transparent);">بحث في البيانات...</span>
+                      <button class="btn btn-secondary" style="font-size: 12px;"><span class="ph ph-sliders-horizontal"></span>خيارات المعاينة</button>
+                    </div>
+                  </div>
+                  <div style="padding: 0 var(--space-6) var(--space-4); overflow-x: auto;">
+                    <table class="table" style="font-size: 13px; min-width: 780px;">
+                      <thead>
+                        <tr>
+                          <th>رقم الفاتورة</th><th>تاريخ الفاتورة</th><th>اسم العميل</th><th>إجمالي المبلغ</th><th>العملة</th><th>المنتج</th><th>الكمية</th><th>سعر الوحدة</th><th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td dir="ltr">INV-00001</td><td dir="ltr">2024-04-01</td><td>مؤسسة النور</td><td dir="ltr">250.00</td><td dir="ltr">SAR</td><td>خدمة استشارية</td><td dir="ltr">2</td><td dir="ltr">125.00</td><td><span class="ph-fill ph-check-circle" style="color: var(--color-accent);"></span></td></tr>
+                        <tr><td dir="ltr">INV-00002</td><td dir="ltr" style="color: var(--color-accent-300);">01/04/2024</td><td>شركة التقنيات المتقدمة</td><td dir="ltr">3,500.00</td><td dir="ltr">SAR</td><td>ترخيص منصة</td><td dir="ltr">1</td><td dir="ltr">3,500.00</td><td><span class="ph ph-warning" style="color: var(--color-accent-300);"></span></td></tr>
+                        <tr><td dir="ltr">INV-00003</td><td dir="ltr" style="color: var(--color-accent-300);">2024/04/02</td><td>مؤسسة اليسر</td><td dir="ltr">85.00</td><td dir="ltr">SAR</td><td>دعم فني</td><td>—</td><td dir="ltr">85.00</td><td><span class="ph ph-warning" style="color: var(--color-accent-300);"></span></td></tr>
+                        <tr><td dir="ltr">INV-00004</td><td dir="ltr">2024-04-02</td><td>شركة المستقبل</td><td dir="ltr">1,200.00</td><td><span class="tag tag-neutral" dir="ltr">USD</span></td><td>تدريب حضوري</td><td dir="ltr">3</td><td dir="ltr">1,200.00</td><td><span class="ph ph-info" style="color: var(--color-neutral-400);"></span></td></tr>
+                        <tr><td dir="ltr">INV-00005</td><td dir="ltr">2024-04-03</td><td>مؤسسة الأفق</td><td>—</td><td dir="ltr">SAR</td><td>اشتراك شهري</td><td dir="ltr">5</td><td dir="ltr">99.00</td><td><span class="ph-fill ph-x-circle" style="color: var(--color-neutral-200);"></span></td></tr>
+                        <tr><td dir="ltr">INV-00006</td><td dir="ltr" style="color: var(--color-accent-300);">03/04/2024</td><td>شركة البناء الحديث</td><td dir="ltr">2,750.00</td><td dir="ltr">SAR</td><td>تنفيذ تكامل</td><td dir="ltr">1</td><td>—</td><td><span class="ph-fill ph-x-circle" style="color: var(--color-neutral-200);"></span></td></tr>
+                        <tr><td dir="ltr">INV-00007</td><td dir="ltr">2024-04-03</td><td>مؤسسة النور</td><td dir="ltr">1,300.00</td><td dir="ltr">SAR</td><td>صيانة سنوية</td><td dir="ltr">2</td><td dir="ltr">650.00</td><td><span class="ph-fill ph-check-circle" style="color: var(--color-accent);"></span></td></tr>
+                        <tr><td dir="ltr">INV-00008</td><td dir="ltr">2024-04-04</td><td>شركة التقنيات المتقدمة</td><td dir="ltr">1,200.00</td><td dir="ltr">SAR</td><td>خدمة استشارية</td><td dir="ltr">10</td><td dir="ltr">120.00</td><td><span class="ph-fill ph-check-circle" style="color: var(--color-accent);"></span></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-6) var(--space-4); font-size: 12px;">
+                    <button class="btn btn-ghost" style="font-size: 12px;">عرض جميع المشاكل (18)</button>
+                    <div class="text-muted" style="display: flex; align-items: center; gap: var(--space-4);">
+                      <span>مفتاح الحالة:</span>
+                      <span style="display: flex; align-items: center; gap: 4px;"><span class="ph-fill ph-check-circle" style="color: var(--color-accent);"></span>صحيح</span>
+                      <span style="display: flex; align-items: center; gap: 4px;"><span class="ph ph-warning" style="color: var(--color-accent-300);"></span>تحذير</span>
+                      <span style="display: flex; align-items: center; gap: 4px;"><span class="ph-fill ph-x-circle" style="color: var(--color-neutral-200);"></span>خطأ</span>
+                      <span style="display: flex; align-items: center; gap: 4px;"><span class="ph ph-info"></span>معلومة</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1.25fr 1fr; gap: var(--space-6);">
+                  <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                    <div style="display: flex; align-items: center; gap: var(--space-2);">
+                      <span class="ph ph-warning-circle" style="color: var(--color-accent);"></span>
+                      <div class="card-title" style="font-size: 15px;">أبرز المشاكل</div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-3); font-size: 13px;">
+                      <div style="display: flex; gap: var(--space-3);"><span dir="ltr" style="min-width: 34px; color: var(--color-accent-300);">118</span><span class="text-muted">قيمة مفقودة في «إجمالي المبلغ»</span></div>
+                      <div style="display: flex; gap: var(--space-3);"><span dir="ltr" style="min-width: 34px; color: var(--color-accent-300);">94</span><span class="text-muted">تاريخ غير متسق (سيتم التوحيد إلى YYYY-MM-DD)</span></div>
+                      <div style="display: flex; gap: var(--space-3);"><span dir="ltr" style="min-width: 34px; color: var(--color-accent-300);">56</span><span class="text-muted">سعر وحدة مفقود أو غير صالح</span></div>
+                    </div>
+                    <button class="btn btn-ghost" style="font-size: 12px; align-self: flex-start;">عرض جميع المشاكل ←</button>
+                  </div>
+                  <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                    <div class="card-title" style="font-size: 15px;">ملخص الجودة</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+                      <div><div class="text-muted" style="font-size: 11px;">إجمالي الصفوف</div><div dir="ltr" style="font-family: var(--font-heading); font-size: 20px;">7,542</div></div>
+                      <div><div class="text-muted" style="font-size: 11px;">صفوف صالحة</div><div dir="ltr" style="font-family: var(--font-heading); font-size: 20px; color: var(--color-accent-300);">6,812 <span style="font-size: 11px;">90.3%</span></div></div>
+                      <div><div class="text-muted" style="font-size: 11px;">تحذيرات</div><div dir="ltr" style="font-family: var(--font-heading); font-size: 20px;">612 <span style="font-size: 11px;">8.1%</span></div></div>
+                      <div><div class="text-muted" style="font-size: 11px;">مشكلات حرجة</div><div dir="ltr" style="font-family: var(--font-heading); font-size: 20px;">118 <span style="font-size: 11px;">1.6%</span></div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);">
+                  <div class="card-title" style="font-size: 15px;">ربط الأعمدة بالمجالات المستهدفة</div>
+                  <span class="text-muted" style="font-size: 11px;">سحب مستوى الثقة ⌄</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">رقم الفاتورة <span style="color: var(--color-accent);">*</span></div><div class="text-muted" style="font-size: 11px;">معرف فريد</div></div>
+                    <div><div style="font-size: 13px;">رقم الفاتورة</div><div class="text-muted" style="font-size: 11px;">ABC نص</div></div>
+                    <span class="tag tag-accent" dir="ltr">99%</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">تاريخ الفاتورة <span style="color: var(--color-accent);">*</span></div><div class="text-muted" style="font-size: 11px;">تاريخ المعاملة</div></div>
+                    <div><div style="font-size: 13px;">تاريخ الفاتورة</div><div class="text-muted" style="font-size: 11px;">تاريخ</div></div>
+                    <span class="tag tag-accent" dir="ltr">98%</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">اسم العميل <span style="color: var(--color-accent);">*</span></div><div class="text-muted" style="font-size: 11px;">العميل</div></div>
+                    <div><div style="font-size: 13px;">اسم العميل</div><div class="text-muted" style="font-size: 11px;">ABC نص</div></div>
+                    <span class="tag tag-accent" dir="ltr">99%</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">إجمالي المبلغ <span style="color: var(--color-accent);">*</span></div><div class="text-muted" style="font-size: 11px;">المبلغ الإجمالي</div></div>
+                    <div><div style="font-size: 13px;">إجمالي المبلغ</div><div class="text-muted" style="font-size: 11px;">رقم</div></div>
+                    <span class="tag tag-accent" dir="ltr">97%</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">العملة <span style="color: var(--color-accent);">*</span></div><div class="text-muted" style="font-size: 11px;">العملة</div></div>
+                    <div><div style="font-size: 13px;">العملة</div><div class="text-muted" style="font-size: 11px;">ABC نص</div></div>
+                    <span class="tag tag-accent" dir="ltr">96%</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">المنتج</div><div class="text-muted" style="font-size: 11px;">المادة/الخدمة</div></div>
+                    <div><div style="font-size: 13px;">المنتج</div><div class="text-muted" style="font-size: 11px;">ABC نص</div></div>
+                    <span class="tag tag-outline" dir="ltr">82%</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">الكمية</div><div class="text-muted" style="font-size: 11px;">الكمية</div></div>
+                    <div><div style="font-size: 13px;">الكمية</div><div class="text-muted" style="font-size: 11px;">رقم</div></div>
+                    <span class="tag tag-outline" dir="ltr">78%</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div><div style="font-size: 13px;">سعر الوحدة</div><div class="text-muted" style="font-size: 11px;">سعر الوحدة</div></div>
+                    <div><div style="font-size: 13px;">سعر الوحدة</div><div class="text-muted" style="font-size: 11px;">رقم</div></div>
+                    <span class="tag tag-outline" dir="ltr">75%</span>
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <button class="btn btn-ghost" style="font-size: 12px;">+ إضافة مجال مخصص</button>
+                  <span class="text-muted" style="font-size: 12px;">8 من 12 مجال مكتملة</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding-top: var(--space-4);">
+              <button class="btn btn-secondary" onClick="{{ goUpload }}">الرجوع</button>
+              <div style="display: flex; gap: var(--space-3);">
+                <button class="btn btn-secondary"><span class="ph ph-floppy-disk"></span>حفظ كمسودة</button>
+                <button class="btn btn-primary" onClick="{{ goConfig }}"><span class="ph ph-check-circle"></span>اعتماد الربط</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isConfig }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: var(--space-6);">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-8);">
+              <div>
+                <div class="text-muted" style="font-size: 12px;">التقارير › إعداد تقرير جديد</div>
+                <h2 style="margin: 6px 0 0;">إعداد التقرير التنفيذي</h2>
+                <p class="text-muted" style="margin: 4px 0 0; font-size: 14px; max-width: 72ch;">قم بتكوين التقرير التنفيذي عبر اختيار نوع التقرير، وحدد المقاييس، والمرشحات، وإعدادات العرض، ثم نُنشئ تقريرًا جاهزًا للمشاركة.</p>
+              </div>
+              <div style="display: flex; gap: var(--space-3);">
+                <button class="btn btn-secondary"><span class="ph ph-arrow-counter-clockwise"></span>إعادة تعيين</button>
+                <button class="btn btn-secondary"><span class="ph ph-eye"></span>معاينة تعيينة</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1.75fr 1fr; gap: var(--space-6); align-items: start;">
+              <div style="display: flex; flex-direction: column; gap: var(--space-6);">
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-6);">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-8);">
+                    <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                      <div class="card-title" style="font-size: 15px;">نوع التقرير</div>
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
+                        <div style="border: 1px solid var(--color-accent); border-radius: var(--radius-md); padding: var(--space-3); background: color-mix(in srgb, var(--color-accent) 10%, transparent);">
+                          <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 14px; color: var(--color-accent-200);"><span class="ph ph-briefcase"></span>تنفيذي</div>
+                          <div class="text-muted" style="font-size: 11px; margin-top: 4px;">ملخص شامل للأداء واتجاهات الأعمال</div>
+                        </div>
+                        <div style="border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: var(--space-3);">
+                          <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 14px;"><span class="ph ph-chart-line"></span>تحليلي</div>
+                          <div class="text-muted" style="font-size: 11px; margin-top: 4px;">تحليل متعمق مع تفاصيل</div>
+                        </div>
+                        <div style="border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: var(--space-3);">
+                          <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 14px;"><span class="ph ph-gear"></span>تشغيلي</div>
+                          <div class="text-muted" style="font-size: 11px; margin-top: 4px;">تفاصيل العمليات اليومية</div>
+                        </div>
+                        <div style="border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: var(--space-3);">
+                          <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 14px;"><span class="ph ph-sliders"></span>مخصص</div>
+                          <div class="text-muted" style="font-size: 11px; margin-top: 4px;">تقرير مخصص بالكامل</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                      <div class="card-title" style="font-size: 15px;">نطاق التاريخ</div>
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
+                        <div class="field"><label>من</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>01 مايو 2024</span><span class="ph ph-calendar-blank" style="color: var(--color-neutral-400);"></span></div></div>
+                        <div class="field"><label>إلى</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>31 مايو 2024</span><span class="ph ph-calendar-blank" style="color: var(--color-neutral-400);"></span></div></div>
+                      </div>
+                      <div class="field"><label>الفترة المسبقة للمقارنة</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>نفس الفترة السابقة</span><span class="ph ph-caret-down" style="color: var(--color-neutral-400);"></span></div></div>
+                      <label class="radio"><input type="checkbox"><span class="dot"></span><span class="text-muted" style="font-size: 13px;">تضمين الفترة المسبقة للمقارنة</span></label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-6);">
+                  <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--space-8);">
+                    <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                      <div>
+                        <div class="card-title" style="font-size: 15px;">المقاييس (KPIs)</div>
+                        <div class="text-muted" style="font-size: 12px;">اختر المقاييس الرئيسية لعرضها في التقرير</div>
+                      </div>
+                      <div style="display: flex; flex-wrap: wrap; gap: var(--space-3);">
+                        <span style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-accent); color: var(--color-accent-200); background: color-mix(in srgb, var(--color-accent) 10%, transparent);"><span class="ph ph-check"></span>إجمالي الإيرادات</span>
+                        <span style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-accent); color: var(--color-accent-200); background: color-mix(in srgb, var(--color-accent) 10%, transparent);"><span class="ph ph-check"></span>هامش الربح</span>
+                        <span style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-accent); color: var(--color-accent-200); background: color-mix(in srgb, var(--color-accent) 10%, transparent);"><span class="ph ph-check"></span>صافي الربح</span>
+                        <span style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-accent); color: var(--color-accent-200); background: color-mix(in srgb, var(--color-accent) 10%, transparent);"><span class="ph ph-check"></span>معدل دوران المخزون</span>
+                        <span class="text-muted" style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-divider);"><span class="ph ph-trend-up"></span>النمو على أساس سنوي</span>
+                        <span class="text-muted" style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-divider);"><span class="ph ph-shopping-cart"></span>متوسط قيمة الطلب</span>
+                        <span class="text-muted" style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-divider);"><span class="ph ph-user-plus"></span>تكلفة اكتساب العميل</span>
+                        <span class="text-muted" style="display: flex; align-items: center; white-space: nowrap; gap: 6px; font-size: 13px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-divider);"><span class="ph ph-smiley"></span>رضا العملاء</span>
+                      </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                      <div>
+                        <div class="card-title" style="font-size: 15px;">المرشحات</div>
+                        <div class="text-muted" style="font-size: 12px;">تحديد معايير تصفية البيانات</div>
+                      </div>
+                      <div class="field"><label>المنطقة</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>الكل</span><span class="ph ph-caret-down" style="color: var(--color-neutral-400);"></span></div></div>
+                      <div class="field"><label>القناة</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>الكل</span><span class="ph ph-caret-down" style="color: var(--color-neutral-400);"></span></div></div>
+                      <div class="field"><label>فئة المنتج</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>الكل</span><span class="ph ph-caret-down" style="color: var(--color-neutral-400);"></span></div></div>
+                      <button class="btn btn-ghost" style="font-size: 12px; align-self: flex-start;">+ إضافة مرشح</button>
+                    </div>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider);">
+                    <div class="field"><label><span class="ph ph-file-text" style="margin-inline-end: 5px;"></span>تنسيق الإخراج · صيغة الملف</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span dir="ltr">PDF و Excel</span><span class="ph ph-caret-down" style="color: var(--color-neutral-400);"></span></div></div>
+                    <div class="field"><label><span class="ph ph-globe" style="margin-inline-end: 5px;"></span>اللغة · لغة التقرير</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>العربية والإنجليزية</span><span class="ph ph-caret-down" style="color: var(--color-neutral-400);"></span></div></div>
+                    <div class="field"><label><span class="ph ph-rows" style="margin-inline-end: 5px;"></span>التجميع · تجميع البيانات حسب</label><div class="input" style="display: flex; align-items: center; justify-content: space-between;"><span>الشهر</span><span class="ph ph-caret-down" style="color: var(--color-neutral-400);"></span></div></div>
+                  </div>
+                </div>
+
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                  <div>
+                    <div class="card-title" style="font-size: 15px;">اختيار القالب</div>
+                    <div class="text-muted" style="font-size: 12px;">اختر قالبًا لتحديد تصميم وتخطيط التقرير</div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-4);">
+                    <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                      <div style="aspect-ratio: 4 / 3; border-radius: var(--radius-sm); border: 1px solid var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent); display: grid; place-items: center;"><span class="ph ph-layout" style="font-size: 26px; color: var(--color-accent);"></span></div>
+                      <div style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--color-accent-200);"><span class="ph-fill ph-check-circle"></span>قالب تنفيذي كلاسيكي</div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                      <div style="aspect-ratio: 4 / 3; border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); display: grid; place-items: center;"><span class="ph ph-chart-bar" style="font-size: 26px; color: var(--color-neutral-500);"></span></div>
+                      <div class="text-muted" style="font-size: 12px;">قالب تحليلي حديث</div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                      <div style="aspect-ratio: 4 / 3; border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); display: grid; place-items: center;"><span class="ph ph-chart-donut" style="font-size: 26px; color: var(--color-neutral-500);"></span></div>
+                      <div class="text-muted" style="font-size: 12px;">قالب ملخص مرئي</div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                      <div style="aspect-ratio: 4 / 3; border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); display: grid; place-items: center;"><span class="ph ph-table" style="font-size: 26px; color: var(--color-neutral-500);"></span></div>
+                      <div class="text-muted" style="font-size: 12px;">قالب أداء الأقسام</div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                      <div style="aspect-ratio: 4 / 3; border-radius: var(--radius-sm); border: 1px dashed var(--color-divider); display: grid; place-items: center;"><span class="ph ph-plus" style="font-size: 22px; color: var(--color-neutral-500);"></span></div>
+                      <div class="text-muted" style="font-size: 12px;">قالب مخصص</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                  <div class="card-title" style="font-size: 15px;">ملخص الإعدادات</div>
+                  <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+                    <span class="ph ph-database" style="font-size: 17px; color: var(--color-accent-400); margin-top: 2px;"></span>
+                    <div><div class="text-muted" style="font-size: 11px;">مصدر البيانات</div><div style="font-size: 13px;">مستودع البيانات الرئيسي</div><div class="text-muted" style="font-size: 11px;">تحديث يومي · آخر تحديث اليوم 10:30 ص</div></div>
+                  </div>
+                  <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+                    <span class="ph ph-squares-four" style="font-size: 17px; color: var(--color-accent-400); margin-top: 2px;"></span>
+                    <div><div class="text-muted" style="font-size: 11px;">الأقسام المختارة</div><div style="font-size: 13px;">4 أقسام</div></div>
+                  </div>
+                  <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+                    <span class="ph ph-users-three" style="font-size: 17px; color: var(--color-accent-400); margin-top: 2px;"></span>
+                    <div><div class="text-muted" style="font-size: 11px;">الجمهور المستهدف</div><div style="font-size: 13px;">الإدارة التنفيذية</div><div class="text-muted" style="font-size: 11px;">15 مستخدم</div></div>
+                  </div>
+                  <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+                    <span class="ph ph-clock" style="font-size: 17px; color: var(--color-accent-400); margin-top: 2px;"></span>
+                    <div><div class="text-muted" style="font-size: 11px;">وقت التسليم المتوقع</div><div style="font-size: 13px;">05 يونيو 2024 · 08:00 ص</div><div class="text-muted" style="font-size: 11px;">حسب منطقتك الزمنية</div></div>
+                  </div>
+                </div>
+
+                <div style="padding: var(--space-4); border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-accent) 9%, transparent); display: flex; gap: var(--space-3);">
+                  <span class="ph ph-info" style="color: var(--color-accent); margin-top: 2px;"></span>
+                  <div>
+                    <div style="font-size: 13px; color: var(--color-accent-200);">معلومات مهمة</div>
+                    <div class="text-muted" style="font-size: 12px; line-height: 1.6;">سيتم إرسال التقرير بصيغة PDF و Excel إلى البريد الإلكتروني للمستلمين المحددين. يمكنك تعديل الإعدادات لاحقًا.</div>
+                  </div>
+                </div>
+
+                <button class="btn btn-primary btn-block" onClick="{{ goRunning }}" style="padding: 12px;"><span class="ph ph-file-plus"></span>إنشاء التقرير</button>
+                <button class="btn btn-secondary btn-block"><span class="ph ph-bookmark-simple"></span>حفظ كمسودة</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isRunning }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: var(--space-6);">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-8);">
+              <div>
+                <div class="text-muted" style="font-size: 12px;">التقارير › جاري إنشاء التقرير</div>
+                <h2 style="margin: 6px 0 0; display: flex; align-items: center; gap: var(--space-3);"><span class="ph ph-file-text" style="color: var(--color-accent);"></span>جاري إنشاء التقرير</h2>
+                <p style="margin: 6px 0 0; font-size: 14px;">جارٍ إنشاء تقرير الأداء التنفيذي لشهر مايو 2024</p>
+                <p class="text-muted" style="margin: 2px 0 0; font-size: 12px;">بناءً على البيانات المحدثة في 19 مايو 2024، 10:30 ص</p>
+              </div>
+              <div style="display: flex; gap: var(--space-3);">
+                <button class="btn btn-secondary"><span class="ph ph-bell"></span>إشعار عند الاكتمال</button>
+                <button class="btn btn-primary" onClick="{{ goReport }}"><span class="ph ph-arrow-square-out"></span>متابعة في الخلفية</button>
+              </div>
+            </div>
+
+            <div class="card elev-sm" style="padding: var(--space-8); gap: var(--space-6);">
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: var(--space-8); align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: var(--space-2); min-width: 150px;">
+                  <div class="text-muted" style="font-size: 11px;">الوقت المتبقي المقدر</div>
+                  <div style="font-family: var(--font-heading); font-size: 30px;">2 دقيقة</div>
+                  <div class="text-muted" style="font-size: 11px;">حتى الاكتمال</div>
+                  <div style="display: flex; gap: 4px; margin-top: var(--space-2);">
+                    <span style="height: 4px; flex: 1; background: var(--color-accent);"></span>
+                    <span style="height: 4px; flex: 1; background: var(--color-accent);"></span>
+                    <span style="height: 4px; flex: 1; background: var(--color-accent);"></span>
+                    <span style="height: 4px; flex: 1; background: var(--color-accent);"></span>
+                    <span style="height: 4px; flex: 1; background: var(--color-neutral-800);"></span>
+                    <span style="height: 4px; flex: 1; background: var(--color-neutral-800);"></span>
+                  </div>
+                  <div class="text-muted" style="font-size: 11px;">تم الانتهاء من 4 من 6</div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                  <div style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4);">
+                    <div style="font-family: var(--font-heading); font-size: 34px; color: var(--color-accent);">78%</div>
+                    <div class="text-muted" style="font-size: 12px;">الخطوة الحالية: مراجعة الجودة الداخلية · جاري إنشاء التقرير...</div>
+                  </div>
+                  <div style="height: 6px; border-radius: 3px; background: var(--color-neutral-900); overflow: hidden; position: relative;">
+                    <div style="width: 78%; height: 100%; background: var(--color-accent); border-radius: 3px;"></div>
+                    <div style="position: absolute; inset-block: 0; inset-inline-start: 0; width: 12%; background: linear-gradient(to left, transparent, color-mix(in srgb, var(--color-accent-100) 55%, transparent), transparent); animation: khepri-sheen 2.4s linear infinite;"></div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--space-3); margin-top: var(--space-2);">
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;">
+                      <span class="ph ph-database" style="font-size: 22px; color: var(--color-accent-400);"></span>
+                      <span style="font-size: 12px;">تحقق البيانات</span><span class="text-muted" style="font-size: 11px;">اكتمل</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;">
+                      <span class="ph ph-calculator" style="font-size: 22px; color: var(--color-accent-400);"></span>
+                      <span style="font-size: 12px;">حساب المؤشرات</span><span class="text-muted" style="font-size: 11px;">اكتمل</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;">
+                      <span class="ph ph-chart-bar" style="font-size: 22px; color: var(--color-accent-400);"></span>
+                      <span style="font-size: 12px;">إنشاء الرسوم البيانية</span><span class="text-muted" style="font-size: 11px;">اكتمل</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;">
+                      <span class="ph ph-text-align-left" style="font-size: 22px; color: var(--color-accent-400);"></span>
+                      <span style="font-size: 12px;">توليد السرد</span><span class="text-muted" style="font-size: 11px;">اكتمل</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: var(--space-2); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--color-accent) 12%, transparent);">
+                      <span class="ph ph-shield-check" style="font-size: 22px; color: var(--color-accent);"></span>
+                      <span style="font-size: 12px; color: var(--color-accent-200);">مراجعة الجودة</span><span style="font-size: 11px; color: var(--color-accent-300);">جاري التنفيذ</span>
+                    </div>
+                    <div class="text-muted" style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;">
+                      <span class="ph ph-package" style="font-size: 22px;"></span>
+                      <span style="font-size: 12px;">حزمة التصدير</span><span style="font-size: 11px;">في الانتظار</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: var(--space-6); align-items: start;">
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                <div class="card-title" style="font-size: 15px;">الأنشطة في الخلفية</div>
+                <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>8 مصادر</span><span class="text-muted">اكتمل · 100%</span></div>
+                    <div style="height: 4px; background: var(--color-neutral-900);"><div style="width: 100%; height: 100%; background: var(--color-accent);"></div></div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>23 مؤشر</span><span class="text-muted">اكتمل · 100%</span></div>
+                    <div style="height: 4px; background: var(--color-neutral-900);"><div style="width: 100%; height: 100%; background: var(--color-accent);"></div></div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>18 رسم بياني</span><span class="text-muted">جاري التنفيذ · 87%</span></div>
+                    <div style="height: 4px; background: var(--color-neutral-900);"><div style="width: 87%; height: 100%; background: var(--color-accent);"></div></div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>12 قسم</span><span class="text-muted">جاري التنفيذ · 64%</span></div>
+                    <div style="height: 4px; background: var(--color-neutral-900);"><div style="width: 64%; height: 100%; background: var(--color-accent);"></div></div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px;"><span>تحقق تلقائي</span><span class="text-muted">جاري التنفيذ · 22%</span></div>
+                    <div style="height: 4px; background: var(--color-neutral-900);"><div style="width: 22%; height: 100%; background: var(--color-accent);"></div></div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div class="text-muted" style="display: flex; justify-content: space-between; font-size: 12px;"><span dir="ltr">PDF, Excel, PPT</span><span>في الانتظار · 0%</span></div>
+                    <div style="height: 4px; background: var(--color-neutral-900);"></div>
+                  </div>
+                </div>
+                <div class="text-muted" style="font-size: 11px;">ستبقى هذه الصفحة مفتوحة حتى اكتمال التقرير.</div>
+              </div>
+
+              <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                <div style="display: flex; align-items: center; gap: var(--space-2);">
+                  <span class="ph ph-eye" style="color: var(--color-accent);"></span>
+                  <div class="card-title" style="font-size: 15px;">معاينة حية (مبدئية)</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: var(--space-4);">
+                  <div style="padding: var(--space-4); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div class="text-muted" style="font-size: 11px;">هامش الربح</div>
+                    <div style="font-family: var(--font-heading); font-size: 24px; margin-top: 4px;">18.0%</div>
+                    <div style="font-size: 11px; color: var(--color-accent-300);">↑ 6 نقاط مقارنة بالشهر السابق</div>
+                  </div>
+                  <div style="padding: var(--space-4); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div class="text-muted" style="font-size: 11px;">إجمالي الإيرادات</div>
+                    <div style="font-family: var(--font-heading); font-size: 24px; margin-top: 4px;">12.84</div>
+                    <div style="font-size: 11px; color: var(--color-accent-300);">↑ 13.7% مقارنة بالشهر السابق</div>
+                  </div>
+                  <div style="padding: var(--space-4); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div class="text-muted" style="font-size: 11px;">ملخص تنفيذي</div>
+                    <div class="text-muted" style="font-size: 11px; line-height: 1.7; margin-top: 4px;">شهد الأداء التنفيذي خلال شهر مايو 2024 تحسنًا ملحوظًا في معظم المؤشرات الرئيسية، حيث ارتفع إجمالي الإيرادات بنسبة 13.7% مقارنة بالشهر السابق.</div>
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+                  <div style="padding: var(--space-4); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">
+                    <div class="text-muted" style="font-size: 11px; margin-bottom: var(--space-2);">اتجاه الإيرادات (آخر 6 أشهر)</div>
+                    <svg viewBox="0 0 300 110" style="width: 100%; height: auto; display: block;">
+                      <polyline points="8,92 66,80 124,66 182,50 240,34 292,14" fill="none" stroke="var(--color-accent-500)" stroke-width="2" stroke-linejoin="round"></polyline>
+                      <polyline points="8,92 66,80 124,66 182,50 240,34 292,14 292,104 8,104" fill="var(--color-accent-500)" fill-opacity="0.10" stroke="none"></polyline>
+                      <line x1="8" y1="104" x2="292" y2="104" stroke="var(--color-neutral-400)" stroke-width="1"></line>
+                    </svg>
+                  </div>
+                  <div style="padding: var(--space-4); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: var(--space-3);">
+                    <div class="text-muted" style="font-size: 11px;">توزيع الإيرادات حسب القطاع</div>
+                    <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden;">
+                      <span style="width: 50%; background: var(--color-accent);"></span>
+                      <span style="width: 26%; background: var(--color-accent-600);"></span>
+                      <span style="width: 17%; background: var(--color-accent-700);"></span>
+                      <span style="width: 7%; background: var(--color-neutral-700);"></span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 5px; font-size: 11px;">
+                      <div style="display: flex; justify-content: space-between;"><span>الخدمات الرقمية</span><span dir="ltr" class="text-muted">50%</span></div>
+                      <div style="display: flex; justify-content: space-between;"><span>الاستشارات</span><span dir="ltr" class="text-muted">26%</span></div>
+                      <div style="display: flex; justify-content: space-between;"><span>المنتجات</span><span dir="ltr" class="text-muted">17%</span></div>
+                      <div style="display: flex; justify-content: space-between;"><span>أخرى</span><span dir="ltr" class="text-muted">7%</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isReport }}" hint-placeholder-val="{{ true }}">
+          <div data-surface="doc" style="--color-bg: #e4e7f5; --color-surface: #f3f5fe; --color-text: #292b31; --color-divider: color-mix(in srgb, #292b31 16%, transparent); --color-neutral-100: #595d6c; --color-neutral-200: #3f424d; --color-neutral-400: #75798c; --color-neutral-600: #75798c; --color-neutral-800: #e4e7f5; --color-neutral-900: #f3f5fe; --color-accent-100: #5d5294; --color-accent-200: #423a6a; --color-accent-300: #796cbf; --color-accent-400: #796cbf; --color-accent-800: #e7e5fe; --color-accent: #796cbf; --shadow-sm: 0 0 0 1px #cfd3e5; --shadow-md: 0 0 0 1px #cfd3e5, 0 6px 18px rgba(41,43,49,0.10); --shadow-lg: 0 0 0 1px #b2b6ca, 0 16px 40px rgba(41,43,49,0.14); background: var(--color-bg); color: var(--color-text); flex: 1; margin: calc(var(--space-8) * -1); padding: var(--space-8); display: flex; flex-direction: column; gap: var(--space-6);">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-8); flex-wrap: wrap;">
+              <div>
+                <div style="display: flex; align-items: center; gap: var(--space-3);">
+                  <span class="ph-fill ph-seal-check" style="font-size: 24px; color: var(--color-accent);"></span>
+                  <h2 style="margin: 0;">التقرير التنفيذي النهائي</h2>
+                  <span class="tag tag-outline">جاهز للتسليم</span>
+                </div>
+                <div class="text-muted" style="font-size: 12px; margin-top: 6px; display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;">
+                  <span style="white-space: nowrap;">تقرير الأداء التنفيذي — 2024</span>
+                  <span style="white-space: nowrap;">آخر تحديث: 10 يونيو 2024، 10:30 ص</span>
+                  <span class="tag tag-neutral">الإصدار <span dir="ltr">1.3</span></span>
+                </div>
+              </div>
+              <div style="display: flex; gap: var(--space-3); flex-wrap: wrap;">
+                <button class="btn btn-secondary"><span class="ph ph-file-xls"></span>Excel</button>
+                <button class="btn btn-secondary"><span class="ph ph-file-pdf"></span>تصدير PDF</button>
+                <button class="btn btn-secondary"><span class="ph ph-users-three"></span>طلب مراجعة</button>
+                <button class="btn btn-primary"><span class="ph ph-lock-simple"></span>مشاركة آمنة</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-4);">
+              <div class="card elev-sm" style="padding: var(--space-4); gap: 2px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;"><span class="text-muted" style="font-size: 11px;">إجمالي الإيرادات</span><span class="ph ph-database" style="color: var(--color-accent-400);"></span></div>
+                <div style="font-family: var(--font-heading); font-size: 26px;">12.84</div>
+                <div class="text-muted" style="font-size: 10px;">مليون ر.س</div>
+                <div style="font-size: 11px; color: var(--color-accent-300);">↑ 13.7% عن النصف السابق</div>
+              </div>
+              <div class="card elev-sm" style="padding: var(--space-4); gap: 2px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;"><span class="text-muted" style="font-size: 11px;">صافي الربح</span><span class="ph ph-trend-up" style="color: var(--color-accent-400);"></span></div>
+                <div style="font-family: var(--font-heading); font-size: 26px;">2.31</div>
+                <div class="text-muted" style="font-size: 10px;">مليون ر.س</div>
+                <div style="font-size: 11px; color: var(--color-accent-300);">↑ 16.4% عن النصف السابق</div>
+              </div>
+              <div class="card elev-sm" style="padding: var(--space-4); gap: 2px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;"><span class="text-muted" style="font-size: 11px;">هامش الربح</span><span class="ph ph-percent" style="color: var(--color-accent-400);"></span></div>
+                <div style="font-family: var(--font-heading); font-size: 26px;">18.0%</div>
+                <div class="text-muted" style="font-size: 10px;">من الإيرادات</div>
+                <div style="font-size: 11px; color: var(--color-accent-300);">↑ 1.8 نقطة مئوية</div>
+              </div>
+              <div class="card elev-sm" style="padding: var(--space-4); gap: 2px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;"><span class="text-muted" style="font-size: 11px;">عدد العملاء النشطين</span><span class="ph ph-users" style="color: var(--color-accent-400);"></span></div>
+                <div style="font-family: var(--font-heading); font-size: 26px;">1,248</div>
+                <div class="text-muted" style="font-size: 10px;">عميل</div>
+                <div style="font-size: 11px; color: var(--color-accent-300);">↑ 11.2% عن النصف السابق</div>
+              </div>
+              <div class="card elev-sm" style="padding: var(--space-4); gap: 2px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;"><span class="text-muted" style="font-size: 11px;">التدفق النقدي التشغيلي</span><span class="ph ph-money" style="color: var(--color-accent-400);"></span></div>
+                <div style="font-family: var(--font-heading); font-size: 26px;">4.56</div>
+                <div class="text-muted" style="font-size: 10px;">مليون ر.س</div>
+                <div style="font-size: 11px; color: var(--color-accent-300);">↑ 24.3% عن النصف السابق</div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1.65fr 1fr; gap: var(--space-6); align-items: start;">
+              <div style="display: flex; flex-direction: column; gap: var(--space-6);">
+                <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: var(--space-6);">
+                  <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                    <div class="text-muted" style="font-size: 12px;">اتجاه الإيرادات (مليون ر.س)</div>
+                    <svg viewBox="0 0 340 150" style="width: 100%; height: auto; display: block;">
+                      <polyline points="14,120 80,104 146,88 212,62 300,20" fill="none" stroke="var(--color-accent-500)" stroke-width="2" stroke-linejoin="round"></polyline>
+                      <polyline points="14,120 80,104 146,88 212,62 300,20 300,136 14,136" fill="var(--color-accent-500)" fill-opacity="0.10" stroke="none"></polyline>
+                      <circle cx="14" cy="120" r="3" fill="var(--color-accent-500)"></circle>
+                      <circle cx="80" cy="104" r="3" fill="var(--color-accent-500)"></circle>
+                      <circle cx="146" cy="88" r="3" fill="var(--color-accent-500)"></circle>
+                      <circle cx="212" cy="62" r="3" fill="var(--color-accent-500)"></circle>
+                      <circle cx="300" cy="20" r="3.5" fill="var(--color-accent-500)"></circle>
+                      <line x1="14" y1="136" x2="326" y2="136" stroke="var(--color-neutral-400)" stroke-width="1"></line>
+                    </svg>
+                    <div dir="ltr" class="text-muted" style="display: flex; justify-content: space-between; font-size: 10px;">
+                      <span>النصف الأول 2022</span><span>النصف الثاني 2022</span><span>النصف الأول 2024</span>
+                    </div>
+                  </div>
+                  <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-3);">
+                    <div class="text-muted" style="font-size: 12px;">أداء المؤشرات الرئيسية</div>
+                    <table class="table" style="font-size: 13px;">
+                      <thead><tr><th>المؤشر</th><th style="text-align: end;">القيمة</th><th style="text-align: end;">التغير</th></tr></thead>
+                      <tbody>
+                        <tr><td>إجمالي الإيرادات</td><td dir="ltr" style="text-align: end;">12.84</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 13.7%</td></tr>
+                        <tr><td>صافي الربح</td><td dir="ltr" style="text-align: end;">2.31</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 16.4%</td></tr>
+                        <tr><td>هامش الربح</td><td dir="ltr" style="text-align: end;">18.0%</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 1.8 ن.م</td></tr>
+                        <tr><td>عدد العملاء النشطين</td><td dir="ltr" style="text-align: end;">1,248</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 11.2%</td></tr>
+                        <tr><td>التدفق النقدي التشغيلي</td><td dir="ltr" style="text-align: end;">4.56</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 24.3%</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                  <div class="card-title" style="font-size: 15px;">تفاصيل الأداء حسب خط الأعمال</div>
+                  <table class="table" style="font-size: 13px;">
+                    <thead>
+                      <tr><th>خط الأعمال</th><th style="text-align: end;">إجمالي الإيرادات</th><th style="text-align: end;">% من الإجمالي</th><th style="text-align: end;">التغير</th><th style="text-align: end;">هامش الربح</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>الحلول المؤسسية</td><td dir="ltr" style="text-align: end;">6.42</td><td dir="ltr" style="text-align: end;">50.0%</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 14.1%</td><td dir="ltr" style="text-align: end;">20.3%</td></tr>
+                      <tr><td>المنصات السحابية</td><td dir="ltr" style="text-align: end;">3.28</td><td dir="ltr" style="text-align: end;">25.6%</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 12.6%</td><td dir="ltr" style="text-align: end;">17.8%</td></tr>
+                      <tr><td>خدمات البيانات والتحليلات</td><td dir="ltr" style="text-align: end;">2.15</td><td dir="ltr" style="text-align: end;">16.7%</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 15.9%</td><td dir="ltr" style="text-align: end;">18.9%</td></tr>
+                      <tr><td>حلول التكامل والأتمتة</td><td dir="ltr" style="text-align: end;">0.99</td><td dir="ltr" style="text-align: end;">7.7%</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 9.8%</td><td dir="ltr" style="text-align: end;">16.4%</td></tr>
+                      <tr><td style="font-family: var(--font-heading);">الإجمالي</td><td dir="ltr" style="text-align: end; font-family: var(--font-heading);">12.84</td><td dir="ltr" style="text-align: end;">100%</td><td dir="ltr" style="text-align: end; color: var(--color-accent-300);">↑ 13.7%</td><td dir="ltr" style="text-align: end;">18.0%</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-4);">
+                  <div style="display: flex; align-items: center; gap: var(--space-2);">
+                    <span class="ph ph-sparkle" style="color: var(--color-accent);"></span>
+                    <div class="card-title" style="font-size: 15px;">الرؤى التنفيذية</div>
+                  </div>
+                  <p class="text-muted" style="margin: 0; font-size: 13px; line-height: 1.8;">واصلت الشركة أداءها القوي خلال النصف الأول من 2024، مسجلة نموًا مستدامًا في الإيرادات بنسبة 13.7% مدعومًا من العملاء الأساسيين وتوسع الحلول ذات القيمة المضافة.</p>
+                  <div style="display: flex; flex-direction: column; gap: var(--space-3); font-size: 13px;">
+                    <div style="display: flex; gap: var(--space-3);"><span class="ph-fill ph-check-circle" style="color: var(--color-accent); margin-top: 3px;"></span><span class="text-muted">تحسن هامش الربح نتيجة لزيادة الكفاءة التشغيلية وإدارة التكاليف.</span></div>
+                    <div style="display: flex; gap: var(--space-3);"><span class="ph-fill ph-check-circle" style="color: var(--color-accent); margin-top: 3px;"></span><span class="text-muted">تنامي عدد العملاء النشطين يعكس قوة عرض القيمة واستدامة الطلب.</span></div>
+                    <div style="display: flex; gap: var(--space-3);"><span class="ph-fill ph-check-circle" style="color: var(--color-accent); margin-top: 3px;"></span><span class="text-muted">تدفق نقدي تشغيلي قوي يدعم الاستثمار في النمو والابتكار.</span></div>
+                  </div>
+                  <button class="btn btn-secondary" style="align-self: flex-start; font-size: 12px;">عرض المنهجية وملاحظات التقرير</button>
+                </div>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                <div class="card elev-sm" style="padding: 0; gap: 0; overflow: hidden;">
+                  <div style="display: flex; gap: var(--space-6); padding: 0 var(--space-6); border-bottom: 1px solid var(--color-divider);">
+                    <span style="font-size: 13px; padding: var(--space-4) 0; color: var(--color-accent); box-shadow: inset 0 -2px 0 var(--color-accent);">التعاون والحوكمة</span>
+                    <span class="text-muted" style="font-size: 13px; padding: var(--space-4) 0;">معلومات التقرير</span>
+                  </div>
+                  <div style="padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4);">
+                    <div class="text-muted" style="font-size: 11px;">المراجعات والتعليقات</div>
+                    <div style="display: flex; gap: var(--space-3);">
+                      <span style="width: 30px; height: 30px; border-radius: 50%; background: var(--color-accent-800); color: var(--color-accent-100); display: grid; place-items: center; font-size: 11px; flex: none;">م</span>
+                      <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 12px;"><span>مروان العتيبي</span><span class="tag tag-accent">مراجع</span><span class="text-muted" style="margin-inline-start: auto; font-size: 10px;">10 يونيو · 09:15 ص</span></div>
+                        <div class="text-muted" style="font-size: 12px; line-height: 1.6; margin-top: 2px;">الأرقام دقيقة، أوافق على النتائج والتوصيات.</div>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: var(--space-3);">
+                      <span style="width: 30px; height: 30px; border-radius: 50%; background: var(--color-neutral-800); color: var(--color-neutral-100); display: grid; place-items: center; font-size: 11px; flex: none;">ن</span>
+                      <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 12px;"><span>نجلاء حسن</span><span class="tag tag-neutral">تعليق</span><span class="text-muted" style="margin-inline-start: auto; font-size: 10px;">9 يونيو · 05:40 م</span></div>
+                        <div class="text-muted" style="font-size: 12px; line-height: 1.6; margin-top: 2px;">يرجى توضيح أثر المبادرات التشغيلية على هامش الربح.</div>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: var(--space-3);">
+                      <span style="width: 30px; height: 30px; border-radius: 50%; background: var(--color-accent-800); color: var(--color-accent-100); display: grid; place-items: center; font-size: 11px; flex: none;">أ</span>
+                      <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 12px;"><span>أحمد السعدي</span><span class="tag tag-accent">مراجع</span><span class="text-muted" style="margin-inline-start: auto; font-size: 10px;">8 يونيو · 11:20 ص</span></div>
+                        <div class="text-muted" style="font-size: 12px; line-height: 1.6; margin-top: 2px;">ممتاز، جاهز للمشاركة مع مجلس الإدارة.</div>
+                      </div>
+                    </div>
+                    <button class="btn btn-ghost" style="font-size: 12px; align-self: flex-start;">عرض جميع التعليقات (3) ←</button>
+                  </div>
+                </div>
+
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-3);">
+                  <div class="text-muted" style="font-size: 11px;">سجل الإصدارات</div>
+                  <div style="display: flex; align-items: center; gap: var(--space-3); font-size: 12px;"><span dir="ltr" style="min-width: 26px;">1.3</span><span class="tag tag-accent">الحالي</span><span class="text-muted">أحمد السعدي</span><span class="text-muted" style="margin-inline-start: auto;">10 يونيو · 10:30 ص</span></div>
+                  <div style="display: flex; align-items: center; gap: var(--space-3); font-size: 12px;"><span dir="ltr" style="min-width: 26px;">1.2</span><span class="text-muted">نجلاء حسن</span><span class="text-muted" style="margin-inline-start: auto;">9 يونيو · 02:15 م</span></div>
+                  <div style="display: flex; align-items: center; gap: var(--space-3); font-size: 12px;"><span dir="ltr" style="min-width: 26px;">1.1</span><span class="text-muted">مروان العتيبي</span><span class="text-muted" style="margin-inline-start: auto;">7 يونيو · 05:50 م</span></div>
+                  <button class="btn btn-ghost" style="font-size: 12px; align-self: flex-start;">عرض كل الإصدارات ←</button>
+                </div>
+
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-2);">
+                  <div class="text-muted" style="font-size: 11px;">الأذونات</div>
+                  <div style="display: flex; align-items: center; gap: var(--space-2); font-size: 12px;"><span class="ph ph-globe" style="color: var(--color-accent-400);"></span><span class="text-muted">تمت مشاركة التقرير مع 6 أشخاص و 3 مجموعات</span></div>
+                </div>
+
+                <div class="card elev-sm" style="padding: var(--space-6); gap: var(--space-3);">
+                  <div class="text-muted" style="font-size: 11px;">سجل التدقيق</div>
+                  <div style="display: flex; gap: var(--space-3); font-size: 12px;"><span class="text-muted" style="min-width: 92px;">10 يونيو 10:30 ص</span><span class="text-muted">تم تصدير التقرير إلى PDF بواسطة أحمد السعدي</span></div>
+                  <div style="display: flex; gap: var(--space-3); font-size: 12px;"><span class="text-muted" style="min-width: 92px;">10 يونيو 10:28 ص</span><span class="text-muted">تمت مشاركة التقرير مع مجلس الإدارة</span></div>
+                  <div style="display: flex; gap: var(--space-3); font-size: 12px;"><span class="text-muted" style="min-width: 92px;">9 يونيو 05:40 م</span><span class="text-muted">تم إضافة تعليق بواسطة نجلاء حسن</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+
+      <div style="width: 60px; flex: none; background: var(--color-neutral-900); display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-4) 0;">
+        <span class="ph-fill ph-bug-beetle" style="font-size: 22px; color: var(--color-accent); margin-bottom: var(--space-4);"></span>
+        <span class="ph ph-chart-line-up" style="{{ railHome }}"></span>
+        <span class="ph ph-table" style="{{ railConfig }}"></span>
+        <span class="ph ph-database" style="{{ railSources }}"></span>
+        <span class="ph ph-file-text" style="{{ railUpload }}"></span>
+        <span class="ph ph-shield-check" style="{{ railQuality }}"></span>
+        <span class="ph ph-clock-counter-clockwise" style="{{ railHistory }}"></span>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="width: min(1520px, 100%); display: flex; gap: var(--space-6); align-items: baseline; padding-top: var(--space-4);">
+    <span style="font-family: var(--font-heading); font-size: 14px; color: var(--color-accent);">{{ screenLabel }}</span>
+    <span class="text-muted" style="font-size: 13px;">{{ screenNote }}</span>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;home&quot;,&quot;upload&quot;,&quot;quality&quot;,&quot;config&quot;,&quot;running&quot;,&quot;report&quot;],&quot;default&quot;:&quot;home&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Mockup&quot;},&quot;showTrustBar&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Mockup&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null };
+
+  get screen() {
+    return this.state.screen ?? this.props.startScreen ?? "home";
+  }
+
+  rail(on) {
+    return "font-size: 19px; padding: 9px; border-radius: var(--radius-sm); color: " +
+      (on ? "var(--color-accent)" : "var(--color-neutral-600)") +
+      "; background: " + (on ? "color-mix(in srgb, var(--color-accent) 14%, transparent)" : "transparent") + ";";
+  }
+
+  tab(on) {
+    return on
+      ? "border-color: var(--color-accent); color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent);"
+      : "";
+  }
+
+  navItem(on) {
+    return on
+      ? "color: var(--color-accent); box-shadow: inset 0 -2px 0 var(--color-accent); padding-bottom: 2px;"
+      : "color: color-mix(in srgb, var(--color-text) 62%, transparent);";
+  }
+
+  renderVals() {
+    const s = this.screen;
+    const notes = {
+      home: "الصفحة الأولى بعد الدخول: الترحيب، لمحة من التقرير، وخطوات الانطلاق.",
+      upload: "استيراد الملف: النوع، منطقة الإفلات، الحدود، وسجل أحدث الملفات.",
+      quality: "الخطوة الثالثة: معاينة الصفوف، ملخص الجودة، وربط الأعمدة بمستوى ثقة لكل حقل.",
+      config: "تكوين التقرير: النوع، النطاق، المقاييس، المرشحات، والقالب.",
+      running: "المعالجة: نسبة الإنجاز، الخطوات الست، والأنشطة في الخلفية مع معاينة مبدئية.",
+      report: "التقرير النهائي مع طبقة الحوكمة: التعليقات، الإصدارات، الأذونات، وسجل التدقيق."
+    };
+    const labels = {
+      home: "1 · الرئيسية",
+      upload: "2 · رفع البيانات",
+      quality: "3 · مراجعة الأعمدة والجودة",
+      config: "4 · إعداد التقرير",
+      running: "5 · جاري الإنشاء",
+      report: "6 · التقرير النهائي"
+    };
+    const go = k => () => this.setState({ screen: k });
+    return {
+      isHome: s === "home", isUpload: s === "upload", isQuality: s === "quality",
+      isConfig: s === "config", isRunning: s === "running", isReport: s === "report",
+      showTrust: this.props.showTrustBar !== false,
+      goHome: go("home"), goUpload: go("upload"), goQuality: go("quality"),
+      goConfig: go("config"), goRunning: go("running"), goReport: go("report"),
+      tabHome: this.tab(s === "home"), tabUpload: this.tab(s === "upload"),
+      tabQuality: this.tab(s === "quality"), tabConfig: this.tab(s === "config"),
+      tabRunning: this.tab(s === "running"), tabReport: this.tab(s === "report"),
+      navHome: this.navItem(s === "home" || s === "quality"),
+      navReports: this.navItem(s === "config" || s === "running" || s === "report"),
+      navSources: this.navItem(s === "upload"),
+      railHome: this.rail(s === "home"), railConfig: this.rail(s === "config"),
+      railSources: this.rail(s === "running"), railUpload: this.rail(s === "upload"),
+      railQuality: this.rail(s === "quality"), railHistory: this.rail(s === "report"),
+      screenLabel: labels[s], screenNote: notes[s]
+    };
+  }
+}
+</script>
+</body>
+</html>
