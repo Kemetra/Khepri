@@ -19,7 +19,7 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 
-from khepri.rca.records import Sealed, through_door
+from khepri.rca.records import Sealed, register_sealed, through_door
 
 KDF_N = 2**15
 KDF_R = 8
@@ -69,6 +69,7 @@ def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) 
     )
 
 
+@register_sealed
 @dataclass(frozen=True, slots=True)
 class Verifier(Sealed):
     """A salted credential verifier: everything needed to check a credential, and nothing more.

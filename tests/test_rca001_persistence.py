@@ -32,6 +32,7 @@ from khepri.rca.persistence import (
     SqlAccountStore,
     SqlOrganizationStore,
 )
+from khepri.rca.records import through_door
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 EMAIL = "owner@example.test"
@@ -457,6 +458,50 @@ def test_a_door_body_never_runs_caller_reachable_code() -> None:
     Account.create(HostileAddress(EMAIL), CREDENTIAL)
 
     assert forged == [], "caller code ran while a construction door was open"
+
+
+def test_a_subclass_cannot_override_the_door_check() -> None:
+    """`__post_init__` is an ordinary method, so a subclass could override it away.
+
+    Found by review of this PR. A subclass of `Account` with a no-op `__post_init__`
+    constructed a record holding `digest=b"recoverable-password"` with no door open, and
+    `assert_sealed` accepted it through `isinstance` — FR-002 defeated with two class
+    definitions and no forgery.
+
+    Refused at class-definition time now, so the bypass cannot even be written down.
+    """
+    with pytest.raises(TypeError, match="may not override __post_init__"):
+
+        class ForgedAccount(Account):
+            def __post_init__(self) -> None:
+                return
+
+
+def test_the_store_refuses_a_subclass_of_a_sealed_record(factory: sessionmaker) -> None:
+    """`assert_sealed` checks the exact type, not `isinstance`.
+
+    A subclass satisfies `isinstance` by definition, and a subclass is precisely the thing
+    whose construction may have been altered. Requiring the declared type means a record
+    reaching persistence is one of ours rather than something that merely inherits from one —
+    defence in depth behind the `__init_subclass__` hook, since that hook only catches the
+    override, not every future way a subclass might diverge.
+    """
+
+    class PlainSubclass(Account):
+        pass
+
+    genuine = Account.create(EMAIL, CREDENTIAL)
+    # Built through a door, so the door check itself cannot be what refuses it — this isolates
+    # the exact-type check. Without it the record is a legitimate `Sealed` instance by
+    # `isinstance` and the store would accept a type this package never declared.
+    with through_door():
+        smuggled = PlainSubclass(
+            account_id=genuine.account_id, email=genuine.email, verifier=genuine.verifier
+        )
+    assert isinstance(smuggled, Account), "isinstance alone would have admitted it"
+
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        SqlAccountStore(factory).add_account(smuggled)
 
 
 def test_a_store_refuses_a_record_of_the_wrong_type(factory: sessionmaker) -> None:

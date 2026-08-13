@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from khepri.rca.errors import ORGANIZATION_FAILURE, OrganizationCreationFailed
-from khepri.rca.records import Sealed, through_door
+from khepri.rca.records import Sealed, register_sealed, through_door
 
 if TYPE_CHECKING:
     from khepri.rca.stores import OrganizationStore
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 OWNER_ROLE = "owner"
 
 
+@register_sealed
 @dataclass(frozen=True, slots=True)
 class Organization(Sealed):
     organization_id: str
@@ -35,6 +36,7 @@ class Organization(Sealed):
             return cls(organization_id=organization_id, name=name, created_at=created_at)
 
 
+@register_sealed
 @dataclass(frozen=True, slots=True)
 class Membership(Sealed):
     """An account's role in an organization, as a state row.
@@ -102,6 +104,7 @@ def allocate_owner_id() -> str:
     return f"{_OWNER_ID_PREFIX}{secrets.token_urlsafe(18)}"
 
 
+@register_sealed
 @dataclass(frozen=True, slots=True)
 class IsolationScope(Sealed):
     """An organization's opaque isolation key (FR-032, FR-033, FR-035).

@@ -24,12 +24,13 @@ from typing import TYPE_CHECKING
 
 from khepri.rca.credentials import DEFAULT_KDF, DUMMY_SALT, Verifier, hash_credential
 from khepri.rca.errors import AUTHENTICATION_FAILURE, AuthenticationFailed
-from khepri.rca.records import Sealed, through_door
+from khepri.rca.records import Sealed, register_sealed, through_door
 
 if TYPE_CHECKING:
     from khepri.rca.stores import AccountStore
 
 
+@register_sealed
 @dataclass(frozen=True, slots=True)
 class Account(Sealed):
     account_id: str

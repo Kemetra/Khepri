@@ -96,6 +96,11 @@ _MISUSE = (
 # threads, and one thread's construction must not authorize another's.
 _opening = threading.local()
 
+# The exact record types persistence accepts, populated by `@register_sealed`. A set of exact
+# types rather than an isinstance check, because a subclass passes isinstance while being the
+# very thing whose construction may have been altered.
+_SEALED_TYPES: set[type] = set()
+
 
 @contextmanager
 def _door() -> Iterator[None]:
@@ -132,9 +137,33 @@ class Sealed:
 
     __slots__ = ()
 
-    def __post_init__(self) -> None:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Refuse a subclass that overrides the door check.
+
+        `__post_init__` is an ordinary method, so the dataclass-generated `__init__` dispatches
+        to it dynamically and a subclass can override it with a no-op. Verified: a subclass of
+        `Account` doing exactly that constructed a record holding
+        `digest=b"recoverable-password"` with no door open, and `assert_sealed` accepted it via
+        `isinstance`, defeating FR-002.
+
+        Two things close it. This hook rejects the override at class-definition time, and the
+        check itself lives in the name-mangled `__enforce_door` below, which
+        `__post_init__` calls — a subclass writing `__post_init__` cannot reach
+        `_Sealed__enforce_door`, so even a subclass defined before this hook existed could not
+        silence the check without naming the mangled attribute explicitly.
+        """
+        super().__init_subclass__(**kwargs)
+        if "__post_init__" in cls.__dict__:
+            raise TypeError(
+                f"{cls.__name__} may not override __post_init__: it is the door check"
+            )
+
+    def __enforce_door(self) -> None:
         if not _is_open():
             raise TypeError(_MISUSE)
+
+    def __post_init__(self) -> None:
+        self.__enforce_door()
 
     def __deepcopy__(self, memo: dict[int, object]) -> Sealed:
         """Deep-copy by rebuilding through a door, ignoring the caller's `memo`.
@@ -183,9 +212,19 @@ def assert_sealed(*records: object) -> None:
     right. Checking contents is what #148's round 2 already proved insufficient: shape cannot
     establish where a value came from.
 
-    With the capability moved into the call stack, an instance of a `Sealed` subclass can only
-    exist if a door was open when it was built, so the type itself is now the evidence.
+    With the capability moved into the call stack, an instance of a sealed type can only exist
+    if a door was open when it was built, so the type itself is the evidence — but only for the
+    types this package declares. `isinstance` is deliberately **not** used: a subclass satisfies
+    it by definition, and a subclass is precisely the thing that could have altered how it was
+    constructed. Requiring the exact declared type means a record reaching persistence is one of
+    ours, not merely something that inherits from one.
     """
     for record in records:
-        if not isinstance(record, Sealed):
+        if type(record) not in _SEALED_TYPES:
             raise TypeError(_MISUSE)
+
+
+def register_sealed(cls: type) -> type:
+    """Declare a type as one persistence will accept. Used as a decorator on each record."""
+    _SEALED_TYPES.add(cls)
+    return cls
