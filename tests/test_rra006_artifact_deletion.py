@@ -466,3 +466,46 @@ def test_the_drain_deferral_schedules_past_the_drain_it_is_waiting_on() -> None:
         assert deletion is not None
         assert deletion.next_retry_at is not None
         assert _utc(deletion.next_retry_at) > late
+
+
+def test_a_retry_inside_the_backoff_window_does_not_touch_object_storage() -> None:
+    """`fail` scheduled the next attempt; arriving early must not spend an attempt.
+
+    A repeated DELETE, or a sweeper pass that runs ahead of the recorded deadline,
+    otherwise reaches object storage immediately. That defeats the backoff the
+    failure path just recorded -- hammering a store that is already degraded and
+    writing an unbounded run of evidence rows for attempts nobody asked for.
+    """
+    repository = TargetsRepository()
+    fourth_key = _targets()[3].object_key
+    objects = MemoryDeletionObjectStore(fail_keys={fourth_key})
+    deletion = _service(repository, objects)
+
+    with pytest.raises(DeletionRetryRequired):
+        deletion.delete_session_content(
+            session_id="ses_alpha", reason="immediate", now=NOW
+        )
+
+    assert repository.job is not None
+    assert repository.job.state == "retryable"
+    evidence_after_failure = len(repository.evidence)
+    prefixes_after_failure = len(objects.deleted_prefixes)
+
+    with pytest.raises(DeletionRetryRequired):
+        deletion.delete_session_content(
+            session_id="ses_alpha",
+            reason="immediate",
+            now=NOW + timedelta(minutes=1),
+        )
+
+    assert len(objects.deleted_prefixes) == prefixes_after_failure
+    assert len(repository.evidence) == evidence_after_failure
+    assert repository.job.attempt_count == 1
+
+    completed = deletion.delete_session_content(
+        session_id="ses_alpha",
+        reason="immediate",
+        now=NOW + timedelta(minutes=5),
+    )
+
+    assert completed.state == "complete"

@@ -94,6 +94,20 @@ def validate_completed_evidence(
         raise ValueError("Deletion evidence does not match every target.")
 
 
+def _is_backing_off(job: DeletionJob, *, now: datetime) -> bool:
+    """Whether a scheduled retry deadline has still to elapse.
+
+    Only a job the failure path put into `retryable` carries a deadline that
+    describes a degraded object store. A job that was merely deferred for a
+    publication is held by that fencing instead, and a first attempt has nothing
+    to wait for.
+    """
+    if job.state != "retryable" or job.attempt_count == 0:
+        return False
+    retry_at = job.next_retry_at
+    return retry_at is not None and retry_at > now
+
+
 def deletion_identity(
     item: DeletionEvidence | DeletionTarget,
 ) -> tuple[str, str]:
@@ -191,6 +205,12 @@ class DeletionService:
             now=now,
             next_retry_at=now + _RETRY_DELAY,
         ):
+            raise DeletionRetryRequired("Content deletion must be retried.")
+        if _is_backing_off(job, now=now):
+            # A previous attempt failed against the object store and scheduled the
+            # next one. Reaching storage before that deadline spends an attempt on
+            # a store still likely to be degraded, and writes a fresh run of
+            # evidence rows for it.
             raise DeletionRetryRequired("Content deletion must be retried.")
         targets = self._deletions.get_targets(job)
         for target in targets:

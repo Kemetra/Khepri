@@ -23,3 +23,24 @@ def test_report_module_builds_exactly_seven_links_only_after_complete_bundle() -
     ):
         assert path in script
     assert "object_key" not in script
+
+
+def test_the_report_page_shows_the_session_deletion_deadline() -> None:
+    """A participant near expiry has to see when access ends, not a generic promise.
+
+    The footer states the seven-day retention in general terms. A report generated
+    late in a session may have hours left, so the page carries the governed
+    `content_expires_at` for this session -- with its timezone, because a deadline
+    read in the wrong zone is worse than none.
+    """
+    script = files("khepri.rra.journey").joinpath("assets", "report.js").read_text(
+        encoding="utf-8"
+    )
+    assert "state.content_expires_at" in script
+    assert "timeZoneName" in script
+
+    for language, label in (("en", "Available until"), ("ar", "متاح حتى")):
+        body = client().get(f"/beta/{language}/report").text
+        # The slot the module fills, and the label naming it in this language.
+        assert 'id="expires-at"' in body
+        assert label in body
