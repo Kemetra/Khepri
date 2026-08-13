@@ -55,6 +55,11 @@ from khepri.rra.rendering.html import (
     build_context,
     build_environment,
 )
+from khepri.rra.report_artifacts import (
+    PDF_MEDIA_TYPE,
+    ArtifactPayload,
+    MaterializedSurface,
+)
 
 PDF_SURFACE_VERSION = "rra006.pdf.v1"
 
@@ -159,6 +164,21 @@ class PdfReportRenderer:
 
     def render(self, bundle: ReportBundle) -> SurfaceContent:
         return self.render_pdf(bundle).content
+
+    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+        surface = self.render_pdf(bundle)
+        return MaterializedSurface(
+            content=surface.content,
+            artifacts=tuple(
+                ArtifactPayload.of(
+                    kind=f"pdf_{language}",
+                    media_type=PDF_MEDIA_TYPE,
+                    file_name="khepri-report.pdf",
+                    content=surface.documents[language],
+                )
+                for language in REQUIRED_LANGUAGES
+            ),
+        )
 
     def render_pdf(self, bundle: ReportBundle) -> PdfSurface:
         """Print one document per governed language, and claim what they present."""

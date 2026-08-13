@@ -126,6 +126,11 @@ from khepri.rra.rendering.wording import (
     refusal_message,
     worded,
 )
+from khepri.rra.report_artifacts import (
+    XLSX_MEDIA_TYPE,
+    ArtifactPayload,
+    MaterializedSurface,
+)
 
 # v2 moved the figures off the two report sheets and onto a sheet per section; v3 adds
 # the chart data sheets and the native charts drawn from them. The version is
@@ -421,6 +426,21 @@ class ExcelSurfaceRenderer:
         except OSError as error:
             raise WorkbookUnavailable("The Excel surface could not be written.") from error
         return _content(bundle, written)
+
+    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+        content = self.render(bundle)
+        payload = self.path_for(bundle).read_bytes()
+        return MaterializedSurface(
+            content=content,
+            artifacts=(
+                ArtifactPayload.of(
+                    kind="excel",
+                    media_type=XLSX_MEDIA_TYPE,
+                    file_name="khepri-report.xlsx",
+                    content=payload,
+                ),
+            ),
+        )
 
 
 def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:
