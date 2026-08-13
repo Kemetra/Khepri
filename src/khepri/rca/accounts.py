@@ -8,74 +8,76 @@ intersection of three requirements this slice does not implement — `KHEPRI-DEC
 24-month retention horizon and opaque tombstone, `FR-008`'s session revocation, and
 `FR-013`'s final-owner guard — and implementing it without them produced a disabled account
 that stranded its organization and retained its login identity indefinitely. It gets its own
-slice, with a design first. The verifier columns are already nullable so that slice needs no
-migration to destroy a verifier.
+slice, with a design first (#149). `Account.verifier` is already optional and
+`khepri.rca.credentials` already owns derivation, so that slice needs no migration and no new
+home for destruction.
+
+Records here follow the two-door rule decided in #151: see `records.py`.
 """
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from khepri.rca.credentials import DEFAULT_KDF, DUMMY_SALT, Verifier, hash_credential
 from khepri.rca.errors import AUTHENTICATION_FAILURE, AuthenticationFailed
+from khepri.rca.records import Sealed, register_sealed, through_door
 
 if TYPE_CHECKING:
     from khepri.rca.stores import AccountStore
 
-KDF_N = 2**15
-KDF_R = 8
-KDF_P = 1
-KDF_DKLEN = 32
-SALT_BYTES = 16
-# A fixed dummy salt used to pay the same scrypt cost for a missing account as for a
-# wrong-credential rejection, so account existence is not revealed through timing (FR-004).
-_DUMMY_SALT = b"\x00" * SALT_BYTES
 
-
+@register_sealed
 @dataclass(frozen=True, slots=True)
-class KdfParams:
-    """The scrypt cost parameters a digest was produced with.
-
-    Stored alongside each digest so the work factor can be raised later without
-    invalidating existing records.
-    """
-
-    n: int = KDF_N
-    r: int = KDF_R
-    p: int = KDF_P
-
-
-DEFAULT_KDF = KdfParams()
-
-
-@dataclass(frozen=True, slots=True)
-class Account:
+class Account(Sealed):
     account_id: str
     email: str
-    # Nullable so the schema can represent an account with no verifier. KHEPRI-DEC-015
-    # retains the credential verifier only "while the account is enabled" and requires
-    # immediate, non-recoverable destruction on disablement or replacement. Disablement
-    # itself is not in this slice (see the module docstring), but the shape it requires is,
-    # so the lifecycle slice does not need a migration to introduce it.
-    credential_salt: bytes | None
-    credential_digest: bytes | None
-    kdf: KdfParams | None
+    # Optional as a whole, never by halves. KHEPRI-DEC-015 retains the credential verifier only
+    # "while the account is enabled" and requires immediate, non-recoverable destruction on
+    # disablement or replacement. Holding salt/digest/kdf as one optional value means
+    # destruction is a single assignment and a partially-destroyed verifier is unrepresentable.
+    # Disablement itself is #149; the shape it needs is here, so it needs no migration.
+    verifier: Verifier | None
 
     @property
     def has_verifier(self) -> bool:
-        return (
-            self.credential_salt is not None
-            and self.credential_digest is not None
-            and self.kdf is not None
-        )
+        return self.verifier is not None
+
+    @classmethod
+    def create(cls, email: str, credential: str) -> Account:
+        """Establish a durable identity with a freshly derived verifier (FR-001, FR-002).
+
+        Takes the credential, not a verifier: there is no parameter through which
+        caller-supplied digest material can become a new account's stored verifier.
+        """
+        # EVERYTHING is computed before the door opens, not just the expensive part. A door
+        # authorizes the whole thread while it is open, so any caller-reachable code running
+        # inside it can construct any sealed record. `canonical_email` calls `.strip()` and
+        # `.lower()` on its argument, and a `str` subclass overriding either runs attacker code
+        # — verified: an overridden `strip` built an `IsolationScope` carrying a chosen
+        # `owner_id` from inside this door, and it passed `assert_sealed`.
+        #
+        # The rule this enforces: a door's body contains the constructor call and nothing else.
+        account_id = f"acc_{secrets.token_urlsafe(18)}"
+        canonical = canonical_email(email)
+        verifier = Verifier.derive(credential)
+        with through_door():
+            return Account(
+                account_id=account_id,
+                email=canonical,
+                verifier=verifier,
+            )
+
+    @classmethod
+    def _from_storage(cls, account_id: str, email: str, verifier: Verifier | None) -> Account:
+        """Rebuild an account from stored columns, preserving them verbatim."""
+        with through_door():
+            return Account(account_id=account_id, email=email, verifier=verifier)
 
 
-# scrypt needs 128 * n * r bytes = 64 MiB at n=2**15, r=8, which exceeds OpenSSL's 32 MiB
-# default. Without an explicit maxmem, hashlib.scrypt raises
-# ValueError("[digital envelope routines] memory limit exceeded"). Verified on this machine.
 def canonical_email(email: str) -> str:
     """Canonical form used for both storage and lookup, so uniqueness is meaningful.
 
@@ -95,35 +97,27 @@ def canonical_email(email: str) -> str:
 
 def _is_verifiable(account: Account | None) -> bool:
     """True only for a record this slice can verify: present, complete, at the default factor."""
-    return account is not None and account.has_verifier and account.kdf == DEFAULT_KDF
+    return (
+        account is not None
+        and account.verifier is not None
+        and account.verifier.kdf == DEFAULT_KDF
+    )
 
 
 def _verifiable_salt(account: Account | None) -> bytes:
     """The record's salt, or a fixed dummy so an unverifiable record costs the same."""
     if _is_verifiable(account):
-        assert account is not None and account.credential_salt is not None
-        return account.credential_salt
-    return _DUMMY_SALT
+        assert account is not None and account.verifier is not None
+        return account.verifier.salt
+    return DUMMY_SALT
 
 
 def _verifiable_digest(account: Account | None) -> bytes | None:
     """The digest to compare against, or None when the record cannot be verified here."""
     if _is_verifiable(account):
-        assert account is not None
-        return account.credential_digest
+        assert account is not None and account.verifier is not None
+        return account.verifier.digest
     return None
-
-
-def hash_credential(credential: str, salt: bytes, kdf: KdfParams = DEFAULT_KDF) -> bytes:
-    return hashlib.scrypt(
-        credential.encode(),
-        salt=salt,
-        n=kdf.n,
-        r=kdf.r,
-        p=kdf.p,
-        dklen=KDF_DKLEN,
-        maxmem=128 * kdf.n * kdf.r * 2,
-    )
 
 
 class AccountService:
@@ -131,14 +125,7 @@ class AccountService:
         self._store = store
 
     def create_account(self, email: str, credential: str) -> Account:
-        salt = secrets.token_bytes(SALT_BYTES)
-        account = Account(
-            account_id=f"acc_{secrets.token_urlsafe(18)}",
-            email=canonical_email(email),
-            credential_salt=salt,
-            credential_digest=hash_credential(credential, salt, DEFAULT_KDF),
-            kdf=DEFAULT_KDF,
-        )
+        account = Account.create(email, credential)
         if not self._store.add_account(account):
             raise AuthenticationFailed(AUTHENTICATION_FAILURE)
         return account
@@ -161,7 +148,7 @@ class AccountService:
 
         So `KdfParams` is stored per record but only `DEFAULT_KDF` is ever used to verify.
         A record at any other factor is refused, uniformly, rather than verified cheaply.
-        The upgrade path lands with the write path in the lifecycle slice.
+        The upgrade path lands with the write path in the lifecycle slice (#149).
         """
         account = self._store.get_account_by_email(canonical_email(email))
         expected = _verifiable_digest(account)

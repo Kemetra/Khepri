@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import copy
+import dataclasses
+import inspect
+import pickle
 import secrets
 from datetime import UTC, datetime
 
@@ -8,7 +13,8 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from khepri.rca.accounts import DEFAULT_KDF, Account, AccountService, hash_credential
+from khepri.rca.accounts import Account, AccountService
+from khepri.rca.credentials import DEFAULT_KDF, Verifier, hash_credential
 from khepri.rca.errors import AuthenticationFailed, OrganizationCreationFailed
 from khepri.rca.isolation import IsolationService
 from khepri.rca.organizations import (
@@ -26,6 +32,7 @@ from khepri.rca.persistence import (
     SqlAccountStore,
     SqlOrganizationStore,
 )
+from khepri.rca.records import through_door
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 EMAIL = "owner@example.test"
@@ -95,8 +102,51 @@ def test_an_account_round_trips_through_a_new_store_instance(factory: sessionmak
     restored = SqlAccountStore(factory).get_account(account.account_id)
     assert restored is not None
     assert restored.email == EMAIL
-    assert restored.credential_digest == account.credential_digest
-    assert restored.kdf == account.kdf
+    assert restored.verifier == account.verifier
+    # A record rebuilt through the reconstruction door equals the one the creation door made:
+    # the capability lives in the call stack, not in a field, so equality is door-independent.
+    assert restored == account
+
+
+@pytest.mark.parametrize(
+    "destroyed",
+    [
+        pytest.param(("credential_digest",), id="digest_only"),
+        pytest.param(("credential_salt",), id="salt_only"),
+        pytest.param(("kdf_n", "kdf_r", "kdf_p"), id="work_factor_only"),
+        pytest.param(("kdf_n",), id="one_work_factor_column"),
+    ],
+)
+def test_a_partially_destroyed_verifier_reads_as_no_verifier(
+    factory: sessionmaker, destroyed: tuple[str, ...]
+) -> None:
+    """`KHEPRI-DEC-015` destruction must not be expressible by halves.
+
+    The verifier occupies five columns, so a destruction that fails partway — or a future
+    write path that clears some of them — leaves a row that is neither live nor destroyed.
+    Reading such a row as a *usable* verifier would let a disabled account authenticate
+    against whatever material survived. So any missing part makes the whole thing absent.
+
+    This is #149's load-bearing assumption: that slice destroys verifiers on disablement, and
+    it inherits this reader. Without this test the guard is deletable in a refactor without a
+    single test going red — verified by mutation (`any` to `all` leaves the suite green).
+    """
+    account = AccountService(SqlAccountStore(factory)).create_account(EMAIL, CREDENTIAL)
+
+    with factory.begin() as database:
+        row = database.get(AccountRow, account.account_id)
+        assert row is not None
+        for column in destroyed:
+            setattr(row, column, None)
+
+    restored = SqlAccountStore(factory).get_account(account.account_id)
+    assert restored is not None, "the account itself survives; only its verifier is gone"
+    assert restored.verifier is None
+    assert restored.has_verifier is False
+
+    # And it must not authenticate, even with the credential that produced the row.
+    with pytest.raises(AuthenticationFailed):
+        AccountService(SqlAccountStore(factory)).authenticate(EMAIL, CREDENTIAL)
 
 
 def test_a_canonicalized_duplicate_is_refused_through_the_service(
@@ -121,28 +171,25 @@ def test_the_store_canonicalizes_without_the_service(factory: sessionmaker) -> N
     canonicalized service lookups. This calls the store directly, which is what an earlier
     version of this test only appeared to do: it routed both inserts through the service, so
     the store's own behaviour was never exercised.
+
+    Note the two bypasses are different and only one is closed. Skipping `AccountService` is
+    still permitted and still exercised here; skipping a *construction door* is not, so the
+    records are built through `_from_storage` — the door for values that already exist — with
+    a deliberately non-canonical address, which is precisely the input a backfill would carry.
     """
     store = SqlAccountStore(factory)
     salt = secrets.token_bytes(16)
-    digest = hash_credential(CREDENTIAL, salt, DEFAULT_KDF)
+    verifier = Verifier._from_storage(
+        salt=salt, digest=hash_credential(CREDENTIAL, salt, DEFAULT_KDF), kdf=DEFAULT_KDF
+    )
 
     assert store.add_account(
-        Account(
-            account_id="acc_canonical",
-            email=EMAIL,
-            credential_salt=salt,
-            credential_digest=digest,
-            kdf=DEFAULT_KDF,
-        )
+        Account._from_storage(account_id="acc_canonical", email=EMAIL, verifier=verifier)
     )
     # Same mailbox, different casing, straight into the store.
     assert not store.add_account(
-        Account(
-            account_id="acc_variant",
-            email="Owner@EXAMPLE.Test",
-            credential_salt=salt,
-            credential_digest=digest,
-            kdf=DEFAULT_KDF,
+        Account._from_storage(
+            account_id="acc_variant", email="Owner@EXAMPLE.Test", verifier=verifier
         )
     )
 
@@ -190,15 +237,17 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
     account = AccountService(SqlAccountStore(factory)).create_account(EMAIL, CREDENTIAL)
     OrganizationService(store).create_organization("Acme", account.account_id, now=NOW)
 
-    doomed = Organization(organization_id="org_doomed", name="Doomed", created_at=NOW)
-    orphan = Membership(
+    doomed = Organization._from_storage(
+        organization_id="org_doomed", name="Doomed", created_at=NOW
+    )
+    orphan = Membership._from_storage(
         organization_id="org_doomed",
         account_id="acc_does_not_exist",
         role="owner",
         changed_by="acc_does_not_exist",
         changed_at=NOW,
     )
-    scope = IsolationScope(organization_id="org_doomed")
+    scope = IsolationScope.create("org_doomed")
 
     assert store.create_organization(doomed, orphan, scope) is False
 
@@ -230,15 +279,15 @@ def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker
         ("org_new", existing.organization_id),  # scope points elsewhere
     ):
         assert not store.create_organization(
-            Organization(organization_id="org_new", name="New", created_at=NOW),
-            Membership(
+            Organization._from_storage(organization_id="org_new", name="New", created_at=NOW),
+            Membership._from_storage(
                 organization_id=membership_org,
                 account_id=other.account_id,
                 role="owner",
                 changed_by=other.account_id,
                 changed_at=NOW,
             ),
-            IsolationScope(organization_id=scope_org),
+            IsolationScope.create(scope_org),
         )
 
     with factory() as database:
@@ -246,8 +295,8 @@ def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker
         assert database.get(OrganizationRow, "org_new") is None
 
 
-def test_a_caller_cannot_supply_an_isolation_key() -> None:
-    """FR-032/FR-033 by construction: `owner_id` is not a constructor parameter.
+def test_the_creation_door_has_no_parameter_for_an_isolation_key() -> None:
+    """FR-032/FR-033 by construction: `create` cannot express an untrusted key.
 
     Two weaker versions were tried and both left a hole. Validating in
     `OrganizationService` missed every caller reaching the store directly — verified: such a
@@ -256,31 +305,333 @@ def test_a_caller_cannot_supply_an_isolation_key() -> None:
     `own_AcmePharmacy000000000000`, which is 24 characters of the accepted alphabet and still
     copied straight from an organization name.
 
-    Shape cannot establish provenance. So the type owns the key instead of checking it, and
-    there is no parameter through which an untrusted value can enter.
+    Shape cannot establish provenance, so the creation door owns the key instead of checking
+    it. This asserts the **signature**, not an exception type: an earlier version asserted
+    `pytest.raises(TypeError)` on a direct call, which after #151 sealed the constructor would
+    have kept passing for an entirely unrelated reason (a missing sentinel), leaving the
+    property it was written to defend untested.
     """
+    assert "owner_id" not in inspect.signature(IsolationScope.create).parameters
+
+
+def test_a_created_scope_never_carries_caller_data() -> None:
+    """The complement of the signature check: what `create` actually mints is opaque."""
     for untrusted in (
         "owner@example.test",
         "acme-pharmacy",
         "own_AcmePharmacy000000000000",
     ):
-        with pytest.raises(TypeError, match="unexpected keyword argument"):
-            IsolationScope(organization_id="org_1", owner_id=untrusted)  # type: ignore[call-arg]
+        scope = IsolationScope.create(untrusted)
+        assert untrusted not in scope.owner_id
+        assert scope.owner_id.startswith("own_")
+
+
+def test_records_reject_construction_outside_a_door() -> None:
+    """Every sealed record refuses a direct call, so a bypass cannot happen by accident."""
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        IsolationScope(organization_id="org_1", owner_id="own_whatever")
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        Organization(organization_id="org_1", name="Acme", created_at=NOW)
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        Membership(
+            organization_id="org_1",
+            account_id="acc_1",
+            role="owner",
+            changed_by="acc_1",
+            changed_at=NOW,
+        )
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        Account(account_id="acc_1", email=EMAIL, verifier=None)
+
+
+@pytest.mark.parametrize(
+    "clone",
+    [
+        pytest.param(dataclasses.replace, id="dataclasses_replace"),
+        pytest.param(copy.replace, id="copy_replace"),
+    ],
+)
+def test_copying_a_sealed_record_is_not_a_door(clone) -> None:
+    """Round five of #148, found by review of this very change and fixed here.
+
+    The first version of this slice made the construction capability an instance *field*
+    holding a module-private sentinel. `dataclasses.replace` copies every field the caller
+    does not override — including that sentinel — onto a record whose other fields it has just
+    rewritten. So a caller could take a legitimately created scope, substitute the isolation
+    key, and produce a forgery that the persistence boundary accepted:
+
+        forged = dataclasses.replace(IsolationScope.create(org), owner_id="own_AcmePharmacy...")
+
+    Verified before the fix: that scope committed through `SqlOrganizationStore` and
+    `resolve_scope` handed the organization's own name back as the analytical boundary — the
+    exact FR-032/FR-033 defect #148 spent four rounds closing, reachable again through one
+    idiomatic stdlib call.
+
+    The capability now lives in the call stack instead, so there is no field to carry forward
+    and every copy protocol lands outside a door. This matters most for the slices that follow:
+    `replace(account, verifier=None)` is the obvious way to write #149's verifier destruction,
+    and `replace(membership, role="owner")` the obvious way to write #150's role transition.
+    Both must be refused, or those slices reintroduce this hole while looking correct.
+    """
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(IsolationScope.create("org_1"), owner_id="own_AcmePharmacy000000000000")
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(Account.create(EMAIL, CREDENTIAL), verifier=None)
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(
+            Membership.create("org_1", "acc_1", "member", changed_by="acc_1", now=NOW),
+            role="owner",
+        )
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(Organization.create("Acme", now=NOW), name="Renamed")
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(Verifier.derive(CREDENTIAL), digest=CREDENTIAL.encode())
+
+
+@pytest.mark.parametrize(
+    "duplicate",
+    [
+        pytest.param(copy.copy, id="copy"),
+        pytest.param(copy.deepcopy, id="deepcopy"),
+        pytest.param(lambda record: pickle.loads(pickle.dumps(record)), id="pickle"),
+    ],
+)
+def test_duplicating_a_sealed_record_reproduces_it_faithfully(duplicate) -> None:
+    """A copy must be faithful — the whole reason copying is permitted at all."""
+    scope = IsolationScope.create("org_1")
+    duplicated = duplicate(scope)
+    assert duplicated == scope
+    assert duplicated.owner_id == scope.owner_id
+    assert duplicated.organization_id == scope.organization_id
+
+
+def test_deepcopy_ignores_a_memo_that_would_substitute_a_field() -> None:
+    """`deepcopy`'s `memo` is a field-substitution channel, and it was open.
+
+    Found by review of this PR. `copy.deepcopy(record, {id(field): replacement})` pre-seeds what
+    a nested field copies to — the same capability `dataclasses.replace` has, reached through a
+    different protocol. Verified before `Sealed.__deepcopy__` existed: this produced an `Account`
+    carrying `digest=b"recoverable-credential"` that `assert_sealed` accepted and
+    `SqlAccountStore.add_account` persisted, defeating FR-002.
+
+    The docstring in `records.py` had claimed the copy protocols "offer no parameter through
+    which a caller's value can enter". `memo` is exactly such a parameter. Copies now rebuild
+    from the source record's own attributes, so the memo cannot reach them.
+    """
+    account = Account.create(EMAIL, CREDENTIAL)
+    assert account.verifier is not None
+    recoverable = Verifier._from_storage(
+        salt=b"", digest=CREDENTIAL.encode(), kdf=DEFAULT_KDF
+    )
+
+    duplicated = copy.deepcopy(account, {id(account.verifier): recoverable})
+
+    assert duplicated.verifier is not None
+    assert duplicated.verifier.digest != CREDENTIAL.encode()
+    assert duplicated.verifier == account.verifier
+    assert duplicated == account
+
+
+def test_a_door_body_never_runs_caller_reachable_code() -> None:
+    """A door authorizes the whole thread, so nothing but the constructor may run inside it.
+
+    Found by review of this PR. `Account.create` called `canonical_email(email)` *inside* its
+    door, and `canonical_email` calls `.strip()` on its argument. A `str` subclass overriding
+    `strip` therefore ran caller code with construction authorized — verified: it built an
+    `IsolationScope` with a chosen `owner_id`, which `assert_sealed` accepted, defeating
+    FR-032/FR-033.
+
+    `records.py` documented this hazard ("a door that wraps a long computation, a callback, or
+    anything that yields is a wider grant than it looks") while `create` still did it. Every
+    value is now computed before the door opens.
+    """
+    forged: list[IsolationScope] = []
+
+    class HostileAddress(str):
+        def strip(self) -> str:
+            with contextlib.suppress(TypeError):
+                forged.append(
+                    IsolationScope(organization_id="org_1", owner_id="own_AcmePharmacy00000")
+                )
+            return str(self)
+
+    Account.create(HostileAddress(EMAIL), CREDENTIAL)
+
+    assert forged == [], "caller code ran while a construction door was open"
+
+
+def _forged_verifier() -> Verifier:
+    return Verifier._from_storage(salt=b"", digest=CREDENTIAL.encode(), kdf=DEFAULT_KDF)
+
+
+ACCIDENTAL_BYPASSES = [
+    pytest.param(
+        lambda genuine: Account(account_id="a", email=EMAIL, verifier=_forged_verifier()),
+        id="direct_construction",
+    ),
+    pytest.param(
+        lambda genuine: dataclasses.replace(genuine, verifier=_forged_verifier()),
+        id="dataclasses_replace",
+    ),
+    pytest.param(
+        lambda genuine: copy.replace(genuine, verifier=_forged_verifier()),
+        id="copy_replace",
+    ),
+    pytest.param(
+        lambda genuine: type("Forged", (Account,), {"__post_init__": lambda s: None}),
+        id="subclass_overrides_post_init",
+    ),
+    pytest.param(
+        lambda genuine: type("Forged", (Account,), {"__init__": lambda s, **k: None}),
+        id="subclass_overrides_init",
+    ),
+    pytest.param(
+        lambda genuine: type("Forged", (Account,), {"__new__": lambda c, **k: None}),
+        id="subclass_overrides_new",
+    ),
+]
+
+
+@pytest.mark.parametrize("bypass", ACCIDENTAL_BYPASSES)
+def test_no_accidental_channel_admits_forged_credential_material(bypass) -> None:
+    """The property the whole boundary exists for, tested as one closed set.
+
+    Four separate bypasses reached review one at a time, each found *after* the previous fix
+    shipped: `dataclasses.replace`, `deepcopy`'s `memo`, caller code inside an open door, and
+    subclass overrides of the construction hooks. Every one was an **accidental** channel —
+    something a careful engineer could write without intending to bypass anything.
+
+    They arrived serially because each was hunted individually. This enumerates the class
+    instead, so a future change that reopens any of them fails here rather than in review.
+
+    What this deliberately does NOT cover: `object.__new__`, `object.__setattr__`, and calling
+    `through_door()` directly. Those still work and always will — Python has no private
+    construction. They are the documented limit, and the distinction is the point: reaching
+    them requires explicitly naming `object.__new__`, which nobody does by accident.
+    """
+    genuine = Account.create(EMAIL, CREDENTIAL)
+    with pytest.raises(TypeError):
+        bypass(genuine)
+
+
+def test_faithful_duplication_stays_permitted() -> None:
+    """The complement: channels that cannot substitute a field are left alone.
+
+    `copy`, `deepcopy`, and `pickle` reproduce a record exactly and expose no parameter through
+    which a caller value can enter — once `memo` is neutralised. Blocking them would fight the
+    pickle protocol for no gain, so the rule is *substitution is refused, duplication is not*.
+    """
+    genuine = Account.create(EMAIL, CREDENTIAL)
+    forged = copy.deepcopy(genuine, {id(genuine.verifier): _forged_verifier()})
+
+    for duplicate in (copy.copy(genuine), copy.deepcopy(genuine), forged):
+        assert duplicate == genuine
+        assert duplicate.verifier is not None
+        assert duplicate.verifier.digest != CREDENTIAL.encode()
+
+
+@pytest.mark.parametrize("method", ["__post_init__", "__init__", "__new__"])
+def test_a_subclass_cannot_override_any_construction_hook(method: str) -> None:
+    """Every hook the constructor dispatches through is sealed, not just `__post_init__`.
+
+    An earlier fix here closed `__post_init__` alone, and review immediately found the next
+    one: `Account.create` calls `cls(...)`, and on a subclass with an overridden `__init__`
+    that runs caller code **while the door is open**. Reproduced — it built and retained genuine
+    `Verifier` and `Account` instances holding `digest=b"recoverable-password"`, and because
+    those have the registered exact types, `assert_sealed` accepted them.
+
+    The exact-type check could not help: the smuggled objects *were* the exact types. Only
+    refusing the override, and constructing the declared type rather than `cls`, closes it.
+    """
+    with pytest.raises(TypeError, match=f"may not override {method}"):
+        type("Forged", (Account,), {method: lambda self, *a, **k: None})
+
+
+def test_a_door_constructs_the_declared_type_not_the_dispatched_one() -> None:
+    """`create` on a subclass yields the declared record, so `cls` cannot steer construction.
+
+    Defence in depth behind the override guard: even a subclass that adds nothing cannot make
+    a door produce an instance of itself.
+    """
+
+    class PlainSubclass(Account):
+        pass
+
+    assert type(PlainSubclass.create(EMAIL, CREDENTIAL)) is Account
+
+
+def test_the_store_refuses_a_subclass_of_a_sealed_record(factory: sessionmaker) -> None:
+    """`assert_sealed` checks the exact type, not `isinstance`.
+
+    A subclass satisfies `isinstance` by definition, and a subclass is precisely the thing
+    whose construction may have been altered. Requiring the declared type means a record
+    reaching persistence is one of ours rather than something that merely inherits from one —
+    defence in depth behind the `__init_subclass__` hook, since that hook only catches the
+    override, not every future way a subclass might diverge.
+    """
+
+    class PlainSubclass(Account):
+        pass
+
+    genuine = Account.create(EMAIL, CREDENTIAL)
+    # Built through a door, so the door check itself cannot be what refuses it — this isolates
+    # the exact-type check. Without it the record is a legitimate `Sealed` instance by
+    # `isinstance` and the store would accept a type this package never declared.
+    with through_door():
+        smuggled = PlainSubclass(
+            account_id=genuine.account_id, email=genuine.email, verifier=genuine.verifier
+        )
+    assert isinstance(smuggled, Account), "isinstance alone would have admitted it"
+
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        SqlAccountStore(factory).add_account(smuggled)
+
+
+def test_a_store_refuses_a_record_of_the_wrong_type(factory: sessionmaker) -> None:
+    """The persistence boundary checks the type discipline held, not field contents.
+
+    Checking contents is what #148's round 2 already proved insufficient: a value's shape
+    cannot establish where it came from. Since a `Sealed` instance can only exist if a door was
+    open when it was built, the type is now the evidence.
+    """
+
+    @dataclasses.dataclass(frozen=True, slots=True)
+    class LookalikeAccount:
+        account_id: str = "acc_1"
+        email: str = EMAIL
+        verifier: object = None
+
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        SqlAccountStore(factory).add_account(LookalikeAccount())  # type: ignore[arg-type]
+
+
+def test_a_verifier_cannot_be_built_outside_a_door() -> None:
+    """Sealing must reach the credential material, not only the record that carries it.
+
+    `Account._from_storage` accepts whatever `Verifier` it is handed without re-deriving — it
+    must, since a stored digest is the only thing a candidate can be compared against. An
+    unsealed `Verifier` would therefore let an in-package caller choose the credential material
+    for an account whose own provenance check then passed (FR-002).
+    """
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        Verifier(salt=b"", digest=CREDENTIAL.encode(), kdf=DEFAULT_KDF)
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        dataclasses.replace(Verifier.derive(CREDENTIAL), digest=CREDENTIAL.encode())
 
 
 def test_every_scope_allocates_a_distinct_opaque_key() -> None:
-    keys = {IsolationScope(organization_id=f"org_{index}").owner_id for index in range(200)}
+    keys = {IsolationScope.create(f"org_{index}").owner_id for index in range(200)}
     assert len(keys) == 200
     assert all(key.startswith("own_") for key in keys)
 
 
-def test_restore_preserves_the_key_that_was_allocated_originally() -> None:
+def test_reconstruction_preserves_the_key_that_was_allocated_originally() -> None:
     """FR-035: one organization resolves to a stable scope for its lifetime.
 
     The persistence read path must return the stored key, not mint a new one.
     """
-    stored = IsolationScope(organization_id="org_1").owner_id
-    assert IsolationScope.restore("org_1", stored).owner_id == stored
+    stored = IsolationScope.create("org_1").owner_id
+    assert IsolationScope._from_storage("org_1", stored).owner_id == stored
 
 
 def test_service_converts_a_failed_write_into_a_uniform_refusal(factory: sessionmaker) -> None:

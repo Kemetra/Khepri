@@ -14,8 +14,10 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-from khepri.rca.accounts import Account, KdfParams, canonical_email
+from khepri.rca.accounts import Account, canonical_email
+from khepri.rca.credentials import KdfParams, Verifier
 from khepri.rca.organizations import IsolationScope, Membership, Organization
+from khepri.rca.records import assert_sealed
 
 
 class Base(DeclarativeBase):
@@ -95,27 +97,31 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
-def _kdf_from_row(row: AccountRow) -> KdfParams | None:
-    """None once the verifier has been destroyed on disablement (KHEPRI-DEC-015)."""
-    stored = (row.kdf_n, row.kdf_r, row.kdf_p)
-    if None in stored:
+def _verifier_from_row(row: AccountRow) -> Verifier | None:
+    """None once the verifier has been destroyed on disablement (KHEPRI-DEC-015).
+
+    Treats the five verifier columns as one value: a row is either a complete verifier or no
+    verifier at all. A partially-populated row — a salt with no digest, a digest with no work
+    factor — is not a verifier that happens to be missing a piece; it is a record that cannot
+    be verified, and admitting it as a `Verifier` would let a half-destroyed row look live.
+    """
+    stored = (row.credential_salt, row.credential_digest, row.kdf_n, row.kdf_r, row.kdf_p)
+    if any(part is None for part in stored):
         return None
-    n, r, p = stored
-    return KdfParams(n=n, r=r, p=p)
+    salt, digest, n, r, p = stored
+    return Verifier._from_storage(salt=salt, digest=digest, kdf=KdfParams(n=n, r=r, p=p))
 
 
 def _account_from_row(row: AccountRow) -> Account:
-    return Account(
+    return Account._from_storage(
         account_id=row.account_id,
         email=row.email,
-        credential_salt=row.credential_salt,
-        credential_digest=row.credential_digest,
-        kdf=_kdf_from_row(row),
+        verifier=_verifier_from_row(row),
     )
 
 
 def _membership_from_row(row: MembershipRow) -> Membership:
-    return Membership(
+    return Membership._from_storage(
         organization_id=row.organization_id,
         account_id=row.account_id,
         role=row.role,
@@ -125,7 +131,7 @@ def _membership_from_row(row: MembershipRow) -> Membership:
 
 
 def _scope_from_row(row: IsolationScopeRow) -> IsolationScope:
-    return IsolationScope.restore(
+    return IsolationScope._from_storage(
         organization_id=row.organization_id,
         owner_id=row.owner_id,
     )
@@ -134,30 +140,36 @@ def _scope_from_row(row: IsolationScopeRow) -> IsolationScope:
 class SqlAccountStore:
     """Persistence for accounts.
 
-    Canonicalizes the email address on both write and read. `AccountService` also
+    Canonicalizes the email address on both write and read. `Account.create` also
     canonicalizes, but the store cannot rely on that: an importer, a backfill, or any other
     internal caller reaching `add_account` directly would otherwise persist `Owner@Example.Test`
     verbatim, and the case-sensitive unique constraint would admit it beside
     `owner@example.test` — two durable identities for one mailbox, in violation of `RCA-001`
     A-1, with the mixed-case row unreachable through canonicalized service lookups.
     Enforcing it at the boundary that owns the constraint makes the invariant unconditional.
+
+    The verifier is written as one value or not at all (#151): the five credential columns are
+    populated together from `Account.verifier`, or all set NULL, so a half-destroyed verifier
+    cannot be produced here.
     """
 
     def __init__(self, factory: sessionmaker) -> None:
         self._factory = factory
 
     def add_account(self, account: Account) -> bool:
+        assert_sealed(account)
+        verifier = account.verifier
         try:
             with self._factory.begin() as database:
                 database.add(
                     AccountRow(
                         account_id=account.account_id,
                         email=canonical_email(account.email),
-                        credential_salt=account.credential_salt,
-                        credential_digest=account.credential_digest,
-                        kdf_n=account.kdf.n,
-                        kdf_r=account.kdf.r,
-                        kdf_p=account.kdf.p,
+                        credential_salt=None if verifier is None else verifier.salt,
+                        credential_digest=None if verifier is None else verifier.digest,
+                        kdf_n=None if verifier is None else verifier.kdf.n,
+                        kdf_r=None if verifier is None else verifier.kdf.r,
+                        kdf_p=None if verifier is None else verifier.kdf.p,
                     )
                 )
         except IntegrityError:
@@ -199,6 +211,7 @@ class SqlOrganizationStore:
         — that produced an orphan organization, which FR-013's "never zero owner-role
         members" forbids from the moment of creation.
         """
+        assert_sealed(organization, membership, scope)
         if membership.organization_id != organization.organization_id:
             return False
         if scope.organization_id != organization.organization_id:

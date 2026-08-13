@@ -134,7 +134,7 @@ def test_scopes_do_not_merge_for_multi_organization_membership() -> None:
     store, organizations, isolation = _fixture()
     first = organizations.create_organization("First", ACCOUNT, now=NOW)
     second = organizations.create_organization("Second", ACCOUNT, now=NOW)
-    store.memberships[(second.organization_id, ACCOUNT)] = Membership(
+    store.memberships[(second.organization_id, ACCOUNT)] = Membership._from_storage(
         organization_id=second.organization_id,
         account_id=ACCOUNT,
         role="owner",
