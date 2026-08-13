@@ -6,6 +6,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from khepri.rca.persistence import Base as RcaBase
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base
@@ -19,13 +20,32 @@ database_url = os.environ.get("KHEPRI_DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
-target_metadata = Base.metadata
-if ReportJobRow.metadata is not target_metadata:
-    raise RuntimeError("Report job metadata is not registered with the RRA base.")
-if OperationalEventRow.metadata is not target_metadata:
-    raise RuntimeError("Operational event metadata is not registered with the RRA base.")
-if ReportDeliveryRow.metadata is not target_metadata:
-    raise RuntimeError("Report delivery metadata is not registered with the RRA base.")
+_RRA_ROWS = (
+    ("Report job", ReportJobRow),
+    ("Operational event", OperationalEventRow),
+    ("Report delivery", ReportDeliveryRow),
+)
+
+
+def _verify_rra_rows_share_one_base() -> None:
+    for label, row in _RRA_ROWS:
+        if row.metadata is not Base.metadata:
+            raise RuntimeError(f"{label} metadata is not registered with the RRA base.")
+
+
+def _verify_rca_base_is_separate() -> None:
+    """RCA declares its own DeclarativeBase rather than joining RRA's (FR-039)."""
+    if RcaBase.metadata is Base.metadata:
+        raise RuntimeError("RCA metadata must stay separate from the RRA base (FR-039).")
+    if any(name.startswith("rra_") for name in RcaBase.metadata.tables):
+        raise RuntimeError("RCA metadata must not declare rra_* tables.")
+
+
+_verify_rra_rows_share_one_base()
+_verify_rca_base_is_separate()
+
+# Both metadata objects, as a list, so autogenerate sees every table without merging bases.
+target_metadata = [Base.metadata, RcaBase.metadata]
 
 
 def run_migrations_offline() -> None:
