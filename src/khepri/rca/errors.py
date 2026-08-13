@@ -17,6 +17,17 @@ ACCOUNT_FAILURE = "Account is invalid or unavailable."
 # wrong" -- which is the outcome FR-013 names explicitly to avoid.
 FINAL_OWNER_FAILURE = "The final owner of an organization cannot be removed or disabled."
 
+# The outcomes of an owner-reducing operation. The store reports one of these; the service
+# translates it into a refusal above. They live here rather than in `persistence` because both
+# layers need the vocabulary and this module is the leaf both already depend on -- a service
+# importing from persistence to learn how to raise would invert the dependency.
+#
+# Reported rather than raised so the whole refusal contract, including FR-013's deliberately
+# non-uniform message, stays in one place instead of being split across persistence.
+OWNER_CHANGE_APPLIED = "applied"
+OWNER_CHANGE_FINAL_OWNER = "final_owner"
+OWNER_CHANGE_NOT_APPLICABLE = "not_applicable"
+
 
 class AuthenticationFailed(PermissionError):
     pass

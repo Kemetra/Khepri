@@ -105,7 +105,7 @@ def test_a_disabled_account_is_refused_uniformly(monkeypatch: pytest.MonkeyPatch
     service = AccountService(accounts)
     account = service.create_account(EMAIL, CREDENTIAL)
     service.create_account(OTHER_EMAIL, CREDENTIAL)
-    LifecycleService(accounts, MemoryOrganizationStore()).disable_account(
+    LifecycleService(accounts, MemoryOrganizationStore(accounts)).disable_account(
         account.account_id, now=NOW
     )
 
@@ -171,7 +171,7 @@ def test_a_re_enabled_account_still_cannot_authenticate_with_the_old_credential(
     accounts = MemoryAccountStore()
     service = AccountService(accounts)
     account = service.create_account(EMAIL, CREDENTIAL)
-    lifecycle = LifecycleService(accounts, MemoryOrganizationStore())
+    lifecycle = LifecycleService(accounts, MemoryOrganizationStore(accounts))
 
     lifecycle.disable_account(account.account_id, now=NOW)
     re_enabled = lifecycle.enable_account(account.account_id)
@@ -186,7 +186,7 @@ def test_disablement_is_idempotent_and_keeps_the_original_horizon() -> None:
     """A second disablement must not restart the 24-month clock."""
     accounts = MemoryAccountStore()
     account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    lifecycle = LifecycleService(accounts, MemoryOrganizationStore())
+    lifecycle = LifecycleService(accounts, MemoryOrganizationStore(accounts))
 
     first = lifecycle.disable_account(account.account_id, now=NOW)
     later = lifecycle.disable_account(account.account_id, now=NOW + timedelta(days=100))

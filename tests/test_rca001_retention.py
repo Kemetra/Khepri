@@ -49,7 +49,7 @@ def test_the_sweeper_purges_only_after_the_horizon(
 ) -> None:
     accounts = MemoryAccountStore()
     account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    LifecycleService(accounts, MemoryOrganizationStore()).disable_account(
+    LifecycleService(accounts, MemoryOrganizationStore(accounts)).disable_account(
         account.account_id, now=NOW
     )
 
@@ -66,7 +66,7 @@ def test_the_sweeper_leaves_an_opaque_tombstone() -> None:
     no credential verifier, no profile data"."""
     accounts = MemoryAccountStore()
     account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    lifecycle = LifecycleService(accounts, MemoryOrganizationStore())
+    lifecycle = LifecycleService(accounts, MemoryOrganizationStore(accounts))
     disabled = lifecycle.disable_account(account.account_id, now=NOW)
 
     AccountRetentionSweeper(accounts).sweep(now=NOW + timedelta(days=760))
@@ -98,7 +98,7 @@ def test_sweeping_twice_purges_once() -> None:
     """The count a pass reports must be work it did, not rows it re-examined."""
     accounts = MemoryAccountStore()
     account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    LifecycleService(accounts, MemoryOrganizationStore()).disable_account(
+    LifecycleService(accounts, MemoryOrganizationStore(accounts)).disable_account(
         account.account_id, now=NOW
     )
     sweeper = AccountRetentionSweeper(accounts)
@@ -137,7 +137,7 @@ def test_a_purged_account_cannot_be_re_enabled_or_disabled() -> None:
     """A tombstone has no identity to re-enable it as."""
     accounts = MemoryAccountStore()
     account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    lifecycle = LifecycleService(accounts, MemoryOrganizationStore())
+    lifecycle = LifecycleService(accounts, MemoryOrganizationStore(accounts))
     lifecycle.disable_account(account.account_id, now=NOW)
     AccountRetentionSweeper(accounts).sweep(now=NOW + timedelta(days=760))
 
@@ -255,7 +255,7 @@ def test_disabling_an_account_the_store_lost_fails_closed() -> None:
     account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
 
     with pytest.raises(AccountOperationFailed):
-        LifecycleService(accounts, MemoryOrganizationStore()).disable_account(
+        LifecycleService(accounts, MemoryOrganizationStore(accounts)).disable_account(
             account.account_id, now=NOW
         )
 

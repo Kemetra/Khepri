@@ -31,8 +31,8 @@ def _fixture() -> tuple[MemoryOrganizationStore, OrganizationService, IsolationS
     `IsolationService` refuses a disabled account (#149), so the accounts these tests act as
     have to exist and be enabled or every resolution would fail for the wrong reason.
     """
-    store = MemoryOrganizationStore()
     accounts = MemoryAccountStore()
+    store = MemoryOrganizationStore(accounts)
     for account_id in (ACCOUNT, OTHER_ACCOUNT):
         accounts.accounts[account_id] = Account._from_storage(
             account_id=account_id,

@@ -17,6 +17,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from khepri.rca.accounts import Account, canonical_email
 from khepri.rca.credentials import KdfParams, Verifier
+from khepri.rca.errors import (
+    OWNER_CHANGE_APPLIED,
+    OWNER_CHANGE_FINAL_OWNER,
+    OWNER_CHANGE_NOT_APPLICABLE,
+)
 from khepri.rca.organizations import OWNER_ROLE, IsolationScope, Membership, Organization
 from khepri.rca.records import assert_sealed
 
@@ -231,20 +236,8 @@ class SqlAccountStore:
         Returns False when the row does not exist, so a caller cannot mistake a no-op for a
         successful write. The lifecycle service turns that into a uniform refusal.
         """
-        assert_sealed(account)
-        verifier = account.verifier
         with self._factory.begin() as database:
-            row = database.get(AccountRow, account.account_id)
-            if row is None:
-                return False
-            row.email = _canonical_or_none(account.email)
-            row.credential_salt = None if verifier is None else verifier.salt
-            row.credential_digest = None if verifier is None else verifier.digest
-            row.kdf_n = None if verifier is None else verifier.kdf.n
-            row.kdf_r = None if verifier is None else verifier.kdf.r
-            row.kdf_p = None if verifier is None else verifier.kdf.p
-            row.disabled_at = account.disabled_at
-        return True
+            return _apply_account(database, account)
 
     def get_account_by_email(self, email: str) -> Account | None:
         with self._factory() as database:
@@ -288,6 +281,84 @@ class SqlAccountStore:
             if row is None:
                 return None
             return _account_from_row(row)
+
+
+def _apply_account(database, account: Account) -> bool:
+    """Write an account's current state onto its row inside the caller's transaction.
+
+    Takes the session rather than opening one, because two callers need this with different
+    transaction scopes: `save_account`, which is the whole operation, and
+    `apply_owner_reducing_change`, where the write must land in the same transaction as the
+    guard that permitted it. Extracting it is what stops those two from drifting into writing
+    different column sets.
+
+    Every verifier column moves together with the record's `verifier`, so a partially destroyed
+    verifier cannot be written -- which is what makes `KHEPRI-DEC-015`'s "immediate,
+    non-recoverable" destruction hold at the boundary rather than only in the domain type.
+
+    Returns False when the row does not exist, so a caller cannot mistake a no-op for a
+    successful write.
+    """
+    assert_sealed(account)
+    verifier = account.verifier
+    row = database.get(AccountRow, account.account_id)
+    if row is None:
+        return False
+    row.email = _canonical_or_none(account.email)
+    row.credential_salt = None if verifier is None else verifier.salt
+    row.credential_digest = None if verifier is None else verifier.digest
+    row.kdf_n = None if verifier is None else verifier.kdf.n
+    row.kdf_r = None if verifier is None else verifier.kdf.r
+    row.kdf_p = None if verifier is None else verifier.kdf.p
+    row.disabled_at = account.disabled_at
+    return True
+
+
+def _effective_owner_conditions() -> tuple:
+    """The effective-owner rule, expressed once.
+
+    An owner counts only if the account holds the owner role, is enabled (`disabled_at IS
+    NULL`), is not purged (`email IS NOT NULL`), and can actually authenticate
+    (`credential_digest IS NOT NULL`). The last is load-bearing and the least obvious:
+    re-enablement deliberately leaves the verifier destroyed (`KHEPRI-DEC-015` §5), so an
+    enabled, unpurged owner may still be unable to log in -- and FR-013 asks whether an owner
+    can *act*. Verified before that clause existed: disable A, re-enable A, disable B left an
+    organization whose only remaining owner could not authenticate.
+
+    This mirrors `Account.can_authenticate` in SQL. Extracted because it is now evaluated in two
+    places -- the unlocked count and the locked guard -- and two copies of a rule this sharp
+    drift. `test_rca001_final_owner.py` asserts the SQL and the Python agree state by state.
+    """
+    return (
+        MembershipRow.role == OWNER_ROLE,
+        AccountRow.disabled_at.is_(None),
+        AccountRow.email.is_not(None),
+        AccountRow.credential_digest.is_not(None),
+    )
+
+
+def owner_memberships_for_update(account_id: str):
+    """Lock this account's owner-role memberships for the duration of the transaction.
+
+    A named module-level statement rather than an inline `.with_for_update()`, following
+    `khepri.rra.persistence.invitation_for_update_statement`. The reason is testability: SQLite
+    emits no `FOR UPDATE` and SQLAlchemy silently omits it for that dialect, so if the lock were
+    inline and someone later dropped it, the whole RCA suite would stay green while `#155`
+    returned. Because this is a named function, a test compiles it against the PostgreSQL
+    dialect and asserts `FOR UPDATE` is present without needing a database.
+
+    Locking the *membership* rows rather than the account row is what makes competing
+    operations on the same organization serialize: two different accounts disabling themselves
+    contend on the organization's owner rows, which is where the invariant lives.
+    """
+    return (
+        select(MembershipRow)
+        .where(
+            MembershipRow.account_id == account_id,
+            MembershipRow.role == OWNER_ROLE,
+        )
+        .with_for_update()
+    )
 
 
 class SqlOrganizationStore:
@@ -397,17 +468,54 @@ class SqlOrganizationStore:
                     .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
                     .where(
                         MembershipRow.organization_id == organization_id,
-                        MembershipRow.role == OWNER_ROLE,
                         MembershipRow.account_id != excluding_account_id,
-                        AccountRow.disabled_at.is_(None),
-                        AccountRow.email.is_not(None),
-                        # ...and can actually authenticate. Re-enablement deliberately leaves
-                        # the verifier destroyed (DEC-015 §5), so an enabled, unpurged owner
-                        # may still be unable to log in -- and FR-013 asks whether an owner can
-                        # *act*. Verified: disable A, re-enable A, disable B left an
-                        # organization whose only owner could not authenticate.
-                        AccountRow.credential_digest.is_not(None),
+                        *_effective_owner_conditions(),
                     )
                 ).scalar()
                 or 0
             )
+
+    def apply_owner_reducing_change(self, account_id: str, updated: Account) -> str:
+        """Guard FR-013 and write `updated` as one atomic decision (`#155`).
+
+        The defect this closes: the guard and the write were three round trips on three
+        sessions, so two concurrent disablements of a two-owner organization could both count
+        a live co-owner, both pass, and both commit, leaving zero. Verified deterministically
+        against PostgreSQL before this method existed -- see
+        `tests/test_rca001_concurrent_final_owner.py`, where three contending owners left the
+        organization with none.
+
+        `updated` arrives already built. `Account` is frozen and sealed, so a state change is a
+        new instance through a door, and there is no mutable handle a transaction could be
+        handed instead. That is also why no door opens in here: `records.py` records that a
+        door authorizes the *thread* rather than one call, and a round trip under `FOR UPDATE`
+        blocks and can wait on another transaction's lock, which is a far wider grant than the
+        single constructor call the doors are scoped to.
+
+        Returns an outcome rather than raising, so the FR-013 refusal message stays in
+        `errors.py` with the rest of the refusal vocabulary.
+        """
+        with self._factory.begin() as database:
+            owned = database.scalars(owner_memberships_for_update(account_id)).all()
+            if database.get(AccountRow, account_id) is None:
+                return OWNER_CHANGE_NOT_APPLICABLE
+            for membership in owned:
+                # Counted inside the transaction, on rows this statement holds a lock over. A
+                # competing owner-reducing operation on the same organization is blocked at the
+                # SELECT above until this commits, so it observes the write rather than the
+                # state that preceded it.
+                remaining = database.execute(
+                    select(func.count())
+                    .select_from(MembershipRow)
+                    .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
+                    .where(
+                        MembershipRow.organization_id == membership.organization_id,
+                        MembershipRow.account_id != account_id,
+                        *_effective_owner_conditions(),
+                    )
+                ).scalar()
+                if not remaining:
+                    return OWNER_CHANGE_FINAL_OWNER
+            if not _apply_account(database, updated):
+                return OWNER_CHANGE_NOT_APPLICABLE
+        return OWNER_CHANGE_APPLIED
