@@ -1,7 +1,10 @@
 # Khepri commercial roadmap: private beta to sellable analysis service
 
-> Historical snapshot. It predates KHEPRI-DEC-017 and the unified registry; use
-> `governance/registry.yaml` for current governance state.
+> Historical snapshot, superseded for planning purposes by
+> `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`. Do not use this document to sequence work.
+> It predates KHEPRI-DEC-017 and the unified registry; use `governance/registry.yaml` for current
+> governance state. Its claim below that `KHEPRI-DEC-008` is `proposed` and gates implementation is
+> stale: that decision is now `active`.
 
 - Drafted at: 2026-08-04
 - Base commit: `0b1ae35` on `main`
