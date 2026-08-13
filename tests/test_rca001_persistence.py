@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import dataclasses
 import inspect
@@ -400,25 +401,67 @@ def test_copying_a_sealed_record_is_not_a_door(clone) -> None:
     ],
 )
 def test_duplicating_a_sealed_record_reproduces_it_faithfully(duplicate) -> None:
-    """The copy protocols are permitted, and this is why that is safe.
-
-    `copy`, `deepcopy`, and `pickle` do **not** go through `__init__` on a slotted dataclass:
-    they allocate with `__class__.__new__` and restore state through `__reduce_ex__`, so
-    `__post_init__` never runs and no door check applies. Blocking them would mean fighting
-    the pickle protocol.
-
-    It is unnecessary, and the reason is the difference between these and `dataclasses.replace`
-    — which is blocked. `replace` lets a caller *substitute* a field while keeping everything
-    else, which is how the round-five forgery worked. These reproduce every field verbatim,
-    and a faithful copy of a legitimate record is a legitimate record: there is no input
-    through which a caller's value can enter. This test pins that distinction, so a future
-    change that makes a copy protocol field-substitutable fails here.
-    """
+    """A copy must be faithful — the whole reason copying is permitted at all."""
     scope = IsolationScope.create("org_1")
     duplicated = duplicate(scope)
     assert duplicated == scope
     assert duplicated.owner_id == scope.owner_id
     assert duplicated.organization_id == scope.organization_id
+
+
+def test_deepcopy_ignores_a_memo_that_would_substitute_a_field() -> None:
+    """`deepcopy`'s `memo` is a field-substitution channel, and it was open.
+
+    Found by review of this PR. `copy.deepcopy(record, {id(field): replacement})` pre-seeds what
+    a nested field copies to — the same capability `dataclasses.replace` has, reached through a
+    different protocol. Verified before `Sealed.__deepcopy__` existed: this produced an `Account`
+    carrying `digest=b"recoverable-credential"` that `assert_sealed` accepted and
+    `SqlAccountStore.add_account` persisted, defeating FR-002.
+
+    The docstring in `records.py` had claimed the copy protocols "offer no parameter through
+    which a caller's value can enter". `memo` is exactly such a parameter. Copies now rebuild
+    from the source record's own attributes, so the memo cannot reach them.
+    """
+    account = Account.create(EMAIL, CREDENTIAL)
+    assert account.verifier is not None
+    recoverable = Verifier._from_storage(
+        salt=b"", digest=CREDENTIAL.encode(), kdf=DEFAULT_KDF
+    )
+
+    duplicated = copy.deepcopy(account, {id(account.verifier): recoverable})
+
+    assert duplicated.verifier is not None
+    assert duplicated.verifier.digest != CREDENTIAL.encode()
+    assert duplicated.verifier == account.verifier
+    assert duplicated == account
+
+
+def test_a_door_body_never_runs_caller_reachable_code() -> None:
+    """A door authorizes the whole thread, so nothing but the constructor may run inside it.
+
+    Found by review of this PR. `Account.create` called `canonical_email(email)` *inside* its
+    door, and `canonical_email` calls `.strip()` on its argument. A `str` subclass overriding
+    `strip` therefore ran caller code with construction authorized — verified: it built an
+    `IsolationScope` with a chosen `owner_id`, which `assert_sealed` accepted, defeating
+    FR-032/FR-033.
+
+    `records.py` documented this hazard ("a door that wraps a long computation, a callback, or
+    anything that yields is a wider grant than it looks") while `create` still did it. Every
+    value is now computed before the door opens.
+    """
+    forged: list[IsolationScope] = []
+
+    class HostileAddress(str):
+        def strip(self) -> str:
+            with contextlib.suppress(TypeError):
+                forged.append(
+                    IsolationScope(organization_id="org_1", owner_id="own_AcmePharmacy00000")
+                )
+            return str(self)
+
+    Account.create(HostileAddress(EMAIL), CREDENTIAL)
+
+    assert forged == [], "caller code ran while a construction door was open"
 
 
 def test_a_store_refuses_a_record_of_the_wrong_type(factory: sessionmaker) -> None:

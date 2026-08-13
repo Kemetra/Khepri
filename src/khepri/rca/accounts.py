@@ -82,13 +82,21 @@ class Account(Sealed):
         Takes the credential, not a verifier: there is no parameter through which
         caller-supplied digest material can become a new account's stored verifier.
         """
-        # Derive before opening this record's door rather than inside it, so the window in
-        # which construction is authorized on this thread stays one constructor call wide.
+        # EVERYTHING is computed before the door opens, not just the expensive part. A door
+        # authorizes the whole thread while it is open, so any caller-reachable code running
+        # inside it can construct any sealed record. `canonical_email` calls `.strip()` and
+        # `.lower()` on its argument, and a `str` subclass overriding either runs attacker code
+        # — verified: an overridden `strip` built an `IsolationScope` carrying a chosen
+        # `owner_id` from inside this door, and it passed `assert_sealed`.
+        #
+        # The rule this enforces: a door's body contains the constructor call and nothing else.
+        account_id = f"acc_{secrets.token_urlsafe(18)}"
+        canonical = canonical_email(email)
         verifier = Verifier.derive(credential)
         with through_door():
             return cls(
-                account_id=f"acc_{secrets.token_urlsafe(18)}",
-                email=canonical_email(email),
+                account_id=account_id,
+                email=canonical,
                 verifier=verifier,
                 disabled_at=None,
             )

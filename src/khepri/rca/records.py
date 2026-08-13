@@ -29,12 +29,21 @@ producing a *modified* record means going through `create` or `_from_storage` ag
 change and a verifier destruction are **operations**, not field assignments, and #150 and #149
 respectively must write them as such.
 
-`copy.copy`, `copy.deepcopy`, and `pickle` are a different case and are **not** blocked. On a
-slotted dataclass they allocate with `__class__.__new__` and restore state through
-`__reduce_ex__`, never calling `__init__`, so no check applies — blocking them would mean
-fighting the pickle protocol. It is also unnecessary: they reproduce every field verbatim and
-offer no parameter through which a caller's value can enter, so a copy of a legitimate record
-is a legitimate record. The distinction that matters is substitution, not duplication.
+`copy.copy` and `copy.deepcopy` are **also doors**, via `__copy__` and `__deepcopy__` on
+`Sealed`, and they rebuild from the source record's own attributes. That is not defence in
+depth — it closes a real substitution path. `copy.deepcopy(account, {id(account.verifier):
+fake})` pre-seeds what a nested field copies to, which is field substitution by another name;
+verified before those methods existed, it produced an `Account` holding
+`digest=b"recoverable-credential"` that `assert_sealed` accepted and the store persisted.
+
+An earlier version of this docstring asserted these protocols "reproduce every field verbatim
+and offer no parameter through which a caller's value can enter". The `memo` argument is exactly
+such a parameter. The claim was wrong, and it is recorded here because being wrong in a
+docstring is how #148's review rounds kept going.
+
+`pickle` remains unguarded and is out of scope: it restores through `__reduce_ex__` without
+calling `__init__`, and a crafted payload is arbitrary code execution against any boundary this
+module could offer.
 
 None of this was true of the first version of this module; see the comment on `_opening` for
 the forgery it permitted.
@@ -126,6 +135,34 @@ class Sealed:
     def __post_init__(self) -> None:
         if not _is_open():
             raise TypeError(_MISUSE)
+
+    def __deepcopy__(self, memo: dict[int, object]) -> Sealed:
+        """Deep-copy by rebuilding through a door, ignoring the caller's `memo`.
+
+        The default implementation restores state through `__reduce_ex__` without calling
+        `__init__`, so no door check applies — which was safe only while a copy reproduced every
+        field verbatim. It does not: `copy.deepcopy(account, {id(account.verifier): fake})`
+        pre-seeds what a nested field copies to, and that is field *substitution*, the same
+        capability `dataclasses.replace` has. Verified before this method existed: it produced an
+        `Account` holding `digest=b"recoverable-credential"` that `assert_sealed` accepted and
+        the store persisted, defeating FR-002 at exactly the boundary this class defends.
+
+        Rebuilding from `self`'s own attributes, rather than from the memo, makes a deep copy
+        faithful by construction. Records here are frozen and hold only immutable scalars,
+        `bytes`, `datetime`, and other sealed records, so sharing them is safe; there is no
+        mutable state a caller could reach through the copy.
+        """
+        with _door():
+            return type(self)(
+                **{field: getattr(self, field) for field in self.__dataclass_fields__}
+            )
+
+    def __copy__(self) -> Sealed:
+        """Shallow-copy through a door, for the same reason `__deepcopy__` exists."""
+        with _door():
+            return type(self)(
+                **{field: getattr(self, field) for field in self.__dataclass_fields__}
+            )
 
 
 @contextmanager
