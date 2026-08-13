@@ -40,6 +40,26 @@ Known drift **not** fixed here, because this program is docs-only:
   It also cites `governance/registries/decisions.yaml`, a path that no longer exists. That is the
   subject of `R0-02` and `R0-03` and is not addressed by this file alone.
 
+**Update, 2026-08-13 (`R0-02`/`R0-03`/`R0-05`).** The second item is now addressed. Each stale
+document carries a supersession banner, and three new files sit beside them: `SUPERSEDED.md` (the
+delta), `STATUS.md` (per-requirement implementation status), and `NEXT-SLICES.md` (the issue-to-task
+map). The originals were **not** rewritten, for the reason this document already gives about dated
+advisories — and because they reason from a Constitution and an approval framework that commit
+`2fc6c70` deleted, so a line-by-line patch would cite artifacts that no longer exist.
+
+That reconciliation also corrected an assumption in this roadmap. Section 3 lists
+`LifecycleService.assert_account_active` as the FR-008 chokepoint shipping unused, which is
+accurate — but `src/khepri/rca/isolation.py:30-40` independently enforces account liveness,
+membership, and uniform refusal at scope resolution. So FR-022, FR-023, FR-024, FR-025, and FR-028
+are **partially implemented**, not absent, and `R6` extends an existing guard rather than
+introducing the first one. `STATUS.md` records the evidence, and counts the gap: of the 30
+requirements not fully implemented, 18 trace to three structural absences (no sessions, no
+membership writes, no authorization layer — `R3`, `R2`, `R6`), 6 more to invitations and recovery
+not existing (`R4`, `R5`), and the remaining 6 to narrower causes, four of which are the same one —
+`IsolationService` is instantiated nowhere outside tests.
+
+The first item stands, and `NEXT-SLICES.md` carries it forward as an `R1` follow-up.
+
 **North star:** Move Khepri from a secure bilingual single-assessment private-beta journey into a sellable enterprise retail analytics platform with durable organization workspaces, analysis history, period comparison, evidence-backed dashboards and reports, team administration, onboarding, billing, agency tenancy, recurring delivery, and a governed evidence-backed AI assistant.
 
 ---
@@ -1298,8 +1318,8 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 
 | Program | Status | Reason |
 | --- | --- | --- |
-| R0 Roadmap/spec reconciliation | READY_FOR_IMPLEMENTATION | Docs-only; needed to prevent stale agent instructions |
-| R1 Concurrent final-owner safety | READY_FOR_PLAN | `#155` is open and design choice is unsettled |
+| R0 Roadmap/spec reconciliation | IN_REVIEW | `R0-04` is MERGED at `ebfbe77`. `R0-01`/`R0-02`/`R0-03`/`R0-05` are proposed as one docs-only slice — `specs/001-rca-001-commercial-identity/{SUPERSEDED,STATUS,NEXT-SLICES}.md`. Not MERGED until the owner merges it |
+| R1 Concurrent final-owner safety | READY_FOR_IMPLEMENTATION | `R1-01` design settled; `R1-02` onward need owner approval and the CI decision in the design note §8 |
 | R2 Membership lifecycle | READY_FOR_PLAN | R2-01 design may proceed now (section 12, Slice D); implementation must inherit the R1 transaction seam before any owner-reducing write |
 | R3 Authentication sessions | READY_FOR_PLAN | RCA-001 is active; must coordinate migrations and beta-session boundary |
 | R4 Invitations | READY_FOR_PLAN | Depends on stable R2 membership operations and R3 actor resolution |
