@@ -15,8 +15,16 @@ from khepri.rca.persistence import Base as RcaBase
 from tests.local_stack_support import requires_local_stack
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RCA_REVISION = "20260812_0010"
 PREVIOUS_HEAD = "20260730_0009"
+# Every RCA revision, oldest first. `_run` applies the whole chain, so adding a revision here is
+# all that is needed for the column-parity and round-trip tests below to cover it -- an earlier
+# version drove one hardcoded module, which meant a second revision would have gone unexercised
+# while `test_migration_columns_match_the_declared_models` still reported green.
+RCA_REVISIONS = (
+    ("20260812_0010", "rca_identity_spine"),
+    ("20260813_0011", "rca_account_lifecycle"),
+)
+RCA_REVISION = RCA_REVISIONS[0][0]
 RCA_TABLES = {
     "rca_accounts",
     "rca_organizations",
@@ -25,14 +33,14 @@ RCA_TABLES = {
 }
 
 
-def _rca_migration_module():
-    """Load the revision by path, the way Alembic does.
+def _rca_migration_module(revision: str = RCA_REVISION, slug: str = "rca_identity_spine"):
+    """Load a revision by path, the way Alembic does.
 
     `migrations/versions/` has no `__init__.py` — Alembic loads revision files directly —
     so a normal import cannot reach it.
     """
-    path = REPO_ROOT / "migrations" / "versions" / f"{RCA_REVISION}_rca_identity_spine.py"
-    spec = importlib.util.spec_from_file_location(f"rca_migration_{RCA_REVISION}", path)
+    path = REPO_ROOT / "migrations" / "versions" / f"{revision}_{slug}.py"
+    spec = importlib.util.spec_from_file_location(f"rca_migration_{revision}", path)
     assert spec is not None and spec.loader is not None, f"cannot load {path}"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -52,30 +60,45 @@ def _sqlite_url(tmp_path: Path) -> str:
 
 
 def _run(database_url: str, direction: str) -> None:
-    """Apply this revision's upgrade or downgrade in isolation.
+    """Apply every RCA revision's upgrade or downgrade, in order.
 
     The full chain cannot replay on SQLite: four earlier RRA migrations use ALTER-style
     constraint operations the SQLite dialect refuses. Those revisions are exercised against
-    Postgres, so this drives only the RCA revision's own operations, against a real engine
+    Postgres, so this drives only the RCA revisions' own operations, against a real engine
     and a real DDL dialect.
+
+    Downgrades run in reverse, so an upgrade/downgrade round trip returns to the starting state
+    rather than tripping over a dependency the later revision added.
     """
+    ordered = RCA_REVISIONS if direction == "upgrade" else tuple(reversed(RCA_REVISIONS))
     engine = create_engine(database_url)
-    with engine.begin() as connection:
-        context = MigrationContext.configure(connection)
-        operations = Operations(context)
-        module = _rca_migration_module()
-        token = module.op
-        try:
-            module.op = operations
-            getattr(module, direction)()  # noqa: B009 — direction is a runtime parameter
-        finally:
-            module.op = token
+    for revision, slug in ordered:
+        with engine.begin() as connection:
+            context = MigrationContext.configure(connection)
+            operations = Operations(context)
+            module = _rca_migration_module(revision, slug)
+            token = module.op
+            try:
+                module.op = operations
+                getattr(module, direction)()  # noqa: B009 — direction is a runtime parameter
+            finally:
+                module.op = token
 
 
-def test_the_revision_is_chained_to_the_previous_head() -> None:
-    module = _rca_migration_module()
-    assert module.revision == RCA_REVISION
-    assert module.down_revision == PREVIOUS_HEAD
+def test_the_revisions_form_an_unbroken_chain() -> None:
+    """Each RCA revision must point at its predecessor, and the first at the last RRA head.
+
+    A revision whose `down_revision` skips one would still upgrade cleanly here while leaving
+    Alembic with two heads in production.
+    """
+    expected_parent = PREVIOUS_HEAD
+    for revision, slug in RCA_REVISIONS:
+        module = _rca_migration_module(revision, slug)
+        assert module.revision == revision
+        assert module.down_revision == expected_parent, (
+            f"{revision} points at {module.down_revision}, expected {expected_parent}"
+        )
+        expected_parent = revision
 
 
 def test_upgrade_creates_every_rca_table(sqlite_url: str) -> None:
@@ -97,6 +120,30 @@ def test_downgrade_removes_every_rca_table(sqlite_url: str) -> None:
 
     present = set(inspect(create_engine(sqlite_url)).get_table_names())
     assert not (RCA_TABLES & present), f"left behind: {sorted(RCA_TABLES & present)}"
+
+
+def test_migration_preserves_constraints_and_nullability(sqlite_url: str) -> None:
+    """A batch rebuild must not silently drop a constraint.
+
+    `20260813_0011` uses `batch_alter_table` to make `email` nullable, and on SQLite that drops
+    and recreates the table from reflection — a documented way to lose constraints. If
+    `uq_rca_account_email` did not survive, A-1 would be unenforced in production while every
+    store test stayed green, because those build their schema from `Base.metadata.create_all`
+    (which has the constraint from the model, not from the migration).
+
+    Column *names* alone cannot catch this, which is why it is asserted separately from the
+    parity test below.
+    """
+    _run(sqlite_url, "upgrade")
+    inspector = inspect(create_engine(sqlite_url))
+
+    unique = {c["name"] for c in inspector.get_unique_constraints("rca_accounts")}
+    assert "uq_rca_account_email" in unique, f"A-1 constraint lost in the rebuild: {unique}"
+
+    nullable = {c["name"]: c["nullable"] for c in inspector.get_columns("rca_accounts")}
+    assert nullable["email"] is True, "the post-horizon tombstone needs a nullable email"
+    assert nullable["disabled_at"] is True, "an enabled account has no disablement timestamp"
+    assert nullable["account_id"] is False, "the opaque identifier survives every purge"
 
 
 def test_migration_columns_match_the_declared_models(sqlite_url: str) -> None:

@@ -20,6 +20,7 @@ from __future__ import annotations
 import hmac
 import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from khepri.rca.credentials import DEFAULT_KDF, DUMMY_SALT, Verifier, hash_credential
@@ -34,17 +35,46 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class Account(Sealed):
     account_id: str
-    email: str
+    # Nullable so the post-horizon tombstone is representable. KHEPRI-DEC-015 §2b purges the
+    # login identity 24 months after disablement, leaving "an opaque account identifier and the
+    # disablement timestamp -- no email address, no credential verifier, no profile data". A
+    # non-nullable email would make that state unrepresentable and would hold the A-1 uniqueness
+    # reservation forever, which §2b explicitly releases.
+    email: str | None
     # Optional as a whole, never by halves. KHEPRI-DEC-015 retains the credential verifier only
     # "while the account is enabled" and requires immediate, non-recoverable destruction on
     # disablement or replacement. Holding salt/digest/kdf as one optional value means
     # destruction is a single assignment and a partially-destroyed verifier is unrepresentable.
-    # Disablement itself is #149; the shape it needs is here, so it needs no migration.
     verifier: Verifier | None
+    # NULL means enabled. The state is derived from this column and never duplicated into a
+    # boolean, because two representations of one fact can disagree -- and the horizon in §2b is
+    # computed from this timestamp, so it has to exist regardless.
+    disabled_at: datetime | None
 
     @property
     def has_verifier(self) -> bool:
         return self.verifier is not None
+
+    @property
+    def is_enabled(self) -> bool:
+        return self.disabled_at is None
+
+    @property
+    def is_purged(self) -> bool:
+        """True once §2b has minimized this record to a tombstone."""
+        return self.email is None
+
+    @property
+    def can_act(self) -> bool:
+        """True only for an account permitted to authenticate, hold authority, or own anything.
+
+        The single definition of "live". Four call sites need this judgment — authentication,
+        scope resolution, the lifecycle chokepoint, and FR-013's owner count — and expressing it
+        separately at each is how they drift apart. That is not hypothetical: FR-013's guard
+        counted owner-role rows without consulting account state, so a disabled account went on
+        counting as an owner and two ordinary calls could strand an organization.
+        """
+        return self.is_enabled and not self.is_purged
 
     @classmethod
     def create(cls, email: str, credential: str) -> Account:
@@ -69,13 +99,80 @@ class Account(Sealed):
                 account_id=account_id,
                 email=canonical,
                 verifier=verifier,
+                disabled_at=None,
             )
 
     @classmethod
-    def _from_storage(cls, account_id: str, email: str, verifier: Verifier | None) -> Account:
+    def _from_storage(
+        cls,
+        account_id: str,
+        email: str | None,
+        verifier: Verifier | None,
+        disabled_at: datetime | None,
+    ) -> Account:
         """Rebuild an account from stored columns, preserving them verbatim."""
         with through_door():
-            return Account(account_id=account_id, email=email, verifier=verifier)
+            return Account(
+                account_id=account_id,
+                email=email,
+                verifier=verifier,
+                disabled_at=disabled_at,
+            )
+
+    def disabled(self, *, now: datetime) -> Account:
+        """The disabled form of this account: verifier destroyed, timestamp recorded.
+
+        A door, not a field assignment. `dataclasses.replace(account, verifier=None)` is the
+        obvious way to write this and is refused by #151's construction rule — deliberately, because
+        that call was the shape of the forgery that slice was opened to close. Going through a
+        door also means destruction and the timestamp are set together, so a disabled account with
+        a surviving verifier is not expressible.
+
+        Destroying the verifier here is what KHEPRI-DEC-015 requires ("immediate,
+        non-recoverable" on disablement). Re-enablement therefore cannot restore the old
+        credential; see `enabled`.
+        """
+        with through_door():
+            return Account(
+                account_id=self.account_id,
+                email=self.email,
+                verifier=None,
+                disabled_at=now,
+            )
+
+    def enabled(self) -> Account:
+        """The re-enabled form of this account.
+
+        KHEPRI-DEC-015 §2b justifies the 24-month horizon partly so an account "can be re-enabled
+        after a dispute, an erroneous disablement, or a lapsed commercial relationship", so a
+        horizon justified by re-enablement while offering no way to re-enable would be incoherent.
+
+        The verifier stays destroyed — §5 gives it no path back — so a re-enabled account fails
+        authentication uniformly until a new credential is set.
+        """
+        with through_door():
+            return Account(
+                account_id=self.account_id,
+                email=self.email,
+                verifier=self.verifier,
+                disabled_at=None,
+            )
+
+    def purged(self) -> Account:
+        """The tombstone form: identity fields gone, `account_id` and `disabled_at` retained.
+
+        KHEPRI-DEC-015 §2b, applied 24 months after disablement. The two surviving fields are
+        exactly what the decision names, and they exist to keep `FR-014` audit events
+        referentially meaningful for the remainder of their own 12-month horizon and to satisfy
+        §8 item 5.
+        """
+        with through_door():
+            return Account(
+                account_id=self.account_id,
+                email=None,
+                verifier=None,
+                disabled_at=self.disabled_at,
+            )
 
 
 def canonical_email(email: str) -> str:
@@ -96,9 +193,22 @@ def canonical_email(email: str) -> str:
 
 
 def _is_verifiable(account: Account | None) -> bool:
-    """True only for a record this slice can verify: present, complete, at the default factor."""
+    """True only for a record this slice can verify: enabled, complete, at the default factor.
+
+    The disabled check belongs here rather than in `authenticate`, and that placement is
+    load-bearing for FR-004. Every unverifiable record — missing, verifier-less, off-factor,
+    **disabled** — flows through the same dummy-salt path and pays the same single scrypt cost,
+    so a disabled account is not distinguishable from a nonexistent one by timing. An early
+    `if account.disabled_at is not None: raise` in `authenticate` would satisfy FR-008 while
+    reintroducing the enumeration oracle FR-004 forbids: it would skip the hash entirely.
+
+    In practice disablement destroys the verifier (KHEPRI-DEC-015 §5), so a disabled account is
+    already unverifiable through `verifier is None`. This check is deliberately redundant with
+    that: FR-008 must not depend on destruction having succeeded.
+    """
     return (
         account is not None
+        and account.can_act
         and account.verifier is not None
         and account.verifier.kdf == DEFAULT_KDF
     )

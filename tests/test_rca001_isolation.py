@@ -4,9 +4,11 @@ from datetime import UTC, datetime
 
 import pytest
 
+from khepri.rca.accounts import Account
 from khepri.rca.errors import ScopeAccessDenied
 from khepri.rca.isolation import IsolationService
-from khepri.rca.organizations import IsolationScope, Membership, Organization, OrganizationService
+from khepri.rca.organizations import Membership, OrganizationService
+from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 ACCOUNT = "acc_creator"
@@ -23,33 +25,22 @@ ADVERSARIAL_NAMES = [
 ]
 
 
-class MemoryOrganizationStore:
-    def __init__(self) -> None:
-        self.organizations: dict[str, Organization] = {}
-        self.memberships: dict[tuple[str, str], Membership] = {}
-        self.scopes: dict[str, IsolationScope] = {}
-
-    def create_organization(
-        self,
-        organization: Organization,
-        membership: Membership,
-        scope: IsolationScope,
-    ) -> bool:
-        self.organizations[organization.organization_id] = organization
-        self.memberships[(membership.organization_id, membership.account_id)] = membership
-        self.scopes[scope.organization_id] = scope
-        return True
-
-    def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
-        return self.memberships.get((organization_id, account_id))
-
-    def get_scope(self, organization_id: str) -> IsolationScope | None:
-        return self.scopes.get(organization_id)
-
-
 def _fixture() -> tuple[MemoryOrganizationStore, OrganizationService, IsolationService]:
+    """A store plus both services, with ACCOUNT and OTHER_ACCOUNT registered and enabled.
+
+    `IsolationService` refuses a disabled account (#149), so the accounts these tests act as
+    have to exist and be enabled or every resolution would fail for the wrong reason.
+    """
     store = MemoryOrganizationStore()
-    return store, OrganizationService(store), IsolationService(store)
+    accounts = MemoryAccountStore()
+    for account_id in (ACCOUNT, OTHER_ACCOUNT):
+        accounts.accounts[account_id] = Account._from_storage(
+            account_id=account_id,
+            email=f"{account_id}@example.test",
+            verifier=None,
+            disabled_at=None,
+        )
+    return store, OrganizationService(store), IsolationService(store, accounts)
 
 
 def test_resolve_scope_returns_the_stored_owner_id() -> None:
