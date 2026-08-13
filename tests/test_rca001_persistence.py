@@ -20,6 +20,7 @@ from khepri.rca.isolation import IsolationService
 from khepri.rca.organizations import (
     IsolationScope,
     Membership,
+    MembershipEvent,
     Organization,
     OrganizationService,
 )
@@ -254,7 +255,21 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
     )
     scope = IsolationScope.create("org_doomed")
 
-    assert store.create_organization(doomed, orphan, scope) is False
+    assert (
+        store.create_organization(
+            doomed,
+            orphan,
+            scope,
+            MembershipEvent.created(
+                "org_doomed",
+                orphan.account_id,
+                "owner",
+                actor_account_id=orphan.account_id,
+                now=NOW,
+            ),
+        )
+        is False
+    )
 
     with factory() as database:
         assert database.execute(select(func.count()).select_from(OrganizationRow)).scalar() == 1
@@ -265,13 +280,18 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
 
 
 def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker) -> None:
-    """The three records form one aggregate; foreign keys alone do not enforce that.
+    """The four records form one aggregate; foreign keys alone do not enforce that.
 
     A membership naming a different EXISTING organization satisfies every constraint, so the
     new organization would commit with no owner — an orphan, which FR-013 forbids from the
     moment of creation. Note the account must differ from the existing owner: with the same
     account the composite primary key collides and the write fails for an unrelated reason,
     which is what made an earlier version of this check pass by accident.
+
+    The event is the sharper case of the same defect, and the reason it is checked here rather
+    than trusted: `rca_membership_events` carries **no foreign key at all** (its horizon must
+    expire before the account's, so RESTRICT would invert that ordering). Nothing in the schema
+    stops an event naming another organization or another account — only this guard does.
     """
     accounts = AccountService(SqlAccountStore(factory))
     owner = accounts.create_account(EMAIL, CREDENTIAL)
@@ -279,9 +299,15 @@ def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker
     store = SqlOrganizationStore(factory)
     existing = OrganizationService(store).create_organization("First", owner.account_id, now=NOW)
 
-    for membership_org, scope_org in (
-        (existing.organization_id, "org_new"),  # membership points elsewhere
-        ("org_new", existing.organization_id),  # scope points elsewhere
+    for membership_org, scope_org, event_org, event_account in (
+        # membership points elsewhere
+        (existing.organization_id, "org_new", "org_new", other.account_id),
+        # scope points elsewhere
+        ("org_new", existing.organization_id, "org_new", other.account_id),
+        # the event names another organization
+        ("org_new", "org_new", existing.organization_id, other.account_id),
+        # the event attributes the membership to another account
+        ("org_new", "org_new", "org_new", owner.account_id),
     ):
         assert not store.create_organization(
             Organization._from_storage(organization_id="org_new", name="New", created_at=NOW),
@@ -293,6 +319,9 @@ def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker
                 changed_at=NOW,
             ),
             IsolationScope.create(scope_org),
+            MembershipEvent.created(
+                event_org, event_account, "owner", actor_account_id=other.account_id, now=NOW
+            ),
         )
 
     with factory() as database:

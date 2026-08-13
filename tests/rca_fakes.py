@@ -18,7 +18,13 @@ from khepri.rca.errors import (
     OWNER_CHANGE_FINAL_OWNER,
     OWNER_CHANGE_NOT_APPLICABLE,
 )
-from khepri.rca.organizations import OWNER_ROLE, IsolationScope, Membership, Organization
+from khepri.rca.organizations import (
+    OWNER_ROLE,
+    IsolationScope,
+    Membership,
+    MembershipEvent,
+    Organization,
+)
 
 
 class MemoryAccountStore:
@@ -82,6 +88,7 @@ class MemoryOrganizationStore:
         self.organizations: dict[str, Organization] = {}
         self.memberships: dict[tuple[str, str], Membership] = {}
         self.scopes: dict[str, IsolationScope] = {}
+        self.events: list[MembershipEvent] = []
         self.accounts = accounts
         self.fail_on_create = fail_on_create
 
@@ -90,12 +97,14 @@ class MemoryOrganizationStore:
         organization: Organization,
         membership: Membership,
         scope: IsolationScope,
+        event: MembershipEvent,
     ) -> bool:
         if self.fail_on_create:
             return False
         self.organizations[organization.organization_id] = organization
         self.memberships[(membership.organization_id, membership.account_id)] = membership
         self.scopes[scope.organization_id] = scope
+        self.events.append(event)
         return True
 
     def apply_owner_reducing_change(self, account_id: str, updated: Account) -> str:

@@ -6,7 +6,12 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from khepri.rca.accounts import Account
-    from khepri.rca.organizations import IsolationScope, Membership, Organization
+    from khepri.rca.organizations import (
+        IsolationScope,
+        Membership,
+        MembershipEvent,
+        Organization,
+    )
 
 
 class AccountStore(Protocol):
@@ -29,6 +34,7 @@ class OrganizationStore(Protocol):
         organization: Organization,
         membership: Membership,
         scope: IsolationScope,
+        event: MembershipEvent,
     ) -> bool: ...
 
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None: ...
