@@ -211,12 +211,7 @@ class SqlAccountStore:
         """
         with self._factory.begin() as database:
             row = database.get(AccountRow, account_id)
-            if (
-                row is None
-                or row.disabled_at is None
-                or _utc(row.disabled_at) > horizon
-                or row.email is None
-            ):
+            if row is None or not _account_from_row(row).is_purgeable_at(horizon):
                 return False
             row.email = None
             row.credential_salt = None

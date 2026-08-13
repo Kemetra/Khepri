@@ -47,24 +47,13 @@ class MemoryAccountStore:
     def purge_if_still_eligible(self, account_id: str, horizon: datetime) -> bool:
         """Mirror the store's conditional purge, re-checking eligibility at write time."""
         account = self.accounts.get(account_id)
-        if (
-            account is None
-            or account.disabled_at is None
-            or account.disabled_at > horizon
-            or account.is_purged
-        ):
+        if account is None or not account.is_purgeable_at(horizon):
             return False
         self.accounts[account_id] = account.purged()
         return True
 
     def accounts_disabled_before(self, horizon: datetime) -> list[Account]:
-        return [
-            account
-            for account in self.accounts.values()
-            if account.disabled_at is not None
-            and account.disabled_at <= horizon
-            and account.email is not None
-        ]
+        return [a for a in self.accounts.values() if a.is_purgeable_at(horizon)]
 
 
 class MemoryOrganizationStore:

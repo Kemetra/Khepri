@@ -95,6 +95,22 @@ class Account(Sealed):
         """
         return self.can_act and self.has_verifier
 
+    def is_purgeable_at(self, horizon: datetime) -> bool:
+        """True when KHEPRI-DEC-015 §2b's horizon has elapsed and identity is still present.
+
+        The selection rule and the write-time re-check are the same question, asked in two
+        places — `accounts_disabled_before` selects on it and `purge_if_still_eligible`
+        re-verifies it inside the writing transaction, because `enable_account` can land
+        between the two. Naming it once means those two cannot drift into disagreeing.
+
+        `<=` rather than `<`: §2b purges "at the horizon", so the anniversary instant qualifies.
+        """
+        return (
+            self.disabled_at is not None
+            and self.disabled_at <= horizon
+            and not self.is_purged
+        )
+
     @classmethod
     def create(cls, email: str, credential: str) -> Account:
         """Establish a durable identity with a freshly derived verifier (FR-001, FR-002).
