@@ -194,15 +194,10 @@ class SqlArtifactRepository:
         """Resolve the opaque live storage scope, revalidated again at commit."""
         with self._factory.begin() as database:
             job = _leased_job(database, publication.delivery.record)
-            lease_owner = job.lease_owner
-            lease_expires_at = _utc(job.lease_expires_at)
-            if (
-                job.state != JOB_RUNNING
-                or lease_owner is None
-                or lease_expires_at is None
-                or lease_expires_at <= created_at
-            ):
-                raise ArtifactConflict("Report publication lease is unavailable.")
+            lease_owner, attempt_number = _require_active_lease(
+                job,
+                checked_at=created_at,
+            )
             expires_at = _boundary(database, job, generated_at=created_at)
             _require_live_session(database, owner_id=job.owner_id, session_id=job.session_id)
             return ArtifactBoundary(
@@ -210,7 +205,7 @@ class SqlArtifactRepository:
                 session_id=job.session_id,
                 expires_at=expires_at,
                 lease_owner=lease_owner,
-                attempt_number=job.attempt_count,
+                attempt_number=attempt_number,
             )
 
     def has_complete(self, job_id: str) -> bool:
@@ -283,9 +278,30 @@ def _active_publication_job(
         job.session_id,
     )
     lease_expires_at = _utc(job.lease_expires_at)
-    if actual != expected or lease_expires_at is None or lease_expires_at <= committed_at:
+    if actual != expected:
+        raise ArtifactConflict("Report publication lease is unavailable.")
+    if lease_expires_at is None:
+        raise ArtifactConflict("Report publication lease is unavailable.")
+    if lease_expires_at <= committed_at:
         raise ArtifactConflict("Report publication lease is unavailable.")
     return job
+
+
+def _require_active_lease(
+    job: ReportJobRow,
+    *,
+    checked_at: datetime,
+) -> tuple[str, int]:
+    if job.state != JOB_RUNNING:
+        raise ArtifactConflict("Report publication lease is unavailable.")
+    if job.lease_owner is None:
+        raise ArtifactConflict("Report publication lease is unavailable.")
+    lease_expires_at = _utc(job.lease_expires_at)
+    if lease_expires_at is None:
+        raise ArtifactConflict("Report publication lease is unavailable.")
+    if lease_expires_at <= checked_at:
+        raise ArtifactConflict("Report publication lease is unavailable.")
+    return job.lease_owner, job.attempt_count
 
 
 def _validate_publication(
