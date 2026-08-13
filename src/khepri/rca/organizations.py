@@ -12,6 +12,11 @@ if TYPE_CHECKING:
     from khepri.rca.stores import OrganizationStore
 
 OWNER_ROLE = "owner"
+MEMBER_ROLE = "member"
+
+# FR-015: exactly two roles. Named as a set so the domain, the store, and the schema CHECK
+# constraint all restrict to the same values rather than each spelling them out.
+ROLES = (OWNER_ROLE, MEMBER_ROLE)
 
 
 @register_sealed
@@ -106,6 +111,130 @@ def allocate_owner_id() -> str:
 
 @register_sealed
 @dataclass(frozen=True, slots=True)
+class MembershipEvent(Sealed):
+    """One attributable change to a membership (`FR-014`), append-only.
+
+    **The event kind is carried by nullability, not by a type column.** A creation has no prior
+    role; a revocation has no next role; a role change has both. A separate `event_type` column
+    could disagree with them — a row typed `revoked` carrying a non-null `next_role` is
+    expressible — and then two fields describe one event, which is the drift Constitution I
+    forbids. If a future kind cannot be distinguished this way, that is when to add the column.
+
+    **Content-free, per `KHEPRI-DEC-015` §82 and `FR-040`.** Opaque actor identifier, opaque
+    membership identity, prior role, next role, timestamp. No email address, no organization
+    name, no retail content — and nothing that is not on that list.
+
+    **Its horizon is twelve months** (`KHEPRI-DEC-015` §2a), swept independently of the account
+    record's twenty-four. That ordering is deliberate and load-bearing: the account tombstone
+    outlives the audit event so an event never refers to a subject that no longer exists.
+    """
+
+    event_id: str
+    organization_id: str
+    account_id: str
+    actor_account_id: str
+    prior_role: str | None
+    next_role: str | None
+    occurred_at: datetime
+
+    @classmethod
+    def created(
+        cls,
+        organization_id: str,
+        account_id: str,
+        role: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> MembershipEvent:
+        """A membership coming into existence. No prior role."""
+        return cls._build(
+            organization_id, account_id, actor_account_id, None, role, now
+        )
+
+    @classmethod
+    def role_changed(
+        cls,
+        organization_id: str,
+        account_id: str,
+        *,
+        prior_role: str,
+        next_role: str,
+        actor_account_id: str,
+        now: datetime,
+    ) -> MembershipEvent:
+        return cls._build(
+            organization_id, account_id, actor_account_id, prior_role, next_role, now
+        )
+
+    @classmethod
+    def revoked(
+        cls,
+        organization_id: str,
+        account_id: str,
+        *,
+        prior_role: str,
+        actor_account_id: str,
+        now: datetime,
+    ) -> MembershipEvent:
+        """A membership ending. No next role."""
+        return cls._build(
+            organization_id, account_id, actor_account_id, prior_role, None, now
+        )
+
+    @classmethod
+    def _build(
+        cls,
+        organization_id: str,
+        account_id: str,
+        actor_account_id: str,
+        prior_role: str | None,
+        next_role: str | None,
+        now: datetime,
+    ) -> MembershipEvent:
+        # The identifier is allocated before the door opens, following `Account.create`: a door
+        # authorizes the whole thread while open, so its body holds the constructor call alone.
+        event_id = f"mev_{secrets.token_urlsafe(18)}"
+        with through_door():
+            return MembershipEvent(
+                event_id=event_id,
+                organization_id=organization_id,
+                account_id=account_id,
+                actor_account_id=actor_account_id,
+                prior_role=prior_role,
+                next_role=next_role,
+                occurred_at=now,
+            )
+
+    @classmethod
+    def _from_storage(
+        cls,
+        event_id: str,
+        organization_id: str,
+        account_id: str,
+        actor_account_id: str,
+        prior_role: str | None,
+        next_role: str | None,
+        occurred_at: datetime,
+    ) -> MembershipEvent:
+        with through_door():
+            return MembershipEvent(
+                event_id=event_id,
+                organization_id=organization_id,
+                account_id=account_id,
+                actor_account_id=actor_account_id,
+                prior_role=prior_role,
+                next_role=next_role,
+                occurred_at=occurred_at,
+            )
+
+    def is_purgeable_at(self, horizon: datetime) -> bool:
+        """True once the twelve-month horizon has elapsed (`KHEPRI-DEC-015` §2a)."""
+        return self.occurred_at <= horizon
+
+
+@register_sealed
+@dataclass(frozen=True, slots=True)
 class IsolationScope(Sealed):
     """An organization's opaque isolation key (FR-032, FR-033, FR-035).
 
@@ -155,6 +284,18 @@ class OrganizationService:
             now=now,
         )
         scope = IsolationScope.create(organization.organization_id)
-        if not self._store.create_organization(organization, membership, scope):
+        # FR-014 covers "every change to a membership", and the initial owner membership is one.
+        # Emitting it here rather than only for later changes also keeps the audit trail
+        # uniform: the R2-02 backfill synthesizes exactly this event for memberships created
+        # before events existed, so omitting it going forward would leave historical rows with
+        # a creation event and new ones without.
+        event = MembershipEvent.created(
+            organization.organization_id,
+            creator_account_id,
+            OWNER_ROLE,
+            actor_account_id=creator_account_id,
+            now=now,
+        )
+        if not self._store.create_organization(organization, membership, scope, event):
             raise OrganizationCreationFailed(ORGANIZATION_FAILURE)
         return organization

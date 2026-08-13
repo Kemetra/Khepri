@@ -22,7 +22,13 @@ from khepri.rca.errors import (
     OWNER_CHANGE_FINAL_OWNER,
     OWNER_CHANGE_NOT_APPLICABLE,
 )
-from khepri.rca.organizations import OWNER_ROLE, IsolationScope, Membership, Organization
+from khepri.rca.organizations import (
+    OWNER_ROLE,
+    IsolationScope,
+    Membership,
+    MembershipEvent,
+    Organization,
+)
 from khepri.rca.records import assert_sealed
 
 
@@ -88,6 +94,39 @@ class MembershipRow(Base):
     role: Mapped[str] = mapped_column(String, nullable=False)
     changed_by: Mapped[str] = mapped_column(String, nullable=False)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MembershipEventRow(Base):
+    """Append-only attribution for membership and role changes (`FR-014`).
+
+    **No foreign key to `rca_accounts` or `rca_memberships`, deliberately.** Two reasons, and the
+    second is the load-bearing one. `KHEPRI-DEC-015` §82 requires the record to be content-free —
+    opaque identifiers only — and a `RESTRICT` foreign key is a referential claim rather than a
+    content one, but it would make the *account purge* fail while any event still referenced the
+    account. That inverts the horizon relationship the decision sets up: the twenty-four month
+    account tombstone exists partly "to outlast the twelve-month audit horizon so that audit
+    evidence never outlives the subject it refers to". The event must expire first and the
+    account row must survive until it does; a RESTRICT constraint would enforce the opposite.
+
+    The membership row is likewise unreferenced: revocation removes it while its event must
+    survive, which is exactly what `KHEPRI-DEC-015` means by retaining the membership "only as
+    the subject of the `FR-014` audit event".
+    """
+
+    __tablename__ = "rca_membership_events"
+
+    event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String, nullable=False)
+    account_id: Mapped[str] = mapped_column(String, nullable=False)
+    actor_account_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Nullable in both directions: a creation has no prior role, a revocation has no next role.
+    # The pair carries the event kind, so no event_type column can disagree with it.
+    prior_role: Mapped[str | None] = mapped_column(String, nullable=True)
+    next_role: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The twelve-month horizon is computed from this, and the sweeper selects on it.
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
 
 
 class IsolationScopeRow(Base):
@@ -283,6 +322,19 @@ class SqlAccountStore:
             return _account_from_row(row)
 
 
+def _event_row(event: MembershipEvent) -> MembershipEventRow:
+    """One event record's row. Every field moves together; there is no partial event."""
+    return MembershipEventRow(
+        event_id=event.event_id,
+        organization_id=event.organization_id,
+        account_id=event.account_id,
+        actor_account_id=event.actor_account_id,
+        prior_role=event.prior_role,
+        next_role=event.next_role,
+        occurred_at=event.occurred_at,
+    )
+
+
 def _apply_account(database, account: Account) -> bool:
     """Write an account's current state onto its row inside the caller's transaction.
 
@@ -370,19 +422,30 @@ class SqlOrganizationStore:
         organization: Organization,
         membership: Membership,
         scope: IsolationScope,
+        event: MembershipEvent,
     ) -> bool:
-        """Write the organization, its owner membership, and its isolation scope atomically.
+        """Write the organization, its owner membership, its scope, and the creation event.
 
-        The three records form one aggregate, so their identifiers must agree. Foreign keys
+        The four records form one aggregate, so their identifiers must agree. Foreign keys
         alone do not enforce that: a membership naming a *different* existing organization
         satisfies every constraint, and the new organization commits with no owner. Verified
         — that produced an orphan organization, which FR-013's "never zero owner-role
         members" forbids from the moment of creation.
+
+        **The event is written here rather than by a later call** because FR-014 requires every
+        membership change to be attributable, and an event emitted outside this transaction
+        could describe a creation that rolled back — or be missing for one that did not. The
+        event carries no foreign key (see `MembershipEventRow`), so nothing but this identifier
+        check stops it naming a different organization.
         """
-        assert_sealed(organization, membership, scope)
+        assert_sealed(organization, membership, scope, event)
         if membership.organization_id != organization.organization_id:
             return False
         if scope.organization_id != organization.organization_id:
+            return False
+        if event.organization_id != organization.organization_id:
+            return False
+        if event.account_id != membership.account_id:
             return False
         try:
             with self._factory.begin() as database:
@@ -414,6 +477,7 @@ class SqlOrganizationStore:
                         owner_id=scope.owner_id,
                     )
                 )
+                database.add(_event_row(event))
         except IntegrityError:
             return False
         return True
