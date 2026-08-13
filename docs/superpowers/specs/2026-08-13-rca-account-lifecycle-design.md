@@ -175,6 +175,50 @@ Specific properties, each with the failure it defends against:
 9. **Disablement is not reversible by copying**: `dataclasses.replace(account, disabled_at=None)`
    is refused by the #151 door rule. This is the regression test that the two slices compose.
 
+## What adversarial review found after the guards were mutation-tested
+
+The slice reached 14/14 mutation coverage and then review found an **FR-013 violation reachable
+through two ordinary API calls** — no concurrency, no forgery:
+
+```python
+disable_account(A)   # guard sees B live       -> permitted
+disable_account(B)   # guard sees A's ROW      -> permitted
+# organization now has zero owners able to act
+```
+
+Disablement never touches `rca_memberships`, so a disabled account kept its owner-role row and
+`count_owners` counted it as a live owner. **The guard built to prevent stranding was the thing
+that permitted it.** Reproduced end to end against the real store before the fix.
+
+The root error was asking the wrong question. `count_owners` correctly implemented "count
+owner-role rows"; FR-013 asks about *effective* ownership, and an owner who cannot authenticate
+is not an owner. Mutation testing could not find this — every mutation perturbs code that
+exists, and this code was correct at what it did.
+
+Fixed by joining `rca_accounts` and counting only enabled, unpurged owners. The purged case is
+sharper than the disabled one: a tombstone keeps its membership row because
+`fk_rca_membership_account` is `RESTRICT`, so without the join it would count as an owner
+forever.
+
+`MemoryOrganizationStore` mirrors the join. A fake that kept counting rows would let the defect
+back in while every FR-013 test using it stayed green — which is how it reached review.
+
+### Known limitation, recorded rather than fixed
+
+**The guard and the write are not in one transaction.** `disable_account` reads the account,
+counts owners through the organization store, and writes through the account store — three
+round trips on three sessions. Two *concurrent* disablements of a two-owner organization can
+both pass the check before either writes.
+
+Fixing it needs one transaction spanning both stores — a shared session through the store
+protocols, or `SELECT ... FOR UPDATE` on the membership rows. That is a change to the store seam
+every RCA service shares, not to this service, and making it inside this slice would mean
+redesigning the persistence boundary in a review loop: the failure mode #148 demonstrated and
+#151 was opened to end.
+
+A single-process local stack with no concurrent callers cannot reach it. **It must be closed
+before any deployment serves concurrent requests**, and is filed as its own issue.
+
 ## Judgment calls made without the owner
 
 - **`LifecycleService` as a third service** rather than extending either existing one (Q1).
