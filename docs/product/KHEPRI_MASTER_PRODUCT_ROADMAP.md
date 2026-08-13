@@ -60,6 +60,26 @@ not existing (`R4`, `R5`), and the remaining 6 to narrower causes, four of which
 
 The first item stands, and `NEXT-SLICES.md` carries it forward as an `R1` follow-up.
 
+**Update, 2026-08-13 (`R1` complete, `#155` closed at `c8c6edb`).** Four things this program
+established that later programs inherit, recorded here because each was decided during R1 rather
+than planned in this document:
+
+1. **`OrganizationStore.apply_owner_reducing_change` is the seam `R2-06` reuses.** It opens one
+   transaction, locks the account's owner-role memberships with `SELECT … FOR UPDATE`, counts
+   effective owners on the locked rows, and either writes or refuses. `R2`'s revoke and demote
+   must route through it rather than adding a second guard.
+2. **CI now runs PostgreSQL, and a skipped concurrency test fails the build.** This resolves the
+   open decision in `R1-01` §8 and `R1-02` §9 — option (a) was taken, as its own change
+   (`8ed6e24`). `.github/scripts/require_concurrency_tests.py` refuses both a skip and a marker
+   that matches nothing.
+3. **A two-thread test is not a reliable proof here.** The two-owner concurrency test passed
+   against the *broken* code; only the three-owner case failed. Under `READ COMMITTED` two
+   contenders usually do not interleave badly enough. Any later concurrency proof — `R2-06`
+   included — needs at least three contenders, or it can report green against a live defect.
+4. **The effective-owner rule now has one SQL expression** (`_effective_owner_conditions`), and a
+   parametrized test asserts it agrees with `Account.can_authenticate` across the four states
+   that matter. The divergence `R1-01` was asked to resolve is now enforced rather than reviewed.
+
 **North star:** Move Khepri from a secure bilingual single-assessment private-beta journey into a sellable enterprise retail analytics platform with durable organization workspaces, analysis history, period comparison, evidence-backed dashboards and reports, team administration, onboarding, billing, agency tenancy, recurring delivery, and a governed evidence-backed AI assistant.
 
 ---
@@ -1319,7 +1339,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | Program | Status | Reason |
 | --- | --- | --- |
 | R0 Roadmap/spec reconciliation | IN_REVIEW | `R0-04` is MERGED at `ebfbe77`. `R0-01`/`R0-02`/`R0-03`/`R0-05` are proposed as one docs-only slice — `specs/001-rca-001-commercial-identity/{SUPERSEDED,STATUS,NEXT-SLICES}.md`. Not MERGED until the owner merges it |
-| R1 Concurrent final-owner safety | READY_FOR_IMPLEMENTATION | `R1-01` design settled; `R1-02` onward need owner approval and the CI decision in the design note §8 |
+| R1 Concurrent final-owner safety | MERGED | `R1-01`…`R1-06` complete at `c8c6edb`; `#155` closed. The deployment stop gate is cleared |
 | R2 Membership lifecycle | READY_FOR_PLAN | R2-01 design may proceed now (section 12, Slice D); implementation must inherit the R1 transaction seam before any owner-reducing write |
 | R3 Authentication sessions | READY_FOR_PLAN | RCA-001 is active; must coordinate migrations and beta-session boundary |
 | R4 Invitations | READY_FOR_PLAN | Depends on stable R2 membership operations and R3 actor resolution |
