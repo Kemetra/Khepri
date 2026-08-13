@@ -52,7 +52,11 @@ That reconciliation also corrected an assumption in this roadmap. Section 3 list
 accurate — but `src/khepri/rca/isolation.py:30-40` independently enforces account liveness,
 membership, and uniform refusal at scope resolution. So FR-022, FR-023, FR-024, FR-025, and FR-028
 are **partially implemented**, not absent, and `R6` extends an existing guard rather than
-introducing the first one. `STATUS.md` records the evidence.
+introducing the first one. `STATUS.md` records the evidence, and counts the gap: of the 30
+requirements not fully implemented, 18 trace to three structural absences (no sessions, no
+membership writes, no authorization layer — `R3`, `R2`, `R6`), 6 more to invitations and recovery
+not existing (`R4`, `R5`), and the remaining 6 to narrower causes, four of which are the same one —
+`IsolationService` is instantiated nowhere outside tests.
 
 The first item stands, and `NEXT-SLICES.md` carries it forward as an `R1` follow-up.
 

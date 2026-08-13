@@ -28,19 +28,31 @@ documents in this directory would rebuild merged code. See `SUPERSEDED.md`.
 "Partial" is used strictly: the requirement has real code behind it that does what it says for some
 paths, and a named clause or scenario it does not yet cover. It is not a synonym for "started".
 
-## The three absences that explain most of the gap
+## The absences that explain the gap
 
-22 of the 30 non-implemented rows trace to exactly three missing pieces, each of which is an
-existing roadmap program:
+30 requirements are not fully implemented (15 partial + 15 not implemented). **18 of them** trace to
+exactly three missing pieces, each an existing roadmap program:
 
-| Absence | Verified by | Blocks | Roadmap |
-|---|---|---|---|
-| No session concept | every `session` token in `src/khepri/rca/` is a docstring or SQLAlchemy's `sessionmaker`/`Session` | FR-003 clause 2, FR-007, FR-008 clause 2 generally, FR-027, FR-029, FR-030, session halves of FR-022 and FR-035 | `R3` |
-| No membership write operations | `stores.py` `OrganizationStore` exposes exactly one write, `create_organization` | FR-012, FR-014 second clause, FR-013's remove/downgrade clauses, FR-020, membership-change clause of FR-035 | `R2` |
-| No authorization layer | no `authorization.py`; no protected-action abstraction | FR-021, FR-026, and the general halves of FR-022 … FR-025, FR-028 | `R6` |
+| Absence | Verified by | Blocks | Count | Roadmap |
+|---|---|---|---|---|
+| No session concept | every `session` token in `src/khepri/rca/` is a docstring or SQLAlchemy's `sessionmaker`/`Session` | FR-003 clause 2, FR-007, FR-008 clause 2 generally, FR-022 session half, FR-027, FR-029, FR-030, FR-035 session clause | 8 | `R3` |
+| No membership write operations | `stores.py` `OrganizationStore` exposes exactly one write, `create_organization` | FR-012, FR-013 remove/downgrade clauses, FR-014 second clause, FR-020, FR-035 membership clause | 5 | `R2` |
+| No authorization layer | no `authorization.py`; no protected-action abstraction | FR-021, FR-022 … FR-025 general halves, FR-026, FR-028 | 7 | `R6` |
 
-That these three absences map one-to-one onto `R2`, `R3`, and `R6` is independent evidence for the
-roadmap's critical path, arrived at from the code rather than from the roadmap.
+The three sets overlap (FR-022 and FR-035 each appear twice), so the union is **18**, not 20.
+
+Two further capability absences account for another **6**: invitations do not exist (FR-016 … FR-020,
+`R4`) and recovery does not exist (FR-005, FR-006, FR-007, `R5`) — FR-007 and FR-020 are already
+counted above, so these add 6 distinct rows for a running total of **24 of 30**.
+
+The remaining **6** — FR-001, FR-009, FR-015, FR-031, FR-034, FR-038 — are not blocked by a missing
+subsystem. They are partial for narrower reasons stated in their rows: an unasserted clause
+(FR-001), an unwired service (FR-009, FR-031, FR-034, FR-038 all trace to `IsolationService` being
+instantiated nowhere outside tests), and an unconstrained `role` column (FR-015).
+
+That the three structural absences map one-to-one onto `R2`, `R3`, and `R6`, and the two capability
+absences onto `R4` and `R5`, is independent evidence for the roadmap's critical path — arrived at
+from the code rather than from the roadmap.
 
 ---
 

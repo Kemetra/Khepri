@@ -9,6 +9,12 @@ slices, not the whole roadmap.
 nothing, and adds no requirement. Implementation of any task below still needs the owner's explicit
 approval of that task ID, per the roadmap's Definition of Ready.
 
+**Where `R0-01` went.** Its stated output is a current-state matrix. Rather than a fourth document
+restating what three others already carry, the snapshot is recorded as the shared baseline block at
+the top of this file, `STATUS.md`, and `SUPERSEDED.md` — all three pinned to `ebfbe77` with the same
+open issues, merged slices, and migration head. There is no separate `R0-01` artifact, and its
+absence is not an incomplete Slice A.
+
 ---
 
 ## Slice 1 — `#155`, the FR-013 transaction boundary → `R1`
