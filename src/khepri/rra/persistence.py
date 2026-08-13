@@ -13,7 +13,6 @@ from sqlalchemy import (
     LargeBinary,
     String,
     UniqueConstraint,
-    delete,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +20,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 from sqlalchemy.sql import Select
 
 from khepri.rra.datasets import DatasetProfileRecord
-from khepri.rra.deletion import DeletionEvidence, DeletionJob, DeletionTarget
+from khepri.rra.deletion import (
+    DeletionEvidence,
+    DeletionJob,
+    DeletionTarget,
+    evidence_tuple,
+    validate_completed_evidence,
+)
 from khepri.rra.intake import UploadMetadata
 from khepri.rra.packages import FactPackageRecord, PackageVersions
 from khepri.rra.sessions import (
@@ -637,8 +642,10 @@ class SqlDeletionRepository:
             return None if row is None else _upload_from_row(row)
 
     def get_targets(self, job: DeletionJob) -> tuple[DeletionTarget, ...]:
+        from khepri.rra.deletion_persistence import deletion_targets  # noqa: PLC0415
+
         with self._factory() as database:
-            return self._targets(database, job.owner_id, job.session_id)
+            return deletion_targets(database, job.owner_id, job.session_id)
 
     def complete(
         self,
@@ -647,19 +654,33 @@ class SqlDeletionRepository:
         evidence: DeletionEvidence | tuple[DeletionEvidence, ...] | None,
         completed_at: datetime,
     ) -> DeletionJob:
-        evidences = _evidence_tuple(evidence)
+        from khepri.rra.deletion_persistence import (  # noqa: PLC0415
+            add_evidence,
+            delete_derived_content,
+            delete_object_metadata,
+            deletion_targets,
+        )
+
+        evidences = evidence_tuple(evidence)
         with self._factory.begin() as database:
             row = self._locked_job(database, job.deletion_id)
             if row.state == "complete":
                 return _deletion_from_row(row)
-            targets = self._targets(database, row.owner_id, row.session_id)
-            _validate_deletion_evidence(evidences, targets)
-            _delete_derived_content(database, row.owner_id, row.session_id)
+            targets = deletion_targets(database, row.owner_id, row.session_id)
+            validate_completed_evidence(evidences, targets)
+            delete_derived_content(database, row.owner_id, row.session_id)
             if evidences:
-                self._add_evidence(database, row, evidences)
-                _delete_object_metadata(database, row.owner_id, row.session_id)
-                _record_completed_attempt(row, evidences)
-            _complete_deletion(database, row, completed_at)
+                add_evidence(database, row, evidences)
+                delete_object_metadata(database, row.owner_id, row.session_id)
+                row.attempt_count += 1
+                row.last_attempt_at = evidences[0].attempted_at
+            session_row = database.get(BetaSessionRow, row.session_id)
+            if session_row is None:
+                raise LookupError("Session is unavailable.")
+            session_row.content_deleted_at = completed_at
+            row.state = "complete"
+            row.next_retry_at = None
+            row.completed_at = completed_at
             database.flush()
             return _deletion_from_row(row)
 
@@ -670,14 +691,16 @@ class SqlDeletionRepository:
         evidence: DeletionEvidence | tuple[DeletionEvidence, ...],
         next_retry_at: datetime,
     ) -> DeletionJob:
-        evidences = _evidence_tuple(evidence)
+        from khepri.rra.deletion_persistence import add_evidence  # noqa: PLC0415
+
+        evidences = evidence_tuple(evidence)
         if not evidences:
             raise ValueError("Failed deletion evidence is required.")
         with self._factory.begin() as database:
             row = self._locked_job(database, job.deletion_id)
             if row.state == "complete":
                 return _deletion_from_row(row)
-            self._add_evidence(database, row, evidences)
+            add_evidence(database, row, evidences)
             row.state = "retryable"
             row.attempt_count += 1
             row.last_attempt_at = evidences[0].attempted_at
@@ -709,161 +732,6 @@ class SqlDeletionRepository:
         if row is None:
             raise LookupError("Deletion job is unavailable.")
         return row
-
-    @staticmethod
-    def _add_evidence(
-        database: Session,
-        job: DeletionJobRow,
-        evidence: tuple[DeletionEvidence, ...],
-    ) -> None:
-        if any(
-            item.deletion_id != job.deletion_id
-            or item.attempt_number != job.attempt_count + 1
-            for item in evidence
-        ):
-            raise ValueError("Deletion evidence does not match the current attempt.")
-        if len({(item.target_kind, item.target_id) for item in evidence}) != len(evidence):
-            raise ValueError("Deletion evidence repeats a target.")
-        database.add_all(
-            DeletionEvidenceRow(
-                evidence_id=item.evidence_id,
-                deletion_id=item.deletion_id,
-                target_kind=item.target_kind,
-                target_id=item.target_id,
-                location_digest=item.location_digest,
-                content_digest=item.content_digest,
-                attempted_at=item.attempted_at,
-                attempt_number=item.attempt_number,
-                outcome=item.outcome,
-                error_code=item.error_code,
-            )
-            for item in evidence
-        )
-
-    @staticmethod
-    def _targets(
-        database: Session,
-        owner_id: str,
-        session_id: str,
-    ) -> tuple[DeletionTarget, ...]:
-        targets: list[DeletionTarget] = []
-        upload = database.scalar(
-            select(UploadRow).where(
-                UploadRow.owner_id == owner_id,
-                UploadRow.session_id == session_id,
-            )
-        )
-        if upload is not None:
-            targets.append(
-                DeletionTarget(
-                    target_kind="input",
-                    target_id=upload.upload_id,
-                    owner_id=upload.owner_id,
-                    session_id=upload.session_id,
-                    object_key=upload.object_key,
-                    content_digest=upload.sha256_hex,
-                )
-            )
-        from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: PLC0415
-        from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS  # noqa: PLC0415
-
-        rows = list(
-            database.scalars(
-                select(ReportArtifactRow).where(
-                    ReportArtifactRow.owner_id == owner_id,
-                    ReportArtifactRow.session_id == session_id,
-                )
-            )
-        )
-        order = {kind: index for index, kind in enumerate(REQUIRED_ARTIFACT_KINDS)}
-        for artifact in sorted(rows, key=lambda item: (item.job_id, order[item.artifact_kind])):
-            targets.append(
-                DeletionTarget(
-                    target_kind="report_artifact",
-                    target_id=f"{artifact.job_id}:{artifact.artifact_kind}",
-                    owner_id=artifact.owner_id,
-                    session_id=artifact.session_id,
-                    object_key=artifact.object_key,
-                    content_digest=artifact.sha256_hex,
-                )
-            )
-        return tuple(targets)
-
-
-def _validate_deletion_evidence(
-    evidence: tuple[DeletionEvidence, ...],
-    targets: tuple[DeletionTarget, ...],
-) -> None:
-    if not evidence:
-        if targets:
-            raise ValueError("Deletion evidence is required for an existing target.")
-        return
-    evidence_ids = {_deletion_identity(item) for item in evidence}
-    target_ids = {_deletion_identity(item) for item in targets}
-    if evidence_ids != target_ids:
-        raise ValueError("Deletion evidence does not match every target.")
-    if any(item.outcome != "deleted" for item in evidence):
-        raise ValueError("Deletion evidence does not match every target.")
-
-
-def _deletion_identity(
-    item: DeletionEvidence | DeletionTarget,
-) -> tuple[str, str]:
-    return item.target_kind, item.target_id
-
-
-def _delete_derived_content(
-    database: Session,
-    owner_id: str,
-    session_id: str,
-) -> None:
-    # The package references the profile, so it goes first.
-    for model in (FactPackageRow, DatasetProfileRow):
-        database.execute(
-            delete(model).where(
-                model.owner_id == owner_id,
-                model.session_id == session_id,
-            )
-        )
-
-
-def _delete_object_metadata(
-    database: Session,
-    owner_id: str,
-    session_id: str,
-) -> None:
-    from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: PLC0415
-
-    for model in (ReportArtifactRow, UploadRow):
-        database.execute(
-            delete(model).where(
-                model.owner_id == owner_id,
-                model.session_id == session_id,
-            )
-        )
-
-
-def _record_completed_attempt(
-    row: DeletionJobRow,
-    evidence: tuple[DeletionEvidence, ...],
-) -> None:
-    row.attempt_count += 1
-    row.last_attempt_at = evidence[0].attempted_at
-
-
-def _complete_deletion(
-    database: Session,
-    row: DeletionJobRow,
-    completed_at: datetime,
-) -> None:
-    session_row = database.get(BetaSessionRow, row.session_id)
-    if session_row is None:
-        raise LookupError("Session is unavailable.")
-    session_row.content_deleted_at = completed_at
-    row.state = "complete"
-    row.next_retry_at = None
-    row.completed_at = completed_at
-
 
 def session_scope_for_update_statement(
     scope: SessionScope,
@@ -977,16 +845,6 @@ def _evidence_from_row(row: DeletionEvidenceRow) -> DeletionEvidence:
         outcome=row.outcome,
         error_code=row.error_code,
     )
-
-
-def _evidence_tuple(
-    evidence: DeletionEvidence | tuple[DeletionEvidence, ...] | None,
-) -> tuple[DeletionEvidence, ...]:
-    if evidence is None:
-        return ()
-    if isinstance(evidence, DeletionEvidence):
-        return (evidence,)
-    return evidence
 
 
 def _utc(value: datetime | None) -> datetime | None:

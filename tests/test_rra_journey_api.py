@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from khepri.rra.api import create_app
 from khepri.rra.journey.routes import JourneyServices
-from khepri.rra.journey.state import snapshot
+from khepri.rra.journey.state import JourneyResources, snapshot
 from tests.test_rra006_report_api import invitation_service
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
@@ -18,11 +18,13 @@ class Reader:
             return None
         return snapshot(
             content_expires_at=NOW + timedelta(days=7),
-            consent_recorded=True,
-            upload_present=True,
-            profile_present=True,
-            profile_admissible=True,
-            row_count=42,
+            resources=JourneyResources(
+                consent_recorded=True,
+                upload_present=True,
+                profile_present=True,
+                profile_admissible=True,
+                row_count=42,
+            ),
         )
 
 

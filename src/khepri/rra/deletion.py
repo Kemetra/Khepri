@@ -68,6 +68,38 @@ class DeletionTarget:
         return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
 
 
+def evidence_tuple(
+    evidence: DeletionEvidence | tuple[DeletionEvidence, ...] | None,
+) -> tuple[DeletionEvidence, ...]:
+    if evidence is None:
+        return ()
+    if isinstance(evidence, DeletionEvidence):
+        return (evidence,)
+    return evidence
+
+
+def validate_completed_evidence(
+    evidence: tuple[DeletionEvidence, ...],
+    targets: tuple[DeletionTarget, ...],
+) -> None:
+    if not evidence:
+        if targets:
+            raise ValueError("Deletion evidence is required for an existing target.")
+        return
+    evidence_ids = {deletion_identity(item) for item in evidence}
+    target_ids = {deletion_identity(item) for item in targets}
+    if evidence_ids != target_ids:
+        raise ValueError("Deletion evidence does not match every target.")
+    if any(item.outcome != "deleted" for item in evidence):
+        raise ValueError("Deletion evidence does not match every target.")
+
+
+def deletion_identity(
+    item: DeletionEvidence | DeletionTarget,
+) -> tuple[str, str]:
+    return item.target_kind, item.target_id
+
+
 class DeletionRepository(Protocol):
     def begin(
         self,

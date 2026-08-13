@@ -27,6 +27,21 @@ JOURNEY_STEPS = frozenset({"upload", "review", "processing", "report"})
 
 
 @dataclass(frozen=True, slots=True)
+class JourneyResources:
+    consent_recorded: bool = False
+    upload_present: bool = False
+    profile_present: bool = False
+    profile_admissible: bool | None = None
+    package_present: bool = False
+    job_id: str | None = None
+    job_state: str | None = None
+    job_reason: str | None = None
+    row_count: int | None = None
+    generated_at: datetime | None = None
+    bundle_complete: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class JourneySnapshot:
     step: str
     content_expires_at: datetime
@@ -52,37 +67,28 @@ class JourneySnapshot:
 def snapshot(
     *,
     content_expires_at: datetime,
-    consent_recorded: bool = False,
-    upload_present: bool = False,
-    profile_present: bool = False,
-    profile_admissible: bool | None = None,
-    package_present: bool = False,
-    job_id: str | None = None,
-    job_state: str | None = None,
-    job_reason: str | None = None,
-    row_count: int | None = None,
-    generated_at: datetime | None = None,
-    bundle_complete: bool = False,
+    resources: JourneyResources | None = None,
 ) -> JourneySnapshot:
+    found = resources or JourneyResources()
     return JourneySnapshot(
         step=_journey_step(
-            bundle_complete=bundle_complete,
-            job_state=job_state,
-            package_present=package_present,
-            profile_present=profile_present,
+            bundle_complete=found.bundle_complete,
+            job_state=found.job_state,
+            package_present=found.package_present,
+            profile_present=found.profile_present,
         ),
         content_expires_at=content_expires_at,
-        consent_recorded=consent_recorded,
-        upload_present=upload_present,
-        profile_present=profile_present,
-        profile_admissible=profile_admissible,
-        package_present=package_present,
-        job_id=job_id,
-        job_state=job_state,
-        job_reason=job_reason,
-        row_count=row_count,
-        generated_at=generated_at,
-        bundle_complete=bundle_complete,
+        consent_recorded=found.consent_recorded,
+        upload_present=found.upload_present,
+        profile_present=found.profile_present,
+        profile_admissible=found.profile_admissible,
+        package_present=found.package_present,
+        job_id=found.job_id,
+        job_state=found.job_state,
+        job_reason=found.job_reason,
+        row_count=found.row_count,
+        generated_at=found.generated_at,
+        bundle_complete=found.bundle_complete,
     )
 
 
@@ -107,16 +113,20 @@ class SqlJourneyReader:
             delivery = _delivery(database, job)
             return snapshot(
                 content_expires_at=expires_at,
-                consent_recorded=session.consented_at is not None,
-                upload_present=_exists(database, UploadRow, session_id),
-                profile_present=profile is not None,
-                profile_admissible=None if profile is None else profile.admissible,
-                package_present=_exists(database, FactPackageRow, session_id),
-                job_id=None if job is None else job.job_id,
-                job_state=None if job is None else job.state,
-                row_count=None if profile is None else profile.row_count,
-                generated_at=None if delivery is None else _utc(delivery.generated_at),
-                bundle_complete=_bundle_complete(database, job, delivery),
+                resources=JourneyResources(
+                    consent_recorded=session.consented_at is not None,
+                    upload_present=_exists(database, UploadRow, session_id),
+                    profile_present=profile is not None,
+                    profile_admissible=None if profile is None else profile.admissible,
+                    package_present=_exists(database, FactPackageRow, session_id),
+                    job_id=None if job is None else job.job_id,
+                    job_state=None if job is None else job.state,
+                    row_count=None if profile is None else profile.row_count,
+                    generated_at=(
+                        None if delivery is None else _utc(delivery.generated_at)
+                    ),
+                    bundle_complete=_bundle_complete(database, job, delivery),
+                ),
             )
 
 
@@ -267,6 +277,7 @@ def _exists(database: Session, model: type, session_id: str) -> bool:
 __all__ = [
     "JOURNEY_STEPS",
     "JourneyReader",
+    "JourneyResources",
     "JourneySnapshot",
     "SqlJourneyReader",
     "snapshot",

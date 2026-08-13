@@ -8,7 +8,7 @@ from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
 from khepri.rra.intake import StoragePolicyViolation
-from khepri.rra.storage import S3EncryptedObjectStore
+from khepri.rra.storage import ObjectWrite, S3EncryptedObjectStore
 
 BUCKET = "khepri-beta-content"
 KEY = "owners/own_alpha/sessions/ses_alpha/inputs/upl_alpha"
@@ -172,15 +172,17 @@ def test_put_or_verify_accepts_identical_preexisting_encrypted_content() -> None
 
     with stubber:
         result = store.put_or_verify(
-            key=KEY,
-            content=CONTENT,
-            media_type="text/csv",
-            sha256_hex=SHA256_HEX,
-            encryption_context={
-                "session_id": "ses_alpha",
-                "upload_id": "upl_alpha",
-                "owner_id": "own_alpha",
-            },
+            ObjectWrite(
+                key=KEY,
+                content=CONTENT,
+                media_type="text/csv",
+                sha256_hex=SHA256_HEX,
+                encryption_context={
+                    "session_id": "ses_alpha",
+                    "upload_id": "upl_alpha",
+                    "owner_id": "own_alpha",
+                },
+            )
         )
 
     assert result.created is False

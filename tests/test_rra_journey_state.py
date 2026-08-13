@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from khepri.rra.journey.state import JourneySnapshot, snapshot
+from khepri.rra.journey.state import JourneyResources, JourneySnapshot, snapshot
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -29,7 +29,10 @@ NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
     ],
 )
 def test_snapshot_derives_one_resumable_step(resources: dict[str, object], expected: str) -> None:
-    assert snapshot(content_expires_at=NOW + timedelta(days=7), **resources).step == expected
+    assert snapshot(
+        content_expires_at=NOW + timedelta(days=7),
+        resources=JourneyResources(**resources),
+    ).step == expected
 
 
 def test_snapshot_refuses_a_complete_bundle_without_a_succeeded_job() -> None:

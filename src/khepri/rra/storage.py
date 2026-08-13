@@ -38,6 +38,15 @@ class PutResult:
     created: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ObjectWrite:
+    key: str
+    content: bytes
+    media_type: str
+    sha256_hex: str
+    encryption_context: dict[str, str]
+
+
 class S3EncryptedObjectStore:
     def __init__(
         self,
@@ -101,23 +110,15 @@ class S3EncryptedObjectStore:
             kms_key_id=self._kms_key_arn,
         )
 
-    def put_or_verify(
-        self,
-        *,
-        key: str,
-        content: bytes,
-        media_type: str,
-        sha256_hex: str,
-        encryption_context: dict[str, str],
-    ) -> PutResult:
+    def put_or_verify(self, request: ObjectWrite) -> PutResult:
         """Create a content-addressed object, or prove the existing bytes."""
         try:
             stored = self.put(
-                key=key,
-                content=content,
-                media_type=media_type,
-                sha256_hex=sha256_hex,
-                encryption_context=encryption_context,
+                key=request.key,
+                content=request.content,
+                media_type=request.media_type,
+                sha256_hex=request.sha256_hex,
+                encryption_context=request.encryption_context,
             )
         except ClientError as error:
             response = error.response
@@ -125,19 +126,19 @@ class S3EncryptedObjectStore:
             code = response.get("Error", {}).get("Code")
             if status != 412 or code not in {"PreconditionFailed", "412"}:
                 raise
-            existing = self.get(key)
+            existing = self.get(request.key)
             if (
-                len(existing) != len(content)
-                or hashlib.sha256(existing).hexdigest() != sha256_hex
+                len(existing) != len(request.content)
+                or hashlib.sha256(existing).hexdigest() != request.sha256_hex
             ):
                 raise StoragePolicyViolation(
                     "An existing object conflicts with the requested content."
                 ) from error
             stored = StoredObject(
-                key=key,
+                key=request.key,
                 size_bytes=len(existing),
-                sha256_hex=sha256_hex,
-                media_type=media_type,
+                sha256_hex=request.sha256_hex,
+                media_type=request.media_type,
                 encryption_algorithm="aws:kms",
                 kms_key_id=self._kms_key_arn,
             )

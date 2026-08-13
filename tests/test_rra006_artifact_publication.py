@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import cast
 
 import pytest
 from sqlalchemy import select
@@ -14,17 +13,9 @@ from khepri.rra.artifact_publication import (
 )
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.intake import StoragePolicyViolation, StoredObject
-from khepri.rra.storage import PutResult
+from khepri.rra.storage import ObjectWrite, PutResult
 from tests.test_rra006_artifact_persistence import _publication
 from tests.test_rra006_delivery_persistence import NOW, harness
-
-
-@dataclass
-class MemoryPut:
-    key: str
-    content: bytes
-    media_type: str
-    sha256_hex: str
 
 
 @dataclass
@@ -35,8 +26,7 @@ class MemoryObjects:
     deleted: list[str] = field(default_factory=list)
     aborted: list[str] = field(default_factory=list)
 
-    def put_or_verify(self, **values: object) -> PutResult:
-        request = _memory_put(values)
+    def put_or_verify(self, request: ObjectWrite) -> PutResult:
         self.put_calls.append(request.key)
         if self.fail_on is not None and len(self.put_calls) == self.fail_on:
             raise StoragePolicyViolation("provider detail must not escape")
@@ -71,16 +61,7 @@ class MemoryObjects:
         self.aborted.append(prefix)
 
 
-def _memory_put(values: dict[str, object]) -> MemoryPut:
-    return MemoryPut(
-        key=cast(str, values["key"]),
-        content=cast(bytes, values["content"]),
-        media_type=cast(str, values["media_type"]),
-        sha256_hex=cast(str, values["sha256_hex"]),
-    )
-
-
-def _stored_value(request: MemoryPut) -> tuple[bytes, str, str]:
+def _stored_value(request: ObjectWrite) -> tuple[bytes, str, str]:
     return request.content, request.media_type, request.sha256_hex
 
 

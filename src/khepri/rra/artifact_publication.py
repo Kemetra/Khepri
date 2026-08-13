@@ -16,7 +16,7 @@ from khepri.rra.artifact_persistence import (
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import ARTIFACT_METADATA, ArtifactPayload
-from khepri.rra.storage import PutResult
+from khepri.rra.storage import ObjectWrite, PutResult
 
 
 class ArtifactUnavailable(RuntimeError):
@@ -44,15 +44,7 @@ class PublishedObject:
 
 
 class ArtifactObjectStore(Protocol):
-    def put_or_verify(
-        self,
-        *,
-        key: str,
-        content: bytes,
-        media_type: str,
-        sha256_hex: str,
-        encryption_context: dict[str, str],
-    ) -> PutResult: ...
+    def put_or_verify(self, request: ObjectWrite) -> PutResult: ...
 
     def get(self, key: str) -> bytes: ...
 
@@ -163,11 +155,13 @@ class ReportArtifactPublisher:
     ) -> PublishedObject:
         key = _object_key(context, payload.kind)
         result = self._objects.put_or_verify(
-            key=key,
-            content=payload.content,
-            media_type=payload.media_type,
-            sha256_hex=payload.sha256_hex,
-            encryption_context=_encryption_context(context, payload.kind),
+            ObjectWrite(
+                key=key,
+                content=payload.content,
+                media_type=payload.media_type,
+                sha256_hex=payload.sha256_hex,
+                encryption_context=_encryption_context(context, payload.kind),
+            )
         )
         _require_proven(result, key=key, publication=payload)
         return PublishedObject(
