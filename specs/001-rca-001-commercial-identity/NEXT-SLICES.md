@@ -21,26 +21,29 @@ absence is not an incomplete Slice A.
 
 | | |
 |---|---|
-| Issue | `#155` — the FR-013 guard and its write are not in one transaction |
-| Roadmap | `R1-01` … `R1-06` |
-| Status | `R1-01` complete; design note at `docs/superpowers/specs/2026-08-13-r1-01-transaction-boundary-design.md` |
-| Blocks | `R2` (revoke and demote inherit the same seam), and OPS1's deployment stop gate |
-| Migration | none — the recommended design needs no schema change |
+| Issue | `#155` — **closed** at `c8c6edb` |
+| Roadmap | `R1-01` … `R1-06` — **complete** |
+| Design | `2026-08-13-r1-01-transaction-boundary-design.md`, `2026-08-13-r1-02-store-contract-design.md` |
+| Delivered | `apply_owner_reducing_change`, the named `owner_memberships_for_update` lock, a single SQL expression of the effective-owner rule, a PostgreSQL CI service, and three deterministic concurrency tests |
+| Migration | none — no schema change was needed |
 
-**Why first.** The roadmap's deployment stop gate: "Do not serve concurrent external users before
-R1 is merged and its concurrency tests pass." `R2`'s revocation and demotion are the same
-guard-then-write shape, so building membership first would duplicate a known defect across three
-call sites instead of fixing it at one.
+**Why it was first.** The roadmap's deployment stop gate: "Do not serve concurrent external users
+before R1 is merged and its concurrency tests pass." That gate is now cleared. `R2`'s revocation and
+demotion are the same guard-then-write shape, so building membership first would have duplicated a
+known defect across three call sites instead of fixing it at one.
 
-**Remaining tasks:** `R1-02` (transaction-scoped store contract and fake semantics), `R1-03` (RED
-concurrency test), `R1-04` (one atomic guard-and-write boundary), `R1-05` (prove non-owner-reducing
-operations take no unnecessary locks), `R1-06` (close `#155`).
+**What `R2` inherits.** `R2-06` must route revoke and demote through
+`apply_owner_reducing_change` rather than adding a second final-owner guard. Two findings from R1
+apply directly to it:
 
-**One decision is outstanding before `R1-03`.** The design note §8 records it: CI defines no
-PostgreSQL service, and the RCA suite runs in-memory SQLite with `StaticPool`, so the only test that
-proves the concurrency contract cannot run in CI as configured. Recommended resolution is a separate
-one-file infrastructure PR adding the service. This is an owner decision, not an implementer's
-default.
+- a two-thread concurrency test is **not** a reliable proof of this class of defect. The two-owner
+  test passed against the broken code; only three contenders exposed it. `R2-06`'s proof needs at
+  least three.
+- `MemoryOrganizationStore` now requires its account store, and the shadowing duplicate in
+  `test_rca001_organizations.py` is gone. There is one fake, and it must keep matching the SQL
+  store's outcome vocabulary.
+
+**The `count_owners` docstring follow-up is still open** — see the end of this file.
 
 ## Slice 2 — `#150`, membership lifecycle → `R2`
 
@@ -91,12 +94,10 @@ alongside the other. The second to merge re-points its `down_revision`. Design a
 ## Recommended order
 
 ```
-R1-01 (done) -> R1-02..R1-05 -> R1-06 close #155
-                     |
-                     +-> R2-01 design (may start now, in parallel)
-                     +-> R3-01 design (may start now, in parallel)
-                            |
-                            R2 implementation -> R3 implementation
+R1 complete (#155 closed at c8c6edb)
+     |
+     +-> R2-01 design ---> R2 implementation
+     +-> R3-01 design ---> R3 implementation
                             (serialize the two migrations)
 ```
 
@@ -107,11 +108,12 @@ persistence branch, one independent domain or UI branch, and one docs branch at 
 
 ## Follow-up recorded here rather than lost
 
-**`count_owners`' docstring is incomplete.** `src/khepri/rca/persistence.py:388-390` describes the
-enabled and not-purged conditions but omits the `credential_digest IS NOT NULL` clause the query
-actually applies at `:409` — which is the clause that matters most, because re-enablement leaves the
-verifier destroyed under `KHEPRI-DEC-015` §5.
+**`count_owners`' docstring — closed by `R1-04`, no issue needed.** It described the enabled and
+not-purged conditions and omitted the `credential_digest IS NOT NULL` clause, which is the one that
+matters most because re-enablement leaves the verifier destroyed under `KHEPRI-DEC-015` §5.
 
-The code is correct; the prose is incomplete. The master roadmap's verification record already names
-this and says: record as an issue, fix alongside `R1`. It is a one-paragraph docstring change and
-belongs in an `R1` PR that is touching the file anyway, not in a separate drive-by commit.
+`R1-04` removed the drift at its source rather than patching the prose: the rule now has one
+expression, `_effective_owner_conditions`, and the docstring names that function instead of
+restating it. A test asserts it agrees with `Account.can_authenticate` across four account states.
+The roadmap's instruction was "record as an issue, fix alongside R1" — R1 fixed it, so there is
+nothing left to record.

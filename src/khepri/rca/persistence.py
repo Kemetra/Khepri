@@ -456,9 +456,19 @@ class SqlOrganizationStore:
         which the `khepri.rca.accounts` module docstring records slice 1 having already caused
         once by a different route.
 
-        An owner counts only if the account is enabled (`disabled_at IS NULL`) and not purged
-        (`email IS NOT NULL`). A purged tombstone is the sharper case: its row survives because
-        `fk_rca_membership_account` is `RESTRICT`, so without this it would be counted forever.
+        Which accounts count is `_effective_owner_conditions`, not restated here — an earlier
+        version of this docstring listed the enabled and not-purged conditions and omitted the
+        `credential_digest` clause, which is the one that matters most. Naming the function is
+        what stops the prose and the query from disagreeing again.
+
+        The purged tombstone is worth calling out even so: its membership row survives because
+        `fk_rca_membership_account` is `RESTRICT`, so without that predicate it would be counted
+        as an owner forever.
+
+        **This count is unlocked**, and is the right tool for a read. An owner-reducing
+        *decision* must use `apply_owner_reducing_change`, which counts the same way inside a
+        transaction that holds the rows — see `#155` for what a count read outside the write's
+        transaction permits.
         """
         with self._factory() as database:
             return (
