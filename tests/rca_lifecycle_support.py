@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
@@ -9,9 +10,10 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from khepri.rca.accounts import AccountService
 from khepri.rca.lifecycle import LifecycleService
-from khepri.rca.organizations import Membership
-from khepri.rca.persistence import Base, MembershipRow
+from khepri.rca.organizations import OWNER_ROLE, Membership, OrganizationService
+from khepri.rca.persistence import Base, MembershipRow, SqlAccountStore, SqlOrganizationStore
 from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
@@ -60,38 +62,65 @@ def memory_stack() -> tuple[MemoryAccountStore, MemoryOrganizationStore, Lifecyc
     return accounts, organizations, LifecycleService(accounts, organizations)
 
 
-def add_membership(
-    organizations: MemoryOrganizationStore,
-    organization_id: str,
-    account_id: str,
-    role: str,
-    *,
-    changed_by: str,
-) -> None:
-    """Give an account a membership in the fake store.
+@dataclass(frozen=True, slots=True)
+class TwoOwners:
+    """An organization with two owner-role members, and the stores holding it."""
 
-    The FR-013 tests each need an organization with a second member at a chosen role, and
-    writing that inline six times is duplication CodeScene flags — fairly, since the shape is
-    identical every time and only the role and holder vary.
+    accounts: object
+    organizations: object
+    lifecycle: LifecycleService
+    organization: object
+    first: object
+    second: object
+
+
+def two_owner_organization(factory: sessionmaker | None = None) -> TwoOwners:
+    """Build the fixture every FR-013 test needs: one organization, two owners.
+
+    `OrganizationService` only ever makes the creator an owner, so the second has to be added
+    directly. Extracted as one unit because that is what the duplication actually was — four
+    near-identical setup statements repeated across the FR-013 tests in two variants. An earlier
+    attempt pulled out only the membership line, which left the block intact and added an
+    argument-heavy helper in its place.
+
+    Pass `factory` for the SQL-backed variant; omit it for the in-memory one.
     """
-    organizations.memberships[(organization_id, account_id)] = Membership.create(
-        organization_id, account_id, role, changed_by=changed_by, now=NOW
+    if factory is None:
+        accounts = MemoryAccountStore()
+        organizations = MemoryOrganizationStore(accounts)
+    else:
+        accounts = SqlAccountStore(factory)
+        organizations = SqlOrganizationStore(factory)
+
+    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = OrganizationService(organizations).create_organization(
+        "Acme", first.account_id, now=NOW
+    )
+    _grant(
+        (organizations, factory, organization.organization_id, first.account_id),
+        second.account_id,
+        OWNER_ROLE,
+    )
+    return TwoOwners(
+        accounts, organizations, LifecycleService(accounts, organizations),
+        organization, first, second,
     )
 
 
-def add_membership_row(
-    factory: sessionmaker,
-    organization_id: str,
-    account_id: str,
-    role: str,
-    *,
-    changed_by: str,
-) -> None:
-    """The same, against the real store.
+def _grant(stack_parts, account_id: str, role: str) -> None:
+    """Add a membership to whichever store backs this fixture.
 
-    The SQL-backed FR-013 tests need a second owner row that `OrganizationService` will not
-    create for them, since it only ever makes the creator an owner.
+    Takes the fixture's own (organizations, factory, organization_id, granter) rather than four
+    separate parameters: the caller already has them together, and threading them individually
+    is the excess-argument smell that replaced the duplication on the first attempt.
     """
+    organizations, factory, organization_id, changed_by = stack_parts
+    if factory is None:
+        organizations.memberships[(organization_id, account_id)] = Membership.create(
+            organization_id, account_id, role, changed_by=changed_by, now=NOW
+        )
+        return
     with factory.begin() as database:
         database.add(
             MembershipRow(
@@ -102,3 +131,12 @@ def add_membership_row(
                 changed_at=NOW,
             )
         )
+
+
+def grant_membership(stack: TwoOwners, account_id: str, role: str, *, factory=None) -> None:
+    """Add one more membership to an existing fixture, for the multi-organization cases."""
+    _grant(
+        (stack.organizations, factory, stack.organization.organization_id, stack.first.account_id),
+        account_id,
+        role,
+    )

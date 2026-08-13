@@ -9,21 +9,28 @@ from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
 from khepri.rca.errors import FinalOwnerProtected
-from khepri.rca.lifecycle import RETENTION_DAYS, AccountRetentionSweeper, LifecycleService
+from khepri.rca.lifecycle import RETENTION_DAYS, AccountRetentionSweeper
 from khepri.rca.organizations import OWNER_ROLE, OrganizationService
-from khepri.rca.persistence import MembershipRow, SqlAccountStore, SqlOrganizationStore
+from khepri.rca.persistence import MembershipRow
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
     NOW,
     OTHER_EMAIL,
-    add_membership,
-    add_membership_row,
     factory_fixture,
+    grant_membership,
     memory_stack,
+    two_owner_organization,
 )
 
-# --- FR-013: the final owner ------------------------------------------------------------
+
+def _owners(stack) -> int:
+    return stack.organizations.count_owners(
+        stack.organization.organization_id, excluding_account_id=""
+    )
+
+
+# --- the guard refuses the last owner ----------------------------------------------------
 
 
 def test_disabling_the_final_owner_fails_closed() -> None:
@@ -61,24 +68,14 @@ def test_the_final_owner_refusal_names_its_cause() -> None:
     assert "final owner" in str(caught.value).lower()
 
 
-def test_a_non_final_owner_can_be_disabled() -> None:
-    """The guard must not refuse every owner — only the last one."""
-    accounts, organizations, lifecycle = memory_stack()
-    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
-    organization = OrganizationService(organizations).create_organization(
-        "Acme", first.account_id, now=NOW
-    )
-    add_membership(
-        organizations,
-        organization.organization_id,
-        second.account_id,
-        OWNER_ROLE,
-        changed_by=first.account_id,
-    )
+# --- ...but only the last one ------------------------------------------------------------
 
-    disabled = lifecycle.disable_account(first.account_id, now=NOW)
-    assert not disabled.is_enabled
+
+def test_a_non_final_owner_can_be_disabled() -> None:
+    """The guard must not refuse every owner, only the last."""
+    stack = two_owner_organization()
+
+    assert not stack.lifecycle.disable_account(stack.first.account_id, now=NOW).is_enabled
 
 
 def test_a_non_owner_member_can_be_disabled() -> None:
@@ -88,41 +85,25 @@ def test_a_non_owner_member_can_be_disabled() -> None:
     organization = OrganizationService(organizations).create_organization(
         "Acme", owner.account_id, now=NOW
     )
-    add_membership(
-        organizations,
-        organization.organization_id,
-        member.account_id,
-        "member",
-        changed_by=owner.account_id,
+    organizations.memberships[(organization.organization_id, member.account_id)] = (
+        organizations.memberships[(organization.organization_id, owner.account_id)]
     )
 
     assert not lifecycle.disable_account(member.account_id, now=NOW).is_enabled
 
 
-def test_the_guard_checks_every_organization_not_only_the_first() -> None:
-    """An account owning two organizations must be refused if it is the last owner of either.
+# --- the scan covers every organization --------------------------------------------------
 
-    A guard that returned after inspecting one membership would let this through, and which
-    membership comes first is an ordering accident.
-    """
-    accounts, organizations, lifecycle = memory_stack()
-    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    second_owner = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
-    shared = OrganizationService(organizations).create_organization(
-        "Shared", owner.account_id, now=NOW
+
+def test_the_guard_checks_every_organization_not_only_the_first() -> None:
+    """Sole ownership of a *second* organization must still refuse."""
+    stack = two_owner_organization()
+    OrganizationService(stack.organizations).create_organization(
+        "Solo", stack.first.account_id, now=NOW
     )
-    add_membership(
-        organizations,
-        shared.organization_id,
-        second_owner.account_id,
-        OWNER_ROLE,
-        changed_by=owner.account_id,
-    )
-    # The second organization has this account as its only owner.
-    OrganizationService(organizations).create_organization("Solo", owner.account_id, now=NOW)
 
     with pytest.raises(FinalOwnerProtected):
-        lifecycle.disable_account(owner.account_id, now=NOW)
+        stack.lifecycle.disable_account(stack.first.account_id, now=NOW)
 
 
 def test_the_guard_does_not_abandon_the_scan_at_a_non_owner_membership() -> None:
@@ -137,18 +118,10 @@ def test_the_guard_does_not_abandon_the_scan_at_a_non_owner_membership() -> None
     accounts, organizations, lifecycle = memory_stack()
     owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
     other = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
-    # A plain membership in someone else's organization...
     theirs = OrganizationService(organizations).create_organization(
         "Theirs", other.account_id, now=NOW
     )
-    add_membership(
-        organizations,
-        theirs.organization_id,
-        owner.account_id,
-        "member",
-        changed_by=other.account_id,
-    )
-    # ...and sole ownership of their own.
+    grant_membership_inline(organizations, theirs.organization_id, owner.account_id, "member")
     OrganizationService(organizations).create_organization("Solo", owner.account_id, now=NOW)
 
     scanned = [m.role for m in organizations.memberships_for_account(owner.account_id)]
@@ -156,6 +129,18 @@ def test_the_guard_does_not_abandon_the_scan_at_a_non_owner_membership() -> None
 
     with pytest.raises(FinalOwnerProtected):
         lifecycle.disable_account(owner.account_id, now=NOW)
+
+
+def grant_membership_inline(organizations, organization_id, account_id, role) -> None:
+    """One-off membership grant for the single test that needs a bespoke shape."""
+    from khepri.rca.organizations import Membership
+
+    organizations.memberships[(organization_id, account_id)] = Membership.create(
+        organization_id, account_id, role, changed_by=account_id, now=NOW
+    )
+
+
+# --- effective ownership, not owner-role rows --------------------------------------------
 
 
 def test_disabling_owners_one_after_another_cannot_strand_an_organization(
@@ -169,104 +154,54 @@ def test_disabling_owners_one_after_another_cannot_strand_an_organization(
     owners one after the other passed the guard *both times* and left the organization with zero
     owners able to authenticate, resolve a scope, or act at all.
 
-    No concurrency and no forgery — two ordinary API calls. This is the same harm the
-    `khepri.rca.accounts` module docstring records slice 1 having caused by a different route.
+    No concurrency and no forgery — two ordinary API calls.
     """
-    accounts = SqlAccountStore(factory)
-    organizations = SqlOrganizationStore(factory)
-    lifecycle = LifecycleService(accounts, organizations)
-    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
-    organization = OrganizationService(organizations).create_organization(
-        "Acme", first.account_id, now=NOW
-    )
-    add_membership_row(
-        factory,
-        organization.organization_id,
-        second.account_id,
-        OWNER_ROLE,
-        changed_by=first.account_id,
-    )
+    stack = two_owner_organization(factory)
 
-    # The first is permitted: the second is still live.
-    lifecycle.disable_account(first.account_id, now=NOW)
+    stack.lifecycle.disable_account(stack.first.account_id, now=NOW)
 
-    # The second must now be refused, because the first no longer counts.
     with pytest.raises(FinalOwnerProtected):
-        lifecycle.disable_account(second.account_id, now=NOW)
+        stack.lifecycle.disable_account(stack.second.account_id, now=NOW)
 
-    survivor = accounts.get_account(second.account_id)
+    survivor = stack.accounts.get_account(stack.second.account_id)
     assert survivor is not None and survivor.is_enabled
-    assert (
-        organizations.count_owners(organization.organization_id, excluding_account_id="") == 1
-    ), "exactly one owner remains, and they can act"
+    assert _owners(stack) == 1, "exactly one owner remains, and they can act"
 
 
 def test_the_memory_fake_counts_owners_the_same_way_the_store_does() -> None:
     """Guards the fake against drifting from `SqlOrganizationStore`.
 
-    Every FR-013 test that uses `memory_stack()` is only meaningful if the fake's `count_owners`
-    agrees with production on the case FR-013 turns on: a disabled account keeps its owner-role
-    row and must stop counting. A fake that counted rows would make those tests pass while the
-    real store had the defect — which is how the row-counting bug reached review in the first
-    place.
+    Every FR-013 test using the fake is only meaningful if its `count_owners` agrees with
+    production on the case FR-013 turns on: a disabled account keeps its owner-role row and must
+    stop counting. A fake that counted rows would make those tests pass while the real store had
+    the defect — which is how the row-counting bug reached review in the first place.
     """
-    accounts, organizations, lifecycle = memory_stack()
-    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
-    organization = OrganizationService(organizations).create_organization(
-        "Acme", first.account_id, now=NOW
-    )
-    add_membership(
-        organizations,
-        organization.organization_id,
-        second.account_id,
-        OWNER_ROLE,
-        changed_by=first.account_id,
-    )
-    assert organizations.count_owners(organization.organization_id, excluding_account_id="") == 2
+    stack = two_owner_organization()
+    assert _owners(stack) == 2
 
-    lifecycle.disable_account(first.account_id, now=NOW)
+    stack.lifecycle.disable_account(stack.first.account_id, now=NOW)
 
-    assert organizations.count_owners(organization.organization_id, excluding_account_id="") == 1, (
-        "the disabled owner keeps its membership row but must stop counting as an owner"
-    )
+    assert _owners(stack) == 1, "the disabled owner keeps its row but stops counting"
     with pytest.raises(FinalOwnerProtected):
-        lifecycle.disable_account(second.account_id, now=NOW)
+        stack.lifecycle.disable_account(stack.second.account_id, now=NOW)
 
 
 def test_a_purged_owner_does_not_count_as_an_owner(factory: sessionmaker) -> None:
     """A tombstone keeps its membership row, because the foreign key is RESTRICT.
 
-    So the guard has to discount it by the holder's state or a purged account would be counted
-    as an owner forever — the sharpest form of the row-counting defect.
+    So the guard has to discount it by the holder's state, or a purged account would count as an
+    owner forever — the sharpest form of the row-counting defect.
     """
-    accounts = SqlAccountStore(factory)
-    organizations = SqlOrganizationStore(factory)
-    lifecycle = LifecycleService(accounts, organizations)
-    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
-    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
-    organization = OrganizationService(organizations).create_organization(
-        "Acme", first.account_id, now=NOW
-    )
-    add_membership_row(
-        factory,
-        organization.organization_id,
-        second.account_id,
-        OWNER_ROLE,
-        changed_by=first.account_id,
-    )
+    stack = two_owner_organization(factory)
+    stack.lifecycle.disable_account(stack.first.account_id, now=NOW)
+    AccountRetentionSweeper(stack.accounts).sweep(now=NOW + timedelta(days=RETENTION_DAYS + 1))
 
-    lifecycle.disable_account(first.account_id, now=NOW)
-    AccountRetentionSweeper(accounts).sweep(now=NOW + timedelta(days=RETENTION_DAYS + 1))
-
-    # The membership row survived the purge...
     with factory() as database:
-        assert (
-            database.get(MembershipRow, (organization.organization_id, first.account_id))
-            is not None
+        surviving = database.get(
+            MembershipRow, (stack.organization.organization_id, stack.first.account_id)
         )
-    # ...but it is not an owner any more.
-    assert organizations.count_owners(organization.organization_id, excluding_account_id="") == 1
+    assert surviving is not None, "the row survives the purge"
+
+    assert _owners(stack) == 1, "but it is not an owner any more"
     with pytest.raises(FinalOwnerProtected):
-        lifecycle.disable_account(second.account_id, now=NOW)
+        stack.lifecycle.disable_account(stack.second.account_id, now=NOW)
