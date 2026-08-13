@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
 from khepri.rca.errors import FinalOwnerProtected
-from khepri.rca.lifecycle import RETENTION_DAYS, AccountRetentionSweeper
+from khepri.rca.lifecycle import AccountRetentionSweeper
 from khepri.rca.organizations import OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import MembershipRow
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
@@ -180,8 +180,15 @@ def test_the_memory_fake_counts_owners_the_same_way_the_store_does() -> None:
     assert _owners(stack) == 2
 
     stack.lifecycle.disable_account(stack.first.account_id, now=NOW)
-
     assert _owners(stack) == 1, "the disabled owner keeps its row but stops counting"
+
+    # ...and re-enabling does not restore effective ownership, because the verifier stays
+    # destroyed. This is the `can_authenticate` half of the rule, exercised through the fake
+    # so the property has a test of its own rather than relying on the SQL join.
+    revived = stack.lifecycle.enable_account(stack.first.account_id)
+    assert revived.is_enabled and not revived.has_verifier
+    assert _owners(stack) == 1, "an enabled owner with no credential still cannot act"
+
     with pytest.raises(FinalOwnerProtected):
         stack.lifecycle.disable_account(stack.second.account_id, now=NOW)
 
@@ -194,7 +201,7 @@ def test_a_purged_owner_does_not_count_as_an_owner(factory: sessionmaker) -> Non
     """
     stack = two_owner_organization(factory)
     stack.lifecycle.disable_account(stack.first.account_id, now=NOW)
-    AccountRetentionSweeper(stack.accounts).sweep(now=NOW + timedelta(days=RETENTION_DAYS + 1))
+    AccountRetentionSweeper(stack.accounts).sweep(now=NOW + timedelta(days=760))
 
     with factory() as database:
         surviving = database.get(
@@ -203,5 +210,27 @@ def test_a_purged_owner_does_not_count_as_an_owner(factory: sessionmaker) -> Non
     assert surviving is not None, "the row survives the purge"
 
     assert _owners(stack) == 1, "but it is not an owner any more"
+    with pytest.raises(FinalOwnerProtected):
+        stack.lifecycle.disable_account(stack.second.account_id, now=NOW)
+
+
+def test_a_re_enabled_owner_without_a_credential_does_not_count(
+    factory: sessionmaker,
+) -> None:
+    """FR-013 asks whether an owner can *act*, and an owner with no credential cannot.
+
+    Two correct decisions combined into a defect. `enable_account` deliberately leaves the
+    verifier destroyed — KHEPRI-DEC-015 §5 gives it no path back — and `can_act` meant only
+    "enabled and not purged". So disabling owner A, re-enabling A, then disabling owner B
+    passed the guard, leaving an organization whose sole owner could not authenticate.
+    Reproduced against the real store before `can_authenticate` existed.
+    """
+    stack = two_owner_organization(factory)
+    stack.lifecycle.disable_account(stack.first.account_id, now=NOW)
+    revived = stack.lifecycle.enable_account(stack.first.account_id)
+
+    assert revived.is_enabled and not revived.has_verifier, "the setup this test turns on"
+    assert _owners(stack) == 1, "a credential-less owner is not an effective owner"
+
     with pytest.raises(FinalOwnerProtected):
         stack.lifecycle.disable_account(stack.second.account_id, now=NOW)

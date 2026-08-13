@@ -11,7 +11,7 @@ from khepri.rca.accounts import AccountService
 from khepri.rca.errors import (
     AccountOperationFailed,
 )
-from khepri.rca.lifecycle import RETENTION_DAYS, AccountRetentionSweeper, LifecycleService
+from khepri.rca.lifecycle import AccountRetentionSweeper, LifecycleService
 from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -45,7 +45,7 @@ def test_assert_account_active_refuses_disabled_purged_and_missing() -> None:
             lifecycle.assert_account_active(account_id)
         messages.append(str(caught.value))
 
-    AccountRetentionSweeper(accounts).sweep(now=NOW + timedelta(days=RETENTION_DAYS + 1))
+    AccountRetentionSweeper(accounts).sweep(now=NOW + timedelta(days=760))
     with pytest.raises(AccountOperationFailed) as caught:
         lifecycle.assert_account_active(doomed.account_id)
     messages.append(str(caught.value))

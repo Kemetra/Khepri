@@ -20,6 +20,8 @@ class AccountStore(Protocol):
 
     def accounts_disabled_before(self, horizon: datetime) -> list[Account]: ...
 
+    def purge_if_still_eligible(self, account_id: str, horizon: datetime) -> bool: ...
+
 
 class OrganizationStore(Protocol):
     def create_organization(

@@ -16,8 +16,9 @@ matters.
 
 from __future__ import annotations
 
+from calendar import monthrange
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from khepri.rca.errors import (
@@ -34,10 +35,28 @@ if TYPE_CHECKING:
 
 # KHEPRI-DEC-015 §2b: a disabled account's record and login identity are retained for twenty-four
 # months from disablement, then the identity fields are purged and only an opaque tombstone
-# remains. Expressed in days because `timedelta` has no months and a calendar-accurate horizon
-# would make the boundary depend on which months elapsed; the decision's justification (outlasting
-# the twelve-month audit horizon, bounded rather than indefinite) is not sensitive to that.
-RETENTION_DAYS = 730
+# remains.
+#
+# Counted in calendar months, not days. An earlier version used 730 days, which is 24 months only
+# when the interval contains no leap day: an account disabled 2027-01-01 became eligible on
+# 2028-12-31, one day before its 2029-01-01 anniversary. Purging identity even a day before the
+# governed horizon is a retention breach, and §2b bounds retention precisely because an unbounded
+# one is indefinite retention by omission.
+RETENTION_MONTHS = 24
+
+
+def _months_before(moment: datetime, months: int) -> datetime:
+    """`moment` shifted back by whole calendar months, clamping a short target month.
+
+    `timedelta` has no month unit and a fixed day count drifts across leap years, so the horizon
+    is computed on the calendar. A day-of-month that does not exist in the target month (31 March
+    going back to February) clamps to that month's last day, which keeps the horizon monotonic.
+    """
+    month_index = moment.month - 1 - months
+    year = moment.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(moment.day, monthrange(year, month)[1])
+    return moment.replace(year=year, month=month, day=day)
 
 
 class LifecycleService:
@@ -167,9 +186,11 @@ class AccountRetentionSweeper:
     deployment nobody has authorized.
     """
 
-    def __init__(self, accounts: AccountStore, *, retention_days: int = RETENTION_DAYS) -> None:
+    def __init__(
+        self, accounts: AccountStore, *, retention_months: int = RETENTION_MONTHS
+    ) -> None:
         self._accounts = accounts
-        self._retention_days = retention_days
+        self._retention_months = retention_months
 
     def sweep(self, *, now: datetime) -> PurgeReport:
         """Purge every account whose retention horizon has elapsed.
@@ -188,9 +209,12 @@ class AccountRetentionSweeper:
         account purgeable without first disabling it, this reasoning breaks and the check has to
         move here.
         """
-        horizon = now - timedelta(days=self._retention_days)
+        horizon = _months_before(now, self._retention_months)
         purged = 0
         for account in self._accounts.accounts_disabled_before(horizon):
-            if self._accounts.save_account(account.purged()):
+            # Re-checked inside the write, not trusted from the selection above: `enable_account`
+            # landing between the two would otherwise let this write a stale snapshot back and
+            # irreversibly purge an account that is no longer eligible.
+            if self._accounts.purge_if_still_eligible(account.account_id, horizon):
                 purged += 1
         return PurgeReport(purged_accounts=purged)

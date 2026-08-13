@@ -73,8 +73,27 @@ class Account(Sealed):
         separately at each is how they drift apart. That is not hypothetical: FR-013's guard
         counted owner-role rows without consulting account state, so a disabled account went on
         counting as an owner and two ordinary calls could strand an organization.
+
+        This is *permission* to act, not *capability*. An account with no verifier passes here
+        and still cannot authenticate — see `can_authenticate`, which FR-013 needs instead.
         """
         return self.is_enabled and not self.is_purged
+
+    @property
+    def can_authenticate(self) -> bool:
+        """True only for an account that can actually log in and therefore exercise authority.
+
+        FR-013 asks whether an organization still has an owner who can *act*, and an owner with
+        no credential cannot. That gap was reachable: `enable_account` deliberately leaves the
+        verifier destroyed (KHEPRI-DEC-015 §5 gives it no path back), so disabling an owner,
+        re-enabling them, then disabling the other owner left an organization whose only
+        remaining owner could not authenticate. Verified before this property existed.
+
+        `can_act` is deliberately weaker and stays that way: a verifier-less account must still
+        be re-enablable and still resolve for the lifecycle chokepoint. Only ownership needs the
+        stronger question.
+        """
+        return self.can_act and self.has_verifier
 
     @classmethod
     def create(cls, email: str, credential: str) -> Account:

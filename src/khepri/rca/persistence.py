@@ -195,6 +195,37 @@ class SqlAccountStore:
             return False
         return True
 
+    def purge_if_still_eligible(self, account_id: str, horizon: datetime) -> bool:
+        """Tombstone an account, but only if the row still qualifies at write time.
+
+        The sweep selects, then writes, and those were separate transactions with no predicate
+        between them — so `enable_account` landing in the gap made the sweeper write its stale
+        snapshot back, erasing a re-enabled account's email and restoring its old `disabled_at`.
+        Verified before this method existed, and irreversible when it happened: §2b's purge is
+        deliberately non-recoverable.
+
+        Re-reading and re-checking the condition inside the writing transaction closes it. The
+        predicate is the selection rule restated — disabled, before the horizon, not already
+        purged — so a row that stopped qualifying is skipped rather than clobbered, and the
+        returned count is work actually done.
+        """
+        with self._factory.begin() as database:
+            row = database.get(AccountRow, account_id)
+            if (
+                row is None
+                or row.disabled_at is None
+                or _utc(row.disabled_at) > horizon
+                or row.email is None
+            ):
+                return False
+            row.email = None
+            row.credential_salt = None
+            row.credential_digest = None
+            row.kdf_n = None
+            row.kdf_r = None
+            row.kdf_p = None
+        return True
+
     def save_account(self, account: Account) -> bool:
         """Write an existing account's current state back, as one row update.
 
@@ -248,7 +279,9 @@ class SqlAccountStore:
             rows = database.scalars(
                 select(AccountRow).where(
                     AccountRow.disabled_at.is_not(None),
-                    AccountRow.disabled_at < horizon,
+                    # `<=`: DEC-015 2b purges "at the horizon", so the anniversary
+                    # instant is eligible rather than one tick short of it.
+                    AccountRow.disabled_at <= horizon,
                     AccountRow.email.is_not(None),
                 )
             ).all()
@@ -373,6 +406,12 @@ class SqlOrganizationStore:
                         MembershipRow.account_id != excluding_account_id,
                         AccountRow.disabled_at.is_(None),
                         AccountRow.email.is_not(None),
+                        # ...and can actually authenticate. Re-enablement deliberately leaves
+                        # the verifier destroyed (DEC-015 §5), so an enabled, unpurged owner
+                        # may still be unable to log in -- and FR-013 asks whether an owner can
+                        # *act*. Verified: disable A, re-enable A, disable B left an
+                        # organization whose only owner could not authenticate.
+                        AccountRow.credential_digest.is_not(None),
                     )
                 ).scalar()
                 or 0
