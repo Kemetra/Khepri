@@ -32,3 +32,9 @@ def test_processing_recovers_missing_and_dead_lettered_jobs() -> None:
     assert 'api("/api/v1/beta/reports"' in script
     assert 'state.job_state === "dead_lettered"' in script
     assert "processing-recovery" in script
+
+
+def test_processing_always_offers_immediate_deletion() -> None:
+    body = client().get("/beta/en/processing").text
+    assert 'id="processing-recovery"' in body
+    assert 'id="processing-recovery" class="text-button" hidden' not in body

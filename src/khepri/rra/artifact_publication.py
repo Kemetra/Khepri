@@ -74,6 +74,9 @@ class ArtifactRepository(Protocol):
         self,
         publication: ReportPublication,
         artifacts: tuple[StoredArtifact, ...],
+        *,
+        boundary: ArtifactBoundary,
+        committed_at: datetime,
     ) -> DeliveryRecord: ...
 
     def find_in_session(
@@ -135,7 +138,12 @@ class ReportArtifactPublisher:
                 attempt_id=_require_attempt_id(_new_attempt_id()),
             )
             artifacts = self._store_all(context, publication.artifacts, created_keys)
-            return self._repository.commit(publication, artifacts)
+            return self._repository.commit(
+                publication,
+                artifacts,
+                boundary=boundary,
+                committed_at=self._now(),
+            )
         except Exception as error:
             self._rollback(created_keys)
             raise ArtifactUnavailable("Report artifacts are unavailable.") from error

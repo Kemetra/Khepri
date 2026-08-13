@@ -9,7 +9,7 @@
     <div><dt>{{ copy.size_limit }}</dt><dd dir="ltr">50 MB</dd></div>
     <div><dt>{{ copy.you_receive }}</dt><dd>{{ copy.outputs }}</dd></div>
   </dl>
-  <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden data-invitation="{{ copy.invitation_unavailable }}" data-temporary="{{ copy.temporary_unavailable }}"></div>
+  <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden data-invitation="{{ copy.invitation_unavailable }}" data-temporary="{{ copy.temporary_unavailable }}" data-profile-rejected="{{ copy.profile_rejected }}"></div>
   <form id="upload-form">
     <label class="consent-row"><input id="consent" type="checkbox"> <span>{{ copy.consent }}</span></label>
     <label id="drop-zone" class="drop-zone" for="sales-file" aria-describedby="file-help">
@@ -24,6 +24,7 @@
       <div class="progress-track" role="progressbar" aria-label="{{ copy.upload_progress }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
     </div>
     <button id="start-assessment" class="primary-button" type="submit" disabled>{{ copy.start }}</button>
+    <button id="upload-recovery" class="text-button" type="button" hidden>{{ copy.delete }}</button>
   </form>
 </section>
 {% endblock %}

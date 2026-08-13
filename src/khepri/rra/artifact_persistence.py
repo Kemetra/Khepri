@@ -23,6 +23,8 @@ from khepri.rra.delivery_persistence import (
     _commit_delivery,
     _leased_job,
 )
+from khepri.rra.job_persistence import ReportJobRow
+from khepri.rra.jobs import JOB_RUNNING
 from khepri.rra.persistence import Base, BetaSessionRow, _utc
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import (
@@ -133,6 +135,8 @@ class ArtifactBoundary:
     owner_id: str
     session_id: str
     expires_at: datetime
+    lease_owner: str
+    attempt_number: int
 
 
 class SqlArtifactRepository:
@@ -143,12 +147,20 @@ class SqlArtifactRepository:
         self,
         publication: ReportPublication,
         artifacts: tuple[StoredArtifact, ...],
+        *,
+        boundary: ArtifactBoundary,
+        committed_at: datetime,
     ) -> DeliveryRecord:
         _validate_publication(publication, artifacts)
         created_at = artifacts[0].created_at
         with self._factory.begin() as database:
             record = publication.delivery.record
-            job = _leased_job(database, record)
+            job = _active_publication_job(
+                database,
+                record,
+                boundary=boundary,
+                committed_at=committed_at,
+            )
             expires_at = _boundary(database, job, generated_at=created_at)
             _require_live_session(database, owner_id=job.owner_id, session_id=job.session_id)
             _validate_scope(
@@ -182,12 +194,23 @@ class SqlArtifactRepository:
         """Resolve the opaque live storage scope, revalidated again at commit."""
         with self._factory.begin() as database:
             job = _leased_job(database, publication.delivery.record)
+            lease_owner = job.lease_owner
+            lease_expires_at = _utc(job.lease_expires_at)
+            if (
+                job.state != JOB_RUNNING
+                or lease_owner is None
+                or lease_expires_at is None
+                or lease_expires_at <= created_at
+            ):
+                raise ArtifactConflict("Report publication lease is unavailable.")
             expires_at = _boundary(database, job, generated_at=created_at)
             _require_live_session(database, owner_id=job.owner_id, session_id=job.session_id)
             return ArtifactBoundary(
                 owner_id=job.owner_id,
                 session_id=job.session_id,
                 expires_at=expires_at,
+                lease_owner=lease_owner,
+                attempt_number=job.attempt_count,
             )
 
     def has_complete(self, job_id: str) -> bool:
@@ -235,6 +258,34 @@ class SqlArtifactRepository:
             artifacts = tuple(_from_row(row) for row in rows)
             _validate_stored_set(artifacts, delivery=delivery)
             return artifacts
+
+
+def _active_publication_job(
+    database: Session,
+    record: DeliveryRecord,
+    *,
+    boundary: ArtifactBoundary,
+    committed_at: datetime,
+) -> ReportJobRow:
+    job = _leased_job(database, record)
+    expected = (
+        JOB_RUNNING,
+        boundary.lease_owner,
+        boundary.attempt_number,
+        boundary.owner_id,
+        boundary.session_id,
+    )
+    actual = (
+        job.state,
+        job.lease_owner,
+        job.attempt_count,
+        job.owner_id,
+        job.session_id,
+    )
+    lease_expires_at = _utc(job.lease_expires_at)
+    if actual != expected or lease_expires_at is None or lease_expires_at <= committed_at:
+        raise ArtifactConflict("Report publication lease is unavailable.")
+    return job
 
 
 def _validate_publication(

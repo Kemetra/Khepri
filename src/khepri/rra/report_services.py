@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from khepri.rra.artifact_publication import ArtifactDocument, ReportArtifactPublisher
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.job_persistence import ReportJobRow, SqlReportJobRepository
-from khepri.rra.jobs import EnqueueJob, ReportJob
+from khepri.rra.jobs import JOB_SUCCEEDED, EnqueueJob, ReportJob
 from khepri.rra.packages import FactPackageRecord
 from khepri.rra.reports import DeliveredBundle, ReportJobView, ReportPackageMissing
 from khepri.rra.sessions import SessionScope
@@ -151,7 +151,8 @@ class DeliveredBundleAdapter:
         job_id: str,
         now: datetime,
     ) -> DeliveredBundle | None:
-        if self._reader.find_in_session(job_id, session_id) is None:
+        job = self._reader.find_in_session(job_id, session_id)
+        if job is None or job.state != JOB_SUCCEEDED:
             return None
         record = self._deliveries.find_delivery(job_id)
         if record is None:

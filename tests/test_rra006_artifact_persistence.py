@@ -21,6 +21,7 @@ from khepri.rra.report_artifacts import (
     XLSX_MEDIA_TYPE,
     ArtifactPayload,
 )
+from khepri.rra.report_services import DeliveredBundleAdapter, JobReader
 from tests.test_rra006_delivery_persistence import NOW, Harness, harness
 
 
@@ -74,12 +75,26 @@ def _stored(test: Harness, publication: ReportPublication) -> tuple[StoredArtifa
     )
 
 
+def _commit(
+    repository: SqlArtifactRepository,
+    publication: ReportPublication,
+    artifacts: tuple[StoredArtifact, ...],
+):
+    boundary = repository.boundary(publication, created_at=NOW)
+    return repository.commit(
+        publication,
+        artifacts,
+        boundary=boundary,
+        committed_at=NOW,
+    )
+
+
 def test_commit_writes_delivery_and_exact_artifact_set_atomically() -> None:
     test = harness()
     publication = _publication(test)
     repository = SqlArtifactRepository(test.factory)
 
-    record = repository.commit(publication, _stored(test, publication))
+    record = _commit(repository, publication, _stored(test, publication))
 
     assert record == publication.delivery.record
     assert tuple(
@@ -101,8 +116,8 @@ def test_identical_retry_returns_the_existing_complete_delivery() -> None:
     stored = _stored(test, publication)
     repository = SqlArtifactRepository(test.factory)
 
-    first = repository.commit(publication, stored)
-    second = repository.commit(publication, stored)
+    first = _commit(repository, publication, stored)
+    second = _commit(repository, publication, stored)
 
     assert second == first
     with test.factory() as database:
@@ -137,7 +152,7 @@ def test_commit_rejects_any_set_that_cannot_prove_the_publication(malformed) -> 
     repository = SqlArtifactRepository(test.factory)
 
     with pytest.raises(ArtifactConflict):
-        repository.commit(publication, tuple(malformed(_stored(test, publication))))
+        _commit(repository, publication, tuple(malformed(_stored(test, publication))))
 
     with test.factory() as database:
         assert list(database.scalars(select(ReportDeliveryRow))) == []
@@ -148,7 +163,7 @@ def test_session_scoped_read_hides_foreign_expired_and_deleted_content() -> None
     test = harness()
     publication = _publication(test)
     repository = SqlArtifactRepository(test.factory)
-    repository.commit(publication, _stored(test, publication))
+    _commit(repository, publication, _stored(test, publication))
     job_id = publication.delivery.record.job_id
 
     assert repository.find_in_session(
@@ -166,7 +181,7 @@ def test_read_fails_closed_when_the_stored_set_is_incomplete() -> None:
     test = harness()
     publication = _publication(test)
     repository = SqlArtifactRepository(test.factory)
-    repository.commit(publication, _stored(test, publication))
+    _commit(repository, publication, _stored(test, publication))
     with test.factory.begin() as database:
         database.execute(
             delete(ReportArtifactRow).where(ReportArtifactRow.artifact_kind == "excel")
@@ -178,3 +193,19 @@ def test_read_fails_closed_when_the_stored_set_is_incomplete() -> None:
             job_id=publication.delivery.record.job_id,
             now=NOW,
         )
+
+
+def test_manifest_is_withheld_while_a_retained_delivery_is_republishing() -> None:
+    test = harness()
+    publication = _publication(test)
+    test.store.deliver(publication.delivery)
+    adapter = DeliveredBundleAdapter(
+        deliveries=test.store,
+        reader=JobReader(test.factory),
+    )
+
+    assert adapter.get_session_bundle(
+        session_id=test.session.session_id,
+        job_id=publication.delivery.record.job_id,
+        now=NOW,
+    ) is None

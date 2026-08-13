@@ -1,4 +1,4 @@
-import { api, language, resume, routeFor } from "/beta/assets/common.js";
+import { api, deleteContent, language, resume, routeFor } from "/beta/assets/common.js";
 
 const MAX_BYTES = 50 * 1024 * 1024;
 const CONSENT_VERSION = "rra001.beta-consent.v1";
@@ -9,7 +9,9 @@ const button = document.querySelector("#start-assessment");
 const selected = document.querySelector("#selected-file");
 const errorSummary = document.querySelector("#error-summary");
 const dropZone = document.querySelector("#drop-zone");
+const recovery = document.querySelector("#upload-recovery");
 let file = null;
+let uploaded = false;
 
 const message = (text) => {
   errorSummary.textContent = text;
@@ -65,10 +67,12 @@ form.addEventListener("submit", async (event) => {
   try {
     await api("/api/v1/beta/consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent_version: CONSENT_VERSION }) });
     await upload();
+    uploaded = true;
     await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requested_semantics: [] }) });
     location.assign(routeFor("review"));
   } catch (error) {
-    message(language === "ar" ? "تعذر إكمال الرفع الآمن. حاول مرة أخرى." : "The secure upload could not be completed. Try again.");
+    message(uploaded ? errorSummary.dataset.profileRejected : (language === "ar" ? "تعذر إكمال الرفع الآمن. حاول مرة أخرى." : "The secure upload could not be completed. Try again."));
+    recovery.hidden = !uploaded;
     update();
   }
 });
@@ -80,12 +84,15 @@ const bootstrap = async () => {
     if (invitation) await api("/api/v1/beta/sessions/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation }) });
     const state = await resume();
     if (state?.upload_present && !state.profile_present) {
+      uploaded = true;
       await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requested_semantics: [] }) });
       location.replace(routeFor("review"));
     }
   } catch (error) {
-    message(error.status === 401 ? errorSummary.dataset.invitation : errorSummary.dataset.temporary);
+    message(uploaded ? errorSummary.dataset.profileRejected : (error.status === 401 ? errorSummary.dataset.invitation : errorSummary.dataset.temporary));
+    recovery.hidden = !uploaded;
   }
 };
+recovery.addEventListener("click", deleteContent);
 update();
 bootstrap();

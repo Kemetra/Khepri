@@ -764,7 +764,13 @@ def test_the_pipeline_runs_one_leased_job_against_the_stored_ports() -> None:
                 )
                 for payload in publication.artifacts
             )
-            return repository.commit(publication, artifacts)
+            boundary = repository.boundary(publication, created_at=NOW)
+            return repository.commit(
+                publication,
+                artifacts,
+                boundary=boundary,
+                committed_at=NOW,
+            )
 
     pipeline = ReportPipeline(
         ports=ReportPipelinePorts(

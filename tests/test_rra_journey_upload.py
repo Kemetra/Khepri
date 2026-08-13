@@ -44,3 +44,12 @@ def test_consent_precedes_raw_xhr_upload_and_profile_request() -> None:
     assert 'xhr.upload.addEventListener("progress"' in script
     assert script.index("await upload()") < script.index("/api/v1/beta/profile")
     assert "Content-Length" not in script
+
+
+def test_profile_rejection_exposes_session_recovery_after_upload() -> None:
+    body = client().get("/beta/en/upload").text
+    script = _script()
+    assert 'id="upload-recovery"' in body
+    assert "deleteContent" in script
+    assert "uploaded = true" in script
+    assert "upload-recovery" in script

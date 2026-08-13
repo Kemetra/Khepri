@@ -77,6 +77,10 @@ _EN = {
     "upload_progress": "Upload progress",
     "invitation_unavailable": "This invitation is unavailable.",
     "temporary_unavailable": "The secure session is temporarily unavailable. Try again.",
+    "profile_rejected": (
+        "The file was uploaded but could not be profiled. Delete this session and "
+        "request a new invitation."
+    ),
 }
 
 _AR = {
@@ -149,6 +153,9 @@ _AR = {
     "upload_progress": "تقدم رفع الملف",
     "invitation_unavailable": "هذه الدعوة غير متاحة.",
     "temporary_unavailable": "الجلسة الآمنة غير متاحة مؤقتاً. حاول مرة أخرى.",
+    "profile_rejected": (
+        "تم رفع الملف لكن تعذر تحليله الأولي. احذف هذه الجلسة واطلب دعوة جديدة."
+    ),
 }
 
 if _EN.keys() != _AR.keys():

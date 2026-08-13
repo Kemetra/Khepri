@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from khepri.rra.artifact_publication import (
 )
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.intake import StoragePolicyViolation, StoredObject
+from khepri.rra.jobs import LeaseRequest
 from khepri.rra.storage import ObjectWrite, PutResult
 from tests.test_rra006_artifact_persistence import _publication
 from tests.test_rra006_delivery_persistence import NOW, harness
@@ -163,7 +165,7 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
         def boundary(self, publication, *, created_at):
             return inner.boundary(publication, created_at=created_at)
 
-        def commit(self, publication, artifacts):
+        def commit(self, publication, artifacts, **context):
             raise RuntimeError("database provider detail")
 
         def find_in_session(self, **details):
@@ -205,9 +207,9 @@ def test_late_rollback_preserves_a_concurrent_publication(monkeypatch) -> None:
         def boundary(self, publication, *, created_at):
             return inner.boundary(publication, created_at=created_at)
 
-        def commit(self, publication, artifacts):
+        def commit(self, publication, artifacts, **context):
             winner.publish(publication)
-            return inner.commit(publication, artifacts)
+            return inner.commit(publication, artifacts, **context)
 
         def find_in_session(self, **details):
             return inner.find_in_session(**details)
@@ -227,6 +229,32 @@ def test_late_rollback_preserves_a_concurrent_publication(monkeypatch) -> None:
     assert len(objects.deleted) == 7
     document = _publisher_document(winner, test, publication)
     assert document.content == publication.artifacts[-1].content
+
+
+def test_publication_cannot_commit_after_its_lease_is_replaced() -> None:
+    class LeaseChangingObjects(MemoryObjects):
+        def put_or_verify(self, request: ObjectWrite) -> PutResult:
+            result = super().put_or_verify(request)
+            if len(self.put_calls) == 7:
+                test.jobs.recover_expired(now=NOW + timedelta(minutes=6))
+                replacement = test.jobs.lease(
+                    LeaseRequest(
+                        job_id="job_alpha",
+                        worker_id="worker_beta",
+                        now=NOW + timedelta(minutes=6),
+                        lease_for=timedelta(minutes=5),
+                    )
+                )
+                assert replacement is not None
+            return result
+
+    objects = LeaseChangingObjects()
+    test, publisher = _publisher(objects)
+
+    with pytest.raises(ArtifactUnavailable):
+        publisher.publish(_publication(test))
+
+    assert objects.values == {}
 
 
 def _publisher_document(publisher, test, publication):
