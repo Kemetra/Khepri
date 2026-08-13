@@ -460,6 +460,76 @@ def test_a_door_body_never_runs_caller_reachable_code() -> None:
     assert forged == [], "caller code ran while a construction door was open"
 
 
+def _forged_verifier() -> Verifier:
+    return Verifier._from_storage(salt=b"", digest=CREDENTIAL.encode(), kdf=DEFAULT_KDF)
+
+
+ACCIDENTAL_BYPASSES = [
+    pytest.param(
+        lambda genuine: Account(account_id="a", email=EMAIL, verifier=_forged_verifier()),
+        id="direct_construction",
+    ),
+    pytest.param(
+        lambda genuine: dataclasses.replace(genuine, verifier=_forged_verifier()),
+        id="dataclasses_replace",
+    ),
+    pytest.param(
+        lambda genuine: copy.replace(genuine, verifier=_forged_verifier()),
+        id="copy_replace",
+    ),
+    pytest.param(
+        lambda genuine: type("Forged", (Account,), {"__post_init__": lambda s: None}),
+        id="subclass_overrides_post_init",
+    ),
+    pytest.param(
+        lambda genuine: type("Forged", (Account,), {"__init__": lambda s, **k: None}),
+        id="subclass_overrides_init",
+    ),
+    pytest.param(
+        lambda genuine: type("Forged", (Account,), {"__new__": lambda c, **k: None}),
+        id="subclass_overrides_new",
+    ),
+]
+
+
+@pytest.mark.parametrize("bypass", ACCIDENTAL_BYPASSES)
+def test_no_accidental_channel_admits_forged_credential_material(bypass) -> None:
+    """The property the whole boundary exists for, tested as one closed set.
+
+    Four separate bypasses reached review one at a time, each found *after* the previous fix
+    shipped: `dataclasses.replace`, `deepcopy`'s `memo`, caller code inside an open door, and
+    subclass overrides of the construction hooks. Every one was an **accidental** channel —
+    something a careful engineer could write without intending to bypass anything.
+
+    They arrived serially because each was hunted individually. This enumerates the class
+    instead, so a future change that reopens any of them fails here rather than in review.
+
+    What this deliberately does NOT cover: `object.__new__`, `object.__setattr__`, and calling
+    `through_door()` directly. Those still work and always will — Python has no private
+    construction. They are the documented limit, and the distinction is the point: reaching
+    them requires explicitly naming `object.__new__`, which nobody does by accident.
+    """
+    genuine = Account.create(EMAIL, CREDENTIAL)
+    with pytest.raises(TypeError):
+        bypass(genuine)
+
+
+def test_faithful_duplication_stays_permitted() -> None:
+    """The complement: channels that cannot substitute a field are left alone.
+
+    `copy`, `deepcopy`, and `pickle` reproduce a record exactly and expose no parameter through
+    which a caller value can enter — once `memo` is neutralised. Blocking them would fight the
+    pickle protocol for no gain, so the rule is *substitution is refused, duplication is not*.
+    """
+    genuine = Account.create(EMAIL, CREDENTIAL)
+    forged = copy.deepcopy(genuine, {id(genuine.verifier): _forged_verifier()})
+
+    for duplicate in (copy.copy(genuine), copy.deepcopy(genuine), forged):
+        assert duplicate == genuine
+        assert duplicate.verifier is not None
+        assert duplicate.verifier.digest != CREDENTIAL.encode()
+
+
 @pytest.mark.parametrize("method", ["__post_init__", "__init__", "__new__"])
 def test_a_subclass_cannot_override_any_construction_hook(method: str) -> None:
     """Every hook the constructor dispatches through is sealed, not just `__post_init__`.

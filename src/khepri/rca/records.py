@@ -48,6 +48,33 @@ module could offer.
 None of this was true of the first version of this module; see the comment on `_opening` for
 the forgery it permitted.
 
+## The closed set
+
+Four bypasses reached review one at a time, each found after the previous fix shipped:
+`dataclasses.replace`, `deepcopy`'s `memo`, caller code running inside an open door, and
+subclass overrides of `__post_init__` / `__init__` / `__new__`. They arrived serially because
+each was hunted individually rather than as a class.
+
+Every construction channel Python offers has since been enumerated and tested as one set
+(`test_no_accidental_channel_admits_forged_credential_material`). Exactly three remain open,
+and they are the same three that were open on day one:
+
+```text
+object.__new__(Account)        # allocate without any constructor
+object.__setattr__(rec, ...)   # mutate a frozen instance
+through_door()                 # take the capability directly
+```
+
+None of them is closable. A guard against `object.__setattr__` is itself removable by
+`object.__setattr__`; this is the language's design, not a gap in this module. What separates
+them from the four that were fixed is intent: reaching these requires explicitly naming
+`object.__new__`, which nobody writes by accident, whereas
+`dataclasses.replace(account, verifier=None)` is what a careful engineer writes *while trying
+to do the right thing*.
+
+That distinction is the boundary's actual guarantee, and it is worth stating plainly rather
+than leaving as an emergent property of which bypasses happened to get reported.
+
 ## What this does NOT claim
 
 **Python has no private construction.** `object.__setattr__` still mutates a frozen instance,
