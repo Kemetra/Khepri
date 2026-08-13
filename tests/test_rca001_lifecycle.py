@@ -63,7 +63,10 @@ def _factory_fixture() -> sessionmaker:
 
 def _memory() -> tuple[MemoryAccountStore, MemoryOrganizationStore, LifecycleService]:
     accounts = MemoryAccountStore()
-    organizations = MemoryOrganizationStore()
+    # The fake counts effective owners only when it can see account state, matching the SQL
+    # store's join. Without this wiring the fake would disagree with production on exactly the
+    # case FR-013 turns on.
+    organizations = MemoryOrganizationStore(accounts)
     return accounts, organizations, LifecycleService(accounts, organizations)
 
 
@@ -338,6 +341,128 @@ def test_the_guard_does_not_abandon_the_scan_at_a_non_owner_membership() -> None
 
 
 # --- re-enablement ----------------------------------------------------------------------
+
+
+def test_disabling_owners_one_after_another_cannot_strand_an_organization(
+    factory: sessionmaker,
+) -> None:
+    """FR-013 counts owners who can act, not owner-role rows.
+
+    The defect this pins, confirmed against the real store before the fix: disablement never
+    touches `rca_memberships`, so a disabled account kept its owner-role row and was counted as
+    a live owner by the guard meant to prevent stranding. Disabling a two-owner organization's
+    owners one after the other passed the guard *both times* and left the organization with zero
+    owners able to authenticate, resolve a scope, or act at all.
+
+    No concurrency and no forgery — two ordinary API calls. This is the same harm the
+    `khepri.rca.accounts` module docstring records slice 1 having caused by a different route.
+    """
+    accounts = SqlAccountStore(factory)
+    organizations = SqlOrganizationStore(factory)
+    lifecycle = LifecycleService(accounts, organizations)
+    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = OrganizationService(organizations).create_organization(
+        "Acme", first.account_id, now=NOW
+    )
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=second.account_id,
+                role=OWNER_ROLE,
+                changed_by=first.account_id,
+                changed_at=NOW,
+            )
+        )
+
+    # The first is permitted: the second is still live.
+    lifecycle.disable_account(first.account_id, now=NOW)
+
+    # The second must now be refused, because the first no longer counts.
+    with pytest.raises(FinalOwnerProtected):
+        lifecycle.disable_account(second.account_id, now=NOW)
+
+    survivor = accounts.get_account(second.account_id)
+    assert survivor is not None and survivor.is_enabled
+    assert (
+        organizations.count_owners(organization.organization_id, excluding_account_id="") == 1
+    ), "exactly one owner remains, and they can act"
+
+
+def test_the_memory_fake_counts_owners_the_same_way_the_store_does() -> None:
+    """Guards the fake against drifting from `SqlOrganizationStore`.
+
+    Every FR-013 test that uses `_memory()` is only meaningful if the fake's `count_owners`
+    agrees with production on the case FR-013 turns on: a disabled account keeps its owner-role
+    row and must stop counting. A fake that counted rows would make those tests pass while the
+    real store had the defect — which is how the row-counting bug reached review in the first
+    place.
+    """
+    accounts, organizations, lifecycle = _memory()
+    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = OrganizationService(organizations).create_organization(
+        "Acme", first.account_id, now=NOW
+    )
+    organizations.memberships[(organization.organization_id, second.account_id)] = (
+        Membership.create(
+            organization.organization_id,
+            second.account_id,
+            OWNER_ROLE,
+            changed_by=first.account_id,
+            now=NOW,
+        )
+    )
+    assert organizations.count_owners(organization.organization_id, excluding_account_id="") == 2
+
+    lifecycle.disable_account(first.account_id, now=NOW)
+
+    assert organizations.count_owners(organization.organization_id, excluding_account_id="") == 1, (
+        "the disabled owner keeps its membership row but must stop counting as an owner"
+    )
+    with pytest.raises(FinalOwnerProtected):
+        lifecycle.disable_account(second.account_id, now=NOW)
+
+
+def test_a_purged_owner_does_not_count_as_an_owner(factory: sessionmaker) -> None:
+    """A tombstone keeps its membership row, because the foreign key is RESTRICT.
+
+    So the guard has to discount it by the holder's state or a purged account would be counted
+    as an owner forever — the sharpest form of the row-counting defect.
+    """
+    accounts = SqlAccountStore(factory)
+    organizations = SqlOrganizationStore(factory)
+    lifecycle = LifecycleService(accounts, organizations)
+    first = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = OrganizationService(organizations).create_organization(
+        "Acme", first.account_id, now=NOW
+    )
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=second.account_id,
+                role=OWNER_ROLE,
+                changed_by=first.account_id,
+                changed_at=NOW,
+            )
+        )
+
+    lifecycle.disable_account(first.account_id, now=NOW)
+    AccountRetentionSweeper(accounts).sweep(now=NOW + timedelta(days=RETENTION_DAYS + 1))
+
+    # The membership row survived the purge...
+    with factory() as database:
+        assert (
+            database.get(MembershipRow, (organization.organization_id, first.account_id))
+            is not None
+        )
+    # ...but it is not an owner any more.
+    assert organizations.count_owners(organization.organization_id, excluding_account_id="") == 1
+    with pytest.raises(FinalOwnerProtected):
+        lifecycle.disable_account(second.account_id, now=NOW)
 
 
 def test_a_re_enabled_account_still_cannot_authenticate_with_the_old_credential() -> None:

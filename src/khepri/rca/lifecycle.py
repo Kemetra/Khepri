@@ -41,12 +41,28 @@ RETENTION_DAYS = 730
 
 
 class LifecycleService:
-    """Disable, re-enable, and gate accounts, with the FR-013 guard applied atomically.
+    """Disable, re-enable, and gate accounts, with the FR-013 guard.
 
-    The guard and the write must not be separable. An implementation that checked ownership,
-    returned, and then disabled would leave a window in which the last remaining owner is revoked
-    by another caller between the two — and the check would have passed against a state that no
-    longer holds. Both happen inside `disable_account` with no intervening yield.
+    **Known limitation: the guard and the write are not in one transaction.** `disable_account`
+    reads the account, counts effective owners through the *organization* store, and writes
+    through the *account* store — three round trips, each on its own session. Two concurrent
+    disablements of a two-owner organization can therefore both pass the check before either
+    writes, and both commit, leaving zero owners.
+
+    This is recorded rather than fixed here because fixing it properly needs one transaction
+    spanning both stores — either a shared session passed through the store protocols, or
+    `SELECT ... FOR UPDATE` on the membership rows — and that is a change to the store seam that
+    every RCA service shares, not a change to this service. Doing it inside this slice would mean
+    redesigning the persistence boundary in a review loop, which is the failure mode #148 already
+    demonstrated and #151 was opened to end.
+
+    What *is* closed here is the sequential path, which needed no concurrency at all: disabling a
+    two-owner organization's owners one after another passed the guard both times, because
+    `count_owners` counted membership rows rather than owners who can act. See
+    `SqlOrganizationStore.count_owners`.
+
+    Scope of the remaining risk: a single-process local stack with no concurrent callers cannot
+    hit it. It must be closed before any deployment serves concurrent requests.
     """
 
     def __init__(self, accounts: AccountStore, organizations: OrganizationStore) -> None:
@@ -156,6 +172,22 @@ class AccountRetentionSweeper:
         self._retention_days = retention_days
 
     def sweep(self, *, now: datetime) -> PurgeReport:
+        """Purge every account whose retention horizon has elapsed.
+
+        **No FR-013 check here, deliberately, and this is safe only because of where the guard
+        actually lives.** A purge does not change who owns an organization: `count_owners` counts
+        *effective* owners, and an account must already be disabled to be swept, so it has
+        already stopped counting as an owner at the moment of disablement — not at the moment of
+        purge. Adding an ownership check here would therefore refuse nothing that
+        `disable_account` had not already refused, while implying the purge path is what protects
+        FR-013. It is not; disablement is.
+
+        The reason that ordering matters: a purged account keeps its membership row, because
+        `fk_rca_membership_account` is `RESTRICT` and the row cannot be deleted. So the guard has
+        to discount the *holder's state*, which is what it does. If a later slice ever makes an
+        account purgeable without first disabling it, this reasoning breaks and the check has to
+        move here.
+        """
         horizon = now - timedelta(days=self._retention_days)
         purged = 0
         for account in self._accounts.accounts_disabled_before(horizon):

@@ -55,10 +55,18 @@ class MemoryAccountStore:
 
 
 class MemoryOrganizationStore:
-    def __init__(self) -> None:
+    """The organization store.
+
+    `count_owners` needs account state, which the SQL store gets from a join. Set `accounts` to
+    a `MemoryAccountStore` to mirror that; left unset, every membership holder is treated as
+    live, which is the right default for tests that never disable anyone.
+    """
+
+    def __init__(self, accounts: MemoryAccountStore | None = None) -> None:
         self.organizations: dict[str, Organization] = {}
         self.memberships: dict[tuple[str, str], Membership] = {}
         self.scopes: dict[str, IsolationScope] = {}
+        self.accounts = accounts
 
     def create_organization(
         self,
@@ -85,10 +93,24 @@ class MemoryOrganizationStore:
         ]
 
     def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int:
+        """Effective owners, mirroring the SQL store's join onto account state.
+
+        Counting membership rows alone would make this fake disagree with `SqlOrganizationStore`
+        on the case that matters: a disabled account keeps its owner-role row, so counting rows
+        reports a live owner where there is none. That is a real defect this slice shipped and
+        review caught — a fake that kept the old behaviour would let it back in.
+        """
         return sum(
             1
             for (org, holder), membership in self.memberships.items()
             if org == organization_id
             and holder != excluding_account_id
             and membership.role == OWNER_ROLE
+            and self._can_act(holder)
         )
+
+    def _can_act(self, account_id: str) -> bool:
+        if self.accounts is None:
+            return True
+        account = self.accounts.get_account(account_id)
+        return account is not None and account.is_enabled and not account.is_purged

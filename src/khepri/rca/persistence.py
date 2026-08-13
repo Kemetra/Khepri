@@ -341,22 +341,38 @@ class SqlOrganizationStore:
             return [_membership_from_row(row) for row in rows]
 
     def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int:
-        """How many owner-role members this organization would still have without that account.
+        """How many *effective* owners this organization would still have without that account.
 
         Phrased as the remaining count rather than the total because that is the question FR-013
         actually asks. The alternative — return the total and let the caller compare against one —
         pushes "is this account an owner?" into the service, where it has to be decided a second
         time and can disagree with the row this query saw.
+
+        **The join onto `rca_accounts` is the load-bearing part.** Counting membership rows alone
+        is not counting owners: disablement does not touch `rca_memberships`, so a disabled
+        account keeps its owner-role row and would be counted as a live owner by the very guard
+        meant to prevent stranding. Verified before this join existed — disabling a two-owner
+        organization's owners one after the other passed the guard both times and left the
+        organization with zero owners able to act, which is exactly the harm FR-013 forbids and
+        which the `khepri.rca.accounts` module docstring records slice 1 having already caused
+        once by a different route.
+
+        An owner counts only if the account is enabled (`disabled_at IS NULL`) and not purged
+        (`email IS NOT NULL`). A purged tombstone is the sharper case: its row survives because
+        `fk_rca_membership_account` is `RESTRICT`, so without this it would be counted forever.
         """
         with self._factory() as database:
             return (
                 database.execute(
                     select(func.count())
                     .select_from(MembershipRow)
+                    .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
                     .where(
                         MembershipRow.organization_id == organization_id,
                         MembershipRow.role == OWNER_ROLE,
                         MembershipRow.account_id != excluding_account_id,
+                        AccountRow.disabled_at.is_(None),
+                        AccountRow.email.is_not(None),
                     )
                 ).scalar()
                 or 0
