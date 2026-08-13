@@ -98,7 +98,10 @@ def _run_artifact(database_url: str, direction: str) -> None:
         token = module.op
         try:
             module.op = operations
-            getattr(module, direction)()  # noqa: B009
+            if direction == "upgrade":
+                module._create_artifact_table()  # noqa: SLF001
+            else:
+                module._drop_artifact_table()  # noqa: SLF001
         finally:
             module.op = token
 

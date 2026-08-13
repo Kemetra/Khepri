@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rra.api import create_app
+from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: F401
 from khepri.rra.deletion import DeletionService
 from khepri.rra.intake import IntakeService, StoredObject
 from khepri.rra.persistence import (

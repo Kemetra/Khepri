@@ -24,6 +24,7 @@ class MemoryObjects:
     values: dict[str, tuple[bytes, str, str]] = field(default_factory=dict)
     put_calls: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
+    aborted: list[str] = field(default_factory=list)
 
     def put_or_verify(
         self,
@@ -64,6 +65,9 @@ class MemoryObjects:
     def delete(self, key: str) -> None:
         self.deleted.append(key)
         self.values.pop(key, None)
+
+    def abort_multipart_uploads(self, prefix: str) -> None:
+        self.aborted.append(prefix)
 
 
 def _publisher(objects: MemoryObjects):

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from khepri.rra.intake import SessionReader, UploadMetadata
+from khepri.rra.intake import SessionReader
 from khepri.rra.sessions import (
     SessionExpired,
     SessionScope,
@@ -54,6 +54,20 @@ class DeletionEvidence:
     error_code: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class DeletionTarget:
+    target_kind: str
+    target_id: str
+    owner_id: str
+    session_id: str
+    object_key: str
+    content_digest: str
+
+    @property
+    def scope(self) -> SessionScope:
+        return SessionScope(owner_id=self.owner_id, session_id=self.session_id)
+
+
 class DeletionRepository(Protocol):
     def begin(
         self,
@@ -64,13 +78,13 @@ class DeletionRepository(Protocol):
         requested_at: datetime,
     ) -> DeletionJob: ...
 
-    def get_target(self, job: DeletionJob) -> UploadMetadata | None: ...
+    def get_targets(self, job: DeletionJob) -> tuple[DeletionTarget, ...]: ...
 
     def complete(
         self,
         *,
         job: DeletionJob,
-        evidence: DeletionEvidence | None,
+        evidence: tuple[DeletionEvidence, ...],
         completed_at: datetime,
     ) -> DeletionJob: ...
 
@@ -78,7 +92,7 @@ class DeletionRepository(Protocol):
         self,
         *,
         job: DeletionJob,
-        evidence: DeletionEvidence,
+        evidence: tuple[DeletionEvidence, ...],
         next_retry_at: datetime,
     ) -> DeletionJob: ...
 
@@ -130,58 +144,95 @@ class DeletionService:
         )
         if job.state == "complete":
             return job
-        target = self._deletions.get_target(job)
-        if target is None:
+        targets = self._deletions.get_targets(job)
+        if not targets:
             return self._deletions.complete(
                 job=job,
-                evidence=None,
+                evidence=(),
                 completed_at=now,
             )
-        assert_same_scope(job.scope, target.scope)
+        for target in targets:
+            assert_same_scope(job.scope, target.scope)
 
-        evidence = self._evidence(
-            job=job,
-            target=target,
-            attempted_at=now,
-            outcome="deleted",
-            error_code=None,
-        )
         prefix = f"owners/{job.owner_id}/sessions/{job.session_id}/"
+        evidence: list[DeletionEvidence] = []
         try:
             self._objects.abort_multipart_uploads(prefix)
-            self._objects.delete(target.object_key)
         except Exception as error:
-            failed = DeletionEvidence(
-                evidence_id=evidence.evidence_id,
-                deletion_id=evidence.deletion_id,
-                target_kind=evidence.target_kind,
-                target_id=evidence.target_id,
-                location_digest=evidence.location_digest,
-                content_digest=evidence.content_digest,
-                attempted_at=evidence.attempted_at,
-                attempt_number=evidence.attempt_number,
-                outcome="failed",
-                error_code="object_store_error",
-            )
-            result = self._deletions.fail(
+            evidence = [
+                self._evidence(
+                    job=job,
+                    target=target,
+                    attempted_at=now,
+                    outcome="failed",
+                    error_code="object_store_error",
+                )
+                for target in targets
+            ]
+            return self._retry_or_complete(
                 job=job,
-                evidence=failed,
-                next_retry_at=now + _RETRY_DELAY,
+                evidence=tuple(evidence),
+                now=now,
+                error=error,
             )
-            if result.state == "complete":
-                return result
-            raise DeletionRetryRequired("Content deletion must be retried.") from error
+
+        failed = False
+        last_error: Exception | None = None
+        for target in targets:
+            try:
+                self._objects.delete(target.object_key)
+                outcome = "deleted"
+                error_code = None
+            except Exception as error:
+                failed = True
+                last_error = error
+                outcome = "failed"
+                error_code = "object_store_error"
+            evidence.append(
+                self._evidence(
+                    job=job,
+                    target=target,
+                    attempted_at=now,
+                    outcome=outcome,
+                    error_code=error_code,
+                )
+            )
+        if failed:
+            assert last_error is not None
+            return self._retry_or_complete(
+                job=job,
+                evidence=tuple(evidence),
+                now=now,
+                error=last_error,
+            )
         return self._deletions.complete(
             job=job,
-            evidence=evidence,
+            evidence=tuple(evidence),
             completed_at=now,
         )
+
+    def _retry_or_complete(
+        self,
+        *,
+        job: DeletionJob,
+        evidence: tuple[DeletionEvidence, ...],
+        now: datetime,
+        error: Exception,
+    ) -> DeletionJob:
+        result = self._deletions.fail(
+            job=job,
+            evidence=evidence,
+            next_retry_at=now + _RETRY_DELAY,
+        )
+        if result.state == "complete":
+            return result
+        raise DeletionRetryRequired("Content deletion must be retried.") from error
 
     def _evidence(
         self,
         *,
         job: DeletionJob,
-        target: UploadMetadata,
+        target: DeletionTarget,
         attempted_at: datetime,
         outcome: str,
         error_code: str | None,
@@ -189,10 +240,10 @@ class DeletionService:
         return DeletionEvidence(
             evidence_id=self._new_evidence_id(),
             deletion_id=job.deletion_id,
-            target_kind="input",
-            target_id=target.upload_id,
+            target_kind=target.target_kind,
+            target_id=target.target_id,
             location_digest=hashlib.sha256(target.object_key.encode()).hexdigest(),
-            content_digest=target.sha256_hex,
+            content_digest=target.content_digest,
             attempted_at=attempted_at,
             attempt_number=job.attempt_count + 1,
             outcome=outcome,
