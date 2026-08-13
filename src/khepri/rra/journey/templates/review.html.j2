@@ -1,0 +1,17 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ copy.review_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+<section class="document-card wide" aria-labelledby="page-title">
+  <div class="step-marker" aria-label="Step 2 of 4"><span>02</span><span>—</span><span>04</span></div>
+  <h1 id="page-title">{{ copy.review_title }}</h1><p class="lede">{{ copy.review_intro }}</p>
+  <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden></div>
+  <div class="table-region" role="region" aria-labelledby="mapping-caption" tabindex="0">
+    <table id="mapping-table"><caption id="mapping-caption">{{ copy.review_title }}</caption>
+      <thead><tr><th scope="col">Column</th><th scope="col">Retail meaning</th><th scope="col">Status</th><th scope="col">Evidence</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="actions"><button id="confirm-mapping" class="primary-button" disabled>{{ copy.confirm }}</button><button id="restart" class="text-button">{{ copy.restart }}</button></div>
+</section>
+{% endblock %}
+{% block script %}<script type="module" src="/beta/assets/review.js"></script>{% endblock %}

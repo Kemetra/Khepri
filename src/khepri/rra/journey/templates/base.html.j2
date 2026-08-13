@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ copy.product }}{% endblock %}</title>
+  <link rel="stylesheet" href="/beta/assets/journey.css">
+</head>
+<body data-step="{{ step }}" data-language="{{ language }}">
+  <a class="skip-link" href="#main-content">{{ copy.skip }}</a>
+  <header class="site-header">
+    <a class="brand" href="/beta/{{ language }}" aria-label="{{ copy.product }}">
+      <span class="brand-mark" aria-hidden="true">K</span>
+      <span>{{ copy.product }}</span>
+    </a>
+    <nav aria-label="Language">
+      <a class="language-link" href="/beta/{{ alternate }}/{{ step }}">{{ copy.language }}</a>
+    </nav>
+  </header>
+  <main id="main-content" class="journey-shell" tabindex="-1">
+    <p class="eyebrow">{{ copy.private_beta }}</p>
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer"><p>{{ copy.retention }}</p></footer>
+  <script type="module" src="/beta/assets/common.js"></script>
+  {% block script %}{% endblock %}
+</body>
+</html>

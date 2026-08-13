@@ -82,4 +82,8 @@ def test_web_app_exposes_the_complete_approved_beta_route_set() -> None:
         "/api/v1/beta/reports/{job_id}/surfaces/evidence/{language}",
         "/api/v1/beta/reports/{job_id}/surfaces/pdf/{language}",
         "/api/v1/beta/reports/{job_id}/surfaces/excel",
+        "/api/v1/beta/journey",
+        "/beta/{language}",
+        "/beta/{language}/{step}",
+        "/beta/assets/{name}",
     } <= paths

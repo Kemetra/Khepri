@@ -24,6 +24,8 @@ from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
 from khepri.rra.intake import IntakeService
 from khepri.rra.job_persistence import SqlReportJobRepository
+from khepri.rra.journey.routes import JourneyServices
+from khepri.rra.journey.state import SqlJourneyReader
 from khepri.rra.package_source import SessionFactPackageSource
 from khepri.rra.packages import FactPackageService
 from khepri.rra.persistence import (
@@ -203,6 +205,7 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
         profiling_service=stack.services.profiling,
         package_service=stack.services.packages,
         report_services=build_report_services(stack),
+        journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
 
 
