@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import io
+
 import boto3
 import pytest
+from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
 from khepri.rra.intake import StoragePolicyViolation
@@ -141,6 +144,47 @@ def test_put_sends_and_verifies_checksum_kms_context_and_owner_guard() -> None:
     assert stored.media_type == "text/csv"
     assert stored.encryption_algorithm == "aws:kms"
     assert stored.kms_key_id == KMS_KEY_ARN
+
+
+def test_put_or_verify_accepts_identical_preexisting_encrypted_content() -> None:
+    store, stubber = store_and_stubber()
+    stubber.add_client_error(
+        "put_object",
+        service_error_code="PreconditionFailed",
+        http_status_code=412,
+        expected_params=put_parameters(),
+    )
+    stubber.add_response(
+        "get_object",
+        {
+            "Body": StreamingBody(io.BytesIO(CONTENT), len(CONTENT)),
+            "ChecksumSHA256": SHA256_BASE64,
+            "ServerSideEncryption": "aws:kms",
+            "SSEKMSKeyId": KMS_KEY_ARN,
+        },
+        {
+            "Bucket": BUCKET,
+            "Key": KEY,
+            "ExpectedBucketOwner": OWNER_ACCOUNT,
+            "ChecksumMode": "ENABLED",
+        },
+    )
+
+    with stubber:
+        result = store.put_or_verify(
+            key=KEY,
+            content=CONTENT,
+            media_type="text/csv",
+            sha256_hex=SHA256_HEX,
+            encryption_context={
+                "session_id": "ses_alpha",
+                "upload_id": "upl_alpha",
+                "owner_id": "own_alpha",
+            },
+        )
+
+    assert result.created is False
+    assert result.stored.sha256_hex == SHA256_HEX
 
 
 @pytest.mark.parametrize(

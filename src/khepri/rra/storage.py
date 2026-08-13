@@ -4,7 +4,10 @@ import base64
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from typing import Any, Protocol
+
+from botocore.exceptions import ClientError
 
 from khepri.rra.intake import StoragePolicyViolation, StoredObject
 
@@ -25,6 +28,14 @@ class S3Client(Protocol):
     def list_multipart_uploads(self, **kwargs: object) -> dict[str, Any]: ...
 
     def abort_multipart_upload(self, **kwargs: object) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PutResult:
+    """A policy-proven object and whether this call created it."""
+
+    stored: StoredObject
+    created: bool
 
 
 class S3EncryptedObjectStore:
@@ -89,6 +100,49 @@ class S3EncryptedObjectStore:
             encryption_algorithm="aws:kms",
             kms_key_id=self._kms_key_arn,
         )
+
+    def put_or_verify(
+        self,
+        *,
+        key: str,
+        content: bytes,
+        media_type: str,
+        sha256_hex: str,
+        encryption_context: dict[str, str],
+    ) -> PutResult:
+        """Create a content-addressed object, or prove the existing bytes."""
+        try:
+            stored = self.put(
+                key=key,
+                content=content,
+                media_type=media_type,
+                sha256_hex=sha256_hex,
+                encryption_context=encryption_context,
+            )
+        except ClientError as error:
+            response = error.response
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            code = response.get("Error", {}).get("Code")
+            if status != 412 or code not in {"PreconditionFailed", "412"}:
+                raise
+            existing = self.get(key)
+            if (
+                len(existing) != len(content)
+                or hashlib.sha256(existing).hexdigest() != sha256_hex
+            ):
+                raise StoragePolicyViolation(
+                    "An existing object conflicts with the requested content."
+                ) from error
+            stored = StoredObject(
+                key=key,
+                size_bytes=len(existing),
+                sha256_hex=sha256_hex,
+                media_type=media_type,
+                encryption_algorithm="aws:kms",
+                kms_key_id=self._kms_key_arn,
+            )
+            return PutResult(stored=stored, created=False)
+        return PutResult(stored=stored, created=True)
 
     def get(self, key: str) -> bytes:
         response = self._client.get_object(

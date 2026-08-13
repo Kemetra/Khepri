@@ -127,6 +127,13 @@ class StoredArtifact:
     kms_key_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactBoundary:
+    owner_id: str
+    session_id: str
+    expires_at: datetime
+
+
 class SqlArtifactRepository:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
@@ -142,6 +149,7 @@ class SqlArtifactRepository:
             record = publication.delivery.record
             job = _leased_job(database, record)
             expires_at = _boundary(database, job, generated_at=created_at)
+            _require_live_session(database, owner_id=job.owner_id, session_id=job.session_id)
             _validate_scope(
                 artifacts,
                 owner_id=job.owner_id,
@@ -163,6 +171,34 @@ class SqlArtifactRepository:
             database.add_all(ReportArtifactRow(**_values(item)) for item in artifacts)
             database.flush()
             return result
+
+    def boundary(
+        self,
+        publication: ReportPublication,
+        *,
+        created_at: datetime,
+    ) -> ArtifactBoundary:
+        """Resolve the opaque live storage scope, revalidated again at commit."""
+        with self._factory.begin() as database:
+            job = _leased_job(database, publication.delivery.record)
+            expires_at = _boundary(database, job, generated_at=created_at)
+            _require_live_session(database, owner_id=job.owner_id, session_id=job.session_id)
+            return ArtifactBoundary(
+                owner_id=job.owner_id,
+                session_id=job.session_id,
+                expires_at=expires_at,
+            )
+
+    def has_complete(self, job_id: str) -> bool:
+        with self._factory() as database:
+            delivery = database.get(ReportDeliveryRow, job_id)
+            if delivery is None:
+                return False
+            artifacts = tuple(_from_row(row) for row in _rows(database, job_id))
+            if not artifacts:
+                return False
+            _validate_stored_set(artifacts, delivery=delivery)
+            return True
 
     def find_in_session(
         self,
@@ -274,6 +310,28 @@ def _available(
     )
 
 
+def _require_live_session(
+    database: Session,
+    *,
+    owner_id: str,
+    session_id: str,
+) -> None:
+    session = database.scalar(
+        select(BetaSessionRow)
+        .where(
+            BetaSessionRow.owner_id == owner_id,
+            BetaSessionRow.session_id == session_id,
+        )
+        .with_for_update()
+    )
+    if (
+        session is None
+        or session.deletion_requested_at is not None
+        or session.content_deleted_at is not None
+    ):
+        raise ArtifactConflict("Session content is unavailable.")
+
+
 def _validate_stored_set(
     artifacts: tuple[StoredArtifact, ...],
     *,
@@ -335,6 +393,7 @@ def _values(item: StoredArtifact) -> dict[str, object]:
 __all__ = [
     "ArtifactConflict",
     "ArtifactCorrupted",
+    "ArtifactBoundary",
     "ReportArtifactRow",
     "SqlArtifactRepository",
     "StoredArtifact",
