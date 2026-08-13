@@ -65,6 +65,11 @@ from khepri.rra.rendering.wording import (
     caveat_prose,
     kind_qualifier,
 )
+from khepri.rra.report_artifacts import (
+    HTML_MEDIA_TYPE,
+    ArtifactPayload,
+    MaterializedSurface,
+)
 
 HTML_SURFACE_VERSION = "rra006.html.v1"
 
@@ -272,6 +277,27 @@ class HtmlReportRenderer:
 
     def render(self, bundle: ReportBundle) -> SurfaceContent:
         return self.render_html(bundle).content
+
+    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+        surface = self.render_html(bundle)
+        artifacts = tuple(
+            ArtifactPayload.of(
+                kind=f"web_business_{language}",
+                media_type=HTML_MEDIA_TYPE,
+                file_name="khepri-report.html",
+                content=surface.documents[language].encode("utf-8"),
+            )
+            for language in REQUIRED_LANGUAGES
+        ) + tuple(
+            ArtifactPayload.of(
+                kind=f"web_evidence_{language}",
+                media_type=HTML_MEDIA_TYPE,
+                file_name="khepri-evidence.html",
+                content=surface.evidence[language].encode("utf-8"),
+            )
+            for language in REQUIRED_LANGUAGES
+        )
+        return MaterializedSurface(content=surface.content, artifacts=artifacts)
 
     def render_html(self, bundle: ReportBundle) -> HtmlSurface:
         """Render both regions, and the claim about what they present."""

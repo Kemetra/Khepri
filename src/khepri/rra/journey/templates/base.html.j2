@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ copy.product }}{% endblock %}</title>
+  <link rel="stylesheet" href="/beta/assets/journey.css">
+</head>
+<body data-step="{{ step }}" data-language="{{ language }}">
+  <a class="skip-link" href="#main-content">{{ copy.skip }}</a>
+  <header class="site-header">
+    <a class="brand" href="/beta/{{ language }}" aria-label="{{ copy.product }}">
+      <span>KHEPRI</span>
+    </a>
+    <nav aria-label="{{ copy.language_navigation }}">
+      <a class="language-link" href="/beta/{{ alternate }}/{{ step }}">{{ copy.language }}</a>
+    </nav>
+  </header>
+  <nav class="step-nav" aria-label="{{ copy.journey_progress }}">
+    <ol>
+      <li class="{% if step == 'upload' %}current{% endif %}"><a href="/beta/{{ language }}/upload"><span>1</span> {{ copy.step_upload }}</a></li>
+      <li class="{% if step == 'review' %}current{% endif %}"><a href="/beta/{{ language }}/review"><span>2</span> {{ copy.step_review }}</a></li>
+      <li class="{% if step == 'processing' %}current{% endif %}"><a href="/beta/{{ language }}/processing"><span>3</span> {{ copy.step_processing }}</a></li>
+      <li class="{% if step == 'report' %}current{% endif %}"><a href="/beta/{{ language }}/report"><span>4</span> {{ copy.step_report }}</a></li>
+    </ol>
+  </nav>
+  <main id="main-content" class="journey-shell" tabindex="-1">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer"><p>{{ copy.retention }}</p></footer>
+  <script type="module" src="/beta/assets/common.js"></script>
+  {% block script %}{% endblock %}
+</body>
+</html>

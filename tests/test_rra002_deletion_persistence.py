@@ -8,6 +8,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: F401
 from khepri.rra.deletion import DeletionEvidence
 from khepri.rra.intake import CSV_MEDIA_TYPE, UploadMetadata
 from khepri.rra.persistence import (

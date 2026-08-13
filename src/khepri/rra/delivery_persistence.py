@@ -192,32 +192,13 @@ class SqlDeliveryStore:
             job = _leased_job(database, record)
             generated_at = self._now()
             expires_at = _boundary(database, job, generated_at=generated_at)
-            existing = database.get(ReportDeliveryRow, record.job_id)
-            if existing is not None:
-                return _existing(existing, self._surfaces(database, record.job_id), delivery)
-            database.add(
-                ReportDeliveryRow(
-                    job_id=record.job_id,
-                    owner_id=job.owner_id,
-                    session_id=record.session_id,
-                    bundle_id=record.bundle_id,
-                    package_version=record.package_version,
-                    narrative_state=record.narrative_state,
-                    generated_at=generated_at,
-                    expires_at=expires_at,
-                )
+            return _commit_delivery(
+                database,
+                delivery,
+                owner_id=job.owner_id,
+                generated_at=generated_at,
+                expires_at=expires_at,
             )
-            for content in delivery.surfaces:
-                database.add(
-                    ReportDeliverySurfaceRow(
-                        job_id=record.job_id,
-                        surface=content.surface,
-                        bundle_id=content.bundle_id,
-                        content_digest=surface_digest(content),
-                    )
-                )
-            database.flush()
-            return record
 
     @staticmethod
     def _surfaces(database: Session, job_id: str) -> tuple[DeliveredSurface, ...]:
@@ -248,6 +229,48 @@ def surface_digest(content: SurfaceContent) -> str:
     or came from another run does not.
     """
     return hashlib.sha256(canonical_json(_surface_document(content)).encode()).hexdigest()
+
+
+def _commit_delivery(
+    database: Session,
+    delivery: ReportDelivery,
+    *,
+    owner_id: str,
+    generated_at: datetime,
+    expires_at: datetime,
+) -> DeliveryRecord:
+    """Insert delivery evidence inside a caller-owned transaction."""
+    record = delivery.record
+    existing = database.get(ReportDeliveryRow, record.job_id)
+    if existing is not None:
+        return _existing(
+            existing,
+            SqlDeliveryStore._surfaces(database, record.job_id),
+            delivery,
+        )
+    database.add(
+        ReportDeliveryRow(
+            job_id=record.job_id,
+            owner_id=owner_id,
+            session_id=record.session_id,
+            bundle_id=record.bundle_id,
+            package_version=record.package_version,
+            narrative_state=record.narrative_state,
+            generated_at=generated_at,
+            expires_at=expires_at,
+        )
+    )
+    for content in delivery.surfaces:
+        database.add(
+            ReportDeliverySurfaceRow(
+                job_id=record.job_id,
+                surface=content.surface,
+                bundle_id=content.bundle_id,
+                content_digest=surface_digest(content),
+            )
+        )
+    database.flush()
+    return record
 
 
 def _surface_document(content: SurfaceContent) -> dict[str, object]:

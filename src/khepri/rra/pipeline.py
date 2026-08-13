@@ -64,7 +64,6 @@ from khepri.rra.bundle import (
     BundleAttempt,
     ReportBundle,
     SurfaceContent,
-    SurfaceRenderer,
 )
 from khepri.rra.bundle import GOVERNED_REASONS as BUNDLE_REASONS
 from khepri.rra.facts import FactPackage
@@ -74,6 +73,12 @@ from khepri.rra.narrative import (
     NarrativeAdapter,
     NarrativeDraft,
     NarrativeService,
+)
+from khepri.rra.report_artifacts import (
+    REQUIRED_ARTIFACT_KINDS,
+    ArtifactPayload,
+    MaterializedRenderer,
+    MaterializedSurface,
 )
 from khepri.rra.worker import WorkerExecution
 
@@ -200,12 +205,24 @@ class ReportDelivery:
         _require_one_bundle_behind_every_surface(self.surfaces, self.bundle)
 
 
-class DeliveryStore(Protocol):
-    """Where a delivered report and its content-free evidence are kept."""
+@dataclass(frozen=True, slots=True)
+class ReportPublication:
+    """One reconciled report beside the exact payload set to publish."""
+
+    delivery: ReportDelivery
+    artifacts: tuple[ArtifactPayload, ...]
+
+    def __post_init__(self) -> None:
+        if tuple(artifact.kind for artifact in self.artifacts) != REQUIRED_ARTIFACT_KINDS:
+            raise ValueError("A publication carries every required artifact exactly once.")
+
+
+class PublicationStore(Protocol):
+    """Where a whole report publication is committed atomically."""
 
     def find_delivery(self, job_id: str) -> DeliveryRecord | None: ...
 
-    def deliver(self, delivery: ReportDelivery) -> DeliveryRecord: ...
+    def publish(self, publication: ReportPublication) -> DeliveryRecord: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,8 +251,24 @@ class ReportPipelinePorts:
 
     packages: FactPackageSource
     adapter: NarrativeAdapter
-    renderers: Sequence[SurfaceRenderer]
-    deliveries: DeliveryStore
+    renderers: Sequence[MaterializedRenderer]
+    deliveries: PublicationStore
+
+
+class _MaterializedClaimRenderer:
+    """Expose one materialized render as the assembler's claim-only port."""
+
+    def __init__(self, renderer: MaterializedRenderer) -> None:
+        self._renderer = renderer
+        self.materialized: MaterializedSurface | None = None
+
+    @property
+    def surface(self) -> str:
+        return self._renderer.surface
+
+    def render(self, bundle: ReportBundle) -> SurfaceContent:
+        self.materialized = self._renderer.render_materialized(bundle)
+        return self.materialized.content
 
 
 class ReportPipeline:
@@ -261,7 +294,7 @@ class ReportPipeline:
             adapter=ports.adapter,
             monotonic_ms=monotonic_ms,
         )
-        self._assembler = BundleAssembler(renderers=ports.renderers)
+        self._renderers = tuple(ports.renderers)
         self._deliveries = ports.deliveries
 
     def __call__(self, execution: WorkerExecution) -> None:
@@ -285,9 +318,9 @@ class ReportPipeline:
         execution.heartbeat()
         narrative = self.compose_narrative(package)
         execution.heartbeat()
-        delivery = self.assemble(job, package, narrative)
+        publication = self.assemble(job, package, narrative)
         execution.heartbeat()
-        return PipelineOutcome(record=self.deliver(delivery), delivered=True)
+        return PipelineOutcome(record=self.deliver(publication), delivered=True)
 
     def load_package(self, job: ReportJob) -> FactPackage:
         """The one immutable package every surface of this report comes from."""
@@ -308,7 +341,7 @@ class ReportPipeline:
         job: ReportJob,
         package: FactPackage,
         narrative: NarrativeDraft,
-    ) -> ReportDelivery:
+    ) -> ReportPublication:
         """Render every surface and reconcile each against the one package.
 
         Both happen in `BundleAssembler`, which already refuses to hand back a
@@ -317,18 +350,31 @@ class ReportPipeline:
         `bundle` is designed never to expose.
         """
         bundle = ReportBundle.of(package, narrative=narrative)
-        result = self._assembler.assemble(bundle)
+        claim_renderers = tuple(
+            _MaterializedClaimRenderer(renderer) for renderer in self._renderers
+        )
+        result = BundleAssembler(renderers=claim_renderers).assemble(bundle)
         if result.surfaces is None:
             raise ReportPipelineFailed(result.attempt.reason or REASON_STAGE_FAILED)
-        return ReportDelivery(
-            record=DeliveryRecord.of(job, result.attempt),
-            bundle=bundle,
-            surfaces=result.surfaces,
+        materialized = tuple(renderer.materialized for renderer in claim_renderers)
+        if any(entry is None for entry in materialized):
+            raise ReportPipelineFailed(REASON_STAGE_FAILED)
+        delivery = ReportDelivery(
+            record=DeliveryRecord.of(job, result.attempt), bundle=bundle, surfaces=result.surfaces
+        )
+        return ReportPublication(
+            delivery=delivery,
+            artifacts=tuple(
+                artifact
+                for entry in materialized
+                if entry is not None
+                for artifact in entry.artifacts
+            ),
         )
 
-    def deliver(self, delivery: ReportDelivery) -> DeliveryRecord:
+    def deliver(self, publication: ReportPublication) -> DeliveryRecord:
         """Persist the whole report, which is the first durable side effect."""
-        return self._deliveries.deliver(delivery)
+        return self._deliveries.publish(publication)
 
 
 def _require_text(value: str, name: str) -> None:
@@ -374,11 +420,12 @@ __all__ = [
     "REASON_PACKAGE_MISSING",
     "REASON_STAGE_FAILED",
     "DeliveryRecord",
-    "DeliveryStore",
     "FactPackageSource",
     "PipelineOutcome",
+    "PublicationStore",
     "ReportDelivery",
     "ReportPipeline",
     "ReportPipelineFailed",
     "ReportPipelinePorts",
+    "ReportPublication",
 ]

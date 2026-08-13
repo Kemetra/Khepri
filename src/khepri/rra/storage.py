@@ -4,7 +4,10 @@ import base64
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from typing import Any, Protocol
+
+from botocore.exceptions import ClientError
 
 from khepri.rra.intake import StoragePolicyViolation, StoredObject
 
@@ -24,7 +27,26 @@ class S3Client(Protocol):
 
     def list_multipart_uploads(self, **kwargs: object) -> dict[str, Any]: ...
 
+    def list_objects_v2(self, **kwargs: object) -> dict[str, Any]: ...
+
     def abort_multipart_upload(self, **kwargs: object) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PutResult:
+    """A policy-proven object and whether this call created it."""
+
+    stored: StoredObject
+    created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectWrite:
+    key: str
+    content: bytes
+    media_type: str
+    sha256_hex: str
+    encryption_context: dict[str, str]
 
 
 class S3EncryptedObjectStore:
@@ -90,6 +112,41 @@ class S3EncryptedObjectStore:
             kms_key_id=self._kms_key_arn,
         )
 
+    def put_or_verify(self, request: ObjectWrite) -> PutResult:
+        """Create a content-addressed object, or prove the existing bytes."""
+        try:
+            stored = self.put(
+                key=request.key,
+                content=request.content,
+                media_type=request.media_type,
+                sha256_hex=request.sha256_hex,
+                encryption_context=request.encryption_context,
+            )
+        except ClientError as error:
+            response = error.response
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            code = response.get("Error", {}).get("Code")
+            if status != 412 or code not in {"PreconditionFailed", "412"}:
+                raise
+            existing = self.get(request.key)
+            if (
+                len(existing) != len(request.content)
+                or hashlib.sha256(existing).hexdigest() != request.sha256_hex
+            ):
+                raise StoragePolicyViolation(
+                    "An existing object conflicts with the requested content."
+                ) from error
+            stored = StoredObject(
+                key=request.key,
+                size_bytes=len(existing),
+                sha256_hex=request.sha256_hex,
+                media_type=request.media_type,
+                encryption_algorithm="aws:kms",
+                kms_key_id=self._kms_key_arn,
+            )
+            return PutResult(stored=stored, created=False)
+        return PutResult(stored=stored, created=True)
+
     def get(self, key: str) -> bytes:
         response = self._client.get_object(
             Bucket=self._bucket,
@@ -113,6 +170,32 @@ class S3EncryptedObjectStore:
 
     def delete(self, key: str) -> None:
         self._delete_unversioned(key)
+
+    def delete_prefix(self, prefix: str) -> None:
+        base = {
+            "Bucket": self._bucket,
+            "Prefix": prefix,
+            "ExpectedBucketOwner": self._expected_bucket_owner,
+        }
+        parameters: dict[str, object] = dict(base)
+        while True:
+            response = self._client.list_objects_v2(**parameters)
+            for item in response.get("Contents") or []:
+                key = item.get("Key")
+                if not isinstance(key, str) or not key.startswith(prefix):
+                    raise StoragePolicyViolation(
+                        "S3 returned an object outside the deletion scope."
+                    )
+                self._delete_unversioned(key)
+            if response.get("IsTruncated") is not True:
+                break
+            token = response.get("NextContinuationToken")
+            if not isinstance(token, str):
+                raise StoragePolicyViolation("S3 object pagination is incomplete.")
+            parameters = {**base, "ContinuationToken": token}
+        confirmation = self._client.list_objects_v2(**base)
+        if confirmation.get("Contents") or confirmation.get("IsTruncated") is True:
+            raise StoragePolicyViolation("S3 objects remain after prefix cleanup.")
 
     def abort_multipart_uploads(self, prefix: str) -> None:
         base_parameters = {

@@ -90,10 +90,10 @@ from khepri.rra.narrative import NarrativeAdapter, NarrativeDraft, NarrativeRequ
 from khepri.rra.pipeline import (
     DeliveryRecord,
     PipelineOutcome,
-    ReportDelivery,
     ReportPipeline,
     ReportPipelineFailed,
     ReportPipelinePorts,
+    ReportPublication,
 )
 from khepri.rra.sessions import SessionScope
 from khepri.rra.telemetry import (
@@ -300,7 +300,7 @@ class InstrumentedReportPipeline(ReportPipeline):
         job: ReportJob,
         package: FactPackage,
         narrative: NarrativeDraft,
-    ) -> ReportDelivery:
+    ) -> ReportPublication:
         assembled = super().assemble
         return self._measure(
             STAGE_BUNDLE,
@@ -308,7 +308,7 @@ class InstrumentedReportPipeline(ReportPipeline):
             learn=_learn_bundle,
         )
 
-    def deliver(self, delivery: ReportDelivery) -> DeliveryRecord:
+    def deliver(self, delivery: ReportPublication) -> DeliveryRecord:
         delivered = super().deliver
         return self._measure(STAGE_DELIVERY, lambda: delivered(delivery))
 
@@ -416,7 +416,7 @@ def _learn_package(context: _RunContext, package: FactPackage) -> _RunContext:
     return replace(context, fact_package_id=package.digest)
 
 
-def _learn_bundle(context: _RunContext, delivery: ReportDelivery) -> _RunContext:
+def _learn_bundle(context: _RunContext, publication: ReportPublication) -> _RunContext:
     """Name the bundle, and how many bytes its surfaces came to.
 
     Read from the delivery *after* the assembler returned it, never from inside
@@ -425,8 +425,8 @@ def _learn_bundle(context: _RunContext, delivery: ReportDelivery) -> _RunContext
     """
     return replace(
         context,
-        report_bundle_id=delivery.bundle.bundle_id,
-        rendered_size_bytes=_rendered_bytes(delivery.surfaces),
+        report_bundle_id=publication.delivery.bundle.bundle_id,
+        rendered_size_bytes=_rendered_bytes(publication.delivery.surfaces),
     )
 
 

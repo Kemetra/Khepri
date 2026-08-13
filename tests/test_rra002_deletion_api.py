@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rra.api import create_app
+from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: F401
 from khepri.rra.deletion import DeletionService
 from khepri.rra.intake import IntakeService, StoredObject
 from khepri.rra.persistence import (
@@ -50,6 +52,11 @@ class LifecycleMemoryObjectStore:
     def abort_multipart_uploads(self, prefix: str) -> None:
         self.abort_prefixes.append(prefix)
 
+    def delete_prefix(self, prefix: str) -> None:
+        for key in tuple(self.objects):
+            if key.startswith(prefix):
+                self.objects.pop(key)
+
     def delete(self, key: str) -> None:
         if self.delete_failures:
             self.delete_failures -= 1
@@ -60,6 +67,7 @@ class LifecycleMemoryObjectStore:
 def client_and_repositories(
     *,
     delete_failures: int = 0,
+    clock_offset: Callable[[], timedelta] = lambda: timedelta(0),
 ) -> tuple[
     TestClient,
     InvitationService,
@@ -97,7 +105,7 @@ def client_and_repositories(
         service=invitations,
         intake_service=intake,
         deletion_service=deletion,
-        clock=lambda: NOW,
+        clock=lambda: NOW + clock_offset(),
     )
     return (
         TestClient(app, base_url="https://testserver"),
@@ -150,8 +158,10 @@ def test_delete_content_removes_input_and_clears_session_cookie() -> None:
 
 
 def test_delete_failure_returns_retryable_response_without_private_detail() -> None:
+    elapsed: list[timedelta] = []
     client, invitations, uploads, deletions, objects = client_and_repositories(
-        delete_failures=1
+        delete_failures=1,
+        clock_offset=lambda: sum(elapsed, timedelta(0)),
     )
     session_id = redeem_and_consent(client, invitations)
     client.post("/api/v1/beta/uploads", content=CSV)
@@ -164,6 +174,15 @@ def test_delete_failure_returns_retryable_response_without_private_detail() -> N
     assert uploads.get_upload_for_session(session_id) is not None
     assert deletions.list_evidence("del_example")[0].error_code == "object_store_error"
 
+    # Immediately: the failure path scheduled the next attempt, and reaching the
+    # object store before that deadline would defeat the backoff it just recorded.
+    too_soon = client.delete("/api/v1/beta/content")
+
+    assert too_soon.status_code == 503
+    assert uploads.get_upload_for_session(session_id) is not None
+    assert len(deletions.list_evidence("del_example")) == 1
+
+    elapsed.append(timedelta(minutes=5))
     completed = client.delete("/api/v1/beta/content")
 
     assert completed.status_code == 204

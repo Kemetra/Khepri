@@ -33,6 +33,7 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from khepri.rra.artifact_publication import ArtifactDocument
 from khepri.rra.datasets import ProfileCorrupted
 from khepri.rra.jobs import UnknownJobState
 from khepri.rra.packages import PackageCorrupted, PackageRefused
@@ -59,9 +60,14 @@ JobIdentifier = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
 ]
+ArtifactLanguage = Annotated[
+    str,
+    StringConstraints(pattern=r"^(ar|en)$"),
+]
 
 _NO_JOB = "No report job is available for this session."
 _NO_BUNDLE = "No delivered report is available for this session."
+_NO_ARTIFACT = "No report artifact is available for this session."
 
 
 class ReportRequestBody(BaseModel):
@@ -187,6 +193,61 @@ def add_report_routes(
             job_id=job_id,
         )
 
+    if services.artifacts is not None:
+
+        def artifact_response(
+            job_id: str,
+            artifact_kind: str,
+            session_id: str | None,
+        ) -> Response:
+            caller = _require_session(session_id)
+            try:
+                document = services.artifacts.get_session_artifact(
+                    session_id=caller,
+                    job_id=job_id,
+                    artifact_kind=artifact_kind,
+                    now=clock(),
+                )
+            except Exception as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Report artifact is unavailable.",
+                ) from error
+            if document is None:
+                raise HTTPException(status_code=404, detail=_NO_ARTIFACT)
+            return _artifact_response(document)
+
+        @app.get("/api/v1/beta/reports/{job_id}/surfaces/web/{language}")
+        def read_business_html(
+            job_id: JobIdentifier,
+            language: ArtifactLanguage,
+            session_id: BetaSessionCookie = None,
+        ) -> Response:
+            return artifact_response(job_id, f"web_business_{language}", session_id)
+
+        @app.get("/api/v1/beta/reports/{job_id}/surfaces/evidence/{language}")
+        def read_evidence_html(
+            job_id: JobIdentifier,
+            language: ArtifactLanguage,
+            session_id: BetaSessionCookie = None,
+        ) -> Response:
+            return artifact_response(job_id, f"web_evidence_{language}", session_id)
+
+        @app.get("/api/v1/beta/reports/{job_id}/surfaces/pdf/{language}")
+        def read_pdf(
+            job_id: JobIdentifier,
+            language: ArtifactLanguage,
+            session_id: BetaSessionCookie = None,
+        ) -> Response:
+            return artifact_response(job_id, f"pdf_{language}", session_id)
+
+        @app.get("/api/v1/beta/reports/{job_id}/surfaces/excel")
+        def read_excel(
+            job_id: JobIdentifier,
+            session_id: BetaSessionCookie = None,
+        ) -> Response:
+            return artifact_response(job_id, "excel", session_id)
+
 
 def _requested_report(
     services: ReportServices,
@@ -285,6 +346,18 @@ def _bundle_response(bundle: DeliveredBundle, *, job_id: str) -> ReportBundleRes
     )
 
 
+def _artifact_response(document: ArtifactDocument) -> Response:
+    return Response(
+        content=document.content,
+        media_type=document.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{document.file_name}"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 # How a governed refusal reaches a caller. A table rather than a chain of
 # `except` clauses inside each route: the report routes refuse for the same
 # reasons, and three copies of one mapping is three places for them to drift.
@@ -322,6 +395,7 @@ def _require_session(session_id: str | None) -> str:
 
 __all__ = [
     "JobIdentifier",
+    "ArtifactLanguage",
     "ReportBundleResponse",
     "ReportJobResponse",
     "ReportRequestBody",

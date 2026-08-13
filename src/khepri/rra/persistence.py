@@ -13,7 +13,6 @@ from sqlalchemy import (
     LargeBinary,
     String,
     UniqueConstraint,
-    delete,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +20,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 from sqlalchemy.sql import Select
 
 from khepri.rra.datasets import DatasetProfileRecord
-from khepri.rra.deletion import DeletionEvidence, DeletionJob
+from khepri.rra.deletion import (
+    DeletionEvidence,
+    DeletionJob,
+    DeletionTarget,
+    evidence_tuple,
+    validate_completed_evidence,
+)
 from khepri.rra.intake import UploadMetadata
 from khepri.rra.packages import FactPackageRecord, PackageVersions
 from khepri.rra.sessions import (
@@ -262,7 +267,10 @@ class DeletionJobRow(Base):
 class DeletionEvidenceRow(Base):
     __tablename__ = "rra_deletion_evidence"
     __table_args__ = (
-        CheckConstraint("target_kind = 'input'", name="ck_evidence_target_kind"),
+        CheckConstraint(
+            "target_kind IN ('input', 'report_artifact')",
+            name="ck_evidence_target_kind",
+        ),
         CheckConstraint(
             "length(location_digest) = 64",
             name="ck_evidence_location_digest",
@@ -289,7 +297,9 @@ class DeletionEvidenceRow(Base):
         UniqueConstraint(
             "deletion_id",
             "attempt_number",
-            name="uq_evidence_deletion_attempt",
+            "target_kind",
+            "target_id",
+            name="uq_evidence_deletion_attempt_target",
         ),
     )
 
@@ -631,47 +641,59 @@ class SqlDeletionRepository:
             row = database.scalar(statement)
             return None if row is None else _upload_from_row(row)
 
+    def get_targets(self, job: DeletionJob) -> tuple[DeletionTarget, ...]:
+        from khepri.rra.deletion_persistence import deletion_targets  # noqa: PLC0415
+
+        with self._factory() as database:
+            return deletion_targets(database, job.owner_id, job.session_id)
+
+    def defer_for_publication(
+        self,
+        job: DeletionJob,
+        *,
+        now: datetime,
+        next_retry_at: datetime,
+    ) -> bool:
+        from khepri.rra.deletion_persistence import (  # noqa: PLC0415
+            defer_for_publication,
+        )
+
+        with self._factory.begin() as database:
+            deletion = self._locked_job(database, job.deletion_id)
+            return defer_for_publication(
+                database,
+                deletion,
+                now=now,
+                next_retry_at=next_retry_at,
+            )
+
     def complete(
         self,
         *,
         job: DeletionJob,
-        evidence: DeletionEvidence | None,
+        evidence: DeletionEvidence | tuple[DeletionEvidence, ...] | None,
         completed_at: datetime,
     ) -> DeletionJob:
+        from khepri.rra.deletion_persistence import (  # noqa: PLC0415
+            add_evidence,
+            delete_derived_content,
+            delete_object_metadata,
+            deletion_targets,
+        )
+
+        evidences = evidence_tuple(evidence)
         with self._factory.begin() as database:
             row = self._locked_job(database, job.deletion_id)
             if row.state == "complete":
                 return _deletion_from_row(row)
-            upload = database.scalar(
-                select(UploadRow).where(
-                    UploadRow.owner_id == row.owner_id,
-                    UploadRow.session_id == row.session_id,
-                )
-            )
-            if evidence is None and upload is not None:
-                raise ValueError("Deletion evidence is required for an existing target.")
-            # The package references the profile, so it goes first.
-            database.execute(
-                delete(FactPackageRow).where(
-                    FactPackageRow.owner_id == row.owner_id,
-                    FactPackageRow.session_id == row.session_id,
-                )
-            )
-            database.execute(
-                delete(DatasetProfileRow).where(
-                    DatasetProfileRow.owner_id == row.owner_id,
-                    DatasetProfileRow.session_id == row.session_id,
-                )
-            )
-            if evidence is not None:
-                self._add_evidence(database, row, evidence)
-                if upload is None or upload.upload_id != evidence.target_id:
-                    raise ValueError("Deletion target no longer matches evidence.")
-                database.execute(
-                    delete(UploadRow).where(UploadRow.upload_id == upload.upload_id)
-                )
+            targets = deletion_targets(database, row.owner_id, row.session_id)
+            validate_completed_evidence(evidences, targets)
+            delete_derived_content(database, row.owner_id, row.session_id)
+            if evidences:
+                add_evidence(database, row, evidences)
+                delete_object_metadata(database, row.owner_id, row.session_id)
                 row.attempt_count += 1
-                row.last_attempt_at = evidence.attempted_at
+                row.last_attempt_at = evidences[0].attempted_at
             session_row = database.get(BetaSessionRow, row.session_id)
             if session_row is None:
                 raise LookupError("Session is unavailable.")
@@ -686,17 +708,22 @@ class SqlDeletionRepository:
         self,
         *,
         job: DeletionJob,
-        evidence: DeletionEvidence,
+        evidence: DeletionEvidence | tuple[DeletionEvidence, ...],
         next_retry_at: datetime,
     ) -> DeletionJob:
+        from khepri.rra.deletion_persistence import add_evidence  # noqa: PLC0415
+
+        evidences = evidence_tuple(evidence)
+        if not evidences:
+            raise ValueError("Failed deletion evidence is required.")
         with self._factory.begin() as database:
             row = self._locked_job(database, job.deletion_id)
             if row.state == "complete":
                 return _deletion_from_row(row)
-            self._add_evidence(database, row, evidence)
+            add_evidence(database, row, evidences)
             row.state = "retryable"
             row.attempt_count += 1
-            row.last_attempt_at = evidence.attempted_at
+            row.last_attempt_at = evidences[0].attempted_at
             row.next_retry_at = next_retry_at
             row.completed_at = None
             database.flush()
@@ -706,7 +733,11 @@ class SqlDeletionRepository:
         statement = (
             select(DeletionEvidenceRow)
             .where(DeletionEvidenceRow.deletion_id == deletion_id)
-            .order_by(DeletionEvidenceRow.attempt_number)
+            .order_by(
+                DeletionEvidenceRow.attempt_number,
+                DeletionEvidenceRow.target_kind,
+                DeletionEvidenceRow.target_id,
+            )
         )
         with self._factory() as database:
             return [_evidence_from_row(row) for row in database.scalars(statement)]
@@ -721,33 +752,6 @@ class SqlDeletionRepository:
         if row is None:
             raise LookupError("Deletion job is unavailable.")
         return row
-
-    @staticmethod
-    def _add_evidence(
-        database: Session,
-        job: DeletionJobRow,
-        evidence: DeletionEvidence,
-    ) -> None:
-        if (
-            evidence.deletion_id != job.deletion_id
-            or evidence.attempt_number != job.attempt_count + 1
-        ):
-            raise ValueError("Deletion evidence does not match the current attempt.")
-        database.add(
-            DeletionEvidenceRow(
-                evidence_id=evidence.evidence_id,
-                deletion_id=evidence.deletion_id,
-                target_kind=evidence.target_kind,
-                target_id=evidence.target_id,
-                location_digest=evidence.location_digest,
-                content_digest=evidence.content_digest,
-                attempted_at=evidence.attempted_at,
-                attempt_number=evidence.attempt_number,
-                outcome=evidence.outcome,
-                error_code=evidence.error_code,
-            )
-        )
-
 
 def session_scope_for_update_statement(
     scope: SessionScope,

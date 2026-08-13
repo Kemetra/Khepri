@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from alembic import command
@@ -15,6 +16,7 @@ from khepri.rca.persistence import Base as RcaBase
 from tests.local_stack_support import requires_local_stack
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+ARTIFACT_REVISION = "20260813_0012"
 PREVIOUS_HEAD = "20260730_0009"
 # Every RCA revision, oldest first. `_run` applies the whole chain, so adding a revision here is
 # all that is needed for the column-parity and round-trip tests below to cover it -- an earlier
@@ -41,6 +43,22 @@ def _rca_migration_module(revision: str = RCA_REVISION, slug: str = "rca_identit
     """
     path = REPO_ROOT / "migrations" / "versions" / f"{revision}_{slug}.py"
     spec = importlib.util.spec_from_file_location(f"rca_migration_{revision}", path)
+    assert spec is not None and spec.loader is not None, f"cannot load {path}"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _artifact_migration_module():
+    path = (
+        REPO_ROOT
+        / "migrations"
+        / "versions"
+        / f"{ARTIFACT_REVISION}_rra_report_artifacts.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        f"rra_migration_{ARTIFACT_REVISION}", path
+    )
     assert spec is not None and spec.loader is not None, f"cannot load {path}"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -85,6 +103,23 @@ def _run(database_url: str, direction: str) -> None:
                 module.op = token
 
 
+def _run_artifact(database_url: str, direction: str) -> None:
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        operations = Operations(context)
+        module = _artifact_migration_module()
+        token = module.op
+        try:
+            module.op = operations
+            if direction == "upgrade":
+                module._create_artifact_table()  # noqa: SLF001
+            else:
+                module._drop_artifact_table()  # noqa: SLF001
+        finally:
+            module.op = token
+
+
 def test_the_revisions_form_an_unbroken_chain() -> None:
     """Each RCA revision must point at its predecessor, and the first at the last RRA head.
 
@@ -99,6 +134,69 @@ def test_the_revisions_form_an_unbroken_chain() -> None:
             f"{revision} points at {module.down_revision}, expected {expected_parent}"
         )
         expected_parent = revision
+
+
+def test_report_artifacts_are_chained_after_the_rca_head() -> None:
+    """The artifact revision must descend from the *last* RCA revision, not a fixed one.
+
+    Derived from `RCA_REVISIONS[-1]` rather than written as a literal. This assertion named
+    `20260812_0010` while that happened to be the newest RCA revision, and stayed green as a
+    statement about the wrong revision the moment `20260813_0011` landed beside it -- git
+    reported no conflict here, because only the constant it reads through had moved.
+    """
+    module = _artifact_migration_module()
+    assert module.revision == ARTIFACT_REVISION
+    assert module.down_revision == RCA_REVISIONS[-1][0]
+
+
+def test_report_artifact_migration_matches_its_declared_columns(sqlite_url: str) -> None:
+    from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: PLC0415
+
+    _run_artifact(sqlite_url, "upgrade")
+    inspector = inspect(create_engine(sqlite_url))
+    migrated = {
+        column["name"]
+        for column in inspector.get_columns(ReportArtifactRow.__tablename__)
+    }
+    declared = {column.name for column in ReportArtifactRow.__table__.columns}
+    assert migrated == declared
+
+
+def test_report_artifact_migration_downgrades_cleanly(sqlite_url: str) -> None:
+    _run_artifact(sqlite_url, "upgrade")
+    _run_artifact(sqlite_url, "downgrade")
+    assert "rra_report_artifacts" not in inspect(create_engine(sqlite_url)).get_table_names()
+
+
+def test_artifact_migration_requeues_live_legacy_deliveries() -> None:
+    module = _artifact_migration_module()
+    operation = Mock()
+    token = module.op
+    try:
+        module.op = operation
+        module._requeue_deliveries_without_artifacts()  # noqa: SLF001
+    finally:
+        module.op = token
+    statement = str(operation.execute.call_args.args[0])
+    assert "SET state = 'queued'" in statement
+    assert "state = 'succeeded'" in statement
+    assert "content_expires_at > CURRENT_TIMESTAMP" in statement
+    assert "attempt_count = 0" not in statement
+    assert "max_attempts = max_attempts + attempt_count" in statement
+
+
+def test_artifact_downgrade_discards_incompatible_report_evidence() -> None:
+    module = _artifact_migration_module()
+    operation = Mock()
+    token = module.op
+    try:
+        module.op = operation
+        module._discard_report_artifact_evidence()  # noqa: SLF001
+    finally:
+        module.op = token
+    statement = str(operation.execute.call_args.args[0])
+    assert "DELETE FROM rra_deletion_evidence" in statement
+    assert "target_kind = 'report_artifact'" in statement
 
 
 def test_upgrade_creates_every_rca_table(sqlite_url: str) -> None:

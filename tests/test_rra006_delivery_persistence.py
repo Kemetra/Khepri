@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rra.admissibility import assess_admissibility
+from khepri.rra.artifact_persistence import SqlArtifactRepository, StoredArtifact
 from khepri.rra.bundle import (
     LANGUAGE_DIRECTION,
     NARRATIVE_INCLUDED,
@@ -55,8 +56,15 @@ from khepri.rra.pipeline import (
     ReportDelivery,
     ReportPipeline,
     ReportPipelinePorts,
+    ReportPublication,
 )
 from khepri.rra.profiling import build_profile
+from khepri.rra.report_artifacts import (
+    ARTIFACT_METADATA,
+    SURFACE_ARTIFACT_KINDS,
+    ArtifactPayload,
+    MaterializedSurface,
+)
 from khepri.rra.sessions import (
     BetaSession,
     CrossSessionAccessDenied,
@@ -234,6 +242,20 @@ class Renderer:
 
     def render(self, bundle: ReportBundle) -> SurfaceContent:
         return surface_of(bundle, self._surface)
+
+    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+        kinds = SURFACE_ARTIFACT_KINDS[self.surface]
+        final_size = SURFACE_SIZE - len(kinds) + 1
+        artifacts = tuple(
+            ArtifactPayload.of(
+                kind=kind,
+                media_type=ARTIFACT_METADATA[kind][0],
+                file_name=ARTIFACT_METADATA[kind][1],
+                content=b"x" if index < len(kinds) - 1 else b"x" * final_size,
+            )
+            for index, kind in enumerate(kinds)
+        )
+        return MaterializedSurface(content=self.render(bundle), artifacts=artifacts)
 
 
 class Execution:
@@ -716,12 +738,46 @@ def test_the_pipeline_runs_one_leased_job_against_the_stored_ports() -> None:
     test = harness()
     leased = test.leased()
     source, _ = source_for(stored(package(), scope=test.scope))
+    repository = SqlArtifactRepository(test.factory)
+
+    class Publisher:
+        def find_delivery(self, job_id: str) -> DeliveryRecord | None:
+            return test.store.find_delivery(job_id)
+
+        def publish(self, publication: ReportPublication) -> DeliveryRecord:
+            artifacts = tuple(
+                StoredArtifact(
+                    job_id=publication.delivery.record.job_id,
+                    artifact_kind=payload.kind,
+                    owner_id=test.session.owner_id,
+                    session_id=test.session.session_id,
+                    bundle_id=publication.delivery.record.bundle_id,
+                    object_key=f"reports/{publication.delivery.record.bundle_id}/{payload.kind}",
+                    media_type=payload.media_type,
+                    file_name=payload.file_name,
+                    size_bytes=len(payload.content),
+                    sha256_hex=payload.sha256_hex,
+                    created_at=NOW,
+                    expires_at=test.session.content_expires_at,
+                    encryption_algorithm="aws:kms",
+                    kms_key_id="arn:aws:kms:me-central-1:123456789012:key/example",
+                )
+                for payload in publication.artifacts
+            )
+            boundary = repository.boundary(publication, created_at=NOW)
+            return repository.commit(
+                publication,
+                artifacts,
+                boundary=boundary,
+                committed_at=NOW,
+            )
+
     pipeline = ReportPipeline(
         ports=ReportPipelinePorts(
             packages=source,
             adapter=Adapter(),
             renderers=tuple(Renderer(name) for name in REQUIRED_SURFACES),
-            deliveries=test.store,
+            deliveries=Publisher(),
         ),
         monotonic_ms=lambda: 0,
     )

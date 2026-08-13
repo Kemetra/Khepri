@@ -15,7 +15,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.rra.api import create_app
-from khepri.rra.bundle import SurfaceRenderer
+from khepri.rra.artifact_persistence import SqlArtifactRepository
+from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.claim_queue import ClaimingReportQueue, ClaimPolicy
 from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
@@ -23,6 +24,8 @@ from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
 from khepri.rra.intake import IntakeService
 from khepri.rra.job_persistence import SqlReportJobRepository
+from khepri.rra.journey.routes import JourneyServices
+from khepri.rra.journey.state import SqlJourneyReader
 from khepri.rra.package_source import SessionFactPackageSource
 from khepri.rra.packages import FactPackageService
 from khepri.rra.persistence import (
@@ -36,10 +39,12 @@ from khepri.rra.pipeline import ReportPipeline, ReportPipelinePorts
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.pdf import PagePrinter, PdfReportRenderer
+from khepri.rra.report_artifacts import MaterializedRenderer
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import (
     DeliveredBundleAdapter,
     JobReader,
+    ReportArtifactAdapter,
     ReportRequestAdapter,
 )
 from khepri.rra.reports import ReportServices
@@ -76,6 +81,8 @@ class SessionServices:
 class ReportStores:
     jobs: SqlReportJobRepository
     deliveries: SqlDeliveryStore
+    artifacts: SqlArtifactRepository
+    publisher: ReportArtifactPublisher
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +123,14 @@ def build_stack(
     profiles = SqlProfileRepository(factory)
     packages = SqlFactPackageRepository(factory)
     deletions = SqlDeletionRepository(factory)
+    report_deliveries = SqlDeliveryStore(factory, now=clock)
+    artifact_repository = SqlArtifactRepository(factory)
+    artifact_publisher = ReportArtifactPublisher(
+        repository=artifact_repository,
+        deliveries=report_deliveries,
+        objects=objects,
+        now=clock,
+    )
     return RuntimeStack(
         settings=settings,
         clients=resolved_clients,
@@ -143,7 +158,9 @@ def build_stack(
         ),
         reports=ReportStores(
             jobs=SqlReportJobRepository(factory),
-            deliveries=SqlDeliveryStore(factory, now=clock),
+            deliveries=report_deliveries,
+            artifacts=artifact_repository,
+            publisher=artifact_publisher,
         ),
         factory=factory,
         objects=objects,
@@ -175,6 +192,7 @@ def build_report_services(stack: RuntimeStack) -> ReportServices:
             deliveries=stack.reports.deliveries,
             reader=reader,
         ),
+        artifacts=ReportArtifactAdapter(stack.reports.publisher),
     )
 
 
@@ -187,6 +205,7 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
         profiling_service=stack.services.profiling,
         package_service=stack.services.packages,
         report_services=build_report_services(stack),
+        journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
 
 
@@ -197,7 +216,7 @@ def build_pipeline(
     printer: PagePrinter,
 ) -> ReportPipeline:
     workbooks.mkdir(parents=True, exist_ok=True)
-    renderers: tuple[SurfaceRenderer, ...] = (
+    renderers: tuple[MaterializedRenderer, ...] = (
         HtmlReportRenderer(),
         PdfReportRenderer(printer=printer),
         ExcelSurfaceRenderer(directory=workbooks),
@@ -210,7 +229,7 @@ def build_pipeline(
             ),
             adapter=DeterministicNarrator(),
             renderers=renderers,
-            deliveries=stack.reports.deliveries,
+            deliveries=stack.reports.publisher,
         ),
         monotonic_ms=lambda: int(stack.clock().timestamp() * 1000),
     )

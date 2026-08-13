@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
+
 import boto3
 import pytest
+from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
 from khepri.rra.intake import StoragePolicyViolation
-from khepri.rra.storage import S3EncryptedObjectStore
+from khepri.rra.storage import ObjectWrite, S3EncryptedObjectStore
 
 BUCKET = "khepri-beta-content"
 KEY = "owners/own_alpha/sessions/ses_alpha/inputs/upl_alpha"
@@ -143,6 +146,49 @@ def test_put_sends_and_verifies_checksum_kms_context_and_owner_guard() -> None:
     assert stored.kms_key_id == KMS_KEY_ARN
 
 
+def test_put_or_verify_accepts_identical_preexisting_encrypted_content() -> None:
+    store, stubber = store_and_stubber()
+    stubber.add_client_error(
+        "put_object",
+        service_error_code="PreconditionFailed",
+        http_status_code=412,
+        expected_params=put_parameters(),
+    )
+    stubber.add_response(
+        "get_object",
+        {
+            "Body": StreamingBody(io.BytesIO(CONTENT), len(CONTENT)),
+            "ChecksumSHA256": SHA256_BASE64,
+            "ServerSideEncryption": "aws:kms",
+            "SSEKMSKeyId": KMS_KEY_ARN,
+        },
+        {
+            "Bucket": BUCKET,
+            "Key": KEY,
+            "ExpectedBucketOwner": OWNER_ACCOUNT,
+            "ChecksumMode": "ENABLED",
+        },
+    )
+
+    with stubber:
+        result = store.put_or_verify(
+            ObjectWrite(
+                key=KEY,
+                content=CONTENT,
+                media_type="text/csv",
+                sha256_hex=SHA256_HEX,
+                encryption_context={
+                    "session_id": "ses_alpha",
+                    "upload_id": "upl_alpha",
+                    "owner_id": "own_alpha",
+                },
+            )
+        )
+
+    assert result.created is False
+    assert result.stored.sha256_hex == SHA256_HEX
+
+
 @pytest.mark.parametrize(
     "response",
     [
@@ -224,6 +270,35 @@ def test_delete_fails_closed_if_s3_reports_versioned_delete_semantics() -> None:
 
     with stubber, pytest.raises(StoragePolicyViolation):
         store.delete(KEY)
+
+
+def test_prefix_cleanup_deletes_orphaned_objects_and_confirms_empty_scope() -> None:
+    store, stubber = store_and_stubber()
+    prefix = "owners/own_alpha/sessions/ses_alpha/"
+    orphan = f"{prefix}reports/bundle/web_business_en"
+    list_parameters = {
+        "Bucket": BUCKET,
+        "Prefix": prefix,
+        "ExpectedBucketOwner": OWNER_ACCOUNT,
+    }
+    stubber.add_response(
+        "list_objects_v2",
+        {"IsTruncated": False, "Contents": [{"Key": orphan}]},
+        list_parameters,
+    )
+    stubber.add_response(
+        "delete_object",
+        {},
+        {"Bucket": BUCKET, "Key": orphan, "ExpectedBucketOwner": OWNER_ACCOUNT},
+    )
+    stubber.add_response(
+        "list_objects_v2",
+        {"IsTruncated": False, "Contents": []},
+        list_parameters,
+    )
+
+    with stubber:
+        store.delete_prefix(prefix)
 
 
 def test_multipart_cleanup_aborts_and_confirms_every_upload_under_prefix() -> None:

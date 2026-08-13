@@ -30,9 +30,10 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from khepri.rra.artifact_publication import ArtifactDocument, ReportArtifactPublisher
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.job_persistence import ReportJobRow, SqlReportJobRepository
-from khepri.rra.jobs import EnqueueJob, ReportJob
+from khepri.rra.jobs import JOB_SUCCEEDED, EnqueueJob, ReportJob
 from khepri.rra.packages import FactPackageRecord
 from khepri.rra.reports import DeliveredBundle, ReportJobView, ReportPackageMissing
 from khepri.rra.sessions import SessionScope
@@ -150,7 +151,8 @@ class DeliveredBundleAdapter:
         job_id: str,
         now: datetime,
     ) -> DeliveredBundle | None:
-        if self._reader.find_in_session(job_id, session_id) is None:
+        job = self._reader.find_in_session(job_id, session_id)
+        if job is None or job.state != JOB_SUCCEEDED:
             return None
         record = self._deliveries.find_delivery(job_id)
         if record is None:
@@ -158,6 +160,28 @@ class DeliveredBundleAdapter:
         return DeliveredBundle(
             record=record,
             surfaces=self._deliveries.find_surfaces(job_id),
+        )
+
+
+class ReportArtifactAdapter:
+    """Expose the publisher's verified read through the route-facing contract."""
+
+    def __init__(self, publisher: ReportArtifactPublisher) -> None:
+        self._publisher = publisher
+
+    def get_session_artifact(
+        self,
+        *,
+        session_id: str,
+        job_id: str,
+        artifact_kind: str,
+        now: datetime,
+    ) -> ArtifactDocument | None:
+        return self._publisher.read(
+            session_id=session_id,
+            job_id=job_id,
+            artifact_kind=artifact_kind,
+            now=now,
         )
 
 
@@ -191,5 +215,6 @@ __all__ = [
     "JobReader",
     "DeliveredBundleAdapter",
     "ReportRequestAdapter",
+    "ReportArtifactAdapter",
     "SessionPackages",
 ]

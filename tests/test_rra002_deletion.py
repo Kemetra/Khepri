@@ -11,6 +11,7 @@ from khepri.rra.deletion import (
     DeletionRepository,
     DeletionRetryRequired,
     DeletionService,
+    DeletionTarget,
 )
 from khepri.rra.intake import CSV_MEDIA_TYPE, UploadMetadata
 from khepri.rra.sessions import (
@@ -88,24 +89,43 @@ class MemoryDeletionRepository(DeletionRepository):
             )
         return self.job
 
-    def get_target(self, job: DeletionJob) -> UploadMetadata | None:
-        return self.target
+    def get_targets(self, job: DeletionJob) -> tuple[DeletionTarget, ...]:
+        if self.target is None:
+            return ()
+        return (
+            DeletionTarget(
+                target_kind="input",
+                target_id=self.target.upload_id,
+                owner_id=self.target.owner_id,
+                session_id=self.target.session_id,
+                object_key=self.target.object_key,
+                content_digest=self.target.sha256_hex,
+            ),
+        )
+
+    def defer_for_publication(
+        self,
+        job: DeletionJob,
+        *,
+        now: datetime,
+        next_retry_at: datetime,
+    ) -> bool:
+        return False
 
     def complete(
         self,
         *,
         job: DeletionJob,
-        evidence: DeletionEvidence | None,
+        evidence: tuple[DeletionEvidence, ...],
         completed_at: datetime,
     ) -> DeletionJob:
-        if evidence is not None:
-            self.evidence.append(evidence)
+        self.evidence.extend(evidence)
         self.target = None
         self.job = replace(
             job,
             state="complete",
-            attempt_count=job.attempt_count + (1 if evidence is not None else 0),
-            last_attempt_at=completed_at if evidence is not None else job.last_attempt_at,
+            attempt_count=job.attempt_count + (1 if evidence else 0),
+            last_attempt_at=completed_at if evidence else job.last_attempt_at,
             next_retry_at=None,
             completed_at=completed_at,
         )
@@ -115,33 +135,41 @@ class MemoryDeletionRepository(DeletionRepository):
         self,
         *,
         job: DeletionJob,
-        evidence: DeletionEvidence,
+        evidence: tuple[DeletionEvidence, ...],
         next_retry_at: datetime,
     ) -> DeletionJob:
-        self.evidence.append(evidence)
+        self.evidence.extend(evidence)
         self.job = replace(
             job,
             state="retryable",
             attempt_count=job.attempt_count + 1,
-            last_attempt_at=evidence.attempted_at,
+            last_attempt_at=evidence[0].attempted_at,
             next_retry_at=next_retry_at,
         )
         return self.job
 
 
 class MemoryDeletionObjectStore:
-    def __init__(self, *, failures: int = 0) -> None:
+    def __init__(self, *, failures: int = 0, fail_keys: set[str] | None = None) -> None:
         self.failures = failures
+        self.fail_keys = fail_keys or set()
         self.abort_prefixes: list[str] = []
+        self.deleted_prefixes: list[str] = []
         self.deleted_keys: list[str] = []
 
     def abort_multipart_uploads(self, prefix: str) -> None:
         self.abort_prefixes.append(prefix)
 
+    def delete_prefix(self, prefix: str) -> None:
+        self.deleted_prefixes.append(prefix)
+
     def delete(self, key: str) -> None:
         self.deleted_keys.append(key)
         if self.failures:
             self.failures -= 1
+            raise RuntimeError("customer filename must never enter evidence")
+        if key in self.fail_keys:
+            self.fail_keys.discard(key)
             raise RuntimeError("customer filename must never enter evidence")
 
 
@@ -150,7 +178,7 @@ class ConcurrentCompletionRepository(MemoryDeletionRepository):
         self,
         *,
         job: DeletionJob,
-        evidence: DeletionEvidence,
+        evidence: tuple[DeletionEvidence, ...],
         next_retry_at: datetime,
     ) -> DeletionJob:
         self.target = None
@@ -158,11 +186,23 @@ class ConcurrentCompletionRepository(MemoryDeletionRepository):
             job,
             state="complete",
             attempt_count=1,
-            last_attempt_at=evidence.attempted_at,
+            last_attempt_at=evidence[0].attempted_at,
             next_retry_at=None,
-            completed_at=evidence.attempted_at,
+            completed_at=evidence[0].attempted_at,
         )
         return self.job
+
+
+class PublishingRepository(MemoryDeletionRepository):
+    def defer_for_publication(
+        self,
+        job: DeletionJob,
+        *,
+        now: datetime,
+        next_retry_at: datetime,
+    ) -> bool:
+        self.job = replace(job, state="retryable", next_retry_at=next_retry_at)
+        return True
 
 
 def service(
@@ -171,7 +211,7 @@ def service(
     *,
     beta_session: BetaSession | None = None,
 ) -> DeletionService:
-    evidence_ids = iter(("dev_alpha", "dev_beta", "dev_gamma"))
+    evidence_ids = iter(f"dev_{index}" for index in range(100))
     return DeletionService(
         sessions=MemorySessionReader(beta_session or session()),
         deletions=repository,
@@ -195,12 +235,13 @@ def test_successful_deletion_records_only_content_free_evidence() -> None:
     assert result.attempt_count == 1
     assert repository.target is None
     assert objects.abort_prefixes == ["owners/own_alpha/sessions/ses_alpha/"]
+    assert objects.deleted_prefixes == ["owners/own_alpha/sessions/ses_alpha/"]
     assert objects.deleted_keys == [
         "owners/own_alpha/sessions/ses_alpha/inputs/upl_alpha"
     ]
     assert repository.evidence == [
         DeletionEvidence(
-            evidence_id="dev_alpha",
+            evidence_id="dev_0",
             deletion_id="del_alpha",
             target_kind="input",
             target_id="upl_alpha",
@@ -212,6 +253,26 @@ def test_successful_deletion_records_only_content_free_evidence() -> None:
             error_code=None,
         )
     ]
+
+
+def test_in_flight_publication_defers_deletion_before_storage_sweep() -> None:
+    repository = PublishingRepository(upload())
+    objects = MemoryDeletionObjectStore()
+
+    with pytest.raises(DeletionRetryRequired):
+        service(repository, objects).delete_session_content(
+            session_id="ses_alpha",
+            reason="immediate",
+            now=NOW,
+        )
+
+    assert repository.job is not None
+    assert repository.job.state == "retryable"
+    assert repository.job.next_retry_at == NOW + timedelta(minutes=5)
+    assert objects.abort_prefixes == []
+    assert objects.deleted_prefixes == []
+    assert objects.deleted_keys == []
+    assert repository.evidence == []
 
 
 def test_completed_deletion_is_idempotent_without_repeating_storage_calls() -> None:
@@ -312,3 +373,4 @@ def test_session_without_content_completes_without_fabricated_evidence() -> None
     assert result.attempt_count == 0
     assert repository.evidence == []
     assert objects.deleted_keys == []
+    assert objects.deleted_prefixes == ["owners/own_alpha/sessions/ses_alpha/"]
