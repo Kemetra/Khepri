@@ -235,6 +235,14 @@ class SqlAccountStore:
         `email.is_not(None)` is what makes the sweep idempotent: a purged row no longer matches,
         so repeated passes do no repeated work and the count a pass reports is the work it
         actually did.
+
+        `disabled_at.is_not(None)` is **redundant and deliberately kept**. SQL's three-valued
+        logic already excludes an enabled row, because `NULL < horizon` evaluates to NULL rather
+        than TRUE. It is stated anyway because "only disabled accounts" is the rule this query
+        implements, and leaving it to an emergent property of NULL comparison would make the
+        next reader derive it. Mutation testing cannot kill this clause — removing it selects
+        exactly the same rows, verified — so its absence from the mutation score is expected and
+        is not a missing test.
         """
         with self._factory() as database:
             rows = database.scalars(

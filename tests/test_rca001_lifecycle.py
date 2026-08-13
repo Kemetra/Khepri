@@ -304,6 +304,39 @@ def test_the_guard_checks_every_organization_not_only_the_first() -> None:
         lifecycle.disable_account(owner.account_id, now=NOW)
 
 
+def test_the_guard_does_not_abandon_the_scan_at_a_non_owner_membership() -> None:
+    """A plain membership encountered first must not stop the scan.
+
+    The distinction from the test above is the *skip* branch, not the loop length. There every
+    membership is owner-role, so a guard that returned on the non-owner branch would never
+    execute that line and the test would pass while the bug was live — confirmed by mutation
+    (`continue` to `return` stayed green). Here the account is a plain member of one
+    organization and the sole owner of another, which is the realistic shape of this bug.
+    """
+    accounts, organizations, lifecycle = _memory()
+    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    other = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    # A plain membership in someone else's organization...
+    theirs = OrganizationService(organizations).create_organization(
+        "Theirs", other.account_id, now=NOW
+    )
+    organizations.memberships[(theirs.organization_id, owner.account_id)] = Membership.create(
+        theirs.organization_id,
+        owner.account_id,
+        "member",
+        changed_by=other.account_id,
+        now=NOW,
+    )
+    # ...and sole ownership of their own.
+    OrganizationService(organizations).create_organization("Solo", owner.account_id, now=NOW)
+
+    scanned = [m.role for m in organizations.memberships_for_account(owner.account_id)]
+    assert "member" in scanned and OWNER_ROLE in scanned, "both membership kinds must be present"
+
+    with pytest.raises(FinalOwnerProtected):
+        lifecycle.disable_account(owner.account_id, now=NOW)
+
+
 # --- re-enablement ----------------------------------------------------------------------
 
 
@@ -450,6 +483,119 @@ def test_a_purged_account_cannot_be_re_enabled_or_disabled() -> None:
         lifecycle.enable_account(account.account_id)
     with pytest.raises(AccountOperationFailed):
         lifecycle.disable_account(account.account_id, now=NOW)
+
+
+# --- the same horizon rules, against real SQL --------------------------------------------
+#
+# Every sweeper test above runs against MemoryAccountStore, whose `accounts_disabled_before` is
+# a second, independent implementation of the selection rule. Mutating the SQL predicate left
+# all of them green — verified — so the store's own filtering was entirely unverified. These
+# drive `SqlAccountStore` directly. See the warning in `tests/rca_fakes.py`, which this slice
+# wrote and then initially ignored.
+
+
+def test_the_store_selects_only_disabled_unpurged_accounts_past_the_horizon(
+    factory: sessionmaker,
+) -> None:
+    accounts = SqlAccountStore(factory)
+    service = AccountService(accounts)
+    lifecycle = LifecycleService(accounts, SqlOrganizationStore(factory))
+    # The cutoff a sweep at NOW + RETENTION_DAYS would compute: disabled strictly before this
+    # instant has elapsed its horizon, disabled after it has not.
+    horizon = NOW
+
+    enabled = service.create_account("enabled@example.test", CREDENTIAL)
+    recent = service.create_account("recent@example.test", CREDENTIAL)
+    elapsed = service.create_account("elapsed@example.test", CREDENTIAL)
+    already = service.create_account("already@example.test", CREDENTIAL)
+
+    lifecycle.disable_account(recent.account_id, now=NOW + timedelta(days=1))
+    lifecycle.disable_account(elapsed.account_id, now=NOW - timedelta(days=1))
+    lifecycle.disable_account(already.account_id, now=NOW - timedelta(days=1))
+    purged = accounts.get_account(already.account_id)
+    assert purged is not None
+    accounts.save_account(purged.purged())
+
+    selected = {
+        account.account_id for account in accounts.accounts_disabled_before(horizon)
+    }
+
+    assert selected == {elapsed.account_id}, (
+        "an enabled account has no horizon; a recently disabled one has not reached it; "
+        "a tombstone has already been purged and must not be selected again"
+    )
+    assert enabled.account_id not in selected
+
+
+def test_the_sweeper_purges_through_real_sql(factory: sessionmaker) -> None:
+    """End to end against the database, so the row state is what is asserted."""
+    accounts = SqlAccountStore(factory)
+    account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    LifecycleService(accounts, SqlOrganizationStore(factory)).disable_account(
+        account.account_id, now=NOW
+    )
+
+    report = AccountRetentionSweeper(accounts).sweep(
+        now=NOW + timedelta(days=RETENTION_DAYS + 1)
+    )
+
+    assert report.purged_accounts == 1
+    with factory() as database:
+        row = database.get(AccountRow, account.account_id)
+        assert row is not None
+        assert row.email is None
+        assert row.disabled_at is not None
+        assert row.credential_digest is None
+
+
+def test_sweeping_twice_through_real_sql_purges_once(factory: sessionmaker) -> None:
+    """The idempotence rule, against the store that actually implements it.
+
+    The fake-backed version of this test cannot see the SQL predicate: swapping
+    `email IS NOT NULL` for a clause every row satisfies leaves it green while the store
+    re-selects tombstones on every pass, re-writing rows and reporting work it did not do.
+    """
+    accounts = SqlAccountStore(factory)
+    account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    LifecycleService(accounts, SqlOrganizationStore(factory)).disable_account(
+        account.account_id, now=NOW
+    )
+    sweeper = AccountRetentionSweeper(accounts)
+    later = NOW + timedelta(days=RETENTION_DAYS + 1)
+
+    assert sweeper.sweep(now=later).purged_accounts == 1
+    assert sweeper.sweep(now=later).purged_accounts == 0
+    assert accounts.accounts_disabled_before(later) == []
+
+
+def test_saving_an_account_that_does_not_exist_reports_failure(factory: sessionmaker) -> None:
+    """A no-op write must not look like a successful one.
+
+    `save_account` returning True for a missing row would make `disable_account` report success
+    while nothing was written — the account would stay enabled and the caller would believe it
+    had been disabled.
+    """
+    accounts = SqlAccountStore(factory)
+    ghost = AccountService(MemoryAccountStore()).create_account(EMAIL, CREDENTIAL)
+
+    assert accounts.save_account(ghost) is False
+    assert accounts.get_account(ghost.account_id) is None
+
+
+def test_disabling_an_account_the_store_lost_fails_closed() -> None:
+    """The service must convert a failed write into a refusal, not return a phantom record."""
+
+    class LosesWrites(MemoryAccountStore):
+        def save_account(self, account):  # type: ignore[no-untyped-def]
+            return False
+
+    accounts = LosesWrites()
+    account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+
+    with pytest.raises(AccountOperationFailed):
+        LifecycleService(accounts, MemoryOrganizationStore()).disable_account(
+            account.account_id, now=NOW
+        )
 
 
 # --- FR-008 clause 2: the chokepoint the session slice must use -------------------------
