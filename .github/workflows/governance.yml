@@ -42,10 +42,40 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
 
+  # A PostgreSQL service is attached because some contracts cannot be proved
+  # without one. The RCA suite runs in-memory SQLite through a StaticPool, so
+  # every session shares a single connection and two concurrent transactions
+  # cannot exist; SQLite also has no SELECT ... FOR UPDATE, and SQLAlchemy
+  # emits none for that dialect. A concurrency test written against that
+  # fixture would pass while proving nothing.
+  #
+  # KHEPRI_TEST_DATABASE_URL is the only way a test reaches this service. A
+  # test that needs it must skip when the variable is unset, so the suite
+  # still runs locally on SQLite alone -- but see the guard job below: a skip
+  # in CI is treated as a failure, because a skipped concurrency test reports
+  # green and reads as a passing one.
   pytest:
     name: pytest
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        # Pinned by digest, matching how every action in this file is pinned.
+        # postgres:17-alpine as of 2026-08-13.
+        image: postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_USER: khepri
+          POSTGRES_PASSWORD: khepri
+          POSTGRES_DB: khepri_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U khepri -d khepri_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      KHEPRI_TEST_DATABASE_URL: postgresql+psycopg://khepri:khepri@localhost:5432/khepri_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
@@ -55,6 +85,14 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - run: uv run pytest
+      # The point of attaching the service is that concurrency contracts get
+      # proved rather than skipped, and a skipped test reports green. This
+      # step fails if any test marked `concurrency` was skipped, and also
+      # fails if the marker matches nothing at all -- because "no concurrency
+      # tests exist" and "the concurrency tests were silently disabled" look
+      # identical from the outside, and only the second is a regression.
+      - name: prove the concurrency contracts actually ran
+        run: uv run python .github/scripts/require_concurrency_tests.py
 
   # RRA-007 requires CI to fail when an approved performance tolerance is
   # exceeded. This job is that gate. It is NOT evidence that the objective is
