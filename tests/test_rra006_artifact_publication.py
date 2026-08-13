@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from typing import cast
 
 import pytest
 from sqlalchemy import select
@@ -19,6 +20,14 @@ from tests.test_rra006_delivery_persistence import NOW, harness
 
 
 @dataclass
+class MemoryPut:
+    key: str
+    content: bytes
+    media_type: str
+    sha256_hex: str
+
+
+@dataclass
 class MemoryObjects:
     fail_on: int | None = None
     values: dict[str, tuple[bytes, str, str]] = field(default_factory=dict)
@@ -26,33 +35,25 @@ class MemoryObjects:
     deleted: list[str] = field(default_factory=list)
     aborted: list[str] = field(default_factory=list)
 
-    def put_or_verify(
-        self,
-        *,
-        key: str,
-        content: bytes,
-        media_type: str,
-        sha256_hex: str,
-        encryption_context: dict[str, str],
-    ) -> PutResult:
-        del encryption_context
-        self.put_calls.append(key)
+    def put_or_verify(self, **values: object) -> PutResult:
+        request = _memory_put(values)
+        self.put_calls.append(request.key)
         if self.fail_on is not None and len(self.put_calls) == self.fail_on:
             raise StoragePolicyViolation("provider detail must not escape")
-        existing = self.values.get(key)
+        existing = self.values.get(request.key)
         if existing is not None:
-            if existing != (content, media_type, sha256_hex):
+            if existing != _stored_value(request):
                 raise StoragePolicyViolation("conflicting object")
             created = False
         else:
-            self.values[key] = (content, media_type, sha256_hex)
+            self.values[request.key] = _stored_value(request)
             created = True
         return PutResult(
             stored=StoredObject(
-                key=key,
-                size_bytes=len(content),
-                sha256_hex=sha256_hex,
-                media_type=media_type,
+                key=request.key,
+                size_bytes=len(request.content),
+                sha256_hex=request.sha256_hex,
+                media_type=request.media_type,
                 encryption_algorithm="aws:kms",
                 kms_key_id="arn:aws:kms:me-central-1:123456789012:key/example",
             ),
@@ -68,6 +69,19 @@ class MemoryObjects:
 
     def abort_multipart_uploads(self, prefix: str) -> None:
         self.aborted.append(prefix)
+
+
+def _memory_put(values: dict[str, object]) -> MemoryPut:
+    return MemoryPut(
+        key=cast(str, values["key"]),
+        content=cast(bytes, values["content"]),
+        media_type=cast(str, values["media_type"]),
+        sha256_hex=cast(str, values["sha256_hex"]),
+    )
+
+
+def _stored_value(request: MemoryPut) -> tuple[bytes, str, str]:
+    return request.content, request.media_type, request.sha256_hex
 
 
 def _publisher(objects: MemoryObjects):

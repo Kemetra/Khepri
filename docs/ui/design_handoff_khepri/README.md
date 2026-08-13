@@ -33,8 +33,8 @@ most appropriate for the project and implement the designs there.
 
 Concretely:
 - Keep the tokens, layout, spacing, typography and copy exactly.
-- Replace the prototype's runtime (a small template + logic-class harness in `support.js`) with the
-  codebase's own component model. Do not port `support.js`.
+- Replace the prototype's runtime (a small template + logic-class harness in
+  `support.runtime.txt`) with the codebase's own component model. Do not port it.
 - Replace the `.dc.html` screen-switching (`sc-if` blocks driven by a `screen` state string) with real
   routes or a real wizard state machine.
 
@@ -718,7 +718,7 @@ than importing this stylesheet — but keep the ramp relationships.
 | `design-files/_ds/nocturne-…/styles.css` | Nocturne token sheet + component layer |
 | `design-files/_ds/nocturne-…/readme.md` | Nocturne's own usage guide |
 | `design-files/_ds/nocturne-…/_ds_bundle.js` | Nocturne component bundle (needed only to open the prototypes) |
-| `design-files/support.js` | Prototype runtime. **Do not port.** Present only so the HTML opens in a browser. |
+| `design-files/support.runtime.txt` | Generated prototype runtime stored as reference text. **Do not port.** |
 | `screenshots/` | Rendered PNGs of every screen at design width (see below) |
 
 ### Screenshots
@@ -743,7 +743,7 @@ Captured at the design width, 1:1, no scaling. Use them for visual diffing while
 Direction A (document) is the recommended client-journey direction; B is kept for reference.
 
 To view a prototype: open the `.dc.html` file directly in a browser (it needs its sibling
-`support.js` and `_ds/` folder in place).
+`support.runtime.txt` and `_ds/` folder in place).
 
 ## Source repository
 

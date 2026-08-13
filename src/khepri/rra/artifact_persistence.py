@@ -28,6 +28,7 @@ from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import (
     ARTIFACT_METADATA,
     REQUIRED_ARTIFACT_KINDS,
+    ArtifactPayload,
 )
 
 
@@ -240,39 +241,62 @@ def _validate_publication(
     publication: ReportPublication,
     artifacts: tuple[StoredArtifact, ...],
 ) -> None:
-    if tuple(item.artifact_kind for item in artifacts) != REQUIRED_ARTIFACT_KINDS:
-        raise ArtifactConflict("Publication metadata is not the exact artifact set.")
+    _require_exact_kinds(artifacts, conflict=ArtifactConflict)
     record = publication.delivery.record
     for payload, stored in zip(publication.artifacts, artifacts, strict=True):
-        expected = (
-            record.job_id,
-            payload.kind,
-            record.session_id,
-            record.bundle_id,
-            payload.media_type,
-            payload.file_name,
-            len(payload.content),
-            payload.sha256_hex,
-        )
-        actual = (
-            stored.job_id,
-            stored.artifact_kind,
-            stored.session_id,
-            stored.bundle_id,
-            stored.media_type,
-            stored.file_name,
-            stored.size_bytes,
-            stored.sha256_hex,
-        )
-        if actual != expected:
-            raise ArtifactConflict("Artifact metadata does not prove its payload.")
-        if (
-            not stored.object_key
-            or stored.encryption_algorithm != "aws:kms"
-            or not stored.kms_key_id
-            or stored.expires_at <= stored.created_at
-        ):
-            raise ArtifactConflict("Artifact storage metadata is invalid.")
+        _validate_published_artifact(record, payload, stored)
+
+
+def _require_exact_kinds(
+    artifacts: tuple[StoredArtifact, ...],
+    *,
+    conflict: type[ArtifactConflict] | type[ArtifactCorrupted],
+) -> None:
+    actual = tuple(item.artifact_kind for item in artifacts)
+    if actual != REQUIRED_ARTIFACT_KINDS:
+        raise conflict("Report metadata is not the exact artifact set.")
+
+
+def _validate_published_artifact(
+    record: DeliveryRecord,
+    payload: ArtifactPayload,
+    stored: StoredArtifact,
+) -> None:
+    expected = (
+        record.job_id,
+        payload.kind,
+        record.session_id,
+        record.bundle_id,
+        payload.media_type,
+        payload.file_name,
+        len(payload.content),
+        payload.sha256_hex,
+    )
+    actual = (
+        stored.job_id,
+        stored.artifact_kind,
+        stored.session_id,
+        stored.bundle_id,
+        stored.media_type,
+        stored.file_name,
+        stored.size_bytes,
+        stored.sha256_hex,
+    )
+    if actual != expected:
+        raise ArtifactConflict("Artifact metadata does not prove its payload.")
+    _validate_storage_metadata(stored)
+
+
+def _validate_storage_metadata(stored: StoredArtifact) -> None:
+    _require_storage_value(bool(stored.object_key))
+    _require_storage_value(stored.encryption_algorithm == "aws:kms")
+    _require_storage_value(bool(stored.kms_key_id))
+    _require_storage_value(stored.expires_at > stored.created_at)
+
+
+def _require_storage_value(valid: bool) -> None:
+    if not valid:
+        raise ArtifactConflict("Artifact storage metadata is invalid.")
 
 
 def _validate_scope(
@@ -282,14 +306,18 @@ def _validate_scope(
     session_id: str,
     expires_at: datetime,
 ) -> None:
-    if any(
-        item.owner_id != owner_id
-        or item.session_id != session_id
-        or _utc(item.expires_at) != expires_at
-        or _utc(item.created_at) != _utc(artifacts[0].created_at)
-        for item in artifacts
-    ):
+    expected = (owner_id, session_id, expires_at, _utc(artifacts[0].created_at))
+    if any(_scope(item) != expected for item in artifacts):
         raise ArtifactConflict("Artifact metadata crosses its session boundary.")
+
+
+def _scope(item: StoredArtifact) -> tuple[str, str, datetime | None, datetime | None]:
+    return (
+        item.owner_id,
+        item.session_id,
+        _utc(item.expires_at),
+        _utc(item.created_at),
+    )
 
 
 def _available(
@@ -299,15 +327,19 @@ def _available(
     session_id: str,
     now: datetime,
 ) -> bool:
-    if session is None or delivery is None or delivery.session_id != session_id:
+    if session is None or delivery is None:
+        return False
+    if delivery.session_id != session_id:
         return False
     expires_at = _utc(session.content_expires_at)
-    return bool(
-        expires_at is not None
-        and expires_at > now
-        and session.deletion_requested_at is None
-        and session.content_deleted_at is None
-    )
+    if expires_at is None or expires_at <= now:
+        return False
+    return _content_is_live(session)
+
+
+def _content_is_live(session: BetaSessionRow) -> bool:
+    state = (session.deletion_requested_at, session.content_deleted_at)
+    return state == (None, None)
 
 
 def _require_live_session(
@@ -324,11 +356,9 @@ def _require_live_session(
         )
         .with_for_update()
     )
-    if (
-        session is None
-        or session.deletion_requested_at is not None
-        or session.content_deleted_at is not None
-    ):
+    if session is None:
+        raise ArtifactConflict("Session content is unavailable.")
+    if not _content_is_live(session):
         raise ArtifactConflict("Session content is unavailable.")
 
 
@@ -337,17 +367,30 @@ def _validate_stored_set(
     *,
     delivery: ReportDeliveryRow,
 ) -> None:
-    if tuple(item.artifact_kind for item in artifacts) != REQUIRED_ARTIFACT_KINDS:
-        raise ArtifactCorrupted("Stored report does not contain every artifact.")
-    if any(
-        item.job_id != delivery.job_id
-        or item.session_id != delivery.session_id
-        or item.bundle_id != delivery.bundle_id
-        or item.expires_at != _utc(delivery.expires_at)
-        or ARTIFACT_METADATA[item.artifact_kind]
-        != (item.media_type, item.file_name)
-        for item in artifacts
-    ):
+    _require_exact_kinds(artifacts, conflict=ArtifactCorrupted)
+    for artifact in artifacts:
+        _validate_stored_artifact(artifact, delivery)
+
+
+def _validate_stored_artifact(
+    artifact: StoredArtifact,
+    delivery: ReportDeliveryRow,
+) -> None:
+    expected = (
+        delivery.job_id,
+        delivery.session_id,
+        delivery.bundle_id,
+        _utc(delivery.expires_at),
+        ARTIFACT_METADATA[artifact.artifact_kind],
+    )
+    actual = (
+        artifact.job_id,
+        artifact.session_id,
+        artifact.bundle_id,
+        artifact.expires_at,
+        (artifact.media_type, artifact.file_name),
+    )
+    if actual != expected:
         raise ArtifactCorrupted("Stored report artifact metadata is mixed.")
 
 

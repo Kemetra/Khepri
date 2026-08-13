@@ -13,7 +13,42 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     _create_artifact_table()
-    _widen_deletion_evidence()
+    _replace_deletion_evidence_constraints(
+        current_unique="uq_evidence_deletion_attempt",
+        replacement_unique="uq_evidence_deletion_attempt_target",
+        target_check="target_kind IN ('input', 'report_artifact')",
+        unique_columns=(
+            "deletion_id",
+            "attempt_number",
+            "target_kind",
+            "target_id",
+        ),
+    )
+
+
+def downgrade() -> None:
+    _replace_deletion_evidence_constraints(
+        current_unique="uq_evidence_deletion_attempt_target",
+        replacement_unique="uq_evidence_deletion_attempt",
+        target_check="target_kind = 'input'",
+        unique_columns=("deletion_id", "attempt_number"),
+    )
+    _drop_artifact_table()
+
+
+def _replace_deletion_evidence_constraints(
+    *,
+    current_unique: str,
+    replacement_unique: str,
+    target_check: str,
+    unique_columns: tuple[str, ...],
+) -> None:
+    table = "rra_deletion_evidence"
+    check = "ck_evidence_target_kind"
+    op.drop_constraint(current_unique, table, type_="unique")
+    op.drop_constraint(check, table, type_="check")
+    op.create_check_constraint(check, table, target_check)
+    op.create_unique_constraint(replacement_unique, table, list(unique_columns))
 
 
 def _create_artifact_table() -> None:
@@ -24,51 +59,6 @@ def _create_artifact_table() -> None:
     )
     op.create_index(
         "ix_report_artifact_expiry", "rra_report_artifacts", ["expires_at"]
-    )
-
-
-def _widen_deletion_evidence() -> None:
-    op.drop_constraint(
-        "ck_evidence_target_kind", "rra_deletion_evidence", type_="check"
-    )
-    op.drop_constraint(
-        "uq_evidence_deletion_attempt", "rra_deletion_evidence", type_="unique"
-    )
-    op.create_check_constraint(
-        "ck_evidence_target_kind",
-        "rra_deletion_evidence",
-        "target_kind IN ('input', 'report_artifact')",
-    )
-    op.create_unique_constraint(
-        "uq_evidence_deletion_attempt_target",
-        "rra_deletion_evidence",
-        ["deletion_id", "attempt_number", "target_kind", "target_id"],
-    )
-
-
-def downgrade() -> None:
-    _narrow_deletion_evidence()
-    _drop_artifact_table()
-
-
-def _narrow_deletion_evidence() -> None:
-    op.drop_constraint(
-        "uq_evidence_deletion_attempt_target",
-        "rra_deletion_evidence",
-        type_="unique",
-    )
-    op.drop_constraint(
-        "ck_evidence_target_kind", "rra_deletion_evidence", type_="check"
-    )
-    op.create_check_constraint(
-        "ck_evidence_target_kind",
-        "rra_deletion_evidence",
-        "target_kind = 'input'",
-    )
-    op.create_unique_constraint(
-        "uq_evidence_deletion_attempt",
-        "rra_deletion_evidence",
-        ["deletion_id", "attempt_number"],
     )
 
 

@@ -10,7 +10,6 @@ from typing import Protocol
 
 from khepri.rra.artifact_persistence import (
     ArtifactBoundary,
-    ArtifactConflict,
     ArtifactCorrupted,
     StoredArtifact,
 )
@@ -29,6 +28,19 @@ class ArtifactDocument:
     content: bytes
     media_type: str
     file_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class PublicationContext:
+    boundary: ArtifactBoundary
+    record: DeliveryRecord
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedObject:
+    artifact: StoredArtifact
+    created: bool
 
 
 class ArtifactObjectStore(Protocol):
@@ -101,63 +113,67 @@ class ReportArtifactPublisher:
             raise ArtifactUnavailable("Report artifacts are unavailable.") from error
 
     def publish(self, publication: ReportPublication) -> DeliveryRecord:
-        existing = self.find_delivery(publication.delivery.record.job_id)
+        existing = self._existing(publication)
         if existing is not None:
-            if existing.bundle_id != publication.delivery.record.bundle_id:
-                raise ArtifactUnavailable("Report artifacts are unavailable.")
             return existing
+        return self._publish_new(publication)
 
+    def _existing(self, publication: ReportPublication) -> DeliveryRecord | None:
+        existing = self.find_delivery(publication.delivery.record.job_id)
+        if existing is None:
+            return None
+        if existing.bundle_id != publication.delivery.record.bundle_id:
+            raise ArtifactUnavailable("Report artifacts are unavailable.")
+        return existing
+
+    def _publish_new(self, publication: ReportPublication) -> DeliveryRecord:
         created_at = self._now()
         created_keys: list[str] = []
         try:
             boundary = self._repository.boundary(publication, created_at=created_at)
-            stored: list[StoredArtifact] = []
-            for payload in publication.artifacts:
-                key = (
-                    f"owners/{boundary.owner_id}/sessions/{boundary.session_id}/reports/"
-                    f"{publication.delivery.record.bundle_id}/{payload.kind}"
-                )
-                result = self._objects.put_or_verify(
-                    key=key,
-                    content=payload.content,
-                    media_type=payload.media_type,
-                    sha256_hex=payload.sha256_hex,
-                    encryption_context={
-                        "owner_id": boundary.owner_id,
-                        "session_id": boundary.session_id,
-                        "job_id": publication.delivery.record.job_id,
-                        "bundle_id": publication.delivery.record.bundle_id,
-                        "artifact_kind": payload.kind,
-                    },
-                )
-                _require_proven(result, key=key, publication=payload)
-                if result.created:
-                    created_keys.append(key)
-                stored.append(
-                    StoredArtifact(
-                        job_id=publication.delivery.record.job_id,
-                        artifact_kind=payload.kind,
-                        owner_id=boundary.owner_id,
-                        session_id=boundary.session_id,
-                        bundle_id=publication.delivery.record.bundle_id,
-                        object_key=key,
-                        media_type=payload.media_type,
-                        file_name=payload.file_name,
-                        size_bytes=len(payload.content),
-                        sha256_hex=payload.sha256_hex,
-                        created_at=created_at,
-                        expires_at=boundary.expires_at,
-                        encryption_algorithm=result.stored.encryption_algorithm,
-                        kms_key_id=result.stored.kms_key_id,
-                    )
-                )
-            return self._repository.commit(publication, tuple(stored))
-        except (ArtifactConflict, ArtifactCorrupted, StoragePolicyViolation) as error:
-            self._rollback(created_keys)
-            raise ArtifactUnavailable("Report artifacts are unavailable.") from error
+            context = PublicationContext(
+                boundary=boundary,
+                record=publication.delivery.record,
+                created_at=created_at,
+            )
+            artifacts = self._store_all(context, publication.artifacts, created_keys)
+            return self._repository.commit(publication, artifacts)
         except Exception as error:
             self._rollback(created_keys)
             raise ArtifactUnavailable("Report artifacts are unavailable.") from error
+
+    def _store_all(
+        self,
+        context: PublicationContext,
+        payloads: tuple[ArtifactPayload, ...],
+        created_keys: list[str],
+    ) -> tuple[StoredArtifact, ...]:
+        stored: list[StoredArtifact] = []
+        for payload in payloads:
+            published = self._store_one(context, payload)
+            stored.append(published.artifact)
+            if published.created:
+                created_keys.append(published.artifact.object_key)
+        return tuple(stored)
+
+    def _store_one(
+        self,
+        context: PublicationContext,
+        payload: ArtifactPayload,
+    ) -> PublishedObject:
+        key = _object_key(context, payload.kind)
+        result = self._objects.put_or_verify(
+            key=key,
+            content=payload.content,
+            media_type=payload.media_type,
+            sha256_hex=payload.sha256_hex,
+            encryption_context=_encryption_context(context, payload.kind),
+        )
+        _require_proven(result, key=key, publication=payload)
+        return PublishedObject(
+            artifact=_stored_artifact(context, payload, key, result),
+            created=result.created,
+        )
 
     def read(
         self,
@@ -176,23 +192,20 @@ class ReportArtifactPublisher:
             )
             if metadata is None:
                 return None
-            content = self._objects.get(metadata.object_key)
-            if (
-                len(content) != metadata.size_bytes
-                or hashlib.sha256(content).hexdigest() != metadata.sha256_hex
-                or ARTIFACT_METADATA.get(metadata.artifact_kind)
-                != (metadata.media_type, metadata.file_name)
-            ):
-                raise ArtifactUnavailable("Report artifacts are unavailable.")
-            return ArtifactDocument(
-                content=content,
-                media_type=metadata.media_type,
-                file_name=metadata.file_name,
-            )
+            return self._read_document(metadata)
         except ArtifactUnavailable:
             raise
         except Exception as error:
             raise ArtifactUnavailable("Report artifacts are unavailable.") from error
+
+    def _read_document(self, metadata: StoredArtifact) -> ArtifactDocument:
+        content = self._objects.get(metadata.object_key)
+        _require_verified_content(metadata, content)
+        return ArtifactDocument(
+            content=content,
+            media_type=metadata.media_type,
+            file_name=metadata.file_name,
+        )
 
     def _rollback(self, keys: list[str]) -> None:
         try:
@@ -200,6 +213,66 @@ class ReportArtifactPublisher:
                 self._objects.delete(key)
         except Exception as error:
             raise ArtifactUnavailable("Report artifacts are unavailable.") from error
+
+
+def _object_key(context: PublicationContext, artifact_kind: str) -> str:
+    boundary = context.boundary
+    return (
+        f"owners/{boundary.owner_id}/sessions/{boundary.session_id}/reports/"
+        f"{context.record.bundle_id}/{artifact_kind}"
+    )
+
+
+def _encryption_context(
+    context: PublicationContext,
+    artifact_kind: str,
+) -> dict[str, str]:
+    return {
+        "owner_id": context.boundary.owner_id,
+        "session_id": context.boundary.session_id,
+        "job_id": context.record.job_id,
+        "bundle_id": context.record.bundle_id,
+        "artifact_kind": artifact_kind,
+    }
+
+
+def _stored_artifact(
+    context: PublicationContext,
+    payload: ArtifactPayload,
+    key: str,
+    result: PutResult,
+) -> StoredArtifact:
+    return StoredArtifact(
+        job_id=context.record.job_id,
+        artifact_kind=payload.kind,
+        owner_id=context.boundary.owner_id,
+        session_id=context.boundary.session_id,
+        bundle_id=context.record.bundle_id,
+        object_key=key,
+        media_type=payload.media_type,
+        file_name=payload.file_name,
+        size_bytes=len(payload.content),
+        sha256_hex=payload.sha256_hex,
+        created_at=context.created_at,
+        expires_at=context.boundary.expires_at,
+        encryption_algorithm=result.stored.encryption_algorithm,
+        kms_key_id=result.stored.kms_key_id,
+    )
+
+
+def _require_verified_content(metadata: StoredArtifact, content: bytes) -> None:
+    expected = (
+        metadata.size_bytes,
+        metadata.sha256_hex,
+        (metadata.media_type, metadata.file_name),
+    )
+    actual = (
+        len(content),
+        hashlib.sha256(content).hexdigest(),
+        ARTIFACT_METADATA.get(metadata.artifact_kind),
+    )
+    if actual != expected:
+        raise ArtifactUnavailable("Report artifacts are unavailable.")
 
 
 def _require_proven(

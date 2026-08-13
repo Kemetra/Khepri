@@ -48,60 +48,37 @@ def journey_environment() -> Environment:
     )
 
 
-def add_journey_routes(
-    app: FastAPI,
-    *,
-    services: JourneyServices | None,
-    clock: Callable[[], datetime],
-) -> None:
-    if services is None:
-        return
-    environment = journey_environment()
+@dataclass(frozen=True, slots=True)
+class JourneyEndpoints:
+    services: JourneyServices
+    clock: Callable[[], datetime]
+    environment: Environment
 
-    @app.middleware("http")
-    async def journey_security(request: Request, call_next):
+    async def security(self, request: Request, call_next):
         try:
             require_same_origin(request)
         except HTTPException as error:
-            return JSONResponse(status_code=error.status_code, content={"detail": error.detail})
+            return JSONResponse(
+                status_code=error.status_code,
+                content={"detail": error.detail},
+            )
         return await call_next(request)
 
-    @app.get("/api/v1/beta/journey")
-    def read_journey(
+    def read(
+        self,
         response: Response,
         session_id: BetaSessionCookie = None,
     ) -> dict[str, object]:
         if session_id is None:
             raise HTTPException(status_code=401, detail=SESSION_UNAVAILABLE)
-        found = services.reader.read(session_id, clock())
+        found = self.services.reader.read(session_id, self.clock())
         if found is None:
             raise HTTPException(status_code=401, detail=SESSION_UNAVAILABLE)
         response.headers["Cache-Control"] = "private, no-store"
         return asdict(found)
 
-    def page_response(request: Request, language: str, step: str) -> HTMLResponse:
-        if language not in JOURNEY_COPY or step not in _TEMPLATES:
-            raise HTTPException(status_code=404)
-        html = environment.get_template(_TEMPLATES[step]).render(
-            request=request,
-            language=language,
-            direction="rtl" if language == "ar" else "ltr",
-            alternate="en" if language == "ar" else "ar",
-            copy=JOURNEY_COPY[language],
-            step=step,
-        )
-        return HTMLResponse(html, headers=SECURITY_HEADERS)
-
-    @app.get("/beta/assets/{name}", name="journey_asset")
-    def journey_asset(name: str) -> Response:
-        media_type = _ASSETS.get(name)
-        if media_type is not None:
-            content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
-        elif name in _TYPEFACE_ASSETS:
-            media_type = "font/woff2"
-            content = _TYPEFACE_ASSETS[name]
-        else:
-            raise HTTPException(status_code=404)
+    def asset(self, name: str) -> Response:
+        media_type, content = _asset(name)
         return Response(
             content=content,
             media_type=media_type,
@@ -111,15 +88,77 @@ def add_journey_routes(
             },
         )
 
-    @app.get("/beta/{language}", response_class=HTMLResponse, name="journey_entry")
-    def journey_entry(request: Request, language: str) -> HTMLResponse:
-        return page_response(request, language, "upload")
+    def entry(self, request: Request, language: str) -> HTMLResponse:
+        return self._page_response(request, language, "upload")
 
-    @app.get(
-        "/beta/{language}/{step}", response_class=HTMLResponse, name="journey_page"
+    def page(self, request: Request, language: str, step: str) -> HTMLResponse:
+        return self._page_response(request, language, step)
+
+    def _page_response(
+        self,
+        request: Request,
+        language: str,
+        step: str,
+    ) -> HTMLResponse:
+        if language not in JOURNEY_COPY or step not in _TEMPLATES:
+            raise HTTPException(status_code=404)
+        html = self.environment.get_template(_TEMPLATES[step]).render(
+            request=request,
+            language=language,
+            direction="rtl" if language == "ar" else "ltr",
+            alternate="en" if language == "ar" else "ar",
+            copy=JOURNEY_COPY[language],
+            step=step,
+        )
+        return HTMLResponse(html, headers=SECURITY_HEADERS)
+
+
+def add_journey_routes(
+    app: FastAPI,
+    *,
+    services: JourneyServices | None,
+    clock: Callable[[], datetime],
+) -> None:
+    if services is None:
+        return
+    endpoints = JourneyEndpoints(services, clock, journey_environment())
+    app.middleware("http")(endpoints.security)
+    app.add_api_route("/api/v1/beta/journey", endpoints.read, methods=["GET"])
+    app.add_api_route(
+        "/beta/assets/{name}",
+        endpoints.asset,
+        methods=["GET"],
+        name="journey_asset",
     )
-    def journey_page(request: Request, language: str, step: str) -> HTMLResponse:
-        return page_response(request, language, step)
+    app.add_api_route(
+        "/beta/{language}",
+        endpoints.entry,
+        methods=["GET"],
+        response_class=HTMLResponse,
+        name="journey_entry",
+    )
+    app.add_api_route(
+        "/beta/{language}/{step}",
+        endpoints.page,
+        methods=["GET"],
+        response_class=HTMLResponse,
+        name="journey_page",
+    )
 
 
-__all__ = ["JourneyServices", "add_journey_routes", "journey_environment"]
+def _asset(name: str) -> tuple[str, bytes]:
+    media_type = _ASSETS.get(name)
+    if media_type is not None:
+        content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
+        return media_type, content
+    if name in _TYPEFACE_ASSETS:
+        return "font/woff2", _TYPEFACE_ASSETS[name]
+    raise HTTPException(status_code=404)
+
+
+__all__ = [
+    "JourneyEndpoints",
+    "JourneyServices",
+    "add_journey_routes",
+    "journey_environment",
+]

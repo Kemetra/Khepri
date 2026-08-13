@@ -58,17 +58,8 @@ class ArtifactPayload:
     sha256_hex: str
 
     def __post_init__(self) -> None:
-        expected = ARTIFACT_METADATA.get(self.kind)
-        if expected is None:
-            raise ValueError("Artifact kind is not governed.")
-        if self.media_type != expected[0]:
-            raise ValueError("Artifact media type does not match its kind.")
-        if self.file_name != expected[1]:
-            raise ValueError("Artifact file name does not match its kind.")
-        if not self.content:
-            raise ValueError("Artifact content is required.")
-        if self.sha256_hex != hashlib.sha256(self.content).hexdigest():
-            raise ValueError("Artifact digest does not address its content.")
+        _validate_artifact_identity(self)
+        _validate_artifact_content(self)
 
     @classmethod
     def of(
@@ -96,14 +87,51 @@ class MaterializedSurface:
     artifacts: tuple[ArtifactPayload, ...]
 
     def __post_init__(self) -> None:
-        expected = SURFACE_ARTIFACT_KINDS.get(self.content.surface)
-        if expected is None:
-            raise ValueError("Materialized surface is not governed.")
-        if tuple(artifact.kind for artifact in self.artifacts) != expected:
-            raise ValueError("Materialized surface does not carry its exact artifacts.")
-        size = sum(len(artifact.content) for artifact in self.artifacts)
-        if self.content.output_size_bytes != size:
-            raise ValueError("Surface output size does not match its artifacts.")
+        _validate_surface_identity(self)
+        _validate_surface_size(self)
+
+
+def _validate_artifact_identity(artifact: ArtifactPayload) -> None:
+    expected = ARTIFACT_METADATA.get(artifact.kind)
+    if expected is None:
+        raise ValueError("Artifact kind is not governed.")
+    _require_equal(
+        artifact.media_type,
+        expected[0],
+        "Artifact media type does not match its kind.",
+    )
+    _require_equal(
+        artifact.file_name,
+        expected[1],
+        "Artifact file name does not match its kind.",
+    )
+
+
+def _require_equal(actual: str, expected: str, message: str) -> None:
+    if actual != expected:
+        raise ValueError(message)
+
+
+def _validate_artifact_content(artifact: ArtifactPayload) -> None:
+    if not artifact.content:
+        raise ValueError("Artifact content is required.")
+    if artifact.sha256_hex != hashlib.sha256(artifact.content).hexdigest():
+        raise ValueError("Artifact digest does not address its content.")
+
+
+def _validate_surface_identity(surface: MaterializedSurface) -> None:
+    expected = SURFACE_ARTIFACT_KINDS.get(surface.content.surface)
+    if expected is None:
+        raise ValueError("Materialized surface is not governed.")
+    actual = tuple(artifact.kind for artifact in surface.artifacts)
+    if actual != expected:
+        raise ValueError("Materialized surface does not carry its exact artifacts.")
+
+
+def _validate_surface_size(surface: MaterializedSurface) -> None:
+    size = sum(len(artifact.content) for artifact in surface.artifacts)
+    if surface.content.output_size_bytes != size:
+        raise ValueError("Surface output size does not match its artifacts.")
 
 
 class MaterializedRenderer(Protocol):

@@ -653,52 +653,13 @@ class SqlDeletionRepository:
             if row.state == "complete":
                 return _deletion_from_row(row)
             targets = self._targets(database, row.owner_id, row.session_id)
-            if not evidences and targets:
-                raise ValueError("Deletion evidence is required for an existing target.")
-            if evidences and (
-                {(item.target_kind, item.target_id) for item in evidences}
-                != {(item.target_kind, item.target_id) for item in targets}
-                or any(item.outcome != "deleted" for item in evidences)
-            ):
-                raise ValueError("Deletion evidence does not match every target.")
-            # The package references the profile, so it goes first.
-            database.execute(
-                delete(FactPackageRow).where(
-                    FactPackageRow.owner_id == row.owner_id,
-                    FactPackageRow.session_id == row.session_id,
-                )
-            )
-            database.execute(
-                delete(DatasetProfileRow).where(
-                    DatasetProfileRow.owner_id == row.owner_id,
-                    DatasetProfileRow.session_id == row.session_id,
-                )
-            )
+            _validate_deletion_evidence(evidences, targets)
+            _delete_derived_content(database, row.owner_id, row.session_id)
             if evidences:
                 self._add_evidence(database, row, evidences)
-                from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: PLC0415
-
-                database.execute(
-                    delete(ReportArtifactRow).where(
-                        ReportArtifactRow.owner_id == row.owner_id,
-                        ReportArtifactRow.session_id == row.session_id,
-                    )
-                )
-                database.execute(
-                    delete(UploadRow).where(
-                        UploadRow.owner_id == row.owner_id,
-                        UploadRow.session_id == row.session_id,
-                    )
-                )
-                row.attempt_count += 1
-                row.last_attempt_at = evidences[0].attempted_at
-            session_row = database.get(BetaSessionRow, row.session_id)
-            if session_row is None:
-                raise LookupError("Session is unavailable.")
-            session_row.content_deleted_at = completed_at
-            row.state = "complete"
-            row.next_retry_at = None
-            row.completed_at = completed_at
+                _delete_object_metadata(database, row.owner_id, row.session_id)
+                _record_completed_attempt(row, evidences)
+            _complete_deletion(database, row, completed_at)
             database.flush()
             return _deletion_from_row(row)
 
@@ -827,6 +788,81 @@ class SqlDeletionRepository:
                 )
             )
         return tuple(targets)
+
+
+def _validate_deletion_evidence(
+    evidence: tuple[DeletionEvidence, ...],
+    targets: tuple[DeletionTarget, ...],
+) -> None:
+    if not evidence:
+        if targets:
+            raise ValueError("Deletion evidence is required for an existing target.")
+        return
+    evidence_ids = {_deletion_identity(item) for item in evidence}
+    target_ids = {_deletion_identity(item) for item in targets}
+    if evidence_ids != target_ids:
+        raise ValueError("Deletion evidence does not match every target.")
+    if any(item.outcome != "deleted" for item in evidence):
+        raise ValueError("Deletion evidence does not match every target.")
+
+
+def _deletion_identity(
+    item: DeletionEvidence | DeletionTarget,
+) -> tuple[str, str]:
+    return item.target_kind, item.target_id
+
+
+def _delete_derived_content(
+    database: Session,
+    owner_id: str,
+    session_id: str,
+) -> None:
+    # The package references the profile, so it goes first.
+    for model in (FactPackageRow, DatasetProfileRow):
+        database.execute(
+            delete(model).where(
+                model.owner_id == owner_id,
+                model.session_id == session_id,
+            )
+        )
+
+
+def _delete_object_metadata(
+    database: Session,
+    owner_id: str,
+    session_id: str,
+) -> None:
+    from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: PLC0415
+
+    for model in (ReportArtifactRow, UploadRow):
+        database.execute(
+            delete(model).where(
+                model.owner_id == owner_id,
+                model.session_id == session_id,
+            )
+        )
+
+
+def _record_completed_attempt(
+    row: DeletionJobRow,
+    evidence: tuple[DeletionEvidence, ...],
+) -> None:
+    row.attempt_count += 1
+    row.last_attempt_at = evidence[0].attempted_at
+
+
+def _complete_deletion(
+    database: Session,
+    row: DeletionJobRow,
+    completed_at: datetime,
+) -> None:
+    session_row = database.get(BetaSessionRow, row.session_id)
+    if session_row is None:
+        raise LookupError("Session is unavailable.")
+    session_row.content_deleted_at = completed_at
+    row.state = "complete"
+    row.next_retry_at = None
+    row.completed_at = completed_at
 
 
 def session_scope_for_update_statement(
