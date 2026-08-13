@@ -1341,7 +1341,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R0 Roadmap/spec reconciliation | IN_REVIEW | `R0-04` is MERGED at `ebfbe77`. `R0-01`/`R0-02`/`R0-03`/`R0-05` are proposed as one docs-only slice — `specs/001-rca-001-commercial-identity/{SUPERSEDED,STATUS,NEXT-SLICES}.md`. Not MERGED until the owner merges it |
 | R1 Concurrent final-owner safety | MERGED | `R1-01`…`R1-06` complete at `c8c6edb`; `#155` closed. The deployment stop gate is cleared |
 | R2 Membership lifecycle | READY_FOR_PLAN | R2-01 design may proceed now (section 12, Slice D); implementation must inherit the R1 transaction seam before any owner-reducing write |
-| R3 Authentication sessions | READY_FOR_PLAN | RCA-001 is active; must coordinate migrations and beta-session boundary |
+| R3 Authentication sessions | READY_FOR_IMPLEMENTATION | `R3-01` design merged; `R3-02` (domain types) may start now. Two owner decisions in the design note §9 must settle before `R3-03` writes schema |
 | R4 Invitations | READY_FOR_PLAN | Depends on stable R2 membership operations and R3 actor resolution |
 | R5 Recovery | READY_FOR_PLAN | R5-01 design may proceed alongside R3 design; implementation depends on R3 session revocation |
 | R6 Canonical authorization | BLOCKED | Depends on live R2 membership and R3 session resolution |
