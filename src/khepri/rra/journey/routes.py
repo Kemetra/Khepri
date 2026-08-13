@@ -14,6 +14,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 from khepri.rra.journey.copy import JOURNEY_COPY
 from khepri.rra.journey.security import SECURITY_HEADERS, require_same_origin
 from khepri.rra.journey.state import JourneyReader
+from khepri.rra.rendering.fonts import load_report_fonts
 from khepri.rra.session_cookie import SESSION_UNAVAILABLE, BetaSessionCookie
 
 
@@ -30,6 +31,7 @@ _ASSETS = {
     "processing.js": "text/javascript; charset=utf-8",
     "report.js": "text/javascript; charset=utf-8",
 }
+_TYPEFACE_ASSETS = {face.file_name: face.payload for face in load_report_fonts()}
 _TEMPLATES = {
     "upload": "upload.html.j2",
     "review": "review.html.j2",
@@ -93,9 +95,13 @@ def add_journey_routes(
     @app.get("/beta/assets/{name}", name="journey_asset")
     def journey_asset(name: str) -> Response:
         media_type = _ASSETS.get(name)
-        if media_type is None:
+        if media_type is not None:
+            content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
+        elif name in _TYPEFACE_ASSETS:
+            media_type = "font/woff2"
+            content = _TYPEFACE_ASSETS[name]
+        else:
             raise HTTPException(status_code=404)
-        content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
         return Response(
             content=content,
             media_type=media_type,

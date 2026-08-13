@@ -2,14 +2,18 @@
 {% block title %}{{ copy.upload_title }} · {{ copy.product }}{% endblock %}
 {% block content %}
 <section class="document-card" aria-labelledby="page-title">
-  <div class="step-marker" aria-label="Step 1 of 4"><span>01</span><span>—</span><span>04</span></div>
   <h1 id="page-title">{{ copy.upload_title }}</h1>
   <p class="lede">{{ copy.upload_intro }}</p>
+  <dl class="intake-facts">
+    <div><dt>{{ copy.accepted }}</dt><dd>CSV, XLSX</dd></div>
+    <div><dt>{{ copy.size_limit }}</dt><dd dir="ltr">50 MB</dd></div>
+    <div><dt>{{ copy.you_receive }}</dt><dd>{{ copy.outputs }}</dd></div>
+  </dl>
   <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden></div>
   <form id="upload-form">
     <label class="consent-row"><input id="consent" type="checkbox"> <span>{{ copy.consent }}</span></label>
     <label id="drop-zone" class="drop-zone" for="sales-file" aria-describedby="file-help">
-      <span class="drop-icon" aria-hidden="true">↑</span>
+      <svg class="drop-icon" aria-hidden="true" viewBox="0 0 24 24" width="32" height="32"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <strong>{{ copy.drop_file }}</strong>
       <span class="button-like">{{ copy.choose_file }}</span>
     </label>

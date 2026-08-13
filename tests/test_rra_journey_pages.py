@@ -33,4 +33,7 @@ def test_only_allowlisted_local_assets_are_served() -> None:
     css = test.get("/beta/assets/journey.css")
     assert css.status_code == 200
     assert "immutable" in css.headers["cache-control"]
+    typeface = test.get("/beta/assets/NotoSansArabic-Regular-arabic.woff2")
+    assert typeface.status_code == 200
+    assert typeface.headers["content-type"] == "font/woff2"
     assert test.get("/beta/assets/../routes.py").status_code == 404

@@ -2,7 +2,6 @@
 {% block title %}{{ copy.report_title }} · {{ copy.product }}{% endblock %}
 {% block content %}
 <section class="document-card wide" aria-labelledby="page-title">
-  <div class="step-marker ready" aria-label="Step 4 of 4"><span>04</span><span>—</span><span>04</span></div>
   <h1 id="page-title">{{ copy.report_title }}</h1><p class="lede">{{ copy.report_intro }}</p>
   <dl class="report-meta"><div><dt>Dataset</dt><dd>{{ copy.uploaded_dataset }}</dd></div><div><dt>Rows</dt><dd id="row-count" dir="ltr">—</dd></div><div><dt>Generated</dt><dd id="generated-at" dir="ltr">—</dd></div></dl>
   <div id="report-links" class="report-grid" hidden></div>

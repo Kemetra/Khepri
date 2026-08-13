@@ -10,15 +10,21 @@
   <a class="skip-link" href="#main-content">{{ copy.skip }}</a>
   <header class="site-header">
     <a class="brand" href="/beta/{{ language }}" aria-label="{{ copy.product }}">
-      <span class="brand-mark" aria-hidden="true">K</span>
-      <span>{{ copy.product }}</span>
+      <span>KHEPRI</span>
     </a>
     <nav aria-label="Language">
       <a class="language-link" href="/beta/{{ alternate }}/{{ step }}">{{ copy.language }}</a>
     </nav>
   </header>
+  <nav class="step-nav" aria-label="Journey progress">
+    <ol>
+      <li class="{% if step == 'upload' %}current{% endif %}"><a href="/beta/{{ language }}/upload"><span>1</span> {{ copy.step_upload }}</a></li>
+      <li class="{% if step == 'review' %}current{% endif %}"><a href="/beta/{{ language }}/review"><span>2</span> {{ copy.step_review }}</a></li>
+      <li class="{% if step == 'processing' %}current{% endif %}"><a href="/beta/{{ language }}/processing"><span>3</span> {{ copy.step_processing }}</a></li>
+      <li class="{% if step == 'report' %}current{% endif %}"><a href="/beta/{{ language }}/report"><span>4</span> {{ copy.step_report }}</a></li>
+    </ol>
+  </nav>
   <main id="main-content" class="journey-shell" tabindex="-1">
-    <p class="eyebrow">{{ copy.private_beta }}</p>
     {% block content %}{% endblock %}
   </main>
   <footer class="site-footer"><p>{{ copy.retention }}</p></footer>

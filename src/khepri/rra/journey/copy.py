@@ -26,6 +26,14 @@ _EN = {
     "expired_title": "This secure session is unavailable",
     "expired_intro": "Ask your Khepri advisor for a new private-beta invitation.",
     "uploaded_dataset": "Uploaded dataset",
+    "step_upload": "Upload",
+    "step_review": "Review",
+    "step_processing": "Analysing",
+    "step_report": "Report",
+    "accepted": "Accepted",
+    "size_limit": "Size limit",
+    "you_receive": "You receive",
+    "outputs": "Arabic and English — web, PDF, Excel",
 }
 
 _AR = {
@@ -52,6 +60,14 @@ _AR = {
     "expired_title": "هذه الجلسة الآمنة غير متاحة",
     "expired_intro": "اطلب دعوة جديدة للنسخة التجريبية من مستشار كِبري.",
     "uploaded_dataset": "مجموعة البيانات المرفوعة",
+    "step_upload": "الرفع",
+    "step_review": "المراجعة",
+    "step_processing": "التحليل",
+    "step_report": "التقرير",
+    "accepted": "الملفات المقبولة",
+    "size_limit": "الحد الأقصى",
+    "you_receive": "ما ستحصل عليه",
+    "outputs": "العربية والإنجليزية — ويب وPDF وExcel",
 }
 
 if _EN.keys() != _AR.keys():
