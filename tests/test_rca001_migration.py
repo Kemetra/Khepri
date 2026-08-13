@@ -122,6 +122,30 @@ def test_downgrade_removes_every_rca_table(sqlite_url: str) -> None:
     assert not (RCA_TABLES & present), f"left behind: {sorted(RCA_TABLES & present)}"
 
 
+def test_migration_preserves_constraints_and_nullability(sqlite_url: str) -> None:
+    """A batch rebuild must not silently drop a constraint.
+
+    `20260813_0011` uses `batch_alter_table` to make `email` nullable, and on SQLite that drops
+    and recreates the table from reflection — a documented way to lose constraints. If
+    `uq_rca_account_email` did not survive, A-1 would be unenforced in production while every
+    store test stayed green, because those build their schema from `Base.metadata.create_all`
+    (which has the constraint from the model, not from the migration).
+
+    Column *names* alone cannot catch this, which is why it is asserted separately from the
+    parity test below.
+    """
+    _run(sqlite_url, "upgrade")
+    inspector = inspect(create_engine(sqlite_url))
+
+    unique = {c["name"] for c in inspector.get_unique_constraints("rca_accounts")}
+    assert "uq_rca_account_email" in unique, f"A-1 constraint lost in the rebuild: {unique}"
+
+    nullable = {c["name"]: c["nullable"] for c in inspector.get_columns("rca_accounts")}
+    assert nullable["email"] is True, "the post-horizon tombstone needs a nullable email"
+    assert nullable["disabled_at"] is True, "an enabled account has no disablement timestamp"
+    assert nullable["account_id"] is False, "the opaque identifier survives every purge"
+
+
 def test_migration_columns_match_the_declared_models(sqlite_url: str) -> None:
     """Guards drift between the migration and `khepri.rca.persistence`.
 
