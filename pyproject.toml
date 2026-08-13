@@ -70,6 +70,7 @@ cache_dir = ".pytest-cache"
 markers = [
     "browser: exercises a real pinned Chromium; skipped when it is not installed (deselect with -m 'not browser')",
     "local_stack: exercises the docker-compose.local.yml stack; skipped when it is not running (deselect with -m 'not local_stack')",
+    "concurrency: proves a contract that only a real database can exhibit; CI fails if one of these skips (deselect with -m 'not concurrency')",
 ]
 
 [tool.ruff]
