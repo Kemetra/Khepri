@@ -70,7 +70,7 @@ def _stored_value(request: ObjectWrite) -> tuple[bytes, str, str]:
     return request.content, request.media_type, request.sha256_hex
 
 
-def _publisher(objects: MemoryObjects):
+def _publisher(objects: MemoryObjects, *, attempt_id: str = "a" * 32):
     test = harness()
     return (
         test,
@@ -79,6 +79,7 @@ def _publisher(objects: MemoryObjects):
             deliveries=test.store,
             objects=objects,
             now=lambda: NOW,
+            new_attempt_id=lambda: attempt_id,
         ),
     )
 
@@ -134,7 +135,7 @@ def test_rollback_never_deletes_a_preexisting_verified_object() -> None:
     first = publication.artifacts[0]
     first_key = (
         f"owners/{test.session.owner_id}/sessions/{test.session.session_id}/reports/"
-        f"{publication.delivery.record.bundle_id}/{first.kind}"
+        f"{publication.delivery.record.bundle_id}/attempts/{'a' * 32}/{first.kind}"
     )
     objects.values[first_key] = (first.content, first.media_type, first.sha256_hex)
 
@@ -172,6 +173,7 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
         deliveries=test.store,
         objects=objects,
         now=lambda: NOW,
+        new_attempt_id=lambda: "a" * 32,
     )
 
     with pytest.raises(ArtifactUnavailable, match="unavailable") as raised:
@@ -180,6 +182,60 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
     assert "database" not in str(raised.value)
     assert len(objects.deleted) == 7
     assert objects.values == {}
+
+
+def test_late_rollback_preserves_a_concurrent_publication() -> None:
+    objects = MemoryObjects()
+    test = harness()
+    inner = SqlArtifactRepository(test.factory)
+    publication = _publication(test)
+    winner = ReportArtifactPublisher(
+        repository=inner,
+        deliveries=test.store,
+        objects=objects,
+        now=lambda: NOW,
+        new_attempt_id=lambda: "b" * 32,
+    )
+
+    class ConcurrentRepository:
+        def has_complete(self, job_id: str) -> bool:
+            return inner.has_complete(job_id)
+
+        def boundary(self, publication, *, created_at):
+            return inner.boundary(publication, created_at=created_at)
+
+        def commit(self, publication, artifacts):
+            winner.publish(publication)
+            return inner.commit(publication, artifacts)
+
+        def find_in_session(self, **details):
+            return inner.find_in_session(**details)
+
+    late_worker = ReportArtifactPublisher(
+        repository=ConcurrentRepository(),
+        deliveries=test.store,
+        objects=objects,
+        now=lambda: NOW,
+        new_attempt_id=lambda: "a" * 32,
+    )
+
+    with pytest.raises(ArtifactUnavailable):
+        late_worker.publish(publication)
+
+    assert len(objects.values) == 7
+    assert all("/attempts/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/" in key for key in objects.values)
+    assert len(objects.deleted) == 7
+    document = _publisher_document(winner, test, publication)
+    assert document.content == publication.artifacts[-1].content
+
+
+def _publisher_document(publisher, test, publication):
+    return publisher.read(
+        session_id=test.session.session_id,
+        job_id=publication.delivery.record.job_id,
+        artifact_kind="excel",
+        now=NOW,
+    )
 
 
 def test_verified_read_rechecks_digest_and_hides_storage_failures() -> None:

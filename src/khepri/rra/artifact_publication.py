@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
+from uuid import uuid4
 
 from khepri.rra.artifact_persistence import (
     ArtifactBoundary,
@@ -17,6 +19,8 @@ from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import ARTIFACT_METADATA, ArtifactPayload
 from khepri.rra.storage import ObjectWrite, PutResult
+
+_ATTEMPT_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 class ArtifactUnavailable(RuntimeError):
@@ -35,6 +39,7 @@ class PublicationContext:
     boundary: ArtifactBoundary
     record: DeliveryRecord
     created_at: datetime
+    attempt_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,11 +94,13 @@ class ReportArtifactPublisher:
         deliveries: DeliveryReader,
         objects: ArtifactObjectStore,
         now: Callable[[], datetime],
+        new_attempt_id: Callable[[], str] | None = None,
     ) -> None:
         self._repository = repository
         self._deliveries = deliveries
         self._objects = objects
         self._now = now
+        self._new_attempt_id = new_attempt_id or _new_attempt_id
 
     def find_delivery(self, job_id: str) -> DeliveryRecord | None:
         record = self._deliveries.find_delivery(job_id)
@@ -127,6 +134,7 @@ class ReportArtifactPublisher:
                 boundary=boundary,
                 record=publication.delivery.record,
                 created_at=created_at,
+                attempt_id=_require_attempt_id(self._new_attempt_id()),
             )
             artifacts = self._store_all(context, publication.artifacts, created_keys)
             return self._repository.commit(publication, artifacts)
@@ -213,7 +221,7 @@ def _object_key(context: PublicationContext, artifact_kind: str) -> str:
     boundary = context.boundary
     return (
         f"owners/{boundary.owner_id}/sessions/{boundary.session_id}/reports/"
-        f"{context.record.bundle_id}/{artifact_kind}"
+        f"{context.record.bundle_id}/attempts/{context.attempt_id}/{artifact_kind}"
     )
 
 
@@ -227,7 +235,18 @@ def _encryption_context(
         "job_id": context.record.job_id,
         "bundle_id": context.record.bundle_id,
         "artifact_kind": artifact_kind,
+        "publication_attempt_id": context.attempt_id,
     }
+
+
+def _new_attempt_id() -> str:
+    return uuid4().hex
+
+
+def _require_attempt_id(attempt_id: str) -> str:
+    if _ATTEMPT_ID.fullmatch(attempt_id) is None:
+        raise ValueError("Publication attempt identity is invalid.")
+    return attempt_id
 
 
 def _stored_artifact(
