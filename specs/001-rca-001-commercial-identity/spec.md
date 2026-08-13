@@ -1,5 +1,13 @@
 # Feature Specification: RCA-001 — Commercial Identity, Organizations, and Authorization
 
+> **SUPERSEDED — historical artifact, written 2026-08-08. Do not follow these instructions.**
+> This document predates the current governance model and three merged RCA-001 slices. It reasons
+> from a Constitution and an approval framework that no longer exist, and its status claims are
+> false: `RCA-001` is `active` and implementation is under way. Read
+> [`SUPERSEDED.md`](SUPERSEDED.md) for the delta and [`STATUS.md`](STATUS.md) for what is actually
+> implemented. `governance/specifications/RCA-001.md` and `governance/registry.yaml` are
+> authoritative; this file is not.
+
 **Feature Branch**: `001-rca-001-commercial-identity` (directory only; no git branch was created)
 
 **Created**: 2026-08-08
