@@ -40,6 +40,7 @@ from khepri.rra.rendering.excel import (
     EXCEL_SURFACE_VERSION,
     GOVERNED_LABELS,
     ExcelSurfaceRenderer,
+    WorkbookUnavailable,
     _business_name,
 )
 from khepri.rra.rendering.wording import caveat_prose
@@ -656,3 +657,63 @@ def test_the_workbook_is_named_by_the_bundle_it_was_built_for(tmp_path: Path) ->
 def test_a_destination_that_is_not_a_directory_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         ExcelSurfaceRenderer(directory=tmp_path / "absent")
+
+
+def test_a_concurrent_render_of_the_same_bundle_cannot_truncate_the_payload(
+    tmp_path: Path,
+) -> None:
+    # Two workers may hold the same bundle at once -- an expired lease is reclaimed
+    # while the first worker is still writing. Both derive the same destination from
+    # the bundle id, so a payload read from that shared name may be the other
+    # worker's half-written archive. A digest taken afterwards would be computed
+    # from those same bytes and so would verify the corruption against itself;
+    # refusing the read is what keeps a corrupt workbook from being published.
+    bundle = ReportBundle.of(package())
+    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+
+    content = renderer.render(bundle)
+    renderer.path_for(bundle).write_bytes(b"PK truncated")
+
+    with pytest.raises(WorkbookUnavailable):
+        renderer.payload_for(bundle, content)
+
+
+def test_a_render_never_writes_directly_to_the_shared_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The shared name is what a concurrent worker may be reading. If a render
+    # streamed the archive there directly, that worker could observe a partial
+    # file; the name must only ever be claimed by an already-closed archive.
+    bundle = ReportBundle.of(package())
+    renderer = ExcelSurfaceRenderer(directory=tmp_path)
+    shared = renderer.path_for(bundle)
+    opened: list[str] = []
+
+    original = excel.xlsxwriter.Workbook
+
+    def record(path, options):
+        opened.append(str(path))
+        return original(path, options)
+
+    monkeypatch.setattr(excel.xlsxwriter, "Workbook", record)
+
+    content = renderer.render(bundle)
+
+    assert opened, "the renderer never opened a workbook"
+    assert str(shared) not in opened
+    # The finished archive still arrives under the name callers resolve.
+    assert shared.stat().st_size == content.output_size_bytes
+    assert list(tmp_path.iterdir()) == [shared]
+
+
+def test_a_materialized_workbook_carries_the_bytes_it_measured(
+    tmp_path: Path,
+) -> None:
+    materialized = ExcelSurfaceRenderer(directory=tmp_path).render_materialized(
+        ReportBundle.of(package())
+    )
+
+    payload = materialized.artifacts[0].content
+    assert len(payload) == materialized.content.output_size_bytes
+    assert payload.startswith(b"PK")

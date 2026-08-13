@@ -21,9 +21,11 @@ from khepri.rra.jobs import (
     LeaseRequest,
 )
 from khepri.rra.persistence import (
+    DeletionJobRow,
     SqlDeletionRepository,
     SqlSessionStore,
     SqlUploadRepository,
+    _utc,
 )
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from tests.test_rra002_deletion import (
@@ -330,3 +332,137 @@ def test_sql_completion_removes_upload_and_artifact_metadata_together() -> None:
     assert SqlUploadRepository(test.factory).get_upload_for_session(
         test.session.session_id
     ) is None
+
+
+def test_exhaustion_observed_after_the_saved_deadline_still_drains() -> None:
+    """Deferring for a *running* worker must not spend that worker's drain interval.
+
+    The first deferral is taken while the publisher still holds a live lease, so the
+    deadline it records describes when to look again -- not a drain. If recovery only
+    marks the job exhausted after that deadline has passed, the sweep that observes
+    the terminal transition is the first one that could drain it, and it must start a
+    fresh interval rather than treat the elapsed deadline as one already served.
+    """
+    test = harness()
+    queued_at = test.session.created_at
+    test.jobs.enqueue(
+        EnqueueJob(
+            scope=test.scope,
+            job_id="job_alpha",
+            idempotency_key="e" * 64,
+            queued_at=queued_at,
+            max_attempts=1,
+        )
+    )
+    leased = test.jobs.lease(
+        LeaseRequest(
+            job_id="job_alpha",
+            worker_id="worker_alpha",
+            now=queued_at,
+            lease_for=timedelta(minutes=30),
+        )
+    )
+    assert leased is not None
+    objects = MemoryObjects()
+    service = DeletionService(
+        sessions=SqlSessionStore(test.factory),
+        deletions=SqlDeletionRepository(test.factory),
+        objects=objects,
+        new_deletion_id=lambda: "del_alpha",
+    )
+
+    # The publisher is still running, so deletion defers and records a deadline.
+    with pytest.raises(DeletionRetryRequired):
+        service.delete_session_content(
+            session_id=test.session.session_id,
+            reason="immediate",
+            now=queued_at,
+        )
+
+    # The lease expires long after that deadline; this sweep is the first one that
+    # can see the job as terminal.
+    late = queued_at + timedelta(minutes=30)
+    exhausted = test.jobs.recover_expired(now=late)
+    assert exhausted[0].state == "dead_lettered"
+
+    with pytest.raises(DeletionRetryRequired):
+        service.delete_session_content(
+            session_id=test.session.session_id,
+            reason="immediate",
+            now=late,
+        )
+
+    # The expired worker lands an in-flight write after that sweep. A drain that
+    # started when exhaustion was observed still covers it.
+    late_key = (
+        f"owners/{test.session.owner_id}/sessions/{test.session.session_id}/"
+        "reports/late-attempt/web_business_en"
+    )
+    objects.values[late_key] = (b"late", "text/html", hashlib.sha256(b"late").hexdigest())
+
+    result = service.delete_session_content(
+        session_id=test.session.session_id,
+        reason="immediate",
+        now=late + timedelta(minutes=5),
+    )
+
+    assert result.state == "complete"
+    assert objects.values == {}
+
+
+def test_the_drain_deferral_schedules_past_the_drain_it_is_waiting_on() -> None:
+    """The recorded deadline must describe the drain, not the earlier deferral.
+
+    `_needs_drain` refuses the sweep on its own, so a stale deadline cannot delete
+    content early. It does decide when a poller returns, and a deadline left over
+    from a deferral taken against a still-running publisher sends it back before
+    the drain can possibly have run -- a wake-up that can only defer again.
+    """
+    test = harness()
+    queued_at = test.session.created_at
+    test.jobs.enqueue(
+        EnqueueJob(
+            scope=test.scope,
+            job_id="job_alpha",
+            idempotency_key="f" * 64,
+            queued_at=queued_at,
+            max_attempts=1,
+        )
+    )
+    leased = test.jobs.lease(
+        LeaseRequest(
+            job_id="job_alpha",
+            worker_id="worker_alpha",
+            now=queued_at,
+            lease_for=timedelta(minutes=30),
+        )
+    )
+    assert leased is not None
+    service = DeletionService(
+        sessions=SqlSessionStore(test.factory),
+        deletions=SqlDeletionRepository(test.factory),
+        objects=MemoryObjects(),
+        new_deletion_id=lambda: "del_alpha",
+    )
+
+    with pytest.raises(DeletionRetryRequired):
+        service.delete_session_content(
+            session_id=test.session.session_id,
+            reason="immediate",
+            now=queued_at,
+        )
+
+    late = queued_at + timedelta(minutes=30)
+    test.jobs.recover_expired(now=late)
+    with pytest.raises(DeletionRetryRequired):
+        service.delete_session_content(
+            session_id=test.session.session_id,
+            reason="immediate",
+            now=late,
+        )
+
+    with test.factory() as database:
+        deletion = database.get(DeletionJobRow, "del_alpha")
+        assert deletion is not None
+        assert deletion.next_retry_at is not None
+        assert _utc(deletion.next_retry_at) > late

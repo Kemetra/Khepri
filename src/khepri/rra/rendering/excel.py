@@ -79,6 +79,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
+from uuid import uuid4
 
 import xlsxwriter
 from xlsxwriter.chart import Chart
@@ -410,6 +411,16 @@ class ExcelSurfaceRenderer:
     def path_for(self, bundle: ReportBundle) -> Path:
         return self.directory / f"{bundle.bundle_id}{WORKBOOK_SUFFIX}"
 
+    def _attempt_path(self, bundle: ReportBundle) -> Path:
+        """A destination no concurrent render of this bundle can be holding.
+
+        `path_for` is derived from `bundle_id` alone, so two workers rendering the
+        same bundle -- which is what happens when an expired lease is reclaimed --
+        resolve to the same file. Each attempt therefore writes somewhere unique
+        and only afterwards claims the shared name.
+        """
+        return self.directory / f"{bundle.bundle_id}.{_new_attempt_id()}{WORKBOOK_SUFFIX}"
+
     def render(self, bundle: ReportBundle) -> SurfaceContent:
         """Write the workbook, then report what it presents and how large it is.
 
@@ -417,19 +428,38 @@ class ExcelSurfaceRenderer:
         writing. A workbook is a compressed archive, so the bytes a caller ends
         up holding are only knowable once the archive has been finished, and any
         figure taken earlier would describe something that never existed.
+
+        The size is taken from this attempt's own file, before the shared name is
+        claimed, so it describes the archive this call wrote and not one a
+        concurrent worker happened to leave there.
         """
-        path = self.path_for(bundle)
+        attempt = self._attempt_path(bundle)
         try:
-            with xlsxwriter.Workbook(str(path), dict(WORKBOOK_OPTIONS)) as workbook:
+            with xlsxwriter.Workbook(str(attempt), dict(WORKBOOK_OPTIONS)) as workbook:
                 _write_workbook(workbook, bundle)
-            written = path.stat().st_size
+            written = attempt.stat().st_size
+            attempt.replace(self.path_for(bundle))
         except OSError as error:
             raise WorkbookUnavailable("The Excel surface could not be written.") from error
         return _content(bundle, written)
 
+    def payload_for(self, bundle: ReportBundle, content: SurfaceContent) -> bytes:
+        """The archive bytes this renderer wrote, verified against what it reported.
+
+        Reading the shared path can observe a concurrent worker's half-written
+        archive, and the digest a caller derives afterwards would be taken from
+        those same bytes -- so a corrupt workbook would verify against itself. The
+        recorded size is the one independent check available, and a mismatch means
+        the file was replaced under us.
+        """
+        payload = self.path_for(bundle).read_bytes()
+        if len(payload) != content.output_size_bytes:
+            raise WorkbookUnavailable("The Excel surface could not be read.")
+        return payload
+
     def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
         content = self.render(bundle)
-        payload = self.path_for(bundle).read_bytes()
+        payload = self.payload_for(bundle, content)
         return MaterializedSurface(
             content=content,
             artifacts=(
@@ -441,6 +471,10 @@ class ExcelSurfaceRenderer:
                 ),
             ),
         )
+
+
+def _new_attempt_id() -> str:
+    return uuid4().hex
 
 
 def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:

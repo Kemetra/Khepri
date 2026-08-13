@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select
@@ -22,6 +22,11 @@ from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 
 if TYPE_CHECKING:
     from khepri.rra.job_persistence import ReportJobRow
+
+# How long an exhausted publisher is assumed to still be capable of writing. It
+# matches the deletion retry delay so that the sweep which runs once the deferral
+# elapses is the one that finds the drain served.
+_DRAIN_INTERVAL = timedelta(minutes=5)
 
 
 def defer_for_publication(
@@ -74,16 +79,31 @@ def _needs_drain(
     *,
     now: datetime,
 ) -> bool:
+    """Whether an exhausted publisher could still be writing.
+
+    The interval is measured from the moment exhaustion was recorded, never from
+    the deletion's own `next_retry_at`. That field answers a different question --
+    when to look again -- and it is already set whenever deletion was deferred for
+    a publisher that was still running. Reading it as a drain would let a deferral
+    taken against a live worker be spent before that worker ever became terminal,
+    so the sweep that first observes the transition would sweep immediately and an
+    in-flight object write could land after it.
+    """
     from khepri.rra.jobs import DEAD_LETTER_RETRIES_EXHAUSTED  # noqa: PLC0415
 
-    exhausted = any(
-        candidate.dead_letter_reason == DEAD_LETTER_RETRIES_EXHAUSTED
-        for candidate in report_jobs
-    )
-    if not exhausted or deletion.attempt_count > 0:
+    if deletion.attempt_count > 0:
         return False
-    retry_at = _utc(deletion.next_retry_at)
-    return retry_at is None or retry_at > now
+    exhausted_at = [
+        _utc(candidate.completed_at)
+        for candidate in report_jobs
+        if candidate.dead_letter_reason == DEAD_LETTER_RETRIES_EXHAUSTED
+    ]
+    if not exhausted_at:
+        return False
+    # An unrecorded transition time cannot be shown to have drained.
+    return any(
+        observed is None or observed + _DRAIN_INTERVAL > now for observed in exhausted_at
+    )
 
 
 def _defer(deletion: DeletionJobRow, *, next_retry_at: datetime) -> bool:
@@ -93,7 +113,14 @@ def _defer(deletion: DeletionJobRow, *, next_retry_at: datetime) -> bool:
 
 
 def _defer_drain(deletion: DeletionJobRow, *, next_retry_at: datetime) -> bool:
-    if deletion.next_retry_at is None:
+    """Hold the deletion until the drain interval has run.
+
+    The deadline is pushed forward rather than kept, because a deadline recorded
+    while the publisher was still running has no bearing on when its drain ends.
+    Keeping the earlier value would let the very next sweep proceed.
+    """
+    retry_at = _utc(deletion.next_retry_at)
+    if retry_at is None or retry_at < next_retry_at:
         _defer(deletion, next_retry_at=next_retry_at)
     return True
 
