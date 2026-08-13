@@ -32,7 +32,8 @@ from khepri.local.storage import build_local_object_store
 from khepri.local.sweeper import LocalSweeper, build_local_sweeper
 from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
 from khepri.rra.api import create_app
-from khepri.rra.bundle import SurfaceRenderer
+from khepri.rra.artifact_persistence import SqlArtifactRepository
+from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
 from khepri.rra.delivery_persistence import SqlDeliveryStore
@@ -52,9 +53,11 @@ from khepri.rra.rendering.chromium import launch_chromium
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.pdf import PagePrinter, PdfReportRenderer
+from khepri.rra.report_artifacts import MaterializedRenderer
 from khepri.rra.report_services import (
     DeliveredBundleAdapter,
     JobReader,
+    ReportArtifactAdapter,
     ReportRequestAdapter,
 )
 from khepri.rra.reports import ReportServices
@@ -82,6 +85,8 @@ class ReportStores:
 
     jobs: SqlReportJobRepository
     deliveries: SqlDeliveryStore
+    artifacts: SqlArtifactRepository
+    publisher: ReportArtifactPublisher
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +139,14 @@ def build_stack(
     packages = SqlFactPackageRepository(factory)
     deletions = SqlDeletionRepository(factory)
 
+    report_deliveries = SqlDeliveryStore(factory, now=clock)
+    artifact_repository = SqlArtifactRepository(factory)
+    artifact_publisher = ReportArtifactPublisher(
+        repository=artifact_repository,
+        deliveries=report_deliveries,
+        objects=objects,
+        now=clock,
+    )
     return LocalStack(
         settings=resolved,
         services=SessionServices(
@@ -160,7 +173,9 @@ def build_stack(
         ),
         reports=ReportStores(
             jobs=SqlReportJobRepository(factory),
-            deliveries=SqlDeliveryStore(factory, now=clock),
+            deliveries=report_deliveries,
+            artifacts=artifact_repository,
+            publisher=artifact_publisher,
         ),
         factory=factory,
         clock=clock,
@@ -186,7 +201,7 @@ def build_pipeline(
     run substituting some other PDF writer would be delivering a report whose
     surfaces were not produced the way the approved ones are.
     """
-    renderers: list[SurfaceRenderer] = [
+    renderers: list[MaterializedRenderer] = [
         HtmlReportRenderer(),
         ExcelSurfaceRenderer(directory=workbooks),
     ]
@@ -200,7 +215,7 @@ def build_pipeline(
             ),
             adapter=DeterministicNarrator(),
             renderers=tuple(renderers),
-            deliveries=stack.reports.deliveries,
+            deliveries=stack.reports.publisher,
         ),
         monotonic_ms=lambda: int(stack.clock().timestamp() * 1000),
     )
@@ -234,6 +249,7 @@ def build_report_services(stack: LocalStack) -> ReportServices:
             deliveries=deliveries,
         ),
         bundles=DeliveredBundleAdapter(deliveries=deliveries, reader=reader),
+        artifacts=ReportArtifactAdapter(stack.reports.publisher),
     )
 
 

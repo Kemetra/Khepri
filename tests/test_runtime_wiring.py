@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.report_publication import QueuedReportRequestService
-from khepri.rra.report_services import DeliveredBundleAdapter
+from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.config import RuntimeSettings
 from khepri.runtime.wiring import RuntimeClients, build_report_services, build_stack, build_web_app
@@ -59,6 +60,8 @@ def test_report_routes_use_queued_requests_and_session_scoped_deliveries() -> No
 
     assert isinstance(services.jobs, QueuedReportRequestService)
     assert isinstance(services.bundles, DeliveredBundleAdapter)
+    assert isinstance(services.artifacts, ReportArtifactAdapter)
+    assert isinstance(runtime_stack().reports.publisher, ReportArtifactPublisher)
 
 
 def test_web_app_exposes_the_complete_approved_beta_route_set() -> None:
@@ -75,4 +78,8 @@ def test_web_app_exposes_the_complete_approved_beta_route_set() -> None:
         "/api/v1/beta/reports",
         "/api/v1/beta/reports/{job_id}",
         "/api/v1/beta/reports/{job_id}/bundle",
+        "/api/v1/beta/reports/{job_id}/surfaces/web/{language}",
+        "/api/v1/beta/reports/{job_id}/surfaces/evidence/{language}",
+        "/api/v1/beta/reports/{job_id}/surfaces/pdf/{language}",
+        "/api/v1/beta/reports/{job_id}/surfaces/excel",
     } <= paths
