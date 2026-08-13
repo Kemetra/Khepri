@@ -106,7 +106,7 @@ class Verifier(Sealed):
         # open window a single constructor call.
         digest = hash_credential(credential, salt, DEFAULT_KDF)
         with through_door():
-            return cls(salt=salt, digest=digest, kdf=DEFAULT_KDF)
+            return Verifier(salt=salt, digest=digest, kdf=DEFAULT_KDF)
 
     @classmethod
     def _from_storage(cls, salt: bytes, digest: bytes, kdf: KdfParams) -> Verifier:
@@ -117,4 +117,4 @@ class Verifier(Sealed):
         and the guarantee is that nothing but `derive` could have put them there.
         """
         with through_door():
-            return cls(salt=salt, digest=digest, kdf=kdf)
+            return Verifier(salt=salt, digest=digest, kdf=kdf)

@@ -65,7 +65,7 @@ class Account(Sealed):
         canonical = canonical_email(email)
         verifier = Verifier.derive(credential)
         with through_door():
-            return cls(
+            return Account(
                 account_id=account_id,
                 email=canonical,
                 verifier=verifier,
@@ -75,7 +75,7 @@ class Account(Sealed):
     def _from_storage(cls, account_id: str, email: str, verifier: Verifier | None) -> Account:
         """Rebuild an account from stored columns, preserving them verbatim."""
         with through_door():
-            return cls(account_id=account_id, email=email, verifier=verifier)
+            return Account(account_id=account_id, email=email, verifier=verifier)
 
 
 def canonical_email(email: str) -> str:

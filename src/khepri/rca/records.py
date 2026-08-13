@@ -121,6 +121,19 @@ def _is_open() -> bool:
     return getattr(_opening, "depth", 0) > 0
 
 
+def _is_dataclass_generated(method: object) -> bool:
+    """True for the `__init__` `@dataclass` synthesises, false for a hand-written one.
+
+    Needed because `slots=True` rebuilds the class — `dataclasses._add_slots` calls
+    `type(cls)(...)`, which re-fires `__init_subclass__` — so our own records legitimately
+    arrive here carrying a generated `__init__`. Generated methods are compiled from a synthetic
+    source file whose name `dataclasses` sets to `<string>`; a real override in this package
+    comes from a `.py` file on disk.
+    """
+    code = getattr(method, "__code__", None)
+    return code is not None and code.co_filename == "<string>"
+
+
 class Sealed:
     """Mixin giving a frozen dataclass the two-door construction rule.
 
@@ -153,9 +166,12 @@ class Sealed:
         silence the check without naming the mangled attribute explicitly.
         """
         super().__init_subclass__(**kwargs)
-        if "__post_init__" in cls.__dict__:
+        for method in ("__post_init__", "__init__", "__new__"):
+            override = cls.__dict__.get(method)
+            if override is None or _is_dataclass_generated(override):
+                continue
             raise TypeError(
-                f"{cls.__name__} may not override __post_init__: it is the door check"
+                f"{cls.__name__} may not override {method}: construction is sealed"
             )
 
     def __enforce_door(self) -> None:

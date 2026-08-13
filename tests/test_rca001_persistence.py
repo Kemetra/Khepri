@@ -460,21 +460,34 @@ def test_a_door_body_never_runs_caller_reachable_code() -> None:
     assert forged == [], "caller code ran while a construction door was open"
 
 
-def test_a_subclass_cannot_override_the_door_check() -> None:
-    """`__post_init__` is an ordinary method, so a subclass could override it away.
+@pytest.mark.parametrize("method", ["__post_init__", "__init__", "__new__"])
+def test_a_subclass_cannot_override_any_construction_hook(method: str) -> None:
+    """Every hook the constructor dispatches through is sealed, not just `__post_init__`.
 
-    Found by review of this PR. A subclass of `Account` with a no-op `__post_init__`
-    constructed a record holding `digest=b"recoverable-password"` with no door open, and
-    `assert_sealed` accepted it through `isinstance` — FR-002 defeated with two class
-    definitions and no forgery.
+    An earlier fix here closed `__post_init__` alone, and review immediately found the next
+    one: `Account.create` calls `cls(...)`, and on a subclass with an overridden `__init__`
+    that runs caller code **while the door is open**. Reproduced — it built and retained genuine
+    `Verifier` and `Account` instances holding `digest=b"recoverable-password"`, and because
+    those have the registered exact types, `assert_sealed` accepted them.
 
-    Refused at class-definition time now, so the bypass cannot even be written down.
+    The exact-type check could not help: the smuggled objects *were* the exact types. Only
+    refusing the override, and constructing the declared type rather than `cls`, closes it.
     """
-    with pytest.raises(TypeError, match="may not override __post_init__"):
+    with pytest.raises(TypeError, match=f"may not override {method}"):
+        type("Forged", (Account,), {method: lambda self, *a, **k: None})
 
-        class ForgedAccount(Account):
-            def __post_init__(self) -> None:
-                return
+
+def test_a_door_constructs_the_declared_type_not_the_dispatched_one() -> None:
+    """`create` on a subclass yields the declared record, so `cls` cannot steer construction.
+
+    Defence in depth behind the override guard: even a subclass that adds nothing cannot make
+    a door produce an instance of itself.
+    """
+
+    class PlainSubclass(Account):
+        pass
+
+    assert type(PlainSubclass.create(EMAIL, CREDENTIAL)) is Account
 
 
 def test_the_store_refuses_a_subclass_of_a_sealed_record(factory: sessionmaker) -> None:

@@ -24,7 +24,7 @@ class Organization(Sealed):
     @classmethod
     def create(cls, name: str, *, now: datetime) -> Organization:
         with through_door():
-            return cls(
+            return Organization(
                 organization_id=f"org_{secrets.token_urlsafe(18)}",
                 name=name,
                 created_at=now,
@@ -33,7 +33,7 @@ class Organization(Sealed):
     @classmethod
     def _from_storage(cls, organization_id: str, name: str, created_at: datetime) -> Organization:
         with through_door():
-            return cls(organization_id=organization_id, name=name, created_at=created_at)
+            return Organization(organization_id=organization_id, name=name, created_at=created_at)
 
 
 @register_sealed
@@ -65,7 +65,7 @@ class Membership(Sealed):
         now: datetime,
     ) -> Membership:
         with through_door():
-            return cls(
+            return Membership(
                 organization_id=organization_id,
                 account_id=account_id,
                 role=role,
@@ -83,7 +83,7 @@ class Membership(Sealed):
         changed_at: datetime,
     ) -> Membership:
         with through_door():
-            return cls(
+            return Membership(
                 organization_id=organization_id,
                 account_id=account_id,
                 role=role,
@@ -127,12 +127,12 @@ class IsolationScope(Sealed):
     @classmethod
     def create(cls, organization_id: str) -> IsolationScope:
         with through_door():
-            return cls(organization_id=organization_id, owner_id=allocate_owner_id())
+            return IsolationScope(organization_id=organization_id, owner_id=allocate_owner_id())
 
     @classmethod
     def _from_storage(cls, organization_id: str, owner_id: str) -> IsolationScope:
         with through_door():
-            return cls(organization_id=organization_id, owner_id=owner_id)
+            return IsolationScope(organization_id=organization_id, owner_id=owner_id)
 
 
 class OrganizationService:
