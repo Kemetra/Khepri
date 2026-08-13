@@ -44,6 +44,13 @@ the forgery it permitted.
 **Python has no private construction.** `object.__setattr__` still mutates a frozen instance,
 and nothing stops a module calling `through_door()` itself. Verified, not assumed.
 
+**A door authorizes the thread, not one call.** While it is open, any code running on that
+thread can construct any sealed record. The doors therefore keep the window to a single
+constructor call: `Account.create` derives its verifier *before* opening, and `Verifier.derive`
+runs its ~100ms scrypt outside its own door, so no expensive or re-entrant work happens while
+construction is authorized. Keep it that way — a door that wraps a long computation, a
+callback, or anything that yields is a wider grant than it looks.
+
 The guarantee is that bypassing a door must be *deliberate and conspicuous* — never something
 a caller does by accident while writing ordinary-looking code. `dataclasses.replace` was
 precisely such an accident, which is what made it worth fixing rather than documenting.

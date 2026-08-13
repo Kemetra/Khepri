@@ -99,12 +99,13 @@ class Verifier(Sealed):
         a caller cannot substitute chosen material for a real derivation (FR-002).
         """
         salt = secrets.token_bytes(SALT_BYTES)
+        # Hash *before* opening the door, not inside it. A door authorizes construction for
+        # anything running on this thread while it is open, and `hash_credential` is a ~100ms
+        # scrypt — by far the longest-lived call in the package. Keeping it outside makes the
+        # open window a single constructor call.
+        digest = hash_credential(credential, salt, DEFAULT_KDF)
         with through_door():
-            return cls(
-                salt=salt,
-                digest=hash_credential(credential, salt, DEFAULT_KDF),
-                kdf=DEFAULT_KDF,
-            )
+            return cls(salt=salt, digest=digest, kdf=DEFAULT_KDF)
 
     @classmethod
     def _from_storage(cls, salt: bytes, digest: bytes, kdf: KdfParams) -> Verifier:

@@ -52,11 +52,14 @@ class Account(Sealed):
         Takes the credential, not a verifier: there is no parameter through which
         caller-supplied digest material can become a new account's stored verifier.
         """
+        # Derive before opening this record's door rather than inside it, so the window in
+        # which construction is authorized on this thread stays one constructor call wide.
+        verifier = Verifier.derive(credential)
         with through_door():
             return cls(
                 account_id=f"acc_{secrets.token_urlsafe(18)}",
                 email=canonical_email(email),
-                verifier=Verifier.derive(credential),
+                verifier=verifier,
             )
 
     @classmethod

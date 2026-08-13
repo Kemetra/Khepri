@@ -380,6 +380,10 @@ def test_copying_a_sealed_record_is_not_a_door(clone) -> None:
             Membership.create("org_1", "acc_1", "member", changed_by="acc_1", now=NOW),
             role="owner",
         )
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(Organization.create("Acme", now=NOW), name="Renamed")
+    with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
+        clone(Verifier.derive(CREDENTIAL), digest=CREDENTIAL.encode())
 
 
 @pytest.mark.parametrize(
