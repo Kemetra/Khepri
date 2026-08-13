@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from khepri.rra.artifact_publication import ArtifactDocument
 from khepri.rra.bundle import GOVERNED_REASONS as BUNDLE_REASONS
 from khepri.rra.bundle import (
     REASON_BUNDLE_MISMATCH,
@@ -309,6 +310,19 @@ class DeliveredBundleReader(Protocol):
     ) -> DeliveredBundle | None: ...
 
 
+class ReportArtifactReader(Protocol):
+    """Resolve verified report bytes only through the caller's session."""
+
+    def get_session_artifact(
+        self,
+        *,
+        session_id: str,
+        job_id: str,
+        artifact_kind: str,
+        now: datetime,
+    ) -> ArtifactDocument | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ReportServices:
     """The collaborators the report surface needs, injected as one unit.
@@ -322,6 +336,7 @@ class ReportServices:
 
     jobs: ReportRequestService
     bundles: DeliveredBundleReader
+    artifacts: ReportArtifactReader | None = None
 
 
 __all__ = [
@@ -334,6 +349,7 @@ __all__ = [
     "ReportJobView",
     "ReportPackageMissing",
     "ReportRequestService",
+    "ReportArtifactReader",
     "ReportServices",
     "job_outcome",
     "reconcile_delivery",

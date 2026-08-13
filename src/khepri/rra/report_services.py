@@ -30,6 +30,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from khepri.rra.artifact_publication import ArtifactDocument, ReportArtifactPublisher
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.job_persistence import ReportJobRow, SqlReportJobRepository
 from khepri.rra.jobs import EnqueueJob, ReportJob
@@ -161,6 +162,28 @@ class DeliveredBundleAdapter:
         )
 
 
+class ReportArtifactAdapter:
+    """Expose the publisher's verified read through the route-facing contract."""
+
+    def __init__(self, publisher: ReportArtifactPublisher) -> None:
+        self._publisher = publisher
+
+    def get_session_artifact(
+        self,
+        *,
+        session_id: str,
+        job_id: str,
+        artifact_kind: str,
+        now: datetime,
+    ) -> ArtifactDocument | None:
+        return self._publisher.read(
+            session_id=session_id,
+            job_id=job_id,
+            artifact_kind=artifact_kind,
+            now=now,
+        )
+
+
 def _idempotency_key(scope: SessionScope, package_digest: str) -> str:
     """One key per session and published package, so a re-request is one job."""
     return hashlib.sha256(
@@ -191,5 +214,6 @@ __all__ = [
     "JobReader",
     "DeliveredBundleAdapter",
     "ReportRequestAdapter",
+    "ReportArtifactAdapter",
     "SessionPackages",
 ]
