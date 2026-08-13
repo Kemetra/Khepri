@@ -30,7 +30,7 @@ REQUIRED_ARTIFACT_KINDS = (
     "excel",
 )
 
-_ARTIFACT_METADATA = {
+ARTIFACT_METADATA = {
     "web_business_ar": (HTML_MEDIA_TYPE, "khepri-report.html"),
     "web_business_en": (HTML_MEDIA_TYPE, "khepri-report.html"),
     "web_evidence_ar": (HTML_MEDIA_TYPE, "khepri-evidence.html"),
@@ -58,7 +58,7 @@ class ArtifactPayload:
     sha256_hex: str
 
     def __post_init__(self) -> None:
-        expected = _ARTIFACT_METADATA.get(self.kind)
+        expected = ARTIFACT_METADATA.get(self.kind)
         if expected is None:
             raise ValueError("Artifact kind is not governed.")
         if self.media_type != expected[0]:
@@ -120,6 +120,7 @@ __all__ = [
     "PDF_MEDIA_TYPE",
     "XLSX_MEDIA_TYPE",
     "ArtifactPayload",
+    "ARTIFACT_METADATA",
     "MaterializedRenderer",
     "MaterializedSurface",
     "REQUIRED_ARTIFACT_KINDS",
