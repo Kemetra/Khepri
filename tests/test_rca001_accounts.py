@@ -5,13 +5,8 @@ import secrets
 import pytest
 
 from khepri.rca import accounts as accounts_module
-from khepri.rca.accounts import (
-    DEFAULT_KDF,
-    Account,
-    AccountService,
-    KdfParams,
-    hash_credential,
-)
+from khepri.rca.accounts import Account, AccountService
+from khepri.rca.credentials import DEFAULT_KDF, KdfParams, Verifier, hash_credential
 from khepri.rca.errors import AuthenticationFailed
 
 EMAIL = "owner@example.test"
@@ -57,25 +52,29 @@ def test_credential_is_never_stored_in_recoverable_form() -> None:
     account = service.create_account(EMAIL, CREDENTIAL)
     secret = CREDENTIAL.encode()
 
-    assert secret not in account.credential_digest
+    assert account.verifier is not None
+    assert secret not in account.verifier.digest
     assert CREDENTIAL not in repr(account)
     # The salt must participate: the same credential under a different salt differs.
-    assert account.credential_digest != hash_credential(CREDENTIAL, b"0" * 16)
+    assert account.verifier.digest != hash_credential(CREDENTIAL, b"0" * 16)
 
 
 def test_credential_digest_records_its_work_factor() -> None:
     service = _service()
     account = service.create_account(EMAIL, CREDENTIAL)
-    assert (account.kdf.n, account.kdf.r, account.kdf.p) == (2**15, 8, 1)
-    assert len(account.credential_salt) == 16
-    assert len(account.credential_digest) == 32
+    assert account.verifier is not None
+    kdf = account.verifier.kdf
+    assert (kdf.n, kdf.r, kdf.p) == (2**15, 8, 1)
+    assert len(account.verifier.salt) == 16
+    assert len(account.verifier.digest) == 32
 
 
 def test_same_credential_yields_distinct_digests_across_accounts() -> None:
     service = _service()
     first = service.create_account("a@example.test", CREDENTIAL)
     second = service.create_account("b@example.test", CREDENTIAL)
-    assert first.credential_digest != second.credential_digest
+    assert first.verifier is not None and second.verifier is not None
+    assert first.verifier.digest != second.verifier.digest
 
 
 def test_authenticate_succeeds_with_correct_credential() -> None:
@@ -114,6 +113,13 @@ def _rejection_work(
     shared CI runners) or summing nominal n*r*p (which cannot see that scrypt is memory-hard,
     so 2 calls at n=2**14 and 1 at n=2**15 have equal nominal cost but different real cost —
     measured within 0.4% on one CPU and 0.14s vs 0.23s on another).
+
+    `hash_credential` lives in `khepri.rca.credentials` but is imported by name into
+    `khepri.rca.accounts`, so `accounts.authenticate` resolves it through the *accounts*
+    module namespace. Patching `credentials.hash_credential` would therefore record nothing
+    while every assertion below still passed: `dict.fromkeys({}, ...)` compares `{} == {}`.
+    The patch target must be the module that calls it, and the recorder must be proven to
+    have fired, which is what the assertion at the end of this helper is for.
     """
     calls: dict[str, list[KdfParams]] = {}
     real_hash = accounts_module.hash_credential
@@ -129,6 +135,13 @@ def _rejection_work(
         calls[current] = []
         with pytest.raises(AuthenticationFailed):
             service.authenticate(email, credential)
+
+    # Without this, a stale patch target makes every caller's uniformity assertion vacuous:
+    # no path records anything, and comparing an empty dict to itself passes.
+    assert calls and all(calls[label] for label in calls), (
+        f"the recorder never fired: {calls!r} -- hash_credential is no longer resolved "
+        "through khepri.rca.accounts, so this test proves nothing"
+    )
     return calls
 
 
@@ -220,22 +233,25 @@ def test_a_record_at_a_non_default_work_factor_is_refused_uniformly(
     service = AccountService(store)
     legacy_kdf = KdfParams(n=2**14)
     salt = secrets.token_bytes(16)
+    # Both records stand in for rows a *previous* release wrote, so they are built through the
+    # reconstruction door rather than `create` — which is exactly what that door is for, and
+    # which `create` could not express anyway (it always derives at DEFAULT_KDF).
     store.add_account(
-        Account(
+        Account._from_storage(
             account_id="acc_legacy",
             email="legacy@example.test",
-            credential_salt=salt,
-            credential_digest=hash_credential(CREDENTIAL, salt, legacy_kdf),
-            kdf=legacy_kdf,
+            verifier=Verifier.from_storage(
+                salt=salt,
+                digest=hash_credential(CREDENTIAL, salt, legacy_kdf),
+                kdf=legacy_kdf,
+            ),
         )
     )
     store.add_account(
-        Account(
+        Account._from_storage(
             account_id="acc_bare",
             email="bare@example.test",
-            credential_salt=None,
-            credential_digest=None,
-            kdf=None,
+            verifier=None,
         )
     )
     service.create_account(EMAIL, CREDENTIAL)

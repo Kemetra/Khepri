@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from khepri.rca.errors import ORGANIZATION_FAILURE, OrganizationCreationFailed
+from khepri.rca.records import SEALED, Sealed, sealed_field
 
 if TYPE_CHECKING:
     from khepri.rca.stores import OrganizationStore
@@ -14,19 +15,82 @@ OWNER_ROLE = "owner"
 
 
 @dataclass(frozen=True, slots=True)
-class Organization:
+class Organization(Sealed):
     organization_id: str
     name: str
     created_at: datetime
+    _token: object = sealed_field()
+
+    @classmethod
+    def create(cls, name: str, *, now: datetime) -> Organization:
+        return cls(
+            organization_id=f"org_{secrets.token_urlsafe(18)}",
+            name=name,
+            created_at=now,
+            _token=SEALED,
+        )
+
+    @classmethod
+    def _from_storage(cls, organization_id: str, name: str, created_at: datetime) -> Organization:
+        return cls(
+            organization_id=organization_id, name=name, created_at=created_at, _token=SEALED
+        )
 
 
 @dataclass(frozen=True, slots=True)
-class Membership:
+class Membership(Sealed):
+    """An account's role in an organization, as a state row.
+
+    This records the *current* role only. It cannot represent a role transition, so FR-014's
+    "what the prior and resulting roles were" is unsatisfiable in this shape, and the
+    `changed_by`/`changed_at` columns hold audit data on a row with no expiry while
+    `KHEPRI-DEC-015` gives role/membership audit events a 12-month horizon. Both are #150's:
+    attribution moves to an append-only `rca_membership_events` table that expires on its own.
+    """
+
     organization_id: str
     account_id: str
     role: str
     changed_by: str
     changed_at: datetime
+    _token: object = sealed_field()
+
+    @classmethod
+    def create(
+        cls,
+        organization_id: str,
+        account_id: str,
+        role: str,
+        *,
+        changed_by: str,
+        now: datetime,
+    ) -> Membership:
+        return cls(
+            organization_id=organization_id,
+            account_id=account_id,
+            role=role,
+            changed_by=changed_by,
+            changed_at=now,
+            _token=SEALED,
+        )
+
+    @classmethod
+    def _from_storage(
+        cls,
+        organization_id: str,
+        account_id: str,
+        role: str,
+        changed_by: str,
+        changed_at: datetime,
+    ) -> Membership:
+        return cls(
+            organization_id=organization_id,
+            account_id=account_id,
+            role=role,
+            changed_by=changed_by,
+            changed_at=changed_at,
+            _token=SEALED,
+        )
 
 
 _OWNER_ID_PREFIX = "own_"
@@ -42,40 +106,36 @@ def allocate_owner_id() -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class IsolationScope:
-    """An organization's opaque isolation key. The key cannot be supplied by a caller.
+class IsolationScope(Sealed):
+    """An organization's opaque isolation key (FR-032, FR-033, FR-035).
 
-    FR-032/FR-033 are the reason this slice exists, and enforcing them anywhere other than
-    here left a gap. Validating in `OrganizationService` missed every caller reaching the
-    store directly — verified: such a caller could persist `owner@example.test`, and
-    `resolve_scope` handed that email back as the analytical boundary. Validating the key's
-    *shape* then missed `own_AcmePharmacy000000000000`, which is 24 characters of the
-    accepted alphabet and still copied straight from an organization name.
+    `create` takes an organization identifier and nothing else. There is no parameter for
+    `owner_id`, so a caller-supplied key is not rejected — it cannot be written down. That is
+    the property #148 spent four review rounds failing to reach by validation: a key's *shape*
+    cannot establish its provenance, since `own_AcmePharmacy000000000000` is 24 characters of
+    the accepted alphabet and still copied from an organization name.
 
-    Shape cannot establish provenance, so this type does not check provenance — it owns it.
-    `owner_id` is allocated in `__post_init__` and there is no parameter to override it, so
-    no layer can construct a scope carrying an untrusted key.
+    `_from_storage` preserves the key a row already holds, because FR-035 requires one
+    organization to resolve to a *stable* scope for its lifetime — reading must never mint a
+    new key. It asserts nothing about the value: the value came from the database, and the
+    guarantee is that nothing but `create` could have put it there.
     """
 
     organization_id: str
-    owner_id: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "owner_id", allocate_owner_id())
+    owner_id: str
+    _token: object = sealed_field()
 
     @classmethod
-    def restore(cls, organization_id: str, owner_id: str) -> IsolationScope:
-        """Rebuild a scope from storage, preserving the key that was allocated originally.
+    def create(cls, organization_id: str) -> IsolationScope:
+        return cls(
+            organization_id=organization_id,
+            owner_id=allocate_owner_id(),
+            _token=SEALED,
+        )
 
-        Reading must not mint a new key: FR-035 requires one organization to resolve to a
-        *stable* scope for its lifetime. This is the only way to set `owner_id` from outside,
-        and it exists for the persistence read path — a store converting a row it previously
-        wrote. It asserts nothing about the value because the value came from the database;
-        the guarantee is that nothing but an allocation could have put it there.
-        """
-        scope = cls(organization_id=organization_id)
-        object.__setattr__(scope, "owner_id", owner_id)
-        return scope
+    @classmethod
+    def _from_storage(cls, organization_id: str, owner_id: str) -> IsolationScope:
+        return cls(organization_id=organization_id, owner_id=owner_id, _token=SEALED)
 
 
 class OrganizationService:
@@ -89,19 +149,15 @@ class OrganizationService:
         *,
         now: datetime,
     ) -> Organization:
-        organization = Organization(
-            organization_id=f"org_{secrets.token_urlsafe(18)}",
-            name=name,
-            created_at=now,
-        )
-        membership = Membership(
+        organization = Organization.create(name, now=now)
+        membership = Membership.create(
             organization_id=organization.organization_id,
             account_id=creator_account_id,
             role=OWNER_ROLE,
             changed_by=creator_account_id,
-            changed_at=now,
+            now=now,
         )
-        scope = IsolationScope(organization_id=organization.organization_id)
+        scope = IsolationScope.create(organization.organization_id)
         if not self._store.create_organization(organization, membership, scope):
             raise OrganizationCreationFailed(ORGANIZATION_FAILURE)
         return organization
