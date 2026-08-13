@@ -287,6 +287,16 @@ def test_a_heartbeat_keeps_an_active_job_out_of_orphan_recovery() -> None:
     assert recovered == ()
 
 
+def test_a_job_cannot_start_after_session_deletion_is_requested() -> None:
+    test = harness()
+    queued = test.enqueue()
+    beta_session = test.sessions.get_session(test.scope.session_id)
+    assert beta_session is not None
+    test.sessions.update_session(replace(beta_session, deletion_requested_at=NOW))
+
+    assert test.lease(queued.job_id, "worker_alpha") is None
+
+
 def test_attempt_evidence_carries_only_content_free_identifiers() -> None:
     names = {field.name for field in fields(JobAttempt)}
 

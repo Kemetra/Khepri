@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,29 @@ from khepri.rra.persistence import (
     UploadRow,
 )
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
+
+
+def defer_for_publication(
+    database: Session,
+    deletion: DeletionJobRow,
+    session_id: str,
+    next_retry_at: datetime,
+) -> bool:
+    from khepri.rra.job_persistence import ReportJobRow  # noqa: PLC0415
+    from khepri.rra.jobs import JOB_DEAD_LETTERED, JOB_SUCCEEDED  # noqa: PLC0415
+
+    report_jobs = database.scalars(
+        select(ReportJobRow)
+        .where(ReportJobRow.session_id == session_id)
+        .with_for_update()
+    )
+    terminal = {JOB_SUCCEEDED, JOB_DEAD_LETTERED}
+    if all(candidate.state in terminal for candidate in report_jobs):
+        return False
+    deletion.state = "retryable"
+    deletion.next_retry_at = next_retry_at
+    database.flush()
+    return True
 
 
 def deletion_targets(
@@ -152,4 +177,5 @@ __all__ = [
     "delete_derived_content",
     "delete_object_metadata",
     "deletion_targets",
+    "defer_for_publication",
 ]

@@ -112,6 +112,13 @@ class DeletionRepository(Protocol):
 
     def get_targets(self, job: DeletionJob) -> tuple[DeletionTarget, ...]: ...
 
+    def defer_for_publication(
+        self,
+        job: DeletionJob,
+        *,
+        next_retry_at: datetime,
+    ) -> bool: ...
+
     def complete(
         self,
         *,
@@ -178,6 +185,11 @@ class DeletionService:
         )
         if job.state == "complete":
             return job
+        if self._deletions.defer_for_publication(
+            job,
+            next_retry_at=now + _RETRY_DELAY,
+        ):
+            raise DeletionRetryRequired("Content deletion must be retried.")
         targets = self._deletions.get_targets(job)
         for target in targets:
             assert_same_scope(job.scope, target.scope)

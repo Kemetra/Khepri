@@ -1,4 +1,7 @@
 const language = document.body.dataset.language;
+class ApiError extends Error {
+  constructor(status) { super(String(status)); this.status = status; }
+}
 const api = async (path, options = {}) => {
   const headers = { ...(options.headers || {}) };
   const response = await fetch(path, {
@@ -6,7 +9,7 @@ const api = async (path, options = {}) => {
     ...options,
     headers,
   });
-  if (!response.ok) throw new Error(String(response.status));
+  if (!response.ok) throw new ApiError(response.status);
   return response.status === 204 ? null : response.json();
 };
 
@@ -18,14 +21,21 @@ const resume = async () => {
     if (state.step !== current) location.replace(routeFor(state.step));
     return state;
   } catch (error) {
-    if (current !== "expired") location.replace(routeFor("expired"));
-    return null;
+    if (error.status === 401) {
+      if (current !== "expired") location.replace(routeFor("expired"));
+      return null;
+    }
+    throw error;
   }
 };
 
 const deleteContent = async () => {
-  await api("/api/v1/beta/content", { method: "DELETE" });
-  location.replace(routeFor("expired"));
+  try {
+    await api("/api/v1/beta/content", { method: "DELETE" });
+  } catch (error) {
+    if (error.status !== 503) throw error;
+  }
+  location.replace(`${routeFor("expired")}?deletion=requested`);
 };
 
 export { api, deleteContent, language, resume, routeFor };

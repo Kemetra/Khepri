@@ -103,6 +103,14 @@ class MemoryDeletionRepository(DeletionRepository):
             ),
         )
 
+    def defer_for_publication(
+        self,
+        job: DeletionJob,
+        *,
+        next_retry_at: datetime,
+    ) -> bool:
+        return False
+
     def complete(
         self,
         *,
@@ -184,6 +192,17 @@ class ConcurrentCompletionRepository(MemoryDeletionRepository):
         return self.job
 
 
+class PublishingRepository(MemoryDeletionRepository):
+    def defer_for_publication(
+        self,
+        job: DeletionJob,
+        *,
+        next_retry_at: datetime,
+    ) -> bool:
+        self.job = replace(job, state="retryable", next_retry_at=next_retry_at)
+        return True
+
+
 def service(
     repository: MemoryDeletionRepository,
     objects: MemoryDeletionObjectStore,
@@ -232,6 +251,26 @@ def test_successful_deletion_records_only_content_free_evidence() -> None:
             error_code=None,
         )
     ]
+
+
+def test_in_flight_publication_defers_deletion_before_storage_sweep() -> None:
+    repository = PublishingRepository(upload())
+    objects = MemoryDeletionObjectStore()
+
+    with pytest.raises(DeletionRetryRequired):
+        service(repository, objects).delete_session_content(
+            session_id="ses_alpha",
+            reason="immediate",
+            now=NOW,
+        )
+
+    assert repository.job is not None
+    assert repository.job.state == "retryable"
+    assert repository.job.next_retry_at == NOW + timedelta(minutes=5)
+    assert objects.abort_prefixes == []
+    assert objects.deleted_prefixes == []
+    assert objects.deleted_keys == []
+    assert repository.evidence == []
 
 
 def test_completed_deletion_is_idempotent_without_repeating_storage_calls() -> None:

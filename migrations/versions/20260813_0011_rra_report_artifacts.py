@@ -45,7 +45,7 @@ def _requeue_deliveries_without_artifacts() -> None:
             UPDATE rra_report_jobs
             SET state = 'queued',
                 available_at = CURRENT_TIMESTAMP,
-                attempt_count = 0,
+                max_attempts = max_attempts + attempt_count,
                 lease_owner = NULL,
                 lease_expires_at = NULL,
                 completed_at = NULL,

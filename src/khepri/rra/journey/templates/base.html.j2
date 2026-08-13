@@ -12,11 +12,11 @@
     <a class="brand" href="/beta/{{ language }}" aria-label="{{ copy.product }}">
       <span>KHEPRI</span>
     </a>
-    <nav aria-label="Language">
+    <nav aria-label="{{ copy.language_navigation }}">
       <a class="language-link" href="/beta/{{ alternate }}/{{ step }}">{{ copy.language }}</a>
     </nav>
   </header>
-  <nav class="step-nav" aria-label="Journey progress">
+  <nav class="step-nav" aria-label="{{ copy.journey_progress }}">
     <ol>
       <li class="{% if step == 'upload' %}current{% endif %}"><a href="/beta/{{ language }}/upload"><span>1</span> {{ copy.step_upload }}</a></li>
       <li class="{% if step == 'review' %}current{% endif %}"><a href="/beta/{{ language }}/review"><span>2</span> {{ copy.step_review }}</a></li>

@@ -185,6 +185,7 @@ class SqlReportJobRepository:
                 ReportJobRow.state.in_((JOB_QUEUED, JOB_RETRYABLE)),
                 ReportJobRow.available_at <= request.now,
                 ReportJobRow.attempt_count < ReportJobRow.max_attempts,
+                ReportJobRow.session_id.in_(_live_content_sessions()),
             )
             .with_for_update()
         )
@@ -438,6 +439,13 @@ def _new_job_row(request: EnqueueJob) -> ReportJobRow:
 def _deleted_content_sessions() -> Select[tuple[str]]:
     return select(BetaSessionRow.session_id).where(
         BetaSessionRow.content_deleted_at.is_not(None)
+    )
+
+
+def _live_content_sessions() -> Select[tuple[str]]:
+    return select(BetaSessionRow.session_id).where(
+        BetaSessionRow.deletion_requested_at.is_(None),
+        BetaSessionRow.content_deleted_at.is_(None),
     )
 
 

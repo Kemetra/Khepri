@@ -47,5 +47,14 @@ def test_expired_page_is_a_closed_local_journey_state() -> None:
 
 def test_common_module_routes_an_unavailable_session_to_expired() -> None:
     script = client().get("/beta/assets/common.js").text
+    assert "error.status === 401" in script
     assert 'current !== "expired"' in script
     assert 'location.replace(routeFor("expired"))' in script
+    assert "error.status !== 503" in script
+    assert "?deletion=requested" in script
+
+
+def test_pending_deletion_has_a_stable_confirmation_page() -> None:
+    body = client().get("/beta/en/expired?deletion=requested").text
+    assert "Deletion requested" in body
+    assert "continue automatically" in body

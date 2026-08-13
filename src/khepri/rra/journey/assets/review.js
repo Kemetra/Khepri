@@ -3,6 +3,7 @@ import { api, deleteContent, language, resume, routeFor } from "/beta/assets/com
 const table = document.querySelector("#mapping-table tbody");
 const confirm = document.querySelector("#confirm-mapping");
 const error = document.querySelector("#error-summary");
+const findings = document.querySelector("#profile-findings");
 const cell = (value) => { const item = document.createElement("td"); item.textContent = value ?? "—"; return item; };
 
 const load = async () => {
@@ -14,6 +15,17 @@ const load = async () => {
     const candidate = mapping.candidates[0];
     row.append(cell(candidate?.safe_label), cell(mapping.semantic), cell(mapping.state), cell(candidate?.evidence?.join(" · ")));
     table.append(row);
+  }
+  if (!profile.admissible) {
+    const codes = [...new Set([...profile.reasons, ...profile.findings])];
+    const list = document.createElement("ul");
+    for (const code of codes) {
+      const item = document.createElement("li");
+      item.textContent = findings.getAttribute(`data-${code.replaceAll("_", "-")}`) ?? findings.dataset.generic;
+      list.append(item);
+    }
+    findings.append(document.createTextNode(findings.dataset.title), list);
+    findings.hidden = false;
   }
   confirm.disabled = !(profile.admissible && profile.mappings.filter((item) => item.requirement === "required").every((item) => item.state === "mapped"));
 };

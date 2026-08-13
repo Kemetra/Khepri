@@ -3,9 +3,9 @@
 {% block content %}
 <section class="document-card" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.processing_title }}</h1><p class="lede">{{ copy.processing_intro }}</p>
-  <div class="indeterminate" role="progressbar" aria-label="Report generation in progress"><span></span></div>
-  <ol id="durable-stages" class="stages"><li>Upload and review</li><li>Confirmed facts</li><li>Report generation</li><li>Complete publication</li></ol>
-  <p id="processing-status" aria-live="polite"></p>
+  <div class="indeterminate" role="progressbar" aria-label="{{ copy.processing_progress }}"><span></span></div>
+  <ol id="durable-stages" class="stages"><li>{{ copy.stage_upload_review }}</li><li>{{ copy.stage_confirmed_facts }}</li><li>{{ copy.stage_report_generation }}</li><li>{{ copy.stage_complete_publication }}</li></ol>
+  <p id="processing-status" aria-live="polite" data-preparing="{{ copy.processing_preparing }}" data-failed="{{ copy.processing_failed }}" data-temporary="{{ copy.temporary_unavailable }}"></p>
   <button id="processing-recovery" class="text-button" hidden>{{ copy.delete }}</button>
 </section>
 {% endblock %}

@@ -647,6 +647,25 @@ class SqlDeletionRepository:
         with self._factory() as database:
             return deletion_targets(database, job.owner_id, job.session_id)
 
+    def defer_for_publication(
+        self,
+        job: DeletionJob,
+        *,
+        next_retry_at: datetime,
+    ) -> bool:
+        from khepri.rra.deletion_persistence import (  # noqa: PLC0415
+            defer_for_publication,
+        )
+
+        with self._factory.begin() as database:
+            deletion = self._locked_job(database, job.deletion_id)
+            return defer_for_publication(
+                database,
+                deletion,
+                job.session_id,
+                next_retry_at,
+            )
+
     def complete(
         self,
         *,

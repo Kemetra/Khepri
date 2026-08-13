@@ -10,6 +10,7 @@ from khepri.rra.artifact_persistence import ReportArtifactRow, SqlArtifactReposi
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.deletion import DeletionRetryRequired, DeletionService, DeletionTarget
 from khepri.rra.intake import CSV_MEDIA_TYPE, UploadMetadata
+from khepri.rra.jobs import LeaseAction
 from khepri.rra.persistence import (
     SqlDeletionRepository,
     SqlSessionStore,
@@ -94,6 +95,28 @@ def test_one_attempt_deletes_upload_and_all_seven_report_artifacts() -> None:
     ]
 
 
+def test_sql_deletion_defers_while_a_report_publication_is_in_flight() -> None:
+    test = harness()
+    test.leased()
+    objects = MemoryObjects()
+    service = DeletionService(
+        sessions=SqlSessionStore(test.factory),
+        deletions=SqlDeletionRepository(test.factory),
+        objects=objects,
+        new_deletion_id=lambda: "del_alpha",
+    )
+
+    with pytest.raises(DeletionRetryRequired):
+        service.delete_session_content(
+            session_id=test.session.session_id,
+            reason="immediate",
+            now=NOW,
+        )
+
+    assert objects.aborted == []
+    assert objects.deleted == []
+
+
 def test_one_object_failure_keeps_metadata_retryable_then_finishes_safely() -> None:
     repository = TargetsRepository()
     fourth_key = _targets()[3].object_key
@@ -134,6 +157,9 @@ def test_sql_completion_removes_upload_and_artifact_metadata_together() -> None:
         now=lambda: NOW,
     )
     publisher.publish(publication)
+    test.jobs.complete(
+        LeaseAction(job_id="job_alpha", worker_id="worker_alpha", now=NOW)
+    )
     input_content = b"date,revenue\n2026-01,1\n"
     input_key = (
         f"owners/{test.session.owner_id}/sessions/{test.session.session_id}/inputs/upl_alpha"

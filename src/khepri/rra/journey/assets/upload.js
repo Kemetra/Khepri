@@ -84,7 +84,7 @@ const bootstrap = async () => {
       location.replace(routeFor("review"));
     }
   } catch (error) {
-    message(language === "ar" ? "الدعوة غير متاحة." : "This invitation is unavailable.");
+    message(error.status === 401 ? errorSummary.dataset.invitation : errorSummary.dataset.temporary);
   }
 };
 update();

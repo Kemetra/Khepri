@@ -2,7 +2,12 @@
 {% block title %}{{ copy.expired_title }} · {{ copy.product }}{% endblock %}
 {% block content %}
 <section class="document-card" aria-labelledby="page-title">
+  {% if request.query_params.get("deletion") == "requested" %}
+  <h1 id="page-title">{{ copy.deletion_requested_title }}</h1>
+  <p class="lede">{{ copy.deletion_requested_intro }}</p>
+  {% else %}
   <h1 id="page-title">{{ copy.expired_title }}</h1>
   <p class="lede">{{ copy.expired_intro }}</p>
+  {% endif %}
 </section>
 {% endblock %}

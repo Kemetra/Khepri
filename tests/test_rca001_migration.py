@@ -151,6 +151,8 @@ def test_artifact_migration_requeues_live_legacy_deliveries() -> None:
     assert "SET state = 'queued'" in statement
     assert "state = 'succeeded'" in statement
     assert "content_expires_at > CURRENT_TIMESTAMP" in statement
+    assert "attempt_count = 0" not in statement
+    assert "max_attempts = max_attempts + attempt_count" in statement
 
 
 def test_artifact_downgrade_discards_incompatible_report_evidence() -> None:

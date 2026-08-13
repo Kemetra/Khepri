@@ -1,11 +1,19 @@
-import { api, deleteContent, language, resume } from "/beta/assets/common.js";
+import { api, deleteContent, resume } from "/beta/assets/common.js";
 
 let delay = 1000;
 let timer = null;
 const poll = async () => {
   timer = null;
   if (document.hidden) return;
-  const state = await resume();
+  let state;
+  try {
+    state = await resume();
+  } catch (error) {
+    document.querySelector("#processing-status").textContent = document.querySelector("#processing-status").dataset.temporary;
+    delay = Math.min(delay * 2, 10000);
+    timer = window.setTimeout(poll, delay);
+    return;
+  }
   if (!state || state.step !== "processing") return;
   if (!state.job_id && state.package_present) {
     try {
@@ -18,11 +26,11 @@ const poll = async () => {
   }
   if (state.job_state === "dead_lettered") {
     document.querySelector(".indeterminate").hidden = true;
-    document.querySelector("#processing-status").textContent = language === "ar" ? "تعذر إكمال التقرير. احذف هذه الجلسة واطلب دعوة جديدة." : "The report could not be completed. Delete this session and request a new invitation.";
+    document.querySelector("#processing-status").textContent = document.querySelector("#processing-status").dataset.failed;
     document.querySelector("#processing-recovery").hidden = false;
     return;
   }
-  document.querySelector("#processing-status").textContent = language === "ar" ? "يتم إعداد التقرير الآمن." : "The secure report is being prepared.";
+  document.querySelector("#processing-status").textContent = document.querySelector("#processing-status").dataset.preparing;
   delay = Math.min(delay * 2, 10000);
   timer = window.setTimeout(poll, delay);
 };

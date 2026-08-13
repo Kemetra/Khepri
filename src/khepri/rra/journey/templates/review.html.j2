@@ -4,9 +4,20 @@
 <section class="document-card wide" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.review_title }}</h1><p class="lede">{{ copy.review_intro }}</p>
   <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden></div>
+  <div id="profile-findings" class="error-summary" role="status" hidden
+    data-title="{{ copy.review_blocked_title }}"
+    data-generic="{{ copy.reason_generic }}"
+    data-no-data-rows="{{ copy.reason_no_data_rows }}"
+    data-no-admissible-time-field="{{ copy.reason_no_time_field }}"
+    data-no-answerable-core-measure="{{ copy.reason_no_core_measure }}"
+    data-irreconcilable-types="{{ copy.reason_irreconcilable_types }}"
+    data-unresolved-ambiguous-mapping="{{ copy.reason_ambiguous_mapping }}"
+    data-missing-requested-semantic="{{ copy.reason_missing_semantic }}"
+    data-duplicate-safe-labels="{{ copy.finding_duplicate_labels }}"
+    data-all-columns-empty="{{ copy.finding_all_columns_empty }}"></div>
   <div class="table-region" role="region" aria-labelledby="mapping-caption" tabindex="0">
     <table id="mapping-table"><caption id="mapping-caption">{{ copy.review_title }}</caption>
-      <thead><tr><th scope="col">Column</th><th scope="col">Retail meaning</th><th scope="col">Status</th><th scope="col">Evidence</th></tr></thead>
+      <thead><tr><th scope="col">{{ copy.column }}</th><th scope="col">{{ copy.retail_meaning }}</th><th scope="col">{{ copy.status }}</th><th scope="col">{{ copy.evidence }}</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
