@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 def defer_for_publication(
     database: Session,
     deletion: DeletionJobRow,
-    session_id: str,
+    *,
     now: datetime,
     next_retry_at: datetime,
 ) -> bool:
@@ -37,7 +37,7 @@ def defer_for_publication(
     report_jobs = list(
         database.scalars(
             select(ReportJobRow)
-            .where(ReportJobRow.session_id == session_id)
+            .where(ReportJobRow.session_id == deletion.session_id)
             .with_for_update()
         )
     )

@@ -86,6 +86,41 @@ def _publisher(objects: MemoryObjects):
     )
 
 
+class DelegatingRepository:
+    """Forwards every repository call to a real repository.
+
+    Each test subclasses this and overrides only the method whose failure it
+    exercises, so the behaviour under test is the only thing it declares.
+    """
+
+    def __init__(self, inner: SqlArtifactRepository) -> None:
+        self._inner = inner
+
+    def has_complete(self, job_id: str) -> bool:
+        return self._inner.has_complete(job_id)
+
+    def is_committed(self, artifacts) -> bool:
+        return self._inner.is_committed(artifacts)
+
+    def boundary(self, publication, *, created_at):
+        return self._inner.boundary(publication, created_at=created_at)
+
+    def commit(self, publication, artifacts, **context):
+        return self._inner.commit(publication, artifacts, **context)
+
+    def find_in_session(self, **details):
+        return self._inner.find_in_session(**details)
+
+
+def _publisher_for(repository, test, objects: MemoryObjects):
+    return ReportArtifactPublisher(
+        repository=repository,
+        deliveries=test.store,
+        objects=objects,
+        now=lambda: NOW,
+    )
+
+
 def test_publication_writes_seven_encrypted_objects_then_one_metadata_set() -> None:
     objects = MemoryObjects()
     test, publisher = _publisher(objects)
@@ -158,28 +193,14 @@ def test_metadata_failure_removes_all_objects_created_by_the_attempt() -> None:
     test = harness()
     inner = SqlArtifactRepository(test.factory)
 
-    class FailingRepository:
-        def has_complete(self, job_id: str) -> bool:
-            return inner.has_complete(job_id)
-
+    class FailingRepository(DelegatingRepository):
         def is_committed(self, artifacts) -> bool:
             return False
-
-        def boundary(self, publication, *, created_at):
-            return inner.boundary(publication, created_at=created_at)
 
         def commit(self, publication, artifacts, **context):
             raise RuntimeError("database provider detail")
 
-        def find_in_session(self, **details):
-            return inner.find_in_session(**details)
-
-    publisher = ReportArtifactPublisher(
-        repository=FailingRepository(),
-        deliveries=test.store,
-        objects=objects,
-        now=lambda: NOW,
-    )
+    publisher = _publisher_for(FailingRepository(inner), test, objects)
 
     with pytest.raises(ArtifactUnavailable, match="unavailable") as raised:
         publisher.publish(_publication(test))
@@ -194,29 +215,12 @@ def test_lost_commit_acknowledgement_preserves_the_committed_objects() -> None:
     test = harness()
     inner = SqlArtifactRepository(test.factory)
 
-    class AmbiguousRepository:
-        def has_complete(self, job_id: str) -> bool:
-            return inner.has_complete(job_id)
-
-        def boundary(self, publication, *, created_at):
-            return inner.boundary(publication, created_at=created_at)
-
+    class AmbiguousRepository(DelegatingRepository):
         def commit(self, publication, artifacts, **context):
-            inner.commit(publication, artifacts, **context)
+            super().commit(publication, artifacts, **context)
             raise RuntimeError("commit acknowledgement was lost")
 
-        def is_committed(self, artifacts):
-            return inner.is_committed(artifacts)
-
-        def find_in_session(self, **details):
-            return inner.find_in_session(**details)
-
-    publisher = ReportArtifactPublisher(
-        repository=AmbiguousRepository(),
-        deliveries=test.store,
-        objects=objects,
-        now=lambda: NOW,
-    )
+    publisher = _publisher_for(AmbiguousRepository(inner), test, objects)
     publication = _publication(test)
 
     result = publisher.publish(publication)
@@ -231,28 +235,14 @@ def test_unavailable_commit_reconciliation_preserves_objects_fail_closed() -> No
     test = harness()
     inner = SqlArtifactRepository(test.factory)
 
-    class UnavailableRepository:
-        def has_complete(self, job_id: str) -> bool:
-            return inner.has_complete(job_id)
-
-        def boundary(self, publication, *, created_at):
-            return inner.boundary(publication, created_at=created_at)
-
+    class UnavailableRepository(DelegatingRepository):
         def commit(self, publication, artifacts, **context):
             raise RuntimeError("commit provider detail")
 
         def is_committed(self, artifacts):
             raise RuntimeError("reconciliation provider detail")
 
-        def find_in_session(self, **details):
-            return inner.find_in_session(**details)
-
-    publisher = ReportArtifactPublisher(
-        repository=UnavailableRepository(),
-        deliveries=test.store,
-        objects=objects,
-        now=lambda: NOW,
-    )
+    publisher = _publisher_for(UnavailableRepository(inner), test, objects)
 
     with pytest.raises(ArtifactUnavailable, match="unavailable") as raised:
         publisher.publish(_publication(test))
@@ -269,36 +259,14 @@ def test_late_rollback_preserves_a_concurrent_publication(monkeypatch) -> None:
     publication = _publication(test)
     attempt_ids = iter(("a" * 32, "b" * 32))
     monkeypatch.setattr(artifact_publication, "_new_attempt_id", lambda: next(attempt_ids))
-    winner = ReportArtifactPublisher(
-        repository=inner,
-        deliveries=test.store,
-        objects=objects,
-        now=lambda: NOW,
-    )
+    winner = _publisher_for(inner, test, objects)
 
-    class ConcurrentRepository:
-        def has_complete(self, job_id: str) -> bool:
-            return inner.has_complete(job_id)
-
-        def is_committed(self, artifacts) -> bool:
-            return inner.is_committed(artifacts)
-
-        def boundary(self, publication, *, created_at):
-            return inner.boundary(publication, created_at=created_at)
-
+    class ConcurrentRepository(DelegatingRepository):
         def commit(self, publication, artifacts, **context):
             winner.publish(publication)
-            return inner.commit(publication, artifacts, **context)
+            return super().commit(publication, artifacts, **context)
 
-        def find_in_session(self, **details):
-            return inner.find_in_session(**details)
-
-    late_worker = ReportArtifactPublisher(
-        repository=ConcurrentRepository(),
-        deliveries=test.store,
-        objects=objects,
-        now=lambda: NOW,
-    )
+    late_worker = _publisher_for(ConcurrentRepository(inner), test, objects)
 
     with pytest.raises(ArtifactUnavailable):
         late_worker.publish(publication)

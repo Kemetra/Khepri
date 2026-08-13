@@ -663,9 +663,8 @@ class SqlDeletionRepository:
             return defer_for_publication(
                 database,
                 deletion,
-                job.session_id,
-                now,
-                next_retry_at,
+                now=now,
+                next_retry_at=next_retry_at,
             )
 
     def complete(
