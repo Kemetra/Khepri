@@ -10,7 +10,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rca.lifecycle import LifecycleService
-from khepri.rca.persistence import Base
+from khepri.rca.organizations import Membership
+from khepri.rca.persistence import Base, MembershipRow
 from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
@@ -57,3 +58,47 @@ def memory_stack() -> tuple[MemoryAccountStore, MemoryOrganizationStore, Lifecyc
     accounts = MemoryAccountStore()
     organizations = MemoryOrganizationStore(accounts)
     return accounts, organizations, LifecycleService(accounts, organizations)
+
+
+def add_membership(
+    organizations: MemoryOrganizationStore,
+    organization_id: str,
+    account_id: str,
+    role: str,
+    *,
+    changed_by: str,
+) -> None:
+    """Give an account a membership in the fake store.
+
+    The FR-013 tests each need an organization with a second member at a chosen role, and
+    writing that inline six times is duplication CodeScene flags — fairly, since the shape is
+    identical every time and only the role and holder vary.
+    """
+    organizations.memberships[(organization_id, account_id)] = Membership.create(
+        organization_id, account_id, role, changed_by=changed_by, now=NOW
+    )
+
+
+def add_membership_row(
+    factory: sessionmaker,
+    organization_id: str,
+    account_id: str,
+    role: str,
+    *,
+    changed_by: str,
+) -> None:
+    """The same, against the real store.
+
+    The SQL-backed FR-013 tests need a second owner row that `OrganizationService` will not
+    create for them, since it only ever makes the creator an owner.
+    """
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization_id,
+                account_id=account_id,
+                role=role,
+                changed_by=changed_by,
+                changed_at=NOW,
+            )
+        )

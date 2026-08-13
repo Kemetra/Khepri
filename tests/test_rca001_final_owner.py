@@ -10,13 +10,15 @@ from sqlalchemy.orm import sessionmaker
 from khepri.rca.accounts import AccountService
 from khepri.rca.errors import FinalOwnerProtected
 from khepri.rca.lifecycle import RETENTION_DAYS, AccountRetentionSweeper, LifecycleService
-from khepri.rca.organizations import OWNER_ROLE, Membership, OrganizationService
+from khepri.rca.organizations import OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import MembershipRow, SqlAccountStore, SqlOrganizationStore
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
     NOW,
     OTHER_EMAIL,
+    add_membership,
+    add_membership_row,
     factory_fixture,
     memory_stack,
 )
@@ -67,14 +69,12 @@ def test_a_non_final_owner_can_be_disabled() -> None:
     organization = OrganizationService(organizations).create_organization(
         "Acme", first.account_id, now=NOW
     )
-    organizations.memberships[(organization.organization_id, second.account_id)] = (
-        Membership.create(
-            organization.organization_id,
-            second.account_id,
-            OWNER_ROLE,
-            changed_by=first.account_id,
-            now=NOW,
-        )
+    add_membership(
+        organizations,
+        organization.organization_id,
+        second.account_id,
+        OWNER_ROLE,
+        changed_by=first.account_id,
     )
 
     disabled = lifecycle.disable_account(first.account_id, now=NOW)
@@ -88,14 +88,12 @@ def test_a_non_owner_member_can_be_disabled() -> None:
     organization = OrganizationService(organizations).create_organization(
         "Acme", owner.account_id, now=NOW
     )
-    organizations.memberships[(organization.organization_id, member.account_id)] = (
-        Membership.create(
-            organization.organization_id,
-            member.account_id,
-            "member",
-            changed_by=owner.account_id,
-            now=NOW,
-        )
+    add_membership(
+        organizations,
+        organization.organization_id,
+        member.account_id,
+        "member",
+        changed_by=owner.account_id,
     )
 
     assert not lifecycle.disable_account(member.account_id, now=NOW).is_enabled
@@ -113,14 +111,12 @@ def test_the_guard_checks_every_organization_not_only_the_first() -> None:
     shared = OrganizationService(organizations).create_organization(
         "Shared", owner.account_id, now=NOW
     )
-    organizations.memberships[(shared.organization_id, second_owner.account_id)] = (
-        Membership.create(
-            shared.organization_id,
-            second_owner.account_id,
-            OWNER_ROLE,
-            changed_by=owner.account_id,
-            now=NOW,
-        )
+    add_membership(
+        organizations,
+        shared.organization_id,
+        second_owner.account_id,
+        OWNER_ROLE,
+        changed_by=owner.account_id,
     )
     # The second organization has this account as its only owner.
     OrganizationService(organizations).create_organization("Solo", owner.account_id, now=NOW)
@@ -145,12 +141,12 @@ def test_the_guard_does_not_abandon_the_scan_at_a_non_owner_membership() -> None
     theirs = OrganizationService(organizations).create_organization(
         "Theirs", other.account_id, now=NOW
     )
-    organizations.memberships[(theirs.organization_id, owner.account_id)] = Membership.create(
+    add_membership(
+        organizations,
         theirs.organization_id,
         owner.account_id,
         "member",
         changed_by=other.account_id,
-        now=NOW,
     )
     # ...and sole ownership of their own.
     OrganizationService(organizations).create_organization("Solo", owner.account_id, now=NOW)
@@ -184,16 +180,13 @@ def test_disabling_owners_one_after_another_cannot_strand_an_organization(
     organization = OrganizationService(organizations).create_organization(
         "Acme", first.account_id, now=NOW
     )
-    with factory.begin() as database:
-        database.add(
-            MembershipRow(
-                organization_id=organization.organization_id,
-                account_id=second.account_id,
-                role=OWNER_ROLE,
-                changed_by=first.account_id,
-                changed_at=NOW,
-            )
-        )
+    add_membership_row(
+        factory,
+        organization.organization_id,
+        second.account_id,
+        OWNER_ROLE,
+        changed_by=first.account_id,
+    )
 
     # The first is permitted: the second is still live.
     lifecycle.disable_account(first.account_id, now=NOW)
@@ -224,14 +217,12 @@ def test_the_memory_fake_counts_owners_the_same_way_the_store_does() -> None:
     organization = OrganizationService(organizations).create_organization(
         "Acme", first.account_id, now=NOW
     )
-    organizations.memberships[(organization.organization_id, second.account_id)] = (
-        Membership.create(
-            organization.organization_id,
-            second.account_id,
-            OWNER_ROLE,
-            changed_by=first.account_id,
-            now=NOW,
-        )
+    add_membership(
+        organizations,
+        organization.organization_id,
+        second.account_id,
+        OWNER_ROLE,
+        changed_by=first.account_id,
     )
     assert organizations.count_owners(organization.organization_id, excluding_account_id="") == 2
 
@@ -258,16 +249,13 @@ def test_a_purged_owner_does_not_count_as_an_owner(factory: sessionmaker) -> Non
     organization = OrganizationService(organizations).create_organization(
         "Acme", first.account_id, now=NOW
     )
-    with factory.begin() as database:
-        database.add(
-            MembershipRow(
-                organization_id=organization.organization_id,
-                account_id=second.account_id,
-                role=OWNER_ROLE,
-                changed_by=first.account_id,
-                changed_at=NOW,
-            )
-        )
+    add_membership_row(
+        factory,
+        organization.organization_id,
+        second.account_id,
+        OWNER_ROLE,
+        changed_by=first.account_id,
+    )
 
     lifecycle.disable_account(first.account_id, now=NOW)
     AccountRetentionSweeper(accounts).sweep(now=NOW + timedelta(days=RETENTION_DAYS + 1))
