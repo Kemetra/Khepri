@@ -56,8 +56,18 @@ from khepri.rra.pipeline import (
     ReportPipeline,
     ReportPipelineFailed,
     ReportPipelinePorts,
+    ReportPublication,
 )
 from khepri.rra.profiling import build_profile
+from khepri.rra.report_artifacts import (
+    HTML_MEDIA_TYPE,
+    PDF_MEDIA_TYPE,
+    REQUIRED_ARTIFACT_KINDS,
+    SURFACE_ARTIFACT_KINDS,
+    XLSX_MEDIA_TYPE,
+    ArtifactPayload,
+    MaterializedSurface,
+)
 from khepri.rra.worker import ReportExecutionFailed, ReportJobMessage, ReportWorker, WorkerPolicy
 
 NOW = datetime(2026, 7, 30, 16, 0, tzinfo=UTC)
@@ -228,6 +238,70 @@ class Renderer:
         self.calls += 1
         return surface_of(bundle, self._surface, output_size_bytes=self._size)
 
+    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+        content = self.render(bundle)
+        kinds = SURFACE_ARTIFACT_KINDS[self.surface]
+        remaining = self._size - len(kinds) + 1
+        artifacts = tuple(
+            _payload(kind, content=b"x" if index < len(kinds) - 1 else b"x" * remaining)
+            for index, kind in enumerate(kinds)
+        )
+        return MaterializedSurface(content=content, artifacts=artifacts)
+
+
+class ArtifactRenderer:
+    """A real publication renderer: bytes beside a content-free claim."""
+
+    def __init__(self, surface: str) -> None:
+        self._surface = surface
+
+    @property
+    def surface(self) -> str:
+        return self._surface
+
+    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+        artifacts = tuple(_payload(kind) for kind in SURFACE_ARTIFACT_KINDS[self.surface])
+        return MaterializedSurface(
+            content=surface_of(
+                bundle,
+                self.surface,
+                output_size_bytes=sum(len(item.content) for item in artifacts),
+            ),
+            artifacts=artifacts,
+        )
+
+
+def _payload(kind: str, *, content: bytes | None = None) -> ArtifactPayload:
+    if kind.startswith("web_"):
+        media_type, file_name = HTML_MEDIA_TYPE, "khepri-report.html"
+        if "evidence" in kind:
+            file_name = "khepri-evidence.html"
+    elif kind.startswith("pdf_"):
+        media_type, file_name = PDF_MEDIA_TYPE, "khepri-report.pdf"
+    else:
+        media_type, file_name = XLSX_MEDIA_TYPE, "khepri-report.xlsx"
+    return ArtifactPayload.of(
+        kind=kind,
+        media_type=media_type,
+        file_name=file_name,
+        content=content or f"artifact:{kind}".encode(),
+    )
+
+
+class Publications:
+    def __init__(self) -> None:
+        self.records: dict[str, DeliveryRecord] = {}
+        self.published: list[ReportPublication] = []
+
+    def find_delivery(self, job_id: str) -> DeliveryRecord | None:
+        return self.records.get(job_id)
+
+    def publish(self, publication: ReportPublication) -> DeliveryRecord:
+        self.published.append(publication)
+        record = publication.delivery.record
+        self.records[record.job_id] = record
+        return record
+
 
 class BrokenRenderer(Renderer):
     def render(self, bundle: ReportBundle) -> SurfaceContent:
@@ -304,7 +378,8 @@ class Deliveries:
     def find_delivery(self, job_id: str) -> DeliveryRecord | None:
         return self.records.get(job_id)
 
-    def deliver(self, delivery: ReportDelivery) -> DeliveryRecord:
+    def publish(self, publication: ReportPublication) -> DeliveryRecord:
+        delivery = publication.delivery
         self.delivered.append(delivery)
         self.records[delivery.record.job_id] = delivery.record
         return delivery.record
@@ -363,6 +438,25 @@ def harness(
 
 
 # --- the whole pipeline ----------------------------------------------------
+
+
+def test_one_run_publishes_one_reconciled_seven_artifact_set() -> None:
+    sink = Publications()
+    pipeline = ReportPipeline(
+        ports=ReportPipelinePorts(
+            packages=Packages(package()),
+            adapter=Adapter(),
+            renderers=tuple(ArtifactRenderer(name) for name in REQUIRED_SURFACES),
+            deliveries=sink,
+        ),
+        monotonic_ms=lambda: 0,
+    )
+
+    outcome = pipeline.run(Execution())
+
+    publication = sink.published[0]
+    assert publication.delivery.record == outcome.record
+    assert tuple(item.kind for item in publication.artifacts) == REQUIRED_ARTIFACT_KINDS
 
 
 def test_one_run_delivers_every_surface_of_one_fact_package() -> None:

@@ -23,10 +23,10 @@ from khepri.rra.pipeline import (
     REASON_PACKAGE_MISSING,
     DeliveryRecord,
     PipelineOutcome,
-    ReportDelivery,
     ReportPipeline,
     ReportPipelineFailed,
     ReportPipelinePorts,
+    ReportPublication,
 )
 from khepri.rra.sessions import SessionScope
 from khepri.rra.stage_telemetry import (
@@ -166,7 +166,7 @@ class BrokenPackages:
 class LosingDeliveries(Deliveries):
     """A store that will not write for a worker whose lease has moved on."""
 
-    def deliver(self, delivery: ReportDelivery) -> DeliveryRecord:
+    def publish(self, publication: ReportPublication) -> DeliveryRecord:
         raise LeaseLost("The lease was taken by another worker.")
 
 
