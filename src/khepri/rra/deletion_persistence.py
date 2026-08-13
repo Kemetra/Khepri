@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -18,6 +19,9 @@ from khepri.rra.persistence import (
 )
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 
+if TYPE_CHECKING:
+    from khepri.rra.job_persistence import ReportJobRow
+
 
 def defer_for_publication(
     database: Session,
@@ -26,12 +30,7 @@ def defer_for_publication(
     next_retry_at: datetime,
 ) -> bool:
     from khepri.rra.job_persistence import ReportJobRow  # noqa: PLC0415
-    from khepri.rra.jobs import (  # noqa: PLC0415
-        DEAD_LETTER_CONTENT_DELETED,
-        JOB_DEAD_LETTERED,
-        JOB_SUCCEEDED,
-        orphanable,
-    )
+    from khepri.rra.jobs import JOB_DEAD_LETTERED, JOB_SUCCEEDED  # noqa: PLC0415
 
     report_jobs = list(
         database.scalars(
@@ -40,17 +39,50 @@ def defer_for_publication(
             .with_for_update()
         )
     )
+    _settle_unleased(report_jobs, completed_at=deletion.requested_at)
+    if _needs_drain(deletion, report_jobs):
+        return _defer(deletion, next_retry_at=next_retry_at)
+    terminal = {JOB_SUCCEEDED, JOB_DEAD_LETTERED}
+    if all(candidate.state in terminal for candidate in report_jobs):
+        return False
+    return _defer(deletion, next_retry_at=next_retry_at)
+
+
+def _settle_unleased(
+    report_jobs: list[ReportJobRow],
+    *,
+    completed_at: datetime,
+) -> None:
+    from khepri.rra.jobs import (  # noqa: PLC0415
+        DEAD_LETTER_CONTENT_DELETED,
+        JOB_DEAD_LETTERED,
+        orphanable,
+    )
+
     for candidate in report_jobs:
         if orphanable(candidate.state):
             candidate.state = JOB_DEAD_LETTERED
             candidate.dead_letter_reason = DEAD_LETTER_CONTENT_DELETED
-            candidate.completed_at = deletion.requested_at
-    terminal = {JOB_SUCCEEDED, JOB_DEAD_LETTERED}
-    if all(candidate.state in terminal for candidate in report_jobs):
+            candidate.completed_at = completed_at
+
+
+def _needs_drain(
+    deletion: DeletionJobRow,
+    report_jobs: list[ReportJobRow],
+) -> bool:
+    from khepri.rra.jobs import DEAD_LETTER_RETRIES_EXHAUSTED  # noqa: PLC0415
+
+    if deletion.next_retry_at is not None:
         return False
+    return any(
+        candidate.dead_letter_reason == DEAD_LETTER_RETRIES_EXHAUSTED
+        for candidate in report_jobs
+    )
+
+
+def _defer(deletion: DeletionJobRow, *, next_retry_at: datetime) -> bool:
     deletion.state = "retryable"
     deletion.next_retry_at = next_retry_at
-    database.flush()
     return True
 
 

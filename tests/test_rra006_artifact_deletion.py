@@ -182,6 +182,66 @@ def test_sql_deletion_settles_an_unleased_report_before_cleanup(job_state: str) 
         assert report.dead_letter_reason == DEAD_LETTER_CONTENT_DELETED
 
 
+def test_expired_final_publisher_is_drained_before_a_later_prefix_sweep() -> None:
+    test = harness()
+    queued_at = test.session.created_at
+    test.jobs.enqueue(
+        EnqueueJob(
+            scope=test.scope,
+            job_id="job_alpha",
+            idempotency_key="d" * 64,
+            queued_at=queued_at,
+            max_attempts=1,
+        )
+    )
+    leased = test.jobs.lease(
+        LeaseRequest(
+            job_id="job_alpha",
+            worker_id="worker_alpha",
+            now=queued_at,
+            lease_for=timedelta(minutes=1),
+        )
+    )
+    assert leased is not None
+    expired_at = queued_at + timedelta(minutes=1)
+    exhausted = test.jobs.recover_expired(now=expired_at)
+    assert exhausted[0].state == "dead_lettered"
+    objects = MemoryObjects()
+    service = DeletionService(
+        sessions=SqlSessionStore(test.factory),
+        deletions=SqlDeletionRepository(test.factory),
+        objects=objects,
+        new_deletion_id=lambda: "del_alpha",
+    )
+
+    with pytest.raises(DeletionRetryRequired):
+        service.delete_session_content(
+            session_id=test.session.session_id,
+            reason="immediate",
+            now=expired_at,
+        )
+    late_key = (
+        f"owners/{test.session.owner_id}/sessions/{test.session.session_id}/"
+        "reports/late-attempt/web_business_en"
+    )
+    objects.values[late_key] = (b"late", "text/html", hashlib.sha256(b"late").hexdigest())
+    with pytest.raises(DeletionRetryRequired):
+        service.delete_session_content(
+            session_id=test.session.session_id,
+            reason="immediate",
+            now=expired_at + timedelta(minutes=4),
+        )
+
+    result = service.delete_session_content(
+        session_id=test.session.session_id,
+        reason="immediate",
+        now=expired_at + timedelta(minutes=5),
+    )
+
+    assert result.state == "complete"
+    assert objects.values == {}
+
+
 def test_one_object_failure_keeps_metadata_retryable_then_finishes_safely() -> None:
     repository = TargetsRepository()
     fourth_key = _targets()[3].object_key
