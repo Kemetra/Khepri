@@ -491,11 +491,23 @@ def test_a_disabled_co_owner_does_not_rescue_a_demotion(factory: sessionmaker) -
 
 
 def test_revoke_and_demote_share_one_guard(factory: sessionmaker) -> None:
-    """The roadmap's stop condition: not two independent final-owner guards.
+    """The roadmap's stop condition, for the two *membership* write paths.
 
     Asserted structurally rather than by comment. Both operations must route through
     `_apply_membership_change`, so a future edit that gives one its own lock-count-check fails
     here rather than passing review as a local change.
+
+    **`apply_owner_reducing_change` is deliberately excluded, and it does decide the outcome
+    itself.** It is the *account* path: disabling reduces ownership across every organization the
+    account owns, so it locks by account where these lock by organization. `R1` built it, and the
+    two predicates intersect on exactly the rows where both operations could affect the same
+    count -- see `_apply_membership_change`'s docstring. So the invariant this test pins is "the
+    two membership paths share one guard", not "only one guard exists anywhere". Adding
+    `apply_owner_reducing_change` to the loop below would fail, correctly.
+
+    Source-text assertions are brittle to refactoring: renaming `_apply_membership_change` fails
+    this for the right reason, while extracting its body one level deeper would fail it for the
+    wrong one. If that happens, the fix is to update the name here, not to delete the test.
     """
     import inspect as inspect_module  # noqa: PLC0415
 
@@ -508,5 +520,6 @@ def test_revoke_and_demote_share_one_guard(factory: sessionmaker) -> None:
             f"{method.__name__} must reuse the shared guard, not carry its own"
         )
         assert "OWNER_CHANGE_FINAL_OWNER" not in source, (
-            f"{method.__name__} decides the final-owner outcome itself; that is a second guard"
+            f"{method.__name__} decides the final-owner outcome itself, so the two membership "
+            "paths no longer share one guard (the account path may; see this test's docstring)"
         )

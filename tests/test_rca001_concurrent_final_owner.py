@@ -392,3 +392,80 @@ def test_one_caller_revoking_while_another_demotes_cannot_strand_the_organizatio
     assert outcomes.count("refused") >= 1, (
         "three operations on three owners: at least one must be refused"
     )
+
+
+@requires_postgres
+def test_the_two_lock_predicates_intersect_on_every_contended_organization(factory) -> None:
+    """Why an account-scoped lock and an organization-scoped lock serialize at all.
+
+    The three owner-reducing paths do not lock the same way. `apply_owner_reducing_change` locks
+    `WHERE account_id = A AND role = 'owner'`, because disabling one account reduces ownership in
+    every organization it owns. `_apply_membership_change` locks
+    `WHERE organization_id = O AND role = 'owner'`, because revoking or demoting touches one.
+
+    Those row sets intersect on exactly `{(O, A)}`, and only when `A` holds an owner row in `O`.
+    That is not a lucky coincidence, it is the definition of contention here: two owner-reducing
+    operations can affect the same organization's owner count **only if** the disabled account is
+    itself an owner of that organization -- in which case its row is in both sets and the two
+    serialize. When the sets are disjoint the operations cannot affect each other's count, so
+    serializing them would be pure contention with no invariant behind it.
+
+    This test pins the load-bearing half: an account owning a *different* organization from the
+    one being revoked from does not block, and neither operation corrupts the other's count. If a
+    later change made the locks intersect only sometimes, the mixed-race test above would catch
+    the dangerous direction and this one catches the wasteful direction.
+
+    Account A owns X. Account B and C own Y. Disable A while revoking B from Y: disjoint locks,
+    both must succeed, and Y must still have C.
+    """
+    accounts = SqlAccountStore(factory)
+    organizations = SqlOrganizationStore(factory)
+    a = AccountService(accounts).create_account("a@example.test", CREDENTIAL)
+    b = AccountService(accounts).create_account("b@example.test", CREDENTIAL)
+    c = AccountService(accounts).create_account("c@example.test", CREDENTIAL)
+    x = OrganizationService(organizations).create_organization("X", a.account_id, now=NOW)
+    y = OrganizationService(organizations).create_organization("Y", b.account_id, now=NOW)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=y.organization_id,
+                account_id=c.account_id,
+                role=OWNER_ROLE,
+            )
+        )
+
+    barrier = threading.Barrier(2, timeout=10)
+
+    def disable_a() -> str:
+        lifecycle = LifecycleService(SqlAccountStore(factory), SqlOrganizationStore(factory))
+        barrier.wait()
+        try:
+            lifecycle.disable_account(a.account_id, now=NOW)
+        except FinalOwnerProtected:
+            return "refused"
+        return "applied"
+
+    def revoke_b() -> str:
+        barrier.wait()
+        try:
+            OrganizationService(SqlOrganizationStore(factory)).revoke_membership(
+                y.organization_id,
+                b.account_id,
+                actor_account_id=c.account_id,
+                now=NOW,
+            )
+        except FinalOwnerProtected:
+            return "refused"
+        return "applied"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        running = [pool.submit(disable_a), pool.submit(revoke_b)]
+        outcomes = sorted(future.result() for future in running)
+
+    # A is X's only owner, so disabling A must be refused on its own merits -- by X's count, not
+    # by anything the revocation did.
+    assert outcomes == ["applied", "refused"], (
+        "the revocation succeeds (Y keeps C) and the disablement is refused (A is X's last owner)"
+    )
+    assert _surviving_owners(factory, x.organization_id) >= 1, "X keeps A"
+    assert _surviving_owners(factory, y.organization_id) >= 1, "Y keeps C"
