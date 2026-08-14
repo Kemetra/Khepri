@@ -36,6 +36,11 @@ RCA_REVISIONS = (
     ("20260814_0013", "rca_membership_events", "20260813_0012"),
     ("20260814_0014", "rca_drop_membership_attribution", "20260814_0013"),
     ("20260814_0015", "rca_membership_role_check", "20260814_0014"),
+    (
+        "20260815_0016",
+        "rca_sessions_and_external_identities",
+        "20260814_0015",
+    ),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -48,6 +53,8 @@ RCA_TABLES = {
     "rca_memberships",
     "rca_membership_events",
     "rca_isolation_scopes",
+    "rca_sessions",
+    "rca_external_identities",
 }
 
 

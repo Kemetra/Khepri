@@ -159,6 +159,74 @@ class MembershipEventRow(Base):
     )
 
 
+class SessionRow(Base):
+    """One commercial authentication session (`R3-02`, `R3-03`).
+
+    **The primary key is the hash, never the raw token.** `KHEPRI-DEC-015` §5 calls session
+    identifiers bearer material, and `R3-01` §9 settled hashing at rest: a database disclosure must
+    not hand over live sessions. `Session.issue` returns the raw token exactly once, for the cookie.
+
+    **No role, no membership, no `owner_id`, no `can_act`.** `FR-030` requires a membership or role
+    change to take effect for decisions made after it without the session ending, and `FR-008`
+    requires disablement to stop authorization without waiting for expiry. A column here for any of
+    those goes stale exactly when it matters, so the schema does not offer one.
+    """
+
+    __tablename__ = "rca_sessions"
+    __table_args__ = (
+        # RESTRICT, matching `fk_rca_membership_account`. Safe against KHEPRI-DEC-015 §2b because
+        # the purge tombstones the account row rather than deleting it -- verified in `R3-09` §3.1.
+        ForeignKeyConstraint(
+            ["account_id"],
+            ["rca_accounts.account_id"],
+            name="fk_rca_session_account",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    session_id_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    account_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Nullable because FR-028 requires an account with no membership to authenticate. One nullable
+    # column cannot hold two organizations, which is how FR-027 is satisfied structurally.
+    active_organization_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # NULL means live. FR-007 revokes by account, which is why `account_id` is indexed.
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ExternalIdentityRow(Base):
+    """`(provider, provider_subject) -> account_id` (`KHEPRI-DEC-018` §7, `R3-09` §3).
+
+    **The composite primary key is what makes `§7` structural.** "Duplicate links fail closed" and
+    "an existing link MUST NOT silently move between accounts" are uniqueness properties, and a
+    primary key enforces them against every caller -- including one reaching the row directly, which
+    is the seam `#151` was opened to close. An application check could be forgotten; this cannot.
+
+    **What is deliberately absent:** no email (`§7`: "Email is not the durable identity key"), no
+    provider organization/role/permission claim (`§4`), and no provider access or refresh token --
+    `§5` gate 1 admits only enumerated personal-data classes, and a stored provider token would be
+    both a new class and a credential Khepri has no reason to hold.
+    """
+
+    __tablename__ = "rca_external_identities"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["account_id"],
+            ["rca_accounts.account_id"],
+            name="fk_rca_external_identity_account",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    provider: Mapped[str] = mapped_column(String, primary_key=True)
+    provider_subject: Mapped[str] = mapped_column(String, primary_key=True)
+    # Not unique: one account may hold several links -- enterprise SSO beside a password provider.
+    # `R3-09` §3 chose a dedicated table over columns on `rca_accounts` for exactly this.
+    account_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class IsolationScopeRow(Base):
     __tablename__ = "rca_isolation_scopes"
     __table_args__ = (
