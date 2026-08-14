@@ -523,6 +523,14 @@ class SqlOrganizationStore:
 
         Returns False rather than raising if the membership has vanished between the service's
         read and this write, so a concurrent revocation surfaces as an ordinary refusal.
+
+        **`prior_role` is checked against the stored row, not against the caller's claim.** The
+        event carries no foreign key, so these checks are the only thing between a caller and a
+        false audit record -- and `prior_role` is the one `FR-014` field ("what the prior and
+        resulting roles were") that a destination check alone leaves undefended. Reading it from
+        the row inside the transaction also closes the service's read-then-write gap: if the
+        role changed after the service read it, the event's `prior_role` is stale and describes
+        a transition that did not happen, so the write refuses instead of recording it.
         """
         assert_sealed(membership, event)
         if event.organization_id != membership.organization_id:
@@ -536,6 +544,8 @@ class SqlOrganizationStore:
                 key = (membership.organization_id, membership.account_id)
                 row = database.get(MembershipRow, key)
                 if row is None:
+                    return False
+                if event.prior_role != row.role:
                     return False
                 row.role = membership.role
                 database.add(_event_row(event))

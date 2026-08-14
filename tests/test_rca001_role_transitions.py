@@ -30,6 +30,7 @@ from khepri.rca.organizations import (
     OWNER_ROLE,
     ROLES,
     Membership,
+    MembershipEvent,
     OrganizationService,
 )
 from khepri.rca.persistence import Base, MembershipRow, SqlAccountStore, SqlOrganizationStore
@@ -42,10 +43,15 @@ EMAIL = "owner@example.test"
 OTHER_EMAIL = "member@example.test"
 
 
-@pytest.fixture(name="factory")
-def _factory(tmp_path) -> sessionmaker:
+@pytest.fixture(name="engine")
+def _engine(tmp_path):
     engine = create_engine(f"sqlite+pysqlite:///{(tmp_path / 'roles.db').as_posix()}")
     Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture(name="factory")
+def _factory(engine) -> sessionmaker:
     return sessionmaker(engine)
 
 
@@ -255,17 +261,99 @@ def test_the_role_column_refuses_a_third_role(factory: sessionmaker) -> None:
         )
 
 
-def test_the_check_constraint_names_exactly_the_declared_roles(factory: sessionmaker) -> None:
+def test_the_check_constraint_names_exactly_the_declared_roles(engine) -> None:
     """The constraint and `ROLES` must not drift apart.
 
     Two sources describing one rule is the drift Constitution I forbids, so the constraint is
     built *from* `ROLES` rather than restating the two values. This asserts the built artifact
     still mentions both and nothing else.
     """
-    checks = inspect(factory.kw["bind"]).get_check_constraints("rca_memberships")
+    checks = inspect(engine).get_check_constraints("rca_memberships")
     assert checks, "rca_memberships must carry a role CHECK constraint"
 
     text_of = " ".join(check["sqltext"] for check in checks)
     for role in ROLES:
         assert f"'{role}'" in text_of, f"{role} missing from {text_of}"
     assert "'admin'" not in text_of
+
+
+def test_the_store_refuses_an_event_whose_prior_role_contradicts_the_row() -> None:
+    """FR-014's prior role is checked against the stored row, not the caller's claim.
+
+    The event carries no foreign key -- deliberately, per `MembershipEventRow` -- so the store's
+    own checks are the only thing between a caller and a false audit record. A destination check
+    alone leaves `prior_role` undefended, and an event claiming a promotion from `owner` when the
+    row was `member` is precisely the record no reader could tell from a true one.
+
+    This is also the read-then-write gap: if the role changed after the service read it, the
+    event describes a transition that did not happen and the write must refuse rather than
+    record it.
+    """
+    accounts = MemoryAccountStore()
+    store = MemoryOrganizationStore(accounts)
+    service = OrganizationService(store)
+    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    member = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = service.create_organization("Acme", owner.account_id, now=NOW)
+    store.memberships[(organization.organization_id, member.account_id)] = Membership.create(
+        organization.organization_id, member.account_id, MEMBER_ROLE
+    )
+    before = len(store.events)
+
+    promoted = Membership.create(organization.organization_id, member.account_id, OWNER_ROLE)
+    lying = MembershipEvent.role_changed(
+        organization.organization_id,
+        member.account_id,
+        prior_role=OWNER_ROLE,  # the row says `member`
+        next_role=OWNER_ROLE,
+        actor_account_id=owner.account_id,
+        now=LATER,
+    )
+
+    assert store.promote_membership(promoted, lying) is False
+    assert len(store.events) == before, "a refused write records nothing"
+    still_member = store.get_membership(organization.organization_id, member.account_id)
+    assert still_member is not None
+    assert still_member.role == MEMBER_ROLE, "the row is untouched by a refused write"
+
+
+def test_the_sql_store_refuses_the_same_contradiction(factory: sessionmaker) -> None:
+    """The fake's refusal is only meaningful if the real store refuses it too."""
+    accounts = SqlAccountStore(factory)
+    store = SqlOrganizationStore(factory)
+    service = OrganizationService(store)
+    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    member = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = service.create_organization("Acme", owner.account_id, now=NOW)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=member.account_id,
+                role=MEMBER_ROLE,
+            )
+        )
+
+    promoted = Membership.create(organization.organization_id, member.account_id, OWNER_ROLE)
+    lying = MembershipEvent.role_changed(
+        organization.organization_id,
+        member.account_id,
+        prior_role=OWNER_ROLE,
+        next_role=OWNER_ROLE,
+        actor_account_id=owner.account_id,
+        now=LATER,
+    )
+
+    assert store.promote_membership(promoted, lying) is False
+
+    unchanged = store.get_membership(organization.organization_id, member.account_id)
+    assert unchanged is not None
+    assert unchanged.role == MEMBER_ROLE
+    with factory() as database:
+        count = database.execute(
+            text(
+                "SELECT COUNT(*) FROM rca_membership_events WHERE account_id = :account_id"
+            ),
+            {"account_id": member.account_id},
+        ).scalar()
+    assert count == 0, "no event survives a refused write"

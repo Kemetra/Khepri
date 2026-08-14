@@ -144,7 +144,13 @@ class MemoryOrganizationStore:
         if event.next_role != membership.role:
             return False
         key = (membership.organization_id, membership.account_id)
-        if key not in self.memberships:
+        stored = self.memberships.get(key)
+        if stored is None:
+            return False
+        # Against the stored role, not the caller's claim, exactly as the SQL store does: it is
+        # the only defense of FR-014's "what the prior role was", and checking the destination
+        # alone would let a false transition commit.
+        if event.prior_role != stored.role:
             return False
         self.memberships[key] = membership
         self.events.append(event)
