@@ -24,7 +24,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
-from khepri.rca.errors import RoleChangeFailed
+from khepri.rca.errors import FinalOwnerProtected, RoleChangeFailed
+from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import (
     MEMBER_ROLE,
     OWNER_ROLE,
@@ -357,3 +358,155 @@ def test_the_sql_store_refuses_the_same_contradiction(factory: sessionmaker) -> 
             {"account_id": member.account_id},
         ).scalar()
     assert count == 0, "no event survives a refused write"
+
+
+# --- demotion: the owner-reducing direction (R2-06) ------------------------------------------
+
+
+def test_demotion_returns_a_new_record_rather_than_mutating() -> None:
+    owner = Membership.create("org_1", "acc_1", OWNER_ROLE)
+
+    demoted = owner.demoted()
+
+    assert demoted.role == MEMBER_ROLE
+    assert owner.role == OWNER_ROLE, "the original is untouched"
+
+
+def test_demoting_a_member_is_refused() -> None:
+    """A no-op demotion would emit an event whose prior and next roles are identical."""
+    member = Membership.create("org_1", "acc_1", MEMBER_ROLE)
+
+    with pytest.raises(ValueError, match="already a member"):
+        member.demoted()
+
+
+def test_demoting_a_non_final_owner_writes_the_row_and_its_event(factory: sessionmaker) -> None:
+    accounts = SqlAccountStore(factory)
+    store = SqlOrganizationStore(factory)
+    service = OrganizationService(store)
+    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = service.create_organization("Acme", owner.account_id, now=NOW)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=second.account_id,
+                role=OWNER_ROLE,
+            )
+        )
+
+    service.demote_to_member(
+        organization.organization_id,
+        second.account_id,
+        actor_account_id=owner.account_id,
+        now=LATER,
+    )
+
+    demoted = store.get_membership(organization.organization_id, second.account_id)
+    assert demoted is not None
+    assert demoted.role == MEMBER_ROLE
+    with factory() as database:
+        roles = database.execute(
+            text(
+                "SELECT prior_role, next_role FROM rca_membership_events "
+                "WHERE account_id = :account_id"
+            ),
+            {"account_id": second.account_id},
+        ).fetchall()
+    assert (OWNER_ROLE, MEMBER_ROLE) in [tuple(row) for row in roles]
+
+
+def test_demoting_the_final_owner_is_refused(factory: sessionmaker) -> None:
+    """FR-013's "downgrade" clause, which had no operation to guard until now."""
+    accounts = SqlAccountStore(factory)
+    store = SqlOrganizationStore(factory)
+    service = OrganizationService(store)
+    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    organization = service.create_organization("Acme", owner.account_id, now=NOW)
+
+    with pytest.raises(FinalOwnerProtected):
+        service.demote_to_member(
+            organization.organization_id,
+            owner.account_id,
+            actor_account_id=owner.account_id,
+            now=LATER,
+        )
+
+    still_owner = store.get_membership(organization.organization_id, owner.account_id)
+    assert still_owner is not None
+    assert still_owner.role == OWNER_ROLE, "the refused demotion left the role alone"
+
+
+def test_a_refused_demotion_writes_no_event(factory: sessionmaker) -> None:
+    accounts = SqlAccountStore(factory)
+    store = SqlOrganizationStore(factory)
+    service = OrganizationService(store)
+    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    organization = service.create_organization("Acme", owner.account_id, now=NOW)
+
+    with pytest.raises(FinalOwnerProtected):
+        service.demote_to_member(
+            organization.organization_id,
+            owner.account_id,
+            actor_account_id=owner.account_id,
+            now=LATER,
+        )
+
+    with factory() as database:
+        changes = database.execute(
+            text(
+                "SELECT COUNT(*) FROM rca_membership_events "
+                "WHERE prior_role IS NOT NULL AND next_role IS NOT NULL"
+            )
+        ).scalar()
+    assert changes == 0, "a refused demotion leaves no audit record of one"
+
+
+def test_a_disabled_co_owner_does_not_rescue_a_demotion(factory: sessionmaker) -> None:
+    """Demotion inherits the effective-owner rule, exactly as revocation does."""
+    accounts = SqlAccountStore(factory)
+    store = SqlOrganizationStore(factory)
+    service = OrganizationService(store)
+    owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    second = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
+    organization = service.create_organization("Acme", owner.account_id, now=NOW)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=second.account_id,
+                role=OWNER_ROLE,
+            )
+        )
+    LifecycleService(accounts, store).disable_account(second.account_id, now=NOW)
+
+    with pytest.raises(FinalOwnerProtected):
+        service.demote_to_member(
+            organization.organization_id,
+            owner.account_id,
+            actor_account_id=owner.account_id,
+            now=LATER,
+        )
+
+
+def test_revoke_and_demote_share_one_guard(factory: sessionmaker) -> None:
+    """The roadmap's stop condition: not two independent final-owner guards.
+
+    Asserted structurally rather than by comment. Both operations must route through
+    `_apply_membership_change`, so a future edit that gives one its own lock-count-check fails
+    here rather than passing review as a local change.
+    """
+    import inspect as inspect_module  # noqa: PLC0415
+
+    for method in (
+        SqlOrganizationStore.revoke_membership,
+        SqlOrganizationStore.demote_membership,
+    ):
+        source = inspect_module.getsource(method)
+        assert "_apply_membership_change" in source, (
+            f"{method.__name__} must reuse the shared guard, not carry its own"
+        )
+        assert "OWNER_CHANGE_FINAL_OWNER" not in source, (
+            f"{method.__name__} decides the final-owner outcome itself; that is a second guard"
+        )

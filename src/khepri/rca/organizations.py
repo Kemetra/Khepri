@@ -117,6 +117,27 @@ class Membership(Sealed):
                 role=OWNER_ROLE,
             )
 
+    def demoted(self) -> Membership:
+        """The member form of this membership.
+
+        The owner-reducing counterpart of `promoted`, and the reason it arrives a slice later:
+        `FR-013` names "downgrade" explicitly, so this needs the final-owner guard and the guard
+        had to exist on a transaction seam first. `R1` built that seam for the disable path and
+        `R2-05` extended it to revocation; this reuses it rather than adding a third.
+
+        Refuses a no-op for the same reason `promoted` does: demoting an existing member would
+        emit an `FR-014` event whose prior and next roles are identical, recording a change that
+        did not happen.
+        """
+        if self.role == MEMBER_ROLE:
+            raise ValueError("this membership is already a member")
+        with through_door():
+            return Membership(
+                organization_id=self.organization_id,
+                account_id=self.account_id,
+                role=MEMBER_ROLE,
+            )
+
 
 _OWNER_ID_PREFIX = "own_"
 
@@ -378,12 +399,47 @@ class OrganizationService:
         membership raises the uniform `RoleChangeFailed`. `errors.py` records why that asymmetry
         is coherent rather than a leak.
         """
-        outcome = self._store.revoke_membership(
-            organization_id,
-            account_id,
-            actor_account_id=actor_account_id,
-            now=now,
+        self._translate(
+            self._store.revoke_membership(
+                organization_id,
+                account_id,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
         )
+
+    def demote_to_member(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> None:
+        """Lower one owner to member (`FR-013` "downgrade", `FR-015`).
+
+        The counterpart of `promote_to_owner`, and the asymmetry between them is `FR-013`'s
+        rather than this module's: promotion raises the owner count and needs no guard, demotion
+        lowers it and goes through the same locked seam revocation uses.
+        """
+        self._translate(
+            self._store.demote_membership(
+                organization_id,
+                account_id,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
+        )
+
+    @staticmethod
+    def _translate(outcome: str) -> None:
+        """Turn a store outcome into the refusal `FR-013` and `FR-025` each require.
+
+        `FR-013` requires the final-owner refusal to *state* its cause, while every other
+        refusal stays uniform so a caller cannot enumerate memberships one probe at a time.
+        `errors.py` records why that asymmetry is coherent: the caller is already inside the
+        organization, so there is nothing left to disclose.
+        """
         if outcome == OWNER_CHANGE_FINAL_OWNER:
             raise FinalOwnerProtected(FINAL_OWNER_FAILURE)
         if outcome != OWNER_CHANGE_APPLIED:

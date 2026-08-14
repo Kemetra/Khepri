@@ -24,6 +24,7 @@ from khepri.rca.errors import (
     OWNER_CHANGE_NOT_APPLICABLE,
 )
 from khepri.rca.organizations import (
+    MEMBER_ROLE,
     OWNER_ROLE,
     ROLES,
     IsolationScope,
@@ -721,15 +722,81 @@ class SqlOrganizationStore:
         `FOR UPDATE` can block on another transaction's lock, which is a far wider grant than
         the single constructor call `records.py` scopes doors to.
         """
+
+        def revoke(database, row: MembershipRow) -> MembershipEvent:
+            event = MembershipEvent.revoked(
+                organization_id,
+                account_id,
+                prior_role=row.role,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
+            database.delete(row)
+            return event
+
+        return self._apply_membership_change(organization_id, account_id, revoke)
+
+    def demote_membership(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> str:
+        """Lower one owner to member, guarding FR-013 (`FR-013` "downgrade", `FR-015`).
+
+        **The third caller of one guard, not a third guard.** `FR-013` names remove, downgrade,
+        and disable; disable goes through `apply_owner_reducing_change`, and remove and downgrade
+        share `_apply_membership_change` below. The roadmap's stop condition forbids two
+        independent final-owner guards, and the way to honour it with three operations is for the
+        owner-reducing ones to differ only in the write they hand over.
+
+        Unlike `promote_membership`, this locks. Promotion raises the owner count and has no
+        guard to invalidate; demotion lowers it, so the count it acts on must be read under the
+        same lock the write commits behind.
+        """
+
+        def demote(database, row: MembershipRow) -> MembershipEvent:
+            event = MembershipEvent.role_changed(
+                organization_id,
+                account_id,
+                prior_role=row.role,
+                next_role=MEMBER_ROLE,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
+            row.role = MEMBER_ROLE
+            return event
+
+        return self._apply_membership_change(organization_id, account_id, demote)
+
+    def _apply_membership_change(self, organization_id: str, account_id: str, write) -> str:
+        """Lock this organization's owners, refuse if the change would strand it, else write.
+
+        The shared body of every owner-reducing change to a *membership* -- revocation and
+        demotion today. `write` receives the session and the locked row and returns the
+        `FR-014` event describing what it did, so the two operations differ only in that
+        callback and the guard exists once.
+
+        **Why the count runs inside this transaction on locked rows.** `#155` was two callers
+        each reading a live co-owner, each passing, and both committing, leaving zero. The
+        `FOR UPDATE` above blocks a competing owner-reducing operation on this organization at
+        its own `SELECT` until this commits, so it observes this write rather than the state
+        that preceded it. `R1` proved a two-thread test cannot establish this on its own; the
+        three-contender and mixed revoke/demote proofs are in
+        `tests/test_rca001_concurrent_final_owner.py`.
+
+        The event is returned by the callback rather than passed in because `prior_role` must be
+        the role the locked row actually held. A caller-supplied value could describe a
+        transition that did not happen, and the event carries no foreign key to contradict it.
+        """
         with self._factory.begin() as database:
             owners = database.scalars(organization_owners_for_update(organization_id)).all()
             row = database.get(MembershipRow, (organization_id, account_id))
             if row is None:
                 return OWNER_CHANGE_NOT_APPLICABLE
             if any(owner.account_id == account_id for owner in owners):
-                # Counted inside the transaction on rows the statement above holds a lock over,
-                # so a competing revocation or demotion on this organization observes this
-                # write rather than the state that preceded it.
                 remaining = database.execute(
                     select(func.count())
                     .select_from(MembershipRow)
@@ -742,14 +809,7 @@ class SqlOrganizationStore:
                 ).scalar()
                 if not remaining:
                     return OWNER_CHANGE_FINAL_OWNER
-            event = MembershipEvent.revoked(
-                organization_id,
-                account_id,
-                prior_role=row.role,
-                actor_account_id=actor_account_id,
-                now=now,
-            )
-            database.delete(row)
+            event = write(database, row)
             database.flush()
             database.add(_event_row(event))
         return OWNER_CHANGE_APPLIED
