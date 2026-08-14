@@ -112,6 +112,11 @@ artifacts:
     state: active
     document: governance/decisions/KHEPRI-DEC-017-minimal-single-owner-governance.md
     depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-018
+    state: active
+    document: governance/decisions/KHEPRI-DEC-018-external-identity-provider-boundary.md
+    depends_on: []
 
   - type: specification
     id: FND-001
