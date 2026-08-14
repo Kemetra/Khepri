@@ -4,6 +4,7 @@ AUTHENTICATION_FAILURE = "Credentials are invalid or unavailable."
 SCOPE_FAILURE = "Scope is invalid or unavailable."
 ORGANIZATION_FAILURE = "Organization could not be created."
 ACCOUNT_FAILURE = "Account is invalid or unavailable."
+ROLE_CHANGE_FAILURE = "Role could not be changed."
 
 # FR-013 is a deliberate exception to the content-free refusal rule the messages above follow.
 # It requires the operation to "fail closed and MUST state that the final owner cannot be
@@ -47,3 +48,13 @@ class AccountOperationFailed(PermissionError):
 
 class FinalOwnerProtected(PermissionError):
     pass
+
+
+class RoleChangeFailed(ValueError):
+    """A role change that could not be applied.
+
+    Distinct from `FinalOwnerProtected`, which FR-013 requires to name its cause. This one is
+    content-free like the rest: it must not disclose whether the membership exists, because a
+    caller probing role changes against account identifiers would otherwise enumerate
+    memberships one refusal at a time.
+    """

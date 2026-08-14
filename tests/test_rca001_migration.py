@@ -35,6 +35,7 @@ RCA_REVISIONS = (
     ("20260813_0011", "rca_account_lifecycle", "20260812_0010"),
     ("20260814_0013", "rca_membership_events", "20260813_0012"),
     ("20260814_0014", "rca_drop_membership_attribution", "20260814_0013"),
+    ("20260814_0015", "rca_membership_role_check", "20260814_0014"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -274,6 +275,13 @@ def test_migration_preserves_constraints_and_nullability(sqlite_url: str) -> Non
     assert nullable["email"] is True, "the post-horizon tombstone needs a nullable email"
     assert nullable["disabled_at"] is True, "an enabled account has no disablement timestamp"
     assert nullable["account_id"] is False, "the opaque identifier survives every purge"
+
+    # FR-015's role CHECK faces the same hazard, and twice over: `20260814_0014` rebuilds
+    # `rca_memberships` to drop two columns, and `20260814_0015` rebuilds it again to add this
+    # constraint. The parity test below compares column *names* only and cannot see a lost
+    # constraint, so an unconstrained `role` would reach production with every store test green.
+    checks = {c["name"] for c in inspector.get_check_constraints("rca_memberships")}
+    assert "ck_rca_membership_role" in checks, f"FR-015 constraint lost in the rebuild: {checks}"
 
 
 def test_migration_columns_match_the_declared_models(sqlite_url: str) -> None:
@@ -580,3 +588,35 @@ def test_the_downgrade_marks_attribution_it_cannot_reconstruct(sqlite_url: str) 
     # than a string precisely because PostgreSQL will not implicitly cast text into a
     # `TIMESTAMPTZ` here. Without this, that bind has no assertion behind it.
     assert "1970" in str(row.changed_at), "a swept event downgrades to the epoch placeholder"
+
+
+def test_the_role_check_agrees_between_the_migration_and_the_model(sqlite_url: str) -> None:
+    """FR-015's constraint has two homes and they must say the same thing.
+
+    The model builds it from `ROLES` so the domain cannot add a role without the column
+    noticing; the migration spells the values out so a past revision keeps meaning what it meant
+    when it ran. Those are the right choices for each, and they are also exactly the conditions
+    under which two sources drift apart -- so this pins them together at head.
+
+    `test_migration_columns_match_the_declared_models` cannot catch this: it compares column
+    names and a CHECK constraint is not a column.
+    """
+    from sqlalchemy.orm import sessionmaker  # noqa: PLC0415
+
+    from khepri.rca.persistence import Base  # noqa: PLC0415
+
+    _run(sqlite_url, "upgrade")
+    migrated = inspect(create_engine(sqlite_url)).get_check_constraints("rca_memberships")
+
+    model_engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(model_engine)
+    sessionmaker(model_engine)
+    declared = inspect(model_engine).get_check_constraints("rca_memberships")
+
+    def roles_named(constraints) -> set[str]:
+        joined = " ".join(c["sqltext"] for c in constraints)
+        return {role for role in ("owner", "member", "admin") if f"'{role}'" in joined}
+
+    assert roles_named(migrated) == roles_named(declared) == {"owner", "member"}, (
+        f"migration names {roles_named(migrated)}, model names {roles_named(declared)}"
+    )

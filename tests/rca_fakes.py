@@ -129,6 +129,27 @@ class MemoryOrganizationStore:
             return OWNER_CHANGE_NOT_APPLICABLE
         return OWNER_CHANGE_APPLIED
 
+    def promote_membership(self, membership: Membership, event: MembershipEvent) -> bool:
+        """Mirror `SqlOrganizationStore.promote_membership`'s refusals exactly.
+
+        The identifier checks are not decoration. The event carries no foreign key, so nothing
+        but these stops one naming a different membership than the row it claims to describe --
+        and a fake that accepted a mismatched pair would let a test prove attribution the real
+        store rejects.
+        """
+        if event.organization_id != membership.organization_id:
+            return False
+        if event.account_id != membership.account_id:
+            return False
+        if event.next_role != membership.role:
+            return False
+        key = (membership.organization_id, membership.account_id)
+        if key not in self.memberships:
+            return False
+        self.memberships[key] = membership
+        self.events.append(event)
+        return True
+
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
         return self.memberships.get((organization_id, account_id))
 

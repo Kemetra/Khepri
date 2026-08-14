@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from khepri.rca.errors import ORGANIZATION_FAILURE, OrganizationCreationFailed
+from khepri.rca.errors import (
+    ORGANIZATION_FAILURE,
+    ROLE_CHANGE_FAILURE,
+    OrganizationCreationFailed,
+    RoleChangeFailed,
+)
 from khepri.rca.records import Sealed, register_sealed, through_door
 
 if TYPE_CHECKING:
@@ -77,6 +82,35 @@ class Membership(Sealed):
                 organization_id=organization_id,
                 account_id=account_id,
                 role=role,
+            )
+
+    def promoted(self) -> Membership:
+        """The owner form of this membership.
+
+        A door, not a field assignment, following `Account.disabled()`.
+        `dataclasses.replace(membership, role=OWNER_ROLE)` is the obvious way to write this and
+        is refused by `#151`'s construction rule -- `records.py`'s module docstring names this
+        exact call as the shape that must not work, because it was the forgery `#148` spent four
+        rounds closing.
+
+        **Promotion only.** `FR-013` names "remove, downgrade, or disable" as the operations
+        that must fail closed, and promotion is none of them: an organization with more owners
+        cannot thereby reach zero. Demotion is owner-reducing and belongs to `R2-06`, which
+        applies `R1`'s transaction seam to it. Adding it here without that guard would leave a
+        callable path to a zero-owner organization, and adding a second guard to cover the gap
+        is what the roadmap's stop condition forbids.
+
+        Refusing a no-op rather than returning `self`: a promotion that changes nothing would
+        still emit an `FR-014` event whose prior and next roles are identical, which is an audit
+        record of a change that did not happen.
+        """
+        if self.role == OWNER_ROLE:
+            raise ValueError("this membership is already an owner")
+        with through_door():
+            return Membership(
+                organization_id=self.organization_id,
+                account_id=self.account_id,
+                role=OWNER_ROLE,
             )
 
 
@@ -280,3 +314,42 @@ class OrganizationService:
         if not self._store.create_organization(organization, membership, scope, event):
             raise OrganizationCreationFailed(ORGANIZATION_FAILURE)
         return organization
+
+    def promote_to_owner(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> Membership:
+        """Raise a `member` to `owner`, recording who did it (`FR-014`, `FR-015`).
+
+        **No final-owner guard, and that is correct rather than an omission.** `FR-013` protects
+        against reaching *zero* owners; promotion only increases the count. Demotion is the
+        owner-reducing half and ships in `R2-06` through `R1`'s transaction seam.
+
+        The read-then-write here is not the race `lifecycle.py:66-84` documents. That race
+        matters because a concurrent change can invalidate a *guard*; there is no guard here to
+        invalidate, and two callers promoting the same membership converge on the same end
+        state. What the store must still do atomically is write the row and its event together,
+        which `promote_membership` does.
+        """
+        membership = self._store.get_membership(organization_id, account_id)
+        if membership is None:
+            raise RoleChangeFailed(ROLE_CHANGE_FAILURE)
+        try:
+            promoted = membership.promoted()
+        except ValueError as already_owner:
+            raise RoleChangeFailed(ROLE_CHANGE_FAILURE) from already_owner
+        event = MembershipEvent.role_changed(
+            organization_id,
+            account_id,
+            prior_role=membership.role,
+            next_role=promoted.role,
+            actor_account_id=actor_account_id,
+            now=now,
+        )
+        if not self._store.promote_membership(promoted, event):
+            raise RoleChangeFailed(ROLE_CHANGE_FAILURE)
+        return promoted
