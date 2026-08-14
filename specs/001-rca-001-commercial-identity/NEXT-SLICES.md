@@ -105,6 +105,18 @@ general half of FR-008's second clause, and the session halves of FR-022 and FR-
 `assert_account_active` (`lifecycle.py:132`) its first production caller — that chokepoint already
 ships and is deliberately unused.
 
+**`KHEPRI-DEC-018` changed R3's shape after this was written.** It merged at `dcb63da`, *after*
+`R3-01`, and permits an admitted provider to own session issuance while keeping the active
+organization (`FR-027`) Khepri-authoritative. The roadmap now carries `R3-09`/`R3-10`/`R3-11` for
+external identity — see the task disposition under Program R3. Two consequences here:
+
+- **`FR-027` and `FR-029` closure is conditional on `R3-09`**, which settles whether Khepri keeps its
+  own server-side state keyed to a verified provider identity. The requirements say an *authenticated
+  session* carries the active organization; who mints that session is what `R3-09` decides.
+- **`R3-02` is still the correct next slice.** Its domain types are needed under either outcome, and
+  it is provider-neutral. `R3-03` now depends on `R3-09` as well, so the seam is settled before any
+  schema is written.
+
 **The structural absence it removes:** no session concept. Every `session` token in
 `src/khepri/rca/` today is a docstring or SQLAlchemy's `sessionmaker`.
 
