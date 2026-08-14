@@ -6,8 +6,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from khepri.rca.errors import (
+    FINAL_OWNER_FAILURE,
     ORGANIZATION_FAILURE,
+    OWNER_CHANGE_APPLIED,
+    OWNER_CHANGE_FINAL_OWNER,
     ROLE_CHANGE_FAILURE,
+    FinalOwnerProtected,
     OrganizationCreationFailed,
     RoleChangeFailed,
 )
@@ -353,3 +357,34 @@ class OrganizationService:
         if not self._store.promote_membership(promoted, event):
             raise RoleChangeFailed(ROLE_CHANGE_FAILURE)
         return promoted
+
+    def revoke_membership(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> None:
+        """End one membership, leaving every other one intact (`FR-012`).
+
+        The store guards `FR-013` inside its transaction and reports an outcome; this translates
+        it. No owner count happens here, deliberately: a service-level check would be a second
+        guard over the same invariant, and the gap between reading it and the store's write is
+        the cross-store race `lifecycle.py:66-84` documents and `R1` closed.
+
+        `FR-013` requires the refusal to *state* that the final owner cannot be removed, which is
+        why this raises `FinalOwnerProtected` with a content-bearing message while an absent
+        membership raises the uniform `RoleChangeFailed`. `errors.py` records why that asymmetry
+        is coherent rather than a leak.
+        """
+        outcome = self._store.revoke_membership(
+            organization_id,
+            account_id,
+            actor_account_id=actor_account_id,
+            now=now,
+        )
+        if outcome == OWNER_CHANGE_FINAL_OWNER:
+            raise FinalOwnerProtected(FINAL_OWNER_FAILURE)
+        if outcome != OWNER_CHANGE_APPLIED:
+            raise RoleChangeFailed(ROLE_CHANGE_FAILURE)

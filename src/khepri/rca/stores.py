@@ -48,3 +48,12 @@ class OrganizationStore(Protocol):
     def apply_owner_reducing_change(self, account_id: str, updated: Account) -> str: ...
 
     def promote_membership(self, membership: Membership, event: MembershipEvent) -> bool: ...
+
+    def revoke_membership(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> str: ...
