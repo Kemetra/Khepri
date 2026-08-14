@@ -129,8 +129,6 @@ def test_scopes_do_not_merge_for_multi_organization_membership() -> None:
         organization_id=second.organization_id,
         account_id=ACCOUNT,
         role="owner",
-        changed_by=ACCOUNT,
-        changed_at=NOW,
     )
 
     assert isolation.resolve_scope(ACCOUNT, first.organization_id) != isolation.resolve_scope(

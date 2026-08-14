@@ -142,7 +142,7 @@ def grant_membership_inline(organizations, organization_id, account_id, role) ->
     from khepri.rca.organizations import Membership
 
     organizations.memberships[(organization_id, account_id)] = Membership.create(
-        organization_id, account_id, role, changed_by=account_id, now=NOW
+        organization_id, account_id, role
     )
 
 
@@ -301,8 +301,6 @@ def test_the_sql_predicate_and_can_authenticate_agree(
                 organization_id=organization.organization_id,
                 account_id=subject.account_id,
                 role=OWNER_ROLE,
-                changed_by=holder.account_id,
-                changed_at=NOW,
             )
         )
 
