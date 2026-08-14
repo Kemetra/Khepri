@@ -415,6 +415,29 @@ def _effective_owner_conditions() -> tuple:
     )
 
 
+def organization_owners_for_update(organization_id: str):
+    """Lock one organization's owner-role memberships for the duration of the transaction.
+
+    The sibling of `owner_memberships_for_update`, which locks by *account* because the disable
+    path reduces ownership across every organization the account owns. Revocation and demotion
+    touch one membership, so the contended set is one organization's owner rows -- and that is
+    where the invariant lives, so that is what must be locked.
+
+    Named at module level for the same reason as its sibling: SQLite emits no `FOR UPDATE` and
+    SQLAlchemy silently omits it, so an inline lock could be deleted and leave the whole RCA
+    suite green while `#155`'s defect class returned through the revoke path. A test compiles
+    this against the PostgreSQL dialect and asserts `FOR UPDATE` is present.
+    """
+    return (
+        select(MembershipRow)
+        .where(
+            MembershipRow.organization_id == organization_id,
+            MembershipRow.role == OWNER_ROLE,
+        )
+        .with_for_update()
+    )
+
+
 def owner_memberships_for_update(account_id: str):
     """Lock this account's owner-role memberships for the duration of the transaction.
 
@@ -663,4 +686,70 @@ class SqlOrganizationStore:
                     return OWNER_CHANGE_FINAL_OWNER
             if not _apply_account(database, updated):
                 return OWNER_CHANGE_NOT_APPLICABLE
+        return OWNER_CHANGE_APPLIED
+
+    def revoke_membership(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> str:
+        """Delete one membership and record its revocation, guarding FR-013 (`FR-012`).
+
+        **The same lock-count-write shape as `apply_owner_reducing_change`, not a second
+        guard.** The roadmap's stop condition names "two independent final-owner guards"
+        explicitly, and this is the sibling `R1-02` §6 anticipated: the outcome vocabulary is
+        about ownership rather than accounts, so it transfers unchanged. What differs is only
+        what is locked and what is written -- one organization's owner rows rather than one
+        account's, and a deleted row rather than a saved account.
+
+        **The event is built here rather than by the caller.** `prior_role` must be the role the
+        row actually held, and only this transaction can read that without a race: a role that
+        changed after the service read it would make a caller-supplied prior role describe a
+        transition that did not happen, and the event has no foreign key to contradict it. The
+        same defect was fixed in `promote_membership`.
+
+        **The deletion and the event commit together.** `KHEPRI-DEC-015` retains the membership
+        "only as the subject of the `FR-014` audit event", so the event must outlive the row --
+        which is why `MembershipEventRow` carries no foreign key onto `rca_memberships`. An
+        event written outside this transaction could describe a revocation that rolled back,
+        and a deletion without its event is an unattributed membership change.
+
+        No door opens here, following `apply_owner_reducing_change`: a round trip under
+        `FOR UPDATE` can block on another transaction's lock, which is a far wider grant than
+        the single constructor call `records.py` scopes doors to.
+        """
+        with self._factory.begin() as database:
+            owners = database.scalars(organization_owners_for_update(organization_id)).all()
+            row = database.get(MembershipRow, (organization_id, account_id))
+            if row is None:
+                return OWNER_CHANGE_NOT_APPLICABLE
+            if any(owner.account_id == account_id for owner in owners):
+                # Counted inside the transaction on rows the statement above holds a lock over,
+                # so a competing revocation or demotion on this organization observes this
+                # write rather than the state that preceded it.
+                remaining = database.execute(
+                    select(func.count())
+                    .select_from(MembershipRow)
+                    .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
+                    .where(
+                        MembershipRow.organization_id == organization_id,
+                        MembershipRow.account_id != account_id,
+                        *_effective_owner_conditions(),
+                    )
+                ).scalar()
+                if not remaining:
+                    return OWNER_CHANGE_FINAL_OWNER
+            event = MembershipEvent.revoked(
+                organization_id,
+                account_id,
+                prior_role=row.role,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
+            database.delete(row)
+            database.flush()
+            database.add(_event_row(event))
         return OWNER_CHANGE_APPLIED

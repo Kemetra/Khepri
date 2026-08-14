@@ -156,6 +156,44 @@ class MemoryOrganizationStore:
         self.events.append(event)
         return True
 
+    def revoke_membership(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> str:
+        """Mirror `SqlOrganizationStore.revoke_membership`'s outcomes.
+
+        Sequential contract only -- a dictionary cannot interleave, so this is never concurrency
+        evidence. The FR-013 guard is proven against two real PostgreSQL connections in
+        `tests/test_rca001_concurrent_final_owner.py`.
+
+        Deleting only this key is what FR-012 asks for, and it is trivially true here; the
+        clause that can actually break is the SQL one, where a DELETE with the wrong WHERE takes
+        the account's other memberships with it.
+        """
+        key = (organization_id, account_id)
+        membership = self.memberships.get(key)
+        if membership is None:
+            return OWNER_CHANGE_NOT_APPLICABLE
+        if membership.role == OWNER_ROLE and (
+            self.count_owners(organization_id, excluding_account_id=account_id) == 0
+        ):
+            return OWNER_CHANGE_FINAL_OWNER
+        del self.memberships[key]
+        self.events.append(
+            MembershipEvent.revoked(
+                organization_id,
+                account_id,
+                prior_role=membership.role,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
+        )
+        return OWNER_CHANGE_APPLIED
+
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
         return self.memberships.get((organization_id, account_id))
 

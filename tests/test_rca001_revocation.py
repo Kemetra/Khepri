@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
@@ -30,12 +31,19 @@ from khepri.rca.errors import (
     FinalOwnerProtected,
     RoleChangeFailed,
 )
+from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import (
     MEMBER_ROLE,
     OWNER_ROLE,
     OrganizationService,
 )
-from khepri.rca.persistence import Base, MembershipRow, SqlAccountStore, SqlOrganizationStore
+from khepri.rca.persistence import (
+    Base,
+    MembershipRow,
+    SqlAccountStore,
+    SqlOrganizationStore,
+    organization_owners_for_update,
+)
 from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
 
 NOW = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
@@ -231,7 +239,7 @@ def test_a_disabled_co_owner_does_not_rescue_the_final_owner(factory: sessionmak
         factory, ("second@example.test", OWNER_ROLE)
     )
     second = members["second@example.test"]
-    AccountService(accounts).disable_account(second.account_id, now=NOW)
+    LifecycleService(accounts, store).disable_account(second.account_id, now=NOW)
 
     with pytest.raises(FinalOwnerProtected):
         OrganizationService(store).revoke_membership(
@@ -386,3 +394,26 @@ def test_the_sql_store_reports_the_same_outcome_vocabulary(factory: sessionmaker
         now=LATER,
     )
     assert outcome == OWNER_CHANGE_APPLIED
+
+
+def test_the_organization_owner_query_locks_its_rows_on_postgresql() -> None:
+    """The revoke path's lock is assertable without a database, like its sibling's.
+
+    SQLite emits no `FOR UPDATE` and SQLAlchemy silently omits it for that dialect, so if the
+    lock were dropped from `organization_owners_for_update` this whole file would stay green
+    while `#155`'s defect class returned through revocation. Compiling against the PostgreSQL
+    dialect is the only evidence a SQLite suite can offer.
+
+    It locks by *organization*, unlike `owner_memberships_for_update` which locks by account.
+    The disable path reduces ownership across every organization an account owns; revocation
+    touches one. Locking the account's rows here would both over-lock and, worse, miss the
+    contended set -- two different accounts being revoked from the same organization contend on
+    that organization's owner rows, not on each other's.
+    """
+    statement = organization_owners_for_update("org_example")
+
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "FOR UPDATE" in sql
+    assert "rca_memberships.organization_id =" in sql
+    assert "rca_memberships.role =" in sql, "only owner rows are locked, not every membership"
