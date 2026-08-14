@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from khepri.rca.accounts import Account
+from khepri.rca.accounts import Account, AccountService
 from khepri.rca.errors import ScopeAccessDenied
 from khepri.rca.isolation import IsolationService
 from khepri.rca.organizations import Membership, OrganizationService
@@ -69,6 +69,80 @@ def test_scope_is_stable_across_repeated_resolutions() -> None:
         isolation.resolve_scope(ACCOUNT, organization.organization_id) for _ in range(5)
     }
     assert len(resolutions) == 1
+
+
+def _fixture_with_credentials() -> (
+    tuple[MemoryOrganizationStore, OrganizationService, IsolationService]
+):
+    """As `_fixture`, but the accounts hold verifiers and therefore count as effective owners.
+
+    `_fixture` builds accounts with `verifier=None`, which is all `IsolationService` needs. FR-013's
+    guard asks a stricter question — `can_authenticate`, which a credential-less account fails,
+    since an owner who cannot log in cannot exercise ownership. So the two tests below, which
+    exercise owner-reducing operations, need accounts that can actually act or the guard refuses
+    them for a reason unrelated to what they assert.
+    """
+    accounts = MemoryAccountStore()
+    store = MemoryOrganizationStore(accounts)
+    service = AccountService(accounts)
+    for account_id in (ACCOUNT, OTHER_ACCOUNT):
+        created = service.create_account(f"{account_id}@example.test", "correct horse battery")
+        accounts.accounts[account_id] = Account._from_storage(
+            account_id=account_id,
+            email=created.email,
+            verifier=created.verifier,
+            disabled_at=None,
+        )
+        del accounts.accounts[created.account_id]
+    return store, OrganizationService(store), IsolationService(store, accounts)
+
+
+def test_scope_is_stable_across_a_membership_change() -> None:
+    """`FR-035`: one organization resolves to one scope "across membership changes".
+
+    Untestable until `R2` supplied role-change operations — the clause named a change no code could
+    make. Now it can, so it is asserted: a demotion alters the *role* the membership carries and
+    must leave the isolation key untouched, because `FR-032`/`FR-033` derive the key from nothing
+    but the organization. A scope that moved with a role would make authorization data reachable
+    under one key and not another for the same organization.
+    """
+    store, organizations, isolation = _fixture_with_credentials()
+    organization = organizations.create_organization("Acme", ACCOUNT, now=NOW)
+    before = isolation.resolve_scope(ACCOUNT, organization.organization_id)
+
+    # A second owner, so demoting the first is not the final-owner case FR-013 refuses.
+    store.memberships[(organization.organization_id, OTHER_ACCOUNT)] = Membership.create(
+        organization.organization_id, OTHER_ACCOUNT, "owner"
+    )
+    organizations.demote_to_member(
+        organization.organization_id, ACCOUNT, actor_account_id=OTHER_ACCOUNT, now=NOW
+    )
+
+    after = isolation.resolve_scope(ACCOUNT, organization.organization_id)
+    assert after == before, "the isolation key must not move with a role"
+
+
+def test_a_revoked_membership_stops_resolving_its_scope() -> None:
+    """The other half of the same clause: the scope is stable, access is not.
+
+    `FR-023` decides access by membership lookup, so revocation must end resolution immediately —
+    without which a revoked member would keep reaching organization data until something expired.
+    Both halves are asserted because a naive reading of "stable across membership changes" would
+    otherwise suggest revocation should keep working.
+    """
+    store, organizations, isolation = _fixture_with_credentials()
+    organization = organizations.create_organization("Acme", ACCOUNT, now=NOW)
+    store.memberships[(organization.organization_id, OTHER_ACCOUNT)] = Membership.create(
+        organization.organization_id, OTHER_ACCOUNT, "owner"
+    )
+    assert isolation.resolve_scope(OTHER_ACCOUNT, organization.organization_id)
+
+    organizations.revoke_membership(
+        organization.organization_id, OTHER_ACCOUNT, actor_account_id=ACCOUNT, now=NOW
+    )
+
+    with pytest.raises(ScopeAccessDenied):
+        isolation.resolve_scope(OTHER_ACCOUNT, organization.organization_id)
 
 
 def test_distinct_organizations_resolve_to_distinct_scopes() -> None:

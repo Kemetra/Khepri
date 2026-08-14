@@ -1339,12 +1339,12 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | Program | Status | Reason |
 | --- | --- | --- |
 | R0 Roadmap/spec reconciliation | IN_REVIEW | `R0-04` is MERGED at `ebfbe77`. `R0-01`/`R0-02`/`R0-03`/`R0-05` are proposed as one docs-only slice — `specs/001-rca-001-commercial-identity/{SUPERSEDED,STATUS,NEXT-SLICES}.md`. Not MERGED until the owner merges it |
-| R1 Concurrent final-owner safety | MERGED | `R1-01`…`R1-06` complete at `c8c6edb`; `#155` closed. The deployment stop gate is cleared |
-| R2 Membership lifecycle | READY_FOR_PLAN | R2-01 design may proceed now (section 12, Slice D); implementation must inherit the R1 transaction seam before any owner-reducing write |
+| R1 Concurrent final-owner safety | MERGED | `R1-01`…`R1-06` complete at `c8c6edb`; `#155` closed. **The stop gate was re-cleared by `ac7143b` (#175), not by `R1`** — `R1`'s lock covered one row per organization, so three callers disabling three different owners of one organization locked disjoint sets and `FOR UPDATE` serialized nothing. Measured at 4 failures in 12 against real PostgreSQL; it had read as a flake. See the note under `R2` |
+| R2 Membership lifecycle | MERGED | `R2-01`…`R2-10` complete at `95760a4` (`#150`); PRs `#165`…`#178`. Roles CHECK-constrained, promotion/demotion/revocation through explicit operations, one shared FR-013 guard for remove/downgrade/disable, append-only FR-014 events on a 12-month horizon with a wired sweeper. Two latent gaps recorded rather than closed — see `specs/001-rca-001-commercial-identity/STATUS.md` |
 | R3 Authentication sessions | READY_FOR_IMPLEMENTATION | `R3-01` design merged; `R3-02` (domain types) may start now. Two owner decisions in the design note §9 must settle before `R3-03` writes schema |
-| R4 Invitations | READY_FOR_PLAN | Depends on stable R2 membership operations and R3 actor resolution |
+| R4 Invitations | READY_FOR_PLAN | R2's membership operations are now merged and stable, so only R3 actor resolution remains. Note for `R4-01`: adding a caller-supplied role (`invite(role=...)`) makes `test_no_role_change_operation_accepts_a_role_from_its_caller` fail by design — that test marks the point where role validation stops being optional, since neither the domain nor `rca_membership_events` validates roles today |
 | R5 Recovery | READY_FOR_PLAN | R5-01 design may proceed alongside R3 design; implementation depends on R3 session revocation |
-| R6 Canonical authorization | BLOCKED | Depends on live R2 membership and R3 session resolution |
+| R6 Canonical authorization | BLOCKED | R2 membership is live; now depends on R3 session resolution alone |
 | R7 Commercial RRA bridge | BLOCKED | Depends on R6 |
 | R8 Commercial shell | READY_FOR_PLAN | Design may proceed; implementation depends on R3/R4/R6/R7 |
 | OPS1 Production operations | READY_FOR_PLAN | `KHEPRI-DEC-008` is active and leaves target selection open by design; spend is an owner decision; deployment waits for R1 |
