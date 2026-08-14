@@ -769,7 +769,26 @@ class SqlOrganizationStore:
             row.role = MEMBER_ROLE
             return event
 
-        return self._apply_membership_change(organization_id, account_id, demote)
+        with self._factory.begin() as database:
+            row = database.get(MembershipRow, (organization_id, account_id))
+            if row is None:
+                return OWNER_CHANGE_NOT_APPLICABLE
+            remaining = database.execute(
+                select(func.count())
+                .select_from(MembershipRow)
+                .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
+                .where(
+                    MembershipRow.organization_id == organization_id,
+                    MembershipRow.account_id != account_id,
+                    *_effective_owner_conditions(),
+                )
+            ).scalar()
+            if not remaining:
+                return OWNER_CHANGE_FINAL_OWNER
+            event = demote(database, row)
+            database.flush()
+            database.add(_event_row(event))
+        return OWNER_CHANGE_APPLIED
 
     def _apply_membership_change(self, organization_id: str, account_id: str, write) -> str:
         """Lock this organization's owners, refuse if the change would strand it, else write.
