@@ -8,9 +8,12 @@ rather than retrying it inside the same pass.
 
 from __future__ import annotations
 
+import ast
+import pathlib
 from datetime import UTC, datetime
 
-from khepri.local.sweeper import REASON_EXPIRED, LocalSweeper
+from khepri.local.sweeper import REASON_EXPIRED, LocalSweeper, RetentionPasses
+from khepri.rca.lifecycle import EventPurgeReport, PurgeReport
 from khepri.rra.deletion import DeletionRetryRequired
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
@@ -45,10 +48,18 @@ class FakeDeletion:
 class StubSweeper(LocalSweeper):
     """Overrides only the database read, so the pass logic is the real one."""
 
-    def __init__(self, *, jobs: object, deletion: object, expired: list[str]) -> None:
+    def __init__(
+        self,
+        *,
+        jobs: object,
+        deletion: object,
+        expired: list[str],
+        retention: RetentionPasses | None = None,
+    ) -> None:
         self._jobs = jobs  # type: ignore[assignment]
         self._deletion = deletion  # type: ignore[assignment]
         self._expired = expired
+        self._retention = retention
 
     def _expired_session_ids(self, *, now: datetime) -> list[str]:
         return self._expired
@@ -107,3 +118,82 @@ class TestOnePass:
 
         assert report.expired_sessions == 0
         assert deletion.deleted == []
+
+
+class TestTheRetentionPassesAreWired:
+    """`KHEPRI-DEC-015`'s horizons are enforced by whatever calls them, and nothing else.
+
+    Both `AccountRetentionSweeper` and `MembershipEventSweeper` shipped correct and uncalled — the
+    defect that pattern produces is not a failing test but a policy that quietly does nothing. So
+    the wiring itself is asserted, not just the classes.
+    """
+
+    def test_a_stack_with_no_retention_configured_sweeps_rra_content_only(self) -> None:
+        """The optional half: a stack with no RCA tables still runs the session passes."""
+        sweeper = StubSweeper(jobs=FakeJobs(), deletion=FakeDeletion(), expired=["s1"])
+
+        report = sweeper.sweep(now=NOW)
+
+        assert report.expired_sessions == 1
+        assert report.purged_accounts == 0
+        assert report.purged_events == 0
+
+    def test_both_horizons_run_in_one_pass(self) -> None:
+        """A pass reports both counts, so neither horizon can be silently skipped."""
+
+        class CountingPass:
+            def __init__(self, report: object) -> None:
+                self._report = report
+                self.calls = 0
+
+            def sweep(self, *, now: datetime) -> object:
+                self.calls += 1
+                return self._report
+
+        accounts = CountingPass(PurgeReport(purged_accounts=2))
+        events = CountingPass(EventPurgeReport(purged_events=3))
+        sweeper = StubSweeper(
+            jobs=FakeJobs(),
+            deletion=FakeDeletion(),
+            expired=[],
+            retention=RetentionPasses(accounts=accounts, events=events),  # type: ignore[arg-type]
+        )
+
+        report = sweeper.sweep(now=NOW)
+
+        assert (accounts.calls, events.calls) == (1, 1), "each horizon ran exactly once"
+        assert report.purged_accounts == 2
+        assert report.purged_events == 3
+
+    def test_production_wires_both_horizons_with_no_override(self) -> None:
+        """`build_worker_stack` passes both passes, neither with a compressed horizon.
+
+        **Why the source and not the built object.** Constructing a real stack needs PostgreSQL and
+        an object endpoint, so the equivalent assertion in `test_local_journey.py` is gated behind
+        `@requires_local_stack()` and skips in CI. A wiring assertion that never executes is not
+        evidence, so this runs unconditionally on the syntax tree.
+
+        **A first version matched raw text and was worthless.** Mutation-testing showed it passed
+        both with the events pass deleted from production outright *and* with `retention_months=1`
+        spliced in: the string slice meant to bound the search ended before the lines it intended to
+        read. An AST cannot mis-slice — the keyword is either in the call or it is not.
+        """
+        tree = ast.parse(pathlib.Path("src/khepri/local/wiring.py").read_text(encoding="utf-8"))
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and any(word.arg == "retention" for word in node.keywords)
+        ]
+        assert len(calls) == 1, "exactly one sweeper wiring site"
+
+        passes = next(word.value for word in calls[0].keywords if word.arg == "retention")
+        wired = {word.arg: ast.unparse(word.value) for word in passes.keywords}  # type: ignore[attr-defined]
+
+        assert set(wired) == {"accounts", "events"}, "both horizons are wired"
+        assert "AccountRetentionSweeper" in wired["accounts"]
+        assert "MembershipEventSweeper" in wired["events"]
+        for name, expression in wired.items():
+            assert "retention_months" not in expression, (
+                f"the {name} horizon must be the governed default, not an override"
+            )

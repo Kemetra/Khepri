@@ -45,6 +45,23 @@ if TYPE_CHECKING:
 # one is indefinite retention by omission.
 RETENTION_MONTHS = 24
 
+# KHEPRI-DEC-015 §2a: an `FR-014` membership event is retained for twelve months from the event,
+# then purged. Counted in calendar months for the same reason as the horizon above.
+#
+# This constant belongs in production rather than in a test. It previously existed only as a
+# test-local literal, which made the ordering assertion below compare production against a number
+# the test itself controlled -- true by construction, and unable to fail.
+MEMBERSHIP_EVENT_RETENTION_MONTHS = 12
+
+# The account tombstone must outlast the audit event, per KHEPRI-DEC-015 §2b: twenty-four months is
+# justified partly as "long enough to outlast the twelve-month audit horizon so that audit evidence
+# never outlives the subject it refers to". Two independently scheduled sweepers cannot enforce that
+# between them, and `rca_membership_events` deliberately carries no foreign key, so the database
+# cannot either. Asserted here so that shortening either horizon fails loudly at import.
+assert RETENTION_MONTHS > MEMBERSHIP_EVENT_RETENTION_MONTHS, (
+    "KHEPRI-DEC-015 requires the account tombstone to outlast the audit event it is the subject of"
+)
+
 
 def _months_before(moment: datetime, months: int) -> datetime:
     """`moment` shifted back by whole calendar months, clamping a short target month.
@@ -204,3 +221,49 @@ class AccountRetentionSweeper:
             if self._accounts.purge_if_still_eligible(account.account_id, horizon):
                 purged += 1
         return PurgeReport(purged_accounts=purged)
+
+
+@dataclass(frozen=True, slots=True)
+class EventPurgeReport:
+    """What one audit-retention pass did, in counts only. No identifier is echoed (`FR-040`)."""
+
+    purged_events: int
+
+
+class MembershipEventSweeper:
+    """Applies `KHEPRI-DEC-015` §2a's twelve-month horizon to `FR-014` membership events.
+
+    **Why a sweeper rather than lazy evaluation on read**, as for accounts: §2a bounds retention,
+    not visibility. An event nobody queries is an event never purged, and the horizon would elapse
+    with the row still present — indefinite retention with a policy comment on top.
+
+    **This is not a scheduler**, following `AccountRetentionSweeper` and `khepri.local.sweeper`: one
+    pass when called. Choosing a cadence is an operational decision.
+
+    **No re-check inside the write, and that asymmetry with the account path is deliberate.**
+    `AccountRetentionSweeper` re-reads eligibility inside `purge_if_still_eligible` because
+    `enable_account` can land between selection and write, making a selected account ineligible.
+    Nothing analogous exists here: events are append-only and `occurred_at` is never updated, so a
+    row eligible at selection is still eligible at deletion. Selection and deletion are therefore
+    one statement, which also means no interleaving between them to protect against.
+
+    **Purging an event never affects live membership state.** The event table carries no foreign key
+    in either direction, and no membership read consults it — so unlike the account purge, this pass
+    cannot make an organization ownerless and needs no `FR-013` reasoning.
+    """
+
+    def __init__(
+        self,
+        organizations: OrganizationStore,
+        *,
+        retention_months: int = MEMBERSHIP_EVENT_RETENTION_MONTHS,
+    ) -> None:
+        self._organizations = organizations
+        self._retention_months = retention_months
+
+    def sweep(self, *, now: datetime) -> EventPurgeReport:
+        """Purge every membership event whose twelve-month horizon has elapsed."""
+        horizon = _months_before(now, self._retention_months)
+        return EventPurgeReport(
+            purged_events=self._organizations._purge_expired_events(horizon)  # noqa: SLF001
+        )

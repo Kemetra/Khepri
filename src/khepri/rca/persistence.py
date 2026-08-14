@@ -10,6 +10,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     UniqueConstraint,
+    delete,
     func,
     select,
 )
@@ -604,6 +605,28 @@ class SqlOrganizationStore:
         except IntegrityError:
             return False
         return True
+
+    def _purge_expired_events(self, horizon: datetime) -> int:
+        """Delete every `FR-014` event at or before `horizon`, returning how many went.
+
+        **The only place production removes a membership event**, which `R2-07`'s source audit
+        enforces by name rather than by convention. Called solely by `MembershipEventSweeper`, which
+        owns the horizon arithmetic; passing the horizon in rather than the retention months keeps
+        the calendar reasoning in one module.
+
+        **One statement, no prior select.** Events are append-only and `occurred_at` never changes,
+        so there is no window in which a selected row stops qualifying — the re-check the account
+        purge needs has nothing to guard against here. `occurred_at` is indexed for this predicate.
+
+        **`<=`, matching `MembershipEvent.is_purgeable_at`.** The horizon instant itself qualifies;
+        the domain method and this query must agree on the boundary or the same event would be
+        purgeable in one and retained in the other.
+        """
+        with self._factory.begin() as database:
+            purged = database.execute(
+                delete(MembershipEventRow).where(MembershipEventRow.occurred_at <= horizon)
+            )
+        return purged.rowcount
 
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
         with self._factory() as database:

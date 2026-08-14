@@ -29,10 +29,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from khepri.local.config import LocalSettings
 from khepri.local.packages import build_package_source
 from khepri.local.storage import build_local_object_store
-from khepri.local.sweeper import LocalSweeper, build_local_sweeper
+from khepri.local.sweeper import LocalSweeper, RetentionPasses, build_local_sweeper
 from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
-from khepri.rca.lifecycle import AccountRetentionSweeper
-from khepri.rca.persistence import SqlAccountStore
+from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -292,10 +292,16 @@ def build_worker_stack(
             jobs=stack.reports.jobs,
             deletion=stack.services.deletion,
             factory=stack.factory,
-            # KHEPRI-DEC-015 §2b's retention pass. Without this the horizon is enforced by
-            # nothing: the class existed but no operational entry point called it, so disabled
-            # accounts would have kept their email identities indefinitely.
-            accounts=AccountRetentionSweeper(SqlAccountStore(stack.factory)),
+            # KHEPRI-DEC-015's two retention horizons. Without this they are enforced by nothing:
+            # both classes existed but no operational entry point called either, so disabled
+            # accounts would have kept their email identities and FR-014 events would have
+            # accumulated indefinitely -- retention rules with no caller are indefinite retention
+            # with a policy comment on top. No horizon overrides here: production runs the
+            # governed twenty-four and twelve months.
+            retention=RetentionPasses(
+                accounts=AccountRetentionSweeper(SqlAccountStore(stack.factory)),
+                events=MembershipEventSweeper(SqlOrganizationStore(stack.factory)),
+            ),
         ),
     )
 

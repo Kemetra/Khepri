@@ -12,7 +12,7 @@ from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
-from khepri.rca.lifecycle import RETENTION_MONTHS
+from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS, RETENTION_MONTHS
 from khepri.rca.organizations import (
     MEMBER_ROLE,
     OWNER_ROLE,
@@ -183,9 +183,6 @@ def test_a_refused_creation_writes_no_event(factory: sessionmaker) -> None:
 # --- retention ordering --------------------------------------------------------------------
 
 
-MEMBERSHIP_EVENT_RETENTION_MONTHS = 12
-
-
 def test_the_account_horizon_outlasts_the_audit_horizon() -> None:
     """`KHEPRI-DEC-015` justifies 24 months partly as outlasting the 12-month audit horizon,
     "so that audit evidence never outlives the subject it refers to".
@@ -193,8 +190,20 @@ def test_the_account_horizon_outlasts_the_audit_horizon() -> None:
     That is a relationship between two independently scheduled sweepers, and nothing else
     enforces it. Shortening the account horizon below the audit horizon would leave events
     pointing at rows that no longer exist, and would do so silently.
+
+    **Both constants now come from production.** Until `R2-08` this test declared its own
+    `MEMBERSHIP_EVENT_RETENTION_MONTHS = 12` and compared production's account horizon against
+    it, so the assertion could only fail if someone changed `RETENTION_MONTHS` — a sweeper
+    shipping an eleven- or thirty-month audit horizon would have passed. Comparing two production
+    constants is what makes this able to fail.
     """
     assert RETENTION_MONTHS > MEMBERSHIP_EVENT_RETENTION_MONTHS
+
+
+def test_the_audit_horizon_is_the_governed_twelve_months() -> None:
+    """`KHEPRI-DEC-015` §2a fixes the number, so the ordering test above is not free to satisfy
+    itself by shortening the audit horizon toward zero."""
+    assert MEMBERSHIP_EVENT_RETENTION_MONTHS == 12
 
 
 def test_an_event_is_purgeable_only_once_its_horizon_elapses() -> None:

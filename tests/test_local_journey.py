@@ -33,6 +33,12 @@ from khepri.local.wiring import (
     build_worker_stack,
     local_page_printer,
 )
+from khepri.rca.lifecycle import (
+    MEMBERSHIP_EVENT_RETENTION_MONTHS,
+    RETENTION_MONTHS,
+    AccountRetentionSweeper,
+    MembershipEventSweeper,
+)
 from khepri.rra.bundle import REQUIRED_SURFACES
 from tests.local_stack_support import requires_local_stack
 
@@ -220,3 +226,26 @@ class TestTheSweeper:
         assert report.orphaned_jobs >= 0
         assert report.expired_sessions >= 0
         assert report.deletions_deferred >= 0
+        assert report.purged_accounts >= 0
+        assert report.purged_events >= 0
+
+    def test_a_sweep_runs_both_retention_horizons(
+        self,
+        stack: LocalStack,
+        tmp_path: Path,
+    ) -> None:
+        """Against the real stack: both passes are wired at the governed lengths.
+
+        The ungated half of this evidence is in `test_local_sweeper.py`, which asserts the same
+        wiring without needing docker. This adds that the wired passes survive a real sweep.
+        """
+        sweeper = build_worker_stack(stack, workbooks=tmp_path).sweeper
+        retention = sweeper._retention  # noqa: SLF001 -- the wiring *is* the assertion
+
+        assert retention is not None, "production must configure the retention passes"
+        assert isinstance(retention.accounts, AccountRetentionSweeper), "§2b pass wired"
+        assert isinstance(retention.events, MembershipEventSweeper), "§2a pass wired"
+        assert retention.accounts._retention_months == RETENTION_MONTHS  # noqa: SLF001
+        assert (
+            retention.events._retention_months == MEMBERSHIP_EVENT_RETENTION_MONTHS  # noqa: SLF001
+        ), "production must not run a compressed audit horizon"
