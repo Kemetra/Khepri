@@ -481,12 +481,59 @@ Create opaque, server-side commercial authentication sessions that resolve one a
 | --- | --- | --- | --- | --- |
 | R3-01 | Specify session identity, expiry, revocation, cookie boundary, and relation to existing RRA beta sessions | R0, active RCA-001 | R2 design | Session design |
 | R3-02 | Add session domain types and exact state vocabulary | R3-01 | R4 invitation design | Domain tests |
-| R3-03 | Add persistence and migration | R2 migration merged or coordinated Alembic re-point | no other migration merge | Session table/store |
+| R3-03 | Add persistence and migration | R3-02, R3-09, R2 migration merged or coordinated Alembic re-point | no other migration merge | Session table/store |
 | R3-04 | Implement create, resolve, expire, and revoke | R3-03 | R4 domain work | Session service |
 | R3-05 | Enforce account activity on every actor resolution | R3-04 | no | Disabled accounts stop authorizing immediately |
 | R3-06 | Add secure HttpOnly cookie handling and uniform invalid-session denial | R3-04 | U1 shell design | HTTP boundary |
 | R3-07 | Add session cleanup and retention behavior under active decisions | R3-04 | no | Sweeper or lifecycle cleanup |
 | R3-08 | Add tests proving no retail content, role, or stale membership authority is stored in session identity | R3-05 | no | Security evidence |
+| R3-09 | Specify how external identity composes with R3's session model, resolving the FR-027 seam below | R3-01, KHEPRI-DEC-018 merged | R3-02 | Design addendum |
+| R3-10 | Add the `IdentityProvider` seam and its verified-identity type | R3-09, R3-02 | no adapter work | Port + domain tests |
+| R3-11 | Add the admitted-provider adapter behind the seam | R3-10, a provider admitted under KHEPRI-DEC-018 §5 | no | Provider adapter |
+
+### Task disposition — external identity (recorded 2026-08-14)
+
+`KHEPRI-DEC-018` merged at `dcb63da`, **after** `R3-01` was designed and merged. `R3-01` therefore
+describes Khepri authenticating its own credentials and minting its own session, and contains no
+`IdentityProvider` concept. Three tasks are appended rather than existing ones being renumbered or
+rewritten, because `R3-01` is merged and referenced from `NEXT-SLICES.md`, `STATUS.md`,
+`docs/superpowers/specs/2026-08-14-r3-provider-evaluation-clerk.md`, and `KHEPRI-DEC-018`'s own
+Consequences.
+
+**No `R3` task is `SUPERSEDED`, and this is not an `R3` rewrite.** `KHEPRI-DEC-018` §11 admits no
+provider and supersedes nothing; until a provider is admitted under §5, `FR-002` remains the only
+authentication path, so `R3-01` … `R3-08` are exactly what Khepri needs. `R3-09` … `R3-11` are
+additive and become relevant only on admission. `R3-11` cannot start before a provider is admitted;
+`R3-09` and `R3-10` are provider-neutral and can.
+
+**The seam `R3-10` builds** is fixed by `KHEPRI-DEC-018` §6: it exposes only whether a request
+carries a verified identity, and the stable provider subject with its issuing provider. Vendor SDK
+types stay behind the adapter and no module outside it imports them. Per the merged Clerk evaluation,
+the authenticated subject is the verified token's `sub`, resolved locally through
+`(provider, provider_subject) -> account_id`; a provider's `external_id`-equivalent is a portability
+anchor, never the per-request subject.
+
+**The open seam `R3-09` must resolve, stated rather than deferred silently.** `KHEPRI-DEC-018` §2
+lets an admitted provider own "session or token issuance, refresh, and expiry" and says "Khepri
+implements none of these for accounts authenticated through an admitted provider." But `FR-027`
+requires "an authenticated session MUST carry at most one active organization", `FR-029` requires a
+switch to "take effect for every subsequent authorization decision in that session", and
+`KHEPRI-DEC-018` §3 makes the active organization (`FR-027`) Khepri-authoritative — a provider
+assertion may not substitute for it.
+
+Those hold together only if Khepri keeps **its own server-side state keyed to the verified provider
+identity**, carrying the active organization and nothing a provider owns. What that state is called,
+whether it reuses `R3-03`'s table, and how its lifetime relates to a provider token's are exactly
+what `R3-09` settles. It is a design question, not a contradiction in either artifact: §2 assigns
+*authentication mechanics* to the provider, and an active-organization pointer is not an
+authentication mechanic. Recording it here prevents `R3-03` from writing schema that assumes one
+answer, and `R3-03`'s `Depends on` cell now names `R3-09` so that ordering is encoded in the table
+rather than only in this prose.
+
+**Shape-affected if `R3-09` concludes Khepri holds no session row of its own:** `R3-02`, `R3-03`,
+`R3-04`, and `R3-06` — `R3-06` most, since the cookie boundary is a different artifact when a
+provider issues the token. None is blocked today, and `R3-02`'s domain types are needed under either
+answer.
 
 ## Key constraints
 
@@ -495,6 +542,10 @@ Create opaque, server-side commercial authentication sessions that resolve one a
 - Account disablement and membership revocation take effect without waiting for session expiry.
 - Session error responses do not reveal whether a token once existed.
 - RCA authentication sessions and RRA private-beta sessions must not be silently conflated.
+- Where an admitted external identity provider authenticates the actor, the same constraints hold
+  unchanged, and no provider organization, role, permission, or membership claim participates in any
+  authorization decision (`KHEPRI-DEC-018` §4). Provider identity replaces credential verification,
+  never authority.
 
 ---
 
@@ -1341,7 +1392,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R0 Roadmap/spec reconciliation | IN_REVIEW | `R0-04` is MERGED at `ebfbe77`. `R0-01`/`R0-02`/`R0-03`/`R0-05` are proposed as one docs-only slice — `specs/001-rca-001-commercial-identity/{SUPERSEDED,STATUS,NEXT-SLICES}.md`. Not MERGED until the owner merges it |
 | R1 Concurrent final-owner safety | MERGED | `R1-01`…`R1-06` complete at `c8c6edb`; `#155` closed. **The stop gate was re-cleared by `ac7143b` (#175), not by `R1`** — `R1`'s lock covered one row per organization, so three callers disabling three different owners of one organization locked disjoint sets and `FOR UPDATE` serialized nothing. Measured at 4 failures in 12 against real PostgreSQL; it had read as a flake. See the note under `R2` |
 | R2 Membership lifecycle | MERGED | `R2-01`…`R2-10` complete at `95760a4` (`#150`); PRs `#165`…`#178`. Roles CHECK-constrained, promotion/demotion/revocation through explicit operations, one shared FR-013 guard for remove/downgrade/disable, append-only FR-014 events on a 12-month horizon with a wired sweeper. Two latent gaps recorded rather than closed — see `specs/001-rca-001-commercial-identity/STATUS.md` |
-| R3 Authentication sessions | READY_FOR_IMPLEMENTATION | `R3-01` design merged; `R3-02` (domain types) may start now. Two owner decisions in the design note §9 must settle before `R3-03` writes schema |
+| R3 Authentication sessions | READY_FOR_IMPLEMENTATION | `R3-01` design merged; `R3-02` (domain types) may start now, and is provider-neutral under either `R3-09` outcome. Two owner decisions in the design note §9 must settle before `R3-03` writes schema. `KHEPRI-DEC-018` (`dcb63da`) added `R3-09`/`R3-10`/`R3-11` — see the task disposition under Program R3. `R3-09` should settle the `FR-027` seam before `R3-03` writes schema; `R3-11` waits on a provider admitted under §5 |
 | R4 Invitations | READY_FOR_PLAN | R2's membership operations are now merged and stable, so only R3 actor resolution remains. Note for `R4-01`: adding a caller-supplied role (`invite(role=...)`) makes `test_no_role_change_operation_accepts_a_role_from_its_caller` fail by design — that test marks the point where role validation stops being optional, since neither the domain nor `rca_membership_events` validates roles today |
 | R5 Recovery | READY_FOR_PLAN | R5-01 design may proceed alongside R3 design; implementation depends on R3 session revocation |
 | R6 Canonical authorization | BLOCKED | R2 membership is live; now depends on R3 session resolution alone |
