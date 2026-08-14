@@ -57,3 +57,12 @@ class OrganizationStore(Protocol):
         actor_account_id: str,
         now: datetime,
     ) -> str: ...
+
+    def demote_membership(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> str: ...

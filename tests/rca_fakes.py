@@ -19,6 +19,7 @@ from khepri.rca.errors import (
     OWNER_CHANGE_NOT_APPLICABLE,
 )
 from khepri.rca.organizations import (
+    MEMBER_ROLE,
     OWNER_ROLE,
     IsolationScope,
     Membership,
@@ -174,6 +175,49 @@ class MemoryOrganizationStore:
         clause that can actually break is the SQL one, where a DELETE with the wrong WHERE takes
         the account's other memberships with it.
         """
+        def revoke(key, membership: Membership) -> MembershipEvent:
+            del self.memberships[key]
+            return MembershipEvent.revoked(
+                organization_id,
+                account_id,
+                prior_role=membership.role,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
+
+        return self._apply_membership_change(organization_id, account_id, revoke)
+
+    def demote_membership(
+        self,
+        organization_id: str,
+        account_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> str:
+        """Mirror `SqlOrganizationStore.demote_membership`'s outcomes."""
+
+        def demote(key, membership: Membership) -> MembershipEvent:
+            self.memberships[key] = membership.demoted()
+            return MembershipEvent.role_changed(
+                organization_id,
+                account_id,
+                prior_role=membership.role,
+                next_role=MEMBER_ROLE,
+                actor_account_id=actor_account_id,
+                now=now,
+            )
+
+        return self._apply_membership_change(organization_id, account_id, demote)
+
+    def _apply_membership_change(self, organization_id: str, account_id: str, write) -> str:
+        """The fake's single owner-reducing guard, mirroring the store's shared body.
+
+        Both stores route revoke and demote through one guard rather than two, because the
+        roadmap forbids independent final-owner guards -- and a fake with two could disagree
+        with the store on one operation while agreeing on the other, which is the divergence
+        that makes a refusal test meaningless.
+        """
         key = (organization_id, account_id)
         membership = self.memberships.get(key)
         if membership is None:
@@ -182,16 +226,7 @@ class MemoryOrganizationStore:
             self.count_owners(organization_id, excluding_account_id=account_id) == 0
         ):
             return OWNER_CHANGE_FINAL_OWNER
-        del self.memberships[key]
-        self.events.append(
-            MembershipEvent.revoked(
-                organization_id,
-                account_id,
-                prior_role=membership.role,
-                actor_account_id=actor_account_id,
-                now=now,
-            )
-        )
+        self.events.append(write(key, membership))
         return OWNER_CHANGE_APPLIED
 
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None:

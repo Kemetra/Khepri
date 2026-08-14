@@ -224,3 +224,171 @@ def test_concurrent_disablement_in_separate_organizations_does_not_serialize(
     assert outcomes == ["refused", "refused"], (
         "each is the final owner of its own organization; both refusals are independent"
     )
+
+
+# --- R2-06: the membership write paths, which R1 did not cover -------------------------------
+
+
+@requires_postgres
+def test_concurrent_revocation_of_three_owners_leaves_one(factory) -> None:
+    """Three contenders on the revoke path.
+
+    `R1` established that two threads are not a reliable proof of this defect class -- its
+    two-owner test passed against the broken code, and only three contenders exposed the race.
+    So the revoke path gets three from the start rather than earning the same lesson twice.
+    """
+    organization, first, second = _two_owner_organization(factory)
+    accounts = SqlAccountStore(factory)
+    third = AccountService(accounts).create_account("third@example.test", CREDENTIAL)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=third.account_id,
+                role=OWNER_ROLE,
+            )
+        )
+
+    barrier = threading.Barrier(3, timeout=10)
+
+    def revoke(account_id: str) -> str:
+        organizations = SqlOrganizationStore(factory)
+        barrier.wait()
+        try:
+            OrganizationService(organizations).revoke_membership(
+                organization.organization_id,
+                account_id,
+                actor_account_id=account_id,
+                now=NOW,
+            )
+        except FinalOwnerProtected:
+            return "refused"
+        return "revoked"
+
+    ids = [first.account_id, second.account_id, third.account_id]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        outcomes = sorted(pool.map(revoke, ids))
+
+    assert _surviving_owners(factory, organization.organization_id) >= 1
+    assert outcomes == ["refused", "revoked", "revoked"], (
+        "two of three may succeed; the last owner must be refused"
+    )
+
+
+@requires_postgres
+def test_concurrent_demotion_of_three_owners_leaves_one(factory) -> None:
+    """Three contenders on the demote path -- `FR-013`'s "downgrade" clause under contention."""
+    organization, first, second = _two_owner_organization(factory)
+    accounts = SqlAccountStore(factory)
+    third = AccountService(accounts).create_account("third@example.test", CREDENTIAL)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=third.account_id,
+                role=OWNER_ROLE,
+            )
+        )
+
+    barrier = threading.Barrier(3, timeout=10)
+
+    def demote(account_id: str) -> str:
+        organizations = SqlOrganizationStore(factory)
+        barrier.wait()
+        try:
+            OrganizationService(organizations).demote_to_member(
+                organization.organization_id,
+                account_id,
+                actor_account_id=account_id,
+                now=NOW,
+            )
+        except FinalOwnerProtected:
+            return "refused"
+        return "demoted"
+
+    ids = [first.account_id, second.account_id, third.account_id]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        outcomes = sorted(pool.map(demote, ids))
+
+    assert _surviving_owners(factory, organization.organization_id) >= 1
+    assert outcomes == ["demoted", "demoted", "refused"], (
+        "two of three may succeed; the last owner must be refused"
+    )
+
+
+@requires_postgres
+def test_one_caller_revoking_while_another_demotes_cannot_strand_the_organization(
+    factory,
+) -> None:
+    """The mixed case `R1` did not have, and the reason `R2-06` exists as its own task.
+
+    `R2-01` §5 names this explicitly: revoke and demote are *two different write paths* reducing
+    the same count. A guard that serialized each path against itself -- two locks, one per
+    operation -- would pass both three-contender tests above and still strand an organization
+    here, because neither caller would observe the other.
+
+    Three owners, three different operations: one revoked, one demoted, one disabled. At most
+    two may succeed, and whichever is last must be refused. This is the test that fails if the
+    three paths ever stop sharing a guard.
+    """
+    organization, first, second = _two_owner_organization(factory)
+    accounts = SqlAccountStore(factory)
+    third = AccountService(accounts).create_account("third@example.test", CREDENTIAL)
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=third.account_id,
+                role=OWNER_ROLE,
+            )
+        )
+
+    barrier = threading.Barrier(3, timeout=10)
+
+    def revoke() -> str:
+        organizations = SqlOrganizationStore(factory)
+        barrier.wait()
+        try:
+            OrganizationService(organizations).revoke_membership(
+                organization.organization_id,
+                first.account_id,
+                actor_account_id=first.account_id,
+                now=NOW,
+            )
+        except FinalOwnerProtected:
+            return "refused"
+        return "applied"
+
+    def demote() -> str:
+        organizations = SqlOrganizationStore(factory)
+        barrier.wait()
+        try:
+            OrganizationService(organizations).demote_to_member(
+                organization.organization_id,
+                second.account_id,
+                actor_account_id=second.account_id,
+                now=NOW,
+            )
+        except FinalOwnerProtected:
+            return "refused"
+        return "applied"
+
+    def disable() -> str:
+        lifecycle = LifecycleService(SqlAccountStore(factory), SqlOrganizationStore(factory))
+        barrier.wait()
+        try:
+            lifecycle.disable_account(third.account_id, now=NOW)
+        except FinalOwnerProtected:
+            return "refused"
+        return "applied"
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        running = [pool.submit(revoke), pool.submit(demote), pool.submit(disable)]
+        outcomes = sorted(future.result() for future in running)
+
+    assert _surviving_owners(factory, organization.organization_id) >= 1, (
+        "three different owner-reducing operations must not between them reach zero owners"
+    )
+    assert outcomes.count("refused") >= 1, (
+        "three operations on three owners: at least one must be refused"
+    )
