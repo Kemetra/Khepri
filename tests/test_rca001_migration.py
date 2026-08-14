@@ -565,7 +565,9 @@ def test_the_downgrade_marks_attribution_it_cannot_reconstruct(sqlite_url: str) 
             module.op = token
 
     with engine.begin() as connection:
-        row = connection.execute(text("SELECT changed_by FROM rca_memberships")).one()
+        row = connection.execute(
+            text("SELECT changed_by, changed_at FROM rca_memberships")
+        ).one()
 
     assert row.changed_by == module._UNKNOWN_ACTOR, (  # noqa: SLF001
         "a swept event must downgrade to the placeholder, not to a plausible account identifier"
@@ -573,3 +575,8 @@ def test_the_downgrade_marks_attribution_it_cannot_reconstruct(sqlite_url: str) 
     assert not row.changed_by.startswith("acc_"), (
         "the placeholder must not be mistakable for a real account identifier"
     )
+    # The NOT NULL tighten that follows catches a placeholder that never landed at all. It
+    # cannot catch one that landed wrong, and the timestamp is bound as a `datetime` rather
+    # than a string precisely because PostgreSQL will not implicitly cast text into a
+    # `TIMESTAMPTZ` here. Without this, that bind has no assertion behind it.
+    assert "1970" in str(row.changed_at), "a swept event downgrades to the epoch placeholder"

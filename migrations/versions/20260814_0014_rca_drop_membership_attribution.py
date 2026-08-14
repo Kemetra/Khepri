@@ -53,6 +53,15 @@ def downgrade() -> None:
     giving audit data a shorter life than the row it describes, which is the point of the move
     rather than an accident of it. A downgrade cannot resurrect what a retention policy
     deliberately destroyed, and it should not pretend otherwise by inventing a plausible actor.
+
+    **This reconstruction is exercised on SQLite only, and the PostgreSQL path is unproven.**
+    `test_full_chain_upgrades_to_head_on_postgres` upgrades and never downgrades, so CI proves
+    the *drop* against the dialect that runs in production and proves the *restore* against the
+    one that does not. The residual risk is narrow and worth naming rather than leaving for a
+    reader to rediscover: `COALESCE(<subquery>, :epoch)` requires PostgreSQL to infer the bound
+    parameter's type from the subquery's `timestamptz`, which it normally does and psycopg
+    normally sends typed. Low, not zero. A downgrade is an emergency path and this is the same
+    exposure `20260814_0013` carries, so it is recorded here rather than treated as blocking.
     """
     with op.batch_alter_table("rca_memberships") as batch:
         batch.add_column(sa.Column("changed_by", sa.String(), nullable=True))
