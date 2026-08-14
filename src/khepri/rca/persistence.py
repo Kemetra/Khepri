@@ -92,8 +92,9 @@ class MembershipRow(Base):
     organization_id: Mapped[str] = mapped_column(String, primary_key=True)
     account_id: Mapped[str] = mapped_column(String, primary_key=True)
     role: Mapped[str] = mapped_column(String, nullable=False)
-    changed_by: Mapped[str] = mapped_column(String, nullable=False)
-    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # No attribution columns: `changed_by`/`changed_at` were dropped by `20260814_0014`.
+    # Audit data on a state row with no expiry outlives its own twelve-month horizon
+    # (`KHEPRI-DEC-015` §2a); it lives on `MembershipEventRow`, which is swept.
 
 
 class MembershipEventRow(Base):
@@ -187,8 +188,6 @@ def _membership_from_row(row: MembershipRow) -> Membership:
         organization_id=row.organization_id,
         account_id=row.account_id,
         role=row.role,
-        changed_by=row.changed_by,
-        changed_at=_utc(row.changed_at),
     )
 
 
@@ -467,8 +466,6 @@ class SqlOrganizationStore:
                         organization_id=membership.organization_id,
                         account_id=membership.account_id,
                         role=membership.role,
-                        changed_by=membership.changed_by,
-                        changed_at=membership.changed_at,
                     )
                 )
                 database.add(

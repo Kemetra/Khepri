@@ -90,8 +90,6 @@ def _two_owner_organization(factory):
                 organization_id=organization.organization_id,
                 account_id=second.account_id,
                 role=OWNER_ROLE,
-                changed_by=first.account_id,
-                changed_at=NOW,
             )
         )
     return organization, first, second
@@ -166,8 +164,6 @@ def test_concurrent_disablement_of_three_owners_leaves_one(factory) -> None:
                 organization_id=organization.organization_id,
                 account_id=third.account_id,
                 role=OWNER_ROLE,
-                changed_by=first.account_id,
-                changed_at=NOW,
             )
         )
 

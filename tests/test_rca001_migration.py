@@ -518,3 +518,58 @@ def test_the_downgrade_reconstructs_attribution_from_the_events(sqlite_url: str)
     }
     assert nullable["changed_by"] is False, "20260812_0010 declares it NOT NULL"
     assert nullable["changed_at"] is False, "20260812_0010 declares it NOT NULL"
+
+
+def test_the_downgrade_marks_attribution_it_cannot_reconstruct(sqlite_url: str) -> None:
+    """A membership whose creation event has been swept downgrades to an explicit placeholder.
+
+    This is the lossy case, and it is inherent rather than accidental: `KHEPRI-DEC-015` §2a
+    gives the event twelve months and the membership row no expiry at all, so a row can outlive
+    the only record of who created it. That asymmetry is the point of moving attribution off the
+    row, not a defect in having done so.
+
+    What the downgrade must not do is paper over it. The placeholder is deliberately not a
+    plausible account identifier, so a reader can tell reconstructed-unknown from
+    genuinely-recorded. A downgrade that invented a credible-looking actor would be forging the
+    audit record it is supposed to be restoring, and nothing downstream could detect it.
+    """
+    _run(sqlite_url, "upgrade")
+    engine = create_engine(sqlite_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO rca_organizations (organization_id, name, created_at) "
+                "VALUES ('org_d', 'Delta', '2026-01-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text("INSERT INTO rca_accounts (account_id, email) VALUES ('acc_d', 'd@example.test')")
+        )
+        # A membership with no creation event: its own has already passed the twelve-month
+        # horizon and been swept.
+        connection.execute(
+            text(
+                "INSERT INTO rca_memberships (organization_id, account_id, role) "
+                "VALUES ('org_d', 'acc_d', 'member')"
+            )
+        )
+
+    module = _rca_migration_module("20260814_0014", "rca_drop_membership_attribution")
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        token = module.op
+        module.op = Operations(context)
+        try:
+            module.downgrade()
+        finally:
+            module.op = token
+
+    with engine.begin() as connection:
+        row = connection.execute(text("SELECT changed_by FROM rca_memberships")).one()
+
+    assert row.changed_by == module._UNKNOWN_ACTOR, (  # noqa: SLF001
+        "a swept event must downgrade to the placeholder, not to a plausible account identifier"
+    )
+    assert not row.changed_by.startswith("acc_"), (
+        "the placeholder must not be mistakable for a real account identifier"
+    )

@@ -146,8 +146,6 @@ def test_resolve_scope_refuses_a_disabled_account(factory: sessionmaker) -> None
                 organization_id=organization.organization_id,
                 account_id=member.account_id,
                 role="member",
-                changed_by=owner.account_id,
-                changed_at=NOW,
             )
         )
     isolation = IsolationService(organizations, accounts)

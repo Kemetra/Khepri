@@ -250,8 +250,6 @@ def test_creation_is_atomic_when_a_row_violates_a_constraint(factory: sessionmak
         organization_id="org_doomed",
         account_id="acc_does_not_exist",
         role="owner",
-        changed_by="acc_does_not_exist",
-        changed_at=NOW,
     )
     scope = IsolationScope.create("org_doomed")
 
@@ -315,8 +313,6 @@ def test_a_mismatched_aggregate_is_refused_without_writing(factory: sessionmaker
                 organization_id=membership_org,
                 account_id=other.account_id,
                 role="owner",
-                changed_by=other.account_id,
-                changed_at=NOW,
             ),
             IsolationScope.create(scope_org),
             MembershipEvent.created(
@@ -371,8 +367,6 @@ def test_records_reject_construction_outside_a_door() -> None:
             organization_id="org_1",
             account_id="acc_1",
             role="owner",
-            changed_by="acc_1",
-            changed_at=NOW,
         )
     with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
         Account(account_id="acc_1", email=EMAIL, verifier=None, disabled_at=None)
@@ -413,7 +407,7 @@ def test_copying_a_sealed_record_is_not_a_door(clone) -> None:
         clone(Account.create(EMAIL, CREDENTIAL), verifier=None)
     with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):
         clone(
-            Membership.create("org_1", "acc_1", "member", changed_by="acc_1", now=NOW),
+            Membership.create("org_1", "acc_1", "member"),
             role="owner",
         )
     with pytest.raises(TypeError, match="create\\(\\) or _from_storage\\(\\)"):

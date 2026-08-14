@@ -98,7 +98,7 @@ def two_owner_organization(factory: sessionmaker | None = None) -> TwoOwners:
         "Acme", first.account_id, now=NOW
     )
     _grant(
-        (organizations, factory, organization.organization_id, first.account_id),
+        (organizations, factory, organization.organization_id),
         second.account_id,
         OWNER_ROLE,
     )
@@ -111,14 +111,18 @@ def two_owner_organization(factory: sessionmaker | None = None) -> TwoOwners:
 def _grant(stack_parts, account_id: str, role: str) -> None:
     """Add a membership to whichever store backs this fixture.
 
-    Takes the fixture's own (organizations, factory, organization_id, granter) rather than four
-    separate parameters: the caller already has them together, and threading them individually
-    is the excess-argument smell that replaced the duplication on the first attempt.
+    Takes the fixture's own (organizations, factory, organization_id) rather than three separate
+    parameters: the caller already has them together, and threading them individually is the
+    excess-argument smell that replaced the duplication on the first attempt.
+
+    The granter used to travel with them, for the membership row's `changed_by`. `20260814_0014`
+    dropped that column, and a fixture helper is the wrong place to keep synthesizing attribution
+    the schema no longer has -- a test needing an attributed change builds a `MembershipEvent`.
     """
-    organizations, factory, organization_id, changed_by = stack_parts
+    organizations, factory, organization_id = stack_parts
     if factory is None:
         organizations.memberships[(organization_id, account_id)] = Membership.create(
-            organization_id, account_id, role, changed_by=changed_by, now=NOW
+            organization_id, account_id, role
         )
         return
     with factory.begin() as database:
@@ -127,8 +131,6 @@ def _grant(stack_parts, account_id: str, role: str) -> None:
                 organization_id=organization_id,
                 account_id=account_id,
                 role=role,
-                changed_by=changed_by,
-                changed_at=NOW,
             )
         )
 
@@ -136,7 +138,7 @@ def _grant(stack_parts, account_id: str, role: str) -> None:
 def grant_membership(stack: TwoOwners, account_id: str, role: str, *, factory=None) -> None:
     """Add one more membership to an existing fixture, for the multi-organization cases."""
     _grant(
-        (stack.organizations, factory, stack.organization.organization_id, stack.first.account_id),
+        (stack.organizations, factory, stack.organization.organization_id),
         account_id,
         role,
     )

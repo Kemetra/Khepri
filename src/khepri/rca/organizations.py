@@ -46,54 +46,37 @@ class Organization(Sealed):
 class Membership(Sealed):
     """An account's role in an organization, as a state row.
 
-    This records the *current* role only. It cannot represent a role transition, so FR-014's
-    "what the prior and resulting roles were" is unsatisfiable in this shape, and the
-    `changed_by`/`changed_at` columns hold audit data on a row with no expiry while
-    `KHEPRI-DEC-015` gives role/membership audit events a 12-month horizon. Both are #150's:
-    attribution moves to an append-only `rca_membership_events` table that expires on its own.
+    This records the *current* role only, and deliberately carries no attribution. It cannot
+    represent a role transition, so FR-014's "what the prior and resulting roles were" is
+    unsatisfiable in this shape; that requirement is met by `MembershipEvent` on an append-only
+    table with its own twelve-month horizon (`KHEPRI-DEC-015` §2a).
+
+    The row previously carried `changed_by`/`changed_at`. They are gone as of `20260814_0014`:
+    audit data on a row with no expiry outlives its own horizon indefinitely, not by decision
+    but by accident of what it rode on. Attribution now has exactly one home, and that home is
+    swept. Adding a "last changed by" field back here for convenience would recreate the defect.
     """
 
     organization_id: str
     account_id: str
     role: str
-    changed_by: str
-    changed_at: datetime
 
     @classmethod
-    def create(
-        cls,
-        organization_id: str,
-        account_id: str,
-        role: str,
-        *,
-        changed_by: str,
-        now: datetime,
-    ) -> Membership:
+    def create(cls, organization_id: str, account_id: str, role: str) -> Membership:
         with through_door():
             return Membership(
                 organization_id=organization_id,
                 account_id=account_id,
                 role=role,
-                changed_by=changed_by,
-                changed_at=now,
             )
 
     @classmethod
-    def _from_storage(
-        cls,
-        organization_id: str,
-        account_id: str,
-        role: str,
-        changed_by: str,
-        changed_at: datetime,
-    ) -> Membership:
+    def _from_storage(cls, organization_id: str, account_id: str, role: str) -> Membership:
         with through_door():
             return Membership(
                 organization_id=organization_id,
                 account_id=account_id,
                 role=role,
-                changed_by=changed_by,
-                changed_at=changed_at,
             )
 
 
@@ -280,8 +263,6 @@ class OrganizationService:
             organization_id=organization.organization_id,
             account_id=creator_account_id,
             role=OWNER_ROLE,
-            changed_by=creator_account_id,
-            now=now,
         )
         scope = IsolationScope.create(organization.organization_id)
         # FR-014 covers "every change to a membership", and the initial owner membership is one.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import UTC, datetime
 
 import pytest
@@ -26,15 +27,27 @@ def test_creating_an_organization_makes_the_creator_an_owner() -> None:
     assert membership.role == OWNER_ROLE
 
 
-def test_membership_creation_is_attributable() -> None:
+def test_the_membership_row_carries_no_attribution() -> None:
+    """FR-014's attribution lives on the event, and nowhere else.
+
+    This used to assert `changed_by`/`changed_at` on the membership itself. That coverage did
+    not disappear with the columns -- it moved to
+    `test_rca001_membership_events.py::test_creating_an_organization_emits_one_creation_event`,
+    which asserts the emitted event names the creator as its actor. What is asserted here is
+    the other half: that the state row does not *also* carry it. Two homes for one fact is the
+    drift the move was made to end, so a future field named `last_changed_by` fails here.
+    """
     store = MemoryOrganizationStore(MemoryAccountStore())
     service = OrganizationService(store)
     organization = service.create_organization("Acme Pharmacy", ACCOUNT, now=NOW)
 
     membership = store.get_membership(organization.organization_id, ACCOUNT)
     assert membership is not None
-    assert membership.changed_by == ACCOUNT
-    assert membership.changed_at == NOW
+    assert {field.name for field in fields(membership)} == {
+        "organization_id",
+        "account_id",
+        "role",
+    }
 
 
 def test_creation_allocates_an_isolation_scope() -> None:
