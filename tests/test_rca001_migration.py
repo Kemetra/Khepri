@@ -34,7 +34,12 @@ RCA_REVISIONS = (
     ("20260812_0010", "rca_identity_spine", "20260730_0009"),
     ("20260813_0011", "rca_account_lifecycle", "20260812_0010"),
     ("20260814_0013", "rca_membership_events", "20260813_0012"),
+    ("20260814_0014", "rca_drop_membership_attribution", "20260814_0013"),
 )
+# The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
+# insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
+# them to head would fail on the INSERT rather than on the behavior they assert.
+BACKFILL_REVISION = "20260814_0013"
 RCA_REVISION = RCA_REVISIONS[0][0]
 RCA_TABLES = {
     "rca_accounts",
@@ -87,7 +92,7 @@ def _sqlite_url(tmp_path: Path) -> str:
     return f"sqlite+pysqlite:///{(tmp_path / 'migration.db').as_posix()}"
 
 
-def _run(database_url: str, direction: str) -> None:
+def _run(database_url: str, direction: str, *, through: str | None = None) -> None:
     """Apply every RCA revision's upgrade or downgrade, in order.
 
     The full chain cannot replay on SQLite: four earlier RRA migrations use ALTER-style
@@ -97,8 +102,18 @@ def _run(database_url: str, direction: str) -> None:
 
     Downgrades run in reverse, so an upgrade/downgrade round trip returns to the starting state
     rather than tripping over a dependency the later revision added.
+
+    `through` stops an upgrade after the named revision, for tests that assert against a schema
+    an intermediate revision produced. It is not an escape hatch for a test that a later
+    revision breaks: a test pinned here must be asserting something about *that* revision's own
+    behavior, and one that fails at head for any other reason is reporting a real defect.
     """
     ordered = RCA_REVISIONS if direction == "upgrade" else tuple(reversed(RCA_REVISIONS))
+    if through is not None:
+        assert direction == "upgrade", "`through` stops an upgrade; downgrades run the full chain"
+        names = [revision for revision, _slug, _parent in ordered]
+        assert through in names, f"unknown revision {through}"
+        ordered = ordered[: names.index(through) + 1]
     engine = create_engine(database_url)
     for revision, slug, _parent in ordered:
         with engine.begin() as connection:
@@ -310,8 +325,11 @@ def test_the_backfill_synthesizes_one_creation_event_per_existing_membership(
     A backfilled event is a reconstruction rather than an observed one: it asserts the
     membership existed at this role, attributed to this account, at this time. All true, all
     supported by the source columns, and none of it emitted by an operation.
+
+    Pinned to `BACKFILL_REVISION`: this asserts what `20260814_0013` did to columns that
+    `20260814_0014` has since removed, so it must run against the schema of its own revision.
     """
-    _run(sqlite_url, "upgrade")
+    _run(sqlite_url, "upgrade", through=BACKFILL_REVISION)
     engine = create_engine(sqlite_url)
     with engine.begin() as connection:
         connection.execute(
@@ -369,8 +387,10 @@ def test_the_backfill_is_idempotent(sqlite_url: str) -> None:
     downgrade-and-replay collides on the primary key instead of silently doubling the audit
     trail. A random identifier would make the second run succeed and leave two creation events
     for one membership.
+
+    Pinned to `BACKFILL_REVISION` for the same reason as the test above.
     """
-    _run(sqlite_url, "upgrade")
+    _run(sqlite_url, "upgrade", through=BACKFILL_REVISION)
     engine = create_engine(sqlite_url)
     with engine.begin() as connection:
         connection.execute(
@@ -414,3 +434,87 @@ def test_the_backfill_is_idempotent(sqlite_url: str) -> None:
             text("SELECT COUNT(*) FROM rca_membership_events")
         ).scalar()
     assert count == 1, "one membership, one creation event, however many replays"
+
+
+def test_the_attribution_columns_are_gone_at_head(sqlite_url: str) -> None:
+    """`R2-03`: `rca_memberships` carries live state only.
+
+    `changed_by` and `changed_at` recorded who last touched the row and when. That is audit
+    data, and `KHEPRI-DEC-015` gives membership audit a twelve-month horizon, while the state
+    row it sat on has no expiry at all. Attribution outliving its horizon because it rode on a
+    row that never expires is the defect `20260814_0013` moved it off, and this asserts the
+    source is now actually gone rather than merely duplicated.
+    """
+    _run(sqlite_url, "upgrade")
+    columns = {c["name"] for c in inspect(create_engine(sqlite_url)).get_columns("rca_memberships")}
+
+    assert columns == {"organization_id", "account_id", "role"}, (
+        f"the state row must carry live membership state only, found {sorted(columns)}"
+    )
+
+
+def test_the_downgrade_reconstructs_attribution_from_the_events(sqlite_url: str) -> None:
+    """Downgrading must restore the columns *with their values*, not merely their shape.
+
+    `20260812_0010` declares both columns `NOT NULL`, so a downgrade that re-adds them empty
+    cannot populate a table that has rows -- it fails on the constraint, and it fails only
+    against real data, which is the worst time to discover it. An empty-table test would pass
+    against exactly that defect, so this one inserts a membership first.
+
+    The creation events are the source: `actor_account_id` becomes `changed_by` and
+    `occurred_at` becomes `changed_at`, inverting the backfill. The reconstruction is exact for
+    any membership whose creation event is still inside its twelve-month horizon, and lossy for
+    one whose event has been swept -- that is inherent to giving audit data a shorter life than
+    the row it describes, and it is the point of the move rather than a defect in it.
+    """
+    _run(sqlite_url, "upgrade")
+    engine = create_engine(sqlite_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO rca_organizations (organization_id, name, created_at) "
+                "VALUES ('org_c', 'Gamma', '2026-01-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text("INSERT INTO rca_accounts (account_id, email) VALUES ('acc_c', 'c@example.test')")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO rca_memberships (organization_id, account_id, role) "
+                "VALUES ('org_c', 'acc_c', 'owner')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO rca_membership_events (event_id, organization_id, account_id, "
+                " actor_account_id, prior_role, next_role, occurred_at) "
+                "VALUES ('mev_c', 'org_c', 'acc_c', 'acc_actor', NULL, 'owner', "
+                " '2026-02-03 04:05:06')"
+            )
+        )
+
+    module = _rca_migration_module("20260814_0014", "rca_drop_membership_attribution")
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        token = module.op
+        module.op = Operations(context)
+        try:
+            module.downgrade()
+        finally:
+            module.op = token
+
+    with engine.begin() as connection:
+        row = connection.execute(
+            text("SELECT changed_by, changed_at FROM rca_memberships")
+        ).one()
+
+    assert row.changed_by == "acc_actor", "the event's actor becomes the row's attribution again"
+    assert "2026-02-03" in str(row.changed_at), "the event's timestamp comes back with it"
+
+    nullable = {
+        c["name"]: c["nullable"]
+        for c in inspect(engine).get_columns("rca_memberships")
+    }
+    assert nullable["changed_by"] is False, "20260812_0010 declares it NOT NULL"
+    assert nullable["changed_at"] is False, "20260812_0010 declares it NOT NULL"
