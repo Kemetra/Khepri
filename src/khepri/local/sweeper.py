@@ -28,7 +28,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from khepri.rca.lifecycle import AccountRetentionSweeper
+from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
 from khepri.rra.deletion import DeletionRetryRequired, DeletionService
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.persistence import BetaSessionRow
@@ -45,6 +45,7 @@ class SweepReport:
     expired_sessions: int
     deletions_deferred: int
     purged_accounts: int = 0
+    purged_events: int = 0
 
 
 class LocalSweeper:
@@ -57,23 +58,28 @@ class LocalSweeper:
         deletion: DeletionService,
         factory: sessionmaker[Session],
         accounts: AccountRetentionSweeper | None = None,
+        events: MembershipEventSweeper | None = None,
     ) -> None:
         self._jobs = jobs
         self._deletion = deletion
         self._factory = factory
-        # Optional so a stack with no RCA tables can still sweep RRA content. When present,
-        # KHEPRI-DEC-015 §2b's retention pass runs here rather than nowhere: a retention rule
-        # whose only caller does not exist is indefinite retention with a policy comment on top.
+        # Both optional so a stack with no RCA tables can still sweep RRA content. When present,
+        # KHEPRI-DEC-015's retention passes run here rather than nowhere: a retention rule whose
+        # only caller does not exist is indefinite retention with a policy comment on top.
         self._accounts = accounts
+        # §2a's twelve-month audit horizon. Independent of the account pass above and shorter than
+        # it, so an event never outlives the account it refers to.
+        self._events = events
 
     def sweep(self, *, now: datetime) -> SweepReport:
-        """Recover stalled work, delete expired sessions, then apply account retention."""
+        """Recover stalled work, delete expired sessions, then apply both retention horizons."""
         expired = self._jobs.recover_expired(now=now)
         orphaned = self._jobs.recover_orphans(now=now)
         swept, deferred = self._expire_sessions(now=now)
         # `getattr` because a stack without RCA tables, and the test stubs that subclass this
         # without calling __init__, legitimately have no retention pass to run.
         retention = getattr(self, "_accounts", None)
+        audit = getattr(self, "_events", None)
         purged = 0 if retention is None else retention.sweep(now=now).purged_accounts
         return SweepReport(
             expired_leases=len(expired),
@@ -81,6 +87,7 @@ class LocalSweeper:
             expired_sessions=swept,
             deletions_deferred=deferred,
             purged_accounts=purged,
+            purged_events=0 if audit is None else audit.sweep(now=now).purged_events,
         )
 
     def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:
@@ -124,8 +131,11 @@ def build_local_sweeper(
     deletion: DeletionService,
     factory: sessionmaker[Session],
     accounts: AccountRetentionSweeper | None = None,
+    events: MembershipEventSweeper | None = None,
 ) -> LocalSweeper:
-    return LocalSweeper(jobs=jobs, deletion=deletion, factory=factory, accounts=accounts)
+    return LocalSweeper(
+        jobs=jobs, deletion=deletion, factory=factory, accounts=accounts, events=events
+    )
 
 
 __all__ = [

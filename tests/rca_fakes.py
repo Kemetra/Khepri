@@ -229,6 +229,17 @@ class MemoryOrganizationStore:
         self.events.append(write(key, membership))
         return OWNER_CHANGE_APPLIED
 
+    def _purge_expired_events(self, horizon: datetime) -> int:
+        """Mirrors `SqlOrganizationStore._purge_expired_events`, boundary included.
+
+        Delegates the comparison to `MembershipEvent.is_purgeable_at` so this fake cannot drift
+        from the domain on the `<=` boundary — an inclusive horizon here and an exclusive one in
+        SQL would make the same event purgeable in unit tests and retained in production.
+        """
+        expired = [event for event in self.events if event.is_purgeable_at(horizon)]
+        self.events = [event for event in self.events if not event.is_purgeable_at(horizon)]
+        return len(expired)
+
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None:
         return self.memberships.get((organization_id, account_id))
 

@@ -31,8 +31,8 @@ from khepri.local.packages import build_package_source
 from khepri.local.storage import build_local_object_store
 from khepri.local.sweeper import LocalSweeper, build_local_sweeper
 from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
-from khepri.rca.lifecycle import AccountRetentionSweeper
-from khepri.rca.persistence import SqlAccountStore
+from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -296,6 +296,10 @@ def build_worker_stack(
             # nothing: the class existed but no operational entry point called it, so disabled
             # accounts would have kept their email identities indefinitely.
             accounts=AccountRetentionSweeper(SqlAccountStore(stack.factory)),
+            # KHEPRI-DEC-015 §2a's twelve-month audit horizon. Same reasoning as the pass above:
+            # `MembershipEventSweeper` existed with no operational caller, so FR-014 events would
+            # have accumulated past the horizon the decision bounds them by.
+            events=MembershipEventSweeper(SqlOrganizationStore(stack.factory)),
         ),
     )
 
