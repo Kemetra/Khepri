@@ -48,6 +48,34 @@ class SweepReport:
     purged_events: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class RetentionPasses:
+    """`KHEPRI-DEC-015`'s two horizons, travelling together.
+
+    They are one parameter rather than two because they are one concern with one reason to be
+    absent: a stack with no RCA tables has neither. Passing them separately also pushed
+    `LocalSweeper.__init__` to five arguments, which CodeScene flagged — the signature had been
+    accumulating one collaborator per slice, and the smell was real rather than incidental.
+
+    Both stay optional so a stack that sweeps only RRA content can construct this with nothing.
+    """
+
+    accounts: AccountRetentionSweeper | None = None
+    events: MembershipEventSweeper | None = None
+
+    def run(self, *, now: datetime) -> tuple[int, int]:
+        """Both passes, returning `(purged_accounts, purged_events)`.
+
+        Independent of each other: §2a's twelve-month audit horizon is shorter than §2b's
+        twenty-four month account horizon, so an event never outlives the account it refers to,
+        and neither pass depends on the other having run.
+        """
+        return (
+            0 if self.accounts is None else self.accounts.sweep(now=now).purged_accounts,
+            0 if self.events is None else self.events.sweep(now=now).purged_events,
+        )
+
+
 class LocalSweeper:
     """One recovery-and-expiry pass over the local database."""
 
@@ -57,19 +85,15 @@ class LocalSweeper:
         jobs: SqlReportJobRepository,
         deletion: DeletionService,
         factory: sessionmaker[Session],
-        accounts: AccountRetentionSweeper | None = None,
-        events: MembershipEventSweeper | None = None,
+        retention: RetentionPasses | None = None,
     ) -> None:
         self._jobs = jobs
         self._deletion = deletion
         self._factory = factory
-        # Both optional so a stack with no RCA tables can still sweep RRA content. When present,
+        # Optional so a stack with no RCA tables can still sweep RRA content. When present,
         # KHEPRI-DEC-015's retention passes run here rather than nowhere: a retention rule whose
         # only caller does not exist is indefinite retention with a policy comment on top.
-        self._accounts = accounts
-        # §2a's twelve-month audit horizon. Independent of the account pass above and shorter than
-        # it, so an event never outlives the account it refers to.
-        self._events = events
+        self._retention = retention
 
     def sweep(self, *, now: datetime) -> SweepReport:
         """Recover stalled work, delete expired sessions, then apply both retention horizons."""
@@ -78,16 +102,15 @@ class LocalSweeper:
         swept, deferred = self._expire_sessions(now=now)
         # `getattr` because a stack without RCA tables, and the test stubs that subclass this
         # without calling __init__, legitimately have no retention pass to run.
-        retention = getattr(self, "_accounts", None)
-        audit = getattr(self, "_events", None)
-        purged = 0 if retention is None else retention.sweep(now=now).purged_accounts
+        retention = getattr(self, "_retention", None) or RetentionPasses()
+        purged_accounts, purged_events = retention.run(now=now)
         return SweepReport(
             expired_leases=len(expired),
             orphaned_jobs=len(orphaned),
             expired_sessions=swept,
             deletions_deferred=deferred,
-            purged_accounts=purged,
-            purged_events=0 if audit is None else audit.sweep(now=now).purged_events,
+            purged_accounts=purged_accounts,
+            purged_events=purged_events,
         )
 
     def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:
@@ -130,17 +153,15 @@ def build_local_sweeper(
     jobs: SqlReportJobRepository,
     deletion: DeletionService,
     factory: sessionmaker[Session],
-    accounts: AccountRetentionSweeper | None = None,
-    events: MembershipEventSweeper | None = None,
+    retention: RetentionPasses | None = None,
 ) -> LocalSweeper:
-    return LocalSweeper(
-        jobs=jobs, deletion=deletion, factory=factory, accounts=accounts, events=events
-    )
+    return LocalSweeper(jobs=jobs, deletion=deletion, factory=factory, retention=retention)
 
 
 __all__ = [
     "REASON_EXPIRED",
     "LocalSweeper",
+    "RetentionPasses",
     "SweepReport",
     "build_local_sweeper",
 ]
