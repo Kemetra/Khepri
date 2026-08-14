@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
     Integer,
@@ -24,12 +25,26 @@ from khepri.rca.errors import (
 )
 from khepri.rca.organizations import (
     OWNER_ROLE,
+    ROLES,
     IsolationScope,
     Membership,
     MembershipEvent,
     Organization,
 )
 from khepri.rca.records import assert_sealed
+
+
+def _role_in(roles: tuple[str, ...]) -> str:
+    """Render the FR-015 role CHECK from the declared roles.
+
+    Built from `ROLES` rather than spelled out, so adding a third role to the domain without a
+    migration fails against the constraint rather than silently widening it. The values are
+    module constants, never caller input, so quoting them here is not a parameterization
+    boundary -- but the assertion keeps it that way if that ever stops being true.
+    """
+    assert all(role.isalpha() for role in roles), f"role names must be plain identifiers: {roles}"
+    values = ", ".join(f"'{role}'" for role in roles)
+    return f"role IN ({values})"
 
 
 class Base(DeclarativeBase):
@@ -75,6 +90,18 @@ class OrganizationRow(Base):
 class MembershipRow(Base):
     __tablename__ = "rca_memberships"
     __table_args__ = (
+        # FR-015: exactly two roles. Built from `ROLES` rather than restating the two values,
+        # so the column and the domain cannot drift into describing one rule two ways.
+        #
+        # **Declared here as well as in the migration, deliberately.** Store tests build their
+        # schema from `Base.metadata.create_all`, which takes constraints from this model and
+        # not from the migration -- so a CHECK that existed only in the migration would let the
+        # whole store suite write `role="admin"` while production refused it. The inverse of
+        # the trap `test_migration_preserves_constraints_and_nullability` documents.
+        CheckConstraint(
+            _role_in(ROLES),
+            name="ck_rca_membership_role",
+        ),
         ForeignKeyConstraint(
             ["organization_id"],
             ["rca_organizations.organization_id"],
@@ -474,6 +501,53 @@ class SqlOrganizationStore:
                         owner_id=scope.owner_id,
                     )
                 )
+                database.add(_event_row(event))
+        except IntegrityError:
+            return False
+        return True
+
+    def promote_membership(self, membership: Membership, event: MembershipEvent) -> bool:
+        """Write the promoted role and its event in one transaction (`FR-014`, `FR-015`).
+
+        **No `SELECT ... FOR UPDATE` here, unlike `apply_owner_reducing_change`.** That method
+        locks because it must count owners and then act on the count, and a concurrent write can
+        invalidate a count between the two. Promotion has no such guard to invalidate: it raises
+        the owner count, which `FR-013` never constrains, and two callers promoting the same
+        membership converge on the same row. Taking the lock anyway would imply a guard exists
+        here and invite a later reader to add one, which is what the roadmap's "two independent
+        final-owner guards" stop condition forbids.
+
+        The event travels with the write for the same reason it does in `create_organization`:
+        an event committed separately can describe a change that rolled back, and a change
+        committed without its event is an unattributed role change, which is `FR-014` unmet.
+
+        Returns False rather than raising if the membership has vanished between the service's
+        read and this write, so a concurrent revocation surfaces as an ordinary refusal.
+
+        **`prior_role` is checked against the stored row, not against the caller's claim.** The
+        event carries no foreign key, so these checks are the only thing between a caller and a
+        false audit record -- and `prior_role` is the one `FR-014` field ("what the prior and
+        resulting roles were") that a destination check alone leaves undefended. Reading it from
+        the row inside the transaction also closes the service's read-then-write gap: if the
+        role changed after the service read it, the event's `prior_role` is stale and describes
+        a transition that did not happen, so the write refuses instead of recording it.
+        """
+        assert_sealed(membership, event)
+        if event.organization_id != membership.organization_id:
+            return False
+        if event.account_id != membership.account_id:
+            return False
+        if event.next_role != membership.role:
+            return False
+        try:
+            with self._factory.begin() as database:
+                key = (membership.organization_id, membership.account_id)
+                row = database.get(MembershipRow, key)
+                if row is None:
+                    return False
+                if event.prior_role != row.role:
+                    return False
+                row.role = membership.role
                 database.add(_event_row(event))
         except IntegrityError:
             return False
