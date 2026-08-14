@@ -44,6 +44,13 @@ CREDENTIAL = "correct horse battery staple"
 
 pytestmark = pytest.mark.concurrency
 
+# Every contention test in this file repeats. One run is not evidence: the three-owner
+# disablement test passed against a genuine zero-owner defect in roughly two runs of three, so a
+# single green run cannot distinguish a sound lock from a lucky interleaving. Ten is enough to
+# make a 33%-failing regression practically certain to fail (0.67^10 is under 2%) while keeping
+# the suite's runtime reasonable.
+ATTEMPTS = 10
+
 DATABASE_URL = os.environ.get("KHEPRI_TEST_DATABASE_URL")
 
 requires_postgres = pytest.mark.skipif(
@@ -101,9 +108,14 @@ def _surviving_owners(factory, organization_id: str) -> int:
     )
 
 
+@pytest.mark.parametrize("attempt", range(ATTEMPTS))
 @requires_postgres
-def test_concurrent_disablement_of_both_owners_leaves_one(factory) -> None:
+def test_concurrent_disablement_of_both_owners_leaves_one(factory, attempt: int) -> None:
     """The `#155` defect, made deterministic.
+
+    Repeated `ATTEMPTS` times. The three-owner sibling below passed against a real defect two
+    runs in three, so a single green run of any test in this file is not evidence -- see that
+    test's docstring.
 
     Two owners, disabled at the same moment. The barrier forces both callers to finish
     reading account state and counting owners before either writes, which is exactly the
@@ -147,13 +159,22 @@ def test_concurrent_disablement_of_both_owners_leaves_one(factory) -> None:
     )
 
 
+@pytest.mark.parametrize("attempt", range(ATTEMPTS))
 @requires_postgres
-def test_concurrent_disablement_of_three_owners_leaves_one(factory) -> None:
+def test_concurrent_disablement_of_three_owners_leaves_one(factory, attempt: int) -> None:
     """Three-way contention, because a two-way lock can be right by accident.
 
     A mechanism that merely serialized *pairs* -- or that happened to make the second caller
     re-read -- could satisfy the two-owner test and still strand an organization when three
     operations contend. Two of the three must be refused.
+
+    **This test found a real defect by failing intermittently, and that is why it repeats.**
+    `apply_owner_reducing_change` locked `WHERE account_id = A AND role = 'owner'`, one row per
+    organization, so three callers disabling three different owners locked three disjoint
+    single-row sets and `FOR UPDATE` serialized nothing. Measured at 4 failures in 12 against
+    real PostgreSQL -- green two runs in three against a guard that let an organization reach
+    zero owners. A concurrency test that is green most of the time against a known defect is
+    worse than no test, which this file's own header says, so it now runs `ATTEMPTS` times.
     """
     organization, first, second = _two_owner_organization(factory)
     accounts = SqlAccountStore(factory)
@@ -316,9 +337,11 @@ def test_concurrent_demotion_of_three_owners_leaves_one(factory) -> None:
     )
 
 
+@pytest.mark.parametrize("attempt", range(ATTEMPTS))
 @requires_postgres
 def test_one_caller_revoking_while_another_demotes_cannot_strand_the_organization(
     factory,
+    attempt: int,
 ) -> None:
     """The mixed case `R1` did not have, and the reason `R2-06` exists as its own task.
 

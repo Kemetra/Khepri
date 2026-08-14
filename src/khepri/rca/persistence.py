@@ -440,7 +440,7 @@ def organization_owners_for_update(organization_id: str):
 
 
 def owner_memberships_for_update(account_id: str):
-    """Lock this account's owner-role memberships for the duration of the transaction.
+    """Lock every owner row of every organization this account owns, for the transaction.
 
     A named module-level statement rather than an inline `.with_for_update()`, following
     `khepri.rra.persistence.invitation_for_update_statement`. The reason is testability: SQLite
@@ -449,16 +449,44 @@ def owner_memberships_for_update(account_id: str):
     returned. Because this is a named function, a test compiles it against the PostgreSQL
     dialect and asserts `FOR UPDATE` is present without needing a database.
 
-    Locking the *membership* rows rather than the account row is what makes competing
-    operations on the same organization serialize: two different accounts disabling themselves
-    contend on the organization's owner rows, which is where the invariant lives.
+    **This locks the organizations' owner rows, not only this account's own.** It previously
+    selected `WHERE account_id = A AND role = 'owner'`, which locked exactly one row per
+    organization -- the account's own. Three callers disabling three *different* owners of one
+    organization therefore locked three pairwise-disjoint single-row sets, so `FOR UPDATE` had
+    nothing to block on: all three read "other effective owners exist", all three passed the
+    guard, and all three committed, leaving zero. That is `#155` surviving on the disable path,
+    and `test_concurrent_disablement_of_three_owners_leaves_one` was written for it and passed
+    against it two runs in three. Measured at 4 failures in 12 against real PostgreSQL.
+
+    A lock serializes only where row sets *intersect*, so the set has to be every row the count
+    will read, not merely the row about to change.
+
+    **The subquery and the lock are one statement, deliberately.** Reading the organization list
+    and then locking it would reintroduce the same race one level up -- a concurrent write could
+    add an owner membership between the two. In one statement PostgreSQL evaluates and locks at
+    one snapshot, so a new membership either is not visible (and cannot affect the count being
+    guarded) or blocks.
+
+    **The order is fixed** so concurrent callers acquire rows in the same sequence. Two accounts
+    each owning the same two organizations, disabled at once, would otherwise be free to lock in
+    opposite orders and deadlock -- trading a correctness defect for an intermittent one that
+    these tests would not reliably catch either.
     """
-    return (
-        select(MembershipRow)
+    owned_organizations = (
+        select(MembershipRow.organization_id)
         .where(
             MembershipRow.account_id == account_id,
             MembershipRow.role == OWNER_ROLE,
         )
+        .scalar_subquery()
+    )
+    return (
+        select(MembershipRow)
+        .where(
+            MembershipRow.organization_id.in_(owned_organizations),
+            MembershipRow.role == OWNER_ROLE,
+        )
+        .order_by(MembershipRow.organization_id, MembershipRow.account_id)
         .with_for_update()
     )
 
@@ -665,20 +693,26 @@ class SqlOrganizationStore:
         `errors.py` with the rest of the refusal vocabulary.
         """
         with self._factory.begin() as database:
-            owned = database.scalars(owner_memberships_for_update(account_id)).all()
+            locked = database.scalars(owner_memberships_for_update(account_id)).all()
             if database.get(AccountRow, account_id) is None:
                 return OWNER_CHANGE_NOT_APPLICABLE
-            for membership in owned:
-                # Counted inside the transaction, on rows this statement holds a lock over. A
-                # competing owner-reducing operation on the same organization is blocked at the
-                # SELECT above until this commits, so it observes the write rather than the
-                # state that preceded it.
+            # The locked set spans every owner row of every organization this account owns, so
+            # the organizations to check are the distinct ones it appears in as an owner -- not
+            # every organization in the locked set, which includes co-owners' rows.
+            owned_organizations = {
+                row.organization_id for row in locked if row.account_id == account_id
+            }
+            for organization_id in sorted(owned_organizations):
+                # Counted inside the transaction, on rows the statement above holds a lock over
+                # -- including the co-owners' rows this count reads. A competing owner-reducing
+                # operation on the same organization blocks at its own SELECT until this commits,
+                # so it observes the write rather than the state that preceded it.
                 remaining = database.execute(
                     select(func.count())
                     .select_from(MembershipRow)
                     .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
                     .where(
-                        MembershipRow.organization_id == membership.organization_id,
+                        MembershipRow.organization_id == organization_id,
                         MembershipRow.account_id != account_id,
                         *_effective_owner_conditions(),
                     )
