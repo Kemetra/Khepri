@@ -790,6 +790,21 @@ class SqlOrganizationStore:
         The event is returned by the callback rather than passed in because `prior_role` must be
         the role the locked row actually held. A caller-supplied value could describe a
         transition that did not happen, and the event carries no foreign key to contradict it.
+
+        **Why this serializes against `apply_owner_reducing_change`, which locks differently.**
+        That method locks `WHERE account_id = A AND role = 'owner'`, because disabling one
+        account reduces ownership in every organization it owns; this one locks
+        `WHERE organization_id = O AND role = 'owner'`, because revoking or demoting touches one
+        organization. Those row sets intersect on exactly `{(O, A)}`, and only when `A` holds an
+        owner row in `O`.
+
+        That is the definition of contention here rather than a coincidence: two owner-reducing
+        operations can affect the same organization's owner count **only if** the disabled
+        account is itself an owner of that organization -- in which case its row is in both
+        predicates and the two block on each other. When the sets are disjoint neither operation
+        can change the other's count, so serializing them would be contention with no invariant
+        behind it. Both directions are tested: the mixed-race test proves the dangerous one and
+        `test_the_two_lock_predicates_intersect_on_every_contended_organization` the wasteful one.
         """
         with self._factory.begin() as database:
             owners = database.scalars(organization_owners_for_update(organization_id)).all()
