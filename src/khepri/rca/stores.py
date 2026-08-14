@@ -39,6 +39,13 @@ class OrganizationStore(Protocol):
 
     def get_membership(self, organization_id: str, account_id: str) -> Membership | None: ...
 
+    #: The only member of this protocol permitted to remove an `FR-014` event, and the only
+    #: underscore-prefixed one. The name is not a style slip: `R2-07`'s source audit fails closed
+    #: against any production function that deletes a `MembershipEventRow` and reserved exactly
+    #: this name for the retention sweep, so keeping it is what keeps the audit meaningful. It is
+    #: private because no caller other than `MembershipEventSweeper` may reach it.
+    def _purge_expired_events(self, horizon: datetime) -> int: ...
+
     def get_scope(self, organization_id: str) -> IsolationScope | None: ...
 
     def memberships_for_account(self, account_id: str) -> list[Membership]: ...
