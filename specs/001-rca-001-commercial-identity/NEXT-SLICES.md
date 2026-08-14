@@ -3,7 +3,7 @@
 **Task:** `R0-05` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`. Scope is deliberately three
 slices, not the whole roadmap.
 
-**Baseline:** `main` @ `95760a4`, 2026-08-14 (was `ebfbe77` when written; updated by `R2-10`).
+**Baseline:** `main` @ `dcb63da`, 2026-08-14 (was `ebfbe77` when written; updated by `R2-10`).
 
 **This maps existing issues to existing roadmap task IDs.** It creates no authority, approves
 nothing, and adds no requirement. Implementation of any task below still needs the owner's explicit

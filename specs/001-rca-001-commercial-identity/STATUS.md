@@ -2,7 +2,7 @@
 
 **Task:** `R0-03` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 
-**Baseline:** `main` @ `95760a4`, 2026-08-14. `uv run khepri-gov validate` passes; `uv run pytest`
+**Baseline:** `main` @ `dcb63da`, 2026-08-14. `uv run khepri-gov validate` passes; `uv run pytest`
 reports 1883 passed, 47 skipped. Migration head `20260814_0015` (single head).
 
 **Updated for `R2-10`.** The `R2` membership slice (`#150`) is merged: `R2-01` … `R2-09` landed as
