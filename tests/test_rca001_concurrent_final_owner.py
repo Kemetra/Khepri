@@ -147,8 +147,9 @@ def test_concurrent_disablement_of_both_owners_leaves_one(factory) -> None:
     )
 
 
+@pytest.mark.parametrize("attempt", range(12))
 @requires_postgres
-def test_concurrent_disablement_of_three_owners_leaves_one(factory) -> None:
+def test_concurrent_disablement_of_three_owners_leaves_one(factory, attempt) -> None:
     """Three-way contention, because a two-way lock can be right by accident.
 
     A mechanism that merely serialized *pairs* -- or that happened to make the second caller
