@@ -11,8 +11,8 @@ while an event still referenced it -- inverting the horizon relationship where t
 tombstone must outlast the twelve-month audit event. `R3-09` §3.1 checked whether the same reasoning
 applies here and found it does not: `purge_if_still_eligible` nulls the identity columns and *keeps
 the row*, `KHEPRI-DEC-015` §2b calls the result "an opaque tombstone" holding "an opaque account
-identifier", and nothing in `src/khepri/rca/` deletes an `AccountRow`. So `account_id` survives every
-horizon and there is no delete for a RESTRICT constraint to block.
+identifier", and nothing in `src/khepri/rca/` deletes an `AccountRow`. So `account_id` survives
+every horizon and there is no delete for a RESTRICT constraint to block.
 
 **Nothing to backfill.** Neither table has existed before, and no earlier column holds session or
 external-identity state, so the upgrade creates and the downgrade drops. No data is at risk in
