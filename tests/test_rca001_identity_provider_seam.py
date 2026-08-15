@@ -212,25 +212,28 @@ def _bound_names(source: str) -> set[str]:
         for node in ast.walk(tree)
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
     }
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            names.add(node.id.lower())
-        elif isinstance(node, ast.Attribute):
-            names.add(node.attr.lower())
-        elif isinstance(node, ast.alias):
-            names.add(node.name.lower())
-        elif isinstance(node, ast.arg):
-            names.add(node.arg.lower())
-        elif isinstance(node, ast.ClassDef | ast.FunctionDef):
-            names.add(node.name.lower())
-        elif (
-            isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and node not in prose
-        ):
-            names.add(node.value.lower())
-    return names
+
+    def _binding(node: ast.AST) -> str | None:
+        """The one name a node binds, or `None` if it binds none.
+
+        A dispatch table rather than an `elif` chain: the chain scored 9.39 on Bumpy Road, and
+        each branch here is genuinely the same shape -- *which attribute holds the name*.
+        """
+        readers: dict[type, object] = {
+            ast.Name: lambda n: n.id,
+            ast.Attribute: lambda n: n.attr,
+            ast.alias: lambda n: n.name,
+            ast.arg: lambda n: n.arg,
+            ast.ClassDef: lambda n: n.name,
+            ast.FunctionDef: lambda n: n.name,
+        }
+        reader = readers.get(type(node))
+        if reader is not None:
+            return str(reader(node))  # type: ignore[operator]
+        is_value = isinstance(node, ast.Constant) and isinstance(node.value, str)
+        return node.value if is_value and node not in prose else None  # type: ignore[attr-defined]
+
+    return {name.lower() for node in ast.walk(tree) if (name := _binding(node)) is not None}
 
 
 def _imported_modules(source: str) -> set[str]:
