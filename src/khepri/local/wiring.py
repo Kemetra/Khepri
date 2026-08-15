@@ -33,6 +33,13 @@ from khepri.local.sweeper import LocalSweeper, RetentionPasses, build_local_swee
 from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
 from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+
+# Aliased because `khepri.rra.persistence` exports a class of the same name below. Two stores
+# called `SqlSessionStore` in one module is the identifier ambiguity `R3-01` §2.1 records between
+# RRA and RCA sessions, arriving one layer up: unaliased, the later import silently wins and the
+# session sweeper is handed the wrong table.
+from khepri.rca.session_persistence import SqlSessionStore as SqlCommercialSessionStore
+from khepri.rca.session_retention import SessionRetentionSweeper
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -292,15 +299,16 @@ def build_worker_stack(
             jobs=stack.reports.jobs,
             deletion=stack.services.deletion,
             factory=stack.factory,
-            # KHEPRI-DEC-015's two retention horizons. Without this they are enforced by nothing:
-            # both classes existed but no operational entry point called either, so disabled
-            # accounts would have kept their email identities and FR-014 events would have
-            # accumulated indefinitely -- retention rules with no caller are indefinite retention
-            # with a policy comment on top. No horizon overrides here: production runs the
-            # governed twenty-four and twelve months.
+            # KHEPRI-DEC-015's retention horizons plus R3-07's session horizon. Without this they
+            # are enforced by nothing: every class existed but no operational entry point called
+            # any of them, so disabled accounts would have kept their email identities and FR-014
+            # events would have accumulated indefinitely -- retention rules with no caller are
+            # indefinite retention with a policy comment on top. No horizon overrides here:
+            # production runs the governed twenty-four months, twelve months, and thirty days.
             retention=RetentionPasses(
                 accounts=AccountRetentionSweeper(SqlAccountStore(stack.factory)),
                 events=MembershipEventSweeper(SqlOrganizationStore(stack.factory)),
+                sessions=SessionRetentionSweeper(SqlCommercialSessionStore(stack.factory)),
             ),
         ),
     )

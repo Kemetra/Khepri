@@ -11,9 +11,11 @@ from __future__ import annotations
 import ast
 import pathlib
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from khepri.local.sweeper import REASON_EXPIRED, LocalSweeper, RetentionPasses
 from khepri.rca.lifecycle import EventPurgeReport, PurgeReport
+from khepri.rca.session_retention import SessionSweepReport
 from khepri.rra.deletion import DeletionRetryRequired
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
@@ -152,18 +154,45 @@ class TestTheRetentionPassesAreWired:
 
         accounts = CountingPass(PurgeReport(purged_accounts=2))
         events = CountingPass(EventPurgeReport(purged_events=3))
+        sessions = CountingPass(SessionSweepReport(purged_sessions=4))
         sweeper = StubSweeper(
             jobs=FakeJobs(),
             deletion=FakeDeletion(),
             expired=[],
-            retention=RetentionPasses(accounts=accounts, events=events),  # type: ignore[arg-type]
+            retention=RetentionPasses(  # type: ignore[arg-type]
+                accounts=accounts, events=events, sessions=sessions
+            ),
         )
 
         report = sweeper.sweep(now=NOW)
 
-        assert (accounts.calls, events.calls) == (1, 1), "each horizon ran exactly once"
+        assert (accounts.calls, events.calls, sessions.calls) == (1, 1, 1), (
+            "each horizon ran exactly once"
+        )
         assert report.purged_accounts == 2
         assert report.purged_events == 3
+        assert report.purged_sessions == 4
+
+    def test_the_session_count_is_distinct_from_rra_content_expiry(self) -> None:
+        """`expired_sessions` and `purged_sessions` measure unrelated things.
+
+        The first counts RRA beta sessions whose *content* was deleted; the second counts
+        commercial session records removed after `R3-07`'s horizon. Collapsing them would produce
+        a report that reads as consistent while summing two different tables under two different
+        policies.
+        """
+        sessions = SimpleNamespace(sweep=lambda *, now: SessionSweepReport(purged_sessions=5))
+        sweeper = StubSweeper(
+            jobs=FakeJobs(),
+            deletion=FakeDeletion(),
+            expired=["beta-1", "beta-2"],
+            retention=RetentionPasses(sessions=sessions),  # type: ignore[arg-type]
+        )
+
+        report = sweeper.sweep(now=NOW)
+
+        assert report.expired_sessions == 2
+        assert report.purged_sessions == 5
 
     def test_production_wires_both_horizons_with_no_override(self) -> None:
         """`build_worker_stack` passes both passes, neither with a compressed horizon.
@@ -190,10 +219,14 @@ class TestTheRetentionPassesAreWired:
         passes = next(word.value for word in calls[0].keywords if word.arg == "retention")
         wired = {word.arg: ast.unparse(word.value) for word in passes.keywords}  # type: ignore[attr-defined]
 
-        assert set(wired) == {"accounts", "events"}, "both horizons are wired"
+        assert set(wired) == {"accounts", "events", "sessions"}, "all three horizons are wired"
         assert "AccountRetentionSweeper" in wired["accounts"]
         assert "MembershipEventSweeper" in wired["events"]
+        assert "SessionRetentionSweeper" in wired["sessions"]
         for name, expression in wired.items():
             assert "retention_months" not in expression, (
+                f"the {name} horizon must be the governed default, not an override"
+            )
+            assert "retention_days" not in expression, (
                 f"the {name} horizon must be the governed default, not an override"
             )
