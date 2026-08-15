@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.persistence import ExternalIdentityRow, SessionRow, _utc
@@ -115,6 +115,38 @@ class SqlSessionStore:
                 .values(revoked_at=now)
             )
         return revoked.rowcount
+
+    def purge_sessions_dead_before(self, horizon: datetime) -> int:
+        """Delete every session whose retention horizon has elapsed (`R3-07`).
+
+        **A session's retention clock starts when it died, not when it was issued.** For an
+        expired session that is `expires_at`; for a revoked one it is `revoked_at`, which may be
+        much earlier. Measuring both from `expires_at` would keep a session revoked on its first
+        day for the remainder of its original horizon -- retention counted from an instant that
+        stopped being meaningful the moment it was revoked.
+
+        A revoked session uses `revoked_at` even when `expires_at` is later, so the two predicates
+        are `OR`-ed rather than combined: dead by either route, long enough ago.
+
+        **Deleting a row is never what ends authority.** `KHEPRI-DEC-015` retains a session record
+        "only until purged; it authorizes nothing from the trigger instant", so `resolve` has
+        already refused these rows for as long as they have been dead. This reclaims storage.
+        """
+        with self._factory.begin() as database:
+            deleted = database.execute(
+                delete(SessionRow).where(
+                    or_(
+                        SessionRow.revoked_at <= horizon,
+                        and_(SessionRow.revoked_at.is_(None), SessionRow.expires_at <= horizon),
+                    )
+                )
+            )
+        return deleted.rowcount
+
+    def get_session_count(self) -> int:
+        """How many session rows exist, in any state. For retention evidence only."""
+        with self._factory() as database:
+            return database.execute(select(func.count()).select_from(SessionRow)).scalar_one()
 
     def link_external_identity(
         self, provider: str, provider_subject: str, account_id: str, *, now: datetime
