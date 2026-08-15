@@ -17,14 +17,24 @@ does not settle** is in §7 — the context type is `R6-02` and the resolver is 
 
 ## 1. The state this note describes, stated first
 
-**No operation in `src/khepri/rca/` takes a caller today.** `promote_to_owner`,
-`demote_to_member`, and `revoke_membership` accept an organization and a target account, and check
-no role. Any code holding a store can invoke them.
+> **Correction, 2026-08-15 (`R6-03`).** The first version of this section claimed these verbs "take
+> no caller". That is wrong: `promote_to_owner`, `demote_to_member`, and `revoke_membership` each
+> take a keyword-only `actor_account_id` (`organizations.py:348`, `:387`, `:416`). The error came
+> from reading only the first four lines of each signature, which stop before the keyword-only
+> section. The corrected claim is below, and it is narrower but still the gap `R6` closes.
 
-That is deliberate rather than an oversight, and `R2` recorded why: the role model is
-CHECK-constrained and the domain accepts any string as a role, but *"what prevents forgery today is
-that no service takes a role as input"* (`NEXT-SLICES.md`, `R2` findings). The same reasoning
-covers authority — no service takes a *caller* as input, so there is no caller to forge.
+**Every membership verb names an actor, and none of them checks it.** `actor_account_id` flows
+into `MembershipEvent` for `FR-014`'s attribution (`organizations.py:194`, `:209`, `:224`) and is
+never compared against a role, a membership, or anything else. A caller may pass any account
+identifier, including one holding no membership in the organization it names.
+
+So the gap is not a missing parameter — it is a recorded parameter that authorizes nothing. The
+audit trail will faithfully attribute a promotion to whoever the caller *said* performed it.
+
+That is deliberate rather than an oversight, and `R2` recorded the adjacent reasoning: the role
+model is CHECK-constrained and the domain accepts any string as a role, but *"what prevents forgery
+today is that no service takes a role as input"* (`NEXT-SLICES.md`, `R2` findings). The parallel
+here is exact — an unchecked actor is forgeable in precisely the way an unchecked role would be.
 
 This holds only while nothing outside the package can reach a store. `R3-04` and `R3-05` have now
 built the first path from an HTTP-shaped credential to an identified actor, so the window in which
@@ -220,7 +230,11 @@ duplication is a deliberate belt-and-braces rather than an accident.
 - **Active-organization selection and switching.** `R6-03`. `Session.switched_to` exists and
   deliberately validates nothing; the service that authorizes a switch is `R6-03`'s.
 - **The resolver itself.** `R6-04`. This note says what it must decide, never how.
-- **Any change to the three membership verbs' signatures.** They take no caller today. Adding one
-  is `R6-04`'s work and would break every existing caller if done here.
+- **Any change to the three membership verbs' signatures.** They already take `actor_account_id`
+  for attribution, so `R6-04` may not need a signature change at all — it needs the actor to be
+  *checked* rather than merely recorded, and where that check lives (the service, or the resolver
+  that calls it) is `R6-04`'s decision. Note that the parameter's current meaning is "who to
+  attribute this to", and authorization would give it a second meaning; whether those should stay
+  one parameter is worth deciding rather than assuming.
 - **Invitation and recovery actions.** `R4` and `R5` add rows to §3.1 and §3.2 respectively; the
   matrix is extended by those programs, not pre-populated here.
