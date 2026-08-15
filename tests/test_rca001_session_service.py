@@ -292,11 +292,24 @@ class TestSliceBoundary:
         for token in ("Set-Cookie", "HttpOnly", "SameSite", "Max-Age"):
             assert token not in source
 
-    def test_the_service_does_not_switch_organizations(self) -> None:
-        """`R6-03` owns selection and switching, because authorizing a switch needs live
-        membership — which is `R6-04`'s resolver, not this slice's."""
+    def test_the_service_does_not_authorize_a_switch(self) -> None:
+        """`R6-03` owns selection and switching. This service may *record* one and never decide it.
+
+        **Rewritten by `R6-03`, and the reason is worth keeping.** The original asserted
+        `"switched_to" not in` the source, which forbade the mechanism rather than the authority.
+        `R6-03` added `point_at_organization` — a persistence verb that takes an already-resolved
+        session, authorizes nothing, and is called by `OrganizationSwitcher` *after* it checks
+        live membership. That is the same split `R3-05` made: `ActorResolver` owns the chokepoint,
+        this service stays store-free.
+
+        So the boundary is restated as what actually matters. Authorizing a switch requires an
+        organization store to read membership from; a service that cannot reach one cannot decide
+        who may switch, whatever methods it has.
+        """
+        source = inspect_module.getsource(SessionService)
+        assert "OrganizationStore" not in source
+        assert "get_membership" not in source
         assert not hasattr(SessionService, "switch_organization")
-        assert "switched_to" not in inspect_module.getsource(SessionService)
 
 
 class TestTokenHandling:

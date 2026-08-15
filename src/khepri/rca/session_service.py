@@ -110,6 +110,23 @@ class SessionService:
             raise AuthenticationFailed(AUTHENTICATION_FAILURE)
         return revoked
 
+    def point_at_organization(self, session: Session, organization_id: str | None) -> Session:
+        """Persist a session's active organization (`FR-029`'s second clause).
+
+        **Takes an already-resolved session and authorizes nothing.** Whether the actor may be in
+        that organization is a membership question this service cannot answer -- it holds no
+        organization store, deliberately (`R3-05`, `R3-08`). `R6-03`'s `OrganizationSwitcher`
+        makes that decision and calls this to record it.
+
+        **A narrow verb rather than a general `save_session`.** Exposing "write this record" would
+        let any caller persist an arbitrary session, including one with a revoked-at cleared or an
+        expiry moved. This writes one field's worth of intent and nothing else.
+        """
+        pointed = session.switched_to(organization_id)
+        if not self._sessions.save_session(pointed):
+            raise AuthenticationFailed(AUTHENTICATION_FAILURE)
+        return pointed
+
     def revoke_all(self, account_id: str, *, now: datetime) -> int:
         """Revoke every live session for one account (`FR-007`, `FR-008`).
 
