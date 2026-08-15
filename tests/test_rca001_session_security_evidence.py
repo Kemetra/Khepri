@@ -82,6 +82,44 @@ def _rca_source(module_name: str) -> str:
     return pathlib.Path(f"src/khepri/rca/{module_name}.py").read_text(encoding="utf-8")
 
 
+def _imported_modules(source: str) -> set[str]:
+    """Every module name this source imports, however it spells the import.
+
+    Both `import x` and `from x import y` are collected, so a caller asks one question -- "is this
+    module imported" -- instead of branching on the two node types at each call site. That
+    branching is what made the first version of these tests a four-level nest.
+    """
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+    return names
+
+
+def _called_names(source: str) -> set[str]:
+    """Every bare function name called here, e.g. `print(...)` but not `obj.print(...)`."""
+    return {
+        node.func.id
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+
+
+def _attribute_calls(source: str) -> set[str]:
+    """Every method name called on something, e.g. the `x` of `obj.x(...)`.
+
+    A *call*, never a mention: `session_service` names `assert_account_active` in prose to explain
+    why it does not call it, and a substring search counts that explanation as a call site.
+    """
+    return {
+        node.func.attr
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+
+
 class TestTheSchemaOffersNoAuthorityColumn:
     def test_no_column_names_authority(self) -> None:
         """`FR-030`. The schema does not offer a column that could go stale.
@@ -222,17 +260,9 @@ class TestTheCommercialBoundaryHolds:
         under a conditional is still an import, and a substring search for `khepri.rra` also
         matches the docstrings that discuss RRA as a counter-example."""
         for module_name in SESSION_MODULES:
-            tree = ast.parse(_rca_source(module_name))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    assert not node.module.startswith("khepri.rra"), (
-                        f"{module_name} imports {node.module}"
-                    )
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        assert not alias.name.startswith("khepri.rra"), (
-                            f"{module_name} imports {alias.name}"
-                        )
+            imported = _imported_modules(_rca_source(module_name))
+            offending = {name for name in imported if name.startswith("khepri.rra")}
+            assert not offending, f"{module_name} imports {sorted(offending)}"
 
     def test_the_session_path_logs_nothing(self) -> None:
         """`FR-040`. A log statement here would echo identifiers no requirement permits.
@@ -243,15 +273,9 @@ class TestTheCommercialBoundaryHolds:
         import from a mention, so it is equally capable of missing a real one behind an alias.
         """
         for module_name in SESSION_MODULES:
-            tree = ast.parse(_rca_source(module_name))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        assert alias.name != "logging", f"{module_name} imports logging"
-                if isinstance(node, ast.ImportFrom):
-                    assert node.module != "logging", f"{module_name} imports from logging"
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                    assert node.func.id != "print", f"{module_name} calls print"
+            source = _rca_source(module_name)
+            assert "logging" not in _imported_modules(source), f"{module_name} imports logging"
+            assert "print" not in _called_names(source), f"{module_name} calls print"
 
 
 class TestTheAbsencesAreLoadBearing:
@@ -276,16 +300,10 @@ class TestTheAbsencesAreLoadBearing:
         to explain why it deliberately does not call it, and `R3-04`'s boundary test asserts that
         absence. A substring search counts that explanation as a call site.
         """
-        callers = []
-        for path in pathlib.Path("src/khepri").rglob("*.py"):
-            if path.name == "lifecycle.py":
-                continue
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-                calls_it = (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "assert_account_active"
-                )
-                if calls_it:
-                    callers.append(path.name)
+        callers = sorted(
+            path.name
+            for path in pathlib.Path("src/khepri").rglob("*.py")
+            if path.name != "lifecycle.py"
+            and "assert_account_active" in _attribute_calls(path.read_text(encoding="utf-8"))
+        )
         assert callers == ["actor_resolution.py"]
