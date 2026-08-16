@@ -155,7 +155,7 @@ def stack_fixture(factory: sessionmaker) -> Stack:
     return Stack(factory)
 
 
-def _attempt(stack: Stack, verb: str, *, token: str, target: str, account: str) -> None:
+def _attempt(stack: Stack, verb: str, token: str, account: str) -> None:
     """Do what an authorized caller does: pass the gate, then call the verb.
 
     **Why every cell goes through this instead of calling the gate alone.** A `DENY` cell claims
@@ -167,10 +167,16 @@ def _attempt(stack: Stack, verb: str, *, token: str, target: str, account: str) 
     Putting both calls inside one helper makes the refusal the thing that *prevents* the write.
     Found in review on `#197`/`#198`; verified by deleting the gate call below and watching the
     post-state assertions fail rather than the `pytest.raises`.
+
+    The organization comes from the fixture rather than from a parameter: every cell in this file
+    acts on the one organization `Stack` builds, so a target argument would have one possible value
+    at each call site. Cross-organization targeting is `R6-06`'s subject, not this file's.
     """
-    context = _resolver(stack.factory).require_owner(token, organization_id=target, now=NOW)
+    context = _resolver(stack.factory).require_owner(
+        token, organization_id=stack.organization_id, now=NOW
+    )
     getattr(stack.organizations, verb)(
-        target, account, actor_account_id=context.account_id, now=NOW
+        stack.organization_id, account, actor_account_id=context.account_id, now=NOW
     )
 
 
@@ -247,13 +253,7 @@ class TestTheOwnerOnlyRows:
                 token = _plain_member_token(stack)
 
         with pytest.raises(refusal):
-            _attempt(
-                stack,
-                verb,
-                token=token,
-                target=stack.organization_id,
-                account=target_account,
-            )
+            _attempt(stack, verb, token, target_account)
 
         assert _role_of(stack.factory, stack.organization_id, target_account) == expected
 
@@ -267,13 +267,7 @@ class TestTheOwnerPermitCells:
     """
 
     def test_an_owner_promotes_a_member(self, stack: Stack) -> None:
-        _attempt(
-            stack,
-            "promote_to_owner",
-            token=stack.owner_token,
-            target=stack.organization_id,
-            account=stack.member,
-        )
+        _attempt(stack, "promote_to_owner", stack.owner_token, stack.member)
         assert _role_of(stack.factory, stack.organization_id, stack.member) == OWNER_ROLE
 
     def test_an_owner_demotes_another_owner(self, stack: Stack) -> None:
@@ -283,23 +277,11 @@ class TestTheOwnerPermitCells:
         would be asserting the wrong thing.
         """
         _promote(stack, stack.member)
-        _attempt(
-            stack,
-            "demote_to_member",
-            token=stack.owner_token,
-            target=stack.organization_id,
-            account=stack.member,
-        )
+        _attempt(stack, "demote_to_member", stack.owner_token, stack.member)
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
     def test_an_owner_revokes_a_member(self, stack: Stack) -> None:
-        _attempt(
-            stack,
-            "revoke_membership",
-            token=stack.owner_token,
-            target=stack.organization_id,
-            account=stack.member,
-        )
+        _attempt(stack, "revoke_membership", stack.owner_token, stack.member)
         assert _role_of(stack.factory, stack.organization_id, stack.member) is None
 
 
