@@ -129,8 +129,8 @@ one — which is the moment validation stops being optional.
 |---|---|---|---|---|
 | FR-021 | Not implemented | — | — | No protected-action abstraction, and no session carrying the actor |
 | FR-022 | Partial | `isolation.py:30-40` — three sequential guards, no permissive fallthrough | `test_rca001_isolation.py:141`, `:149`; `test_rca001_disablement.py:130` | Deny-by-default holds at `resolve_scope` only. Scenario 19 unverifiable without sessions |
-| FR-023 | Partial | `isolation.py:34-36` — the decision is a membership lookup, not the supplied identifier | `test_rca001_isolation.py:141` | Verified at organization-scope granularity only; no object-level authorization path exists |
-| FR-024 | Partial | `isolation.py:34-36` | `test_rca001_isolation.py:141`, `:149` | Scenario 15 (cross-org mutation, no state change in either) has no test and no mutating protected action to test |
+| FR-023 | Partial | `isolation.py:34-36` — the decision is a membership lookup, not the supplied identifier | `test_rca001_isolation.py:141`; `test_rca001_cross_organization.py` (scenario 14) | Verified at organization-scope granularity only; no object-level authorization path exists. **`R6-06`'s carried gap** — the critical rule's object half ("object identifiers never grant authority") stays untestable until an object-level path is built |
+| FR-024 | Partial | `isolation.py:34-36` | `test_rca001_isolation.py:141`, `:149`; `test_rca001_cross_organization.py` (scenarios 14, 15) | Scenario 15 **now tested** by `R6-06`, asserting no state change in *either* organization. Still organization-granular |
 | FR-025 | Partial | `isolation.py:32`, `:36`, `:39` — all three failure modes raise one `ScopeAccessDenied` | `test_rca001_isolation.py:149` — asserts one message across non-member, nonexistent org, and both, and that neither the org name nor a probe string appears | Not proven at object granularity |
 | FR-026 | Not implemented | — | — | No canonical checkpoint. `isolation.py:14` is one chokepoint for one capability, which is not a checkpoint every protected action passes through |
 | FR-027 | Not implemented | — | — | No session, so no active-organization state; `resolve_scope` takes the organization per call |
@@ -158,12 +158,28 @@ one — which is the moment validation stops being optional.
 ## Scenario coverage
 
 The specification's Verification section requires a test per scenario and an authorization matrix
-over `{owner, member, non-member, unauthenticated}` × every protected action. **Neither exists
-yet.** No RCA-001 test names a scenario number, and there is no matrix test.
+over `{owner, member, non-member, unauthenticated}` × every protected action.
 
-Scenarios with no corresponding test: **4, 6, 7, 8, 9, 13, 14, 15, 18, 19, 20** — the same set the
-three structural absences predict. (14, 15, 18, 19, and 20 are supplied by the sibling `R6-05`,
-`R6-06`, and `R6-07` slices.)
+**`R6-06` supplies scenarios 12, 14, and 15**, in `tests/test_rca001_cross_organization.py`.
+Scenario 15's "no state change in **either** organization" is asserted on both sides: the target
+organization *and* the actor's own, since a gate that authorized against the active organization
+while refusing the named one would leave the target untouched and still be the defect.
+
+Scenarios still untested here: **4, 6, 7, 8, 9, 13, 20**. (`18` and `19` are `R6-05`'s; `20` is
+`R6-07`'s.)
+
+### Carried gap from `R6-06`
+
+**Indistinguishability is proven at organization granularity only.** `FR-023`'s object half — the
+critical rule's "object identifiers never grant authority" — has no test because no object-level
+authorization path exists to test. Building one is `R7`/`W1` work, not a test-only slice.
+
+One note for whoever extends these tests: scenario 14's message-comparison holds *structurally*,
+because a nonexistent organization has no membership row and is refused by the same guard as a
+foreign one. A mutant that rewords that guard therefore leaves the comparison green without
+reintroducing the oracle. `test_no_organization_existence_check_precedes_the_membership_check`
+exists because of that — it pins the ordering, and dies against an existence pre-check even when
+the pre-check keeps the uniform message.
 
 ---
 
@@ -178,16 +194,18 @@ What is asserted, each verified by introducing the defect and watching the test 
 | Claim | Fires on |
 |---|---|
 | No module in **any production package** calls the three owner-only verbs | a probe calling `promote_to_owner` directly, planted in `khepri/runtime` |
-| No module forges or mutates a sealed record (`dataclasses.replace`, `object.__new__`/`__setattr__`) | a probe calling `dataclasses.replace` on a context |
+| No module in **any** production package calls `object.__new__`/`object.__setattr__` | a probe forging a record, planted in `khepri/runtime` |
+| No `khepri.rca` module calls `dataclasses.replace` on a sealed record | a probe calling it on a context |
 | No module constructs an `AuthorizationContext` outside `create`, **aliases resolved** | a probe spelling the class directly, and one using `import ... as auth` |
 | `AuthorizationResolver` still has no production consumer | a probe importing it |
 
 The verb and construction scans cover every production package — `runtime`, `local`, `infra`, and
 `rra`, not just `rca` — because `runtime`/`local` are exactly where wiring that calls a membership
 verb will live, and a scan confined to `rca/` would miss the bypass it exists to catch (`#200` P1).
-The generic escape scan deliberately stays `rca`-scoped: its subject is the sealed records, and
-repo-wide it returns six ordinary `dataclasses.replace` hits in `rra` that would train a reader to
-ignore it.
+The escape scan is split by what it looks for rather than by package: `object.__new__` and
+`object.__setattr__` have no legitimate use anywhere and are scanned repo-wide, while only
+`dataclasses.replace` stays `rca`-scoped, because that call *does* have ordinary uses — six of them
+in `khepri.rra`.
 
 Each scanner is additionally self-tested against known-bad and known-good sources, following
 `test_rca001_boundary.py::test_rca_import_checker_flags_and_clears_expected_cases`. Without that, a
