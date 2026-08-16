@@ -25,11 +25,18 @@ merged code. See `SUPERSEDED.md`.
 
 ## Rollup
 
-| Status | Count | Change since `ebfbe77` |
+| Status | Count | Change since `R2-10` |
 |---|---|---|
-| Implemented | 13 | +3 (FR-012, FR-013, FR-014) |
-| Partial | 13 | −2 |
-| Not implemented | 14 | −1 |
+| Implemented | 15 | +2 (FR-008, FR-030) |
+| Partial | 12 | −1 (FR-008) |
+| Not implemented | 8 | −1 (FR-030) |
+
+**The previous rollup did not sum to 35 and is corrected here, not merely adjusted.** It read
+13/13/14 = 40 against 35 requirements: "Implemented" excluded the one `Implemented, vacuously` row
+(FR-040) and "Not implemented" was overstated by six. The figures above are counted from the
+requirement tables in this document — 15 + 12 + 8 = 35 — and `R6-07` promotes exactly two rows.
+Recomputing rather than incrementing is deliberate: incrementing a wrong total preserves the error
+under a new number, which is how the `RRA-009` divergence survived three readings.
 
 "Partial" is used strictly: the requirement has real code behind it that does what it says for some
 paths, and a named clause or scenario it does not yet cover. It is not a synonym for "started".
@@ -42,34 +49,53 @@ one.
 
 ## The absences that explain the gap
 
-27 requirements are not fully implemented (13 partial + 14 not implemented). **15 of them** trace to
-exactly two missing pieces, each an existing roadmap program:
+20 requirements are not fully implemented (12 partial + 8 not implemented).
 
-| Absence | Verified by | Blocks | Count | Roadmap |
-|---|---|---|---|---|
-| No session concept | every `session` token in `src/khepri/rca/` is a docstring or SQLAlchemy's `sessionmaker`/`Session` | FR-003 clause 2, FR-007, FR-008 clause 2 generally, FR-022 session half, FR-027, FR-029, FR-030, FR-035 session clause | 8 | `R3` |
-| No authorization layer | no `authorization.py`; no protected-action abstraction | FR-021, FR-022 … FR-025 general halves, FR-026, FR-028 | 7 | `R6` |
+**Both structural absences this section was built around are now closed.** They are kept as history
+rather than deleted, because the roadmap's critical path was derived from them:
 
-FR-022 appears in both, so the union is **14**, not 15.
+| Absence | Status | Was blocking | Closed by |
+|---|---|---|---|
+| No session concept | **closed** | FR-003 clause 2, FR-007, FR-008 clause 2, FR-022 session half, FR-027, FR-029, FR-030, FR-035 session clause | `R3` — `sessions.py`, `session_service.py`, `actor_resolution.py` |
+| No authorization layer | **closed** | FR-021, FR-022 … FR-025 general halves, FR-026, FR-028 | `R6` — `authorization.py` (`#193`), `authorization_resolution.py` (`#195`) |
 
-**The third absence is now closed.** At `ebfbe77` this table had a row reading "No membership write
+The rows they blocked did not all become Implemented: several are `Partial` for reasons of their
+own now (no object-level authorization path, no production consumer of `IsolationService`), which
+is why closing two absences moved fewer rows than their counts suggest. FR-007 and FR-021 remain
+`Not implemented` because they need `R5` recovery and a protected-action *abstraction* respectively,
+neither of which `R3` or `R6` delivered.
+
+**A third absence closed earlier.** At `ebfbe77` this table had a row reading "No membership write
 operations — `OrganizationStore` exposes exactly one write, `create_organization`", blocking FR-012,
 FR-013's remove/downgrade clauses, FR-014's second clause, FR-020, and FR-035's membership clause.
 `R2` added promotion, demotion, and revocation, so four of those five are no longer blocked by it.
 FR-020 remains blocked, but by invitations rather than by revocation.
 
-Two capability absences account for another **6**: invitations do not exist (FR-016 … FR-020, `R4`)
-and recovery does not exist (FR-005, FR-006, FR-007, `R5`) — FR-007 and FR-020 are already counted
-above, so these add 6 distinct rows for a running total of **20 of 27**.
+**What now explains the remaining 20.** With all three structural absences closed, the gap is no
+longer dominated by missing subsystems:
 
-The remaining **7** — FR-001, FR-009, FR-015, FR-031, FR-034, FR-035, FR-038 — are not blocked by a
-missing subsystem. They are partial for narrower reasons stated in their rows: an unasserted clause
-(FR-001), an unwired service (FR-009, FR-031, FR-034, FR-038 all trace to `IsolationService` being
-instantiated nowhere outside tests), and unbuilt owner capabilities (FR-015).
+| Cause | Requirements | Count | Roadmap |
+|---|---|---|---|
+| Recovery does not exist | FR-005, FR-006, FR-007 | 3 | `R5` |
+| No object-level authorization path, and no production consumer of `IsolationService` | FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 11 | `R7` wiring |
+| Rows not re-derived since `R6-03` merged (see below) | FR-027, FR-029 | 2 | — |
+| Narrower single-clause reasons stated in their own rows | FR-001, FR-003, FR-015, FR-035 | 4 | various |
 
-That the remaining structural absences map one-to-one onto `R3` and `R6`, and the two capability
-absences onto `R4` and `R5`, is independent evidence for the roadmap's critical path — arrived at
-from the code rather than from the roadmap.
+3 + 11 + 2 + 4 = **20**, matching the rollup. Invitations (`FR-016` … `FR-020`) are *not* in this
+list: those rows read `Implemented`, which is worth noticing rather than assuming, since `R4` has
+not shipped.
+
+**A divergence this slice records rather than fixes.** `FR-027` and `FR-029` still read
+`Not implemented`, but `R6-03` (`#194`) shipped `switching.py` and `FR-029`'s live-membership
+clause is asserted in `test_rca001_organization_switching.py`. That is the same staleness `R6-07`
+corrects for `FR-008` and `FR-030` — re-deriving two more rows belongs to whoever owns `R6-03`'s
+status pass, not to a test slice, so it is flagged here instead of silently re-statused. Every
+count above is derived from the requirement tables below; if they disagree, the tables win and this
+section is the defect.
+
+That the two structural absences mapped one-to-one onto `R3` and `R6`, and the capability absences
+onto `R4` and `R5`, was independent evidence for the roadmap's critical path — arrived at from the
+code rather than from the roadmap. Both structural predictions have now been borne out by merge.
 
 ## Two gaps `R2` recorded rather than closed
 
