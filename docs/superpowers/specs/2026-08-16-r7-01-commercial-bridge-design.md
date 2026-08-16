@@ -140,6 +140,18 @@ as 24 URL-safe characters. And `FR-032`/`FR-033` — which govern what may appea
 satisfied by construction, because `allocate_owner_id` takes no argument at all and so cannot
 encode a commercial identifier even by mistake.
 
+**The vehicle, so the question is actionable rather than open-ended.** This changes a governed
+specification's surface, and the precedent is `KHEPRI-DEC-018` (`dcb63da`, `#177`), which admitted
+the external identity-provider boundary and added `R3-09`/`R3-10`/`R3-11` to the roadmap. It was
+drafted as a document under `governance/decisions/` with a `registry.yaml` entry, and became
+governing when the owner merged it — the same convention every slice here follows. So the answer to
+this question is most naturally **`KHEPRI-DEC-019`**, the next free number, admitting an additive
+scoped-session entry point and pinning which of the three shapes below it authorizes.
+
+An agent may draft that record; only the owner's merge makes it governing. This note does not draft
+it, because drafting a decision whose substance is still open would put the recommendation and the
+authorization in one artifact — which `governance-integrity-principles` forbids.
+
 Three ways to take it, if the answer is yes:
 
 - **A separate entry point** (`open_scoped_session(owner_id, *, now)`) leaving `redeem` untouched,
@@ -164,3 +176,18 @@ must originate from the existing RRA fact package".
   participant who has no account.
 - **Whether `R6-01` §3.1 gains a row** for "open an analysis session". It probably should, and that
   is `R7-05`'s call once the endpoint exists.
+
+## 8. Two stale status rows, reported rather than edited
+
+The roadmap's §15 table still reads:
+
+| Row | Says | Actually |
+|---|---|---|
+| `R6 Canonical authorization` | `BLOCKED` — "depends on R3 session resolution alone" | `R6-01`…`R6-08` all merged (`#192`…`#195`, `#197`…`#200`) |
+| `R7 Commercial RRA bridge` | `BLOCKED` — "Depends on R6" | Its only named blocker is cleared; it is now blocked on §6 instead |
+
+Reported, not corrected: this is a design note, and reconciling roadmap status is a status pass.
+It is the same class of staleness `R6-07` corrected for `FR-008`/`FR-030` and flagged for
+`FR-027`/`FR-029` — a merged slice leaving a status row untouched, which is why
+`khepri-plan-status-blocks-not-checkboxes` says to verify a status against the code rather than
+read it.
