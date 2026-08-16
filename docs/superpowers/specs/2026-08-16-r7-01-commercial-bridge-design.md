@@ -118,13 +118,29 @@ a red suite should not "fix" them:
 conflict to record, not a refactor to perform. The `R6` slices touched zero of them and `R7` should
 be able to say the same.
 
-## 6. Question for the owner
+## 6. Question for the owner — answered by `KHEPRI-DEC-019`
 
 **May `RRA` grow an additive session-creation entry point that accepts a caller-supplied
 `owner_id`?**
 
-This is the only remaining shape (§2), and it is a change to a *governed* specification's surface,
-which is why it is not mine to take.
+> **Answered.** `KHEPRI-DEC-019` (`governance/decisions/KHEPRI-DEC-019-commercial-scope-attachment.md`)
+> admits exactly this shape — a new function, sibling to `redeem`, taking an opaque `owner_id` and
+> minting its own `session_id`. It becomes governing when the owner merges it; until then this
+> section records the recommendation and the record records the reasoning.
+
+**One thing found after this note was first written, which reframes the question rather than merely
+answering it.** `RRA-001`'s own Requirements section reads:
+
+> "Preserve the opaque owner ID as **the only future attachment point for separately approved
+> commercial authentication**."
+
+So the attachment point was *reserved* for this purpose from the start, and reaching it requires
+something "separately approved" — which is what `KHEPRI-DEC-019` supplies. The third row of §2's
+table is therefore the **anticipated** shape, not a reluctant last resort, and the framing below
+("what it costs, stated plainly") overstates the cost. It is left in place because the reasoning
+that reached it is still the reasoning a reviewer should check.
+
+This was a change to a *governed* specification's surface, which is why it was not mine to take.
 
 What it costs, stated plainly rather than minimised: `RRA-001` currently guarantees that every
 `owner_id` is minted by RRA itself, and an entry point taking one from a caller weakens that to
