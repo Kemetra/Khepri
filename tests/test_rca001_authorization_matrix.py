@@ -54,6 +54,7 @@ Covering them here would mean inventing a target parameter mid-slice. Recorded a
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import NamedTuple
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -180,27 +181,42 @@ def _attempt(stack: Stack, verb: str, token: str, account: str) -> None:
     )
 
 
-#: The three owner-only rows of `R6-01` §3.1, as data rather than as three near-identical classes.
-#:
-#: Each entry names the verb, whose membership the cell targets, and what that membership must
-#: still read afterwards. Expressing the rows this way is not only deduplication -- it makes the
-#: table in the test file look like the table in the specification, so a missing row is a missing
-#: line rather than an absent method nobody counts.
-OWNER_ONLY_ROWS = (
-    ("promote_to_owner", "member", MEMBER_ROLE),
-    ("demote_to_member", "owner", OWNER_ROLE),
-    ("revoke_membership", "member", MEMBER_ROLE),
-)
+class Cell(NamedTuple):
+    """One denied cell of the matrix: an action, a target, an actor kind, and the refusal.
 
-#: The three denied columns, with the refusal each must raise.
+    A named tuple rather than a tuple of five positional values, so the parametrized test takes
+    *one* argument and each field is read by name at the point it is used.
+    """
+
+    verb: str
+    subject: str
+    expected: str
+    column: str
+    refusal: type[Exception]
+
+
+#: The nine denied cells of `R6-01` §3.1 rows 1-3, as one table.
 #:
-#: `unauthenticated` fails at step 2 with `AuthenticationFailed` rather than `ScopeAccessDenied`,
-#: and the difference is the point: no actor is established, so no row is reached at all
-#: (`R6-01` §3.3, scenario 19). Collapsing the two into one exception type would erase that.
-DENIED_COLUMNS = (
-    ("member", ScopeAccessDenied),
-    ("non_member", ScopeAccessDenied),
-    ("unauthenticated", AuthenticationFailed),
+#: One row per cell rather than two axes crossed, because a `pytest` fixture-argument per axis is
+#: how this method grew six parameters -- and because the specification's own table is a list of
+#: cells, not a product. Each entry is: the verb, whose membership the cell targets and what it
+#: must still read afterwards, the acting column, and the refusal that column must raise.
+#:
+#: `unauthenticated` raises `AuthenticationFailed` rather than `ScopeAccessDenied`, and the
+#: difference is the point: no actor is established, so no row is reached at all (`R6-01` §3.3,
+#: scenario 19). One shared exception type would erase that distinction.
+DENIED_CELLS = tuple(
+    Cell(verb=verb, subject=subject, expected=expected, column=column, refusal=refusal)
+    for verb, subject, expected in (
+        ("promote_to_owner", "member", MEMBER_ROLE),
+        ("demote_to_member", "owner", OWNER_ROLE),
+        ("revoke_membership", "member", MEMBER_ROLE),
+    )
+    for column, refusal in (
+        ("member", ScopeAccessDenied),
+        ("non_member", ScopeAccessDenied),
+        ("unauthenticated", AuthenticationFailed),
+    )
 )
 
 
@@ -224,38 +240,28 @@ class TestTheOwnerOnlyRows:
     not a widening of this cell.
     """
 
-    @pytest.mark.parametrize(("verb", "subject", "expected"), OWNER_ONLY_ROWS)
-    @pytest.mark.parametrize(("column", "refusal"), DENIED_COLUMNS)
-    def test_the_action_is_refused_and_no_role_changes(
-        self,
-        stack: Stack,
-        verb: str,
-        subject: str,
-        expected: str,
-        column: str,
-        refusal: type[Exception],
-    ) -> None:
+    @pytest.mark.parametrize("cell", DENIED_CELLS, ids=lambda c: f"{c.verb}-{c.column}")
+    def test_the_action_is_refused_and_no_role_changes(self, stack: Stack, cell: Cell) -> None:
         """Nine cells: three owner-only actions against three denied actor kinds.
 
         The assertion after the block is the load-bearing one. `_attempt` puts the verb on the
         code path, so a handler that skipped the gate would reach the write and fail the
         `pytest.raises`; a gate that refused only *after* mutating is caught here instead.
         """
-        target_account = getattr(stack, subject)
-        token = _token_for(stack, column)
-        if verb == "demote_to_member":
+        target_account = getattr(stack, cell.subject)
+        token = _token_for(stack, cell.column)
+        if cell.verb == "demote_to_member":
             # Demotion needs a second owner (`FR-013` protects the final one), and promoting the
             # fixture's member to provide it would hand the `member` column an owner's token --
-            # the cell would then fail for the wrong reason. A fresh plain member keeps the
-            # column honest.
+            # the cell would then fail for the wrong reason. A fresh plain member keeps it honest.
             _promote(stack, stack.member)
-            if column == "member":
+            if cell.column == "member":
                 token = _plain_member_token(stack)
 
-        with pytest.raises(refusal):
-            _attempt(stack, verb, token, target_account)
+        with pytest.raises(cell.refusal):
+            _attempt(stack, cell.verb, token, target_account)
 
-        assert _role_of(stack.factory, stack.organization_id, target_account) == expected
+        assert _role_of(stack.factory, stack.organization_id, target_account) == cell.expected
 
 
 class TestTheOwnerPermitCells:
