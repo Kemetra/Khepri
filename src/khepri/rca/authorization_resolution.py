@@ -113,13 +113,21 @@ class AuthorizationResolver:
         return context
 
     def require_owner(
-        self, token: str, *, organization_id: str | None = None, now: datetime
+        self, token: str, *, organization_id: str, now: datetime
     ) -> AuthorizationContext:
-        """Resolve, then refuse unless the actor is an owner of the active organization.
+        """Resolve, then refuse unless the actor owns the organization they named.
 
         The three `R6-01` §3.1 owner-only cells -- promote, demote, revoke a membership -- share
         this shape, and expressing it once is what keeps them from drifting apart. It returns the
         context rather than a boolean so the caller cannot ask the question and ignore the answer.
+
+        **The target organization is required here, unlike on `for_request`, and the asymmetry is
+        the point.** Every owner-only verb takes an `organization_id` of its own and checks no
+        role, so a gate that defaulted to the session's active organization would authorize
+        against A while the caller went on to mutate B -- each line reading correctly in
+        isolation. Requiring it forces the target to be named *at the gate*, so the organization
+        that was authorized is the one in the caller's hand. A default that is safe only when the
+        caller remembers to pass the same value twice is not a default worth having.
 
         **Refuses a member exactly as it refuses a non-member.** `R6-01` §3.1 gives both `DENY`,
         and a distinguishable refusal would tell a member which organizations they are merely a

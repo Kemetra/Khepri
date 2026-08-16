@@ -162,11 +162,14 @@ class TestAnActorInNoOrganization:
     def test_an_actor_in_no_organization_is_refused_the_owner_gate(
         self, factory: sessionmaker
     ) -> None:
+        stack = two_owner_organization(factory)
         account = _account(factory, "nobody@example.test")
         token = _sessions(factory).create(account, now=NOW)
 
         with pytest.raises(ScopeAccessDenied):
-            _resolver(factory).require_owner(token, now=NOW)
+            _resolver(factory).require_owner(
+                token, organization_id=stack.organization.organization_id, now=NOW
+            )
 
 
 class TestMembershipIsReadLive:
@@ -262,11 +265,15 @@ class TestOneResolverHeldAcrossAChange:
         member, token = _member_with_session(factory, stack)
         resolver = _resolver(factory)
         with pytest.raises(ScopeAccessDenied):
-            resolver.require_owner(token, now=NOW)
+            resolver.require_owner(
+                token, organization_id=stack.organization.organization_id, now=NOW
+            )
 
         _change_role(factory, stack, "promote_to_owner", member)
 
-        assert resolver.require_owner(token, now=NOW).is_owner
+        assert resolver.require_owner(
+            token, organization_id=stack.organization.organization_id, now=NOW
+        ).is_owner
 
     def test_a_reused_resolver_observes_a_disablement(self, factory: sessionmaker) -> None:
         """`FR-008` at step 3, through a held resolver: a cache above the chokepoint hides it."""
@@ -342,23 +349,33 @@ class TestTheRoleIsReadLive:
         token = _active_session(
             factory, stack.second.account_id, stack.organization.organization_id
         )
-        _resolver(factory).require_owner(token, now=NOW)
+        _resolver(factory).require_owner(
+            token, organization_id=stack.organization.organization_id, now=NOW
+        )
 
         _change_role(factory, stack, "demote_to_member", stack.second.account_id)
 
         with pytest.raises(ScopeAccessDenied):
-            _resolver(factory).require_owner(token, now=NOW)
+            _resolver(factory).require_owner(
+                token, organization_id=stack.organization.organization_id, now=NOW
+            )
 
     def test_a_promoted_member_gains_the_owner_gate(self, factory: sessionmaker) -> None:
         """The permitting direction, which a resolver that always denies would pass without."""
         stack = two_owner_organization(factory)
         member, token = _member_with_session(factory, stack)
         with pytest.raises(ScopeAccessDenied):
-            _resolver(factory).require_owner(token, now=NOW)
+            _resolver(factory).require_owner(
+                token, organization_id=stack.organization.organization_id, now=NOW
+            )
 
         _change_role(factory, stack, "promote_to_owner", member)
 
-        assert _resolver(factory).require_owner(token, now=NOW).is_owner
+        assert (
+            _resolver(factory)
+            .require_owner(token, organization_id=stack.organization.organization_id, now=NOW)
+            .is_owner
+        )
 
 
 class TestTheOwnerGate:
@@ -369,7 +386,9 @@ class TestTheOwnerGate:
         member, token = _member_with_session(factory, stack)
 
         with pytest.raises(ScopeAccessDenied):
-            _resolver(factory).require_owner(token, now=NOW)
+            _resolver(factory).require_owner(
+                token, organization_id=stack.organization.organization_id, now=NOW
+            )
 
     def test_a_member_and_a_non_member_are_refused_identically(self, factory: sessionmaker) -> None:
         """`R6-01` §3.1 gives both `DENY`, and a distinguishable refusal discloses membership.
@@ -385,11 +404,55 @@ class TestTheOwnerGate:
         outsider_token = _sessions(factory).create(outsider, now=NOW)
 
         with pytest.raises(ScopeAccessDenied) as as_member:
-            _resolver(factory).require_owner(member_token, now=NOW)
+            _resolver(factory).require_owner(
+                member_token, organization_id=stack.organization.organization_id, now=NOW
+            )
         with pytest.raises(ScopeAccessDenied) as as_outsider:
-            _resolver(factory).require_owner(outsider_token, now=NOW)
+            _resolver(factory).require_owner(
+                outsider_token, organization_id=stack.organization.organization_id, now=NOW
+            )
 
         assert str(as_member.value) == str(as_outsider.value)
+
+    def test_an_owner_of_one_organization_cannot_gate_against_another(
+        self, factory: sessionmaker
+    ) -> None:
+        """The gate authorizes the organization the caller *named*, not merely their session.
+
+        Reported on `#195` as a P1: with an optional target, an owner of A passed the gate
+        without naming one and could then hand B to `promote_to_owner`, which takes its own
+        `organization_id` and checks no role. Authorizing A while mutating B read correctly on
+        every individual line. The target is now required, so the value that was authorized is
+        the value the caller holds.
+
+        The actor genuinely owns both organizations here, so a membership check alone permits
+        this. Only the active-organization comparison refuses it.
+        """
+        stack = two_owner_organization(factory)
+        second = _organizations(factory).create_organization(
+            "Beta", stack.first.account_id, now=NOW
+        )
+        token = _active_session(factory, stack.first.account_id, stack.organization.organization_id)
+        resolver = _resolver(factory)
+
+        assert resolver.require_owner(
+            token, organization_id=stack.organization.organization_id, now=NOW
+        ).is_owner
+
+        with pytest.raises(ScopeAccessDenied):
+            resolver.require_owner(token, organization_id=second.organization_id, now=NOW)
+
+    def test_the_target_organization_has_no_default(self, factory: sessionmaker) -> None:
+        """A caller who omits the target gets a `TypeError`, not a silent fallback.
+
+        This is the whole of the fix: the unsafe call must not be expressible. A default that is
+        safe only when the caller remembers to pass the same value twice is not a default.
+        """
+        stack = two_owner_organization(factory)
+        token = _active_session(factory, stack.first.account_id, stack.organization.organization_id)
+
+        with pytest.raises(TypeError):
+            _resolver(factory).require_owner(token, now=NOW)  # type: ignore[call-arg]
 
     def test_it_returns_the_context_rather_than_a_boolean(self, factory: sessionmaker) -> None:
         """A boolean invites a caller who forgets to check it; the failure mode is silence.
@@ -399,7 +462,9 @@ class TestTheOwnerGate:
         stack = two_owner_organization(factory)
         token = _active_session(factory, stack.first.account_id, stack.organization.organization_id)
 
-        context = _resolver(factory).require_owner(token, now=NOW)
+        context = _resolver(factory).require_owner(
+            token, organization_id=stack.organization.organization_id, now=NOW
+        )
 
         assert context.organization_id == stack.organization.organization_id
         assert context.is_owner
@@ -520,7 +585,9 @@ class TestTheFinalOwnerInvariantIsNotDuplicated:
         )
         token = _active_session(factory, stack.first.account_id, stack.organization.organization_id)
 
-        context = _resolver(factory).require_owner(token, now=NOW)
+        context = _resolver(factory).require_owner(
+            token, organization_id=stack.organization.organization_id, now=NOW
+        )
         assert context.is_owner
 
         with pytest.raises(Exception) as refusal:
