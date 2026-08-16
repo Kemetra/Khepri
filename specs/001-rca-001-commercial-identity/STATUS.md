@@ -160,6 +160,26 @@ one — which is the moment validation stops being optional.
 The specification's Verification section requires a test per scenario and an authorization matrix
 over `{owner, member, non-member, unauthenticated}` × every protected action.
 
+**`R6-05` supplies the matrix for `R6-01` §3.1**, in `tests/test_rca001_authorization_matrix.py`:
+all five organization-scoped actions × all four actor kinds, each `DENY` cell asserting that the
+membership is *unchanged* rather than only that an exception was raised. Scenarios **18** and **19**
+are now named and tested there. Scenarios 4, 6, 7, 8, 9, 13, 14, 15, and 20 remain untested; **20**
+is `R6-07`'s.
+
+### Carried gaps from `R6-05`
+
+1. **`R6-01` §3.2 is not covered, and cannot be at this shape.** The six account-scoped actions turn
+   on self-versus-another-account, and `AuthorizationContext` carries the acting `account_id` with
+   no target. `authorization_resolution.py`'s docstring defers this to an `R6-02` change. Covering
+   §3.2 requires that change first; it is not a test-only slice.
+2. **The three owner-only verbs check no authority of their own.** `promote_to_owner`,
+   `demote_to_member`, and `revoke_membership` take `actor_account_id` for *attribution* only, so a
+   direct call from a member succeeds. `R6-04` placed the check in the gate rather than in the
+   verbs; the matrix therefore drives each action through `require_owner`, which is the authorized
+   route. **That the gate is the *only* route is unproven until `R6-08`** — this is precisely the
+   hole that slice exists to close, and `R6-04`'s docstring records four deliberate exclusions
+   without recording this one.
+
 **`R6-06` supplies scenarios 12 and 14, and takes 15 from untested to *partial***, in `tests/test_rca001_cross_organization.py`.
 Scenario 15's "no state change in **either** organization" is asserted on both sides: the target
 organization *and* the actor's own, since a gate that authorized against the active organization
@@ -183,9 +203,10 @@ authorization path exists to test. Building one is `R7`/`W1` work, not a test-on
 One note for whoever extends these tests: scenario 14's message-comparison holds *structurally*,
 because a nonexistent organization has no membership row and is refused by the same guard as a
 foreign one. A mutant that rewords that guard therefore leaves the comparison green without
-reintroducing the oracle. `test_no_organization_existence_check_precedes_the_membership_check`
-exists because of that — it pins the ordering, and dies against an existence pre-check even when
-the pre-check keeps the uniform message.
+reintroducing the oracle — correctly, since such a mutant does not reintroduce the enumeration
+oracle either. A test pinning the *call order* was written and removed (`#198`): its only unique
+kill-set was implementations that check existence first and still return one refusal shape, which
+this document's own type-plus-message definition calls compliant.
 
 ---
 
