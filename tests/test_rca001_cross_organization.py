@@ -99,10 +99,12 @@ def _role_of(factory: sessionmaker, organization_id: str, account_id: str) -> st
     return None if membership is None else membership.role
 
 
-def _attempt_across(
-    orgs: TwoOrganizations, verb: str, *, token: str, target: str, account: str
-) -> None:
+def _attempt_across(orgs: TwoOrganizations, verb: str, target: str, account: str) -> None:
     """Pass the gate for `target`, then call the verb -- what an authorized caller does.
+
+    The acting token is always Alice's -- she is the fixture's cross-organization actor, and every
+    scenario 15 cell is "Alice reaches into B". Taking it as a parameter would be an argument with
+    one possible value at every call site.
 
     **The gate alone proves nothing about state.** `require_owner` is read-only, so a test that
     called it and then asserted "no organization changed" would be asserting a fact about the
@@ -113,7 +115,9 @@ def _attempt_across(
     a handler that skips the gate reaches the write and the `pytest.raises` fails, and a gate that
     refuses only after mutating is caught by the state assertions outside the block.
     """
-    context = _resolver(orgs.factory).require_owner(token, organization_id=target, now=NOW)
+    context = _resolver(orgs.factory).require_owner(
+        orgs.alice_token, organization_id=target, now=NOW
+    )
     getattr(_organizations(orgs.factory), verb)(
         target, account, actor_account_id=context.account_id, now=NOW
     )
@@ -319,9 +323,7 @@ class TestScenarioFifteenCrossOrganizationMutation:
         _grant(orgs.factory, orgs.b, carol, MEMBER_ROLE)
 
         with pytest.raises(ScopeAccessDenied):
-            _attempt_across(
-                orgs, "promote_to_owner", token=orgs.alice_token, target=orgs.b, account=carol
-            )
+            _attempt_across(orgs, "promote_to_owner", orgs.b, carol)
 
         assert _role_of(orgs.factory, orgs.b, carol) == MEMBER_ROLE
         assert _role_of(orgs.factory, orgs.b, orgs.bob) == OWNER_ROLE
@@ -331,13 +333,7 @@ class TestScenarioFifteenCrossOrganizationMutation:
         self, orgs: TwoOrganizations
     ) -> None:
         with pytest.raises(ScopeAccessDenied):
-            _attempt_across(
-                orgs,
-                "revoke_membership",
-                token=orgs.alice_token,
-                target=orgs.b,
-                account=orgs.bob,
-            )
+            _attempt_across(orgs, "revoke_membership", orgs.b, orgs.bob)
 
         assert _role_of(orgs.factory, orgs.b, orgs.bob) == OWNER_ROLE
         assert _role_of(orgs.factory, orgs.a, orgs.alice) == OWNER_ROLE
@@ -355,9 +351,7 @@ class TestScenarioFifteenCrossOrganizationMutation:
         _grant(orgs.factory, orgs.a, dave, MEMBER_ROLE)
 
         with pytest.raises(ScopeAccessDenied):
-            _attempt_across(
-                orgs, "revoke_membership", token=orgs.alice_token, target=orgs.b, account=orgs.bob
-            )
+            _attempt_across(orgs, "revoke_membership", orgs.b, orgs.bob)
 
         assert _role_of(orgs.factory, orgs.a, dave) == MEMBER_ROLE
         assert _role_of(orgs.factory, orgs.a, orgs.alice) == OWNER_ROLE
