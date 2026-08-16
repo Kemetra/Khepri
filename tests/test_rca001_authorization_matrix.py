@@ -8,11 +8,17 @@ different question of the same code: for each actor kind and each protected acti
 specified outcome occur? Organizing by cell is what makes an absent row visible as a hole in a
 table rather than as a test nobody noticed was missing.
 
-**Every cell asserts the observable effect, never only the exception.** A `pytest.raises` on
-`require_owner` restates `TestTheOwnerGate` and cannot fail in any new way. What a `DENY` cell
-actually claims is that *the action did not happen*, so each denial asserts the membership is
-unchanged afterwards. That is the assertion with content: a gate that raised after mutating, or a
-verb reached by some other path, dies here while a `pytest.raises`-only test passes.
+**Every cell drives the real action, not just the gate in front of it.** A `pytest.raises` on
+`require_owner` restates `TestTheOwnerGate` and cannot fail in any new way -- and asserting the
+post-state after a *read-only* gate is worse than useless, because the assertion is then guaranteed
+by fixture setup and would hold even if the verb wrote unconditionally. That defect was in the
+first version of this file and was found in review on `#197`/`#198`.
+
+So every cell goes through `_attempt`, which passes the gate and *then* calls the verb, exactly as
+an authorized caller must. Two distinct defects now die here: a handler that skips the gate reaches
+the verb and the `pytest.raises` fails, and a gate that raises *after* mutating is caught by the
+state assertion outside the block. Verified by deleting the gate call from `_attempt` and watching
+seven cells fail.
 
 **The gated path is what is under test, and that is a deliberate boundary.** The three owner-only
 verbs take `actor_account_id` for attribution and check no authority of their own, so calling
@@ -142,6 +148,25 @@ def stack_fixture(factory: sessionmaker) -> Stack:
     return Stack(factory)
 
 
+def _attempt(stack: Stack, verb: str, *, token: str, target: str, account: str) -> None:
+    """Do what an authorized caller does: pass the gate, then call the verb.
+
+    **Why every cell goes through this instead of calling the gate alone.** A `DENY` cell claims
+    the *action did not happen*, and that claim is only load-bearing if the action was on the code
+    path. A test that calls `require_owner` and then asserts the membership is unchanged asserts
+    nothing about the code: `require_owner` is read-only, so the post-state was guaranteed by
+    fixture setup and would hold even if the verb wrote unconditionally.
+
+    Putting both calls inside one helper makes the refusal the thing that *prevents* the write.
+    Found in review on `#197`/`#198`; verified by deleting the gate call below and watching the
+    post-state assertions fail rather than the `pytest.raises`.
+    """
+    context = _resolver(stack.factory).require_owner(token, organization_id=target, now=NOW)
+    getattr(stack.organizations, verb)(
+        target, account, actor_account_id=context.account_id, now=NOW
+    )
+
+
 class TestPromoteToOwner:
     """`R6-01` §3.1 row 1: owner PERMIT, everyone else DENY."""
 
@@ -159,22 +184,34 @@ class TestPromoteToOwner:
 
     def test_a_member_is_refused_and_no_role_changes(self, stack: Stack) -> None:
         with pytest.raises(ScopeAccessDenied):
-            _resolver(stack.factory).require_owner(
-                stack.member_token, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "promote_to_owner",
+                token=stack.member_token,
+                target=stack.organization_id,
+                account=stack.member,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
     def test_a_non_member_is_refused_and_no_role_changes(self, stack: Stack) -> None:
         with pytest.raises(ScopeAccessDenied):
-            _resolver(stack.factory).require_owner(
-                stack.outsider_token, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "promote_to_owner",
+                token=stack.outsider_token,
+                target=stack.organization_id,
+                account=stack.member,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
     def test_an_unauthenticated_caller_is_refused_and_no_role_changes(self, stack: Stack) -> None:
         with pytest.raises(AuthenticationFailed):
-            _resolver(stack.factory).require_owner(
-                INVALID_TOKEN, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "promote_to_owner",
+                token=INVALID_TOKEN,
+                target=stack.organization_id,
+                account=stack.member,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
@@ -204,22 +241,34 @@ class TestDemoteToMember:
         _promote(stack, stack.member)
         other = _member_token_after_demotion_attempt(stack)
         with pytest.raises(ScopeAccessDenied):
-            _resolver(stack.factory).require_owner(
-                other, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "demote_to_member",
+                token=other,
+                target=stack.organization_id,
+                account=stack.owner,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.owner) == OWNER_ROLE
 
     def test_a_non_member_is_refused_and_no_role_changes(self, stack: Stack) -> None:
         with pytest.raises(ScopeAccessDenied):
-            _resolver(stack.factory).require_owner(
-                stack.outsider_token, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "demote_to_member",
+                token=stack.outsider_token,
+                target=stack.organization_id,
+                account=stack.owner,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.owner) == OWNER_ROLE
 
     def test_an_unauthenticated_caller_is_refused_and_no_role_changes(self, stack: Stack) -> None:
         with pytest.raises(AuthenticationFailed):
-            _resolver(stack.factory).require_owner(
-                INVALID_TOKEN, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "demote_to_member",
+                token=INVALID_TOKEN,
+                target=stack.organization_id,
+                account=stack.owner,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.owner) == OWNER_ROLE
 
@@ -246,15 +295,23 @@ class TestRevokeMembership:
 
     def test_a_member_is_refused_and_the_membership_survives(self, stack: Stack) -> None:
         with pytest.raises(ScopeAccessDenied):
-            _resolver(stack.factory).require_owner(
-                stack.member_token, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "revoke_membership",
+                token=stack.member_token,
+                target=stack.organization_id,
+                account=stack.member,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
     def test_a_non_member_is_refused_and_the_membership_survives(self, stack: Stack) -> None:
         with pytest.raises(ScopeAccessDenied):
-            _resolver(stack.factory).require_owner(
-                stack.outsider_token, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "revoke_membership",
+                token=stack.outsider_token,
+                target=stack.organization_id,
+                account=stack.member,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
@@ -262,8 +319,12 @@ class TestRevokeMembership:
         self, stack: Stack
     ) -> None:
         with pytest.raises(AuthenticationFailed):
-            _resolver(stack.factory).require_owner(
-                INVALID_TOKEN, organization_id=stack.organization_id, now=NOW
+            _attempt(
+                stack,
+                "revoke_membership",
+                token=INVALID_TOKEN,
+                target=stack.organization_id,
+                account=stack.member,
             )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
