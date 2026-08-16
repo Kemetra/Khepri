@@ -36,13 +36,17 @@ kind of evidence a later reader will cite without re-deriving.
    escapes `records.py` enumerates as open, and a scan is the only thing that sees them across a
    whole package.
 
+   The forgery half of that scan -- `object.__new__` and `object.__setattr__` -- runs across every
+   production package too, since neither has an ordinary use: a `runtime` handler mutating a
+   context it was handed is exactly the bypass a narrower scope hides (`#200`). Only the
+   `dataclasses.replace` scan stays `rca`-scoped, because that call *does* have ordinary uses.
+
    The construction scan **resolves aliases**, because `import ... as auth;
    auth.AuthorizationContext(...)` and `import AuthorizationContext as AC; AC(...)` are ordinary
    spellings that a name-exact match misses without anyone intending to evade it (`#200` P2). The
-   two scans have deliberately different scopes: verb calls and context construction are checked
-   across every production package, while the generic escape scan stays `khepri.rca`-only because
-   its subject is the sealed records -- `dataclasses.replace` on an unrelated `rra` dataclass is
-   ordinary code, and repo-wide it returns six such hits that would train a reader to ignore it.
+   scans are scoped by what they look for, not by package convenience: anything with no legitimate
+   use is checked repo-wide, and only `dataclasses.replace` -- which has ordinary uses, six of them
+   in `khepri.rra` -- stays narrow.
 
 **Why an empty allowlist is evidence rather than a tautology.** A scan matching nothing passes
 forever, which is the failure mode this whole slice exists to avoid. So the checker is self-tested
@@ -131,15 +135,34 @@ def _called_name(function: ast.expr) -> str | None:
     return None
 
 
+def find_forgery_escapes(source: str) -> list[str]:
+    """`object.__new__` / `object.__setattr__` calls, which have no legitimate use anywhere.
+
+    Split out from the `dataclasses.replace` scan so this one can run across **every** production
+    package. A `runtime` or `local` handler calling `object.__setattr__` on a context it was handed
+    is exactly the bypass this slice exists to catch, and confining the whole escape scan to
+    `khepri.rca` left that invisible. Found in review on `#200`.
+
+    Unlike `dataclasses.replace`, these two have no ordinary use to be confused with, so scanning
+    them repo-wide costs no noise and needs no allowlist.
+    """
+    return [
+        f"line {node.lineno}: {escape}"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        for escape in [_escape_name(node.func)]
+        if escape is not None and escape.startswith("object.")
+    ]
+
+
 def find_context_escapes(source: str) -> list[str]:
     """Calls that would forge or mutate an `AuthorizationContext` outside its one door.
 
-    **Scanned across `khepri.rca` only, unlike the verb and construction scans.** The subject here
-    is the *sealed records*, which live in this package; `dataclasses.replace` on an unrelated
-    `rra` dataclass is ordinary code, not an escape. Running this repo-wide returns six such hits
-    in `khepri.rra` and would turn the assertion into noise a reader learns to ignore. The scope
-    difference is deliberate and is why `#200`'s `P1` widening applies to the other two scans and
-    not to this one.
+    **Scanned across `khepri.rca` only, and only this scan is narrowed.** `dataclasses.replace` on
+    an unrelated `rra` dataclass is ordinary code, not an escape: repo-wide it returns six such
+    hits and the assertion becomes noise a reader learns to ignore. The forgery half --
+    `object.__new__` and `object.__setattr__`, which have no ordinary use at all -- is split into
+    `find_forgery_escapes` and does run across every production package (`#200`).
 
     `records.py` enumerates these as the escapes that cannot be closed: `dataclasses.replace`
     rebuilds a frozen instance with fields swapped, `object.__new__` allocates without running a
@@ -339,6 +362,36 @@ class TestTheContextBoundaryHoldsStatically:
                 offenders.append(f"{_relative(path)}:{call}")
         assert offenders == []
 
+    def test_no_production_module_anywhere_forges_a_record(self) -> None:
+        """`object.__new__` / `object.__setattr__`, across every production package.
+
+        The narrower `dataclasses.replace` scan above cannot be widened without drowning in
+        ordinary `rra` code, but these two can: they have no legitimate use, so a hit anywhere is
+        worth a review. A `runtime` handler mutating a context it was handed is precisely the
+        bypass the narrower scope hid. Found in review on `#200`.
+        """
+        offenders: list[str] = []
+        for path in _production_sources():
+            for escape in find_forgery_escapes(path.read_text(encoding="utf-8")):
+                offenders.append(f"{_relative(path)}:{escape}")
+        assert offenders == [], (
+            "a production module calls object.__new__ or object.__setattr__; neither has an "
+            "ordinary use, so this is deliberate and needs review"
+        )
+
+    def test_the_forgery_scanner_flags_and_clears_expected_cases(self) -> None:
+        for source in (
+            "object.__new__(AuthorizationContext)",
+            "object.__setattr__(context, 'role', 'owner')",
+        ):
+            assert find_forgery_escapes(source), f"scanner missed: {source!r}"
+        for source in (
+            "dataclasses.replace(context, role='owner')",
+            "obj.__setattr__('a', 1)",
+            "text.replace('a', 'b')",
+        ):
+            assert find_forgery_escapes(source) == [], f"false positive: {source!r}"
+
     def test_the_escape_scanner_flags_and_clears_expected_cases(self) -> None:
         flagged = [
             "dataclasses.replace(context, role=OWNER_ROLE)",
@@ -421,7 +474,7 @@ class TestWhatRemainsOpen:
         importers = [
             _relative(path)
             for path in _production_sources()
-            if path.name != "authorization_resolution.py"
+            if _relative(path) != "khepri/rca/authorization_resolution.py"
             and "AuthorizationResolver" in path.read_text(encoding="utf-8")
         ]
         assert importers == [], (
