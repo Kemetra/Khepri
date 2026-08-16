@@ -42,6 +42,7 @@ from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest f
     CREDENTIAL,
     NOW,
     OTHER_EMAIL,
+    TwoOwners,
     factory_fixture,
     grant_membership,
     two_owner_organization,
@@ -86,6 +87,34 @@ def _active_session(factory: sessionmaker, account_id: str, organization_id: str
     return token
 
 
+def _member_with_session(factory: sessionmaker, stack: TwoOwners) -> tuple[str, str]:
+    """A second-class citizen of `stack`: a plain member, and a token already active in it.
+
+    Extracted because six tests need exactly this arrangement and differ only in what they do
+    *to* it. The arrangement is not what any of them prove, so repeating it inline made the six
+    look like variants of one test rather than six distinct claims.
+    """
+    member = _account(factory, "member@example.test")
+    grant_membership(stack, member, MEMBER_ROLE, factory=factory)
+    return member, _active_session(factory, member, stack.organization.organization_id)
+
+
+def _change_role(factory: sessionmaker, stack: TwoOwners, verb: str, account_id: str) -> None:
+    """Apply one membership verb, attributed to the organization's first owner.
+
+    **The verb is a parameter and the assertion never is.** These tests exist to prove a role
+    change is observed, so the change is the incidental half and the observation is the claim.
+    Folding the assertions in here too would leave six tests asserting nothing of their own,
+    which is how a shared helper silently weakens every test that calls it.
+    """
+    getattr(_organizations(factory), verb)(
+        stack.organization.organization_id,
+        account_id,
+        actor_account_id=stack.first.account_id,
+        now=NOW,
+    )
+
+
 class TestResolvingAnActiveMembership:
     def test_an_owner_resolves_with_their_live_role(self, factory: sessionmaker) -> None:
         stack = two_owner_organization(factory)
@@ -100,9 +129,7 @@ class TestResolvingAnActiveMembership:
 
     def test_a_member_resolves_as_a_member(self, factory: sessionmaker) -> None:
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
 
         context = _resolver(factory).resolve(token, now=NOW)
 
@@ -154,17 +181,10 @@ class TestMembershipIsReadLive:
         inspects one context. This one re-resolves the *same token* after the revocation.
         """
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
         assert _resolver(factory).resolve(token, now=NOW).role == MEMBER_ROLE
 
-        _organizations(factory).revoke_membership(
-            stack.organization.organization_id,
-            member,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "revoke_membership", member)
 
         context = _resolver(factory).resolve(token, now=NOW)
         assert context.organization_id is None
@@ -179,16 +199,9 @@ class TestMembershipIsReadLive:
         breaks `FR-028` for the same actor a moment later.
         """
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
 
-        _organizations(factory).revoke_membership(
-            stack.organization.organization_id,
-            member,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "revoke_membership", member)
 
         context = _resolver(factory).resolve(token, now=NOW)
         assert context.account_id == member
@@ -201,16 +214,9 @@ class TestMembershipIsReadLive:
         organization, because that field is exactly what was not changed.
         """
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
 
-        _organizations(factory).revoke_membership(
-            stack.organization.organization_id,
-            member,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "revoke_membership", member)
 
         still_named = _sessions(factory).resolve(token, now=NOW)
         assert still_named.active_organization_id == stack.organization.organization_id
@@ -231,18 +237,11 @@ class TestOneResolverHeldAcrossAChange:
 
     def test_a_reused_resolver_observes_a_revocation(self, factory: sessionmaker) -> None:
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
         resolver = _resolver(factory)
         assert resolver.resolve(token, now=NOW).role == MEMBER_ROLE
 
-        _organizations(factory).revoke_membership(
-            stack.organization.organization_id,
-            member,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "revoke_membership", member)
 
         assert resolver.resolve(token, now=NOW).organization_id is None
 
@@ -254,30 +253,18 @@ class TestOneResolverHeldAcrossAChange:
         resolver = _resolver(factory)
         assert resolver.resolve(token, now=NOW).is_owner
 
-        _organizations(factory).demote_to_member(
-            stack.organization.organization_id,
-            stack.second.account_id,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "demote_to_member", stack.second.account_id)
 
         assert not resolver.resolve(token, now=NOW).is_owner
 
     def test_a_reused_resolver_observes_a_promotion(self, factory: sessionmaker) -> None:
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
         resolver = _resolver(factory)
         with pytest.raises(ScopeAccessDenied):
             resolver.require_owner(token, now=NOW)
 
-        _organizations(factory).promote_to_owner(
-            stack.organization.organization_id,
-            member,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "promote_to_owner", member)
 
         assert resolver.require_owner(token, now=NOW).is_owner
 
@@ -344,12 +331,7 @@ class TestTheRoleIsReadLive:
         )
         assert _resolver(factory).resolve(token, now=NOW).is_owner
 
-        _organizations(factory).demote_to_member(
-            stack.organization.organization_id,
-            stack.second.account_id,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "demote_to_member", stack.second.account_id)
 
         context = _resolver(factory).resolve(token, now=NOW)
         assert context.role == MEMBER_ROLE
@@ -362,12 +344,7 @@ class TestTheRoleIsReadLive:
         )
         _resolver(factory).require_owner(token, now=NOW)
 
-        _organizations(factory).demote_to_member(
-            stack.organization.organization_id,
-            stack.second.account_id,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "demote_to_member", stack.second.account_id)
 
         with pytest.raises(ScopeAccessDenied):
             _resolver(factory).require_owner(token, now=NOW)
@@ -375,18 +352,11 @@ class TestTheRoleIsReadLive:
     def test_a_promoted_member_gains_the_owner_gate(self, factory: sessionmaker) -> None:
         """The permitting direction, which a resolver that always denies would pass without."""
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
         with pytest.raises(ScopeAccessDenied):
             _resolver(factory).require_owner(token, now=NOW)
 
-        _organizations(factory).promote_to_owner(
-            stack.organization.organization_id,
-            member,
-            actor_account_id=stack.first.account_id,
-            now=NOW,
-        )
+        _change_role(factory, stack, "promote_to_owner", member)
 
         assert _resolver(factory).require_owner(token, now=NOW).is_owner
 
@@ -396,9 +366,7 @@ class TestTheOwnerGate:
 
     def test_a_member_is_refused(self, factory: sessionmaker) -> None:
         stack = two_owner_organization(factory)
-        member = _account(factory, "member@example.test")
-        grant_membership(stack, member, MEMBER_ROLE, factory=factory)
-        token = _active_session(factory, member, stack.organization.organization_id)
+        member, token = _member_with_session(factory, stack)
 
         with pytest.raises(ScopeAccessDenied):
             _resolver(factory).require_owner(token, now=NOW)
