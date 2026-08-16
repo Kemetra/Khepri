@@ -27,16 +27,22 @@ merged code. See `SUPERSEDED.md`.
 
 | Status | Count | Change since `R2-10` |
 |---|---|---|
-| Implemented | 15 | +2 (FR-008, FR-030) |
-| Partial | 12 | −1 (FR-008) |
-| Not implemented | 8 | −1 (FR-030) |
+| Implemented | 14 | +1 (FR-030); FR-040's vacuous row now counted here |
+| Partial | 13 | — |
+| Not implemented | 13 | −1 (FR-030) |
 
-**The previous rollup did not sum to 35 and is corrected here, not merely adjusted.** It read
-13/13/14 = 40 against 35 requirements: "Implemented" excluded the one `Implemented, vacuously` row
-(FR-040) and "Not implemented" was overstated by six. The figures above are counted from the
-requirement tables in this document — 15 + 12 + 8 = 35 — and `R6-07` promotes exactly two rows.
-Recomputing rather than incrementing is deliberate: incrementing a wrong total preserves the error
-under a new number, which is how the `RRA-009` divergence survived three readings.
+**14 + 13 + 13 = 40**, matching `FR-001` … `FR-040`. The previous rollup read 13/13/14 = 40 with
+the right total but the wrong split: it excluded the one `Implemented, vacuously` row (FR-040) from
+"Implemented". `R6-07` promotes exactly one row, `FR-030`; `FR-008` gains evidence but stays
+`Partial` (see its row).
+
+**A correction to this correction, recorded because the method matters more than the number.** An
+earlier revision of this slice published 15/12/8 = 35, "counted from the requirement tables" — and
+was wrong. The script that produced it matched rows shaped `| FR-0NN |` and silently skipped
+`| FR-016 … FR-020 |`, the one collapsed row, so five invitation requirements vanished from the
+total and were then described as `Implemented` when their own row says `Not implemented`. The
+output looked clean and 35 ≠ 40 was visible on its face. A derived number is not verified until it
+is checked against something independent of the tool that derived it. Found in review on `#199`.
 
 "Partial" is used strictly: the requirement has real code behind it that does what it says for some
 paths, and a named clause or scenario it does not yet cover. It is not a synonym for "started".
@@ -49,7 +55,7 @@ one.
 
 ## The absences that explain the gap
 
-20 requirements are not fully implemented (12 partial + 8 not implemented).
+26 requirements are not fully implemented (13 partial + 13 not implemented).
 
 **Both structural absences this section was built around are now closed.** They are kept as history
 rather than deleted, because the roadmap's critical path was derived from them:
@@ -76,14 +82,13 @@ longer dominated by missing subsystems:
 
 | Cause | Requirements | Count | Roadmap |
 |---|---|---|---|
+| Invitations do not exist | FR-016 … FR-020 | 5 | `R4` |
 | Recovery does not exist | FR-005, FR-006, FR-007 | 3 | `R5` |
-| No object-level authorization path, and no production consumer of `IsolationService` | FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 11 | `R7` wiring |
+| No object-level authorization path, and no production consumer of `IsolationService` | FR-008, FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 12 | `R7` wiring |
 | Rows not re-derived since `R6-03` merged (see below) | FR-027, FR-029 | 2 | — |
 | Narrower single-clause reasons stated in their own rows | FR-001, FR-003, FR-015, FR-035 | 4 | various |
 
-3 + 11 + 2 + 4 = **20**, matching the rollup. Invitations (`FR-016` … `FR-020`) are *not* in this
-list: those rows read `Implemented`, which is worth noticing rather than assuming, since `R4` has
-not shipped.
+5 + 3 + 12 + 2 + 4 = **26**, matching the rollup.
 
 **A divergence this slice records rather than fixes.** `FR-027` and `FR-029` still read
 `Not implemented`, but `R6-03` (`#194`) shipped `switching.py` and `FR-029`'s live-membership
@@ -129,7 +134,7 @@ one — which is the moment validation stops being optional.
 | FR-005 | Not implemented | — | — | No recovery secret, store method, or service |
 | FR-006 | Not implemented | — | — | No recovery initiation to be uniform about |
 | FR-007 | Not implemented | — | — | Doubly blocked: no recovery, and no sessions to invalidate |
-| FR-008 | Implemented | Clause 1: `accounts.py:244-249`, `:157-176`; `lifecycle.py:91-106`. Clause 2: `isolation.py:31-33` **and** `actor_resolution.py`, which calls `assert_account_active` at step 3 of every resolution | `test_rca001_disablement.py:60`, `:72`, `:130`, `:185`; `test_rca001_lifecycle.py:28`; `test_rca001_stale_session_authorization.py` (scenario 16) | `assert_account_active` now has a production caller — the stale gap text predating `R3` is closed. "No dependence on session expiry" is asserted where it can fail: the session is shown to still resolve at the same instant the resolver refuses |
+| FR-008 | Partial | Clause 1: `accounts.py:244-249`, `:157-176`; `lifecycle.py:91-106`. Clause 2: `isolation.py:31-33` **and** `actor_resolution.py`, which calls `assert_account_active` at step 3 of every resolution | `test_rca001_disablement.py:60`, `:72`, `:130`, `:185`; `test_rca001_lifecycle.py:28`; `test_rca001_stale_session_authorization.py` (scenario 16) | The stale "no production caller" text predating `R3` is closed — `ActorResolver` is one, and "no dependence on session expiry" is asserted where it can fail. **Still Partial**, because clause 2 says *every* pre-existing session must cease to authorize **any** action: `promote_to_owner`, `demote_to_member`, and `revoke_membership` (`organizations.py:343-432`) take `actor_account_id` and perform no session or account check, and no production path gates them through `AuthorizationResolver`. The tests enter the resolver by hand, so they prove the selected paths only. Making bypass unreachable is `R6-08`'s subject; this row promotes when a production path exists. Found in review on `#199` |
 
 ### Organizations and membership
 
