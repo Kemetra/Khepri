@@ -103,7 +103,7 @@ one — which is the moment validation stops being optional.
 | FR-005 | Not implemented | — | — | No recovery secret, store method, or service |
 | FR-006 | Not implemented | — | — | No recovery initiation to be uniform about |
 | FR-007 | Not implemented | — | — | Doubly blocked: no recovery, and no sessions to invalidate |
-| FR-008 | Partial | Clause 1: `accounts.py:244-249`, `:157-176`; `lifecycle.py:91-106`. Clause 2: `isolation.py:31-33` | `test_rca001_disablement.py:60`, `:72`, `:130`, `:185`; `test_rca001_lifecycle.py:28` | Clause 2 is enforced at scope resolution only. `assert_account_active` (`lifecycle.py:132`) has no production caller and awaits `R3` |
+| FR-008 | Implemented | Clause 1: `accounts.py:244-249`, `:157-176`; `lifecycle.py:91-106`. Clause 2: `isolation.py:31-33` **and** `actor_resolution.py`, which calls `assert_account_active` at step 3 of every resolution | `test_rca001_disablement.py:60`, `:72`, `:130`, `:185`; `test_rca001_lifecycle.py:28`; `test_rca001_stale_session_authorization.py` (scenario 16) | `assert_account_active` now has a production caller — the stale gap text predating `R3` is closed. "No dependence on session expiry" is asserted where it can fail: the session is shown to still resolve at the same instant the resolver refuses |
 
 ### Organizations and membership
 
@@ -136,7 +136,7 @@ one — which is the moment validation stops being optional.
 | FR-027 | Not implemented | — | — | No session, so no active-organization state; `resolve_scope` takes the organization per call |
 | FR-028 | Partial | Clause 1: `accounts.py:278-304` never consults membership. Clause 2: `isolation.py:34-36` | Clause 2: `test_rca001_isolation.py:141` | Clause 1 holds incidentally and is unasserted; scenario 18 has no test |
 | FR-029 | Not implemented | — | — | No switch operation and no active-org state |
-| FR-030 | Not implemented | — | — | Blocked by sessions alone now (`R3`). `R2` supplied the membership-change operations whose effect this requires observing, and `isolation.py` reads membership live per call — the right shape for "takes effect for decisions made after the change". Scenario 20 becomes testable once a session exists |
+| FR-030 | Implemented | `authorization_resolution.py:_context_for` reads the membership per call; `AuthorizationContext` carries no `resolved_at` that would invite reuse | `test_rca001_authorization_resolution.py` (`TestOneResolverHeldAcrossAChange`); `test_rca001_stale_session_authorization.py` (scenario 20) | Scenario 20 **now tested**. Both clauses asserted: the change takes effect with no clock movement between the two resolutions, and the session is separately asserted to still resolve afterwards — "without requiring the affected session to end" is invisible at the refused call |
 
 ### Isolation and the RRA boundary
 
@@ -180,8 +180,8 @@ current membership"). It was listed as untested here; found in review on `#197`.
 **Scenario 18 is tested. Scenario 19 is partial.** Scenario 19 requires a stale or invalid session
 to be denied for *every* protected action, and `TestScenarioNineteen` exercises only the resolver
 methods: the six §3.2 account-scoped actions are uncovered (carried gap 1), as is the isolation
-cell above. Scenarios 4, 6, 7, 8, 9, 14, 15, and 20 remain untested here; 14 and 15 are `R6-06`'s
-and 20 is `R6-07`'s.
+cell above. Scenarios **4, 6, 7, 8, and 9** remain untested; 14 and 15 are `R6-06`'s, and 16 and
+20 are `R6-07`'s below.
 
 ### Carried gaps from `R6-05`
 
@@ -285,6 +285,22 @@ scanner broken into returning `[]` would pass every assertion above it.
    been possible. A green run must not be read as "every handler is gated"; there are no handlers.
    `test_the_resolver_has_no_production_consumer_yet` asserts this explicitly so the caveat cannot
    be lost, and instructs its own replacement when the first consumer arrives.
+
+**`R6-07` supplies scenarios 16 and 20**, in `tests/test_rca001_stale_session_authorization.py`.
+
+
+### A note on what `R6-07` adds beyond `R6-04`
+
+Demotion is the load-bearing case, because it is the only change of the three where the actor keeps
+*some* authority — revocation and disablement are total, so "lost something" and "lost everything"
+are indistinguishable for them. The new claim is the **consequence** of a demotion: the demoted
+actor's member-permitted actions still work and resolve the *same* isolation key. Verified by
+mutating `demote_to_member` into `revoke_membership`; `R6-04` catches that with one test, `R6-07`
+with three.
+
+One mutant to not repeat: caching the role on the `Session` object appears to introduce `FR-030`
+staleness and does not, because `Session` is `slots=True` and the write silently fails. A mutant
+that genuinely caches must hold state on the resolver; that one is killed by three tests here.
 
 ---
 
