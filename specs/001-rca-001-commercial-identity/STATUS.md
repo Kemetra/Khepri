@@ -2,13 +2,22 @@
 
 **Task:** `R0-03` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 
-**Baseline:** `main` @ `95760a4`, 2026-08-14. `uv run khepri-gov validate` passes; `uv run pytest`
-reports 1883 passed, 47 skipped. Migration head `20260814_0015` (single head).
+**Baseline:** `main` @ `00e0f47`, 2026-08-17. `uv run khepri-gov validate` passes; `uv run pytest`
+reports 2154 passed, 45 skipped. Migration head `20260815_0016` (single head).
 
-**Updated for `R2-10`.** The `R2` membership slice (`#150`) is merged: `R2-01` … `R2-09` landed as
-`#165` … `#178`. The rows below were last accurate at `ebfbe77`, before that slice; four membership
-requirements changed status and are re-derived from the code as it stands, not from the roadmap's
-claims about it.
+**Updated through `R7-01`.** This pass reconciles two independent derivations: the `R6-03`-era
+status work proposed in `#196`, and the row edits the `R6-05` … `R6-08` evidence slices made in
+`#197` … `#200`. `#196` was cut before those four merged, so its rows are re-derived here against
+the current tree rather than replayed.
+
+Four rows changed status, each verified against the code and not taken from either document:
+
+| FR | Was | Now | Why |
+|---|---|---|---|
+| `FR-003` | Partial | Partial | Status unchanged; its gap said "No session exists" after `R3` shipped them. Clause 2 is now *asserted* rather than structural |
+| `FR-026` | Not implemented | **Partial** | The checkpoint exists and is correct in isolation. Its gap previously said `R6-08` would close it; `R6-08` is merged and **asserts the absence** instead |
+| `FR-027` | Not implemented | **Implemented** | One nullable `active_organization_id` makes "at most one" structural rather than validated |
+| `FR-029` | Not implemented | **Implemented** | `switching.py:61` — the live membership lookup *is* the authorization; `R6-06` adds the dual-member case that catches accumulation |
 
 **This file records status only.** It does not restate, interpret, or amend any requirement.
 `governance/specifications/RCA-001.md` is the only authoritative source of what RCA-001 requires,
@@ -27,11 +36,11 @@ merged code. See `SUPERSEDED.md`.
 
 | Status | Count | Change since `R2-10` |
 |---|---|---|
-| Implemented | 14 | +1 (FR-030); FR-040's vacuous row now counted here |
-| Partial | 13 | — |
-| Not implemented | 13 | −1 (FR-030) |
+| Implemented | 16 | +3 (FR-027, FR-029, FR-030) |
+| Partial | 14 | +1 net (FR-026 in, FR-027/FR-029 out) |
+| Not implemented | 10 | −3 |
 
-**14 + 13 + 13 = 40**, matching `FR-001` … `FR-040`. The previous rollup read 13/13/14 = 40 with
+**16 + 14 + 10 = 40**, matching `FR-001` … `FR-040`. The previous rollup read 13/13/14 = 40 with
 the right total but the wrong split: it excluded the one `Implemented, vacuously` row (FR-040) from
 "Implemented". `R6-07` promotes exactly one row, `FR-030`; `FR-008` gains evidence but stays
 `Partial` (see its row).
@@ -55,7 +64,7 @@ one.
 
 ## The absences that explain the gap
 
-26 requirements are not fully implemented (13 partial + 13 not implemented).
+24 requirements are not fully implemented (14 partial + 10 not implemented).
 
 **Both structural absences this section was built around are now closed.** They are kept as history
 rather than deleted, because the roadmap's critical path was derived from them:
@@ -84,19 +93,27 @@ longer dominated by missing subsystems:
 |---|---|---|---|
 | Invitations do not exist | FR-016 … FR-020 | 5 | `R4` |
 | Recovery does not exist | FR-005, FR-006, FR-007 | 3 | `R5` |
-| No object-level authorization path, and no production consumer of `IsolationService` | FR-008, FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 12 | `R7` wiring |
-| Rows not re-derived since `R6-03` merged (see below) | FR-027, FR-029 | 2 | — |
+| **No production path routes through the canonical checkpoint** | FR-008, FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 12 | `R7-05` |
 | Narrower single-clause reasons stated in their own rows | FR-001, FR-003, FR-015, FR-035 | 4 | various |
 
-5 + 3 + 12 + 2 + 4 = **26**, matching the rollup.
+5 + 3 + 12 + 4 = **24**, matching the rollup. The set was checked against the requirement tables
+directly, not assembled by hand: every row above appears in the tables as `Partial` or
+`Not implemented`, and every such row appears above.
 
-**A divergence this slice records rather than fixes.** `FR-027` and `FR-029` still read
-`Not implemented`, but `R6-03` (`#194`) shipped `switching.py` and `FR-029`'s live-membership
-clause is asserted in `test_rca001_organization_switching.py`. That is the same staleness `R6-07`
-corrects for `FR-008` and `FR-030` — re-deriving two more rows belongs to whoever owns `R6-03`'s
-status pass, not to a test slice, so it is flagged here instead of silently re-statused. Every
-count above is derived from the requirement tables below; if they disagree, the tables win and this
-section is the defect.
+**One cause now dominates.** With all three structural absences closed, twelve of the twenty-four
+trace to a single fact: `AuthorizationResolver` exists, is correct in isolation, and **nothing in
+`src/` calls it** — `R6-08`'s `test_the_resolver_has_no_production_consumer_yet` asserts exactly
+that absence, and its docstring says the tripwire "currently guards an empty room". `IsolationService`
+is likewise instantiated nowhere outside tests. `R7-05` routes the first endpoint through the
+resolver, and `KHEPRI-DEC-019` (`00e0f47`) unblocked that path. Those twelve rows move together or
+not at all, which is why `R7` is the critical path rather than `R4` or `R5`.
+
+**The `FR-027`/`FR-029` divergence flagged by `R6-07` is closed here.** Both read
+`Not implemented` while `R6-03` (`#194`) had shipped `switching.py`; both are now `Implemented`
+against the code. `FR-003`'s gap said "No session exists" after `R3` shipped sessions, and
+`FR-026`'s said `R6-08` would close it when `R6-08` in fact asserts the absence rather than
+removing it. Every count above is derived from the requirement tables below; if they disagree, the
+tables win and this section is the defect.
 
 That the two structural absences mapped one-to-one onto `R3` and `R6`, and the capability absences
 onto `R4` and `R5`, was independent evidence for the roadmap's critical path — arrived at from the
@@ -129,7 +146,7 @@ one — which is the moment validation stops being optional.
 |---|---|---|---|---|
 | FR-001 | Partial | `accounts.py:114-138`, `:272-276`; `persistence.py:177-196` | `test_rca001_accounts.py:21`; `test_rca001_persistence.py:80`, `:93` | Clause 1 done. Clause 2 (creation grants no organization access) holds structurally — `create_account` writes no membership row — but is never asserted |
 | FR-002 | Implemented | `credentials.py:94-109`, `:53-69`; `persistence.py:117-129`; sealed at `records.py:164-237` | `test_rca001_accounts.py:28`, `:40`, `:50`; `test_rca001_persistence.py:120`, `:334` | — |
-| FR-003 | Partial | `accounts.py:278-304` resolves exactly one `Account` | `test_rca001_accounts.py:58` | No session exists, so "the resulting session" and "that session's identity record" have no artifact. Clause 2 unverifiable |
+| FR-003 | Partial | `accounts.py:278-304` resolves exactly one `Account`; `sessions.py:89-101` carries one `account_id`; `actor_resolution.py:52-60` names the account row authoritative | `test_rca001_accounts.py:58`; `test_rca001_session_security_evidence.py:135`, `:142` | Clause 2 is now **asserted**, not merely structural: the identity record's columns are enumerated and no column names retail content. Clause 1's "resulting session" has no production path — nothing joins `AccountService.authenticate` to `SessionService.create`, and every caller of `create` is a test |
 | FR-004 | Implemented | `accounts.py:230-249`, `:252-265`, `:298-304`; `DUMMY_SALT` at `credentials.py:31` | `test_rca001_accounts.py:64`, `:126`, `:148`, `:193`; `test_rca001_disablement.py:95` | — |
 | FR-005 | Not implemented | — | — | No recovery secret, store method, or service |
 | FR-006 | Not implemented | — | — | No recovery initiation to be uniform about |
@@ -163,10 +180,10 @@ one — which is the moment validation stops being optional.
 | FR-023 | Partial | `isolation.py:34-36` — the decision is a membership lookup, not the supplied identifier | `test_rca001_isolation.py:141`; `test_rca001_cross_organization.py` (scenario 14) | Verified at organization-scope granularity only; no object-level authorization path exists. **`R6-06`'s carried gap** — the critical rule's object half ("object identifiers never grant authority") stays untestable until an object-level path is built |
 | FR-024 | Partial | `isolation.py:34-36` | `test_rca001_isolation.py:141`, `:149`; `test_rca001_cross_organization.py` (scenarios 14, 15) | Scenario 15 is **partial**, not covered: the mutation runs behind the gate but the test enters the gate by hand, since no production path does. Cannot catch wiring that omits the gate. Still organization-granular |
 | FR-025 | Partial | `isolation.py:32`, `:36`, `:39` — all three failure modes raise one `ScopeAccessDenied` | `test_rca001_isolation.py:149` — asserts one message across non-member, nonexistent org, and both, and that neither the org name nor a probe string appears | Not proven at object granularity |
-| FR-026 | Not implemented | — | — | No canonical checkpoint. `isolation.py:14` is one chokepoint for one capability, which is not a checkpoint every protected action passes through |
-| FR-027 | Not implemented | — | — | No session, so no active-organization state; `resolve_scope` takes the organization per call |
+| FR-026 | Partial | `authorization_resolution.py:60-131` — the resolver exists and composes `ActorResolver`, so steps 2, 3 and 4 of `R3-01` §4 run on one path | `test_rca001_authorization_resolution.py` (29 tests), notably `TestStepsTwoAndThreeStillRun` | The checkpoint now exists and is correct in isolation; **nothing routes through it**. A repo-wide search finds no use of `AuthorizationResolver` outside its own module, so `IsolationService.resolve_scope(account_id, organization_id)` remains publicly reachable with a caller-named organization. A checkpoint no production path passes through authorizes nothing. `R6-08` is **merged and does not close this**: `test_the_resolver_has_no_production_consumer_yet` asserts the absence rather than removing it, and its own docstring says the tripwire "currently guards an empty room". `R7-05` is what closes it, by routing an endpoint through the resolver — `KHEPRI-DEC-019` unblocked that path |
+| FR-027 | Implemented | `sessions.py:92-95` — one nullable `active_organization_id`; column `persistence.py:191` | `test_rca001_sessions.py`; `test_rca001_session_service.py:80`; `test_rca001_organization_switching.py:85`; `test_rca001_session_security_evidence.py:142`, `:158` | — Satisfied structurally rather than by validation: one nullable column cannot hold two organizations. `test_switching_between_two_organizations_replaces_rather_than_accumulates` asserts the switch replaces, `test_a_new_session_starts_with_no_active_organization` asserts the at-most, and `test_the_columns_are_exactly_the_six_identity_carries` fixes the shape against a second column appearing |
 | FR-028 | Partial | Clause 1: `accounts.py:278-304` never consults membership. Clause 2: `isolation.py:34-36` | Clause 2: `test_rca001_isolation.py:141` | Clause 1 holds incidentally and is unasserted; scenario 18 has no test |
-| FR-029 | Not implemented | — | — | No switch operation and no active-org state |
+| FR-029 | Implemented | `switching.py:48-63` — the membership lookup *is* the authorization; persisted through `session_service.py:113-128`; consumed by `authorization_resolution.py:145-163` | `test_rca001_organization_switching.py` (16 tests): `:64`, `:70`, `:85`, `:111`, `:119`, `:138`, `:225`; `test_rca001_authorization_resolution.py` `test_a_reused_resolver_observes_a_switch` | — Clause 1 closed exactly: a non-member and an unknown organization are refused identically, membership is read from the store per switch, and a revoked membership cannot be switched into. Clause 2 closed by `R6-04`: `active_organization_id` is read by `_context_for` on every resolution, and a switch through a *held* resolver changes the next decision, which is what "every subsequent authorization decision" names. `R6-06` adds the dual-member case — an actor in both A and B, active in A, is refused B — which is the only arrangement that catches an implementation accumulating access instead of replacing it |
 | FR-030 | Implemented | `authorization_resolution.py:_context_for` reads the membership per call; `AuthorizationContext` carries no `resolved_at` that would invite reuse | `test_rca001_authorization_resolution.py` (`TestOneResolverHeldAcrossAChange`); `test_rca001_stale_session_authorization.py` (scenario 20) | Scenario 20 **now tested**. Both clauses asserted: the change takes effect with no clock movement between the two resolutions, and the session is separately asserted to still resolve afterwards — "without requiring the affected session to end" is invisible at the refused call |
 
 ### Isolation and the RRA boundary
