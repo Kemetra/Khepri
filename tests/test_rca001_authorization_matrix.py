@@ -18,7 +18,14 @@ So every cell goes through `_attempt`, which passes the gate and *then* calls th
 an authorized caller must. Two distinct defects now die here: a handler that skips the gate reaches
 the verb and the `pytest.raises` fails, and a gate that raises *after* mutating is caught by the
 state assertion outside the block. Verified by deleting the gate call from `_attempt` and watching
-seven cells fail.
+all nine `DENY` cells fail.
+
+**The three owner-only rows are one parametrized table, not three near-identical classes.** They
+share one shape -- an owner-only mutation of one membership -- so `OWNER_ONLY_ROWS` ×
+`DENIED_COLUMNS` expresses the nine cells as data. That is what `CodeScene` flagged as duplication
+on `#197`, and deduplicating it also made the file read like the specification's own table, where a
+missing row is a missing line rather than an absent method nobody counts. The `PERMIT` cells stay
+separate, because "the action proceeded" means a different end state for each of the three.
 
 **The gated path is what is under test, and that is a deliberate boundary.** The three owner-only
 verbs take `actor_account_id` for attribution and check no authority of their own, so calling
@@ -167,166 +174,133 @@ def _attempt(stack: Stack, verb: str, *, token: str, target: str, account: str) 
     )
 
 
-class TestPromoteToOwner:
-    """`R6-01` §3.1 row 1: owner PERMIT, everyone else DENY."""
+#: The three owner-only rows of `R6-01` §3.1, as data rather than as three near-identical classes.
+#:
+#: Each entry names the verb, whose membership the cell targets, and what that membership must
+#: still read afterwards. Expressing the rows this way is not only deduplication -- it makes the
+#: table in the test file look like the table in the specification, so a missing row is a missing
+#: line rather than an absent method nobody counts.
+OWNER_ONLY_ROWS = (
+    ("promote_to_owner", "member", MEMBER_ROLE),
+    ("demote_to_member", "owner", OWNER_ROLE),
+    ("revoke_membership", "member", MEMBER_ROLE),
+)
+
+#: The three denied columns, with the refusal each must raise.
+#:
+#: `unauthenticated` fails at step 2 with `AuthenticationFailed` rather than `ScopeAccessDenied`,
+#: and the difference is the point: no actor is established, so no row is reached at all
+#: (`R6-01` §3.3, scenario 19). Collapsing the two into one exception type would erase that.
+DENIED_COLUMNS = (
+    ("member", ScopeAccessDenied),
+    ("non_member", ScopeAccessDenied),
+    ("unauthenticated", AuthenticationFailed),
+)
+
+
+def _token_for(stack: Stack, column: str) -> str:
+    return {
+        "member": stack.member_token,
+        "non_member": stack.outsider_token,
+        "unauthenticated": INVALID_TOKEN,
+    }[column]
+
+
+class TestTheOwnerOnlyRows:
+    """`R6-01` §3.1 rows 1-3: owner PERMIT, member/non-member/unauthenticated DENY.
+
+    Promotion, demotion, and revocation share one shape -- an owner-only mutation of one
+    membership -- so they are one parametrized table rather than three classes differing only in a
+    verb name. The `PERMIT` cells stay separate below, because each proves a different end state.
+
+    **The member column of revocation is not "a member leaving".** Matrix note 1: no operation
+    expresses self-revocation, so that is a distinct action with its own row if it is ever added,
+    not a widening of this cell.
+    """
+
+    @pytest.mark.parametrize(("verb", "subject", "expected"), OWNER_ONLY_ROWS)
+    @pytest.mark.parametrize(("column", "refusal"), DENIED_COLUMNS)
+    def test_the_action_is_refused_and_no_role_changes(
+        self,
+        stack: Stack,
+        verb: str,
+        subject: str,
+        expected: str,
+        column: str,
+        refusal: type[Exception],
+    ) -> None:
+        """Nine cells: three owner-only actions against three denied actor kinds.
+
+        The assertion after the block is the load-bearing one. `_attempt` puts the verb on the
+        code path, so a handler that skipped the gate would reach the write and fail the
+        `pytest.raises`; a gate that refused only *after* mutating is caught here instead.
+        """
+        target_account = getattr(stack, subject)
+        token = _token_for(stack, column)
+        if verb == "demote_to_member":
+            # Demotion needs a second owner (`FR-013` protects the final one), and promoting the
+            # fixture's member to provide it would hand the `member` column an owner's token --
+            # the cell would then fail for the wrong reason. A fresh plain member keeps the
+            # column honest.
+            _promote(stack, stack.member)
+            if column == "member":
+                token = _plain_member_token(stack)
+
+        with pytest.raises(refusal):
+            _attempt(
+                stack,
+                verb,
+                token=token,
+                target=stack.organization_id,
+                account=target_account,
+            )
+
+        assert _role_of(stack.factory, stack.organization_id, target_account) == expected
+
+
+class TestTheOwnerPermitCells:
+    """`R6-01` §3.1 rows 1-3, owner column: each proves a different end state.
+
+    Kept as three tests rather than folded into the table above, because "the action proceeded"
+    means something different for each -- a raised role, a lowered one, and an absent membership.
+    A parametrized expected-value would hide that behind a lookup.
+    """
 
     def test_an_owner_promotes_a_member(self, stack: Stack) -> None:
-        context = _resolver(stack.factory).require_owner(
-            stack.owner_token, organization_id=stack.organization_id, now=NOW
-        )
-        stack.organizations.promote_to_owner(
-            stack.organization_id,
-            stack.member,
-            actor_account_id=context.account_id,
-            now=NOW,
+        _attempt(
+            stack,
+            "promote_to_owner",
+            token=stack.owner_token,
+            target=stack.organization_id,
+            account=stack.member,
         )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == OWNER_ROLE
 
-    def test_a_member_is_refused_and_no_role_changes(self, stack: Stack) -> None:
-        with pytest.raises(ScopeAccessDenied):
-            _attempt(
-                stack,
-                "promote_to_owner",
-                token=stack.member_token,
-                target=stack.organization_id,
-                account=stack.member,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
-
-    def test_a_non_member_is_refused_and_no_role_changes(self, stack: Stack) -> None:
-        with pytest.raises(ScopeAccessDenied):
-            _attempt(
-                stack,
-                "promote_to_owner",
-                token=stack.outsider_token,
-                target=stack.organization_id,
-                account=stack.member,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
-
-    def test_an_unauthenticated_caller_is_refused_and_no_role_changes(self, stack: Stack) -> None:
-        with pytest.raises(AuthenticationFailed):
-            _attempt(
-                stack,
-                "promote_to_owner",
-                token=INVALID_TOKEN,
-                target=stack.organization_id,
-                account=stack.member,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
-
-
-class TestDemoteToMember:
-    """`R6-01` §3.1 row 2: owner PERMIT, everyone else DENY.
-
-    The organization is given a second owner first, because `FR-013` refuses to demote the final
-    owner regardless of authority. Without it the owner cell would fail for a reason that is not
-    authorization at all, and the matrix would be asserting the wrong invariant.
-    """
-
     def test_an_owner_demotes_another_owner(self, stack: Stack) -> None:
+        """A second owner first: `FR-013` refuses to demote the final one regardless of authority.
+
+        Without it this cell would fail on an invariant that is not authorization, and the matrix
+        would be asserting the wrong thing.
+        """
         _promote(stack, stack.member)
-        context = _resolver(stack.factory).require_owner(
-            stack.owner_token, organization_id=stack.organization_id, now=NOW
-        )
-        stack.organizations.demote_to_member(
-            stack.organization_id,
-            stack.member,
-            actor_account_id=context.account_id,
-            now=NOW,
+        _attempt(
+            stack,
+            "demote_to_member",
+            token=stack.owner_token,
+            target=stack.organization_id,
+            account=stack.member,
         )
         assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
-
-    def test_a_member_is_refused_and_no_role_changes(self, stack: Stack) -> None:
-        _promote(stack, stack.member)
-        other = _member_token_after_demotion_attempt(stack)
-        with pytest.raises(ScopeAccessDenied):
-            _attempt(
-                stack,
-                "demote_to_member",
-                token=other,
-                target=stack.organization_id,
-                account=stack.owner,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.owner) == OWNER_ROLE
-
-    def test_a_non_member_is_refused_and_no_role_changes(self, stack: Stack) -> None:
-        with pytest.raises(ScopeAccessDenied):
-            _attempt(
-                stack,
-                "demote_to_member",
-                token=stack.outsider_token,
-                target=stack.organization_id,
-                account=stack.owner,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.owner) == OWNER_ROLE
-
-    def test_an_unauthenticated_caller_is_refused_and_no_role_changes(self, stack: Stack) -> None:
-        with pytest.raises(AuthenticationFailed):
-            _attempt(
-                stack,
-                "demote_to_member",
-                token=INVALID_TOKEN,
-                target=stack.organization_id,
-                account=stack.owner,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.owner) == OWNER_ROLE
-
-
-class TestRevokeMembership:
-    """`R6-01` §3.1 row 3: owner PERMIT, everyone else DENY.
-
-    Note 1 of the matrix is load-bearing here: a member revoking *their own* membership is not
-    this cell. No operation expresses leaving an organization, so the member column stays DENY and
-    a test for self-revocation would be testing an action that does not exist.
-    """
 
     def test_an_owner_revokes_a_member(self, stack: Stack) -> None:
-        context = _resolver(stack.factory).require_owner(
-            stack.owner_token, organization_id=stack.organization_id, now=NOW
-        )
-        stack.organizations.revoke_membership(
-            stack.organization_id,
-            stack.member,
-            actor_account_id=context.account_id,
-            now=NOW,
+        _attempt(
+            stack,
+            "revoke_membership",
+            token=stack.owner_token,
+            target=stack.organization_id,
+            account=stack.member,
         )
         assert _role_of(stack.factory, stack.organization_id, stack.member) is None
-
-    def test_a_member_is_refused_and_the_membership_survives(self, stack: Stack) -> None:
-        with pytest.raises(ScopeAccessDenied):
-            _attempt(
-                stack,
-                "revoke_membership",
-                token=stack.member_token,
-                target=stack.organization_id,
-                account=stack.member,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
-
-    def test_a_non_member_is_refused_and_the_membership_survives(self, stack: Stack) -> None:
-        with pytest.raises(ScopeAccessDenied):
-            _attempt(
-                stack,
-                "revoke_membership",
-                token=stack.outsider_token,
-                target=stack.organization_id,
-                account=stack.member,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
-
-    def test_an_unauthenticated_caller_is_refused_and_the_membership_survives(
-        self, stack: Stack
-    ) -> None:
-        with pytest.raises(AuthenticationFailed):
-            _attempt(
-                stack,
-                "revoke_membership",
-                token=INVALID_TOKEN,
-                target=stack.organization_id,
-                account=stack.member,
-            )
-        assert _role_of(stack.factory, stack.organization_id, stack.member) == MEMBER_ROLE
 
 
 class TestResolveAnIsolationScope:
@@ -516,11 +490,12 @@ def _promote(stack: Stack, account_id: str) -> None:
     )
 
 
-def _member_token_after_demotion_attempt(stack: Stack) -> str:
+def _plain_member_token(stack: Stack) -> str:
     """A token for an account that is a plain member of the organization.
 
-    The member was promoted by the demotion fixture, so this adds a fresh member rather than
-    reusing `stack.member_token` -- whose holder is now an owner and would pass the gate.
+    Used only by the demotion row, whose setup promotes `stack.member` to supply the second owner
+    `FR-013` requires. That promotion would otherwise hand the `member` column an owner's token,
+    and the cell would pass the gate and fail for a reason that is not the one under test.
     """
     accounts = AccountService(SqlAccountStore(stack.factory))
     account_id = accounts.create_account("plain@example.test", CREDENTIAL).account_id
