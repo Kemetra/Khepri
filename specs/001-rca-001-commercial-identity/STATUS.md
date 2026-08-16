@@ -160,6 +160,59 @@ one — which is the moment validation stops being optional.
 The specification's Verification section requires a test per scenario and an authorization matrix
 over `{owner, member, non-member, unauthenticated}` × every protected action.
 
+**`R6-05` supplies a *partial* matrix for `R6-01` §3.1** — **19 of 20 cells**, in
+`tests/test_rca001_authorization_matrix.py`. Five organization-scoped actions × four actor kinds,
+each `DENY` cell driving the verb through the gate and asserting the membership is unchanged rather
+than only that an exception was raised.
+
+**The missing cell is scope resolution × `unauthenticated`**, for the reason in carried gap 0
+below: `resolve_scope` authenticates nobody, so the cell is not expressible at that surface. The
+matrix is **not** complete and `RCA-001`'s Verification requirement is **not** satisfied by this
+slice — recorded explicitly because a "matrix supplied" line is exactly what a later reader would
+cite to call verification done. Found in review on `#197`.
+
+**Scenario 13 is tested.** `TestSwitchActiveOrganization` covers the permitted owner/member
+switches and the denied non-member/unauthenticated ones, and
+`test_rca001_organization_switching.py:70-107` verifies persistence and replacement across two
+organizations — together that is scenario 13's governed outcome ("switch succeeds only into a
+current membership"). It was listed as untested here; found in review on `#197`.
+
+**Scenario 18 is tested. Scenario 19 is partial.** Scenario 19 requires a stale or invalid session
+to be denied for *every* protected action, and `TestScenarioNineteen` exercises only the resolver
+methods: the six §3.2 account-scoped actions are uncovered (carried gap 1), as is the isolation
+cell above. Scenarios 4, 6, 7, 8, 9, 14, 15, and 20 remain untested here; 14 and 15 are `R6-06`'s
+and 20 is `R6-07`'s.
+
+### Carried gaps from `R6-05`
+
+0. **The matrix is exhaustive by construction** (`tasks.md:191`), not by convention:
+   `test_every_protected_action_in_the_design_has_a_matrix_class` parses `R6-01` §3.1's own table
+   and fails when an action there has no test class. `R4` and `R5` extend that table by design, so
+   this is what makes those slices notice they owe the matrix a row. Verified by adding an
+   invitation row to the design note and watching it fail.
+
+1. **Scope resolution's `unauthenticated` cell is uncovered.** `IsolationService.resolve_scope`
+   takes an `account_id` and no token, so it authenticates nobody — a caller who merely knows a
+   member's identifier resolves that member's scope, which is the identifier doing a credential's
+   work that `R6-01` §5's critical rule forbids. Passing an unknown identifier exercises the
+   nonexistent-account branch, **not** the unauthenticated column, and the first version of this
+   slice named such a test `test_an_unauthenticated_caller_is_refused` — the name asserted a cell
+   the test never reached. Found in review on `#197`. The exposure is latent (`FR-031`:
+   `IsolationService` has no production caller) and the authenticated boundary is `R7`'s;
+   `test_the_unauthenticated_cell_is_unreachable_at_this_surface` asserts the signature so the gap
+   fails loudly the moment that boundary arrives.
+2. **`R6-01` §3.2 is not covered, and cannot be at this shape.** The six account-scoped actions turn
+   on self-versus-another-account, and `AuthorizationContext` carries the acting `account_id` with
+   no target. `authorization_resolution.py`'s docstring defers this to an `R6-02` change. Covering
+   §3.2 requires that change first; it is not a test-only slice.
+3. **The three owner-only verbs check no authority of their own.** `promote_to_owner`,
+   `demote_to_member`, and `revoke_membership` take `actor_account_id` for *attribution* only, so a
+   direct call from a member succeeds. `R6-04` placed the check in the gate rather than in the
+   verbs; the matrix therefore drives each action through `require_owner`, which is the authorized
+   route. **That the gate is the *only* route is unproven until `R6-08`** — this is precisely the
+   hole that slice exists to close, and `R6-04`'s docstring records four deliberate exclusions
+   without recording this one.
+
 **`R6-06` supplies scenarios 12 and 14, and takes 15 from untested to *partial***, in `tests/test_rca001_cross_organization.py`.
 Scenario 15's "no state change in **either** organization" is asserted on both sides: the target
 organization *and* the actor's own, since a gate that authorized against the active organization
@@ -183,9 +236,10 @@ authorization path exists to test. Building one is `R7`/`W1` work, not a test-on
 One note for whoever extends these tests: scenario 14's message-comparison holds *structurally*,
 because a nonexistent organization has no membership row and is refused by the same guard as a
 foreign one. A mutant that rewords that guard therefore leaves the comparison green without
-reintroducing the oracle. `test_no_organization_existence_check_precedes_the_membership_check`
-exists because of that — it pins the ordering, and dies against an existence pre-check even when
-the pre-check keeps the uniform message.
+reintroducing the oracle — correctly, since such a mutant does not reintroduce the enumeration
+oracle either. A test pinning the *call order* was written and removed (`#198`): its only unique
+kill-set was implementations that check existence first and still return one refusal shape, which
+this document's own type-plus-message definition calls compliant.
 
 ---
 
