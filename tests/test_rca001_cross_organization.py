@@ -99,6 +99,26 @@ def _role_of(factory: sessionmaker, organization_id: str, account_id: str) -> st
     return None if membership is None else membership.role
 
 
+def _attempt_across(
+    orgs: TwoOrganizations, verb: str, *, token: str, target: str, account: str
+) -> None:
+    """Pass the gate for `target`, then call the verb -- what an authorized caller does.
+
+    **The gate alone proves nothing about state.** `require_owner` is read-only, so a test that
+    called it and then asserted "no organization changed" would be asserting a fact about the
+    fixture, not about the code: the post-state would hold even if the verb wrote unconditionally.
+    Found in review on `#198`.
+
+    With the verb on the code path, scenario 15's claim becomes load-bearing in both directions --
+    a handler that skips the gate reaches the write and the `pytest.raises` fails, and a gate that
+    refuses only after mutating is caught by the state assertions outside the block.
+    """
+    context = _resolver(orgs.factory).require_owner(token, organization_id=target, now=NOW)
+    getattr(_organizations(orgs.factory), verb)(
+        target, account, actor_account_id=context.account_id, now=NOW
+    )
+
+
 class TwoOrganizations:
     """Organizations A and B, disjoint except where a test deliberately joins them.
 
@@ -283,6 +303,13 @@ class TestScenarioFifteenCrossOrganizationMutation:
     protected action existed to attempt until `R6`. The "either" is the load-bearing word: a
     refusal that left the actor's *own* organization altered would satisfy every assertion about
     the target and still be the defect.
+
+    **Each cell attempts the mutation, rather than only the gate in front of it.** The first
+    version of this class called `require_owner` and asserted no organization changed -- but
+    `require_owner` is read-only, so that assertion was guaranteed by the fixture and would have
+    held even against a verb that wrote unconditionally. Found in review on `#198`; `_attempt_across`
+    now puts the write on the code path, verified by deleting its gate call and watching all three
+    cells fail.
     """
 
     def test_promoting_into_another_organization_changes_neither(
@@ -292,8 +319,8 @@ class TestScenarioFifteenCrossOrganizationMutation:
         _grant(orgs.factory, orgs.b, carol, MEMBER_ROLE)
 
         with pytest.raises(ScopeAccessDenied):
-            _resolver(orgs.factory).require_owner(
-                orgs.alice_token, organization_id=orgs.b, now=NOW
+            _attempt_across(
+                orgs, "promote_to_owner", token=orgs.alice_token, target=orgs.b, account=carol
             )
 
         assert _role_of(orgs.factory, orgs.b, carol) == MEMBER_ROLE
@@ -304,8 +331,12 @@ class TestScenarioFifteenCrossOrganizationMutation:
         self, orgs: TwoOrganizations
     ) -> None:
         with pytest.raises(ScopeAccessDenied):
-            _resolver(orgs.factory).require_owner(
-                orgs.alice_token, organization_id=orgs.b, now=NOW
+            _attempt_across(
+                orgs,
+                "revoke_membership",
+                token=orgs.alice_token,
+                target=orgs.b,
+                account=orgs.bob,
             )
 
         assert _role_of(orgs.factory, orgs.b, orgs.bob) == OWNER_ROLE
@@ -324,8 +355,8 @@ class TestScenarioFifteenCrossOrganizationMutation:
         _grant(orgs.factory, orgs.a, dave, MEMBER_ROLE)
 
         with pytest.raises(ScopeAccessDenied):
-            _resolver(orgs.factory).require_owner(
-                orgs.alice_token, organization_id=orgs.b, now=NOW
+            _attempt_across(
+                orgs, "revoke_membership", token=orgs.alice_token, target=orgs.b, account=orgs.bob
             )
 
         assert _role_of(orgs.factory, orgs.a, dave) == MEMBER_ROLE
