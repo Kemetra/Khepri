@@ -201,10 +201,6 @@ class Cell(NamedTuple):
     column: str
     refusal: type[Exception]
 
-    @property
-    def demotes(self) -> bool:
-        return self.verb == "demote_to_member"
-
 
 #: The nine denied cells of `R6-01` §3.1 rows 1-3, as one table.
 #:
