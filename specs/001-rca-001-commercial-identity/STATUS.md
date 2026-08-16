@@ -162,7 +162,44 @@ over `{owner, member, non-member, unauthenticated}` × every protected action. *
 yet.** No RCA-001 test names a scenario number, and there is no matrix test.
 
 Scenarios with no corresponding test: **4, 6, 7, 8, 9, 13, 14, 15, 18, 19, 20** — the same set the
-three structural absences predict.
+three structural absences predict. (14, 15, 18, 19, and 20 are supplied by the sibling `R6-05`,
+`R6-06`, and `R6-07` slices.)
+
+---
+
+## `R6-08` — what the chokepoint evidence does and does not establish
+
+`tests/test_rca001_resolver_chokepoint.py`. The task title says "making bypassing the resolver
+unreachable"; **unreachable is not claimed and is not achievable**, and the file says so in the
+register `authorization.py` set — the boundary is *unmistakable*, never *unbypassable*.
+
+What is asserted, each verified by introducing the defect and watching the test fail:
+
+| Claim | Fires on |
+|---|---|
+| No module outside `organizations.py` calls the three owner-only verbs | a probe module calling `promote_to_owner` directly |
+| No module forges or mutates a sealed record (`dataclasses.replace`, `object.__new__`/`__setattr__`) | a probe calling `dataclasses.replace` on a context |
+| No module constructs an `AuthorizationContext` outside `create` | a probe spelling the class directly |
+| `AuthorizationResolver` still has no production consumer | a probe importing it |
+
+Each scanner is additionally self-tested against known-bad and known-good sources, following
+`test_rca001_boundary.py::test_rca_import_checker_flags_and_clears_expected_cases`. Without that, a
+scanner broken into returning `[]` would pass every assertion above it.
+
+### Two gaps `R6-08` records rather than closes
+
+1. **The three owner-only verbs check no authority of their own.** They take `actor_account_id` for
+   *attribution* only, so a direct call from any caller succeeds. `R6-04` placed the check in the
+   gate, which is coherent — but `R6-04`'s docstring enumerates four things deliberately left out
+   of the resolver and does not mention this fifth one, so the decision `R6-01` §7 flagged
+   ("where that check lives") was made in code without being recorded in prose. Closing it means
+   giving the verbs a context parameter: an `R6-02` change, not a test-only slice.
+2. **The tripwire currently guards an empty room.** No production module consumes
+   `AuthorizationResolver`, because the HTTP surface that would is `R7`/`R8`. The inventory is
+   therefore *preventative* — it will catch the first bypass and has caught none because none has
+   been possible. A green run must not be read as "every handler is gated"; there are no handlers.
+   `test_the_resolver_has_no_production_consumer_yet` asserts this explicitly so the caveat cannot
+   be lost, and instructs its own replacement when the first consumer arrives.
 
 ---
 
