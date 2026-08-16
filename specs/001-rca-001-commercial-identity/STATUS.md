@@ -25,11 +25,24 @@ merged code. See `SUPERSEDED.md`.
 
 ## Rollup
 
-| Status | Count | Change since `ebfbe77` |
+| Status | Count | Change since `R2-10` |
 |---|---|---|
-| Implemented | 13 | +3 (FR-012, FR-013, FR-014) |
-| Partial | 13 | −2 |
-| Not implemented | 14 | −1 |
+| Implemented | 14 | +1 (FR-030); FR-040's vacuous row now counted here |
+| Partial | 13 | — |
+| Not implemented | 13 | −1 (FR-030) |
+
+**14 + 13 + 13 = 40**, matching `FR-001` … `FR-040`. The previous rollup read 13/13/14 = 40 with
+the right total but the wrong split: it excluded the one `Implemented, vacuously` row (FR-040) from
+"Implemented". `R6-07` promotes exactly one row, `FR-030`; `FR-008` gains evidence but stays
+`Partial` (see its row).
+
+**A correction to this correction, recorded because the method matters more than the number.** An
+earlier revision of this slice published 15/12/8 = 35, "counted from the requirement tables" — and
+was wrong. The script that produced it matched rows shaped `| FR-0NN |` and silently skipped
+`| FR-016 … FR-020 |`, the one collapsed row, so five invitation requirements vanished from the
+total and were then described as `Implemented` when their own row says `Not implemented`. The
+output looked clean and 35 ≠ 40 was visible on its face. A derived number is not verified until it
+is checked against something independent of the tool that derived it. Found in review on `#199`.
 
 "Partial" is used strictly: the requirement has real code behind it that does what it says for some
 paths, and a named clause or scenario it does not yet cover. It is not a synonym for "started".
@@ -42,34 +55,52 @@ one.
 
 ## The absences that explain the gap
 
-27 requirements are not fully implemented (13 partial + 14 not implemented). **15 of them** trace to
-exactly two missing pieces, each an existing roadmap program:
+26 requirements are not fully implemented (13 partial + 13 not implemented).
 
-| Absence | Verified by | Blocks | Count | Roadmap |
-|---|---|---|---|---|
-| No session concept | every `session` token in `src/khepri/rca/` is a docstring or SQLAlchemy's `sessionmaker`/`Session` | FR-003 clause 2, FR-007, FR-008 clause 2 generally, FR-022 session half, FR-027, FR-029, FR-030, FR-035 session clause | 8 | `R3` |
-| No authorization layer | no `authorization.py`; no protected-action abstraction | FR-021, FR-022 … FR-025 general halves, FR-026, FR-028 | 7 | `R6` |
+**Both structural absences this section was built around are now closed.** They are kept as history
+rather than deleted, because the roadmap's critical path was derived from them:
 
-FR-022 appears in both, so the union is **14**, not 15.
+| Absence | Status | Was blocking | Closed by |
+|---|---|---|---|
+| No session concept | **closed** | FR-003 clause 2, FR-007, FR-008 clause 2, FR-022 session half, FR-027, FR-029, FR-030, FR-035 session clause | `R3` — `sessions.py`, `session_service.py`, `actor_resolution.py` |
+| No authorization layer | **closed** | FR-021, FR-022 … FR-025 general halves, FR-026, FR-028 | `R6` — `authorization.py` (`#193`), `authorization_resolution.py` (`#195`) |
 
-**The third absence is now closed.** At `ebfbe77` this table had a row reading "No membership write
+The rows they blocked did not all become Implemented: several are `Partial` for reasons of their
+own now (no object-level authorization path, no production consumer of `IsolationService`), which
+is why closing two absences moved fewer rows than their counts suggest. FR-007 and FR-021 remain
+`Not implemented` because they need `R5` recovery and a protected-action *abstraction* respectively,
+neither of which `R3` or `R6` delivered.
+
+**A third absence closed earlier.** At `ebfbe77` this table had a row reading "No membership write
 operations — `OrganizationStore` exposes exactly one write, `create_organization`", blocking FR-012,
 FR-013's remove/downgrade clauses, FR-014's second clause, FR-020, and FR-035's membership clause.
 `R2` added promotion, demotion, and revocation, so four of those five are no longer blocked by it.
 FR-020 remains blocked, but by invitations rather than by revocation.
 
-Two capability absences account for another **6**: invitations do not exist (FR-016 … FR-020, `R4`)
-and recovery does not exist (FR-005, FR-006, FR-007, `R5`) — FR-007 and FR-020 are already counted
-above, so these add 6 distinct rows for a running total of **20 of 27**.
+**What now explains the remaining 20.** With all three structural absences closed, the gap is no
+longer dominated by missing subsystems:
 
-The remaining **7** — FR-001, FR-009, FR-015, FR-031, FR-034, FR-035, FR-038 — are not blocked by a
-missing subsystem. They are partial for narrower reasons stated in their rows: an unasserted clause
-(FR-001), an unwired service (FR-009, FR-031, FR-034, FR-038 all trace to `IsolationService` being
-instantiated nowhere outside tests), and unbuilt owner capabilities (FR-015).
+| Cause | Requirements | Count | Roadmap |
+|---|---|---|---|
+| Invitations do not exist | FR-016 … FR-020 | 5 | `R4` |
+| Recovery does not exist | FR-005, FR-006, FR-007 | 3 | `R5` |
+| No object-level authorization path, and no production consumer of `IsolationService` | FR-008, FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 12 | `R7` wiring |
+| Rows not re-derived since `R6-03` merged (see below) | FR-027, FR-029 | 2 | — |
+| Narrower single-clause reasons stated in their own rows | FR-001, FR-003, FR-015, FR-035 | 4 | various |
 
-That the remaining structural absences map one-to-one onto `R3` and `R6`, and the two capability
-absences onto `R4` and `R5`, is independent evidence for the roadmap's critical path — arrived at
-from the code rather than from the roadmap.
+5 + 3 + 12 + 2 + 4 = **26**, matching the rollup.
+
+**A divergence this slice records rather than fixes.** `FR-027` and `FR-029` still read
+`Not implemented`, but `R6-03` (`#194`) shipped `switching.py` and `FR-029`'s live-membership
+clause is asserted in `test_rca001_organization_switching.py`. That is the same staleness `R6-07`
+corrects for `FR-008` and `FR-030` — re-deriving two more rows belongs to whoever owns `R6-03`'s
+status pass, not to a test slice, so it is flagged here instead of silently re-statused. Every
+count above is derived from the requirement tables below; if they disagree, the tables win and this
+section is the defect.
+
+That the two structural absences mapped one-to-one onto `R3` and `R6`, and the capability absences
+onto `R4` and `R5`, was independent evidence for the roadmap's critical path — arrived at from the
+code rather than from the roadmap. Both structural predictions have now been borne out by merge.
 
 ## Two gaps `R2` recorded rather than closed
 
@@ -103,7 +134,7 @@ one — which is the moment validation stops being optional.
 | FR-005 | Not implemented | — | — | No recovery secret, store method, or service |
 | FR-006 | Not implemented | — | — | No recovery initiation to be uniform about |
 | FR-007 | Not implemented | — | — | Doubly blocked: no recovery, and no sessions to invalidate |
-| FR-008 | Partial | Clause 1: `accounts.py:244-249`, `:157-176`; `lifecycle.py:91-106`. Clause 2: `isolation.py:31-33` | `test_rca001_disablement.py:60`, `:72`, `:130`, `:185`; `test_rca001_lifecycle.py:28` | Clause 2 is enforced at scope resolution only. `assert_account_active` (`lifecycle.py:132`) has no production caller and awaits `R3` |
+| FR-008 | Partial | Clause 1: `accounts.py:244-249`, `:157-176`; `lifecycle.py:91-106`. Clause 2: `isolation.py:31-33` **and** `actor_resolution.py`, which calls `assert_account_active` at step 3 of every resolution | `test_rca001_disablement.py:60`, `:72`, `:130`, `:185`; `test_rca001_lifecycle.py:28`; `test_rca001_stale_session_authorization.py` (scenario 16) | The stale "no production caller" text predating `R3` is closed — `ActorResolver` is one, and "no dependence on session expiry" is asserted where it can fail. **Still Partial**, because clause 2 says *every* pre-existing session must cease to authorize **any** action: `promote_to_owner`, `demote_to_member`, and `revoke_membership` (`organizations.py:343-432`) take `actor_account_id` and perform no session or account check, and no production path gates them through `AuthorizationResolver`. The tests enter the resolver by hand, so they prove the selected paths only. Making bypass unreachable is `R6-08`'s subject; this row promotes when a production path exists. Found in review on `#199` |
 
 ### Organizations and membership
 
@@ -136,7 +167,7 @@ one — which is the moment validation stops being optional.
 | FR-027 | Not implemented | — | — | No session, so no active-organization state; `resolve_scope` takes the organization per call |
 | FR-028 | Partial | Clause 1: `accounts.py:278-304` never consults membership. Clause 2: `isolation.py:34-36` | Clause 2: `test_rca001_isolation.py:141` | Clause 1 holds incidentally and is unasserted; scenario 18 has no test |
 | FR-029 | Not implemented | — | — | No switch operation and no active-org state |
-| FR-030 | Not implemented | — | — | Blocked by sessions alone now (`R3`). `R2` supplied the membership-change operations whose effect this requires observing, and `isolation.py` reads membership live per call — the right shape for "takes effect for decisions made after the change". Scenario 20 becomes testable once a session exists |
+| FR-030 | Implemented | `authorization_resolution.py:_context_for` reads the membership per call; `AuthorizationContext` carries no `resolved_at` that would invite reuse | `test_rca001_authorization_resolution.py` (`TestOneResolverHeldAcrossAChange`); `test_rca001_stale_session_authorization.py` (scenario 20) | Scenario 20 **now tested**. Both clauses asserted: the change takes effect with no clock movement between the two resolutions, and the session is separately asserted to still resolve afterwards — "without requiring the affected session to end" is invisible at the refused call |
 
 ### Isolation and the RRA boundary
 
@@ -180,8 +211,8 @@ current membership"). It was listed as untested here; found in review on `#197`.
 **Scenario 18 is tested. Scenario 19 is partial.** Scenario 19 requires a stale or invalid session
 to be denied for *every* protected action, and `TestScenarioNineteen` exercises only the resolver
 methods: the six §3.2 account-scoped actions are uncovered (carried gap 1), as is the isolation
-cell above. Scenarios 4, 6, 7, 8, 9, 14, 15, and 20 remain untested here; 14 and 15 are `R6-06`'s
-and 20 is `R6-07`'s.
+cell above. Scenarios **4, 6, 7, 8, and 9** remain untested; 14 and 15 are `R6-06`'s, and 16 and
+20 are `R6-07`'s below.
 
 ### Carried gaps from `R6-05`
 
@@ -285,6 +316,22 @@ scanner broken into returning `[]` would pass every assertion above it.
    been possible. A green run must not be read as "every handler is gated"; there are no handlers.
    `test_the_resolver_has_no_production_consumer_yet` asserts this explicitly so the caveat cannot
    be lost, and instructs its own replacement when the first consumer arrives.
+
+**`R6-07` supplies scenarios 16 and 20**, in `tests/test_rca001_stale_session_authorization.py`.
+
+
+### A note on what `R6-07` adds beyond `R6-04`
+
+Demotion is the load-bearing case, because it is the only change of the three where the actor keeps
+*some* authority — revocation and disablement are total, so "lost something" and "lost everything"
+are indistinguishable for them. The new claim is the **consequence** of a demotion: the demoted
+actor's member-permitted actions still work and resolve the *same* isolation key. Verified by
+mutating `demote_to_member` into `revoke_membership`; `R6-04` catches that with one test, `R6-07`
+with three.
+
+One mutant to not repeat: caching the role on the `Session` object appears to introduce `FR-030`
+staleness and does not, because `Session` is `slots=True` and the write silently fails. A mutant
+that genuinely caches must hold state on the resolver; that one is killed by three tests here.
 
 ---
 
