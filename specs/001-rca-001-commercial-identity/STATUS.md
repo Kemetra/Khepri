@@ -130,7 +130,7 @@ one — which is the moment validation stops being optional.
 | FR-021 | Not implemented | — | — | No protected-action abstraction, and no session carrying the actor |
 | FR-022 | Partial | `isolation.py:30-40` — three sequential guards, no permissive fallthrough | `test_rca001_isolation.py:141`, `:149`; `test_rca001_disablement.py:130` | Deny-by-default holds at `resolve_scope` only. Scenario 19 unverifiable without sessions |
 | FR-023 | Partial | `isolation.py:34-36` — the decision is a membership lookup, not the supplied identifier | `test_rca001_isolation.py:141`; `test_rca001_cross_organization.py` (scenario 14) | Verified at organization-scope granularity only; no object-level authorization path exists. **`R6-06`'s carried gap** — the critical rule's object half ("object identifiers never grant authority") stays untestable until an object-level path is built |
-| FR-024 | Partial | `isolation.py:34-36` | `test_rca001_isolation.py:141`, `:149`; `test_rca001_cross_organization.py` (scenarios 14, 15) | Scenario 15 **now tested** by `R6-06`, asserting no state change in *either* organization. Still organization-granular |
+| FR-024 | Partial | `isolation.py:34-36` | `test_rca001_isolation.py:141`, `:149`; `test_rca001_cross_organization.py` (scenarios 14, 15) | Scenario 15 is **partial**, not covered: the mutation runs behind the gate but the test enters the gate by hand, since no production path does. Cannot catch wiring that omits the gate. Still organization-granular |
 | FR-025 | Partial | `isolation.py:32`, `:36`, `:39` — all three failure modes raise one `ScopeAccessDenied` | `test_rca001_isolation.py:149` — asserts one message across non-member, nonexistent org, and both, and that neither the org name nor a probe string appears | Not proven at object granularity |
 | FR-026 | Not implemented | — | — | No canonical checkpoint. `isolation.py:14` is one chokepoint for one capability, which is not a checkpoint every protected action passes through |
 | FR-027 | Not implemented | — | — | No session, so no active-organization state; `resolve_scope` takes the organization per call |
@@ -160,10 +160,16 @@ one — which is the moment validation stops being optional.
 The specification's Verification section requires a test per scenario and an authorization matrix
 over `{owner, member, non-member, unauthenticated}` × every protected action.
 
-**`R6-06` supplies scenarios 12, 14, and 15**, in `tests/test_rca001_cross_organization.py`.
+**`R6-06` supplies scenarios 12 and 14, and takes 15 from untested to *partial***, in `tests/test_rca001_cross_organization.py`.
 Scenario 15's "no state change in **either** organization" is asserted on both sides: the target
 organization *and* the actor's own, since a gate that authorized against the active organization
 while refusing the named one would leave the target untouched and still be the defect.
+
+**Why 15 is partial and not covered.** The mutation now runs behind the gate, but the test enters
+the gate by hand -- `require_owner` has no caller under `src/` besides its own definition, and the
+membership verbs remain callable without it. So these cells cannot catch production wiring that
+omits or reorders the gate, which is the failure mode scenario 15 ultimately guards. The row
+promotes when a production protected-mutation path exists (`R7`). Found in review on `#198`.
 
 Scenarios still untested here: **4, 6, 7, 8, 9, 13, 20**. (`18` and `19` are `R6-05`'s; `20` is
 `R6-07`'s.)

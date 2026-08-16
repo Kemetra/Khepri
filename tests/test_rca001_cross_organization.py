@@ -191,13 +191,19 @@ class TestScenarioFourteenCrossOrganizationRead:
         caller with one account could map every organization on the platform by probing
         identifiers and sorting the two refusals apart.
 
-        **Why this holds structurally, and what that means for this test.** Both cases reach the
-        *same* guard: a nonexistent organization has no membership row either, so the membership
-        check refuses it before the scope lookup is ever consulted. Rewording that one guard moves
-        both refusals together, so a mutant that changes its message leaves this test green -- and
-        that is correct rather than a weakness, because such a mutant does not reintroduce the
-        oracle. What does reintroduce it is an *earlier* existence check, added in good faith for
-        a clearer error, and this test dies against exactly that.
+        **Why this holds structurally.** Both cases reach the *same* guard: a nonexistent
+        organization has no membership row either, so the membership check refuses it before the
+        scope lookup is consulted. Rewording that guard moves both refusals together, so a mutant
+        changing its message leaves this test green -- correctly, since such a mutant does not
+        reintroduce the oracle. An *earlier* existence check does, and this test dies against it.
+
+        **A test asserting the call order was written and then removed** (`#198`). It pinned
+        `get_membership` as the only store call, which fails a refactor that checks scope
+        existence first and still returns one refusal shape -- an implementation this file's own
+        definition calls compliant, since that definition is type-plus-message and explicitly
+        excludes timing. Its only unique kill-set was implementations that are legal under the
+        stated contract, so it converted harmless refactors into CI failures while adding no
+        coverage the comparison above lacks. The knowledge is kept here; the assertion is not.
         """
         isolation = _isolation(orgs.factory)
         shapes = _refusal_shapes(
@@ -207,45 +213,6 @@ class TestScenarioFourteenCrossOrganizationRead:
             ]
         )
         assert len(shapes) == 1
-
-    def test_no_organization_existence_check_precedes_the_membership_check(
-        self, orgs: TwoOrganizations
-    ) -> None:
-        """The ordering that makes indistinguishability structural, asserted directly.
-
-        The case above shows the two refusals match; this one shows *why*, by pinning the
-        property that keeps them matching. A real organization the actor is not in must be
-        refused without its scope ever being read -- if the scope were consulted first, existence
-        would become observable through whatever the lookup does differently for a row that
-        exists. Recording the store's calls is the only way to see an ordering, since both
-        orderings produce the same exception today.
-        """
-        store = SqlOrganizationStore(orgs.factory)
-        consulted: list[str] = []
-        real_get_scope = store.get_scope
-        real_get_membership = store.get_membership
-
-        def watched_get_scope(organization_id: str):
-            consulted.append("scope")
-            return real_get_scope(organization_id)
-
-        def watched_get_membership(organization_id: str, account_id: str):
-            consulted.append("membership")
-            return real_get_membership(organization_id, account_id)
-
-        store.get_scope = watched_get_scope  # type: ignore[method-assign]
-        store.get_membership = watched_get_membership  # type: ignore[method-assign]
-
-        with pytest.raises(ScopeAccessDenied):
-            IsolationService(store, SqlAccountStore(orgs.factory)).resolve_scope(
-                orgs.alice, orgs.b
-            )
-
-        assert "scope" not in consulted, (
-            "the organization's scope was read while refusing a non-member, which makes "
-            "existence observable"
-        )
-        assert consulted == ["membership"]
 
     def test_the_request_gate_refuses_both_identically_too(
         self, orgs: TwoOrganizations
@@ -303,6 +270,13 @@ class TestScenarioFourteenCrossOrganizationRead:
 class TestScenarioFifteenCrossOrganizationMutation:
     """Denied, with **no state change in either organization** (`FR-023`, `FR-024`).
 
+    **Scenario 15 remains partial rather than covered, and `STATUS.md` says so.** `_attempt_across`
+    is test-only orchestration: it enters the gate by hand because no production path does.
+    `require_owner` has no caller under `src/` besides its own definition, and the membership verbs
+    stay callable without it, so these cells cannot catch production wiring that omits or reorders
+    the gate. What they do catch is a gate that refuses while writing, and a refusal that
+    distinguishes a foreign organization from a nonexistent one. Found in review on `#198`.
+
     `STATUS.md`'s `FR-024` row records that this scenario had no test, because no mutating
     protected action existed to attempt until `R6`. The "either" is the load-bearing word: a
     refusal that left the actor's *own* organization altered would satisfy every assertion about
@@ -359,16 +333,23 @@ class TestScenarioFifteenCrossOrganizationMutation:
     def test_a_mutation_against_a_nonexistent_organization_is_refused_identically(
         self, orgs: TwoOrganizations
     ) -> None:
-        resolver = _resolver(orgs.factory)
+        """Both attempts run the **real verb** behind the gate, not the gate alone.
+
+        A comparison of two read-only gate calls says nothing about mutation
+        indistinguishability: a mutating path that distinguished the two targets would leave this
+        green. Found in review on `#198`, the same defect as the cells above and fixed the same
+        way.
+        """
         shapes = _refusal_shapes(
             [
-                lambda: resolver.require_owner(orgs.alice_token, organization_id=orgs.b, now=NOW),
-                lambda: resolver.require_owner(
-                    orgs.alice_token, organization_id=NO_SUCH_ORGANIZATION, now=NOW
+                lambda: _attempt_across(orgs, "revoke_membership", orgs.b, orgs.bob),
+                lambda: _attempt_across(
+                    orgs, "revoke_membership", NO_SUCH_ORGANIZATION, orgs.bob
                 ),
             ]
         )
         assert len(shapes) == 1
+        assert _role_of(orgs.factory, orgs.b, orgs.bob) == OWNER_ROLE
 
 
 class TestScenarioTwelveScopesDoNotMerge:
