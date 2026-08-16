@@ -23,6 +23,14 @@ drives the action the way an authorized caller must -- resolve, then act -- and 
 the only available route. `STATUS.md` carries the finding so it is inherited rather than
 rediscovered.
 
+**One cell of §3.1 is uncovered, and it is named rather than papered over.** Scope resolution's
+`unauthenticated` column cannot be tested at this surface: `IsolationService.resolve_scope` takes
+an `account_id` and no token, so it distinguishes no authenticated owner from an arbitrary caller
+presenting that owner's identifier. `TestResolveAnIsolationScope` records it and asserts the
+signature that makes it true, so the gap fails loudly when an authenticated boundary arrives
+(`R7`). A matrix that quietly counted an unknown-identifier refusal as the unauthenticated cell
+would be exactly the "test that cannot fail" this file exists to avoid.
+
 **Scope: `R6-01` §3.1 only.** The six §3.2 account-scoped actions turn on self-versus-another
 account, and `AuthorizationContext` carries the acting `account_id` with no target, so those cells
 cannot be expressed without the context change `authorization_resolution.py` defers to `R6-02`.
@@ -269,6 +277,14 @@ class TestResolveAnIsolationScope:
 
     `R6-01` §6 settles that `isolation.py`'s own membership refusal *is* the enforcement here, so
     these cells drive `IsolationService` directly rather than adding a second gate in front of it.
+
+    **The unauthenticated cell of this row is not covered, and the reason is recorded rather than
+    hidden.** `resolve_scope` takes an `account_id` and no token, so it authenticates nobody: a
+    caller who knows a member's identifier gets that member's scope. Passing an unknown identifier
+    tests the nonexistent-account branch, not the unauthenticated one, and naming such a test
+    "unauthenticated" would be the matrix claiming a cell it never reached.
+    `test_the_unauthenticated_cell_is_unreachable_at_this_surface` states the gap and fails when
+    the surface changes.
     """
 
     def test_an_owner_resolves_the_scope(self, stack: Stack) -> None:
@@ -292,15 +308,43 @@ class TestResolveAnIsolationScope:
         with pytest.raises(ScopeAccessDenied):
             _isolation(stack).resolve_scope(stack.outsider, stack.organization_id)
 
-    def test_an_unauthenticated_caller_is_refused(self, stack: Stack) -> None:
-        """No account at all, which is what `unauthenticated` means for an account-keyed call.
+    def test_an_unknown_account_identifier_is_refused(self, stack: Stack) -> None:
+        """The nonexistent-account branch, which is **not** the unauthenticated column.
 
-        `resolve_scope` takes an `account_id` rather than a token, so the unauthenticated column
-        is expressed as an identifier no account holds -- the state a caller who never
-        authenticated is in.
+        Named for what it actually covers. An earlier version of this test called itself
+        `test_an_unauthenticated_caller_is_refused`, and the name was the defect: it implied a
+        matrix cell that the assertion does not reach. See the class docstring.
         """
         with pytest.raises(ScopeAccessDenied):
             _isolation(stack).resolve_scope("no-such-account", stack.organization_id)
+
+    def test_the_unauthenticated_cell_is_unreachable_at_this_surface(self, stack: Stack) -> None:
+        """**A recorded gap, not an endorsement** -- `resolve_scope` authenticates nobody.
+
+        It takes an `account_id` and no token, so a caller who merely *knows* a member's
+        identifier resolves that member's scope. The identifier is doing the work of a
+        credential, which is precisely what `R6-01` §5's critical rule forbids: "object
+        identifiers never grant authority".
+
+        This is not a defect this slice can close, and pretending otherwise is worse than
+        recording it. `IsolationService` has no production caller (`STATUS.md`, `FR-031`), so the
+        exposure is latent -- the authenticated boundary in front of it is `R7`'s. What must not
+        happen is a matrix that *looks* complete while its unauthenticated cell is untested, so
+        the gap is asserted here in the idiom `test_rca001_guard_evidence.py` established: the
+        test fails the moment `resolve_scope` grows an authentication parameter, which is the
+        moment this note needs rewriting.
+        """
+        import inspect
+
+        parameters = inspect.signature(IsolationService.resolve_scope).parameters
+        assert "token" not in parameters
+        assert set(parameters) == {"self", "account_id", "organization_id"}
+
+        owner_scope = _isolation(stack).resolve_scope(stack.owner, stack.organization_id)
+        assert owner_scope, (
+            "resolve_scope returns a scope to any caller presenting a member's account_id; "
+            "the unauthenticated cell of R6-01 §3.1 row 4 cannot be tested at this surface"
+        )
 
 
 class TestSwitchActiveOrganization:

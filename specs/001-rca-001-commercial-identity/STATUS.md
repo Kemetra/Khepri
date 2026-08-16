@@ -168,6 +168,16 @@ is `R6-07`'s.
 
 ### Carried gaps from `R6-05`
 
+0. **Scope resolution's `unauthenticated` cell is uncovered.** `IsolationService.resolve_scope`
+   takes an `account_id` and no token, so it authenticates nobody — a caller who merely knows a
+   member's identifier resolves that member's scope, which is the identifier doing a credential's
+   work that `R6-01` §5's critical rule forbids. Passing an unknown identifier exercises the
+   nonexistent-account branch, **not** the unauthenticated column, and the first version of this
+   slice named such a test `test_an_unauthenticated_caller_is_refused` — the name asserted a cell
+   the test never reached. Found in review on `#197`. The exposure is latent (`FR-031`:
+   `IsolationService` has no production caller) and the authenticated boundary is `R7`'s;
+   `test_the_unauthenticated_cell_is_unreachable_at_this_surface` asserts the signature so the gap
+   fails loudly the moment that boundary arrives.
 1. **`R6-01` §3.2 is not covered, and cannot be at this shape.** The six account-scoped actions turn
    on self-versus-another-account, and `AuthorizationContext` carries the acting `account_id` with
    no target. `authorization_resolution.py`'s docstring defers this to an `R6-02` change. Covering
