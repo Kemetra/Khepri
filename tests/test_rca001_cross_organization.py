@@ -307,9 +307,9 @@ class TestScenarioFifteenCrossOrganizationMutation:
     **Each cell attempts the mutation, rather than only the gate in front of it.** The first
     version of this class called `require_owner` and asserted no organization changed -- but
     `require_owner` is read-only, so that assertion was guaranteed by the fixture and would have
-    held even against a verb that wrote unconditionally. Found in review on `#198`; `_attempt_across`
-    now puts the write on the code path, verified by deleting its gate call and watching all three
-    cells fail.
+    held even against a verb that wrote unconditionally. Found in review on `#198`.
+    `_attempt_across` now puts the write on the code path, verified by deleting its gate call and
+    watching all three cells fail.
     """
 
     def test_promoting_into_another_organization_changes_neither(
