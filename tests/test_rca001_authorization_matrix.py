@@ -44,11 +44,18 @@ signature that makes it true, so the gap fails loudly when an authenticated boun
 (`R7`). A matrix that quietly counted an unknown-identifier refusal as the unauthenticated cell
 would be exactly the "test that cannot fail" this file exists to avoid.
 
+**So this file covers 19 of §3.1's 20 cells, and the matrix is not complete.** `RCA-001`'s
+Verification requirement is not satisfied until that cell is expressible. Scenario 18 is fully
+tested here; **scenario 19 is partial**, because it requires denial for *every* protected action
+and `TestScenarioNineteen` reaches only the resolver methods -- §3.2's six account-scoped actions
+are out of scope below, and the isolation cell is the one named above. Stated here as well as in
+`STATUS.md` because a reader reaching for "is the matrix done?" opens this file first.
+
 **Scope: `R6-01` §3.1 only.** The six §3.2 account-scoped actions turn on self-versus-another
 account, and `AuthorizationContext` carries the acting `account_id` with no target, so those cells
 cannot be expressed without the context change `authorization_resolution.py` defers to `R6-02`.
 Covering them here would mean inventing a target parameter mid-slice. Recorded as a carried gap in
-`STATUS.md`; §3.1's five actions are complete below.
+`STATUS.md`; §3.1's five actions appear below, one cell short.
 """
 
 from __future__ import annotations
@@ -194,6 +201,10 @@ class Cell(NamedTuple):
     column: str
     refusal: type[Exception]
 
+    @property
+    def demotes(self) -> bool:
+        return self.verb == "demote_to_member"
+
 
 #: The nine denied cells of `R6-01` §3.1 rows 1-3, as one table.
 #:
@@ -202,6 +213,12 @@ class Cell(NamedTuple):
 #: cells, not a product. Each entry is: the verb, whose membership the cell targets and what it
 #: must still read afterwards, the acting column, and the refusal that column must raise.
 #:
+#: **The demotion rows target `member`, not `owner`.** The setup promotes `stack.member` to be the
+#: second owner `FR-013` requires, and that promoted account is the one the attempted demotion aims
+#: at -- so it is the one whose role must be unchanged. Asserting `stack.owner` instead would be
+#: satisfied by a demotion path that hit the wrong target and then raised. Found in review on
+#: `#197`.
+#:
 #: `unauthenticated` raises `AuthenticationFailed` rather than `ScopeAccessDenied`, and the
 #: difference is the point: no actor is established, so no row is reached at all (`R6-01` §3.3,
 #: scenario 19). One shared exception type would erase that distinction.
@@ -209,7 +226,7 @@ DENIED_CELLS = tuple(
     Cell(verb=verb, subject=subject, expected=expected, column=column, refusal=refusal)
     for verb, subject, expected in (
         ("promote_to_owner", "member", MEMBER_ROLE),
-        ("demote_to_member", "owner", OWNER_ROLE),
+        ("demote_to_member", "member", OWNER_ROLE),
         ("revoke_membership", "member", MEMBER_ROLE),
     )
     for column, refusal in (
@@ -374,18 +391,38 @@ class TestSwitchActiveOrganization:
     """`R6-01` §3.1 row 5: owner and member PERMIT, non-member and unauthenticated DENY."""
 
     def test_an_owner_switches(self, stack: Stack) -> None:
-        session = _switcher(stack).switch(stack.owner_token, stack.organization_id, now=NOW)
-        assert session.active_organization_id == stack.organization_id
+        """Starts from a *cleared* session, so the asserted value was not already true.
+
+        `Stack` switches each token in during setup, so a cell that switched again and asserted
+        the organization would pass even against a `switch` that kept its membership check and
+        stopped persisting anything. Clearing first makes the assertion observe the write.
+        Found in review on `#197`.
+        """
+        _switcher(stack).clear(stack.owner_token, now=NOW)
+        assert _active_organization(stack, stack.owner_token) is None
+
+        _switcher(stack).switch(stack.owner_token, stack.organization_id, now=NOW)
+        assert _active_organization(stack, stack.owner_token) == stack.organization_id
 
     def test_a_member_switches(self, stack: Stack) -> None:
-        session = _switcher(stack).switch(stack.member_token, stack.organization_id, now=NOW)
-        assert session.active_organization_id == stack.organization_id
+        _switcher(stack).clear(stack.member_token, now=NOW)
+        assert _active_organization(stack, stack.member_token) is None
+
+        _switcher(stack).switch(stack.member_token, stack.organization_id, now=NOW)
+        assert _active_organization(stack, stack.member_token) == stack.organization_id
 
     def test_a_non_member_is_refused_and_the_session_stays_unswitched(self, stack: Stack) -> None:
+        """Reads the **stored session**, not the resolved context.
+
+        `_context_for` normalizes an active organization with no live membership to `None`, so a
+        `switch` that persisted the organization and *then* raised would still resolve to
+        `organization_id=None` and satisfy a context-level assertion. Only the raw session shows
+        whether anything was written. Found in review on `#197`.
+        """
         with pytest.raises(ScopeAccessDenied):
             _switcher(stack).switch(stack.outsider_token, stack.organization_id, now=NOW)
-        context = _resolver(stack.factory).resolve(stack.outsider_token, now=NOW)
-        assert context.organization_id is None
+
+        assert _active_organization(stack, stack.outsider_token) is None
 
     def test_a_non_member_naming_the_organization_on_a_request_is_refused(
         self, stack: Stack
@@ -476,6 +513,11 @@ def _promote(stack: Stack, account_id: str) -> None:
     stack.organizations.promote_to_owner(
         stack.organization_id, account_id, actor_account_id=stack.owner, now=NOW
     )
+
+
+def _active_organization(stack: Stack, token: str) -> str | None:
+    """The organization stored on the session itself, bypassing the resolver's normalization."""
+    return stack.sessions.resolve(token, now=NOW).active_organization_id
 
 
 def _plain_member_token(stack: Stack) -> str:

@@ -160,11 +160,22 @@ one — which is the moment validation stops being optional.
 The specification's Verification section requires a test per scenario and an authorization matrix
 over `{owner, member, non-member, unauthenticated}` × every protected action.
 
-**`R6-05` supplies the matrix for `R6-01` §3.1**, in `tests/test_rca001_authorization_matrix.py`:
-all five organization-scoped actions × all four actor kinds, each `DENY` cell asserting that the
-membership is *unchanged* rather than only that an exception was raised. Scenarios **18** and **19**
-are now named and tested there. Scenarios 4, 6, 7, 8, 9, 13, 14, 15, and 20 remain untested; **20**
-is `R6-07`'s.
+**`R6-05` supplies a *partial* matrix for `R6-01` §3.1** — **19 of 20 cells**, in
+`tests/test_rca001_authorization_matrix.py`. Five organization-scoped actions × four actor kinds,
+each `DENY` cell driving the verb through the gate and asserting the membership is unchanged rather
+than only that an exception was raised.
+
+**The missing cell is scope resolution × `unauthenticated`**, for the reason in carried gap 0
+below: `resolve_scope` authenticates nobody, so the cell is not expressible at that surface. The
+matrix is **not** complete and `RCA-001`'s Verification requirement is **not** satisfied by this
+slice — recorded explicitly because a "matrix supplied" line is exactly what a later reader would
+cite to call verification done. Found in review on `#197`.
+
+**Scenario 18 is tested. Scenario 19 is partial.** Scenario 19 requires a stale or invalid session
+to be denied for *every* protected action, and `TestScenarioNineteen` exercises only the resolver
+methods: the six §3.2 account-scoped actions are uncovered (carried gap 1), as is the isolation
+cell above. Scenarios 4, 6, 7, 8, 9, 13, 14, 15, and 20 remain untested; 14 and 15 are `R6-06`'s
+and 20 is `R6-07`'s.
 
 ### Carried gaps from `R6-05`
 
