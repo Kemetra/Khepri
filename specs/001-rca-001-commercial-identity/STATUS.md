@@ -171,15 +171,27 @@ matrix is **not** complete and `RCA-001`'s Verification requirement is **not** s
 slice — recorded explicitly because a "matrix supplied" line is exactly what a later reader would
 cite to call verification done. Found in review on `#197`.
 
+**Scenario 13 is tested.** `TestSwitchActiveOrganization` covers the permitted owner/member
+switches and the denied non-member/unauthenticated ones, and
+`test_rca001_organization_switching.py:70-107` verifies persistence and replacement across two
+organizations — together that is scenario 13's governed outcome ("switch succeeds only into a
+current membership"). It was listed as untested here; found in review on `#197`.
+
 **Scenario 18 is tested. Scenario 19 is partial.** Scenario 19 requires a stale or invalid session
 to be denied for *every* protected action, and `TestScenarioNineteen` exercises only the resolver
 methods: the six §3.2 account-scoped actions are uncovered (carried gap 1), as is the isolation
-cell above. Scenarios 4, 6, 7, 8, 9, 13, 14, 15, and 20 remain untested; 14 and 15 are `R6-06`'s
+cell above. Scenarios 4, 6, 7, 8, 9, 14, 15, and 20 remain untested here; 14 and 15 are `R6-06`'s
 and 20 is `R6-07`'s.
 
 ### Carried gaps from `R6-05`
 
-0. **Scope resolution's `unauthenticated` cell is uncovered.** `IsolationService.resolve_scope`
+0. **The matrix is exhaustive by construction** (`tasks.md:191`), not by convention:
+   `test_every_protected_action_in_the_design_has_a_matrix_class` parses `R6-01` §3.1's own table
+   and fails when an action there has no test class. `R4` and `R5` extend that table by design, so
+   this is what makes those slices notice they owe the matrix a row. Verified by adding an
+   invitation row to the design note and watching it fail.
+
+1. **Scope resolution's `unauthenticated` cell is uncovered.** `IsolationService.resolve_scope`
    takes an `account_id` and no token, so it authenticates nobody — a caller who merely knows a
    member's identifier resolves that member's scope, which is the identifier doing a credential's
    work that `R6-01` §5's critical rule forbids. Passing an unknown identifier exercises the
@@ -189,11 +201,11 @@ and 20 is `R6-07`'s.
    `IsolationService` has no production caller) and the authenticated boundary is `R7`'s;
    `test_the_unauthenticated_cell_is_unreachable_at_this_surface` asserts the signature so the gap
    fails loudly the moment that boundary arrives.
-1. **`R6-01` §3.2 is not covered, and cannot be at this shape.** The six account-scoped actions turn
+2. **`R6-01` §3.2 is not covered, and cannot be at this shape.** The six account-scoped actions turn
    on self-versus-another-account, and `AuthorizationContext` carries the acting `account_id` with
    no target. `authorization_resolution.py`'s docstring defers this to an `R6-02` change. Covering
    §3.2 requires that change first; it is not a test-only slice.
-2. **The three owner-only verbs check no authority of their own.** `promote_to_owner`,
+3. **The three owner-only verbs check no authority of their own.** `promote_to_owner`,
    `demote_to_member`, and `revoke_membership` take `actor_account_id` for *attribution* only, so a
    direct call from a member succeeds. `R6-04` placed the check in the gate rather than in the
    verbs; the matrix therefore drives each action through `require_owner`, which is the authorized

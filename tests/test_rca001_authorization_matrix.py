@@ -61,6 +61,7 @@ Covering them here would mean inventing a target parameter mid-slice. Recorded a
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from typing import NamedTuple
 
 import pytest
@@ -156,6 +157,75 @@ def _grant_membership(
         database.add(
             MembershipRow(organization_id=organization_id, account_id=account_id, role=role)
         )
+
+
+MATRIX_DESIGN = (
+    Path(__file__).resolve().parents[1]
+    / "docs"
+    / "superpowers"
+    / "specs"
+    / "2026-08-15-r6-01-authorization-matrix-design.md"
+)
+
+#: Every §3.1 action, keyed to the class in this file that covers it.
+#:
+#: The values are what makes this more than a second hand-maintained list: the *keys* are checked
+#: against the design note's own §3.1 table, so an action added there without a test class here
+#: fails. `tasks.md:191` requires the matrix to be "exhaustive by construction -- adding an action
+#: without a row fails", and a tuple nobody diffs against anything satisfies that only by
+#: convention. Found in review on `#197`.
+#:
+#: `R4` and `R5` extend §3.1 by design (`R6-01` §7), so this is the assertion that makes those
+#: slices notice they owe the matrix a row.
+ACTION_COVERAGE = {
+    "Promote to owner": "TestTheOwnerOnlyRows",
+    "Demote to member": "TestTheOwnerOnlyRows",
+    "Revoke a membership": "TestTheOwnerOnlyRows",
+    "Resolve an isolation scope": "TestResolveAnIsolationScope",
+    "Switch active organization": "TestSwitchActiveOrganization",
+}
+
+
+def _actions_in_the_design() -> list[str]:
+    """The §3.1 action column, read from the governed design note rather than restated.
+
+    Parsing the table is deliberate: a copied list is a second source of truth for one fact, which
+    is what `STATUS.md` and the `RRA-009` divergence both warn about. If the note is reformatted
+    this test fails loudly rather than silently comparing against nothing -- the row-count floor
+    below is what makes that failure visible.
+    """
+    text = MATRIX_DESIGN.read_text(encoding="utf-8")
+    section = text.split("### 3.1 Organization-scoped actions")[1].split("### 3.2")[0]
+    return [
+        line.split("|")[1].strip()
+        for line in section.splitlines()
+        if line.startswith("| ") and "PERMIT" in line or line.startswith("| ") and "DENY" in line
+    ]
+
+
+def test_every_protected_action_in_the_design_has_a_matrix_class() -> None:
+    """Exhaustiveness by construction (`tasks.md:191`).
+
+    Adding a row to `R6-01` §3.1 without adding a test class here fails this, which is the
+    property the task requires and which a hand-maintained tuple cannot provide on its own.
+    """
+    actions = _actions_in_the_design()
+    assert len(actions) >= 5, (
+        f"parsed {len(actions)} actions from the design note's §3.1 table; the parser is broken "
+        "or the note was reformatted, and either way this test is comparing against nothing"
+    )
+
+    covered = set(ACTION_COVERAGE)
+    assert set(actions) == covered, (
+        f"§3.1 actions without a matrix class: {sorted(set(actions) - covered)}; "
+        f"classes naming an action the design no longer lists: {sorted(covered - set(actions))}"
+    )
+
+    defined = {name for name in globals() if name.startswith("Test")}
+    assert set(ACTION_COVERAGE.values()) <= defined, (
+        f"ACTION_COVERAGE names classes that do not exist: "
+        f"{sorted(set(ACTION_COVERAGE.values()) - defined)}"
+    )
 
 
 @pytest.fixture(name="stack")
