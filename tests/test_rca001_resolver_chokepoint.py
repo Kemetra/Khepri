@@ -78,21 +78,20 @@ def find_verb_calls(source: str) -> list[str]:
     the correct direction for a tripwire: a false positive is a review conversation, a false
     negative is an unnoticed bypass.
     """
-    calls: list[str] = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):
-            continue
-        function = node.func
-        name = (
-            function.attr
-            if isinstance(function, ast.Attribute)
-            else function.id
-            if isinstance(function, ast.Name)
-            else None
-        )
-        if name in OWNER_ONLY_VERBS:
-            calls.append(f"line {node.lineno}: {name}")
-    return calls
+    return [
+        f"line {node.lineno}: {_called_name(node.func)}"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and _called_name(node.func) in OWNER_ONLY_VERBS
+    ]
+
+
+def _called_name(function: ast.expr) -> str | None:
+    """The bare name a call expression invokes, whether attribute or plain."""
+    if isinstance(function, ast.Attribute):
+        return function.attr
+    if isinstance(function, ast.Name):
+        return function.id
+    return None
 
 
 def find_context_escapes(source: str) -> list[str]:
@@ -104,27 +103,35 @@ def find_context_escapes(source: str) -> list[str]:
     at runtime -- a guard against `object.__setattr__` is removable by `object.__setattr__` -- so
     a scan asserting nobody writes them is the available evidence.
     """
-    escapes: list[str] = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):
-            continue
-        function = node.func
-        if isinstance(function, ast.Attribute):
-            if function.attr in ("__new__", "__setattr__") and _is_object(function.value):
-                escapes.append(f"line {node.lineno}: object.{function.attr}")
-            elif function.attr == "replace" and _is_dataclasses(function.value):
-                escapes.append(f"line {node.lineno}: dataclasses.replace")
-        elif isinstance(function, ast.Name) and function.id == "replace":
-            escapes.append(f"line {node.lineno}: replace")
-    return escapes
+    return [
+        f"line {node.lineno}: {escape}"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        for escape in [_escape_name(node.func)]
+        if escape is not None
+    ]
 
 
-def _is_object(node: ast.expr) -> bool:
-    return isinstance(node, ast.Name) and node.id == "object"
+def _escape_name(function: ast.expr) -> str | None:
+    """Name the escape a called expression spells, or `None` if it is not one.
+
+    One node, one decision, following `test_rca001_boundary.py`'s `_import_offense`. Keeping the
+    per-node judgement here rather than nested inside the scan's loop is what keeps either half
+    readable: the loop collects, this decides, and neither does both.
+    """
+    if isinstance(function, ast.Name):
+        return "replace" if function.id == "replace" else None
+    if not isinstance(function, ast.Attribute):
+        return None
+    if function.attr in ("__new__", "__setattr__") and _is_named(function.value, "object"):
+        return f"object.{function.attr}"
+    if function.attr == "replace" and _is_named(function.value, "dataclasses"):
+        return "dataclasses.replace"
+    return None
 
 
-def _is_dataclasses(node: ast.expr) -> bool:
-    return isinstance(node, ast.Name) and node.id == "dataclasses"
+def _is_named(node: ast.expr, name: str) -> bool:
+    return isinstance(node, ast.Name) and node.id == name
 
 
 def find_direct_context_construction(source: str) -> list[str]:
