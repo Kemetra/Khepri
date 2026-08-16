@@ -177,10 +177,17 @@ What is asserted, each verified by introducing the defect and watching the test 
 
 | Claim | Fires on |
 |---|---|
-| No module outside `organizations.py` calls the three owner-only verbs | a probe module calling `promote_to_owner` directly |
+| No module in **any production package** calls the three owner-only verbs | a probe calling `promote_to_owner` directly, planted in `khepri/runtime` |
 | No module forges or mutates a sealed record (`dataclasses.replace`, `object.__new__`/`__setattr__`) | a probe calling `dataclasses.replace` on a context |
-| No module constructs an `AuthorizationContext` outside `create` | a probe spelling the class directly |
+| No module constructs an `AuthorizationContext` outside `create`, **aliases resolved** | a probe spelling the class directly, and one using `import ... as auth` |
 | `AuthorizationResolver` still has no production consumer | a probe importing it |
+
+The verb and construction scans cover every production package — `runtime`, `local`, `infra`, and
+`rra`, not just `rca` — because `runtime`/`local` are exactly where wiring that calls a membership
+verb will live, and a scan confined to `rca/` would miss the bypass it exists to catch (`#200` P1).
+The generic escape scan deliberately stays `rca`-scoped: its subject is the sealed records, and
+repo-wide it returns six ordinary `dataclasses.replace` hits in `rra` that would train a reader to
+ignore it.
 
 Each scanner is additionally self-tested against known-bad and known-good sources, following
 `test_rca001_boundary.py::test_rca_import_checker_flags_and_clears_expected_cases`. Without that, a

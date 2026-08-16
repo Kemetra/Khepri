@@ -22,12 +22,27 @@ kind of evidence a later reader will cite without re-deriving.
    when it changes. The allowlist is deliberately empty and deliberately explicit: adding a caller
    means editing this test, which is the review conversation that ought to happen.
 
+   **The inventory covers every production package, not just `khepri.rca`.** `runtime`, `local`,
+   `infra`, and `rra` are siblings, and `runtime`/`local` are exactly where the wiring that calls a
+   membership verb will live -- a scan confined to `rca/` would miss the bypass it exists to catch.
+   Found in review on `#200` and verified by planting a probe in `khepri/runtime`. The allowlist is
+   keyed on the path from `src/` for the same reason: a bare filename key would silently exempt any
+   sibling package's own `organizations.py`.
+
 2. **The context boundary holds statically.** `test_rca001_authorization_context.py` proves
    `dataclasses.replace` is refused *behaviorally* -- it calls it and catches the refusal. This
-   file asserts the different, static claim: no module in `src/khepri/rca/` writes that call in the
-   first place, nor constructs a context outside its one door, nor reaches for `object.__new__`.
-   Those are the escapes `records.py` enumerates as open, and a scan is the only thing that sees
-   them across a whole package.
+   file asserts the different, static claim: no module writes that call in the first place, nor
+   constructs a context outside its one door, nor reaches for `object.__new__`. Those are the
+   escapes `records.py` enumerates as open, and a scan is the only thing that sees them across a
+   whole package.
+
+   The construction scan **resolves aliases**, because `import ... as auth;
+   auth.AuthorizationContext(...)` and `import AuthorizationContext as AC; AC(...)` are ordinary
+   spellings that a name-exact match misses without anyone intending to evade it (`#200` P2). The
+   two scans have deliberately different scopes: verb calls and context construction are checked
+   across every production package, while the generic escape scan stays `khepri.rca`-only because
+   its subject is the sealed records -- `dataclasses.replace` on an unrelated `rra` dataclass is
+   ordinary code, and repo-wide it returns six such hits that would train a reader to ignore it.
 
 **Why an empty allowlist is evidence rather than a tautology.** A scan matching nothing passes
 forever, which is the failure mode this whole slice exists to avoid. So the checker is self-tested
@@ -50,7 +65,9 @@ from pathlib import Path
 
 import pytest
 
-RCA_DIR = Path(__file__).resolve().parents[1] / "src" / "khepri" / "rca"
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+RCA_DIR = SRC_DIR / "khepri" / "rca"
+KHEPRI_DIR = SRC_DIR / "khepri"
 
 #: The three actions `R6-01` §3.1 makes owner-only. Each takes `actor_account_id` for attribution
 #: and checks no authority of its own, so a direct call is an unauthorized mutation.
@@ -62,11 +79,31 @@ OWNER_ONLY_VERBS = ("promote_to_owner", "demote_to_member", "revoke_membership")
 #: entry would be a module reaching a protected action; there are none today, and adding one means
 #: editing this list -- which is the point. A caller admitted here must go through the resolver,
 #: and this test cannot check that it does; it can only make the addition visible.
-VERB_CALLER_ALLOWLIST = frozenset({"organizations.py"})
+#:
+#: **Keyed on the path from `src/`, not on the bare filename.** The scan covers every production
+#: package, and a sibling package may hold its own `organizations.py`; a filename key would exempt
+#: it silently. Found in review on `#200`.
+VERB_CALLER_ALLOWLIST = frozenset({"khepri/rca/organizations.py"})
+
+
+def _production_sources() -> list[Path]:
+    """Every production module, not just `khepri.rca`.
+
+    **The scan's scope is the whole point of the tripwire.** `khepri.runtime`, `khepri.local`,
+    `khepri.infra`, and `khepri.rra` are sibling production packages, and `runtime`/`local` are
+    exactly where the wiring that would call a membership verb will live. A scan confined to
+    `rca/` would miss the bypass it exists to catch, which is the `P1` finding on `#200`.
+    """
+    return sorted(p for p in KHEPRI_DIR.rglob("*.py") if "__pycache__" not in p.parts)
 
 
 def _rca_sources() -> list[Path]:
+    """Only `khepri.rca`, for the scans whose subject is the sealed records themselves."""
     return sorted(p for p in RCA_DIR.rglob("*.py") if "__pycache__" not in p.parts)
+
+
+def _relative(path: Path) -> str:
+    return path.relative_to(SRC_DIR).as_posix()
 
 
 def find_verb_calls(source: str) -> list[str]:
@@ -96,6 +133,13 @@ def _called_name(function: ast.expr) -> str | None:
 
 def find_context_escapes(source: str) -> list[str]:
     """Calls that would forge or mutate an `AuthorizationContext` outside its one door.
+
+    **Scanned across `khepri.rca` only, unlike the verb and construction scans.** The subject here
+    is the *sealed records*, which live in this package; `dataclasses.replace` on an unrelated
+    `rra` dataclass is ordinary code, not an escape. Running this repo-wide returns six such hits
+    in `khepri.rra` and would turn the assertion into noise a reader learns to ignore. The scope
+    difference is deliberate and is why `#200`'s `P1` widening applies to the other two scans and
+    not to this one.
 
     `records.py` enumerates these as the escapes that cannot be closed: `dataclasses.replace`
     rebuilds a frozen instance with fields swapped, `object.__new__` allocates without running a
@@ -135,20 +179,59 @@ def _is_named(node: ast.expr, name: str) -> bool:
 
 
 def find_direct_context_construction(source: str) -> list[str]:
-    """Calls spelling `AuthorizationContext(...)` directly, bypassing `create`.
+    """Calls constructing an `AuthorizationContext` directly, bypassing `create`.
 
     The class is callable -- `@dataclass` guarantees it -- and `Sealed` refuses construction
-    outside `through_door()`, so this would raise at runtime. The static claim is separate and
-    weaker in one way and stronger in another: it cannot prove the refusal works, but it sees
-    every module at once rather than the ones a test happens to exercise.
+    outside `through_door()`, so this would raise at runtime. The static claim is separate: it
+    cannot prove the refusal works, but it sees every module at once rather than the ones a test
+    happens to exercise.
+
+    **Aliases are resolved, because a name-exact match is trivially evaded without meaning to.**
+    `import khepri.rca.authorization as auth; auth.AuthorizationContext(...)` and
+    `from khepri.rca.authorization import AuthorizationContext as AC; AC(...)` are ordinary
+    spellings that a bare `ast.Name == "AuthorizationContext"` check misses entirely. Found in
+    review on `#200`. `test_rca001_boundary.py` resolves imports for the same reason.
     """
+    tree = ast.parse(source)
+    names = _context_aliases(tree)
     return [
         f"line {node.lineno}: AuthorizationContext(...)"
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "AuthorizationContext"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _constructs_context(node.func, names)
     ]
+
+
+def _context_aliases(tree: ast.Module) -> set[str]:
+    """Local names bound to `AuthorizationContext`, plus module aliases holding it.
+
+    Two shapes are tracked: the class imported under any local name (`AC`), and the *module*
+    imported under any local name (`auth`), since `auth.AuthorizationContext(...)` reaches the
+    same constructor through an attribute rather than a bare name.
+    """
+    aliases = {"AuthorizationContext"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            aliases.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "AuthorizationContext"
+            )
+        elif isinstance(node, ast.Import):
+            aliases.update(
+                (alias.asname or alias.name.split(".")[0])
+                for alias in node.names
+                if alias.name.endswith("authorization")
+            )
+    return aliases
+
+
+def _constructs_context(function: ast.expr, aliases: set[str]) -> bool:
+    """Whether a called expression names the context class, directly or through an alias."""
+    if isinstance(function, ast.Name):
+        return function.id in aliases
+    if isinstance(function, ast.Attribute):
+        return function.attr == "AuthorizationContext"
+    return False
 
 
 class TestTheVerbInventory:
@@ -160,9 +243,13 @@ class TestTheVerbInventory:
         `test_rca001_boundary.py` guards its own scan the same way. The number is a floor, not a
         count -- it fails if the package moves or the glob breaks, not when a module is added.
         """
-        sources = _rca_sources()
-        assert len(sources) >= 15, f"expected the rca package, found {len(sources)} files"
-        assert any(p.name == "organizations.py" for p in sources)
+        sources = _production_sources()
+        assert len(sources) >= 60, f"expected every production package, found {len(sources)} files"
+        packages = {p.relative_to(KHEPRI_DIR).parts[0] for p in sources}
+        assert {"rca", "rra", "runtime", "local"} <= packages, (
+            f"the scan must cover the sibling production packages a bypass could live in; "
+            f"found {sorted(packages)}"
+        )
 
     def test_the_membership_verbs_have_no_callers_outside_their_own_module(self) -> None:
         """The tripwire. Currently an empty set, asserted rather than assumed.
@@ -173,11 +260,11 @@ class TestTheVerbInventory:
         guarantees it is *asked*.
         """
         offenders: list[str] = []
-        for path in _rca_sources():
-            if path.name in VERB_CALLER_ALLOWLIST:
+        for path in _production_sources():
+            if _relative(path) in VERB_CALLER_ALLOWLIST:
                 continue
             for call in find_verb_calls(path.read_text(encoding="utf-8")):
-                offenders.append(f"{path.name}:{call}")
+                offenders.append(f"{_relative(path)}:{call}")
         assert offenders == [], (
             "a module outside the allowlist calls an owner-only membership verb; confirm it "
             "resolves authority through AuthorizationResolver.require_owner first, then add it "
@@ -190,7 +277,7 @@ class TestTheVerbInventory:
         If `organizations.py` were renamed and the entry left behind, the exemption would apply
         to nothing while the new module went unexamined -- a hole that looks like a passing test.
         """
-        present = {p.name for p in _rca_sources()}
+        present = {_relative(p) for p in _production_sources()}
         assert present >= VERB_CALLER_ALLOWLIST
 
     def test_the_verb_scanner_flags_and_clears_expected_cases(self) -> None:
@@ -247,9 +334,9 @@ class TestTheContextBoundaryHoldsStatically:
         module most able to abuse it.
         """
         offenders: list[str] = []
-        for path in _rca_sources():
+        for path in _production_sources():
             for call in find_direct_context_construction(path.read_text(encoding="utf-8")):
-                offenders.append(f"{path.name}:{call}")
+                offenders.append(f"{_relative(path)}:{call}")
         assert offenders == []
 
     def test_the_escape_scanner_flags_and_clears_expected_cases(self) -> None:
@@ -272,10 +359,26 @@ class TestTheContextBoundaryHoldsStatically:
             assert find_context_escapes(source) == [], f"false positive on: {source!r}"
 
     def test_the_construction_scanner_flags_and_clears_expected_cases(self) -> None:
-        assert find_direct_context_construction("AuthorizationContext(account_id='a')")
-        assert find_direct_context_construction("ctx = AuthorizationContext('a', None, None)")
-        assert find_direct_context_construction("AuthorizationContext.create(account_id='a')") == []
-        assert find_direct_context_construction("x: AuthorizationContext = ctx") == []
+        flagged = [
+            "AuthorizationContext(account_id='a')",
+            "ctx = AuthorizationContext('a', None, None)",
+            # Alias forms, the `#200` P2 finding. Each is an ordinary spelling a name-exact
+            # scanner misses, and each reaches the same constructor.
+            "from khepri.rca.authorization import AuthorizationContext as AC\nAC(account_id='a')",
+            "import khepri.rca.authorization as auth\nauth.AuthorizationContext(account_id='a')",
+            "from khepri.rca import authorization\nauthorization.AuthorizationContext('a')",
+        ]
+        for source in flagged:
+            assert find_direct_context_construction(source), f"scanner missed: {source!r}"
+
+        cleared = [
+            "AuthorizationContext.create(account_id='a', organization_id=None, role=None)",
+            "x: AuthorizationContext = ctx",
+            "import khepri.rca.authorization as auth\nauth.AuthorizationContext.create(a=1)",
+            "def build() -> AuthorizationContext: ...",
+        ]
+        for source in cleared:
+            assert find_direct_context_construction(source) == [], f"false positive: {source!r}"
 
 
 class TestWhatRemainsOpen:
@@ -316,8 +419,8 @@ class TestWhatRemainsOpen:
         reading a green test as "every handler is gated".
         """
         importers = [
-            path.name
-            for path in _rca_sources()
+            _relative(path)
+            for path in _production_sources()
             if path.name != "authorization_resolution.py"
             and "AuthorizationResolver" in path.read_text(encoding="utf-8")
         ]
