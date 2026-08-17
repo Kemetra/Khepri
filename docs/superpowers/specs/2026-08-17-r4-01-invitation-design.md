@@ -145,9 +145,9 @@ instance of one pattern, not a new one.
 **Destruction triggers, from the matrix's own end-trigger list:** "Acceptance; expiry; revocation;
 revocation of the inviting membership (`FR-020`)". Acceptance and revocation are writes and destroy
 the verifier in the same transaction that sets the timestamp. **Expiry is not a write** — it is
-`expires_at < now`, a derived state with no column and no event — so an expired invitation's
-verifier survives until something sweeps it. That is the sweeper below, and it is why expiry cannot
-be handled by "destroy it when the state changes".
+`expires_at <= now` per §5's boundary, a derived state with no column and no event — so an expired
+invitation's verifier survives until something sweeps it. That is the sweeper below, and it is why
+expiry cannot be handled by "destroy it when the state changes".
 
 **So invitations need a sweeper, and `R4-03` owes it.** This is a schema consequence, which is why
 it lands with the table rather than later: the matrix's deletion rule ("record purged when replay
@@ -208,12 +208,12 @@ an absence of a decision.
   NULL` covers two of the four triggers — but **expiry is time-derived**, so a legitimately-swept
   expired invitation has a NULL verifier and both timestamps NULL, which is indistinguishable at the
   row level from an open invitation whose verifier was wrongly destroyed. A `CHECK` including
-  `expires_at < now()` is not writable: `now()` is not immutable and PostgreSQL refuses it in a
+  `expires_at <= now()` is not writable: `now()` is not immutable and PostgreSQL refuses it in a
   `CHECK`. So this invariant is the domain's, enforced by the sweeper being the only path that
   destroys without a timestamp. Recorded rather than papered over with a constraint that would be
   wrong.
 
-## 4. Issuance
+## 4. Issuance and revocation
 
 `InvitationService.issue(organization_id, intended_role, target_identity, *, actor_account_id,
 expires_at, now)` returns a **single-use token** the caller must transmit and cannot recover
@@ -240,6 +240,63 @@ reached **through** the gate, which has already resolved the actor, so `actor_ac
 value the gate supplies rather than a caller's claim. `redeem` has no gate — a redeemer holds no
 membership — so it must carry the `ResolvedActor` itself.
 
+**The organization `issue` writes must be the organization the gate resolved.** `issue` creates a
+row rather than looking one up, so it carries no identifier-grants-authority hazard of its own — but
+nothing above yet forbids a service that takes a resolved scope *and* a separate `organization_id`
+parameter, which would let an owner of `A` issue an invitation into `B`. So: the
+`organization_id` `issue` writes is the value `resolve_scope` returned for this actor, and there is
+no second path by which a caller names a different one. `FR-024` requires a request whose actor and
+whose named scope disagree to fail closed, and two independently-supplied organization values are
+exactly that disagreement made expressible.
+
+### 4.1 Revocation is scoped by `(organization_id, invitation_id)`, never by identifier alone
+
+`InvitationService.revoke(organization_id, invitation_id, *, actor_account_id, now)` — and **the
+lookup is composite**: `WHERE organization_id = :organization_id AND invitation_id =
+:invitation_id`, where `organization_id` is the scope the gate already resolved for this actor, not
+a value the caller supplies alongside the invitation.
+
+**Why the signature is stated here rather than left to `R4-04`.** §6.3 gives "Revoke an invitation"
+as owner-only, and a reader could take the matrix row as the whole of the requirement. It is not. A
+matrix row says *which role* may revoke; it says nothing about *which rows* that role may reach. If
+`R4-04` fetches by `invitation_id` alone — the obvious shape, since the identifier is already unique
+— then an owner of organization `A`, holding or guessing an `inv_` identifier belonging to
+organization `B`, revokes `B`'s invitation. Worse before that: a revoke that returns "not found" for
+a bad identifier and "revoked" for a real one turns the endpoint into an existence oracle for other
+organizations' invitations, which discloses that `B` has an outstanding invitation at all.
+
+`FR-023` is the requirement violated — "Possession of an object identifier MUST confer no
+authority. Authorization MUST be decided from the actor's membership in the scope that owns the
+object, never from the caller's ability to name the object" — and `R6-01` §5 states it as the
+critical rule with its own worked example. **This is the same defect class as the caller-supplied
+`account_id` §6's correction removed from `redeem`**, in a different verb: there the caller named
+the account, here the caller names the object. One correction does not fix the other, which is why
+both are written down.
+
+**The refusal is uniform, and that is `FR-025` rather than a courtesy.** A mismatch between the
+authorized organization and the invitation's — and an `invitation_id` that exists nowhere — produce
+**one** failure, indistinguishable from each other and from "no such invitation". `FR-025`: "A
+denial for an object the actor may not reach MUST be indistinguishable from a denial for an object
+that does not exist. Denials MUST NOT disclose existence, ownership, or the identity of another
+organization." So `revoke` never reports which of the two happened, and never names the owning
+organization.
+
+`resolve_scope` (`isolation.py:30-40`) is the in-repo shape and `R4-04` should read like it: the
+membership lookup is composite — `get_membership(organization_id, account_id)` (`:34`) — and its
+three distinct failure causes (no account or a disabled one `:33`, no membership `:36`, no scope
+`:39`) all raise the identical `ScopeAccessDenied(SCOPE_FAILURE)`. Three causes, one message, no
+branch a caller can distinguish. `R4-04` owes the same for revocation.
+
+**No dummy-KDF padding is needed here, unlike §5's redemption path.** Revocation compares no secret,
+and the composite `SELECT` is the same single statement whether it misses because the invitation
+does not exist or because it belongs to another organization. The two causes are timing-equivalent
+by construction rather than by padding, so §5's dummy-work discipline does not transfer to this
+verb. Stated because "every uniform refusal needs a dummy hash" would be the wrong generalization.
+
+**`R4-07` owes a cross-organization revocation case**, not merely a non-owner one: an owner of `A`
+presenting `B`'s `invitation_id` must be refused, and `B`'s invitation must still be open
+afterwards. A test that only checks a `member` cannot revoke would pass on the defective lookup.
+
 ## 5. State, and what "fail closed" means concretely
 
 Four states, discriminated by nullability rather than a status column — following
@@ -248,10 +305,24 @@ and then two fields would describe one fact:
 
 | State | `redeemed_at` | `revoked_at` | `expires_at` vs now |
 |---|---|---|---|
-| open | NULL | NULL | future |
-| expired | NULL | NULL | past |
+| open | NULL | NULL | `expires_at > now` |
+| expired | NULL | NULL | `expires_at <= now` |
 | redeemed | set | NULL | any |
 | revoked | NULL | set | any |
+
+> **Correction, 2026-08-17 (`R4-01`).** The first version of this table said "future" and "past",
+> which classifies `now == expires_at` as **neither** state. That is not a wording infelicity: two
+> implementations reading the same table could pick `<` and `<=` and disagree about one instant,
+> and the one that picks `<` treats an invitation at its own expiry as still open — failing *open*
+> at the boundary, in a state model whose whole point is failing closed. So the boundary is fixed
+> explicitly: **open is `expires_at > now`; expired is `expires_at <= now`.** The expiry instant
+> itself counts as expired. This is the repo's existing convention rather than a new choice —
+> `Session.is_expired_at` is `return self.expires_at <= moment` (`rca/sessions.py:111`), whose
+> docstring gives this exact reason ("a horizon that excluded its own boundary would leave a
+> one-instant window where a session is neither live nor expired"), and RRA's `redeem` already
+> refuses on `invitation.expires_at <= now` (`rra/sessions.py:120`). `R4-02` owes an
+> `is_expired_at`-shaped predicate on the record rather than an inline comparison at each call
+> site, so the boundary is stated once.
 
 **`FR-017`'s hard part is the non-disclosure, not the at-most-once.** Six distinct causes —
 malformed token, unknown `invitation_id`, wrong secret, expired, revoked, already redeemed — must
@@ -294,6 +365,25 @@ well as by message. That means:
   swept invitation becomes distinguishable from a wrong secret by exactly the timing this
   requirement forbids. Three routes therefore reach the dummy: a malformed token, an unknown
   `invitation_id`, and a found row whose verifier is already destroyed.
+- **The state checks must not short-circuit the digest comparison, and RRA's `redeem` is the
+  ordering *not* to copy.** The bullet above covers the row whose verifier is already gone; it does
+  **not** cover the row that is expired, revoked, or already redeemed while its verifier is still
+  intact — which is every such row until the sweeper reaches it, so it is the common case rather
+  than a window. `rra/sessions.py:117-123` refuses on
+  `invitation is None or invitation.redeemed_at is not None or invitation.expires_at <= now or not
+  self.verify_secret(...)`, and Python's `or` short-circuits: a redeemed or expired invitation
+  returns **before** `verify_secret` runs and pays no scrypt at all, while a wrong secret against an
+  open invitation pays the full cost. That is the timing disclosure `FR-017` forbids, present in the
+  precedent this note otherwise follows for the secret half. So `R4`'s `redeem` computes the digest
+  comparison **before** or regardless of the state predicates, and decides the refusal from all of
+  them together. Concretely: the state of the row may determine *whether the refusal is raised*, but
+  never *whether the KDF ran*.
+- **The invariant, stated once so `R4-07` can assert it directly.** Every one of the six causes pays
+  **equivalent KDF cost** — one `scrypt` at `n=2**14` — before any refusal is raised: a malformed
+  token that never parses, an `invitation_id` that matches no row, a row whose verifier is
+  destroyed, a row that is expired, revoked, or already redeemed with its verifier intact, and a
+  genuine wrong secret. Six causes, one message, one KDF invocation each. Anything that skips the
+  work on some branch is the defect, however reasonable it looks as an early return.
 - `hmac.compare_digest` for the comparison itself, as RRA already does.
 
 **A test asserting one message across six causes is not sufficient** — it passes on an
@@ -495,7 +585,7 @@ touch: a demoted or removed owner should not have outstanding invitations that s
 authority under which they were issued is gone.
 
 **Two triggers, two anchors, one cascade.** `R4-06` invalidates, in the same transaction as the
-revocation:
+revocation — see the atomicity note below, which fixes *which* transaction that is:
 
 | Trigger | Predicate | Anchor |
 |---|---|---|
@@ -505,6 +595,42 @@ revocation:
 Both restricted to unredeemed and unrevoked rows, and both destroying the verifier as they mark
 `revoked_at`, per §3's destruction rule. The two predicates overlap only when someone invited
 themselves, so this is a union rather than a choice.
+
+**The cascade is atomic with the membership deletion, and "the same transaction" means
+`_apply_membership_change`'s.** This is the §6.2 argument in a second verb, so it is stated with the
+same force. If the invalidation runs *after* `OrganizationStore.revoke_membership` returns, then a
+crash, a lost connection, or an unhandled exception between the two leaves the membership revoked
+while its invitation is **still open and still redeemable** — and the revoked member walks back in
+through the held token, which is precisely the counter-example above, re-created by a partial
+failure rather than by the narrow reading. Authority regained is the same outcome whichever way the
+gap opens.
+
+**Where the code must go, because the transaction is not the service's to open.**
+`revoke_membership` (`persistence.py:817`) does not manage its own transaction — it delegates to
+`_apply_membership_change` (`persistence.py:899`), which opens `with self._factory.begin()` at
+`persistence.py:934`, does the lock, the final-owner guard, the `write` callback, and
+`database.add(_event_row(event))`, and commits by leaving that block at `persistence.py:955`. So
+there is no seam after `revoke_membership` in which a second store call could still be inside the
+transaction. The cascade therefore runs **inside** that block — either in the `write(database, row)`
+callback, which already receives the session and returns the `FR-014` event, or in
+`_apply_membership_change`'s own body after the guard. It is not a second store method the service
+calls next.
+
+Three things commit or roll back **together**: the membership row's deletion, its `FR-014`
+`MembershipEvent.revoked` event, and every invitation matched by either predicate above.
+`revoke_membership`'s own docstring already makes this argument for two of the three
+(`persistence.py:840-844`): "**The deletion and the event commit together.** … An event written
+outside this transaction could describe a revocation that rolled back, and a deletion without its
+event is an unattributed membership change." The cascade is the third member of that set for the
+same reason — an invitation left open outside the transaction describes a membership that still
+exists.
+
+**What `R4-06` owes as evidence.** A test that revokes and then observes the invitations closed
+passes on the non-atomic implementation too, since nothing crashed. The failure has to be induced:
+force the invalidation to raise *after* the deletion is staged and assert the membership is **still
+present** and the invitation **still open** — both halves, since a rollback that dropped only one
+would be its own defect. `test_rca001_concurrent_final_owner.py` is the precedent for proving a
+transactional claim rather than asserting the happy path.
 
 **What remains uncertain, stated narrowly.** Not the reading — the counter-example settles it. What
 is uncertain is whether `R4-06` should invalidate on **demotion** as well as removal.
