@@ -71,7 +71,12 @@ class BetaSessionRow(Base):
     )
 
     session_id: Mapped[str] = mapped_column(String, primary_key=True)
-    owner_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    #: Not `unique=True`. One scope may hold many sessions: a beta participant happens to hold one,
+    #: but a commercial organization holds a stable `owner_id` for its lifetime (`FR-035`) and runs
+    #: many analyses under it. `uq_session_owner_scope` above is the real invariant, and `owner_id`
+    #: is its leading column, so `owner_id`-only lookups stay index-backed without a second index.
+    #: Dropped by `20260817_0017` under `KHEPRI-DEC-020` §2, which authorizes this and nothing else.
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     content_expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

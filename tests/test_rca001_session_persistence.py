@@ -375,7 +375,19 @@ class TestTheAccountRowSurvivesEveryHorizon:
 
 class TestTheMigration:
     def test_the_head_is_the_session_revision(self) -> None:
-        """One migration, one head. `R3-03` is the only migration in flight."""
+        """One migration, one head.
+
+        The single-head half is the durable claim and must never be relaxed: two heads mean two
+        migrations in flight, which `AGENTS.md` resolves by re-pointing the second's
+        `down_revision` rather than by merging them.
+
+        The pinned revision is deliberately *not* generalized away. A head count alone would pass
+        for a revision chained onto the wrong parent, so the identifier is updated by each slice
+        that adds a migration -- which is what forces that slice to notice it is now the one in
+        flight. `R3-03` wrote `20260815_0016` here; `R7-02` (`KHEPRI-DEC-020` §2) added
+        `20260817_0017` on top of it, dropping `rra_beta_sessions.UNIQUE (owner_id)` so one
+        commercial scope may hold more than one analysis.
+        """
         import subprocess
 
         result = subprocess.run(
@@ -383,7 +395,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260815_0016" in result.stdout
+        assert "20260817_0017" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:
