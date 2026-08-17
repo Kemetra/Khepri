@@ -23,17 +23,17 @@ reason `test_rca001_final_owner.py:247-263` compiles against the PostgreSQL dial
 positive direction is already covered there and in `test_rca001_revocation.py`; this file covers the
 negative direction two ways:
 
-1. **Statically**, over the source: exactly four methods may reach a lock, named in `_MAY_LOCK`. A
-   fifth one appearing fails the test rather than passing unnoticed. The scan follows delegation, so
-   "reach" includes calling a helper that locks.
+1. **Statically**, across **every module in `src/khepri/rca`**: exactly six methods may reach a
+   lock, named in `_MAY_LOCK`. A seventh appearing fails the test rather than passing unnoticed. The
+   scan follows delegation, so "reach" includes calling a helper that locks -- in any module.
 2. **By compilation**, asserting each locking statement's predicates clause by clause -- not merely
    that a predicate appears somewhere in the SQL.
 
 The static half is what makes this durable. A test that only compiled today's statements would say
 nothing about a lock added tomorrow to a method this file never thought to name.
 
-**Four gaps closed after review on `#208`**, each confirmed by watching the mutant escape the
-earlier version before the fix, and die after it:
+**Five gaps closed after review on `#208`**, each confirmed by watching the mutant escape the
+version before the fix, and die after it:
 
 - **Delegation to an allowlisted helper.** The scan was non-transitive *by design*, and that design
   turned out to be an escape hatch.
@@ -42,9 +42,21 @@ earlier version before the fix, and die after it:
 - **The outer `role` predicate dropped.** `assert "role =" in sql` is a disjunction over two
   predicates, so it passed on whichever survived.
 - **The subquery `role` predicate dropped.** The same disjunction, from the other side.
+- **A caller in another module.** Fixing the first gap created this one: the scan became transitive
+  but still read only `persistence.py`, so making `LifecycleService.enable_account` delegate to
+  `apply_owner_reducing_change` acquired the lock with all eight tests green. Now the whole package
+  is scanned, which surfaced `disable_account` and `demote_to_member` as legitimate service-layer
+  reachers.
 
-The lesson worth carrying: the first version's mutation testing killed three mutants I chose myself,
-all of which my design already anticipated. Self-selected mutants measure imagination, not coverage.
+Two lessons worth carrying, both about this file's own history:
+
+**Self-selected mutants measure imagination, not coverage.** The first version's mutation testing
+killed three mutants chosen by its author, all of which the design already anticipated. Four more
+escaped, found by an outside reviewer.
+
+**Widening a static analysis changes what shadows what.** The first attempt at package-wide scanning
+concatenated every module and parsed once, which *silently weakened* the scan -- see `_rca_modules`.
+It was caught by this file's own scanner self-test, which is the argument for having one.
 """
 
 from __future__ import annotations
@@ -59,7 +71,30 @@ from khepri.rca.persistence import (
     owner_memberships_for_update,
 )
 
-_PERSISTENCE = pathlib.Path("src/khepri/rca/persistence.py")
+_RCA_PACKAGE = pathlib.Path("src/khepri/rca")
+_PERSISTENCE = _RCA_PACKAGE / "persistence.py"
+
+
+def _rca_modules() -> list[str]:
+    """Every RCA module's source, so the scan spans the package rather than one file.
+
+    **Why not just `persistence.py`.** The scan follows delegation, but an earlier version fed it
+    only that one file, so a caller in a *different* module was invisible: making
+    `LifecycleService.enable_account` (`lifecycle.py`) delegate to `apply_owner_reducing_change`
+    acquired the allowlisted lock and left all eight tests green. `lifecycle.py:120` already calls
+    that method legitimately, so cross-module reach is the normal shape here, not a hypothetical.
+    Found in review on `#208`, after the transitive fix in the same PR made this gap reachable.
+
+    **A list rather than one concatenated string, and that distinction is load-bearing.** The first
+    attempt joined every module into one source and parsed it once. That *silently weakened* the
+    scan: `_methods_reaching_a_lock` keys on function name, `stores.py` sorts after
+    `persistence.py`, and `stores.py`'s `OrganizationStore` Protocol declares
+    `def apply_owner_reducing_change(...) -> str: ...` with an empty body. The stub overwrote the
+    real implementation, so the scanner reported the package's principal locking method as
+    lock-free -- caught only because this file's own self-test asserts that method is found.
+    Collecting per-module and taking the union keeps a Protocol stub from masking an implementation.
+    """
+    return [path.read_text(encoding="utf-8") for path in sorted(_RCA_PACKAGE.rglob("*.py"))]
 
 #: The two module-level statements that carry `FOR UPDATE`, plus the raw SQLAlchemy call, so a
 #: method reaching for the lock by any of the three routes is caught.
@@ -88,19 +123,29 @@ _LOCK_CALL = "with_for_update"
 #: organization's final owner, so both need it. Every other write either raises the owner count or
 #: cannot change it.
 #:
-#: The two verbs are listed explicitly rather than exempted as "only delegating". The scan is
-#: transitive precisely because delegation is a real way to acquire a lock, so a method that reaches
-#: one must say so here. Every name below is a claim that this method needs the lock, and the
+#: Callers are listed explicitly rather than exempted as "only delegating". The scan is transitive
+#: precisely because delegation is a real way to acquire a lock, so a method that reaches one must
+#: say so here. Every name below is a claim that this method needs the lock, and the
 #: paired-predicate tests below are what check the lock it takes is no wider than its guard.
+#:
+#: **Two layers, because the scan spans the package.** The store methods hold the lock;
+#: `disable_account` (`lifecycle.py`) and `demote_to_member` (`organizations.py`) are the service
+#: verbs that reach them, and both are genuinely owner-reducing -- `disable_account` *is* the
+#: `FR-013` guard path, and `demote_to_member` can remove an organization's last owner. They
+#: appeared only once the scan widened past `persistence.py`, which is the widening working.
 #:
 #: Adding a name here is the review conversation this allowlist exists to force, in the same spirit
 #: as `R6-08`'s `VERB_CALLER_ALLOWLIST`. It is not a list to extend for convenience.
 _MAY_LOCK = frozenset(
     {
+        # store-level: the methods that construct the lock
         "apply_owner_reducing_change",
         "_apply_membership_change",
         "revoke_membership",
         "demote_membership",
+        # service-level: the owner-reducing verbs that reach it
+        "disable_account",
+        "demote_to_member",
     }
 )
 
@@ -140,8 +185,12 @@ def _called_names(node: ast.FunctionDef) -> set[str]:
     return called
 
 
-def _methods_reaching_a_lock(source: str) -> set[str]:
-    """Every function in `source` that can reach a lock, **including through delegation**.
+def _methods_reaching_a_lock(*sources: str) -> set[str]:
+    """Every function in `sources` that can reach a lock, **including through delegation**.
+
+    Accepts one or many modules. Facts are unioned by function name across modules rather than
+    merged by overwriting, so a Protocol stub in one module cannot mask a locking implementation of
+    the same name in another -- see `_rca_modules` for the failure that motivated this.
 
     A direct lock is a reference to a named locking statement, a `.with_for_update()` call, or a
     `with_for_update=` keyword. Transitive reach is then computed to a fixed point: a function
@@ -159,22 +208,47 @@ def _methods_reaching_a_lock(source: str) -> set[str]:
     must be allowlisted explicitly -- which is the honest position, because they *do* take the lock
     and they *do* need it.
     """
-    functions = {
-        node.name: node
+    reaching, calls = _collect_lock_facts(sources)
+    return _close_over_callers(reaching, calls)
+
+
+def _functions_in(sources: tuple[str, ...]) -> list[ast.FunctionDef]:
+    """Every function definition across every module, flattened."""
+    return [
+        node
+        for source in sources
         for node in ast.walk(ast.parse(source))
         if isinstance(node, ast.FunctionDef)
-    }
-    reaching = {name for name, node in functions.items() if _locks_directly(node)}
-    calls = {name: _called_names(node) for name, node in functions.items()}
+    ]
 
-    # Fixed point: repeat until no new caller is added. Bounded by the function count, so a
-    # mutually-recursive pair cannot loop forever.
-    for _ in range(len(functions) + 1):
-        grown = {name for name, called in calls.items() if called & reaching}
-        if grown <= reaching:
+
+def _collect_lock_facts(sources: tuple[str, ...]) -> tuple[set[str], dict[str, set[str]]]:
+    """Direct lockers, and every name each function calls, keyed by function name.
+
+    Facts are **unioned, never overwritten**: a stub definition cannot retract what a real one
+    established, which is what keeps `stores.py`'s Protocol from masking `persistence.py`.
+    """
+    reaching: set[str] = set()
+    calls: dict[str, set[str]] = {}
+    for node in _functions_in(sources):
+        calls.setdefault(node.name, set()).update(_called_names(node))
+        if _locks_directly(node):
+            reaching.add(node.name)
+    return reaching, calls
+
+
+def _close_over_callers(reaching: set[str], calls: dict[str, set[str]]) -> set[str]:
+    """Grow `reaching` to a fixed point: whoever calls a lock-reacher reaches the lock.
+
+    Iteration is bounded by the function count, so a mutually-recursive pair cannot loop forever.
+    """
+    closed = set(reaching)
+    for _ in range(len(calls) + 1):
+        grown = {name for name, called in calls.items() if called & closed}
+        if grown <= closed:
             break
-        reaching |= grown
-    return reaching
+        closed |= grown
+    return closed
 
 
 def test_only_the_two_owner_reducing_writes_reach_a_lock() -> None:
@@ -184,7 +258,7 @@ def test_only_the_two_owner_reducing_writes_reach_a_lock() -> None:
     test, and removing `_apply_membership_change` from `_MAY_LOCK` fails it too -- so the
     allowlist cannot be quietly widened without the diff showing it.
     """
-    reaching = _methods_reaching_a_lock(_PERSISTENCE.read_text(encoding="utf-8"))
+    reaching = _methods_reaching_a_lock(*_rca_modules())
 
     unexpected = reaching - _MAY_LOCK - _LOCK_ROUTES
     assert unexpected == set(), (
@@ -199,7 +273,7 @@ def test_the_scanner_sees_the_locks_that_are_there() -> None:
 
     Follows `test_rca001_boundary.py::test_rca_import_checker_flags_and_clears_expected_cases`.
     """
-    reaching = _methods_reaching_a_lock(_PERSISTENCE.read_text(encoding="utf-8"))
+    reaching = _methods_reaching_a_lock(*_rca_modules())
 
     assert "apply_owner_reducing_change" in reaching, "the scanner found no lock at all"
     assert "_apply_membership_change" in reaching
@@ -347,9 +421,9 @@ def test_promotion_issues_no_locking_statement() -> None:
     concurrent write could invalidate. Asserted separately from the scan because this is the path a
     later reader is most likely to "fix" by adding a lock for symmetry.
     """
-    source = _PERSISTENCE.read_text(encoding="utf-8")
+    modules = _rca_modules()
 
-    assert "promote_membership" not in _methods_reaching_a_lock(source)
+    assert "promote_membership" not in _methods_reaching_a_lock(*modules)
 
 
 def test_reads_and_account_writes_issue_no_locking_statement() -> None:
@@ -359,7 +433,7 @@ def test_reads_and_account_writes_issue_no_locking_statement() -> None:
     *inside* `apply_owner_reducing_change`'s transaction, where the lock is already held. Taking its
     own lock would be the second guard the stop conditions forbid.
     """
-    reaching = _methods_reaching_a_lock(_PERSISTENCE.read_text(encoding="utf-8"))
+    reaching = _methods_reaching_a_lock(*_rca_modules())
 
     for method in (
         "add_account",
