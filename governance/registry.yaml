@@ -119,8 +119,14 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-019
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-019-commercial-scope-attachment.md
+    depends_on: []
+    superseded_by: KHEPRI-DEC-020
+  - type: decision
+    id: KHEPRI-DEC-020
+    state: active
+    document: governance/decisions/KHEPRI-DEC-020-commercial-scope-attachment-with-schema.md
     depends_on: []
 
   - type: specification
