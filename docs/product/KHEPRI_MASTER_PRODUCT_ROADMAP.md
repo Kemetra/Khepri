@@ -629,6 +629,36 @@ Map an authenticated RCA actor and active organization to the existing opaque RR
 | R7-04 | Preserve RRA independence and existing beta mode | R7-01 | no | Regression tests |
 | R7-05 | Add commercial API endpoints only through the canonical resolver | R7-02, R6 | U1 templates | HTTP integration |
 | R7-06 | Add end-to-end cross-org and nonexistence-indistinguishability tests | R7-05 | no | Security E2E |
+| R7-07 | Implement the RRA scoped-session entry point and the RCA bridge that calls it | R7-02 merged, KHEPRI-DEC-020 §3 lifted or a successor authorizing product code | no | Bridge service |
+
+### Task disposition — the schema conflict and its migration (recorded 2026-08-17)
+
+`R7-02`'s row above describes the slice as it was designed: one task producing a "Bridge service".
+It shipped as **two**, and the row is left as written rather than edited, because `R7-02` is merged
+and cited from `STATUS.md`, `KHEPRI-DEC-019`, `KHEPRI-DEC-020`, and
+`docs/superpowers/specs/2026-08-17-r7-02-schema-cardinality-finding.md`.
+
+What actually happened:
+
+1. `R7-02` probed before implementing and found that `KHEPRI-DEC-019` contradicted itself — its §2
+   admitted an entry point taking a caller-supplied `owner_id`, while its §5 forbade any schema
+   change, and `rra_beta_sessions.UNIQUE (owner_id)` made those incompatible. It recorded the
+   finding (`9bfae82`) instead of shipping an entry point whose second call raises `IntegrityError`.
+2. `KHEPRI-DEC-020` (`2c9e0c1`) superseded `KHEPRI-DEC-019` and authorized **the migration and its
+   ORM change, explicitly and only** — its §3 reads "No product code beyond the migration and its
+   ORM change. No bridge service and no entry-point implementation are authorized here."
+3. `R7-02` therefore delivers the migration (`20260817_0017`) and stops there.
+
+**`R7-07` is appended for the bridge itself**, and it is blocked on governance rather than on code:
+`KHEPRI-DEC-020` §1 re-enacts the *admitted shape*, so the design is settled, but §3 withholds
+authorization for the code. Lifting that needs a successor record, which is the owner's to make.
+
+One note for whoever writes `R7-07`. `test_rca001_boundary.py` asserts the **RRA→RCA** import
+direction only (`test_no_rra_module_imports_rca`); `STATUS.md`'s `FR-036` row already records that
+no test asserts RCA→RRA. So the bridge's "no `rra_` import inside `src/khepri/rca/`" discipline rests
+on prose, not on a guard, and `isolation.py:7-8`'s `TYPE_CHECKING` pattern is the existing idiom for
+needing an RRA type without importing it at runtime. Adding the missing direction to the boundary
+test belongs in `R7-07`.
 
 ## Non-goals
 
