@@ -32,8 +32,8 @@ negative direction two ways:
 The static half is what makes this durable. A test that only compiled today's statements would say
 nothing about a lock added tomorrow to a method this file never thought to name.
 
-**Seven gaps closed over two review rounds on `#208`**, each confirmed by watching the mutant escape
-the version before the fix, and die after it:
+**Nine gaps closed over three review rounds on `#208`**, each confirmed by watching the mutant
+escape the version before the fix, and die after it:
 
 - **Delegation to an allowlisted helper.** The scan was non-transitive *by design*, and that design
   turned out to be an escape hatch.
@@ -52,21 +52,32 @@ the version before the fix, and die after it:
   the same reason.
 - **An `async def` body.** `ast.AsyncFunctionDef` is not an `ast.FunctionDef`, so async functions
   were dropped from the scan entirely.
+- **A local variable alias.** `lock = self._organizations.apply_owner_reducing_change` then
+  `lock(...)` records only `lock`. The module-level import-alias fix did not cover a local binding.
+- **A disjunction instead of a conjunction.** Counting predicates cannot tell `a AND b` from
+  `a OR b`, and the `OR` form locks every owner row in *every* organization. The predicates' shape
+  is now asserted, not just their presence.
 
 Three lessons worth carrying, all about this file's own history:
 
 **Self-selected mutants measure imagination, not coverage.** The first version's mutation testing
-killed three mutants chosen by its author, all of which the design already anticipated. Six more
-escaped, found by an outside reviewer over two rounds.
+killed three mutants chosen by its author, all of which the design already anticipated. Nine more
+escaped, found by an outside reviewer over three rounds.
 
 **Widening a static analysis changes what shadows what.** The first attempt at package-wide scanning
 concatenated every module and parsed once, which *silently weakened* the scan -- see `_rca_modules`.
 It was caught by this file's own scanner self-test, which is the argument for having one.
 
 **Each fix opened the next gap.** Transitivity made cross-module reach matter; package-wide scanning
-made aliasing and async matter. A static boundary is only as wide as the spellings it knows, so
+made import aliasing and async matter; resolving import aliases made *local* aliases matter. A
+static boundary is only as wide as the spellings it knows, so
 `test_the_scanner_sees_the_locks_that_are_there` plants every known route -- that list is the real
-statement of what this file can and cannot catch.
+statement of what this file can and cannot catch, and it is not a closed set.
+
+**Presence is not shape.** Three separate findings came from assertions that checked a predicate
+*existed* without checking where it sat or how it was joined: two `role =` predicates a substring
+match could not tell apart, and a conjunction a count could not tell from a disjunction. When
+asserting against compiled SQL, pin the clause.
 """
 
 from __future__ import annotations
@@ -206,9 +217,37 @@ def _locks_directly(node: _AnyFunction, routes: frozenset[str]) -> bool:
     return any(_is_lock_construction(inner, routes) for inner in ast.walk(node))
 
 
+def _local_function_aliases(node: _AnyFunction) -> set[str]:
+    """Names a bound method or function was assigned to inside this body.
+
+    `lock = self._organizations.apply_owner_reducing_change` then `lock(...)` calls the locking
+    method while `_called_names` records only `lock` -- so the delegation is invisible. This returns
+    the *right-hand* names of such assignments, which the caller adds to its call set.
+
+    Verified by planting exactly that in `enable_account` and watching all eight tests stay green
+    (`#208` review, second round). The import-alias fix in the first round did not cover it: that
+    one resolves module-level `import ... as`; this one is a local binding.
+    """
+    aliased: set[str] = set()
+    for inner in ast.walk(node):
+        if not isinstance(inner, ast.Assign):
+            continue
+        # Only bare references, never calls: `x = f()` binds a *result*, `x = f` binds the callable.
+        if isinstance(inner.value, ast.Attribute):
+            aliased.add(inner.value.attr)
+        elif isinstance(inner.value, ast.Name):
+            aliased.add(inner.value.id)
+    return aliased
+
+
 def _called_names(node: _AnyFunction) -> set[str]:
     """Every name this function calls, whether bare (`helper()`) or via an attribute
-    (`self._helper()`). Used to follow delegation to a locking helper."""
+    (`self._helper()`), plus any callable it bound to a local name.
+
+    The local-binding half matters because a call through a variable records only the variable, so
+    delegation through an assignment would otherwise evade the scan -- see
+    `_local_function_aliases`.
+    """
     called: set[str] = set()
     for inner in ast.walk(node):
         if not isinstance(inner, ast.Call):
@@ -218,7 +257,7 @@ def _called_names(node: _AnyFunction) -> set[str]:
             called.add(target.id)
         elif isinstance(target, ast.Attribute):
             called.add(target.attr)
-    return called
+    return called | _local_function_aliases(node)
 
 
 def _methods_reaching_a_lock(*sources: str) -> set[str]:
@@ -381,6 +420,12 @@ def test_the_owner_lock_is_scoped_to_one_organization() -> None:
 
     This statement is a single flat `WHERE` with one of each predicate, so a substring assertion is
     unambiguous here. `owner_memberships_for_update` is not, and is handled separately below.
+
+    **The predicates must be joined by `AND`, and counting them does not establish that.** Rewriting
+    the `where` as `or_(organization_id == ..., role == ...)` keeps both counts at one while
+    PostgreSQL locks every owner row in *every* organization plus every membership in the named
+    one -- the exact opposite of the independence this test claims. Verified: that mutant passed
+    all eight tests before this assertion existed. Found in review on `#208`.
     """
     sql = str(organization_owners_for_update("org_example").compile(dialect=postgresql.dialect()))
 
@@ -391,6 +436,28 @@ def test_the_owner_lock_is_scoped_to_one_organization() -> None:
     assert sql.count("rca_memberships.role =") == 1, (
         "only owner rows are locked, not every membership"
     )
+    assert _where_clause(sql) == (
+        "rca_memberships.organization_id = %(organization_id_1)s "
+        "AND rca_memberships.role = %(role_1)s"
+    ), (
+        "the two predicates must be conjunctive. A disjunction satisfies both counts above and "
+        "locks vastly more rows"
+    )
+    assert " OR " not in _where_clause(sql), "a disjunction here defeats organization independence"
+
+
+def _where_clause(sql: str) -> str:
+    """The `WHERE` body of compiled SQL, normalized to one line and stripped of trailing clauses.
+
+    Exists so a test can assert the predicates' **shape** rather than only their presence. Counting
+    operands cannot distinguish `a AND b` from `a OR b`, and the difference is how many rows the
+    lock covers.
+    """
+    body = sql[sql.index("WHERE") + len("WHERE") :]
+    for terminator in (" ORDER BY ", " FOR UPDATE", " GROUP BY ", " LIMIT "):
+        if terminator in body:
+            body = body[: body.index(terminator)]
+    return " ".join(body.split())
 
 
 def _split_on_subquery(sql: str) -> tuple[str, str]:
@@ -464,6 +531,10 @@ def test_the_account_lock_constrains_the_role_in_both_of_its_clauses() -> None:
     assert "rca_memberships.role =" in outer, (
         "the outer selection must lock owner rows only -- without it, every member row in every "
         "owned organization is locked"
+    )
+    assert " OR " not in _where_clause(sql), (
+        "both clauses must stay conjunctive. A disjunction anywhere here satisfies every count and "
+        "presence check above while widening the lock -- see the sibling organization-lock test"
     )
 
 
