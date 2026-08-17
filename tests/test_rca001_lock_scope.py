@@ -32,8 +32,8 @@ negative direction two ways:
 The static half is what makes this durable. A test that only compiled today's statements would say
 nothing about a lock added tomorrow to a method this file never thought to name.
 
-**Five gaps closed after review on `#208`**, each confirmed by watching the mutant escape the
-version before the fix, and die after it:
+**Seven gaps closed over two review rounds on `#208`**, each confirmed by watching the mutant escape
+the version before the fix, and die after it:
 
 - **Delegation to an allowlisted helper.** The scan was non-transitive *by design*, and that design
   turned out to be an escape hatch.
@@ -47,16 +47,26 @@ version before the fix, and die after it:
   `apply_owner_reducing_change` acquired the lock with all eight tests green. Now the whole package
   is scanned, which surfaced `disable_account` and `demote_to_member` as legitimate service-layer
   reachers.
+- **An aliased import.** `import owner_memberships_for_update as lock_owners` then
+  `lock_owners(...)` is an ordinary spelling a name-exact match misses. `R6-08` resolves aliases for
+  the same reason.
+- **An `async def` body.** `ast.AsyncFunctionDef` is not an `ast.FunctionDef`, so async functions
+  were dropped from the scan entirely.
 
-Two lessons worth carrying, both about this file's own history:
+Three lessons worth carrying, all about this file's own history:
 
 **Self-selected mutants measure imagination, not coverage.** The first version's mutation testing
-killed three mutants chosen by its author, all of which the design already anticipated. Four more
-escaped, found by an outside reviewer.
+killed three mutants chosen by its author, all of which the design already anticipated. Six more
+escaped, found by an outside reviewer over two rounds.
 
 **Widening a static analysis changes what shadows what.** The first attempt at package-wide scanning
 concatenated every module and parsed once, which *silently weakened* the scan -- see `_rca_modules`.
 It was caught by this file's own scanner self-test, which is the argument for having one.
+
+**Each fix opened the next gap.** Transitivity made cross-module reach matter; package-wide scanning
+made aliasing and async matter. A static boundary is only as wide as the spellings it knows, so
+`test_the_scanner_sees_the_locks_that_are_there` plants every known route -- that list is the real
+statement of what this file can and cannot catch.
 """
 
 from __future__ import annotations
@@ -70,6 +80,9 @@ from khepri.rca.persistence import (
     organization_owners_for_update,
     owner_memberships_for_update,
 )
+
+#: Both function node types. `async def` is `AsyncFunctionDef`, not a subclass of `FunctionDef`.
+_AnyFunction = ast.FunctionDef | ast.AsyncFunctionDef
 
 _RCA_PACKAGE = pathlib.Path("src/khepri/rca")
 _PERSISTENCE = _RCA_PACKAGE / "persistence.py"
@@ -150,14 +163,37 @@ _MAY_LOCK = frozenset(
 )
 
 
-def _is_lock_construction(node: ast.AST) -> bool:
+def _lock_aliases(tree: ast.Module) -> frozenset[str]:
+    """Local names bound to a locking statement, including aliased imports.
+
+    `from khepri.rca.persistence import owner_memberships_for_update as lock_owners` then
+    `lock_owners(...)` reaches the same statement under a name `_LOCK_ROUTES` does not contain, so a
+    name-exact match misses it -- verified by planting exactly that and watching all eight tests
+    stay green (`#208` review). Module aliases are covered too: `import persistence as p` then
+    `p.owner_memberships_for_update(...)` arrives as an `Attribute` whose `attr` is the real name,
+    which `_called_names` already records.
+
+    `R6-08`'s `_context_aliases` resolves aliases for the same reason and was added in the same kind
+    of review (`#200` P2). Ordinary spellings evade a name-exact scan without anyone intending to.
+    """
+    aliases = set(_LOCK_ROUTES)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        aliases.update(
+            alias.asname for alias in node.names if alias.name in _LOCK_ROUTES and alias.asname
+        )
+    return frozenset(aliases)
+
+
+def _is_lock_construction(node: ast.AST, routes: frozenset[str]) -> bool:
     """Whether this single node is one of the three ways to construct a lock.
 
-    Split out from the walk so each route is one flat check: a named locking statement, a
-    `.with_for_update()` call, or a `with_for_update=` keyword.
+    Split out from the walk so each route is one flat check: a named locking statement (under any
+    local name in `routes`), a `.with_for_update()` call, or a `with_for_update=` keyword.
     """
     if isinstance(node, ast.Name):
-        return node.id in _LOCK_ROUTES
+        return node.id in routes
     if isinstance(node, ast.Attribute):
         return node.attr == _LOCK_CALL
     if isinstance(node, ast.Call):
@@ -165,12 +201,12 @@ def _is_lock_construction(node: ast.AST) -> bool:
     return False
 
 
-def _locks_directly(node: ast.FunctionDef) -> bool:
+def _locks_directly(node: _AnyFunction, routes: frozenset[str]) -> bool:
     """Whether this function body constructs a lock itself, by any of the three routes."""
-    return any(_is_lock_construction(inner) for inner in ast.walk(node))
+    return any(_is_lock_construction(inner, routes) for inner in ast.walk(node))
 
 
-def _called_names(node: ast.FunctionDef) -> set[str]:
+def _called_names(node: _AnyFunction) -> set[str]:
     """Every name this function calls, whether bare (`helper()`) or via an attribute
     (`self._helper()`). Used to follow delegation to a locking helper."""
     called: set[str] = set()
@@ -212,13 +248,19 @@ def _methods_reaching_a_lock(*sources: str) -> set[str]:
     return _close_over_callers(reaching, calls)
 
 
-def _functions_in(sources: tuple[str, ...]) -> list[ast.FunctionDef]:
-    """Every function definition across every module, flattened."""
+def _functions_in(tree: ast.Module) -> list[_AnyFunction]:
+    """Every function definition in one module, **sync and async alike**.
+
+    `async def` parses to `ast.AsyncFunctionDef`, which is *not* an `ast.FunctionDef`, so a scan
+    testing only the latter drops async functions entirely -- an async path could then lock with
+    every assertion green. Verified by making one RCA method `async def` and watching all eight
+    tests pass (`#208` review). No RCA module defines one today; this keeps the claim true when one
+    does.
+    """
     return [
         node
-        for source in sources
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.FunctionDef)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     ]
 
 
@@ -230,10 +272,13 @@ def _collect_lock_facts(sources: tuple[str, ...]) -> tuple[set[str], dict[str, s
     """
     reaching: set[str] = set()
     calls: dict[str, set[str]] = {}
-    for node in _functions_in(sources):
-        calls.setdefault(node.name, set()).update(_called_names(node))
-        if _locks_directly(node):
-            reaching.add(node.name)
+    for source in sources:
+        tree = ast.parse(source)
+        routes = _lock_aliases(tree)
+        for node in _functions_in(tree):
+            calls.setdefault(node.name, set()).update(_called_names(node))
+            if _locks_directly(node, routes):
+                reaching.add(node.name)
     return reaching, calls
 
 
@@ -279,6 +324,7 @@ def test_the_scanner_sees_the_locks_that_are_there() -> None:
     assert "_apply_membership_change" in reaching
 
     planted = _methods_reaching_a_lock(
+        "from khepri.rca.persistence import owner_memberships_for_update as lock_owners\n"
         "def innocent():\n"
         "    return 1\n"
         "def by_named_statement():\n"
@@ -287,6 +333,10 @@ def test_the_scanner_sees_the_locks_that_are_there() -> None:
         "    return select(Row).with_for_update()\n"
         "def by_keyword():\n"
         "    return database.get(Row, 'id', with_for_update=True)\n"
+        "def by_alias():\n"
+        "    return lock_owners('acc_x')\n"
+        "async def by_async():\n"
+        "    return owner_memberships_for_update('acc_x')\n"
         "def by_delegation():\n"
         "    return self.by_keyword()\n"
         "def by_two_hops():\n"
@@ -296,11 +346,14 @@ def test_the_scanner_sees_the_locks_that_are_there() -> None:
         "by_named_statement",
         "by_method_call",
         "by_keyword",
+        "by_alias",
+        "by_async",
         "by_delegation",
         "by_two_hops",
     }, (
-        "the scanner must catch all three construction routes and follow delegation transitively; "
-        "each of these escaped an earlier version"
+        "the scanner must catch every construction route -- bare name, method call, keyword, "
+        "aliased import, and async body -- and follow delegation transitively. Each of these "
+        "escaped some earlier version of this file"
     )
     assert "innocent" not in planted, "the scanner must not flag a function that cannot lock"
 
