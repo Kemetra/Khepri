@@ -29,9 +29,17 @@ dbt and Dagster; both were refused with a written cost-benefit, and a standing r
 recorded that a later boundary decision does not reopen.
 
 So candidates were filtered against gaps the governance itself names, and each gap was verified
-against `src/` before research was commissioned. The finding is that **the beneficial results are
-obligations Khepri already owns and has not built** — not new territory. No recommendation below
-requires superseding an accepted decision.
+against `src/` before research was commissioned. No recommendation below requires superseding an
+accepted decision.
+
+**The results are not all of one kind, and the distinction matters for anyone selecting work from
+this document.** Two gaps are *authorized follow-ons*: envelope encryption and OpenTelemetry are
+written obligations of `KHEPRI-DEC-008`, unbuilt. Everything else is an *unowned opportunity*.
+The catalog is named by `KHEPRI-DEC-012` but placed explicitly outside its boundary and carries no
+specification linkage. Migration linting, pre-merge dependency scanning, SBOM generation, and
+licence checking rest on the `infra` dependency-group precedent or on no governed source at all.
+Reading the second group as obligations would widen scope on the strength of a research note,
+which this document does not authorize.
 
 One early false positive is recorded so it is not rediscovered: a search for `envelope` matches
 `src/khepri/rca/credentials.py:52`, where the string is OpenSSL's error text in a comment
@@ -44,7 +52,7 @@ choice, not a gap.
 |---|---|---|---|---|
 | Envelope encryption | `KHEPRI-DEC-008` follow-on | Unbuilt; five provider proofs still asserted | Add `cryptography` | Yes |
 | Fact and formula catalog | `KHEPRI-DEC-012`, named gap | Absent | Build with Jinja2 | No |
-| OpenTelemetry / OTLP | `KHEPRI-DEC-008` observability | Unbuilt; no references in `src/` | Core only, no auto-instrumentation | Core only |
+| OpenTelemetry / OTLP | `KHEPRI-DEC-008` observability | Unbuilt; no references in `src/` | Core only, no auto-instrumentation, exception capture disabled | Core only |
 | Migration-safety linting | `infra` group precedent | No lock analysis in CI | Squawk, once blocked path is resolved | No |
 | Pre-merge dependency scan | `infra` group precedent | `image.yml` scan skips pull requests | `osv-scanner` | No |
 | SBOM generation | — | Produced during the scan | Already solved by `uv` | No |
@@ -81,11 +89,21 @@ defensibility.
 | Licence | `Apache-2.0 OR BSD-3-Clause` | `"BSD, Public Domain"`, not valid SPDX | `Apache-2.0` |
 | Last release | 2026-07-31 | 2025-05-17 | 2026-08-13 |
 | AES-256-GCM | `aead.AESGCM` | `AES.MODE_GCM` | yes |
-| RFC 3394 key wrap | `keywrap.aes_key_wrap` | `MODE_KW` | none documented |
+| RFC 3394 key wrap (one candidate mechanism, not governed) | `keywrap.aes_key_wrap` | `MODE_KW` | none documented |
 | Dependency closure | 3 packages | 1 package | 4, including protobuf |
 
-`cryptography` carries both primitives the decision names in one library. A 32-byte data key is a
-multiple of 8, so plain RFC 3394 applies with no padding variant.
+`cryptography` carries AES-256-GCM, which the decision does name, and an RFC 3394 key-wrap
+primitive, which it does not.
+
+**The wrapping mechanism is an open design choice, not a governed one.** `KHEPRI-DEC-008:162-164`
+requires "a per-object AES-256-GCM data key, wrapped by a master key drawn from the secret store,
+with the ciphertext digest verified on read-back." It specifies the data-encryption primitive and
+the wrapping *relationship*; it does not name RFC 3394, and it does not define the master-key
+format. RFC 3394 is one candidate mechanism — AES-GCM wrapping the data key is another, and it
+would need no additional primitive. That choice carries interoperability and key-management
+consequences and belongs to the encryption slice, not to a dependency comparison. It is recorded
+here only because a library offering both mechanisms constrains the slice less than one offering
+neither.
 
 `tink` is refused on architecture rather than quality: its envelope path is KMS-bound, which is
 the coupling `KHEPRI-DEC-008` exists to sever, and it documents no RFC 3394 primitive.
@@ -212,6 +230,17 @@ gRPC fork-safety alongside the separate worker process role is unverified.
 Manual instrumentation costs the free FastAPI, SQLAlchemy, and Psycopg spans. It buys the
 property the decision describes: every attribute reaching a span is one the code wrote, so
 nothing can silently begin emitting SQL text on an upgrade.
+
+**One caveat qualifies that claim, and the slice must handle it.** Manual instrumentation alone
+does not deliver a content-free guarantee. In the SDK at 1.44.0 the standard
+`with tracer.start_as_current_span(...)` pattern defaults both `record_exception` and
+`set_status_on_exception` to true, so an exception escaping the block is exported with its message
+and stack trace even though no application code attached them. Database and storage errors are
+exactly the ones that carry SQL text, filenames, and object locations. Both defaults must
+therefore be disabled on every span context, with only sanitized error data emitted in their
+place. This is a design obligation of the observability slice, not an argument against manual
+instrumentation — auto-instrumentation carries the same exposure plus the attribute-capture
+defaults above.
 
 ## Migration-safety linting
 
@@ -346,3 +375,6 @@ for the change.
    rather than full-history linting.
 3. Whether dependency licence compliance is a requirement. If it is, it is the one area with no
    clean answer and real integration work.
+4. The key-wrapping mechanism and master-key format for envelope encryption. `KHEPRI-DEC-008`
+   fixes the data-encryption primitive and the wrapping relationship but neither of these, so
+   they belong to the encryption slice.
