@@ -23,12 +23,28 @@ reason `test_rca001_final_owner.py:247-263` compiles against the PostgreSQL dial
 positive direction is already covered there and in `test_rca001_revocation.py`; this file covers the
 negative direction two ways:
 
-1. **Statically**, over the source: exactly two methods may reach a locking statement, named here.
-   A third one appearing fails the test rather than passing unnoticed.
-2. **By compilation**, for the statements the lock-free paths actually issue.
+1. **Statically**, over the source: exactly four methods may reach a lock, named in `_MAY_LOCK`. A
+   fifth one appearing fails the test rather than passing unnoticed. The scan follows delegation, so
+   "reach" includes calling a helper that locks.
+2. **By compilation**, asserting each locking statement's predicates clause by clause -- not merely
+   that a predicate appears somewhere in the SQL.
 
 The static half is what makes this durable. A test that only compiled today's statements would say
 nothing about a lock added tomorrow to a method this file never thought to name.
+
+**Four gaps closed after review on `#208`**, each confirmed by watching the mutant escape the
+earlier version before the fix, and die after it:
+
+- **Delegation to an allowlisted helper.** The scan was non-transitive *by design*, and that design
+  turned out to be an escape hatch.
+- **`with_for_update=` as a keyword argument.** It is neither a `Name` nor an `Attribute`, so an AST
+  walk over those two node types missed it.
+- **The outer `role` predicate dropped.** `assert "role =" in sql` is a disjunction over two
+  predicates, so it passed on whichever survived.
+- **The subquery `role` predicate dropped.** The same disjunction, from the other side.
+
+The lesson worth carrying: the first version's mutation testing killed three mutants I chose myself,
+all of which my design already anticipated. Self-selected mutants measure imagination, not coverage.
 """
 
 from __future__ import annotations
@@ -48,36 +64,116 @@ _PERSISTENCE = pathlib.Path("src/khepri/rca/persistence.py")
 #: The two module-level statements that carry `FOR UPDATE`, plus the raw SQLAlchemy call, so a
 #: method reaching for the lock by any of the three routes is caught.
 _LOCK_ROUTES = frozenset({"owner_memberships_for_update", "organization_owners_for_update"})
+
+#: `with_for_update` reaches SQLAlchemy two ways and both must be scanned: as a method
+#: (`select(...).with_for_update()`) and as a **keyword argument**
+#: (`database.get(Row, id, with_for_update=True)`, also `Session.refresh`). The keyword form issues
+#: the same locking query and appears as neither a `Name` nor an `Attribute` in the AST, so a scan
+#: that walked only those two node types missed it entirely. Found in review on `#208`.
+#:
+#: One boundary worth stating, because it looks like a gap and is not. Adding
+#: `with_for_update=True` to a `get` *inside* `apply_owner_reducing_change` changes nothing these
+#: tests should catch: that method already holds the lock over those rows, so the keyword is
+#: redundant rather than newly contending. The scan reports methods, so a lock added to an
+#: already-allowlisted method is invisible by design -- and the paired-predicate tests below are
+#: what bound how wide *its* lock may be. The keyword form is caught where it matters, in a
+#: lock-free method; verified by planting one in `get_membership` and watching two tests fail.
 _LOCK_CALL = "with_for_update"
 
-#: The only methods permitted to lock, each with the guard that justifies it.
+#: The only methods permitted to reach a lock, each with the guard that justifies it.
 #:
 #: `apply_owner_reducing_change` counts effective owners and then writes, so a concurrent write can
-#: invalidate the count between the two. `_apply_membership_change` is the shared boundary behind
-#: `revoke_membership` and `demote_membership`, both of which can remove an organization's final
-#: owner. Every other write either raises the owner count or cannot change it.
+#: invalidate the count between the two. `_apply_membership_change` is the shared boundary, and
+#: `revoke_membership` and `demote_membership` reach the lock *through* it -- both can remove an
+#: organization's final owner, so both need it. Every other write either raises the owner count or
+#: cannot change it.
+#:
+#: The two verbs are listed explicitly rather than exempted as "only delegating". The scan is
+#: transitive precisely because delegation is a real way to acquire a lock, so a method that reaches
+#: one must say so here. Every name below is a claim that this method needs the lock, and the
+#: paired-predicate tests below are what check the lock it takes is no wider than its guard.
 #:
 #: Adding a name here is the review conversation this allowlist exists to force, in the same spirit
 #: as `R6-08`'s `VERB_CALLER_ALLOWLIST`. It is not a list to extend for convenience.
-_MAY_LOCK = frozenset({"apply_owner_reducing_change", "_apply_membership_change"})
+_MAY_LOCK = frozenset(
+    {
+        "apply_owner_reducing_change",
+        "_apply_membership_change",
+        "revoke_membership",
+        "demote_membership",
+    }
+)
+
+
+def _is_lock_construction(node: ast.AST) -> bool:
+    """Whether this single node is one of the three ways to construct a lock.
+
+    Split out from the walk so each route is one flat check: a named locking statement, a
+    `.with_for_update()` call, or a `with_for_update=` keyword.
+    """
+    if isinstance(node, ast.Name):
+        return node.id in _LOCK_ROUTES
+    if isinstance(node, ast.Attribute):
+        return node.attr == _LOCK_CALL
+    if isinstance(node, ast.Call):
+        return any(keyword.arg == _LOCK_CALL for keyword in node.keywords)
+    return False
+
+
+def _locks_directly(node: ast.FunctionDef) -> bool:
+    """Whether this function body constructs a lock itself, by any of the three routes."""
+    return any(_is_lock_construction(inner) for inner in ast.walk(node))
+
+
+def _called_names(node: ast.FunctionDef) -> set[str]:
+    """Every name this function calls, whether bare (`helper()`) or via an attribute
+    (`self._helper()`). Used to follow delegation to a locking helper."""
+    called: set[str] = set()
+    for inner in ast.walk(node):
+        if not isinstance(inner, ast.Call):
+            continue
+        target = inner.func
+        if isinstance(target, ast.Name):
+            called.add(target.id)
+        elif isinstance(target, ast.Attribute):
+            called.add(target.attr)
+    return called
 
 
 def _methods_reaching_a_lock(source: str) -> set[str]:
-    """Every method in `source` whose body can reach a locking statement.
+    """Every function in `source` that can reach a lock, **including through delegation**.
 
-    Walks each function body for a reference to one of the named locking statements or a direct
-    `.with_for_update()` call. Deliberately *not* transitive: a method that locks by calling a
-    helper that locks is a different shape, and `_apply_membership_change` -- the one such helper --
-    is named in `_MAY_LOCK` in its own right, so its callers are correctly reported as lock-free.
+    A direct lock is a reference to a named locking statement, a `.with_for_update()` call, or a
+    `with_for_update=` keyword. Transitive reach is then computed to a fixed point: a function
+    calling one that locks reaches the lock too.
+
+    **The transitive closure is the correction that matters.** An earlier version scanned only
+    direct construction and its docstring defended that as deliberate -- `revoke_membership` and
+    `demote_membership` lock only by calling `_apply_membership_change`, which is allowlisted in its
+    own right, so they were reported lock-free. That rationale is also an escape hatch: *any*
+    method can acquire the lock by delegating to the allowlisted helper, and the scan would not
+    notice. Verified by making `promote_membership` delegate to `_apply_membership_change` and
+    watching all seven tests stay green. Found in review on `#208`.
+
+    The consequence is that `revoke_membership` and `demote_membership` now appear in the result and
+    must be allowlisted explicitly -- which is the honest position, because they *do* take the lock
+    and they *do* need it.
     """
-    reaching: set[str] = set()
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        names = {inner.id for inner in ast.walk(node) if isinstance(inner, ast.Name)}
-        attributes = {inner.attr for inner in ast.walk(node) if isinstance(inner, ast.Attribute)}
-        if names & _LOCK_ROUTES or _LOCK_CALL in attributes:
-            reaching.add(node.name)
+    functions = {
+        node.name: node
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef)
+    }
+    reaching = {name for name, node in functions.items() if _locks_directly(node)}
+    calls = {name: _called_names(node) for name, node in functions.items()}
+
+    # Fixed point: repeat until no new caller is added. Bounded by the function count, so a
+    # mutually-recursive pair cannot loop forever.
+    for _ in range(len(functions) + 1):
+        grown = {name for name, called in calls.items() if called & reaching}
+        if grown <= reaching:
+            break
+        reaching |= grown
     return reaching
 
 
@@ -111,12 +207,28 @@ def test_the_scanner_sees_the_locks_that_are_there() -> None:
     planted = _methods_reaching_a_lock(
         "def innocent():\n"
         "    return 1\n"
-        "def guilty():\n"
+        "def by_named_statement():\n"
         "    return owner_memberships_for_update('acc_x')\n"
-        "def also_guilty():\n"
+        "def by_method_call():\n"
         "    return select(Row).with_for_update()\n"
+        "def by_keyword():\n"
+        "    return database.get(Row, 'id', with_for_update=True)\n"
+        "def by_delegation():\n"
+        "    return self.by_keyword()\n"
+        "def by_two_hops():\n"
+        "    return self.by_delegation()\n"
     )
-    assert planted == {"guilty", "also_guilty"}
+    assert planted == {
+        "by_named_statement",
+        "by_method_call",
+        "by_keyword",
+        "by_delegation",
+        "by_two_hops",
+    }, (
+        "the scanner must catch all three construction routes and follow delegation transitively; "
+        "each of these escaped an earlier version"
+    )
+    assert "innocent" not in planted, "the scanner must not flag a function that cannot lock"
 
 
 def test_the_two_locking_statements_still_lock() -> None:
@@ -139,12 +251,42 @@ def test_the_owner_lock_is_scoped_to_one_organization() -> None:
     `organization_owners_for_update` locks by organization, so two organizations' owner-reducing
     operations do not contend. A statement that dropped the predicate would serialize every
     organization in the table against every other -- correct, and unusably slow.
+
+    This statement is a single flat `WHERE` with one of each predicate, so a substring assertion is
+    unambiguous here. `owner_memberships_for_update` is not, and is handled separately below.
     """
     sql = str(organization_owners_for_update("org_example").compile(dialect=postgresql.dialect()))
 
     assert "FOR UPDATE" in sql
-    assert "rca_memberships.organization_id =" in sql, "the lock must be scoped to one organization"
-    assert "rca_memberships.role =" in sql, "only owner rows are locked, not every membership"
+    assert sql.count("rca_memberships.organization_id =") == 1, (
+        "the lock must be scoped to one organization, by exactly one predicate"
+    )
+    assert sql.count("rca_memberships.role =") == 1, (
+        "only owner rows are locked, not every membership"
+    )
+
+
+def _split_on_subquery(sql: str) -> tuple[str, str]:
+    """Split compiled SQL into (subquery text, everything outside it).
+
+    Depth-counted rather than sliced on the first `)`. A naive `sql.index(")")` lands inside the
+    bound-parameter placeholder `%(account_id_1)s` and truncates the subquery, which made the first
+    version of this helper fail against the real statement -- an argument for driving these
+    assertions off compiled output rather than a hand-written string.
+    """
+    start = sql.index("(SELECT")
+    end = _matching_paren(sql, start)
+    return sql[start : end + 1], sql[:start] + sql[end + 1 :]
+
+
+def _matching_paren(text: str, start: int) -> int:
+    """Index of the `)` closing the `(` at `start`, counting depth."""
+    depth = 0
+    for offset, character in enumerate(text[start:], start=start):
+        depth += {"(": 1, ")": -1}.get(character, 0)
+        if depth == 0 and character == ")":
+            return offset
+    raise AssertionError("the subquery is unbalanced; the statement shape changed")
 
 
 def test_the_account_lock_is_scoped_to_one_account() -> None:
@@ -155,7 +297,47 @@ def test_the_account_lock_is_scoped_to_one_account() -> None:
 
     assert "FOR UPDATE" in sql
     assert "rca_memberships.account_id =" in sql, "the lock must be scoped to one account"
-    assert "rca_memberships.role =" in sql, "only owner rows are locked, not every membership"
+
+
+def test_the_account_lock_constrains_the_role_in_both_of_its_clauses() -> None:
+    """Two `role =` predicates, doing two different jobs, and both must survive.
+
+    `owner_memberships_for_update` is a subquery plus an outer selection:
+
+        WHERE organization_id IN (SELECT organization_id
+                                  WHERE account_id = :a AND role = :owner)  <- which orgs it owns
+          AND role = :owner                                                 <- which rows to lock
+
+    A bare `assert "role =" in sql` is a **disjunction** over both and passes when either survives,
+    so it kills neither mutant. Both were verified to escape the earlier version (`#208` review):
+
+    - **Outer predicate dropped** -> PostgreSQL locks *every member row* of each owned
+      organization, which is exactly the unnecessary contention this file exists to prevent.
+    - **Subquery predicate dropped** -> disabling an account that is merely a *member* of an
+      organization locks that organization's owner rows, contending with an unrelated owner change.
+
+    Asserting the *count* is what distinguishes them: two predicates must be present, not one.
+    Their pairing with the account filter is asserted separately, because a count alone would pass
+    on a statement that filtered the same clause twice.
+    """
+    sql = str(owner_memberships_for_update("acc_example").compile(dialect=postgresql.dialect()))
+
+    assert sql.count("rca_memberships.role =") == 2, (
+        "both role predicates must survive: one selecting the owned organizations, one selecting "
+        "the owner rows to lock. Dropping either widens the lock silently"
+    )
+    subquery, outer = _split_on_subquery(sql)
+    assert "rca_memberships.account_id =" in subquery, (
+        "the subquery must find organizations by account"
+    )
+    assert "rca_memberships.role =" in subquery, (
+        "the subquery must restrict to organizations this account OWNS -- without it, a mere "
+        "member's disablement locks owner rows it has no authority over"
+    )
+    assert "rca_memberships.role =" in outer, (
+        "the outer selection must lock owner rows only -- without it, every member row in every "
+        "owned organization is locked"
+    )
 
 
 def test_promotion_issues_no_locking_statement() -> None:
