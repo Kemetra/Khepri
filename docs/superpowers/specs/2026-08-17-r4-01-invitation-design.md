@@ -423,10 +423,20 @@ the constraint is satisfied by ordering and terminal state is silently overwritt
 
 So `revoke` takes the shape §6.2 requires of redemption, for the same reason: **`UPDATE
 rca_invitations SET revoked_at = :now, <the five verifier columns> = NULL WHERE organization_id =
-:org AND invitation_id = :id AND redeemed_at IS NULL AND revoked_at IS NULL`, affecting exactly one
-row.** Zero rows means the invitation was not open — already redeemed, already revoked, or not
-reachable in this scope — and all of those take the **same uniform refusal** this section already
-requires, so the `rowcount` check adds no disclosure. §7's cascade is the same statement with a
+:org AND invitation_id = :id AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > :now`,
+affecting exactly one row.** Zero rows means the invitation was not open — already redeemed,
+already revoked, **expired**, or not reachable in this scope — and all of those take the **same
+uniform refusal** this section already requires, so the `rowcount` check adds no disclosure.
+
+**`expires_at > :now` is load-bearing and easy to omit**, since the two timestamp predicates look
+like the whole of "still open". They are not: §5's state model makes expiry a **derived** terminal
+state with no column, so an expired row that the sweeper has not yet reached still has
+`redeemed_at IS NULL AND revoked_at IS NULL` and would match. `revoke` would then transition it
+from expired to revoked and report **success**, where §5 requires every non-open state to receive
+the uniform refusal — a state change the caller should not be able to make, reported in a way that
+distinguishes expired from the other non-open causes. The predicate must restate §5's boundary
+(`expires_at > now` is open) rather than assume the nullability columns carry it. §7's cascades
+inherit this clause with the rest. §7's cascade is the same statement with a
 recipient or issuer predicate in place of the identifier, and inherits the requirement.
 
 This is §6.2's argument in a third verb. Recorded here rather than left to `R4-04` because the
@@ -661,12 +671,26 @@ clock**, and derives the account by looking up the session and then reading `ses
    `tests/test_rca001_lock_scope.py`. That is a dependency this note is not authorized to add to a
    roadmap row.
 
-   So what this note settles is the **requirement**: redemption must serialize against disablement,
-   and an account-row lock taken by both paths is the mechanism that satisfies it. What it does
-   **not** settle is who lands the `disable_account` half. §8 records it as an owner question. Until
-   it is answered, `R4-05` is specifiable but not startable — a redemption implemented without the
-   disable-side lock contends with nothing, which is the defect two revisions of this section
-   already shipped.
+   So what this note settles is the **requirement**: redemption must serialize against the writes
+   that end the actor's authority, and a lock taken by both paths is the mechanism that satisfies
+   it. What it does **not** settle is who lands the other half. §8 records it as an owner question.
+   Until it is answered, `R4-05` is specifiable but not startable — a redemption implemented
+   without the counterpart lock contends with nothing, which is the defect two revisions of this
+   section already shipped.
+
+   **And the account is not the only stale half of `ResolvedActor`.** It carries a `session` as
+   well (`actor_resolution.py:90`), and `SessionService.revoke` or `revoke_all` can end that session
+   while redemption waits on its locks — so a membership can commit from a session that is no
+   longer authenticated, which fails `FR-019` under this section's own commit-time reading of "the
+   moment of acceptance". The account fix does not cover it: revoking a session does not touch
+   `rca_accounts`, so `can_act` still passes. Session expiry has the same shape, since
+   `expires_at <= now` may become true while the transaction waits.
+
+   This is the **same escalation, one level out** rather than a second design problem: it needs the
+   session row locked and re-read inside the redemption transaction, and the session-ending writes
+   to take that lock too — which is again a change to a path `R4` does not own. §8's serialization
+   item now covers both counterparts, because answering it for `disable_account` and not for
+   `SessionService.revoke` would leave `R4-05` half-safe and looking finished.
 
    A failure raises the §5 uniform refusal and the transaction rolls back, so **the invitation is
    not consumed**: the refusal is about the actor rather than the invitation, and a re-enabled
@@ -1144,17 +1168,21 @@ the omissions are deliberate, and so the pattern is visible rather than repeated
   approved interval or a `KHEPRI-DEC-015` amendment permitting a bounded delay for
   lifecycle-derived expiry — **not** a design note reinterpreting destruction, which is what an
   earlier revision of §3 attempted and retracted.
-- **Who lands the account-row lock on the disable path** — a sequencing question, and the one that
-  gates `R4-05`. §6.1 establishes that redemption must serialize against `disable_account`, and
-  that a lock only serializes writers which acquire it: `apply_owner_reducing_change`
-  (`persistence.py:766`) locks membership rows and writes the account row without locking it, so
-  redemption's lock contends with nothing until that path takes it too. Two ways to land it, and
-  the choice is the owner's because both alter a roadmap row:
+- **Who lands the counterpart locks that make redemption's serialization real** — a sequencing
+  question, and the one that gates `R4-05`. §6.1 establishes that redemption must serialize against
+  every write that ends the actor's authority mid-transaction, and that a lock only serializes
+  writers which acquire it. **Two counterparts, both outside `R4`:**
+  `apply_owner_reducing_change` (`persistence.py:766`) locks membership rows and writes the account
+  row without locking it; and `SessionService.revoke`/`revoke_all` end the session
+  `ResolvedActor` carries without any lock redemption could contend on. Redemption's own locks do
+  nothing until both counterparts take them, and answering this for the account path alone would
+  leave `R4-05` half-safe while looking finished. Two ways to land it, and the choice is the
+  owner's because both alter a roadmap row:
 
   | Option | What it means |
   |---|---|
-  | `R4-05` takes it | A slice whose declared dependencies are `R4-03`, `R2`, `R3` also modifies `R1`'s merged concurrency path, adds `_MAY_LOCK` entries, and owes a re-run of `test_rca001_concurrent_final_owner.py` |
-  | A prior slice takes it | `R1`'s path is changed under `R1`'s ownership, and `R4-05` gains a dependency on it |
+  | `R4-05` takes them | A slice whose declared dependencies are `R4-03`, `R2`, `R3` also modifies `R1`'s merged concurrency path **and** `R3`'s session service, adds `_MAY_LOCK` entries for both, and owes a re-run of `test_rca001_concurrent_final_owner.py` |
+  | Prior slices take them | Each path changes under its own owner, and `R4-05` gains a dependency on both |
 
   **This is not optional in either direction** — redemption cannot be made safe without it — so it
   is a question about *where* the work lands, not *whether*. Recorded here because §9 sequences
