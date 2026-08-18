@@ -283,6 +283,26 @@ afterwards. `target_identity` is required rather than optional: `KHEPRI-DEC-015`
 retains it "to attribute the resulting membership", and §7's cascade cannot match a row that has
 none, so an invitation without one would be a row `FR-020` cannot reach.
 
+**`target_identity` is canonicalized at issuance — a storage rule, not a comparison rule.** `issue`
+stores `canonical_email(target_identity)` and never the raw input. Canonicalizing only at comparison
+time is not equivalent, and the gap is a real defect rather than a tidiness point: an address issued
+mixed-case or whitespace-padded is stored as typed, so every predicate that compares it against a
+canonicalized operand — §6.1.1's addressee check, §7's recipient cascade, §7.1's purge cascade —
+misses the row. §7.1's miss is the worst of the three, because a skipped purge leaves a stale
+invitation redeemable at a **released** address, which is precisely the identity transfer that
+section exists to prevent.
+
+Canonical at rest turns all three into plain equality and removes the possibility that one call site
+forgets. `_canonical_or_none` (`persistence.py:254`) is the in-repo shape, and the accounts table
+already stores canonically for the same reason (`:455`), so invitations matching it keeps one
+convention in the codebase rather than two.
+
+Two consequences. `R4-03`'s migration and `R4-04` must both apply it, since a value written by a
+store caller that bypasses `issue` would reintroduce the gap — the same "the domain refusing it is
+not sufficient" argument §3's `CHECK` constraints rest on. And `R4-07` owes one case per predicate:
+issue to `Alice@Example.COM `, then assert the addressee check, the recipient cascade, and the purge
+cascade all match an account at `alice@example.com`.
+
 - **Token format `kci1.<invitation_id>.<secret>`**, mirroring RRA's `kiv1.` with a distinct prefix
   so a beta token and a commercial token can never be confused at a boundary that accepts both.
   `R3-01` §2.1 established that reasoning for session keys.
@@ -370,9 +390,33 @@ does not exist or because it belongs to another organization. The two causes are
 by construction rather than by padding, so §5's dummy-work discipline does not transfer to this
 verb. Stated because "every uniform refusal needs a dummy hash" would be the wrong generalization.
 
-**`R4-07` owes a cross-organization revocation case**, not merely a non-owner one: an owner of `A`
-presenting `B`'s `invitation_id` must be refused, and `B`'s invitation must still be open
-afterwards. A test that only checks a `member` cannot revoke would pass on the defective lookup.
+**Revocation is a conditional transition, not a write to a row it has already read.** The composite
+lookup above scopes *which* row revocation may reach; it does not make the open-to-revoked
+transition atomic, and those two concerns read as one. Run concurrently with a redemption: both read
+the invitation as open, redemption's §6.2 conditional update wins and sets `redeemed_at`, and
+revocation — holding a stale snapshot — writes `revoked_at` over a row that is already redeemed.
+Both outcomes are wrong. Either the write lands and the row claims two terminal states, which `CHECK
+(redeemed_at IS NULL OR revoked_at IS NULL)` refuses **after** the membership has committed — so the
+failure surfaces as an integrity error on the revoking transaction rather than as a refusal — or
+the constraint is satisfied by ordering and terminal state is silently overwritten.
+
+So `revoke` takes the shape §6.2 requires of redemption, for the same reason: **`UPDATE
+rca_invitations SET revoked_at = :now, <the five verifier columns> = NULL WHERE organization_id =
+:org AND invitation_id = :id AND redeemed_at IS NULL AND revoked_at IS NULL`, affecting exactly one
+row.** Zero rows means the invitation was not open — already redeemed, already revoked, or not
+reachable in this scope — and all of those take the **same uniform refusal** this section already
+requires, so the `rowcount` check adds no disclosure. §7's cascade is the same statement with a
+recipient or issuer predicate in place of the identifier, and inherits the requirement.
+
+This is §6.2's argument in a third verb. Recorded here rather than left to `R4-04` because the
+composite lookup is the eye-catching part of this section and "scoped the row" reads like the whole
+requirement — exactly as "one transaction" did in §6 before §6.2 was written.
+
+**`R4-07` owes two revocation cases.** First, cross-organization rather than merely non-owner: an
+owner of `A` presenting `B`'s `invitation_id` must be refused, and `B`'s invitation must still be
+open afterwards — a test that only checks a `member` cannot revoke would pass on the defective
+lookup. Second, the race: revoke concurrently with a redemption of the same invitation, and assert
+exactly one terminal state with no integrity error raised on either path.
 
 ## 5. State, and what "fail closed" means concretely
 
@@ -533,18 +577,44 @@ clock**, and derives the account by looking up the session and then reading `ses
    > does, and for the identical reason — it "select[ed], then wr[o]te, and those were separate
    > transactions with no predicate between them".
 
-   **So the write is conditioned on the account still being live.** Inside §6.2's transaction,
-   `R4-05` re-reads the account and requires `can_act`, which `accounts.py:68` names "the single
-   definition of 'live'" precisely so that call sites do not each grow their own — its docstring
-   records `FR-013` drifting by counting owner rows "without consulting account state". A failure
-   raises the §5 uniform refusal, and the transaction rolls back, so **the invitation is not
-   consumed**: a disabled account's attempt leaves the token in whatever state it had. That is the
-   correct outcome, since the refusal is about the actor rather than about the invitation.
+   **So the write is conditioned on the account still being live — under the lock disablement
+   already takes, not merely re-read.** A plain re-read inside the transaction is **not
+   sufficient**, and specifying one was the previous correction's own defect: `disable_account` can
+   commit between that read and redemption's commit, and neither transaction sees a conflict, so
+   both land and the membership survives its account. Re-reading narrows the window; it does not
+   close it. Closing it requires the two operations to **contend on the same rows**.
 
-   `R4-05` owes the case, and it must be induced rather than observed: disable the account after
-   `resolve_actor` returns and before the transaction commits, then assert no membership exists
-   **and** the invitation is still open. A test that disables before `redeem` is called passes on
-   the unconditioned implementation.
+   They already can. `apply_owner_reducing_change` (`persistence.py:766`) — the path
+   `disable_account` takes — does not lock the account row either: it locks
+   `owner_memberships_for_update(account_id)` (`:787`), the membership rows of the account being
+   disabled, and its docstring records why that shape exists ("the guard and the write were three
+   round trips on three sessions, so two concurrent disablements … could both count a live
+   co-owner, both pass, and both commit, leaving zero"). Redemption **inserts a membership for that
+   same account**, so it belongs inside that contention set rather than beside it.
+
+   **`R4-05` therefore takes the same lock on the same rows, in the transaction that does the
+   insert**, and evaluates `can_act` on the account row it reads under that lock — `accounts.py:68`
+   names that "the single definition of 'live'", and its docstring records `FR-013` drifting exactly
+   by growing a local judgment instead ("counted owner-role rows without consulting account state").
+   A concurrent `disable_account` then either blocks at its own `SELECT` until redemption commits
+   and observes the new membership, or wins and redemption's `can_act` reads the disabled row. One
+   of the two, never both.
+
+   A failure raises the §5 uniform refusal and the transaction rolls back, so **the invitation is
+   not consumed**: the refusal is about the actor rather than the invitation, and a re-enabled
+   account may still redeem.
+
+   **This changes §6.2's recommendation, so it is flagged here rather than left to collide.** Route
+   B was preferred because it "adds nothing to `_MAY_LOCK`". That advantage is gone — redemption
+   now takes a lock for liveness whatever it does about at-most-once — so `R4-05` owes the
+   `_MAY_LOCK` entries either way and the cost argument no longer separates the routes. See §6.2.
+
+   `R4-05` owes the case, and it must be **induced** rather than observed: hold the redemption
+   transaction open, commit a `disable_account` against the same account, then release — and assert
+   no membership exists **and** the invitation is still open. A test that disables *before* `redeem`
+   is called passes on the unconditioned implementation, and one that disables after it returns
+   passes on every implementation. `test_rca001_concurrent_final_owner.py` is the precedent for
+   proving a contention claim against PostgreSQL rather than asserting it.
 2. **Parse and verify the invitation secret per §5.** Any failure → the single uniform refusal.
    This is second rather than first because an unauthenticated caller has no business consuming a
    token: `resolve_actor` failing means `redeem` never runs, following the order `ActorResolver`
