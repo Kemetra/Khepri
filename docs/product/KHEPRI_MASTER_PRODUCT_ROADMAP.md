@@ -373,8 +373,7 @@ The current sequential path is protected, but two concurrent calls can both pass
 | R1-03 | Add deterministic concurrent final-owner tests against PostgreSQL behavior | R1-02 | implementation skeleton | RED concurrency test |
 | R1-04 | Implement one atomic guard-and-write boundary for account disablement | R1-03 | no | SQL and memory implementations agree |
 | R1-05 | Prove non-owner-reducing operations do not acquire unnecessary locks | R1-04 | no | Focused regression/performance tests |
-| R1-07 | Take the account row's lock on the disable path so another transaction can serialize against it | R1-04 | no | Named statement + dialect compilation test |
-| R1-06 | Update lifecycle documentation and close `#155` after merge | R1-04, R1-05, R1-07 | no | Issue closeout evidence |
+| R1-06 | Update lifecycle documentation and close `#155` after merge | R1-04, R1-05 | no | Issue closeout evidence |
 
 ## Design requirements
 
@@ -491,7 +490,6 @@ Create opaque, server-side commercial authentication sessions that resolve one a
 | R3-09 | Specify how external identity composes with R3's session model, resolving the FR-027 seam below | R3-01, KHEPRI-DEC-018 merged | R3-02 | Design addendum |
 | R3-10 | Add the `IdentityProvider` seam and its verified-identity type | R3-09, R3-02 | no adapter work | Port + domain tests |
 | R3-11 | Add the admitted-provider adapter behind the seam | R3-10, a provider admitted under KHEPRI-DEC-018 §5 | no | Provider adapter |
-| R3-12 | Take the session row's lock in session-ending writes so another transaction can serialize against it | R3-04 | no | Named statement + dialect compilation test |
 
 ### Task disposition — external identity (recorded 2026-08-14)
 
@@ -565,7 +563,8 @@ Issue, revoke, and redeem organization invitations with one role, one organizati
 | R4-02 | Add invitation domain and hashed secret handling | R4-01 | R3 domain work | Domain tests |
 | R4-03 | Add persistence and migration after the current migration head is known | R4-02 | no parallel migration merge | Store and schema |
 | R4-04 | Implement owner-authorized issuance and revocation | R4-03, R6-01 authorization matrix draft | R5 recovery design | Service tests |
-| R4-05 | Implement one-time authenticated redemption into exactly one membership | R4-03, R2 merged, R3 actor resolution, R1-07, R3-12, issuance-versus-purge resolved (`R4-01` §8.2) | no | Membership creation |
+| R4-08 | Add the counterpart locks redemption serializes against: the account row on the disable path, the session row in session-ending writes | R4-01, R1 merged, R3-04 | no | Named statements + dialect compilation tests; `#155`'s concurrency suite re-run green |
+| R4-05 | Implement one-time authenticated redemption into exactly one membership | R4-03, R2 merged, R3 actor resolution, R4-08, issuance-versus-purge resolved (`R4-01` §8.2) | no | Membership creation |
 | R4-06 | Invalidate relevant unredeemed invitations when a membership is revoked | R4-05 | no | FR-020 behavior |
 | R4-07 | Add uniform expired, replayed, revoked, malformed, and foreign-scope tests | R4-05 | no | Security matrix |
 

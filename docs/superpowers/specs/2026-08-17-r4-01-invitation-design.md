@@ -692,9 +692,9 @@ clock**, and derives the account by looking up the session and then reading `ses
 
    So what this note settles is the **requirement**: redemption must serialize against the writes
    that end the actor's authority, and a lock taken by both paths is the mechanism that satisfies
-   it. Who lands each counterpart is settled in §8.4: `R1-07` takes the account row's lock on the
-   disable path, `R3-12` takes the session row's in the session-ending writes, and `R4-05` depends
-   on both. Until they land, `R4-05` is specifiable but not startable — a redemption implemented
+   it. Who lands each counterpart is settled in §8.4: one slice, `R4-08`, takes the account row's
+   lock on the disable path and the session row's in the session-ending writes, and `R4-05` depends
+   on it. Until they land, `R4-05` is specifiable but not startable — a redemption implemented
    without its counterparts contends with nothing, which is the defect two revisions of this
    section already shipped.
 
@@ -709,11 +709,11 @@ clock**, and derives the account by looking up the session and then reading `ses
    This is the **same escalation, one level out** rather than a second design problem: it needs the
    session row locked and re-read inside the redemption transaction, and the session-ending writes
    to take that lock too — which is again a change to a path `R4` does not own. §8.4 records both
-   counterparts as `R1-07` and `R3-12`, because answering it for `disable_account` and not for
+   counterparts as one slice, `R4-08`, because answering it for `disable_account` and not for
    `SessionService.revoke` would leave `R4-05` half-safe and looking finished.
 
    **Natural expiry is the part no lock reaches, and it needs a predicate rather than a
-   counterpart.** `R3-12` locks the session row against `revoke` and `revoke_all`, which are
+   counterpart.** `R4-08` locks the session row against `revoke` and `revoke_all`, which are
    *writes*. Expiry is neither: `Session.is_expired_at` is `self.expires_at <= moment`
    (`sessions.py:111`), derived from the clock, performing no write and touching no row. There is
    nothing for a lock to contend on, so redemption could lock the session an instant before
@@ -727,10 +727,32 @@ clock**, and derives the account by looking up the session and then reading `ses
    half alone is the drift `accounts.py:68` warns about for `can_act`. The lock covers the revoke
    race; the predicate covers expiry; neither substitutes for the other.
 
-   `R4-05` owes the expiry case separately from the revocation one: hold the redemption transaction
-   past the session's `expires_at`, release, and assert no membership was created. It fails on an
-   implementation that checks only `revoked_at`, which is the shape a reader takes from "lock and
-   re-read the session".
+   **`is_live_at` narrows the window and does not close it, and that residual is stated rather than
+   left to be found.** The check runs at some instant inside the transaction; the commit happens
+   later, after any remaining lock wait. A session live at the check can expire before the commit,
+   and no predicate evaluated *before* a wait can speak for the state *after* it. This is the same
+   shape as the account race — except that race was closable, because disablement is a **write** and
+   two writers can be made to contend. Expiry is the clock. There is no writer to serialize with,
+   so no lock and no re-read reaches it.
+
+   **What actually bounds it, and why this note stops here.** The window is the interval between
+   the check and the commit, so it is bounded by holding the check as late as possible — evaluate
+   `is_live_at` **after** every other lock is acquired, immediately before the write, so nothing
+   remains to wait on. That is a real reduction and `R4-05` owes it. What it is not is elimination:
+   a transaction can still be preempted between the last predicate and the commit record.
+
+   Closing it completely needs something this design cannot supply on its own — a commit-time
+   assertion the database enforces, such as making the membership insert conditional on a session
+   row whose `expires_at` is still in the future, which requires session state reachable from the
+   redemption transaction and is `R3`'s schema to expose. **§8.5 records it**, because the honest
+   position is that `FR-019`'s "at the moment of acceptance" is satisfied to within one preemption
+   window and this note cannot make that zero.
+
+   `R4-05` owes both cases, and they are different tests. **Revocation:** hold the transaction,
+   commit a `revoke`, release, assert no membership — this must pass, and fails on an
+   implementation checking only the account. **Expiry:** hold the transaction past the session's
+   `expires_at`, release, assert no membership — this must pass for the late-check implementation,
+   and is the one whose residual §8.5 describes.
 
    A failure raises the §5 uniform refusal and the transaction rolls back, so **the invitation is
    not consumed**: the refusal is about the actor rather than the invitation, and a re-enabled
@@ -1219,6 +1241,33 @@ the omissions are deliberate, and so the pattern is visible rather than repeated
 - **Issuance versus identity purge** (§8.2) — a `KHEPRI-DEC-015` question. Closed in an earlier
   revision and reopened, because the mechanism chosen does not close the purge-first ordering and
   no candidate that does is available without a decision change.
+- **Session expiry through the redemption commit** (§8.5) — an `R3` schema question. Bounded by
+  §6.1's late check, not eliminated by it.
+
+### 8.5 Session expiry through commit is bounded, not closed
+
+§6.1 requires the redemption transaction to re-read the session and evaluate `is_live_at` after
+every other lock is acquired, immediately before the write. That is the tightest window this note
+can specify, and it is still a window: expiry is derived from the clock, so unlike account
+disablement there is no competing **writer** to serialize against, and a transaction can be
+preempted between its last predicate and its commit record.
+
+**Why no lock fixes it.** `R4-08` locks the session row against `revoke` and `revoke_all`, which
+are writes. `Session.is_expired_at` is `self.expires_at <= moment` (`sessions.py:111`) — it writes
+nothing and touches no row, so a lock has nothing to contend on. A lock serializes writers; it does
+not serialize the passage of time.
+
+**What would close it, and why it is not `R4`'s to build.** A commit-time assertion the database
+enforces — for instance making the membership insert conditional on a session row whose
+`expires_at` is still in the future, so the write itself fails if the session lapsed — requires
+session state reachable from the redemption transaction. Whether commercial sessions expose that,
+and at what cost to `R3`'s boundaries, is `R3`'s schema question rather than an invitation design
+choice.
+
+**The honest statement of the guarantee**, recorded so no reader infers a stronger one: `FR-019`'s
+"an authenticated account exists at the moment of acceptance" holds to within one preemption
+window after the late check. Every earlier revision of §6.1 held it to within a much larger window
+and did not say so.
 
 **Closed since the first review round, with the authority for each.** Four items sat here across
 earlier revisions. Three are closed below on this note's own authority, and the fourth is resolved
@@ -1247,6 +1296,14 @@ So `R4-03` builds `InvitationSweeper` on the `MembershipEventSweeper` shape: one
 the horizon arithmetic in the sweeper, the transaction in the store. **No owner input, and no
 `KHEPRI-DEC-015` amendment.** What `R4-03` does owe is the docstring stating why the interval is
 operational, so the next reader does not re-escalate it.
+
+**And it must be wired, which building it does not accomplish.** The production caller is
+`RetentionPasses` in `local/wiring.py:308-312`, where the account, event and session sweepers are
+already registered; a sweeper absent from it has no caller at all. `MembershipEventSweeper`'s own
+comment in that block states the stake — "retention rules with no caller are indefinite retention
+with a policy comment on top" — which is exactly the outcome §5 forbids for an expired verifier.
+So `R4-03` adds `invitations=` to `RetentionPasses` alongside the other three, and owes a test that
+the pass reaches it. An unwired sweeper would satisfy every sentence above and destroy nothing.
 
 ### 8.2 Issuance versus identity purge — open, and no candidate mechanism survives
 
@@ -1279,6 +1336,11 @@ survive it. `KHEPRI-DEC-015` closes both places it could live:
 
 An address-keyed purge marker is that second identity store under a different name, and it would
 outlive the identity it describes — which is the retention inversion §2's matrix exists to prevent.
+
+**To be exact about what the advisory lock does and does not do**, since the collapsed block below
+was written when this item was closed and says "solves": it closes the **issuance-first** ordering
+and nothing else. It does not solve the identity-transfer hazard, which is the purge-first
+ordering, and `R4-04` must not record it as having done so.
 
 **So this is a `KHEPRI-DEC-015` question, not an `R4-04` one, and it is stated narrowly.** The
 decision would have to admit *some* address-derived survivor with its own bounded horizon, or
@@ -1368,21 +1430,37 @@ So `R4-06` implements the two triggers §7 tables and **no third**. `R4-07` owes
 §7 already names — demote an owner holding outstanding invitations, assert they are still open —
 which now proves an intended behavior rather than guarding an undecided one.
 
-### 8.4 The counterpart locks land as `R1-07` and `R3-12`
+### 8.4 The counterpart locks land as one new slice, `R4-08`
 
 **Resolved as a sequencing decision** (owner, 2026-08-18), where an earlier revision left it open.
 §6.1 establishes that redemption must serialize against every write that ends the actor's authority
 mid-transaction, and that a lock only serializes writers which acquire it. Both counterparts sit
 outside `R4`, so each lands in the family that owns the path:
 
-| Slice | What it does | Why there |
-|---|---|---|
-| `R1-07` | `apply_owner_reducing_change` (`persistence.py:766`) takes the account row's lock, in addition to the membership rows it already locks | Same concurrency defect class as `#155`, on the same method. `R1` is not closed — `R1-06` is the closeout row — so the family that owns this path is still open |
-| `R3-12` | `SessionService.revoke`/`revoke_all` take the session row's lock | The session is `R3`'s object, and `ResolvedActor` carries it |
+> **Correction, 2026-08-18 (`R4-01`).** An earlier revision of this section put the account-row
+> lock in a new `R1-07` and made `R1-06` depend on it. That is wrong on a checkable fact: **`R1` is
+> merged and closed.** The roadmap's program table marks it `MERGED` with "`R1-01`…`R1-06` complete
+> at `c8c6edb`; `#155` closed", and `NEXT-SLICES.md` records the same in its own table. Adding a
+> row to a closed program and making its already-delivered closeout slice depend on unimplemented
+> work reopens `#155` retroactively — three records would then disagree about whether `R1` is done.
+> A slice may not resurrect a merged program to host work discovered later.
 
-`R4-05` depends on both, and **`R1-06` now depends on `R1-07`** so `#155` closes over the final
-state of the method rather than over a version `R4` would later change underneath it. Both
-additions are on the roadmap.
+**Both locks land as one new slice, `R4-08`, in the program that discovered the need.**
+
+| | |
+|---|---|
+| **What** | `apply_owner_reducing_change` (`persistence.py:766`) additionally takes the account row's lock; `SessionService.revoke`/`revoke_all` take the session row's |
+| **Depends on** | `R4-01`, `R1` merged, `R3-04` |
+| **Evidence** | Module-level named statements with dialect-compilation tests (`persistence.py:514-519`), plus `test_rca001_concurrent_final_owner.py` re-run green to show `#155`'s guard is not weakened |
+
+`R4-05` depends on `R4-08`. Putting the work in `R4` is not a reversal of the ownership argument
+below — it is what that argument requires once `R1` is closed: the alternative was reopening a
+merged program, which is worse than a cross-program edit made under an explicit slice with its own
+regression evidence.
+
+**Why one slice rather than two.** Both locks exist for one invariant — redemption must serialize
+against the writes that end an actor's authority — and splitting them across programs would let one
+land without the other, which §6.1 records as the half-safe state that reads as finished.
 
 **Why not `R4-05` doing both**, which is the faster route: a slice whose declared dependencies are
 `R4-03`, `R2`, and `R3` would modify `R1`'s merged concurrency path and `R3`'s session service, add
@@ -1391,8 +1469,8 @@ additions are on the roadmap.
 repo is `_MAY_LOCK`-audited precisely so that no lock arrives without an owner; landing two through
 a third family's slice is how that audit stops meaning anything.
 
-Each of `R1-07` and `R3-12` owes what the existing locking statements owe: a module-level named
-statement, and a dialect-compilation test asserting `FOR UPDATE` is present (`persistence.py:514-519`).
+`R4-08` owes what the existing locking statements owe: module-level named statements, and
+dialect-compilation tests asserting `FOR UPDATE` is present (`persistence.py:514-519`).
 
 ## 9. Slice sequence
 
@@ -1401,7 +1479,7 @@ is current) → `R4-04` issuance and revocation → `R4-05` redemption → `R4-0
 `R4-07` the uniform-failure matrix. `R4-04`'s roadmap row already depends on "`R6-01` authorization
 matrix draft", which §6.3 now supplies concretely.
 
-**`R4-05` depends on `R1-07` and `R3-12`**, per §8.4, and the roadmap now carries both. Redemption's
+**`R4-05` depends on `R4-08`**, per §8.4, and the roadmap now carries it. Redemption's
 own locks do nothing until those counterparts acquire theirs, so starting `R4-05` first would
 produce a slice that looks finished and serializes nothing. `R4-02`, `R4-03` and `R4-04` are
 unaffected and can proceed in parallel with them.
