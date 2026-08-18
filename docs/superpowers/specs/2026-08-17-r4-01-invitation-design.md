@@ -1142,7 +1142,10 @@ is missing, and every place an address-derived marker could live is closed by
 The digest candidate is barred by text rather than judgment — §2's Login-identity row reads
 "**Purged.** Nothing remains" and §2b enumerates the tombstone as holding no email address — so
 admitting it would need an amendment, which this note does not seek for a problem the advisory lock
-solves without retaining anything. §8.2 carries the full argument and the evidence `R4-04` owes.
+closes **without retaining anything — the issuance-first ordering only.** It does not solve the
+purge-first ordering, which §8.2 establishes no available mechanism reaches and which the owner has
+accepted as a residual. §8.2 carries the full argument, the accepted risk, and the evidence `R4-04`
+owes.
 
 **What `R4-06` owes as evidence, and what it cannot owe.** `R4-06` now precedes `R4-05`, so
 redemption does not exist when it runs and its tests cannot call it. Splitting accordingly:
@@ -1159,9 +1162,18 @@ Recorded because the reordering created this: an earlier revision wrote both ass
 `R4-06` when it still followed `R4-05`.
 
 Then the race, against PostgreSQL, **once §8's mechanism question is answered**: `issue` to a
-disabled account's address concurrently with its purge — in **both** commit orders, since the
-purge-first ordering is the one that defeated the retracted fix — and assert that no invitation to
-that address is open afterwards.
+disabled account's address concurrently with its purge, **asserting the outcome each ordering
+actually has** rather than one outcome for both:
+
+| Ordering | Required assertion |
+|---|---|
+| Issuance first | The advisory lock serializes `issue` behind nothing and the purge's cascade catches its row: **no invitation open** afterwards |
+| Purge first | `issue` runs after the cascade and **leaves an invitation open** — the residual §8.2 accepts. Asserted as the *documented* outcome, not as a defect |
+
+An earlier revision required both orderings to leave nothing open. That is unsatisfiable alongside
+§8.2's acceptance, and it contradicted the same section's instruction to `xfail` the purge-first
+case — an implementation could not honour both. The purge-first row is now a positive assertion of
+accepted behaviour, so if it ever *stops* holding, something changed and the suite says so.
 
 **The issuer trigger is retained as well, because an active record requires it.** `KHEPRI-DEC-015`
 §2's Invitation row names four end triggers verbatim: "Acceptance; expiry; revocation; **revocation
@@ -1336,8 +1348,17 @@ fixes for those classes are equally unenforced without one. That is larger than 
 does not fix it. What it does is refuse to let §8.1's "the cadence is operational" imply that
 *somebody* is choosing one: **`R4-03` records in the sweeper's docstring that the invitation
 horizon is unenforced until a scheduled caller exists**, so the gap is visible where an
-implementer will read it rather than only here. Recorded as an observation about the repo, not as
-an `R4` blocker — invitations inherit an existing condition rather than introducing it.
+implementer will read it rather than only here. Recorded as an observation about the repo rather than an
+`R4` blocker — invitations inherit an existing condition rather than introducing it.
+
+**But an unassigned gap is how it stays open, so it is assigned.** The missing scheduler is a live
+`KHEPRI-DEC-015` compliance gap for **three already-merged classes** — accounts at twenty-four
+months, events at twelve, sessions at thirty days — whose horizons are *fixed by the decision* and
+therefore a stronger obligation than the invitation verifier's derived one. It needs its own slice
+against the local runtime, not a line in an invitation design note, and this note's contribution is
+to state the finding and its scope so that slice can be written. `R4-03` adding a fourth unenforced
+horizon does not worsen a condition that already governs three, but it does make the fourth
+reviewer's finding inevitable, which is why it is written here rather than left to be rediscovered.
 
 ### 8.2 Issuance versus identity purge — residual accepted (owner, 2026-08-18)
 
@@ -1666,8 +1687,10 @@ matrix draft", which §6.3 now supplies concretely.
 
 **`R4-05` depends on `R4-06` and on §8.2 and §8.5 being answered**, and the roadmap carries all
 three. The counterpart-lock slice two earlier revisions added is withdrawn — see §8.4. Redemption's
-own locks do nothing until those counterparts acquire theirs, so starting `R4-05` first would
-produce a slice that looks finished and serializes nothing. `R4-02`, `R4-03` and `R4-04` are
+own lock is the whole of what it needs — §8.4 establishes that the disable and session-ending
+paths already take conflicting locks through their `UPDATE`s, so no counterpart is owed. What
+`R4-05` waits on is `R4-06`, and only that: the purge cascade must exist before redemption can make
+a surviving invitation redeemable. `R4-02`, `R4-03` and `R4-04` are
 unaffected and can proceed in parallel with them.
 
 **What each slice owes beyond its roadmap row**, collected because several arrive from corrections
