@@ -563,7 +563,7 @@ Issue, revoke, and redeem organization invitations with one role, one organizati
 | R4-02 | Add invitation domain and hashed secret handling | R4-01 | R3 domain work | Domain tests |
 | R4-03 | Add persistence and migration after the current migration head is known | R4-02 | no parallel migration merge | Store and schema |
 | R4-04 | Implement owner-authorized issuance and revocation | R4-03, R6-01 authorization matrix draft | R5 recovery design | Service tests |
-| R4-05 | Implement one-time authenticated redemption into exactly one membership | R4-03, R2 merged, R3 actor resolution, R4-06, issuance-versus-purge resolved (`R4-01` §8.2), commit-safe session expiry resolved (`R4-01` §8.5) | no | Membership creation |
+| R4-05 | Implement one-time authenticated redemption into exactly one membership | R4-03, R2 merged, R3 actor resolution, R4-06, issuance-versus-purge resolved (`R4-01` §8.2), session-expiry residual accepted on the record (`R4-01` §8.5) | no | Membership creation |
 | R4-06 | Invalidate relevant unredeemed invitations when a membership is revoked, and on identity purge | R4-04 | no | FR-020 behavior |
 | R4-07 | Add uniform expired, replayed, revoked, malformed, and foreign-scope tests | R4-05 | no | Security matrix |
 

@@ -178,8 +178,13 @@ satisfy it, and `R4-03` owes both:
    is what bounds survival for the untouched rows. **The cadence is the deployment's, and `R4-03`'s
    obligation is the wiring, not a number** — see §8.1, which follows the three existing sweepers:
    none of them names an interval, because "one pass when called" puts the schedule in the caller.
-   What makes the bound real is that `RetentionPasses` invokes it, so an unwired sweeper — not an
-   unstated number — is the failure mode "every day it survives is unjustified risk" points at. `MembershipEventSweeper` owns the horizon arithmetic for events
+
+   **But wiring alone supplies no time bound, and today nothing does.** `RetentionPasses` runs only
+   when `LocalSweeper.sweep` is called, and its only caller is the manual `sweep` command
+   (`local/cli.py:74`). There is no scheduler. So an untouched expired verifier survives until
+   somebody types the command — which is unbounded, and is precisely what "every day it survives is
+   unjustified risk" forbids. Wiring is necessary and not sufficient; §8.1 names the deployment
+   obligation that completes it. `MembershipEventSweeper` owns the horizon arithmetic for events
    and the same split applies: the sweeper owns "when", the store owns the transaction.
 
 **What this does not do, stated so the residual is visible rather than papered over.** Neither
@@ -1295,8 +1300,15 @@ the residual reachable. Two ways to clear the gate, and the choice is the owner'
 
 | Option | What it means |
 |---|---|
-| `R3` exposes commit-safe session state | Narrows the window to the statement rather than the transaction. **It does not close it** — a conditional insert evaluates its predicate while executing, so a deschedule between the statement and the commit still lands a durable membership. Better, not sufficient; costs an `R3` schema decision |
+| `R3` exposes commit-safe session state | Narrows the window from the transaction to the **statement**. It does not close it: a conditional insert evaluates its predicate while executing, so a deschedule between statement and commit still lands a durable membership. **Requires the same explicit residual acceptance as the option below** — a smaller window is still a window, and this option must not be treated as clearing the gate on its own |
 | The owner accepts the residual explicitly | `R4-05` ships with the late check and the preemption window is recorded as accepted risk against `FR-019`. Closes nothing, but does so **on the record** rather than by omission |
+
+**Both rows require explicit acceptance; neither is commit-safe.** The first narrows the window and
+the second does not, but the gate is cleared by the *acceptance*, never by the mechanism — so
+"commit-safe session expiry resolved" in the roadmap means **the owner has recorded a reading of
+`FR-019` and accepted the residual**, not that a mechanism was found. Stated because the first row
+otherwise reads as the safe choice that closes the gate, and choosing it would land a durable
+membership after authentication ended while the dependency showed satisfied.
 
 **Neither option reaches zero, and the note stops claiming one does.** An earlier revision offered
 the conditional insert as the closure. It is not: no predicate evaluated *inside* a transaction can
@@ -1345,6 +1357,16 @@ with a policy comment on top" — which is exactly the outcome §5 forbids for a
 So `R4-03` adds `invitations=` to `RetentionPasses` alongside the other three, and owes a test that
 the pass reaches it. An unwired sweeper would satisfy every sentence above and destroy nothing.
 
+**And someone owes the schedule, which no slice currently does.** `RetentionPasses` is invoked only
+by the manual `sweep` command (`local/cli.py:74`); there is no scheduler in the repo, so every
+existing sweeper — accounts, events, sessions — has the same gap, and the horizons `KHEPRI-DEC-015`
+fixes for those classes are equally unenforced without one. That is larger than `R4`, and this note
+does not fix it. What it does is refuse to let §8.1's "the cadence is operational" imply that
+*somebody* is choosing one: **`R4-03` records in the sweeper's docstring that the invitation
+horizon is unenforced until a scheduled caller exists**, so the gap is visible where an
+implementer will read it rather than only here. Recorded as an observation about the repo, not as
+an `R4` blocker — invitations inherit an existing condition rather than introducing it.
+
 ### 8.2 Issuance versus identity purge — open, and no candidate mechanism survives
 
 **This item was closed in an earlier revision of this section and is reopened.** The closure picked
@@ -1382,12 +1404,26 @@ was written when this item was closed and says "solves": it closes the **issuanc
 and nothing else. It does not solve the identity-transfer hazard, which is the purge-first
 ordering, and `R4-04` must not record it as having done so.
 
-**So this is a `KHEPRI-DEC-015` question, not an `R4-04` one, and it is stated narrowly.** The
-decision would have to admit *some* address-derived survivor with its own bounded horizon, or
-accept the residual risk explicitly, or forbid issuance to a disabled account's address outright —
-which is the one option needing no new retained data and is a product decision about behavior, not
-a mechanism. `R4-04` must not choose among these: two of the three change what a purged account
-leaves behind.
+**So this is a `KHEPRI-DEC-015` question, not an `R4-04` one, and it is stated narrowly.** Two
+answers remain:
+
+1. **Admit some address-derived survivor** with its own bounded horizon — a `KHEPRI-DEC-015`
+   amendment, since §2b and §8 item 6 both forbid it today.
+2. **Accept the residual explicitly**, recording that an invitation issued in the window before a
+   purge may survive it, and that the released address is therefore reachable by a replacement
+   account.
+
+> **A third option is withdrawn, and the reason is worth keeping.** An earlier revision offered
+> "forbid issuance to a disabled account's address outright" as the one answer needing no new
+> retained data. It is not an answer: **after the purge the address is absent from the account
+> row**, so `issue` cannot distinguish "this address belonged to a purged account" from
+> `FR-019`'s permitted no-account case. Applying the prohibition requires exactly the
+> address-derived state the paragraphs above establish is unavailable. It looked retention-free
+> because the *rule* mentions no storage — but a rule you cannot evaluate is not a rule, and
+> selecting it would have cleared the gate while leaving the identity-transfer path intact.
+
+`R4-04` must not choose between the two that remain: one changes what a purged account leaves
+behind, and the other is an accepted-risk decision.
 
 **What `R4-04` may implement today, and what it must not claim.** Take the advisory lock anyway —
 it closes the *issuance-first* ordering, which is a real half of the hazard, and it stores nothing
