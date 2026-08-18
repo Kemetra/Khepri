@@ -2,8 +2,8 @@
 
 **Task:** `R4-01` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`. Output is a design, not code.
 
-**Baseline:** `main` @ `086b960`, 2026-08-17 (`R7-02` and `R7-04` merged; `R1-05` in review, so `R1`
-is not yet closed). `uv run khepri-gov validate` passes; `uv run pytest` reports 2197 passed, 47
+**Baseline:** `main` @ `9adeb0a`, 2026-08-18 (`R7-02`, `R7-04` and `R1-05` merged, so `R1` is now
+closed; §6.2's cross-branch coordination note is settled accordingly). `uv run khepri-gov validate` passes; `uv run pytest` reports 2197 passed, 47
 skipped — measured at this commit rather than carried over from a branch. Migration head
 `20260817_0017`, single head.
 
@@ -604,20 +604,26 @@ is that shape with a different invariant.
   them".
 
 **Route B is the recommendation, for a reason about evidence rather than about performance.**
-`tests/test_rca001_lock_scope.py` on branch `test/r1-05-lock-scope` allowlists which methods may
-reach a lock — `_MAY_LOCK` names exactly four (`apply_owner_reducing_change`,
-`_apply_membership_change`, `revoke_membership`, `demote_membership`) — and its own docstring says
-"A fifth one appearing fails the test rather than passing unnoticed", with the scan following
-delegation. **Route A therefore requires adding a fifth entry to `_MAY_LOCK`**, plus a
+`tests/test_rca001_lock_scope.py` — merged with `R1-05` (#208) and now on `main` — allowlists which
+methods may reach a lock. `_MAY_LOCK` names **six**: four store-level
+(`apply_owner_reducing_change`, `_apply_membership_change`, `revoke_membership`,
+`demote_membership`) and two service-level verbs that reach them (`disable_account`,
+`demote_to_member`). Its docstring says "A seventh appearing fails the test rather than passing
+unnoticed", and the scan follows delegation — so it is not enough for `R4-05` to add the locking
+store method; **every service verb that reaches it must be listed too**, which for Route A means
+`redeem` as well. **Route A therefore requires at least two new `_MAY_LOCK` entries**, plus a
 predicate-by-predicate compilation test alongside the existing ones, because that file asserts each
 locking statement's predicates "clause by clause -- not merely that a predicate appears somewhere in
 the SQL". Route B adds nothing to `_MAY_LOCK` at all, since it takes no `FOR UPDATE`.
 
-**Cross-branch coordination, flagged because it will bite otherwise.** `R1-05` is in review (see the
-baseline note at the top), so that allowlist is not on `main` yet. If `R4-05` takes Route A and
-`R1-05` merges afterwards, the allowlist arrives already stale and `R1-05`'s own test fails on a
-method it never heard of. Whichever slice lands second owes the edit. Route B avoids the coupling
-entirely, which is most of why it is preferred.
+> **Correction, 2026-08-18 (`R4-01`).** The previous revision said the allowlist named "exactly
+> four" and lived on an unmerged branch, and flagged cross-branch coordination as the main cost of
+> Route A. `R1-05` has since merged, which settles that coordination question — the allowlist is on
+> `main`, so `R4-05` is unambiguously the slice that owes any edit — and reading the merged file
+> corrects the count: six entries, in two tiers, because the scan follows delegation from the
+> service verb down. The tiering makes Route A's cost *higher* than the previous revision stated,
+> not lower, so the recommendation is unchanged and better supported. Recorded rather than silently
+> renumbered, because "exactly four" was checkable and wrong.
 
 **Whichever route, the membership insert and the redemption mark commit together.** `FR-018`'s
 "exactly one" is a cardinality claim, and a membership committed without the redemption mark is a
