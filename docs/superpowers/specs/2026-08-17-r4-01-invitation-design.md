@@ -145,9 +145,38 @@ instance of one pattern, not a new one.
 **Destruction triggers, from the matrix's own end-trigger list:** "Acceptance; expiry; revocation;
 revocation of the inviting membership (`FR-020`)". Acceptance and revocation are writes and destroy
 the verifier in the same transaction that sets the timestamp. **Expiry is not a write** — it is
-`expires_at <= now` per §5's boundary, a derived state with no column and no event — so an expired
-invitation's verifier survives until something sweeps it. That is the sweeper below, and it is why
-expiry cannot be handled by "destroy it when the state changes".
+`expires_at <= now` per §5's boundary, a derived state with no column and no event — so expiry
+alone changes no bytes, and the sweeper below is what eventually clears them.
+
+**What "destroyed at the trigger" requires at the expiry trigger, stated because the answer is not
+"as soon as possible".** Read as *the bytes are gone at the instant*, the rule is unsatisfiable for
+a derived state: no code runs at `expires_at`, so any mechanism — a sweep, a scheduled job, a
+destroy-on-next-touch — leaves a window, and the only difference between them is its length.
+`KHEPRI-DEC-015` does not read that way. Its §5 states the governing invariant under the heading
+**"Retention must never delay revocation"**, and its own table pairs the effects for exactly this
+row: "Invitation redeemed, expired, or revoked → **Unusable (`FR-017`)** | Verifier destroyed". The
+sentence that closes it is the test — "**A retained record is never a live grant.** Nothing in this
+decision permits an implementation to keep authority alive because a record still exists." The
+guarantee is over *authority*, not over bytes.
+
+**So the trigger obligation is discharged in §5, not by the sweeper.** An expired invitation is
+unusable at the instant `expires_at <= now`, because §5's refusal is decided from the state
+predicates and the surviving verifier authorizes nothing: a caller presenting the correct secret
+against an expired row receives the same uniform refusal as a caller presenting a malformed token,
+and pays the same KDF cost doing it. The verifier's bytes outlive its authority by exactly the
+sweep interval, and outlive its *usefulness to an attacker* not at all — a salted scrypt digest at
+`n=2**14` is not a secret whose disclosure grants anything, which is why `FR-016` permits storing it
+at all while the invitation is live. What the sweeper reclaims is storage and the personal data in
+`target_identity`, on the horizon below; what it is *not* doing is ending a grant, because §5 ended
+that at the instant.
+
+**Recorded because the weaker reading is the tempting one.** "The verifier survives until a sweep"
+is true and sounds like a concession; it is only a defect if the surviving bytes authorize
+something. `R4-05` and `R4-07` owe the evidence that they do not: a test that presents the **correct
+secret** for an expired invitation whose verifier is still intact, and asserts the uniform refusal.
+That case fails on an implementation that verifies the digest and returns success before checking
+`expires_at` — which is the only way the delay could ever become a live grant, and §5's
+ordering rule already forbids it.
 
 **So invitations need a sweeper, and `R4-03` owes it.** This is a schema consequence, which is why
 it lands with the table rather than later: the matrix's deletion rule ("record purged when replay
@@ -168,16 +197,49 @@ Two established shapes to follow, and they differ in a way that matters here:
 `MembershipEventSweeper` owns the horizon arithmetic for events and the same split applies: the
 sweeper owns "when", the store owns the transaction.
 
-**What "when replay refusal no longer needs it" resolves to is still an owner input, but bounded.**
-The matrix fixes the *rule* (lifecycle-derived, no fixed duration) and `KHEPRI-DEC-015` §2a is
-explicit that its twelve months is for audit classes only and that "what does not transfer is the
-**number**". So `R4-03` must not import twelve months by analogy. Replay refusal needs the row for
-as long as a leaked token could plausibly be presented, which is bounded below by `expires_at` — a
-redeemed or revoked row is refusable from its own timestamps, and an expired row is refusable from
-`expires_at` alone once the verifier is gone. A row past `expires_at` whose verifier is destroyed
-can refuse replay without any secret material, so the purge horizon is an operational choice about
-table size, not a privacy horizon. Recorded here so `R4-03` does not read the absence of a number as
-an absence of a decision.
+**What "when replay refusal no longer needs it" resolves to — a predicate, not an owner input.**
+The first version of this paragraph called the remaining horizon "an operational choice about table
+size, not a privacy horizon" and left it to `R4-03`. That is wrong for one reason: `target_identity`
+is **personal data**, so a horizon that is merely operational lets it outlive its authorized
+purposes, and `KHEPRI-DEC-015` §3 makes each matrix purpose "exhaustive for that data class". A
+table-size argument cannot govern a privacy horizon. The corrected reading is that the matrix
+already fixes the rule and the rule is *derivable* — this note is not choosing a number, it is
+reading a lifecycle predicate `KHEPRI-DEC-015` §2 already settled.
+
+**The derivation.** The Invitation row authorizes retaining status and target identity for exactly
+two purposes: "to refuse replay and to attribute the resulting membership". Take them one at a time.
+
+- **Attribution** applies only where a membership was created — a **redeemed** invitation. For an
+  expired or revoked row no membership exists to attribute, so this purpose never attaches.
+- **Replay refusal** needs the *row*, and needs nothing in it but the identifier. §5 already
+  requires an unknown `invitation_id` to receive the identical refusal and the identical dummy KDF
+  work as every other cause. So a deleted row and a retained-but-closed row are, by construction,
+  **externally indistinguishable** — which means deleting the row does not weaken replay refusal at
+  all. Retention adds nothing this purpose can use.
+
+Both purposes therefore lapse for a non-redeemed invitation the moment it is closed, and neither
+authorizes holding `target_identity` past that point.
+
+**The purge predicate `R4-03` implements.** Two lifecycle rules, not one number:
+
+| Row | Purge when | Why |
+|---|---|---|
+| Expired or revoked, never redeemed | The verifier is destroyed — the same sweep pass | Neither authorized purpose attaches; §5 makes deletion indistinguishable from retention |
+| Redeemed | The `FR-014` `MembershipEvent` it produced is purged | Attribution is the surviving purpose, and the event is where `KHEPRI-DEC-015` §2a puts attribution's horizon |
+
+The redeemed row's horizon is **derived, not imported**. §2a's twelve months is an audit-class
+number and this note does not adopt it — what it adopts is the *anchor*: attribution outlives the
+invitation only as long as the audit record it attributes, so when that event goes the invitation's
+last authorized purpose has ended with it. If the event's horizon changes, this follows without
+edit. That is the "lifecycle-derived, no fixed duration" shape the matrix requires, and it is why
+`R4-03` must not write twelve months into the invitation sweeper as a literal.
+
+**One consequence to state rather than discover.** Under the first rule the sweep that destroys an
+expired verifier also deletes the row, so those are one pass, not two — there is no interval in
+which an expired invitation exists with its verifier gone and its `target_identity` retained.
+`R4-03`'s sweeper predicate is therefore evaluated in the deleting statement per the shape above,
+and `R4-07` owes a test that an expired invitation's row is gone after a sweep, not merely
+verifier-cleared.
 
 **Constraints on the table:**
 
@@ -428,10 +490,13 @@ clock**, and derives the account by looking up the session and then reading `ses
    This is second rather than first because an unauthenticated caller has no business consuming a
    token: `resolve_actor` failing means `redeem` never runs, following the order `ActorResolver`
    records as "load-bearing rather than incidental" — a dead session costs no further work.
-3. **Create exactly one membership** at `intended_role` in `organization_id` for
+3. **Check the actor is the addressee** — `canonical(actor.account.email) ==
+   canonical(target_identity)`, or the same uniform refusal. See §6.1.1: this is a verification
+   step, not a courtesy, and it is the reason §3 stores the field for anything beyond §7's cascade.
+4. **Create exactly one membership** at `intended_role` in `organization_id` for
    `actor.account_id`, and mark the invitation redeemed, **in one transaction under a lock or a
    conditional update** — see §6.2, because "one transaction" alone is not sufficient.
-4. **Emit `MembershipEvent.created`** with `actor_account_id` = `actor.account_id`. Attribution
+5. **Emit `MembershipEvent.created`** with `actor_account_id` = `actor.account_id`. Attribution
    travels with the write for the reason `create_organization` records: an event committed
    separately can describe a change that rolled back.
 
@@ -442,6 +507,61 @@ is the one place in `RCA` where a scope is not derived from the actor's session 
 necessity, since `FR-019`'s redeemer holds no membership yet — and it is safe for the narrower
 reason that the *secret* is the authorization. Stated because it looks like the violation corrected
 above and is not.
+
+### 6.1.1 The actor must be the addressee, and that is a product constraint worth naming
+
+**The hole §3's correction opened.** Adding `target_identity` gave every invitation a recorded
+addressee, and the steps above originally created the membership for whichever authenticated actor
+presented a valid token. So account `B`, holding a token forwarded or stolen from account `A`,
+redeems an invitation explicitly addressed to `A` and becomes a member. Two things break at once:
+`FR-018`'s membership is created for the wrong person, and §3's claim that the retained target
+identity is what lets the matrix "attribute the resulting membership" becomes false — the row says
+`A` and the membership says `B`. A field retained *for* attribution that does not constrain the
+thing it attributes is not attribution; it is a stale note.
+
+**The check.** `canonical(actor.account.email) == canonical(target_identity)`, evaluated on the
+uniform verification path per §5 — one more cause of the same refusal, not a distinguishable one.
+Canonical on both sides, via `canonical_email` as `_canonical_or_none` (`persistence.py:254`) uses
+it, for the reason §7 gives for the cascade: a case or normalization difference between the address
+typed at issuance and the address registered at signup would silently spare the invitation there
+and silently refuse it here.
+
+**Why not simply "the emails must match", which is what the plain reading suggests.** Two states
+this codebase actually produces would make that rule refuse a flow `FR-019` requires:
+
+1. **The invitee registers at a different address.** `FR-019`'s whole case is an invitation to a
+   person with **no account yet**; they create one on the way in, and nothing today forces the
+   address they register to be the address they were invited at. A bare equality check makes that
+   ordinary path fail — with the uniform refusal, so they cannot even be told why.
+2. **The account is a purged tombstone.** After `KHEPRI-DEC-015` §2b's twenty-four months,
+   `row.email = None` (`persistence.py:356`) and `actor.account.email is None`, so no comparison is
+   constructible at all.
+
+So the rule is stated with its boundaries rather than as a bare equality:
+
+- **A match is required, and it is canonical.** The addressee is who may redeem.
+- **`actor.account.email is None` → the uniform refusal.** A tombstone cannot be shown to be the
+  addressee, so it fails **closed**, following the same discipline `resolve_scope` applies to a
+  disabled account. Nothing here reconstructs an identity from a purged row.
+- **The product consequence, stated because it is a behavioral constraint and not a footnote:**
+  *an invitee must accept with the address they were invited at.* If they register a different one,
+  redemption refuses and the owner must re-issue to the new address. `R8-05`'s screens will need to
+  say so, and this note does not decide the copy — only that the constraint exists and is
+  deliberate.
+
+**Why that constraint is acceptable rather than a defect.** The alternative — letting any
+authenticated account redeem any token addressed to anyone — makes the invitation a **bearer**
+credential whose addressee is decorative. `FR-016` calls the secret high-entropy precisely so that
+possession is hard to obtain; it does not say possession is *sufficient*, and `KHEPRI-DEC-015`
+retains a target identity, which is only meaningful if the target constrains something. Requiring
+the addressee to be the redeemer is what makes a forwarded token useless, and a forwarded token is
+the realistic threat: invitations travel by email, and email is forwarded.
+
+**`R4-05` and `R4-07` owe two cases here**, and neither is the happy path: account `B` presenting a
+**valid** token addressed to `A` must be refused and no membership created, and an actor whose
+account email is `None` must be refused. Both must produce the §5 refusal, indistinguishable from a
+wrong secret — a test asserting only "redemption fails" passes on an implementation that discloses
+which check failed.
 
 ### 6.2 At-most-once needs a lock or a conditional update, not just a transaction
 
@@ -571,10 +691,57 @@ this the right reading rather than merely the convenient one:
 2. **It is the only reading under which revocation actually revokes.** `FR-030` requires a
    membership change to take effect for decisions made after it. A reading that leaves a held token
    able to recreate the revoked membership defeats the requirement it sits next to.
-3. **The identity to match against is available.** The revoked member has an account, so their
-   `target_identity` is resolvable at revocation time. `R4-06` must match it **canonically**, the
-   same way `_canonical_or_none` (`persistence.py:254`) normalizes an account's email, or a case
-   difference between issuance and account creation silently spares the invitation.
+3. **The identity to match against is available — with one exception, handled below.** The revoked
+   member has an account, so their `target_identity` is resolvable at revocation time. `R4-06` must
+   match it **canonically**, the same way `_canonical_or_none` (`persistence.py:254`) normalizes an
+   account's email, or a case difference between issuance and account creation silently spares the
+   invitation.
+
+### 7.1 The tombstone case, where the recipient anchor does not exist
+
+**The state.** `KHEPRI-DEC-015` §2b purges a disabled account after twenty-four months:
+`row.email = None` (`persistence.py:356`), leaving an opaque tombstone. A membership revoked *after*
+that purge has no resolvable identity, so the recipient predicate above — `target_identity = <the
+revoked member's identity>` — cannot be constructed at all. Meanwhile §4 makes `expires_at` a free
+parameter, so a still-unexpired invitation may retain the old address. The cascade silently matches
+nothing, and the invitation stays open.
+
+**Why that is worse than it first looks.** The address is released when the account is purged, so it
+can be registered by a **different** person. That new account is then, by §6.1.1's own rule, the
+legitimate addressee of an invitation issued to someone else entirely — and it redeems into `O`.
+The failure is not "revocation missed a row"; it is that a purge plus a stale invitation transfers
+an offer of membership from one person to another.
+
+**The fix is a cascade at the purge, not a bound on `expires_at`.** The other available route — cap
+invitation lifetimes so this state is unreachable — is refused: §4 fixes that `expires_at` is a
+parameter because "baking one in would put a product decision in the domain", and a ceiling is that
+same product decision written as a maximum. Nothing about identity purging tells us how long an
+invitation should live. What it does tell us is that the invitation's addressee has ceased to exist,
+which is a **lifecycle** fact this note may act on.
+
+So the destruction-trigger list gains a fifth entry, derived rather than invented: an invitation
+whose addressee is purged has lost the identity the matrix retains it to attribute, so both of
+`KHEPRI-DEC-015` §2's authorized purposes have lapsed exactly as §3's purge derivation describes.
+
+**`R4-06` invalidates on account purge.** In the same transaction as `purge_if_still_eligible`
+(`persistence.py:338`), and for the reason that method exists rather than by analogy: it re-reads
+and re-checks inside the writing transaction because a select-then-write across two transactions
+"erased a re-enabled account's email". An invitation cascade run *after* the purge returns has that
+same gap, plus the one §7's atomicity note names — a failure between the two leaves the address
+released and the invitation open, which is the whole defect. Predicate: `target_identity =
+canonical(<the address being purged>) AND redeemed_at IS NULL AND revoked_at IS NULL`, across
+**every** organization rather than one, since the purge is not scoped to a membership. The address
+must be read before it is nulled, which fixes the ordering inside that transaction.
+
+**Note this is the one cascade with no organization in its predicate**, and that is correct: the
+trigger is the identity ending, not a membership ending, so every outstanding offer to that person
+lapses at once. §7's two triggers stay organization-scoped; this third one cannot be.
+
+**What `R4-06` owes as evidence.** Purge an account holding an unexpired, unredeemed invitation;
+assert the invitation is closed and its verifier destroyed. Then the case that motivates it: after
+the purge, register a **new** account at the same address and assert it cannot redeem that
+invitation — which fails on an implementation that only closes invitations at membership
+revocation.
 
 **The issuer trigger is retained as well, because an active record requires it.** `KHEPRI-DEC-015`
 §2's Invitation row names four end triggers verbatim: "Acceptance; expiry; revocation; **revocation
@@ -611,10 +778,26 @@ gap opens.
 `persistence.py:934`, does the lock, the final-owner guard, the `write` callback, and
 `database.add(_event_row(event))`, and commits by leaving that block at `persistence.py:955`. So
 there is no seam after `revoke_membership` in which a second store call could still be inside the
-transaction. The cascade therefore runs **inside** that block — either in the `write(database, row)`
-callback, which already receives the session and returns the `FR-014` event, or in
-`_apply_membership_change`'s own body after the guard. It is not a second store method the service
-calls next.
+transaction. The cascade therefore runs **inside** that block.
+
+**It goes in `revoke_membership`'s `write` callback, and the helper body is not an equivalent
+placement.** `_apply_membership_change` is shared: `revoke_membership` delegates to it at
+`persistence.py:862` and **`demote_membership` delegates to the same helper** at
+`persistence.py:897`. A cascade placed in the helper's own body therefore runs on **both** verbs, so
+demotion would invalidate the demoted member's invitations — which contradicts §7's closing note,
+where this slice implements revocation only and demotion is left as an owner question. The two
+placements are not two spellings of one design; one of them silently decides an open question.
+
+The `write(database, row)` callback is the correct seam because it is **per-verb**: `revoke`
+(`persistence.py:862`) and `demote` (`:897`) pass different callbacks to the same helper, both
+already inside the transaction and already receiving the session. Putting the cascade there scopes
+it to revocation by construction rather than by a guard someone can drop. If a later slice does
+decide demotion invalidates too, that is a second callback edit and a visible one — not a behavior
+that arrived because two verbs shared a helper.
+
+**`R4-06` owes the negative case**, and it is the one a happy-path suite omits: **demote** an owner
+holding outstanding invitations and assert those invitations are **still open**. That test fails on
+the helper-body placement, which is why it is named here rather than left to review.
 
 Three things commit or roll back **together**: the membership row's deletion, its `FR-014`
 `MembershipEvent.revoked` event, and every invitation matched by either predicate above.
@@ -652,18 +835,42 @@ block `R4-03`, since it changes no schema.
 - **Whether demotion invalidates invitations**, per §7's closing note. Revocation is settled; the
   demotion case changes no schema, so it does not block `R4-03`.
 
-**Removed from this list, and why.** The first version listed **invitation retention** and
-**`FR-020`'s reading** here. Neither is open. Retention is settled by `KHEPRI-DEC-015` §2's
-Invitation row — verifier destroyed at the trigger, status and target identity retained only while
-replay refusal needs them, record purged after — and §3 now records it along with the sweeper
-`R4-03` owes. `FR-020`'s reading is settled by §7's counter-example. Listing a settled question as
-open is the failure mode this note fell into once; it is recorded here so a reader of the list knows
-the omission is deliberate.
+**Removed from this list, and why.** Earlier versions listed **invitation retention**, **`FR-020`'s
+reading**, and **the purge horizon** here. None is open.
+
+- **Retention** is settled by `KHEPRI-DEC-015` §2's Invitation row — verifier destroyed at the
+  trigger, status and target identity retained only while replay refusal needs them, record purged
+  after — and §3 now records it along with the sweeper `R4-03` owes.
+- **`FR-020`'s reading** is settled by §7's counter-example.
+- **The purge horizon** was listed as an owner input for one version, on the grounds that the
+  remaining lifetime was "an operational choice about table size". §3 corrects that: the horizon
+  governs personal data, so it cannot be operational, and the matrix's two authorized purposes
+  yield a lifecycle predicate directly. This note derives it rather than asking for a number.
+
+Listing a settled question as open is a failure mode this note fell into twice — once for
+retention, once for the horizon — and in both cases the cause was the same: reading `FR-016`'s
+field list without opening the governing retention decision. Recorded so a reader of the list knows
+the omissions are deliberate, and so the pattern is visible rather than repeated a third time.
+
+**What genuinely remains open is one product question, not a design one:** whether demotion
+invalidates invitations (§7's closing note). It changes no schema, so it does not block `R4-03`, and
+§7's placement decision makes implementing it later a visible edit rather than an accident.
 
 ## 9. Slice sequence, unchanged from the roadmap
 
 `R4-02` domain and hashed secret → `R4-03` persistence and migration (single head; `20260817_0017`
 is current) → `R4-04` issuance and revocation → `R4-05` redemption → `R4-06` `FR-020` cascade →
 `R4-07` the uniform-failure matrix. `R4-04`'s roadmap row already depends on "`R6-01` authorization
-matrix draft", which §6.3 now supplies concretely. `R4-03` additionally owes the sweeper §3 records,
-and `R4-05` owes the concurrency control §6.2 requires.
+matrix draft", which §6.3 now supplies concretely.
+
+**What each slice owes beyond its roadmap row**, collected because several arrive from corrections
+above rather than from the roadmap:
+
+| Slice | Additional obligation | From |
+|---|---|---|
+| `R4-03` | The sweeper, with the purge predicate evaluated in the deleting statement | §3 |
+| `R4-05` | The concurrency control (Route A or B, recorded) | §6.2 |
+| `R4-05` | The addressee check on the uniform verification path | §6.1.1 |
+| `R4-06` | Cascade in `revoke_membership`'s `write` callback, **not** the shared helper | §7 |
+| `R4-06` | Cascade at account purge, unscoped by organization | §7.1 |
+| `R4-07` | Correct-secret-against-expired refusal; addressee-mismatch and `email is None` refusals; demotion leaves invitations open | §3, §6.1.1, §7 |
