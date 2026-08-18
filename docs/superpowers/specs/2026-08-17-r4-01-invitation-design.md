@@ -288,6 +288,21 @@ none, so an invitation without one would be a row `FR-020` cannot reach.
   `R3-01` §2.1 established that reasoning for session keys.
 - **`scrypt` at RRA's parameters** (`n=2**14, r=8, p=1, dklen=32`, 16-byte salt). Matching rather
   than choosing new parameters: two hashing schemes in one codebase means one of them is unreviewed.
+- **The secret and salt are CSPRNG-generated, at stated sizes.** `secret = secrets.token_urlsafe(32)`
+  and `salt = secrets.token_bytes(16)`, with `invitation_id = f"inv_{secrets.token_urlsafe(18)}"` —
+  the same constructions `rra/sessions.py:78-80` already uses, so there is one generation scheme in
+  the codebase rather than two. **Stated because the rest of this section does not imply it.**
+  Fixing the token encoding, the KDF parameters, and the salt *length* still leaves generation
+  unspecified, and an implementation can satisfy every other bullet above while using a predictable
+  secret or a fixed salt. `scrypt` does not rescue that: it protects the stored verifier against
+  offline attack on a *high-entropy* input, and cannot add entropy a bearer token never had.
+  `FR-016` requires the secret be high-entropy, which is a property of how it is generated and of
+  nothing else here.
+- **`R4-02` owes a test on the sizes rather than on the values.** A generated secret is not
+  assertable against a known value, so the evidence is shape: decoded length, and that two
+  successive issuances differ. `secrets` is the only admissible source — `random` is not a CSPRNG
+  and the distinction is invisible at a call site, which is why the module is named here rather
+  than left as "generate securely".
 - **The secret is returned once and never stored.** Only the `Verifier`'s salt and digest persist,
   which is `FR-016`'s "persisted only as a strong salted hash", and they are destroyed together at
   the trigger per §3.
