@@ -584,21 +584,49 @@ clock**, and derives the account by looking up the session and then reading `ses
    both land and the membership survives its account. Re-reading narrows the window; it does not
    close it. Closing it requires the two operations to **contend on the same rows**.
 
-   They already can. `apply_owner_reducing_change` (`persistence.py:766`) — the path
-   `disable_account` takes — does not lock the account row either: it locks
-   `owner_memberships_for_update(account_id)` (`:787`), the membership rows of the account being
-   disabled, and its docstring records why that shape exists ("the guard and the write were three
-   round trips on three sessions, so two concurrent disablements … could both count a live
-   co-owner, both pass, and both commit, leaving zero"). Redemption **inserts a membership for that
-   same account**, so it belongs inside that contention set rather than beside it.
+   **The row to contend on is the account row, and reusing the disable path's lock does not
+   work.** `apply_owner_reducing_change` (`persistence.py:766`) locks
+   `owner_memberships_for_update(account_id)` (`:787`) rather than the account row, so reusing that
+   statement is the obvious move and it is **wrong here**: that query selects owner rows in
+   organizations the account already owns, and `FR-019`'s invitee owns none — frequently the
+   account did not exist when the invitation was issued. `SELECT ... FOR UPDATE` over an **empty
+   result set acquires no lock at all**, so a concurrent `disable_account` blocks on nothing and
+   the window stays open exactly as it was.
 
-   **`R4-05` therefore takes the same lock on the same rows, in the transaction that does the
-   insert**, and evaluates `can_act` on the account row it reads under that lock — `accounts.py:68`
-   names that "the single definition of 'live'", and its docstring records `FR-013` drifting exactly
-   by growing a local judgment instead ("counted owner-role rows without consulting account state").
-   A concurrent `disable_account` then either blocks at its own `SELECT` until redemption commits
-   and observes the new membership, or wins and redemption's `can_act` reads the disabled row. One
-   of the two, never both.
+   That failure mode is not hypothetical, and the same file records it: the docstring at `:521-528`
+   describes the predicate's *previous* form locking "pairwise-disjoint single-row sets", so
+   "`FOR UPDATE` had nothing to block on: all three read 'other effective owners exist', all three
+   passed the guard, and all three committed, leaving zero" — measured at "4 failures in 12 against
+   real PostgreSQL". An empty set is that defect at its limit. A lock is only a lock over rows that
+   exist.
+
+   **So `R4-05` locks the account row itself** — `SELECT ... FROM rca_accounts WHERE account_id =
+   :id FOR UPDATE`, as a **module-level named statement** for the reason `:514-519` gives, since an
+   inline `.with_for_update()` is silently dropped on SQLite and the suite would stay green without
+   it — and evaluates `can_act` on the row it read under that lock. `accounts.py:68` names that
+   "the single definition of 'live'", and its docstring records `FR-013` drifting exactly by growing
+   a local judgment instead ("counted owner-role rows without consulting account state").
+
+   The account row is the right anchor because it is the one row **both** operations certainly
+   touch: disablement writes it, and redemption's liveness question is about it. Every other
+   candidate is conditional on state the invitee may not have.
+
+   **`disable_account` must take that lock too, or redemption contends with nothing.** A lock only
+   serializes writers that acquire it, and `apply_owner_reducing_change` currently locks membership
+   rows and then writes the account row without locking it. So this slice owes a change on the
+   disable path as well: acquire the account-row lock before the guard, in addition to the existing
+   membership lock, which is additive and leaves `#155`'s fix untouched. Once both paths take it, a
+   concurrent `disable_account` either blocks until redemption commits — then observes the new
+   membership — or wins, and redemption's `can_act` reads the disabled row. One of the two, never
+   both.
+
+   **Flagged as cross-slice work, because it is not confined to `R4`.** `R4-05` modifying
+   `apply_owner_reducing_change` touches the method `#155` and `R1-05` both landed on, and
+   `_MAY_LOCK` in `tests/test_rca001_lock_scope.py` must gain the new entries. `R4-05` owes a
+   re-run of `test_rca001_concurrent_final_owner.py` to show the added lock does not weaken the
+   `FR-013` guard it sits beside. If the owner prefers `R4` not to touch that path, the alternative
+   is a separate slice landing the account-row lock first — but redemption cannot be made safe
+   without it, so it is a sequencing choice rather than an optional one.
 
    A failure raises the §5 uniform refusal and the transaction rolls back, so **the invitation is
    not consumed**: the refusal is about the actor rather than the invitation, and a re-enabled
@@ -611,7 +639,8 @@ clock**, and derives the account by looking up the session and then reading `ses
 
    `R4-05` owes the case, and it must be **induced** rather than observed: hold the redemption
    transaction open, commit a `disable_account` against the same account, then release — and assert
-   no membership exists **and** the invitation is still open. A test that disables *before* `redeem`
+   no membership exists **and** the invitation is still open. It must run against **PostgreSQL**,
+   since SQLite emits no `FOR UPDATE` and the test would pass on an unlocked implementation. A test that disables *before* `redeem`
    is called passes on the unconditioned implementation, and one that disables after it returns
    passes on every implementation. `test_rca001_concurrent_final_owner.py` is the precedent for
    proving a contention claim against PostgreSQL rather than asserting it.
@@ -731,6 +760,18 @@ is that shape with a different invariant.
   for restating the selection predicate inside the writing transaction, and it exists because the
   sweeper "select[ed], then wr[o]te, and those were separate transactions with no predicate between
   them".
+
+> **Correction, 2026-08-18 (`R4-01`).** The recommendation below was written when redemption's
+> only reason to lock was at-most-once, so "Route B adds nothing to `_MAY_LOCK`" was a real
+> saving. §6.1 step 1 has since established that redemption must lock the **account row**
+> regardless, to serialize against `disable_account`. So `redeem` reaches a lock on either route,
+> `_MAY_LOCK` gains its entries either way, and the evidence-cost argument no longer separates
+> them. The recommendation stands on the reduced ground below — Route B still needs no
+> predicate-by-predicate compilation test for a *second* locking statement, and still leaves the
+> at-most-once claim resting on `rowcount` rather than on a lock whose absence a green SQLite suite
+> would hide — but `R4-05` should treat the two as much closer than the text originally implied,
+> and may reasonably prefer Route A now that one lock is unavoidable and a single serialization
+> point is simpler to reason about than two mechanisms.
 
 **Route B is the recommendation, for a reason about evidence rather than about performance.**
 `tests/test_rca001_lock_scope.py` — merged with `R1-05` (#208) and now on `main` — allowlists which
