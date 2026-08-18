@@ -672,18 +672,25 @@ clock**, and derives the account by looking up the session and then reading `ses
    "the single definition of 'live'", and its docstring records `FR-013` drifting exactly by growing
    a local judgment instead ("counted owner-role rows without consulting account state").
 
+   **That lock alone is sufficient; the counterpart writes need no change.** They already take
+   conflicting row locks by virtue of being `UPDATE`s — `_apply_account` (`persistence.py:813`),
+   `save_session` (`session_persistence.py:86-92`), and the bulk `update(SessionRow)` (`:108-116`)
+   — so redemption's `FOR UPDATE` is the second half of a mutual exclusion rather than a lock
+   waiting for a partner. See §8.4, which withdraws the counterpart slice two earlier revisions
+   required.
+
    The account row is the right anchor because it is the one row **both** operations certainly
    touch: disablement writes it, and redemption's liveness question is about it. Every other
    candidate is conditional on state the invitee may not have.
 
-   **`disable_account` must take that lock too, or redemption contends with nothing.** A lock only
-   serializes writers that acquire it, and `apply_owner_reducing_change` currently locks membership
-   rows and then writes the account row without locking it. So this slice owes a change on the
-   disable path as well: acquire the account-row lock before the guard, in addition to the existing
-   membership lock, which is additive and leaves `#155`'s fix untouched. Once both paths take it, a
-   concurrent `disable_account` either blocks until redemption commits — then observes the new
-   membership — or wins, and redemption's `can_act` reads the disabled row. One of the two, never
-   both.
+   **`disable_account` needs no change, and an earlier revision of this paragraph was wrong to say
+   it did.** That revision claimed a lock only serializes writers which acquire one, and that
+   `apply_owner_reducing_change` writes the account row without locking it. The second half is
+   false in the sense that matters: it writes through `_apply_account` (`persistence.py:813`), and
+   on PostgreSQL an `UPDATE` **is** a row lock — one that conflicts with redemption's
+   `SELECT ... FOR UPDATE`. So a concurrent `disable_account` either blocks until redemption
+   commits and then observes the new membership, or commits first and redemption's `FOR UPDATE`
+   waits and reads the disabled row. One of the two, never both, with no writer-side change.
 
    **This crosses `R4`'s boundary, and the note stops at the requirement rather than the
    sequencing.** `R4-05`'s roadmap dependencies are `R4-03`, `R2` merged, and `R3` actor resolution
@@ -694,9 +701,9 @@ clock**, and derives the account by looking up the session and then reading `ses
 
    So what this note settles is the **requirement**: redemption must serialize against the writes
    that end the actor's authority, and a lock taken by both paths is the mechanism that satisfies
-   it. Who lands each counterpart is settled in §8.4: one slice, `R4-08`, takes the account row's
-   lock on the disable path and the session row's in the session-ending writes, and `R4-05` depends
-   on it. Until they land, `R4-05` is specifiable but not startable — a redemption implemented
+   it. §8.4 settles that no counterpart slice is needed: the disable and session-ending paths
+   already take conflicting row locks through their `UPDATE`s, so redemption's own lock completes
+   the serialization. Until they land, `R4-05` is specifiable but not startable — a redemption implemented
    without its counterparts contends with nothing, which is the defect two revisions of this
    section already shipped.
 
@@ -710,12 +717,12 @@ clock**, and derives the account by looking up the session and then reading `ses
 
    This is the **same escalation, one level out** rather than a second design problem: it needs the
    session row locked and re-read inside the redemption transaction, and the session-ending writes
-   to take that lock too — which is again a change to a path `R4` does not own. §8.4 records both
-   counterparts as one slice, `R4-08`, because answering it for `disable_account` and not for
-   `SessionService.revoke` would leave `R4-05` half-safe and looking finished.
+   to take that lock too. §8.4 records that **neither** needs a change: `revoke` and `revoke_all`
+   write the session row through `save_session` and a bulk `update(SessionRow)`, and an `UPDATE`
+   already conflicts with redemption's `FOR UPDATE`.
 
    **Natural expiry is the part no lock reaches, and it needs a predicate rather than a
-   counterpart.** `R4-08` locks the session row against `revoke` and `revoke_all`, which are
+   counterpart.** Redemption's lock covers `revoke` and `revoke_all`, which are
    *writes*. Expiry is neither: `Session.is_expired_at` is `self.expires_at <= moment`
    (`sessions.py:111`), derived from the clock, performing no write and touching no row. There is
    nothing for a lock to contend on, so redemption could lock the session an instant before
@@ -1265,8 +1272,8 @@ can specify, and it is still a window: expiry is derived from the clock, so unli
 disablement there is no competing **writer** to serialize against, and a transaction can be
 preempted between its last predicate and its commit record.
 
-**Why no lock fixes it.** `R4-08` locks the session row against `revoke` and `revoke_all`, which
-are writes. `Session.is_expired_at` is `self.expires_at <= moment` (`sessions.py:111`) — it writes
+**Why no lock fixes it.** Redemption's session lock serializes against `revoke` and `revoke_all`,
+which are writes. `Session.is_expired_at` is `self.expires_at <= moment` (`sessions.py:111`) — it writes
 nothing and touches no row, so a lock has nothing to contend on. A lock serializes writers; it does
 not serialize the passage of time.
 
@@ -1463,37 +1470,55 @@ So `R4-06` implements the two triggers §7 tables and **no third**. `R4-07` owes
 §7 already names — demote an owner holding outstanding invitations, assert they are still open —
 which now proves an intended behavior rather than guarding an undecided one.
 
-### 8.4 The counterpart locks land as one new slice, `R4-08`
+### 8.4 No counterpart slice is needed — the writes already lock
 
 **Resolved as a sequencing decision** (owner, 2026-08-18), where an earlier revision left it open.
 §6.1 establishes that redemption must serialize against every write that ends the actor's authority
 mid-transaction, and that a lock only serializes writers which acquire it. Both counterparts sit
 outside `R4`, so each lands in the family that owns the path:
 
-> **Correction, 2026-08-18 (`R4-01`).** An earlier revision of this section put the account-row
-> lock in a new `R1-07` and made `R1-06` depend on it. That is wrong on a checkable fact: **`R1` is
+> **Correction, 2026-08-18 (`R4-01`), withdrawing this slice entirely.** Two earlier revisions
+> required a counterpart slice — first `R1-07`/`R3-12`, then `R4-08` — to add a writer-side
+> `SELECT ... FOR UPDATE` on the disable and session-ending paths. **Neither is needed, because
+> those writes already lock the rows.** On PostgreSQL an `UPDATE` takes a row lock that conflicts
+> with `SELECT ... FOR UPDATE`, and all three paths issue one inside their transaction:
+> `_apply_account` (`persistence.py:813`) on the disable path, `save_session`
+> (`session_persistence.py:86-92`) for `revoke`, and the bulk `update(SessionRow)` (`:108-116`)
+> for `revoke_all`. Once redemption locks and re-reads the target row the serialization is already
+> mutual — either redemption commits first and the writer blocks, or the writer commits first and
+> redemption's `FOR UPDATE` waits and then reads the new state.
+>
+> **The error was reasoning by analogy from `#155`.** There the *reader* was the unlocked side and
+> the fix was to lock it. Here the reader is redemption, which §6.1 already locks; the writers were
+> never unlocked. A second explicit lock in front of an `UPDATE` adds nothing, and requiring it
+> would have widened `R4` into two merged programs for no safety.
+>
+> `R4-05` therefore needs **no counterpart slice** and `R4-08` is withdrawn from the roadmap. What
+> §6.1 requires of `R4-05` is unchanged and is now the whole of it.
+>
+> The superseded reasoning is retained because the `R1`-reopening half is a trap worth not
+> repeating: an earlier revision put the account-row lock in a new `R1-07` and made `R1-06` depend
+> on it. That is wrong on a checkable fact: **`R1` is
 > merged and closed.** The roadmap's program table marks it `MERGED` with "`R1-01`…`R1-06` complete
 > at `c8c6edb`; `#155` closed", and `NEXT-SLICES.md` records the same in its own table. Adding a
 > row to a closed program and making its already-delivered closeout slice depend on unimplemented
 > work reopens `#155` retroactively — three records would then disagree about whether `R1` is done.
 > A slice may not resurrect a merged program to host work discovered later.
 
-**Both locks land as one new slice, `R4-08`, in the program that discovered the need.**
+**The whole requirement lands inside `R4-05`.** It locks the account row, re-reads it, and
+evaluates `can_act` and `is_live_at` under that lock (§6.1). Nothing is owed by `R1` or `R3`,
+because the writes those programs own already take the conflicting locks:
 
-| | |
-|---|---|
-| **What** | `apply_owner_reducing_change` (`persistence.py:766`) additionally takes the account row's lock; `SessionService.revoke`/`revoke_all` take the session row's |
-| **Depends on** | `R4-01`, `R1` merged, `R3-04` |
-| **Evidence** | Module-level named statements with dialect-compilation tests (`persistence.py:514-519`), plus `test_rca001_concurrent_final_owner.py` re-run green to show `#155`'s guard is not weakened |
+| Path | Write | Lock it already takes |
+|---|---|---|
+| Disable | `_apply_account` (`persistence.py:813`) | Row lock on `rca_accounts` |
+| `revoke` | `save_session` (`session_persistence.py:86-92`) | Row lock on the session row |
+| `revoke_all` | bulk `update(SessionRow)` (`:108-116`) | Row locks on the matched sessions |
 
-`R4-05` depends on `R4-08`. Putting the work in `R4` is not a reversal of the ownership argument
-below — it is what that argument requires once `R1` is closed: the alternative was reopening a
-merged program, which is worse than a cross-program edit made under an explicit slice with its own
-regression evidence.
-
-**Why one slice rather than two.** Both locks exist for one invariant — redemption must serialize
-against the writes that end an actor's authority — and splitting them across programs would let one
-land without the other, which §6.1 records as the half-safe state that reads as finished.
+**The general rule, since this cost three revisions to find:** a `SELECT ... FOR UPDATE` needs a
+counterpart only when the other side *reads* without locking. Against a writer, the `UPDATE` is the
+counterpart. `#155` was the reader-unlocked case, which is why the analogy misled — there the fix
+was to lock a reader, and here the reader is the side already being locked.
 
 **Why not `R4-05` doing both**, which is the faster route: a slice whose declared dependencies are
 `R4-03`, `R2`, and `R3` would modify `R1`'s merged concurrency path and `R3`'s session service, add
@@ -1502,15 +1527,14 @@ land without the other, which §6.1 records as the half-safe state that reads as
 repo is `_MAY_LOCK`-audited precisely so that no lock arrives without an owner; landing two through
 a third family's slice is how that audit stops meaning anything.
 
-`R4-08` owes what the existing locking statements owe: module-level named statements, and
-dialect-compilation tests asserting `FOR UPDATE` is present (`persistence.py:514-519`).
+`R4-05`'s own locking statement owes what the existing ones owe: a module-level named statement,
+and a dialect-compilation test asserting `FOR UPDATE` is present (`persistence.py:514-519`).
 
 ## 9. Slice sequence
 
 `R4-02` domain and hashed secret → `R4-03` persistence and migration (single head; `20260817_0017`
 is current) → `R4-04` issuance and revocation → **`R4-06` the `FR-020` and purge cascades** →
-`R4-05` redemption → `R4-07` the uniform-failure matrix, with **`R4-08`** (the counterpart locks)
-landing any time after `R4-01` and before `R4-05`.
+`R4-05` redemption → `R4-07` the uniform-failure matrix.
 
 **`R4-06` precedes `R4-05`, reversing the roadmap's original order**, per §8: the purge cascade must
 exist before redemption can make a surviving invitation redeemable. An earlier revision of this
@@ -1518,8 +1542,8 @@ paragraph kept the old sequence while the dependency rows carried the new one, s
 permission for the ordering §8 forbids. `R4-04`'s roadmap row already depends on "`R6-01` authorization
 matrix draft", which §6.3 now supplies concretely.
 
-**`R4-05` depends on `R4-08`, on `R4-06`, and on §8.2 and §8.5 being answered**, and the roadmap
-carries all four. Redemption's
+**`R4-05` depends on `R4-06` and on §8.2 and §8.5 being answered**, and the roadmap carries all
+three. The counterpart-lock slice two earlier revisions added is withdrawn — see §8.4. Redemption's
 own locks do nothing until those counterparts acquire theirs, so starting `R4-05` first would
 produce a slice that looks finished and serializes nothing. `R4-02`, `R4-03` and `R4-04` are
 unaffected and can proceed in parallel with them.
