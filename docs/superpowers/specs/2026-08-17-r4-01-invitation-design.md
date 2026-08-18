@@ -415,16 +415,30 @@ well as by message. That means:
   fast and "wrong secret" pays for a scrypt, and the timing difference is the disclosure the
   requirement forbids. This is the one place a `R4` implementation is most likely to be accidentally
   non-compliant, because the fast path looks like an optimization.
-- **The dummy work must also run on the malformed-token path, which is earlier than the lookup.**
-  The first version of this section paid the dummy scrypt only when the *lookup* missed, and that
-  leaves the fastest path of all uncovered: a token that fails `kci1.<invitation_id>.<secret>`
-  parsing never reaches a lookup, so it returns in microseconds while every other cause pays ~100ms.
-  `FR-017` names malformed explicitly — "A replayed, expired, revoked, or **malformed** invitation
-  MUST fail closed without revealing which check failed" — so malformed is one of the causes that
-  must be indistinguishable, not a precondition outside the guarantee. Concretely: `redeem` catches
-  its own parse failure, pays the dummy work described below, discards the result, and raises the
-  same uniform refusal. Ordering matters — the dummy work is paid *before* the raise, in the same
-  call — because a caller measures the call, not the branch.
+- **The dummy work must also run on the malformed-token path, which is earlier than the lookup —
+  and that means a dummy *lookup* as well as a dummy hash.** The first version of this section paid
+  the dummy scrypt only when the *lookup* missed, and that leaves the fastest path of all uncovered:
+  a token that fails `kci1.<invitation_id>.<secret>` parsing never reaches a lookup, so it returns
+  in microseconds while every other cause pays ~100ms. `FR-017` names malformed explicitly — "A
+  replayed, expired, revoked, or **malformed** invitation MUST fail closed without revealing which
+  check failed" — so malformed is one of the causes that must be indistinguishable, not a
+  precondition outside the guarantee. Concretely: `redeem` catches its own parse failure, pays the
+  dummy work, discards the result, and raises the same uniform refusal. Ordering matters — the
+  dummy work is paid *before* the raise, in the same call — because a caller measures the call, not
+  the branch.
+
+  **Equal scrypt is not equal work.** Paying only the hash still leaves the malformed path skipping
+  a **database round trip** that every other cause performs: an unknown identifier, a wrong secret,
+  and a closed record all `SELECT` before they hash. Against a local SQLite test database that
+  difference is noise, which is exactly why it would ship — against a networked PostgreSQL it is a
+  measurable constant, and it reconstructs the distinction the dummy hash was added to remove.
+  Scenario 8's timing evidence must therefore be gathered against a real database rather than
+  in-memory, or it certifies nothing. So the malformed path performs a lookup too: `redeem` parses,
+  and on failure substitutes a **syntactically well-formed identifier that cannot exist** — a
+  module-level constant with the `inv_` prefix, never issued because `issue` derives identifiers
+  from `secrets.token_urlsafe(18)` — then runs the ordinary lookup, discards the miss, pays the
+  dummy hash, and raises. One code path, one round trip, one KDF invocation, whatever the cause.
+  Stated concretely because "make the timings equal" is not implementable and "do a dummy lookup" is.
 - **The dummy work must run at `R4`'s own KDF parameters, and `credentials.py`'s constants are the
   wrong ones.** `credentials.py:24` sets `KDF_N = 2**15` and `DEFAULT_KDF` uses it, but §4 fixes
   invitations at RRA's `n=2**14` (`khepri/rra/sessions.py:108`). Calling
@@ -456,10 +470,11 @@ well as by message. That means:
   them together. Concretely: the state of the row may determine *whether the refusal is raised*, but
   never *whether the KDF ran*.
 - **The invariant, stated once so `R4-07` can assert it directly.** Every one of the six causes pays
-  **equivalent KDF cost** — one `scrypt` at `n=2**14` — before any refusal is raised: a malformed
-  token that never parses, an `invitation_id` that matches no row, a row whose verifier is
-  destroyed, a row that is expired, revoked, or already redeemed with its verifier intact, and a
-  genuine wrong secret. Six causes, one message, one KDF invocation each. Anything that skips the
+  **equivalent work** — one database lookup **and** one `scrypt` at `n=2**14` — before any refusal
+  is raised: a malformed token that never parses, an `invitation_id` that matches no row, a row
+  whose verifier is destroyed, a row that is expired, revoked, or already redeemed with its verifier
+  intact, and a genuine wrong secret. Six causes, one message, one round trip and one KDF invocation
+  each. Anything that skips the
   work on some branch is the defect, however reasonable it looks as an early return.
 - `hmac.compare_digest` for the comparison itself, as RRA already does.
 
@@ -494,13 +509,42 @@ clock**, and derives the account by looking up the session and then reading `ses
 
 ### 6.1 The steps
 
-1. **The actor arrives already resolved.** `ActorResolver.resolve_actor` has run at the boundary,
-   so the session was checked live and `assert_account_active` has already been consulted
-   (`actor_resolution.py:87`). `redeem` does **not** re-check: `ResolvedActor`'s existence is the
-   evidence, and a second check would be a second authority over one fact. `FR-019` says acceptance
-   "MUST require that an authenticated account exists at the moment of acceptance" — *at the
-   moment*, so a token issued before the account existed is fine, and a disabled account is refused
-   by `resolve_actor` before `redeem` is entered.
+1. **The actor arrives already resolved, and is revalidated at the write.**
+   `ActorResolver.resolve_actor` has run at the boundary, so the session was checked live and
+   `assert_account_active` has already been consulted (`actor_resolution.py:87`). `FR-019` says
+   acceptance "MUST require that an authenticated account exists at the moment of acceptance" —
+   *at the moment*, so a token issued before the account existed is fine.
+
+   > **Correction, 2026-08-18 (`R4-01`).** The previous revision said `redeem` does **not** re-check,
+   > on the grounds that "`ResolvedActor`'s existence is the evidence, and a second check would be a
+   > second authority over one fact". That is wrong once §6.2 exists. `ResolvedActor` carries an
+   > `Account` **snapshot** — `resolve_actor` returns `ResolvedActor(session=session,
+   > account=account)` (`actor_resolution.py:90`) after reading it — and §6.2 then opens a
+   > transaction that takes a lock and may wait on a competing writer. So there is a window between
+   > resolution and commit, and it is not a narrow one by construction: it is however long the lock
+   > contends. An account disabled inside that window yields a **durable membership created for an
+   > account that is no longer an authenticated actor**, and `FR-019`'s "at the moment of acceptance"
+   > is a claim about the commit, not about the boundary check that preceded it. The invitation is
+   > consumed too, so the state is not even recoverable by retry.
+   >
+   > The "second authority over one fact" objection was the right instinct aimed at the wrong
+   > target. Two *independent* checks would be two authorities; re-reading the same fact inside the
+   > transaction that depends on it is what `purge_if_still_eligible` (`persistence.py:338`) already
+   > does, and for the identical reason — it "select[ed], then wr[o]te, and those were separate
+   > transactions with no predicate between them".
+
+   **So the write is conditioned on the account still being live.** Inside §6.2's transaction,
+   `R4-05` re-reads the account and requires `can_act`, which `accounts.py:68` names "the single
+   definition of 'live'" precisely so that call sites do not each grow their own — its docstring
+   records `FR-013` drifting by counting owner rows "without consulting account state". A failure
+   raises the §5 uniform refusal, and the transaction rolls back, so **the invitation is not
+   consumed**: a disabled account's attempt leaves the token in whatever state it had. That is the
+   correct outcome, since the refusal is about the actor rather than about the invitation.
+
+   `R4-05` owes the case, and it must be induced rather than observed: disable the account after
+   `resolve_actor` returns and before the transaction commits, then assert no membership exists
+   **and** the invitation is still open. A test that disables before `redeem` is called passes on
+   the unconditioned implementation.
 2. **Parse and verify the invitation secret per §5.** Any failure → the single uniform refusal.
    This is second rather than first because an unauthenticated caller has no business consuming a
    token: `resolve_actor` failing means `redeem` never runs, following the order `ActorResolver`
