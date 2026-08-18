@@ -1054,12 +1054,13 @@ not exist when the purge read the table.
 > discriminating fact is that the row stops being *discoverable* by the key one of them uses.
 > Address-keyed discovery is exactly what the purge destroys.
 
-**What this needs is an identity key that outlives the purge, and §8.2 settles which one: a
-transaction-scoped advisory lock over the canonical address, taken by both paths.** It stores
-nothing, so `KHEPRI-DEC-015` §2b is untouched, and it serializes on the identity rather than on a
-row — which is what the failure above requires, since the purge destroys row discoverability. It
-is a module-level named statement with a dialect-compilation test, per `persistence.py:514-519`.
-The candidates considered, and why the other two lost:
+**What this needs is an identity key that outlives the purge, and §8.2 records that no available
+mechanism supplies one.** A transaction-scoped advisory lock closes the issuance-first ordering and
+is what `R4-04` implements, but it carries no state across transactions, so the purge-first
+ordering survives it: the purge releases the lock, `issue` acquires it, and a post-purge miss is
+indistinguishable from `FR-019`'s ordinary no-account case. Detection — not serialization — is what
+is missing, and every place an address-derived marker could live is closed by
+`KHEPRI-DEC-015` §2b and §8 item 6. The candidates considered, and why each loses:
 
 | Candidate | Objection it must answer |
 |---|---|
@@ -1191,10 +1192,13 @@ retention, once for the horizon — and in both cases the cause was the same: re
 field list without opening the governing retention decision. Recorded so a reader of the list knows
 the omissions are deliberate, and so the pattern is visible rather than repeated a third time.
 
-**What genuinely remains open: one item.**
+**What genuinely remains open: two items.**
 
 - **Whether an invitation may be re-sent to a different address**, above — a product question for
   `R8-05`, blocking nothing in `R4`.
+- **Issuance versus identity purge** (§8.2) — a `KHEPRI-DEC-015` question. Closed in an earlier
+  revision and reopened, because the mechanism chosen does not close the purge-first ordering and
+  no candidate that does is available without a decision change.
 
 **Closed since the first review round, with the authority for each.** Four items sat here across
 earlier revisions. Three are closed below on this note's own authority, and the fourth is resolved
@@ -1224,7 +1228,55 @@ the horizon arithmetic in the sweeper, the transaction in the store. **No owner 
 `KHEPRI-DEC-015` amendment.** What `R4-03` does owe is the docstring stating why the interval is
 operational, so the next reader does not re-escalate it.
 
-### 8.2 Issuance serializes against purge with an advisory lock
+### 8.2 Issuance versus identity purge — open, and no candidate mechanism survives
+
+**This item was closed in an earlier revision of this section and is reopened.** The closure picked
+a transaction-scoped advisory lock over the canonical address. It does not work, and the reason
+generalizes past this candidate.
+
+**A mutex prevents overlap; it carries no state across transactions.** Take the purge-first
+ordering: `purge_if_still_eligible` acquires the lock, closes the existing invitations, nulls the
+address, and **releases**. The waiting `issue` then acquires the same lock, looks the addressee up,
+and finds nothing — which is indistinguishable from `FR-019`'s ordinary invitee who never had an
+account. It inserts an open invitation at an address that is now released, and a replacement
+account redeems it. Serialization was never the missing ingredient. **Detection is**, and the lock
+supplies none.
+
+**That is the third mechanism this section has lost to one fact**, which is why the pattern is
+recorded rather than a fourth attempted: the purge destroys the only evidence the address was ever
+used. A row lock needs a discoverable row (retracted above); an advisory lock needs state to
+outlive it (retracted here); a retained digest *is* the state, and is barred.
+
+**Why "just make issuance fail closed" is not available to this note.** A fail-closed detector must
+answer "was this address purged?" after the purge, which requires something address-derived to
+survive it. `KHEPRI-DEC-015` closes both places it could live:
+
+- The **tombstone** holds "an opaque account identifier and the disablement timestamp — **no email
+  address**, no credential verifier, no profile data" (§2b).
+- The **revocation ledger** holds "opaque identifiers, revocation timestamps, and status only: **no
+  email address**" — and §8 item 6 states the reason directly, that the mechanism "could quietly
+  become a second identity store. It must not."
+
+An address-keyed purge marker is that second identity store under a different name, and it would
+outlive the identity it describes — which is the retention inversion §2's matrix exists to prevent.
+
+**So this is a `KHEPRI-DEC-015` question, not an `R4-04` one, and it is stated narrowly.** The
+decision would have to admit *some* address-derived survivor with its own bounded horizon, or
+accept the residual risk explicitly, or forbid issuance to a disabled account's address outright —
+which is the one option needing no new retained data and is a product decision about behavior, not
+a mechanism. `R4-04` must not choose among these: two of the three change what a purged account
+leaves behind.
+
+**What `R4-04` may implement today, and what it must not claim.** Take the advisory lock anyway —
+it closes the *issuance-first* ordering, which is a real half of the hazard, and it stores nothing
+so it prejudges no answer. But its docstring must record that the purge-first ordering remains
+open, so a reader does not mistake a half-closed race for a closed one. `R4-07`'s two-order test
+is written but the purge-first case is expected to fail until this is decided; mark it
+`xfail(strict=True)` with this section as the reason, so the day it starts passing, something
+changed and the suite says so.
+
+<details>
+<summary>The candidates considered when this was closed, retained for the record</summary>
 
 **Closed on the second of §7.1's three candidates**, because the first is barred and the third is
 not a mechanism.
@@ -1259,6 +1311,8 @@ discipline, different lock primitive.
 Two consequences. The key must be derived from the **canonical** address per §4's storage rule, or
 the two paths lock different keys and serialize nothing. And this is PostgreSQL-specific: SQLite
 emits no advisory lock, so `R4-07`'s race case runs against PostgreSQL, exactly as §6.2's does.
+
+</details>
 
 ### 8.3 Demotion does not invalidate invitations
 
