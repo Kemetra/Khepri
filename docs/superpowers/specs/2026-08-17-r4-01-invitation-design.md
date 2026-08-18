@@ -146,37 +146,56 @@ instance of one pattern, not a new one.
 revocation of the inviting membership (`FR-020`)". Acceptance and revocation are writes and destroy
 the verifier in the same transaction that sets the timestamp. **Expiry is not a write** — it is
 `expires_at <= now` per §5's boundary, a derived state with no column and no event — so expiry
-alone changes no bytes, and the sweeper below is what eventually clears them.
+alone changes no bytes, and something else must. The correction below settles what.
 
-**What "destroyed at the trigger" requires at the expiry trigger, stated because the answer is not
-"as soon as possible".** Read as *the bytes are gone at the instant*, the rule is unsatisfiable for
-a derived state: no code runs at `expires_at`, so any mechanism — a sweep, a scheduled job, a
-destroy-on-next-touch — leaves a window, and the only difference between them is its length.
-`KHEPRI-DEC-015` does not read that way. Its §5 states the governing invariant under the heading
-**"Retention must never delay revocation"**, and its own table pairs the effects for exactly this
-row: "Invitation redeemed, expired, or revoked → **Unusable (`FR-017`)** | Verifier destroyed". The
-sentence that closes it is the test — "**A retained record is never a live grant.** Nothing in this
-decision permits an implementation to keep authority alive because a record still exists." The
-guarantee is over *authority*, not over bytes.
+> **Correction, 2026-08-18 (`R4-01`), retracting this note's own previous answer.** An earlier
+> revision of this section argued that "destroyed at the trigger" governs **authority** rather than
+> bytes, so §5's refusal discharged the obligation and the sweeper merely reclaimed storage. That
+> is wrong, and it was wrong by the same method this note has already failed by twice: quoting part
+> of a governing record instead of reading the section that governs the subject. The argument
+> leaned on `KHEPRI-DEC-015` §5's closing line ("a retained record is never a live grant") and
+> skipped the paragraph directly above it, which is about verifiers specifically and is not about
+> authority at all: "**A verifier whose purpose has ended is destroyed rather than retained: a used
+> or expired verifier has no remaining purpose and every day it survives is unjustified risk**"
+> (§5, lines 172-173). That sentence names *expired* explicitly — the exact case the retracted
+> argument carved out — and measures the harm in **days of survival**, which is a claim about
+> duration and therefore about bytes. A reading under which an expired verifier may sit until the
+> next sweep contradicts it directly. `KHEPRI-DEC-015` is `active`, and a design note cannot narrow
+> an active decision by reinterpreting it.
 
-**So the trigger obligation is discharged in §5, not by the sweeper.** An expired invitation is
-unusable at the instant `expires_at <= now`, because §5's refusal is decided from the state
-predicates and the surviving verifier authorizes nothing: a caller presenting the correct secret
-against an expired row receives the same uniform refusal as a caller presenting a malformed token,
-and pays the same KDF cost doing it. The verifier's bytes outlive its authority by exactly the
-sweep interval, and outlive its *usefulness to an attacker* not at all — a salted scrypt digest at
-`n=2**14` is not a secret whose disclosure grants anything, which is why `FR-016` permits storing it
-at all while the invitation is live. What the sweeper reclaims is storage and the personal data in
-`target_identity`, on the horizon below; what it is *not* doing is ending a grant, because §5 ended
-that at the instant.
+**So expiry needs a destruction mechanism, and "no code runs at `expires_at`" is a constraint to
+engineer around rather than an excuse.** The obligation is that an expired verifier's bytes do not
+survive, and the honest difficulty is that a derived state fires no event. Two mechanisms together
+satisfy it, and `R4-03` owes both:
 
-**Recorded because the weaker reading is the tempting one.** "The verifier survives until a sweep"
-is true and sounds like a concession; it is only a defect if the surviving bytes authorize
-something. `R4-05` and `R4-07` owe the evidence that they do not: a test that presents the **correct
-secret** for an expired invitation whose verifier is still intact, and asserts the uniform refusal.
-That case fails on an implementation that verifies the digest and returns success before checking
-`expires_at` — which is the only way the delay could ever become a live grant, and §5's
-ordering rule already forbids it.
+1. **Destroy on first touch after expiry.** Any path that loads an invitation and finds
+   `expires_at <= now` destroys the verifier in that transaction before refusing. This costs
+   nothing on the read path that was already happening and closes the case that matters most — an
+   expired invitation someone is actively presenting is exactly the one whose verifier should not
+   still be there.
+2. **A sweeper as the backstop, on a schedule stated as a requirement rather than left to
+   operations.** Touch-based destruction cannot reach an invitation nobody presents, so the sweep
+   is what bounds survival for the untouched rows. `R4-03` must state its interval, because "every
+   day it survives is unjustified risk" makes the interval the compliance property — an unstated
+   schedule is an unbounded one. `MembershipEventSweeper` owns the horizon arithmetic for events
+   and the same split applies: the sweeper owns "when", the store owns the transaction.
+
+**What this does not do, stated so the residual is visible rather than papered over.** Neither
+mechanism destroys the verifier *at* the instant, because nothing runs at that instant. The
+residual window for an untouched, unpresented invitation is the sweep interval, and this note
+cannot make it zero. What it can do is refuse to call that window compliant by redefinition, and
+bound it explicitly instead. **If the owner judges the sweep interval insufficient for `FR-016`
+material, that is a `KHEPRI-DEC-015` question rather than an `R4` one** — the available answers
+there are an approved interval, or a decision amendment permitting a bounded delay for
+lifecycle-derived expiry. `R4-03` should not choose between those on its own authority; §8 records
+it.
+
+**Independently of destruction, the refusal must not depend on it.** An expired invitation whose
+verifier is still intact — which is every such row before its first touch — is refused on the state
+predicate. `R4-05` and `R4-07` owe that case with the **correct secret** presented, since it fails
+on an implementation that verifies the digest and returns success before checking `expires_at`.
+That test was previously offered as evidence the delay was harmless; it is retained because the
+property is worth proving on its own, not because it discharges the destruction obligation.
 
 **So invitations need a sweeper, and `R4-03` owes it.** This is a schema consequence, which is why
 it lands with the table rather than later: the matrix's deletion rule ("record purged when replay
@@ -271,9 +290,11 @@ verifier-cleared.
   expired invitation has a NULL verifier and both timestamps NULL, which is indistinguishable at the
   row level from an open invitation whose verifier was wrongly destroyed. A `CHECK` including
   `expires_at <= now()` is not writable: `now()` is not immutable and PostgreSQL refuses it in a
-  `CHECK`. So this invariant is the domain's, enforced by the sweeper being the only path that
-  destroys without a timestamp. Recorded rather than papered over with a constraint that would be
-  wrong.
+  `CHECK`. So this invariant is the domain's, enforced by the **two** paths that may destroy without
+  setting a timestamp being the only ones that do: destroy-on-touch and the sweeper, both of which
+  evaluate `expires_at <= now` in the destroying transaction (§3's destruction mechanisms). Any
+  third path that nulls a verifier without a timestamp is the defect this constraint cannot catch.
+  Recorded rather than papered over with a constraint that would be wrong.
 
 ## 4. Issuance and revocation
 
@@ -637,10 +658,30 @@ clock**, and derives the account by looking up the session and then reading `ses
    now takes a lock for liveness whatever it does about at-most-once — so `R4-05` owes the
    `_MAY_LOCK` entries either way and the cost argument no longer separates the routes. See §6.2.
 
-   `R4-05` owes the case, and it must be **induced** rather than observed: hold the redemption
-   transaction open, commit a `disable_account` against the same account, then release — and assert
-   no membership exists **and** the invitation is still open. It must run against **PostgreSQL**,
-   since SQLite emits no `FOR UPDATE` and the test would pass on an unlocked implementation. A test that disables *before* `redeem`
+   **`R4-05`'s test must assert the outcome for whichever transaction wins, not one fixed
+   outcome.** An earlier revision prescribed holding the redemption transaction open, committing a
+   `disable_account`, and asserting no membership exists and the invitation is still open. That
+   prescription is **not runnable under the lock it is meant to prove**: once redemption holds the
+   account row, `disable_account` cannot commit until redemption releases it, so the stated
+   ordering deadlocks or the disablement lands afterwards — and the assertion then rejects a
+   **correct** serialization. Both orderings are valid; the test's job is to pin the outcome to the
+   order rather than to demand one order.
+
+   So two cases, each asserting the state its winner implies:
+
+   | Winner | Required outcome |
+   |---|---|
+   | Redemption commits first | Membership **exists**, invitation **consumed**; the later disablement is valid and leaves a membership on a now-disabled account, which `can_act` refuses at the next authorization decision per `FR-030` |
+   | Disablement commits first | **No** membership, invitation **still open**; redemption takes the §5 refusal |
+
+   The second row is the one that fails on an unserialized implementation. The first is not a
+   defect and must not be asserted away: a membership on a disabled account is `FR-030`'s ordinary
+   post-revocation state, since disablement stops authority at the next decision rather than
+   retroactively unwinding committed writes.
+
+   Both run against **PostgreSQL** — SQLite emits no `FOR UPDATE`, so either case would pass on an
+   unlocked implementation. `test_rca001_concurrent_final_owner.py` is the precedent for
+   coordinating two real transactions rather than asserting a hoped-for interleaving. A test that disables *before* `redeem`
    is called passes on the unconditioned implementation, and one that disables after it returns
    passes on every implementation. `test_rca001_concurrent_final_owner.py` is the precedent for
    proving a contention claim against PostgreSQL rather than asserting it.
@@ -913,11 +954,37 @@ must be read before it is nulled, which fixes the ordering inside that transacti
 trigger is the identity ending, not a membership ending, so every outstanding offer to that person
 lapses at once. §7's two triggers stay organization-scoped; this third one cannot be.
 
+**An atomic purge-side cascade is not sufficient on its own: issuance must be serialized against
+it.** The cascade above closes every invitation *visible* to the purge transaction. It does not
+close one **inserted concurrently**: `issue` writes a new row for the address while
+`purge_if_still_eligible` runs its `UPDATE`, the two lock no common row, both commit, and the
+invitation is open after the address is released. That is the identity transfer this section
+exists to prevent, arriving through a race rather than through a missing trigger — and unlike the
+membership cascade there is no shared row to contend on, because the invitation being inserted did
+not exist when the purge read the table.
+
+**So the two paths serialize on the account row**, which §6.1's redemption fix already establishes
+as the identity-scoped anchor: `issue` takes `SELECT ... FROM rca_accounts WHERE account_id = :id
+FOR UPDATE` on the **addressee's** account when one exists, and `purge_if_still_eligible` takes the
+same lock — which it must anyway, since it writes that row. Issuance then either commits before the
+purge, so the purge's `UPDATE` sees the row and closes it, or blocks until the purge commits and
+observes the tombstone.
+
+**And when the addressee has no account, there is no row to lock — which is `FR-019`'s ordinary
+case, not an edge.** The account-row lock is unavailable precisely when the invitation is for
+someone who has not registered. That case is safe for a different reason: an address with no
+account is not being purged, since purge operates on a disabled account. The hazard is confined to
+an addressee whose account exists and is disabled, and the lock covers exactly that. `R4-04` must
+therefore look the addressee up by canonical address and lock the row **if it exists**, rather than
+skipping the lookup because invitations do not require an account.
+
 **What `R4-06` owes as evidence.** Purge an account holding an unexpired, unredeemed invitation;
 assert the invitation is closed and its verifier destroyed. Then the case that motivates it: after
 the purge, register a **new** account at the same address and assert it cannot redeem that
 invitation — which fails on an implementation that only closes invitations at membership
-revocation.
+revocation. Then the race, against PostgreSQL: `issue` to a disabled account's address concurrently
+with its purge, and assert that whichever order they commit in, no invitation to that address is
+open afterwards.
 
 **The issuer trigger is retained as well, because an active record requires it.** `KHEPRI-DEC-015`
 §2's Invitation row names four end triggers verbatim: "Acceptance; expiry; revocation; **revocation
@@ -1028,9 +1095,19 @@ retention, once for the horizon — and in both cases the cause was the same: re
 field list without opening the governing retention decision. Recorded so a reader of the list knows
 the omissions are deliberate, and so the pattern is visible rather than repeated a third time.
 
-**What genuinely remains open is one product question, not a design one:** whether demotion
-invalidates invitations (§7's closing note). It changes no schema, so it does not block `R4-03`, and
-§7's placement decision makes implementing it later a visible edit rather than an accident.
+**What genuinely remains open, now two items.**
+
+- **Whether demotion invalidates invitations** (§7's closing note) — a product question. It changes
+  no schema, so it does not block `R4-03`, and §7's placement decision makes implementing it later
+  a visible edit rather than an accident.
+- **Whether a sweep interval satisfies `KHEPRI-DEC-015` §5 for expired invitation verifiers** — a
+  governance question, and the one item here this note is not authorized to close. §3 records why:
+  §5 requires an expired verifier be destroyed and calls every day of survival "unjustified risk",
+  while a derived expiry fires no event, so *some* residual window is unavoidable. §3 bounds it
+  with destroy-on-touch plus a stated sweep interval. If that residual is unacceptable, the answer
+  is an approved interval or a `KHEPRI-DEC-015` amendment permitting a bounded delay for
+  lifecycle-derived expiry — **not** a design note reinterpreting destruction, which is what an
+  earlier revision of §3 attempted and retracted.
 
 ## 9. Slice sequence, unchanged from the roadmap
 
