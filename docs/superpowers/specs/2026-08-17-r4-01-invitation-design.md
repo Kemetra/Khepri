@@ -764,11 +764,24 @@ clock**, and derives the account by looking up the session and then reading `ses
    position is that `FR-019`'s "at the moment of acceptance" is satisfied to within one preemption
    window and this note cannot make that zero.
 
-   `R4-05` owes both cases, and they are different tests. **Revocation:** hold the transaction,
-   commit a `revoke`, release, assert no membership — this must pass, and fails on an
-   implementation checking only the account. **Expiry:** hold the transaction past the session's
-   `expires_at`, release, assert no membership — this must pass for the late-check implementation,
-   and is the one whose residual §8.5 describes.
+   **`R4-05` owes three cases here, and the revocation one is two.** The single "hold, revoke,
+   release, assert no membership" prescription an earlier revision gave cannot prove the
+   serialization, for the reason the account-disablement table above already records: paused
+   *after* the `FOR UPDATE`, the conflicting `UPDATE` cannot commit until release, so the test
+   observes the lock it assumes; paused *before* it, an implementation that re-reads the session
+   **without** locking passes too. Both orderings, as with disablement:
+
+   | Ordering | Required outcome |
+   |---|---|
+   | Redemption takes the lock first | `revoke` **blocks** until redemption commits; membership exists, invitation consumed |
+   | `revoke` commits first | Redemption's `FOR UPDATE` waits, then reads the revoked session; **no** membership, invitation still open |
+
+   The second row fails on an implementation that only re-reads; the first fails on one that never
+   locks at all. Neither alone distinguishes both.
+
+   **Expiry** stays one case, because there is no second ordering to test — nothing commits: hold
+   the transaction past the session's `expires_at`, release, assert no membership. It must pass for
+   the late-check implementation, and is the one whose residual §8.5 describes.
 
    A failure raises the §5 uniform refusal and the transaction rolls back, so **the invitation is
    not consumed**: the refusal is about the actor rather than the invitation, and a re-enabled
