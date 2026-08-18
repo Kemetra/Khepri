@@ -175,9 +175,11 @@ satisfy it, and `R4-03` owes both:
    still be there.
 2. **A sweeper as the backstop, on a schedule stated as a requirement rather than left to
    operations.** Touch-based destruction cannot reach an invitation nobody presents, so the sweep
-   is what bounds survival for the untouched rows. `R4-03` must state its interval, because "every
-   day it survives is unjustified risk" makes the interval the compliance property — an unstated
-   schedule is an unbounded one. `MembershipEventSweeper` owns the horizon arithmetic for events
+   is what bounds survival for the untouched rows. **The cadence is the deployment's, and `R4-03`'s
+   obligation is the wiring, not a number** — see §8.1, which follows the three existing sweepers:
+   none of them names an interval, because "one pass when called" puts the schedule in the caller.
+   What makes the bound real is that `RetentionPasses` invokes it, so an unwired sweeper — not an
+   unstated number — is the failure mode "every day it survives is unjustified risk" points at. `MembershipEventSweeper` owns the horizon arithmetic for events
    and the same split applies: the sweeper owns "when", the store owns the transaction.
 
 **What this does not do, stated so the residual is visible rather than papered over.** Neither
@@ -1286,8 +1288,16 @@ the residual reachable. Two ways to clear the gate, and the choice is the owner'
 
 | Option | What it means |
 |---|---|
-| `R3` exposes commit-safe session state | The membership insert is conditioned on a live session row, so the database refuses the write rather than a predicate hoping to be recent. Closes it; costs an `R3` schema decision |
+| `R3` exposes commit-safe session state | Narrows the window to the statement rather than the transaction. **It does not close it** — a conditional insert evaluates its predicate while executing, so a deschedule between the statement and the commit still lands a durable membership. Better, not sufficient; costs an `R3` schema decision |
 | The owner accepts the residual explicitly | `R4-05` ships with the late check and the preemption window is recorded as accepted risk against `FR-019`. Closes nothing, but does so **on the record** rather than by omission |
+
+**Neither option reaches zero, and the note stops claiming one does.** An earlier revision offered
+the conditional insert as the closure. It is not: no predicate evaluated *inside* a transaction can
+speak for the instant that transaction commits, so "authenticated at the moment of acceptance" is
+unachievable in the strict sense against a clock-derived expiry. What is achievable is making the
+window a statement rather than a transaction, and saying so. **This makes the item an explicit
+`FR-019` interpretation question** — does "at the moment of acceptance" mean the last check or the
+commit record — which is the owner's to answer and is why `R4-05` waits on it.
 
 What `R4-05` must not do is ship while this reads as an open note, which is how a stated residual
 becomes an unstated one. The roadmap carries it as a dependency.
@@ -1498,11 +1508,18 @@ dialect-compilation tests asserting `FOR UPDATE` is present (`persistence.py:514
 ## 9. Slice sequence
 
 `R4-02` domain and hashed secret → `R4-03` persistence and migration (single head; `20260817_0017`
-is current) → `R4-04` issuance and revocation → `R4-05` redemption → `R4-06` `FR-020` cascade →
-`R4-07` the uniform-failure matrix. `R4-04`'s roadmap row already depends on "`R6-01` authorization
+is current) → `R4-04` issuance and revocation → **`R4-06` the `FR-020` and purge cascades** →
+`R4-05` redemption → `R4-07` the uniform-failure matrix, with **`R4-08`** (the counterpart locks)
+landing any time after `R4-01` and before `R4-05`.
+
+**`R4-06` precedes `R4-05`, reversing the roadmap's original order**, per §8: the purge cascade must
+exist before redemption can make a surviving invitation redeemable. An earlier revision of this
+paragraph kept the old sequence while the dependency rows carried the new one, so §9 read as
+permission for the ordering §8 forbids. `R4-04`'s roadmap row already depends on "`R6-01` authorization
 matrix draft", which §6.3 now supplies concretely.
 
-**`R4-05` depends on `R4-08`**, per §8.4, and the roadmap now carries it. Redemption's
+**`R4-05` depends on `R4-08`, on `R4-06`, and on §8.2 and §8.5 being answered**, and the roadmap
+carries all four. Redemption's
 own locks do nothing until those counterparts acquire theirs, so starting `R4-05` first would
 produce a slice that looks finished and serializes nothing. `R4-02`, `R4-03` and `R4-04` are
 unaffected and can proceed in parallel with them.
