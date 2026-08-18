@@ -641,13 +641,19 @@ clock**, and derives the account by looking up the session and then reading `ses
    membership — or wins, and redemption's `can_act` reads the disabled row. One of the two, never
    both.
 
-   **Flagged as cross-slice work, because it is not confined to `R4`.** `R4-05` modifying
-   `apply_owner_reducing_change` touches the method `#155` and `R1-05` both landed on, and
-   `_MAY_LOCK` in `tests/test_rca001_lock_scope.py` must gain the new entries. `R4-05` owes a
-   re-run of `test_rca001_concurrent_final_owner.py` to show the added lock does not weaken the
-   `FR-013` guard it sits beside. If the owner prefers `R4` not to touch that path, the alternative
-   is a separate slice landing the account-row lock first — but redemption cannot be made safe
-   without it, so it is a sequencing choice rather than an optional one.
+   **This crosses `R4`'s boundary, and the note stops at the requirement rather than the
+   sequencing.** `R4-05`'s roadmap dependencies are `R4-03`, `R2` merged, and `R3` actor resolution
+   — **not** `R1`. Requiring it to modify `apply_owner_reducing_change` puts it in `R1`'s merged
+   concurrency path, the method `#155` and `R1-05` both landed on, and adds `_MAY_LOCK` entries in
+   `tests/test_rca001_lock_scope.py`. That is a dependency this note is not authorized to add to a
+   roadmap row.
+
+   So what this note settles is the **requirement**: redemption must serialize against disablement,
+   and an account-row lock taken by both paths is the mechanism that satisfies it. What it does
+   **not** settle is who lands the `disable_account` half. §8 records it as an owner question. Until
+   it is answered, `R4-05` is specifiable but not startable — a redemption implemented without the
+   disable-side lock contends with nothing, which is the defect two revisions of this section
+   already shipped.
 
    A failure raises the §5 uniform refusal and the transaction rolls back, so **the invitation is
    not consumed**: the refusal is about the actor rather than the invitation, and a re-enabled
@@ -1101,20 +1107,40 @@ the omissions are deliberate, and so the pattern is visible rather than repeated
   no schema, so it does not block `R4-03`, and §7's placement decision makes implementing it later
   a visible edit rather than an accident.
 - **Whether a sweep interval satisfies `KHEPRI-DEC-015` §5 for expired invitation verifiers** — a
-  governance question, and the one item here this note is not authorized to close. §3 records why:
-  §5 requires an expired verifier be destroyed and calls every day of survival "unjustified risk",
-  while a derived expiry fires no event, so *some* residual window is unavoidable. §3 bounds it
-  with destroy-on-touch plus a stated sweep interval. If that residual is unacceptable, the answer
-  is an approved interval or a `KHEPRI-DEC-015` amendment permitting a bounded delay for
+  governance question, and one this note is not authorized to close. §3 records why: §5 requires an
+  expired verifier be destroyed and calls every day of survival "unjustified risk", while a derived
+  expiry fires no event, so *some* residual window is unavoidable. §3 bounds it with
+  destroy-on-touch plus a stated sweep interval. If that residual is unacceptable, the answer is an
+  approved interval or a `KHEPRI-DEC-015` amendment permitting a bounded delay for
   lifecycle-derived expiry — **not** a design note reinterpreting destruction, which is what an
   earlier revision of §3 attempted and retracted.
+- **Who lands the account-row lock on the disable path** — a sequencing question, and the one that
+  gates `R4-05`. §6.1 establishes that redemption must serialize against `disable_account`, and
+  that a lock only serializes writers which acquire it: `apply_owner_reducing_change`
+  (`persistence.py:766`) locks membership rows and writes the account row without locking it, so
+  redemption's lock contends with nothing until that path takes it too. Two ways to land it, and
+  the choice is the owner's because both alter a roadmap row:
 
-## 9. Slice sequence, unchanged from the roadmap
+  | Option | What it means |
+  |---|---|
+  | `R4-05` takes it | A slice whose declared dependencies are `R4-03`, `R2`, `R3` also modifies `R1`'s merged concurrency path, adds `_MAY_LOCK` entries, and owes a re-run of `test_rca001_concurrent_final_owner.py` |
+  | A prior slice takes it | `R1`'s path is changed under `R1`'s ownership, and `R4-05` gains a dependency on it |
+
+  **This is not optional in either direction** — redemption cannot be made safe without it — so it
+  is a question about *where* the work lands, not *whether*. Recorded here because §9 sequences
+  `R4-05` as though `R4-03` were its only blocker, and after this note it is not.
+
+## 9. Slice sequence, with one gate the roadmap does not carry
 
 `R4-02` domain and hashed secret → `R4-03` persistence and migration (single head; `20260817_0017`
 is current) → `R4-04` issuance and revocation → `R4-05` redemption → `R4-06` `FR-020` cascade →
 `R4-07` the uniform-failure matrix. `R4-04`'s roadmap row already depends on "`R6-01` authorization
 matrix draft", which §6.3 now supplies concretely.
+
+**`R4-05` has one blocker the roadmap does not list**, and it is the second §8 item: the
+account-row lock must exist on the disable path before redemption's own lock does anything. Whether
+`R4-05` lands that itself or inherits it from a prior slice is an owner decision. Everything else
+below is unchanged.
 
 **What each slice owes beyond its roadmap row**, collected because several arrive from corrections
 above rather than from the roadmap:
