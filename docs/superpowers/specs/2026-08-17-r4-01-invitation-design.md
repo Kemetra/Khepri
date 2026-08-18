@@ -428,6 +428,21 @@ affecting exactly one row.** Zero rows means the invitation was not open — alr
 already revoked, **expired**, or not reachable in this scope — and all of those take the **same
 uniform refusal** this section already requires, so the `rowcount` check adds no disclosure.
 
+**Revocation deletes the row rather than marking it, because §3's derivation leaves nothing to
+retain.** The statement above destroys the verifier and keeps the row, which contradicts the purge
+predicate §3 derives: a **never-redeemed** invitation loses *both* authorized purposes at the moment
+it closes — attribution never attached, and §5 makes a deleted row indistinguishable from a
+retained closed one for replay refusal — so §3 requires it purged when the verifier is destroyed,
+not at a later sweep. Retaining `target_identity` past that point is personal data outliving its
+purpose, which is exactly what that derivation forbids.
+
+So revocation is a **`DELETE`** under the same predicate — `DELETE FROM rca_invitations WHERE
+organization_id = :org AND invitation_id = :id AND redeemed_at IS NULL AND revoked_at IS NULL AND
+expires_at > :now`, affecting exactly one row — and `revoked_at` exists in the schema for the
+**redeemed-then-revoked** case §3's second purge rule covers, not for a row this verb leaves behind.
+§7's cascades take the same shape. The uniform refusal is unaffected: a deleted row is an
+unknown-identifier attempt, which §5 already requires to be indistinguishable.
+
 **`expires_at > :now` is load-bearing and easy to omit**, since the two timestamp predicates look
 like the whole of "still open". They are not: §5's state model makes expiry a **derived** terminal
 state with no column, so an expired row that the sweeper has not yet reached still has
@@ -837,8 +852,21 @@ is that shape with a different invariant.
   dialect and asserts `FOR UPDATE` is present without needing a database" (`:518-519`). An inline
   `.with_for_update()` would produce a lock no test can demonstrate exists.
 - **Route B — a conditional `UPDATE rca_invitations SET redeemed_at = :now WHERE invitation_id =
-  :id AND redeemed_at IS NULL AND revoked_at IS NULL`**, which **must affect exactly one row**; zero
-  rows means another transaction won and the loser raises the uniform refusal. The database's own
+  :id AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > :now`**, which **must affect
+  exactly one row**; zero rows means the invitation was not open at the transition and the loser
+  raises the uniform refusal.
+
+  **`expires_at > :now` against a value read at transition time, for the reason §4.1 gives and one
+  more.** §5 verifies before the lock is acquired, and the transaction may then wait — on the
+  account row, the session row, or a competing redemption. An invitation open at verification can
+  therefore be expired by the time this statement runs, and a predicate checking only the two
+  timestamp columns would let it win: the row is still `NULL, NULL`, because expiry has no column.
+  That would redeem an expired invitation, which `FR-017` refuses outright. The `:now` bound into
+  this statement must be re-read at transition time rather than reused from the verification step,
+  or the check is against a clock reading that predates the wait. **Route A needs the equivalent
+  post-lock check** — the lock does not make the earlier `expires_at` comparison fresh, it only
+  guarantees no competing writer, so `R4-05` re-evaluates expiry on the row it read under the lock
+  before writing. The database's own
   row-level write lock does the serialization, so the claim rests on `rowcount` rather than on an
   explicit `FOR UPDATE`. `purge_if_still_eligible` (`persistence.py:338`) is the in-repo precedent
   for restating the selection predicate inside the writing transaction, and it exists because the
@@ -1204,10 +1232,13 @@ is current) → `R4-04` issuance and revocation → `R4-05` redemption → `R4-0
 `R4-07` the uniform-failure matrix. `R4-04`'s roadmap row already depends on "`R6-01` authorization
 matrix draft", which §6.3 now supplies concretely.
 
-**`R4-05` has one blocker the roadmap does not list**, and it is the second §8 item: the
-account-row lock must exist on the disable path before redemption's own lock does anything. Whether
-`R4-05` lands that itself or inherits it from a prior slice is an owner decision. Everything else
-below is unchanged.
+**`R4-05` has one blocker the roadmap does not list**, and it is the second §8 item: redemption's
+own locks do nothing until **both** counterparts acquire them — `apply_owner_reducing_change` on
+the disable path (`persistence.py:766`), *and* `SessionService.revoke`/`revoke_all` on the session
+path. Naming only the first here would let `R4-05` start with no session-side serialization and
+commit a redemption after the presented session was revoked, which is the defect §6.1 records.
+Whether `R4-05` lands them itself or inherits them from prior slices is an owner decision.
+Everything else below is unchanged.
 
 **What each slice owes beyond its roadmap row**, collected because several arrive from corrections
 above rather than from the roadmap:
