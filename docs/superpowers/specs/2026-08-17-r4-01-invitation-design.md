@@ -184,11 +184,15 @@ satisfy it, and `R4-03` owes both:
 mechanism destroys the verifier *at* the instant, because nothing runs at that instant. The
 residual window for an untouched, unpresented invitation is the sweep interval, and this note
 cannot make it zero. What it can do is refuse to call that window compliant by redefinition, and
-bound it explicitly instead. **If the owner judges the sweep interval insufficient for `FR-016`
-material, that is a `KHEPRI-DEC-015` question rather than an `R4` one** — the available answers
-there are an approved interval, or a decision amendment permitting a bounded delay for
-lifecycle-derived expiry. `R4-03` should not choose between those on its own authority; §8 records
-it.
+bound it explicitly instead.
+
+**The interval itself is operational, and §8.1 records why that is not an evasion.**
+`MembershipEventSweeper` states the convention — "one pass when called. Choosing a cadence is an
+operational decision" (`lifecycle.py:240-241`) — and the account and event sweepers both purge
+classes with *fixed* horizons on it, a stronger obligation than this one. What §5 binds is that a
+destroying mechanism exists and does not depend on someone happening to look; both above satisfy
+that. So `R4-03` picks the cadence and states in the docstring why it is operational, rather than
+escalating a question the repo has answered three times.
 
 **Independently of destruction, the refusal must not depend on it.** An expired invitation whose
 verifier is still intact — which is every such row before its first touch — is refused on the state
@@ -688,9 +692,10 @@ clock**, and derives the account by looking up the session and then reading `ses
 
    So what this note settles is the **requirement**: redemption must serialize against the writes
    that end the actor's authority, and a lock taken by both paths is the mechanism that satisfies
-   it. What it does **not** settle is who lands the other half. §8 records it as an owner question.
-   Until it is answered, `R4-05` is specifiable but not startable — a redemption implemented
-   without the counterpart lock contends with nothing, which is the defect two revisions of this
+   it. Who lands each counterpart is settled in §8.4: `R1-07` takes the account row's lock on the
+   disable path, `R3-12` takes the session row's in the session-ending writes, and `R4-05` depends
+   on both. Until they land, `R4-05` is specifiable but not startable — a redemption implemented
+   without its counterparts contends with nothing, which is the defect two revisions of this
    section already shipped.
 
    **And the account is not the only stale half of `ResolvedActor`.** It carries a `session` as
@@ -1049,9 +1054,12 @@ not exist when the purge read the table.
 > discriminating fact is that the row stops being *discoverable* by the key one of them uses.
 > Address-keyed discovery is exactly what the purge destroys.
 
-**What this needs is an identity key that outlives the purge, and this note does not settle which
-one.** The requirement is stated; the mechanism is `R4-03`/`R4-04`'s and depends on a schema choice
-with consequences beyond invitations. Candidates, with the objection each has to answer:
+**What this needs is an identity key that outlives the purge, and §8.2 settles which one: a
+transaction-scoped advisory lock over the canonical address, taken by both paths.** It stores
+nothing, so `KHEPRI-DEC-015` §2b is untouched, and it serializes on the identity rather than on a
+row — which is what the failure above requires, since the purge destroys row discoverability. It
+is a module-level named statement with a dialect-compilation test, per `persistence.py:514-519`.
+The candidates considered, and why the other two lost:
 
 | Candidate | Objection it must answer |
 |---|---|
@@ -1059,11 +1067,10 @@ with consequences beyond invitations. Candidates, with the objection each has to
 | An identity-keyed advisory lock (e.g. `pg_advisory_xact_lock` over the canonical address) taken by both paths, storing nothing | Serializes without retaining anything, but it is PostgreSQL-specific and the repo's locking discipline is `_MAY_LOCK`-audited named statements; a lock that no compilation test can assert is the shape `persistence.py:516` warns about |
 | Purge closes invitations *and* blocks issuance for a bounded window afterwards | Bounds rather than eliminates, and needs a number nobody has decided |
 
-**Recorded as an owner question in §8 rather than decided here**, for the reason the first candidate
-makes plain: the only mechanism that is purely an implementation choice is the advisory lock, and
-the other two require either a `KHEPRI-DEC-015` reading or a new number. This note has already
-retracted one attempt to settle a governance question on its own authority (§3); it does not make a
-second.
+The digest candidate is barred by text rather than judgment — §2's Login-identity row reads
+"**Purged.** Nothing remains" and §2b enumerates the tombstone as holding no email address — so
+admitting it would need an amendment, which this note does not seek for a problem the advisory lock
+solves without retaining anything. §8.2 carries the full argument and the evidence `R4-04` owes.
 
 **What `R4-06` owes as evidence.** Purge an account holding an unexpired, unredeemed invitation;
 assert the invitation is closed and its verifier destroyed. Then the case that motivates it: after
@@ -1115,9 +1122,9 @@ transaction. The cascade therefore runs **inside** that block.
 placement.** `_apply_membership_change` is shared: `revoke_membership` delegates to it at
 `persistence.py:862` and **`demote_membership` delegates to the same helper** at
 `persistence.py:897`. A cascade placed in the helper's own body therefore runs on **both** verbs, so
-demotion would invalidate the demoted member's invitations — which contradicts §7's closing note,
-where this slice implements revocation only and demotion is left as an owner question. The two
-placements are not two spellings of one design; one of them silently decides an open question.
+demotion would invalidate the demoted member's invitations — which §8.3 settles it must **not** do.
+The two placements are not two spellings of one design; one of them silently reverses a decided
+question, and does so through a helper two verbs happen to share.
 
 The `write(database, row)` callback is the correct seam because it is **per-verb**: `revoke`
 (`persistence.py:862`) and `demote` (`:897`) pass different callbacks to the same helper, both
@@ -1146,13 +1153,14 @@ present** and the invitation **still open** — both halves, since a rollback th
 would be its own defect. `test_rca001_concurrent_final_owner.py` is the precedent for proving a
 transactional claim rather than asserting the happy path.
 
-**What remains uncertain, stated narrowly.** Not the reading — the counter-example settles it. What
-is uncertain is whether `R4-06` should invalidate on **demotion** as well as removal.
-`KHEPRI-DEC-015` says "revocation of the inviting membership"; a demoted owner's membership is not
-revoked, but their authority to invite is gone under `FR-015`. `FR-020` says only "revoking a
-membership". This note reads both as covering revocation and neither as requiring demotion, so
-`R4-06` implements revocation only and records the gap. Flagged as an owner question that does not
-block `R4-03`, since it changes no schema.
+**Demotion does not invalidate, and that is now settled rather than flagged** — see §8.3 for the
+argument. Both governing texts name revocation (`FR-020`: "revoking a membership";
+`KHEPRI-DEC-015` §2's fourth trigger: "revocation of the inviting membership"), and the
+counter-example above does not transfer to demotion: there the revoked member held a token
+restoring **their own** membership, whereas a demoted owner's outstanding invitations are held by
+third parties who did nothing and were issued under authority genuinely held at the time. So
+`R4-06` implements the two triggers tabled above and no third, and `R4-07`'s demotion case proves
+an intended behavior rather than guarding an open question.
 
 ## 8. What this note does not settle
 
@@ -1161,10 +1169,10 @@ block `R4-03`, since it changes no schema.
   recovery, and invitations should reuse whatever that decides rather than inventing a parallel one.
 - **HTTP surface.** `R8-05`'s team-management screens and any endpoint are out of scope, exactly
   as `R6-01` left `R7-05`'s endpoint alone.
-- **Whether an invitation can be re-sent.** Re-issuing is just `issue` again, which is why no
-  `resend` appears above — but whether the old token should then be revoked is a product decision.
-- **Whether demotion invalidates invitations**, per §7's closing note. Revocation is settled; the
-  demotion case changes no schema, so it does not block `R4-03`.
+- **Whether an invitation may be re-sent to a *different* address.** Re-issuing to the same one is
+  just `issue` again. Whether the old token should then be revoked is a product decision, and §6.1.1
+  gives it teeth: an invitee who registers at a different address than the one invited cannot
+  redeem, so re-issuance is the recovery path and `R8-05` will need to offer it.
 
 **Removed from this list, and why.** Earlier versions listed **invitation retention**, **`FR-020`'s
 reading**, and **the purge horizon** here. None is open.
@@ -1183,62 +1191,135 @@ retention, once for the horizon — and in both cases the cause was the same: re
 field list without opening the governing retention decision. Recorded so a reader of the list knows
 the omissions are deliberate, and so the pattern is visible rather than repeated a third time.
 
-**What genuinely remains open, now two items.**
+**What genuinely remains open: one item.**
 
-- **Whether demotion invalidates invitations** (§7's closing note) — a product question. It changes
-  no schema, so it does not block `R4-03`, and §7's placement decision makes implementing it later
-  a visible edit rather than an accident.
-- **Whether a sweep interval satisfies `KHEPRI-DEC-015` §5 for expired invitation verifiers** — a
-  governance question, and one this note is not authorized to close. §3 records why: §5 requires an
-  expired verifier be destroyed and calls every day of survival "unjustified risk", while a derived
-  expiry fires no event, so *some* residual window is unavoidable. §3 bounds it with
-  destroy-on-touch plus a stated sweep interval. If that residual is unacceptable, the answer is an
-  approved interval or a `KHEPRI-DEC-015` amendment permitting a bounded delay for
-  lifecycle-derived expiry — **not** a design note reinterpreting destruction, which is what an
-  earlier revision of §3 attempted and retracted.
-- **Who lands the counterpart locks that make redemption's serialization real** — a sequencing
-  question, and the one that gates `R4-05`. §6.1 establishes that redemption must serialize against
-  every write that ends the actor's authority mid-transaction, and that a lock only serializes
-  writers which acquire it. **Two counterparts, both outside `R4`:**
-  `apply_owner_reducing_change` (`persistence.py:766`) locks membership rows and writes the account
-  row without locking it; and `SessionService.revoke`/`revoke_all` end the session
-  `ResolvedActor` carries without any lock redemption could contend on. Redemption's own locks do
-  nothing until both counterparts take them, and answering this for the account path alone would
-  leave `R4-05` half-safe while looking finished. Two ways to land it, and the choice is the
-  owner's because both alter a roadmap row:
+- **Whether an invitation may be re-sent to a different address**, above — a product question for
+  `R8-05`, blocking nothing in `R4`.
 
-  | Option | What it means |
-  |---|---|
-  | `R4-05` takes them | A slice whose declared dependencies are `R4-03`, `R2`, `R3` also modifies `R1`'s merged concurrency path **and** `R3`'s session service, adds `_MAY_LOCK` entries for both, and owes a re-run of `test_rca001_concurrent_final_owner.py` |
-  | Prior slices take them | Each path changes under its own owner, and `R4-05` gains a dependency on both |
+**Closed since the first review round, with the authority for each.** Four items sat here across
+earlier revisions. Three are closed below on this note's own authority, and the fourth is resolved
+as a sequencing decision. They are recorded rather than deleted, because each was escalated once
+and a reader who saw the escalation is owed the resolution.
 
-  **This is not optional in either direction** — redemption cannot be made safe without it — so it
-  is a question about *where* the work lands, not *whether*. Recorded here because §9 sequences
-  `R4-05` as though `R4-03` were its only blocker, and after this note it is not.
-- **Which identity key serializes issuance against identity purge** — a schema question with a
-  governance edge, gating `R4-04`. §7.1 establishes the hazard (an invitation issued after a purge
-  commits stays open at a released address, and a replacement account redeems it) and shows why an
-  account-row lock cannot close it: the purge destroys address-keyed discoverability, so the row
-  the lock would take is unfindable by the key `issue` has. §7.1 tables three candidates. Only the
-  advisory-lock option is purely an implementation choice; a retained address digest needs
-  `KHEPRI-DEC-015` §2b's permission, since that decision says a purged account retains nothing, and
-  the blocking-window option needs a number. **This note declines to pick**, having already
-  retracted one attempt to settle a governance question on its own authority.
+### 8.1 The sweep interval is an operational decision, not a governance one
 
-## 9. Slice sequence, with one gate the roadmap does not carry
+**Closed.** An earlier revision escalated "does a sweep interval satisfy `KHEPRI-DEC-015` §5 for
+expired verifiers" as a question this note could not answer. It over-escalated: the repo already
+has the convention, stated three times.
+
+`MembershipEventSweeper`'s docstring (`lifecycle.py:240-241`) is explicit — "**This is not a
+scheduler**, following `AccountRetentionSweeper` and `khepri.local.sweeper`: one pass when called.
+**Choosing a cadence is an operational decision.**" Three sweepers already exist on that split, and
+none of them asked for a number.
+
+What §5's "every day it survives is unjustified risk" binds is the **design**, not the deployment
+cadence: there must be a mechanism that destroys, and it must not depend on someone happening to
+look. §3 satisfies that with destroy-on-first-touch plus a sweeper backstop. A cadence chosen at
+deploy time is the same shape `KHEPRI-DEC-015` already tolerates for the account and event
+sweepers, both of which purge classes with fixed horizons — a stronger obligation than an
+invitation verifier's, since those horizons are stated in the decision and this one is derived.
+
+So `R4-03` builds `InvitationSweeper` on the `MembershipEventSweeper` shape: one pass when called,
+the horizon arithmetic in the sweeper, the transaction in the store. **No owner input, and no
+`KHEPRI-DEC-015` amendment.** What `R4-03` does owe is the docstring stating why the interval is
+operational, so the next reader does not re-escalate it.
+
+### 8.2 Issuance serializes against purge with an advisory lock
+
+**Closed on the second of §7.1's three candidates**, because the first is barred and the third is
+not a mechanism.
+
+**The retained-digest candidate is barred by the text, not merely disfavoured.**
+`KHEPRI-DEC-015` §2's Login-identity row (line 74) gives the post-trigger state as "**Purged.**
+Nothing remains", and §2b enumerates exactly what the tombstone holds: "an opaque account
+identifier and the disablement timestamp — **no email address**, no credential verifier, no profile
+data". A one-way digest of the canonical address is derived from the purged field and is linkable
+by construction — present the address, compute the digest, match the tombstone. Retaining it would
+be retaining the login identity in a weaker encoding, which is the "no single retention horizon is
+quietly longer than another" discipline §3 already invokes. Admitting it needs an amendment, and
+this note does not seek one for a serialization problem that has a mechanism requiring no
+retention.
+
+**The blocking-window candidate bounds rather than closes**, and needs a number nobody has decided.
+A race narrowed is a race.
+
+**So: `pg_advisory_xact_lock` over the canonical address**, taken by both `issue` and
+`purge_if_still_eligible`. It stores nothing, so §2b is untouched; it is transaction-scoped, so it
+releases on commit or rollback without a cleanup path; and it serializes on the *identity* rather
+than on a row, which is what §7.1 established the problem requires — the purge destroys row
+discoverability, and an advisory key does not depend on a row existing.
+
+**The objection §7.1 raised against it is answerable, and the answer is the repo's own.** A lock no
+test can assert is the shape `persistence.py:516` warns about. So the advisory call is a
+**module-level named statement** alongside `owner_memberships_for_update` and its siblings, and
+`R4-04` owes the same evidence they carry: a test compiling it against the PostgreSQL dialect and
+asserting the advisory acquisition is present, "without needing a database" (`:518-519`). Same
+discipline, different lock primitive.
+
+Two consequences. The key must be derived from the **canonical** address per §4's storage rule, or
+the two paths lock different keys and serialize nothing. And this is PostgreSQL-specific: SQLite
+emits no advisory lock, so `R4-07`'s race case runs against PostgreSQL, exactly as §6.2's does.
+
+### 8.3 Demotion does not invalidate invitations
+
+**Settled, where §7's closing note left it open.** Both governing texts name revocation and neither
+names demotion: `FR-020` says "revoking a membership", and `KHEPRI-DEC-015` §2's fourth end trigger
+is "revocation of the inviting membership". Reading demotion in would extend two records past their
+words.
+
+**The argument for the other reading, and why it does not carry.** A demoted owner's authority to
+invite is gone under `FR-015`, so their outstanding invitations look like authority surviving its
+source. But §7's counter-example — the one that forced the recipient reading — does not transfer.
+There, the revoked member held a token that would **restore their own** membership, so revocation
+revoked nothing. Here the tokens are held by **third parties** who did nothing, and were issued
+under authority the issuer genuinely held at the time. Invalidating them punishes the invitee for
+the inviter's demotion, and `FR-015` governs who may *issue*, not how long an issued invitation
+lives.
+
+`FR-030`'s "stops at the next authorization decision" is satisfied either way: the demoted owner
+cannot issue again, which is the authority that changed.
+
+So `R4-06` implements the two triggers §7 tables and **no third**. `R4-07` owes the negative case
+§7 already names — demote an owner holding outstanding invitations, assert they are still open —
+which now proves an intended behavior rather than guarding an undecided one.
+
+### 8.4 The counterpart locks land as `R1-07` and `R3-12`
+
+**Resolved as a sequencing decision** (owner, 2026-08-18), where an earlier revision left it open.
+§6.1 establishes that redemption must serialize against every write that ends the actor's authority
+mid-transaction, and that a lock only serializes writers which acquire it. Both counterparts sit
+outside `R4`, so each lands in the family that owns the path:
+
+| Slice | What it does | Why there |
+|---|---|---|
+| `R1-07` | `apply_owner_reducing_change` (`persistence.py:766`) takes the account row's lock, in addition to the membership rows it already locks | Same concurrency defect class as `#155`, on the same method. `R1` is not closed — `R1-06` is the closeout row — so the family that owns this path is still open |
+| `R3-12` | `SessionService.revoke`/`revoke_all` take the session row's lock | The session is `R3`'s object, and `ResolvedActor` carries it |
+
+`R4-05` depends on both, and **`R1-06` now depends on `R1-07`** so `#155` closes over the final
+state of the method rather than over a version `R4` would later change underneath it. Both
+additions are on the roadmap.
+
+**Why not `R4-05` doing both**, which is the faster route: a slice whose declared dependencies are
+`R4-03`, `R2`, and `R3` would modify `R1`'s merged concurrency path and `R3`'s session service, add
+`_MAY_LOCK` entries for both, and owe a re-run of `test_rca001_concurrent_final_owner.py` — and
+`R1-06` would then close `#155` over a method `R4` had just changed. The locking discipline in this
+repo is `_MAY_LOCK`-audited precisely so that no lock arrives without an owner; landing two through
+a third family's slice is how that audit stops meaning anything.
+
+Each of `R1-07` and `R3-12` owes what the existing locking statements owe: a module-level named
+statement, and a dialect-compilation test asserting `FOR UPDATE` is present (`persistence.py:514-519`).
+
+## 9. Slice sequence
 
 `R4-02` domain and hashed secret → `R4-03` persistence and migration (single head; `20260817_0017`
 is current) → `R4-04` issuance and revocation → `R4-05` redemption → `R4-06` `FR-020` cascade →
 `R4-07` the uniform-failure matrix. `R4-04`'s roadmap row already depends on "`R6-01` authorization
 matrix draft", which §6.3 now supplies concretely.
 
-**`R4-05` has one blocker the roadmap does not list**, and it is the second §8 item: redemption's
-own locks do nothing until **both** counterparts acquire them — `apply_owner_reducing_change` on
-the disable path (`persistence.py:766`), *and* `SessionService.revoke`/`revoke_all` on the session
-path. Naming only the first here would let `R4-05` start with no session-side serialization and
-commit a redemption after the presented session was revoked, which is the defect §6.1 records.
-Whether `R4-05` lands them itself or inherits them from prior slices is an owner decision.
-Everything else below is unchanged.
+**`R4-05` depends on `R1-07` and `R3-12`**, per §8.4, and the roadmap now carries both. Redemption's
+own locks do nothing until those counterparts acquire theirs, so starting `R4-05` first would
+produce a slice that looks finished and serializes nothing. `R4-02`, `R4-03` and `R4-04` are
+unaffected and can proceed in parallel with them.
 
 **What each slice owes beyond its roadmap row**, collected because several arrive from corrections
 above rather than from the roadmap:
