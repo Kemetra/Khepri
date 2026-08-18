@@ -1504,9 +1504,20 @@ test can assert is the shape `persistence.py:516` warns about. So the advisory c
 asserting the advisory acquisition is present, "without needing a database" (`:518-519`). Same
 discipline, different lock primitive.
 
-Two consequences. The key must be derived from the **canonical** address per §4's storage rule, or
-the two paths lock different keys and serialize nothing. And this is PostgreSQL-specific: SQLite
-emits no advisory lock, so `R4-07`'s race case runs against PostgreSQL, exactly as §6.2's does.
+**The key derivation is specified, not left to the implementer, because the obvious choice is
+broken.** `pg_advisory_xact_lock` takes a **bigint**, so the canonical address must be mapped to
+one — and Python's built-in `hash()` on a `str` is randomised per process under PEP 456, so two
+workers would derive **different** keys for the same address, acquire non-conflicting locks, and
+serialize nothing. The lock would appear present in code review and in a single-process test, and
+do nothing in production. So: **`key = int.from_bytes(sha256(canonical_address.encode()).digest()[:8], "big", signed=True)`** — a stable digest, not `hash()`, taken by `issue` and
+`purge_if_still_eligible` identically. `R4-04` owes a test that two separate processes derive the
+same key for one address; a same-process assertion cannot fail on the defect this bullet describes.
+
+The address must be **canonical** per §4's storage rule for the same reason — a case difference
+produces a different digest and the two paths lock different keys.
+
+And this is PostgreSQL-specific: SQLite emits no advisory lock, so `R4-07`'s race case runs against
+PostgreSQL, exactly as §6.2's does.
 
 </details>
 
