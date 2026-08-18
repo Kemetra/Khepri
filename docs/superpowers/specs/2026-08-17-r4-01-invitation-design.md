@@ -708,9 +708,29 @@ clock**, and derives the account by looking up the session and then reading `ses
 
    This is the **same escalation, one level out** rather than a second design problem: it needs the
    session row locked and re-read inside the redemption transaction, and the session-ending writes
-   to take that lock too — which is again a change to a path `R4` does not own. §8's serialization
-   item now covers both counterparts, because answering it for `disable_account` and not for
+   to take that lock too — which is again a change to a path `R4` does not own. §8.4 records both
+   counterparts as `R1-07` and `R3-12`, because answering it for `disable_account` and not for
    `SessionService.revoke` would leave `R4-05` half-safe and looking finished.
+
+   **Natural expiry is the part no lock reaches, and it needs a predicate rather than a
+   counterpart.** `R3-12` locks the session row against `revoke` and `revoke_all`, which are
+   *writes*. Expiry is neither: `Session.is_expired_at` is `self.expires_at <= moment`
+   (`sessions.py:111`), derived from the clock, performing no write and touching no row. There is
+   nothing for a lock to contend on, so redemption could lock the session an instant before
+   `expires_at`, wait on the invitation or account lock, and commit a durable membership after it —
+   with the lock held correctly throughout. A lock serializes writers; it does not serialize the
+   passage of time.
+
+   So the re-read evaluates **`Session.is_live_at(now)`** — "neither expired nor revoked"
+   (`sessions.py:113`) — against a `now` re-read at that point, not `is_revoked`. The repo already
+   holds both conditions in one predicate for this reason, and reaching past it to the revocation
+   half alone is the drift `accounts.py:68` warns about for `can_act`. The lock covers the revoke
+   race; the predicate covers expiry; neither substitutes for the other.
+
+   `R4-05` owes the expiry case separately from the revocation one: hold the redemption transaction
+   past the session's `expires_at`, release, and assert no membership was created. It fails on an
+   implementation that checks only `revoked_at`, which is the shape a reader takes from "lock and
+   re-read the session".
 
    A failure raises the §5 uniform refusal and the transaction rolls back, so **the invitation is
    not consumed**: the refusal is about the actor rather than the invitation, and a re-enabled
@@ -1274,6 +1294,17 @@ open, so a reader does not mistake a half-closed race for a closed one. `R4-07`'
 is written but the purge-first case is expected to fail until this is decided; mark it
 `xfail(strict=True)` with this section as the reason, so the day it starts passing, something
 changed and the suite says so.
+
+**And `R4-05` waits on this, which an `xfail` does not accomplish by itself.** An `xfail` records
+a known gap; it does not stop the code that makes the gap reachable. The hazard here is inert
+until redemption exists — an invitation open at a released address grants nothing while nothing
+can redeem it — so shipping `R4-05` is exactly the step that converts a documented hole into a
+stranger holding a membership. Issuance and revocation (`R4-04`) are safe to land meanwhile,
+because neither confers authority.
+
+So `R4-05` depends on this item's resolution, and the roadmap carries it as a dependency rather
+than as a comment. Recorded because "it's tracked in the spec and xfailed in the suite" reads like
+a gate and is not one: both are records, and neither is a blocker.
 
 <details>
 <summary>The candidates considered when this was closed, retained for the record</summary>
