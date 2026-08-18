@@ -708,9 +708,11 @@ clock**, and derives the account by looking up the session and then reading `ses
    that end the actor's authority, and a lock taken by both paths is the mechanism that satisfies
    it. §8.4 settles that no counterpart slice is needed: the disable and session-ending paths
    already take conflicting row locks through their `UPDATE`s, so redemption's own lock completes
-   the serialization. Until they land, `R4-05` is specifiable but not startable — a redemption implemented
-   without its counterparts contends with nothing, which is the defect two revisions of this
-   section already shipped.
+   the serialization. **What remains to land is redemption's own lock and nothing else** — a
+   redemption that omits it contends with nothing, which is the defect two revisions of this
+   section already shipped, but no work outside `R4-05` is owed. An earlier revision of this
+   sentence said `R4-05` was "not startable" until counterparts landed; §8.4 withdrew those, and
+   leaving the sentence would block the slice on work that no longer exists.
 
    **And the account is not the only stale half of `ResolvedActor`.** It carries a `session` as
    well (`actor_resolution.py:90`), and `SessionService.revoke` or `revoke_all` can end that session
@@ -1129,11 +1131,21 @@ The digest candidate is barred by text rather than judgment — §2's Login-iden
 admitting it would need an amendment, which this note does not seek for a problem the advisory lock
 solves without retaining anything. §8.2 carries the full argument and the evidence `R4-04` owes.
 
-**What `R4-06` owes as evidence.** Purge an account holding an unexpired, unredeemed invitation;
-assert the invitation is closed and its verifier destroyed. Then the case that motivates it: after
-the purge, register a **new** account at the same address and assert it cannot redeem that
-invitation — which fails on an implementation that only closes invitations at membership
-revocation. Then the race, against PostgreSQL, **once §8's mechanism question is answered**: `issue` to a
+**What `R4-06` owes as evidence, and what it cannot owe.** `R4-06` now precedes `R4-05`, so
+redemption does not exist when it runs and its tests cannot call it. Splitting accordingly:
+
+- **`R4-06` owes the state assertions.** Purge an account holding an unexpired, unredeemed
+  invitation; assert the invitation is **closed** and its **verifier destroyed**. That is fully
+  checkable without redemption, and it fails on an implementation that only closes invitations at
+  membership revocation — which is the defect this section exists for.
+- **`R4-07` owes the motivating assertion**, because it needs the verb: after the purge, register a
+  **new** account at the same address and assert it **cannot redeem** that invitation. Assigning it
+  here would force `R4-06` either to implement part of `R4-05` or to ship a test it cannot run.
+
+Recorded because the reordering created this: an earlier revision wrote both assertions into
+`R4-06` when it still followed `R4-05`.
+
+Then the race, against PostgreSQL, **once §8's mechanism question is answered**: `issue` to a
 disabled account's address concurrently with its purge — in **both** commit orders, since the
 purge-first ordering is the one that defeated the retracted fix — and assert that no invitation to
 that address is open afterwards.
