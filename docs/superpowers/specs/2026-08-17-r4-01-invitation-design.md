@@ -1510,8 +1510,26 @@ one — and Python's built-in `hash()` on a `str` is randomised per process unde
 workers would derive **different** keys for the same address, acquire non-conflicting locks, and
 serialize nothing. The lock would appear present in code review and in a single-process test, and
 do nothing in production. So: **`key = int.from_bytes(sha256(canonical_address.encode()).digest()[:8], "big", signed=True)`** — a stable digest, not `hash()`, taken by `issue` and
-`purge_if_still_eligible` identically. `R4-04` owes a test that two separate processes derive the
-same key for one address; a same-process assertion cannot fail on the defect this bullet describes.
+`purge_if_still_eligible` identically.
+
+**The evidence `R4-04` owes, stated precisely, because the obvious test cannot fail on this
+defect.** "Two processes derive the same key" is not sufficient: `multiprocessing` **forks** by
+default on Linux, so children inherit the parent's hash secret, and CI that pins `PYTHONHASHSEED`
+makes even fresh interpreters agree. An implementation using `hash()` passes that test and still
+breaks across independently seeded production workers — the same "a test that cannot fail on the
+defect" shape this note has now hit four times. Two forms that do work, and `R4-04` takes at least
+the first:
+
+1. **Assert the constant.** `key("alice@example.com")` equals a **literal bigint** committed in
+   the test. `hash()` cannot produce a fixed value across seeds, so this fails on it by
+   construction and needs no subprocess at all.
+2. **Spawn fresh interpreters with explicitly different seeds** —
+   `subprocess.run([sys.executable, ...], env={**os.environ, "PYTHONHASHSEED": "0"})` and again
+   with `"1"` — and assert the two keys match. This also proves the *derivation* is
+   environment-independent rather than only that the digest is deterministic.
+
+Form 1 is the one that must exist, since it is cheap and unconditional; form 2 is worth adding
+because it fails for the right reason rather than by coincidence of the constant.
 
 The address must be **canonical** per §4's storage rule for the same reason — a case difference
 produces a different digest and the two paths lock different keys.
