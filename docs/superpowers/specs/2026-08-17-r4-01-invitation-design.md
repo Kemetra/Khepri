@@ -1129,8 +1129,11 @@ that address is open afterwards.
 of the inviting membership** (`FR-020`)". That fourth trigger *is* the narrow reading, and it is
 governed rather than optional — dropping it while correcting §3 would repeat this note's original
 mistake in the opposite direction. It also closes a genuine hole the recipient reading does not
-touch: a demoted or removed owner should not have outstanding invitations that still work, since the
-authority under which they were issued is gone.
+touch: an owner whose membership is **revoked** should not have outstanding invitations that still
+work, since the authority under which they were issued is gone. **Revoked, not demoted** — §8.3
+settles that demotion does not invalidate, and `KHEPRI-DEC-015`'s trigger says "revocation of the
+inviting membership". An earlier revision of this sentence read "demoted or removed", which
+contradicted §8.3 and would have sent `R4-06` in the opposite direction.
 
 **Two triggers, two anchors, one cascade.** `R4-06` invalidates, in the same transaction as the
 revocation — see the atomicity note below, which fixes *which* transaction that is:
@@ -1242,7 +1245,15 @@ the omissions are deliberate, and so the pattern is visible rather than repeated
   revision and reopened, because the mechanism chosen does not close the purge-first ordering and
   no candidate that does is available without a decision change.
 - **Session expiry through the redemption commit** (§8.5) — an `R3` schema question. Bounded by
-  §6.1's late check, not eliminated by it.
+  §6.1's late check, not eliminated by it, and gating `R4-05`.
+
+**One sequencing consequence, recorded here because it is not a question.** §7.1 assigns the
+purge-side cascade to `R4-06`, which the roadmap sequences *after* `R4-05`. That ordering is wrong:
+`R4-04` can issue an invitation to an already-disabled account, the account is purged on schedule,
+and with no cascade the invitation survives at a released address — which `R4-05` then makes
+redeemable. The cascade must exist before redemption does, so **`R4-05` depends on `R4-06`** and
+the roadmap now says so. The `FR-020` membership cascade in the same slice is unaffected by the
+reorder, since it needs no redemption to be correct.
 
 ### 8.5 Session expiry through commit is bounded, not closed
 
@@ -1268,6 +1279,18 @@ choice.
 "an authenticated account exists at the moment of acceptance" holds to within one preemption
 window after the late check. Every earlier revision of §6.1 held it to within a much larger window
 and did not say so.
+
+**And this gates `R4-05` rather than merely describing it**, for the reason §8.2 records about
+`xfail`: a documented residual is a record, not a blocker, and redemption is the slice that makes
+the residual reachable. Two ways to clear the gate, and the choice is the owner's:
+
+| Option | What it means |
+|---|---|
+| `R3` exposes commit-safe session state | The membership insert is conditioned on a live session row, so the database refuses the write rather than a predicate hoping to be recent. Closes it; costs an `R3` schema decision |
+| The owner accepts the residual explicitly | `R4-05` ships with the late check and the preemption window is recorded as accepted risk against `FR-019`. Closes nothing, but does so **on the record** rather than by omission |
+
+What `R4-05` must not do is ship while this reads as an open note, which is how a stated residual
+becomes an unstated one. The roadmap carries it as a dependency.
 
 **Closed since the first review round, with the authority for each.** Four items sat here across
 earlier revisions. Three are closed below on this note's own authority, and the fourth is resolved
