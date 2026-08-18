@@ -1276,15 +1276,19 @@ retention, once for the horizon — and in both cases the cause was the same: re
 field list without opening the governing retention decision. Recorded so a reader of the list knows
 the omissions are deliberate, and so the pattern is visible rather than repeated a third time.
 
-**What genuinely remains open: two items.**
+**What genuinely remains open: one item.**
 
 - **Whether an invitation may be re-sent to a different address**, above — a product question for
   `R8-05`, blocking nothing in `R4`.
-- **Issuance versus identity purge** (§8.2) — a `KHEPRI-DEC-015` question. Closed in an earlier
-  revision and reopened, because the mechanism chosen does not close the purge-first ordering and
-  no candidate that does is available without a decision change.
-- **Session expiry through the redemption commit** (§8.5) — an `R3` schema question. Bounded by
-  §6.1's late check, not eliminated by it, and gating `R4-05`.
+
+Both questions that gated `R4-05` were answered by the owner on 2026-08-18 and are recorded as
+decisions in §8.2 and §8.5 rather than as open items:
+
+- **Issuance versus identity purge** (§8.2) — residual **accepted**; `KHEPRI-DEC-015` not amended.
+- **Session expiry through the redemption commit** (§8.5) — `FR-019` reads as the **last check**;
+  §6.1's late check satisfies it.
+
+`R4-05` is unblocked by both.
 
 **One sequencing consequence, recorded here because it is not a question.** §7.1 assigns the
 purge-side cascade to `R4-06`, which the roadmap sequences *after* `R4-05`. That ordering is wrong:
@@ -1293,63 +1297,6 @@ and with no cascade the invitation survives at a released address — which `R4-
 redeemable. The cascade must exist before redemption does, so **`R4-05` depends on `R4-06`** and
 the roadmap now says so. The `FR-020` membership cascade in the same slice is unaffected by the
 reorder, since it needs no redemption to be correct.
-
-### 8.5 Session expiry through commit is bounded, not closed
-
-§6.1 requires the redemption transaction to re-read the session and evaluate `is_live_at` after
-every other lock is acquired, immediately before the write. That is the tightest window this note
-can specify, and it is still a window: expiry is derived from the clock, so unlike account
-disablement there is no competing **writer** to serialize against, and a transaction can be
-preempted between its last predicate and its commit record.
-
-**Why no lock fixes it.** Redemption's session lock serializes against `revoke` and `revoke_all`,
-which are writes. `Session.is_expired_at` is `self.expires_at <= moment` (`sessions.py:111`) — it writes
-nothing and touches no row, so a lock has nothing to contend on. A lock serializes writers; it does
-not serialize the passage of time.
-
-**What would close it, and why it is not `R4`'s to build.** A commit-time assertion the database
-enforces — for instance making the membership insert conditional on a session row whose
-`expires_at` is still in the future, so the write itself fails if the session lapsed — requires
-session state reachable from the redemption transaction. Whether commercial sessions expose that,
-and at what cost to `R3`'s boundaries, is `R3`'s schema question rather than an invitation design
-choice.
-
-**The honest statement of the guarantee**, recorded so no reader infers a stronger one: `FR-019`'s
-"an authenticated account exists at the moment of acceptance" holds to within one preemption
-window after the late check. Every earlier revision of §6.1 held it to within a much larger window
-and did not say so.
-
-**And this gates `R4-05` rather than merely describing it**, for the reason §8.2 records about
-`xfail`: a documented residual is a record, not a blocker, and redemption is the slice that makes
-the residual reachable. Two ways to clear the gate, and the choice is the owner's:
-
-| Option | What it means |
-|---|---|
-| `R3` exposes commit-safe session state | Narrows the window from the transaction to the **statement**. It does not close it: a conditional insert evaluates its predicate while executing, so a deschedule between statement and commit still lands a durable membership. **Requires the same explicit residual acceptance as the option below** — a smaller window is still a window, and this option must not be treated as clearing the gate on its own |
-| The owner accepts the residual explicitly | `R4-05` ships with the late check and the preemption window is recorded as accepted risk against `FR-019`. Closes nothing, but does so **on the record** rather than by omission |
-
-**Both rows require explicit acceptance; neither is commit-safe.** The first narrows the window and
-the second does not, but the gate is cleared by the *acceptance*, never by the mechanism — so
-"commit-safe session expiry resolved" in the roadmap means **the owner has recorded a reading of
-`FR-019` and accepted the residual**, not that a mechanism was found. Stated because the first row
-otherwise reads as the safe choice that closes the gate, and choosing it would land a durable
-membership after authentication ended while the dependency showed satisfied.
-
-**Neither option reaches zero, and the note stops claiming one does.** An earlier revision offered
-the conditional insert as the closure. It is not: no predicate evaluated *inside* a transaction can
-speak for the instant that transaction commits, so "authenticated at the moment of acceptance" is
-unachievable in the strict sense against a clock-derived expiry. What is achievable is making the
-window a statement rather than a transaction, and saying so. **This makes the item an explicit
-`FR-019` interpretation question** — does "at the moment of acceptance" mean the last check or the
-commit record — which is the owner's to answer and is why `R4-05` waits on it.
-
-What `R4-05` must not do is ship while this reads as an open note, which is how a stated residual
-becomes an unstated one. The roadmap carries it as a dependency.
-
-**Closed since the first review round, with the authority for each.** Four items sat here across
-earlier revisions. Three are closed below on this note's own authority, and the fourth is resolved
-as a sequencing decision. They are recorded rather than deleted, because each was escalated once
-and a reader who saw the escalation is owed the resolution.
 
 ### 8.1 The sweep interval is an operational decision, not a governance one
 
@@ -1392,11 +1339,17 @@ horizon is unenforced until a scheduled caller exists**, so the gap is visible w
 implementer will read it rather than only here. Recorded as an observation about the repo, not as
 an `R4` blocker — invitations inherit an existing condition rather than introducing it.
 
-### 8.2 Issuance versus identity purge — open, and no candidate mechanism survives
+### 8.2 Issuance versus identity purge — residual accepted (owner, 2026-08-18)
 
-**This item was closed in an earlier revision of this section and is reopened.** The closure picked
-a transaction-scoped advisory lock over the canonical address. It does not work, and the reason
-generalizes past this candidate.
+> **Decision, 2026-08-18 (owner).** Of the two answers below, the owner took **option 2 — accept
+> the residual explicitly.** `KHEPRI-DEC-015` is not amended: a purged account continues to leave
+> behind an opaque identifier and a disablement timestamp and nothing else, and no address-derived
+> survivor is admitted. The accepted risk is stated in full in §8.2.1, and `R4-04` is unblocked.
+
+**This item was closed in an earlier revision of this section, reopened, and is now decided.** The
+first closure picked a transaction-scoped advisory lock over the canonical address. It does not
+work, and the reason generalizes past that candidate — which is why the decision is an acceptance
+rather than a mechanism.
 
 **A mutex prevents overlap; it carries no state across transactions.** Take the purge-first
 ordering: `purge_if_still_eligible` acquires the lock, closes the existing invitations, nulls the
@@ -1447,8 +1400,36 @@ answers remain:
 > because the *rule* mentions no storage — but a rule you cannot evaluate is not a rule, and
 > selecting it would have cleared the gate while leaving the identity-transfer path intact.
 
-`R4-04` must not choose between the two that remain: one changes what a purged account leaves
-behind, and the other is an accepted-risk decision.
+`R4-04` did not choose between these; the owner did, taking the second.
+
+#### 8.2.1 The accepted residual, stated so it can be reviewed later
+
+**What is accepted.** An invitation issued to a disabled account's address in the window before
+that account's purge completes may remain open after the purge. The address is then released, and
+an account subsequently registered at it is — by §6.1.1's addressee rule — the legitimate redeemer
+of an invitation intended for the previous holder. The result is a membership granted to the wrong
+person, without any component behaving incorrectly.
+
+**Why the exposure is narrow.** Four things must coincide: an account disabled for twenty-four
+months and reaching its purge; an invitation issued to that same address inside the purge's
+transaction window; the address released and re-registered by someone else; and that person
+presenting a token they were never sent. The window is a single transaction, not a policy interval.
+
+**Why it is accepted rather than fixed.** Every mechanism that closes it requires something
+address-derived to survive the purge — which is the guarantee `KHEPRI-DEC-015` §2b exists to make
+("no email address, no credential verifier, no profile data") and which §8 item 6 defends against
+becoming "a second identity store". Trading that guarantee, which covers every purged account
+permanently, against a single-transaction race was judged the worse bargain.
+
+**What `R4-04` still implements, because half the hazard is closable.** The advisory lock over the
+canonical address, which closes the **issuance-first** ordering: an `issue` that begins before the
+purge is serialized behind it and its invitation is caught by the cascade. Only the purge-first
+ordering is accepted.
+
+**What would reopen this.** A delivery mechanism that resends invitations, a longer-running
+issuance path, or a purge that spans more than one transaction all widen the window and make the
+arithmetic above stale. `R5-01` is the first of those, so it should re-read this section rather
+than inherit the conclusion.
 
 **What `R4-04` may implement today, and what it must not claim.** Take the advisory lock anyway —
 it closes the *issuance-first* ordering, which is a real half of the hazard, and it stores nothing
@@ -1590,6 +1571,86 @@ a third family's slice is how that audit stops meaning anything.
 
 `R4-05`'s own locking statement owes what the existing ones owe: a module-level named statement,
 and a dialect-compilation test asserting `FOR UPDATE` is present (`persistence.py:514-519`).
+
+### 8.5 Session expiry through commit — `FR-019` reads as the last check (owner, 2026-08-18)
+
+§6.1 requires the redemption transaction to re-read the session and evaluate `is_live_at` after
+every other lock is acquired, immediately before the write. That is the tightest window this note
+can specify, and it is still a window: expiry is derived from the clock, so unlike account
+disablement there is no competing **writer** to serialize against, and a transaction can be
+preempted between its last predicate and its commit record.
+
+**Why no lock fixes it.** Redemption's session lock serializes against `revoke` and `revoke_all`,
+which are writes. `Session.is_expired_at` is `self.expires_at <= moment` (`sessions.py:111`) — it writes
+nothing and touches no row, so a lock has nothing to contend on. A lock serializes writers; it does
+not serialize the passage of time.
+
+**What would close it, and why it is not `R4`'s to build.** A commit-time assertion the database
+enforces — for instance making the membership insert conditional on a session row whose
+`expires_at` is still in the future, so the write itself fails if the session lapsed — requires
+session state reachable from the redemption transaction. Whether commercial sessions expose that,
+and at what cost to `R3`'s boundaries, is `R3`'s schema question rather than an invitation design
+choice.
+
+**The honest statement of the guarantee**, recorded so no reader infers a stronger one: `FR-019`'s
+"an authenticated account exists at the moment of acceptance" holds to within one preemption
+window after the late check. Every earlier revision of §6.1 held it to within a much larger window
+and did not say so.
+
+> **Decision, 2026-08-18 (owner).** **`FR-019`'s "the moment of acceptance" reads as the last
+> authentication check inside the accepting transaction, not the commit record.** The late
+> `is_live_at` check §6.1 requires therefore satisfies it, and `R4-05` is unblocked. `FR-019` is
+> not amended, because on this reading it was never violated.
+>
+> **Why this reading rather than the strict one.** No predicate evaluated inside a transaction can
+> speak for the instant that transaction commits — that is a property of transactions, not a
+> shortcoming of this design. Against a clock-derived expiry there is no writer to serialize with,
+> so the strict reading is not merely unimplemented here; it is unimplementable by any component,
+> and a requirement no implementation can satisfy constrains nothing. Every authorization decision
+> in the system carries the same gap: `resolve_scope`, `can_act`, and the `FR-013` guard all check
+> and then act.
+>
+> **What the reading obliges, so it is not a licence.** The check must be the **last** thing before
+> the write, per §6.1 — a reading that permits a gap does not permit an arbitrary one, and an
+> implementation that checks early and then waits is non-compliant under this decision exactly as
+> it was before it. `R4-05`'s expiry test is unchanged.
+>
+> **What is not covered.** Authority that must stop *retroactively* is neither this requirement's
+> job nor granted by this reading: `FR-030` governs the next authorization decision, and a
+> membership created microseconds before its session lapsed is refused at its next use like any
+> other.
+
+**This gated `R4-05`, and the decision above clears it.** The gate existed for the reason §8.2
+records about `xfail` — a documented residual is a record, not a blocker, and redemption is the
+slice that makes it reachable. The options that were on the table, retained because the second is
+what the owner took:
+
+| Option | What it means |
+|---|---|
+| `R3` exposes commit-safe session state | Narrows the window from the transaction to the **statement**. It does not close it: a conditional insert evaluates its predicate while executing, so a deschedule between statement and commit still lands a durable membership. **Requires the same explicit residual acceptance as the option below** — a smaller window is still a window, and this option must not be treated as clearing the gate on its own |
+| The owner accepts the residual explicitly | `R4-05` ships with the late check and the preemption window is recorded as accepted risk against `FR-019`. Closes nothing, but does so **on the record** rather than by omission |
+
+**Neither row is commit-safe, which is why the resolution was a reading rather than a choice
+between them.** The first narrows the window and the second does not; neither closes it. The owner
+took the second and did not require the first, so `R4-05` ships with §6.1's late check and no `R3`
+schema change. If `R3` later exposes commit-safe session state for its own reasons, `R4-05` should
+adopt it — a narrower window is still better — but it is not owed.
+
+**Neither option reaches zero, and the note stops claiming one does.** An earlier revision offered
+the conditional insert as the closure. It is not: no predicate evaluated *inside* a transaction can
+speak for the instant that transaction commits, so "authenticated at the moment of acceptance" is
+unachievable in the strict sense against a clock-derived expiry. What is achievable is making the
+window a statement rather than a transaction, and saying so. **This makes the item an explicit
+`FR-019` interpretation question** — does "at the moment of acceptance" mean the last check or the
+commit record — which is the owner's to answer and is why `R4-05` waits on it.
+
+What `R4-05` must not do is ship while this reads as an open note, which is how a stated residual
+becomes an unstated one. The roadmap carries it as a dependency.
+
+**Closed since the first review round, with the authority for each.** Four items sat here across
+earlier revisions. Three are closed below on this note's own authority, and the fourth is resolved
+as a sequencing decision. They are recorded rather than deleted, because each was escalated once
+and a reader who saw the escalation is owed the resolution.
 
 ## 9. Slice sequence
 
