@@ -534,12 +534,25 @@ well as by message. That means:
   comparison **before** or regardless of the state predicates, and decides the refusal from all of
   them together. Concretely: the state of the row may determine *whether the refusal is raised*, but
   never *whether the KDF ran*.
+- **Destroy-on-touch adds a write, and the write must not be what distinguishes the expired
+  case.** §3 requires that a path finding `expires_at <= now` destroys the verifier before
+  refusing. That is an `UPDATE` and a commit which a wrong-secret attempt against an open row does
+  not perform, so the expired refusal becomes measurably slower than the cause it must be
+  indistinguishable from — the timing oracle this section exists to close, reintroduced by the fix
+  for a different requirement one section earlier. Two ways out, and `R4-05` must record which:
+  **equalize the write** so every refusal path performs one, or **move destruction off the refusal
+  path** so the response does not wait on it. The second is preferable if it can be made to satisfy
+  §3 — the touch that observes expiry is what §3 needs, not the caller's latency — but "queue it and
+  return" is a durability claim, and a destruction that is lost on restart does not satisfy
+  `KHEPRI-DEC-015`. Stated as a constraint on `R4-05` rather than resolved here, because the answer
+  depends on whether the codebase grows a durable post-commit hook, which nothing in `RCA` has
+  today.
 - **The invariant, stated once so `R4-07` can assert it directly.** Every one of the six causes pays
-  **equivalent work** — one database lookup **and** one `scrypt` at `n=2**14` — before any refusal
-  is raised: a malformed token that never parses, an `invitation_id` that matches no row, a row
-  whose verifier is destroyed, a row that is expired, revoked, or already redeemed with its verifier
-  intact, and a genuine wrong secret. Six causes, one message, one round trip and one KDF invocation
-  each. Anything that skips the
+  **equivalent work** — one database lookup, one `scrypt` at `n=2**14`, and, per the bullet above,
+  the same write cost — before any refusal is raised: a malformed token that never parses, an
+  `invitation_id` that matches no row, a row whose verifier is destroyed, a row that is expired,
+  revoked, or already redeemed with its verifier intact, and a genuine wrong secret. Six causes, one
+  message, equivalent work each. Anything that skips the
   work on some branch is the defect, however reasonable it looks as an early return.
 - `hmac.compare_digest` for the comparison itself, as RRA already does.
 
@@ -969,28 +982,45 @@ exists to prevent, arriving through a race rather than through a missing trigger
 membership cascade there is no shared row to contend on, because the invitation being inserted did
 not exist when the purge read the table.
 
-**So the two paths serialize on the account row**, which §6.1's redemption fix already establishes
-as the identity-scoped anchor: `issue` takes `SELECT ... FROM rca_accounts WHERE account_id = :id
-FOR UPDATE` on the **addressee's** account when one exists, and `purge_if_still_eligible` takes the
-same lock — which it must anyway, since it writes that row. Issuance then either commits before the
-purge, so the purge's `UPDATE` sees the row and closes it, or blocks until the purge commits and
-observes the tombstone.
+> **Correction, 2026-08-18 (`R4-01`).** A previous revision proposed serializing the two paths on
+> the **account row** — `issue` locking the addressee's account when one exists, and
+> `purge_if_still_eligible` locking the row it already writes. That closes the issuance-first
+> ordering and **not** the purge-first one, so it is not a fix. `purge_if_still_eligible` sets
+> `row.email = None` (`persistence.py:356`) and the account row then survives only under its
+> `account_id`. An `issue` that begins after the purge commits looks the addressee up **by
+> canonical address**, finds nothing, and takes no lock — correctly, by that rule, since a
+> post-purge miss is indistinguishable from `FR-019`'s ordinary no-account case. It then inserts an
+> open invitation *after* the cascade has already run, and a replacement account at the released
+> address redeems it. The identity transfer survives the fix.
+>
+> The general shape of the error: a **row** lock cannot serialize two operations when the
+> discriminating fact is that the row stops being *discoverable* by the key one of them uses.
+> Address-keyed discovery is exactly what the purge destroys.
 
-**And when the addressee has no account, there is no row to lock — which is `FR-019`'s ordinary
-case, not an edge.** The account-row lock is unavailable precisely when the invitation is for
-someone who has not registered. That case is safe for a different reason: an address with no
-account is not being purged, since purge operates on a disabled account. The hazard is confined to
-an addressee whose account exists and is disabled, and the lock covers exactly that. `R4-04` must
-therefore look the addressee up by canonical address and lock the row **if it exists**, rather than
-skipping the lookup because invitations do not require an account.
+**What this needs is an identity key that outlives the purge, and this note does not settle which
+one.** The requirement is stated; the mechanism is `R4-03`/`R4-04`'s and depends on a schema choice
+with consequences beyond invitations. Candidates, with the objection each has to answer:
+
+| Candidate | Objection it must answer |
+|---|---|
+| A retained one-way digest of the canonical address on the account row, surviving the purge as an opaque key both paths lock | `KHEPRI-DEC-015` §2b says a purged account is a tombstone and "nothing remains" — a retained digest is a linkable identifier, so this needs the decision's permission rather than a design note's |
+| An identity-keyed advisory lock (e.g. `pg_advisory_xact_lock` over the canonical address) taken by both paths, storing nothing | Serializes without retaining anything, but it is PostgreSQL-specific and the repo's locking discipline is `_MAY_LOCK`-audited named statements; a lock that no compilation test can assert is the shape `persistence.py:516` warns about |
+| Purge closes invitations *and* blocks issuance for a bounded window afterwards | Bounds rather than eliminates, and needs a number nobody has decided |
+
+**Recorded as an owner question in §8 rather than decided here**, for the reason the first candidate
+makes plain: the only mechanism that is purely an implementation choice is the advisory lock, and
+the other two require either a `KHEPRI-DEC-015` reading or a new number. This note has already
+retracted one attempt to settle a governance question on its own authority (§3); it does not make a
+second.
 
 **What `R4-06` owes as evidence.** Purge an account holding an unexpired, unredeemed invitation;
 assert the invitation is closed and its verifier destroyed. Then the case that motivates it: after
 the purge, register a **new** account at the same address and assert it cannot redeem that
 invitation — which fails on an implementation that only closes invitations at membership
-revocation. Then the race, against PostgreSQL: `issue` to a disabled account's address concurrently
-with its purge, and assert that whichever order they commit in, no invitation to that address is
-open afterwards.
+revocation. Then the race, against PostgreSQL, **once §8's mechanism question is answered**: `issue` to a
+disabled account's address concurrently with its purge — in **both** commit orders, since the
+purge-first ordering is the one that defeated the retracted fix — and assert that no invitation to
+that address is open afterwards.
 
 **The issuer trigger is retained as well, because an active record requires it.** `KHEPRI-DEC-015`
 §2's Invitation row names four end triggers verbatim: "Acceptance; expiry; revocation; **revocation
@@ -1129,6 +1159,15 @@ the omissions are deliberate, and so the pattern is visible rather than repeated
   **This is not optional in either direction** — redemption cannot be made safe without it — so it
   is a question about *where* the work lands, not *whether*. Recorded here because §9 sequences
   `R4-05` as though `R4-03` were its only blocker, and after this note it is not.
+- **Which identity key serializes issuance against identity purge** — a schema question with a
+  governance edge, gating `R4-04`. §7.1 establishes the hazard (an invitation issued after a purge
+  commits stays open at a released address, and a replacement account redeems it) and shows why an
+  account-row lock cannot close it: the purge destroys address-keyed discoverability, so the row
+  the lock would take is unfindable by the key `issue` has. §7.1 tables three candidates. Only the
+  advisory-lock option is purely an implementation choice; a retained address digest needs
+  `KHEPRI-DEC-015` §2b's permission, since that decision says a purged account retains nothing, and
+  the blocking-window option needs a number. **This note declines to pick**, having already
+  retracted one attempt to settle a governance question on its own authority.
 
 ## 9. Slice sequence, with one gate the roadmap does not carry
 
