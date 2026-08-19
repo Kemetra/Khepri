@@ -49,8 +49,8 @@ from khepri.rca.persistence import (
     SqlAccountStore,
     SqlOrganizationStore,
 )
-from khepri.rca.stores import AccountStore, OrganizationStore
-from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
+from khepri.rca.stores import AccountStore, InvitationStore, OrganizationStore
+from tests.rca_fakes import MemoryAccountStore, MemoryInvitationStore, MemoryOrganizationStore
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -288,6 +288,7 @@ def test_a_role_change_records_the_role_the_row_actually_held(factory: sessionma
     [
         pytest.param(OrganizationStore, MemoryOrganizationStore, id="organizations"),
         pytest.param(AccountStore, MemoryAccountStore, id="accounts"),
+        pytest.param(InvitationStore, MemoryInvitationStore, id="invitations"),
     ],
 )
 def test_every_fake_implements_its_whole_protocol(

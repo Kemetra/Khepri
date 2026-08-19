@@ -12,11 +12,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from khepri.rca.accounts import Account
+from khepri.rca.accounts import Account, canonical_email
 from khepri.rca.errors import (
     OWNER_CHANGE_APPLIED,
     OWNER_CHANGE_FINAL_OWNER,
     OWNER_CHANGE_NOT_APPLICABLE,
+)
+from khepri.rca.invitations import (
+    Invitation,
+    InvitationLifecycle,
+    InvitationOffer,
+    StoredInvitationSecret,
 )
 from khepri.rca.organizations import (
     MEMBER_ROLE,
@@ -273,3 +279,100 @@ class MemoryOrganizationStore:
     def _can_act(self, account_id: str) -> bool:
         account = self.accounts.get_account(account_id)
         return account is not None and account.can_authenticate
+
+
+class MemoryInvitationStore:
+    """In-memory `InvitationStore` (`R4-03`).
+
+    Deliberately dumb, like its siblings -- but two behaviours are copied rather than simplified,
+    because simplifying them is what would make tests pass wrongly:
+
+    - **`add_invitation` canonicalizes `target_identity`**, as the SQL store does. A fake holding
+    the
+      raw address would let an addressee-mismatch test pass against `Alice@Example.COM` while
+      production matched `alice@example.com`.
+    - **`find_for_redemption` destroys an expired verifier**, as the SQL store does. A fake that
+      merely returned the row would make `R4-05`'s "the verifier is gone by the time you verify"
+      assertions vacuous.
+    """
+
+    def __init__(self) -> None:
+        self.invitations: dict[str, Invitation] = {}
+
+    def add_invitation(self, invitation: Invitation) -> bool:
+        if invitation.invitation_id in self.invitations:
+            return False
+        self.invitations[invitation.invitation_id] = _canonicalized(invitation)
+        return True
+
+    def get_invitation(self, invitation_id: str) -> Invitation | None:
+        return self.invitations.get(invitation_id)
+
+    def find_for_redemption(self, invitation_id: str, *, now: datetime) -> Invitation | None:
+        invitation = self.invitations.get(invitation_id)
+        if invitation is None:
+            return None
+        if invitation.is_expired_at(now) and invitation.verifier is not None:
+            invitation = invitation.verifier_destroyed(at=now)
+            self.invitations[invitation_id] = invitation
+        return invitation
+
+    def save_invitation(self, invitation: Invitation) -> bool:
+        if invitation.invitation_id not in self.invitations:
+            return False
+        self.invitations[invitation.invitation_id] = invitation
+        return True
+
+    def invitations_for_organization(self, organization_id: str) -> tuple[Invitation, ...]:
+        held = [
+            invitation
+            for invitation in self.invitations.values()
+            if invitation.organization_id == organization_id
+        ]
+        held.sort(key=lambda invitation: (invitation.issued_at, invitation.invitation_id))
+        return tuple(held)
+
+    def _purge_spent_invitations(self, horizon: datetime, *, now: datetime) -> int:
+        """Both lifecycle rules, matching the SQL predicate.
+
+        Implementing only the redeemed branch would leave every expired-verifier test green while
+        production purged nothing -- which is the divergence class the parity test exists to catch.
+        """
+        spent = [
+            invitation_id
+            for invitation_id, invitation in self.invitations.items()
+            if _is_spent(invitation, horizon=horizon, now=now)
+        ]
+        for invitation_id in spent:
+            del self.invitations[invitation_id]
+        return len(spent)
+
+
+def _is_spent(invitation: Invitation, *, horizon: datetime, now: datetime) -> bool:
+    if invitation.redeemed_at is not None:
+        return invitation.redeemed_at <= horizon
+    return invitation.revoked_at is not None or invitation.is_expired_at(now)
+
+
+def _canonicalized(invitation: Invitation) -> Invitation:
+    """The record as the SQL store would hold it, with a canonical `target_identity`."""
+    canonical = canonical_email(invitation.target_identity)
+    if canonical == invitation.target_identity:
+        return invitation
+    return Invitation._from_storage(
+        InvitationOffer(
+            organization_id=invitation.organization_id,
+            intended_role=invitation.intended_role,
+            target_identity=canonical,
+            issued_by=invitation.issued_by,
+        ),
+        StoredInvitationSecret(
+            invitation_id=invitation.invitation_id,
+            verifier=invitation.verifier,
+            expires_at=invitation.expires_at,
+        ),
+        issued_at=invitation.issued_at,
+        lifecycle=InvitationLifecycle(
+            redeemed_at=invitation.redeemed_at, revoked_at=invitation.revoked_at
+        ),
+    )
