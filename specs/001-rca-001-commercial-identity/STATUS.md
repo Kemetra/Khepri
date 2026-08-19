@@ -2,10 +2,16 @@
 
 **Task:** `R0-03` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 
-**Baseline:** `main` @ `00e0f47`, 2026-08-17. `uv run khepri-gov validate` passes; `uv run pytest`
-reports 2154 passed, 45 skipped. Migration head `20260815_0016` (single head).
+**Baseline:** `main` @ `d50ffe6`, 2026-08-19. `uv run khepri-gov validate` passes; `uv run pytest`
+reports 2256 passed, 47 skipped. Migration head `20260817_0017` (single head).
 
-**Updated through `R7-01`.** This pass reconciles two independent derivations: the `R6-03`-era
+**Coverage: rows updated through `R4-02`; the narrative below is written through `R7-01`.** The two
+are separated deliberately. `R4-02` (`d50ffe6`) changed the rollup and the Invitations rows, and the
+baseline above moves with them, but the reconciliation *story* in this section is still the `R7-01`-era
+pass and is not re-derived here. A reader can therefore tell which repository state supports the
+current counts without mistaking the older narrative for a fresh audit. The previous header pinned
+`00e0f47` / 2154 tests / `20260815_0016` while the rows had moved past it — found in review on `#214`,
+and it is the same drift this document exists to catch, one level up. This pass reconciles two independent derivations: the `R6-03`-era
 status work proposed in `#196`, and the row edits the `R6-05` … `R6-08` evidence slices made in
 `#197` … `#200`. `#196` was cut before those four merged, so its rows are re-derived here against
 the current tree rather than replayed.
@@ -34,16 +40,27 @@ merged code. See `SUPERSEDED.md`.
 
 ## Rollup
 
-| Status | Count | Change since `R2-10` |
-|---|---|---|
-| Implemented | 16 | +3 (FR-027, FR-029, FR-030) |
-| Partial | 14 | +1 net (FR-026 in, FR-027/FR-029 out) |
-| Not implemented | 10 | −3 |
+| Status | Count | Since `R2-10` (13/13/14) | Of that, from `R4-02` |
+|---|---|---|---|
+| Implemented | 16 | +3 | — |
+| Partial | 15 | +2 | +1 (FR-016) |
+| Not implemented | 9 | −5 | −1 (FR-016) |
 
-**16 + 14 + 10 = 40**, matching `FR-001` … `FR-040`. The previous rollup read 13/13/14 = 40 with
-the right total but the wrong split: it excluded the one `Implemented, vacuously` row (FR-040) from
-"Implemented". `R6-07` promotes exactly one row, `FR-030`; `FR-008` gains evidence but stays
-`Partial` (see its row).
+**16 + 15 + 9 = 40**, matching `FR-001` … `FR-040`.
+
+**Two delta columns, because one was ambiguous and wrong.** An earlier version of this table kept a
+single `Change since R2-10` column and filled it with the `R4-02` increment alone (`—/+1/−1`), which
+contradicts the `13/13/14` baseline this paragraph states: measured from there the cumulative deltas
+are **+3/+2/−5**. Found in review on `#214`. Splitting the columns means neither figure has to stand
+for both, and a future slice adds a row to the right-hand column rather than silently redefining the
+left.
+
+The cumulative +3/+2/−5 decomposes as: `R6-07` and the `R3`/`R6` slices promoted FR-027, FR-029 and
+FR-030 to Implemented and FR-026 to Partial; `R4-02` (`d50ffe6`) then moved FR-016 from Not
+implemented to Partial — its domain and hashed secret exist, its table and store do not.
+
+The `13/13/14` baseline itself had the right total and the wrong split: it excluded the one
+`Implemented, vacuously` row (FR-040) from "Implemented".
 
 **A correction to this correction, recorded because the method matters more than the number.** An
 earlier revision of this slice published 15/12/8 = 35, "counted from the requirement tables" — and
@@ -64,7 +81,7 @@ one.
 
 ## The absences that explain the gap
 
-24 requirements are not fully implemented (14 partial + 10 not implemented).
+24 requirements are not fully implemented (15 partial + 9 not implemented).
 
 **Both structural absences this section was built around are now closed.** They are kept as history
 rather than deleted, because the roadmap's critical path was derived from them:
@@ -91,12 +108,13 @@ longer dominated by missing subsystems:
 
 | Cause | Requirements | Count | Roadmap |
 |---|---|---|---|
-| Invitations do not exist | FR-016 … FR-020 | 5 | `R4` |
+| Invitations have a domain but no service or table | FR-017, FR-018, FR-019, FR-020 | 4 | `R4-03` … `R4-06` |
+| Invitations have no table or store | FR-016 | 1 | `R4-03` |
 | Recovery does not exist | FR-005, FR-006, FR-007 | 3 | `R5` |
 | **No production path routes through the canonical checkpoint** | FR-008, FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 12 | `R7-05` |
 | Narrower single-clause reasons stated in their own rows | FR-001, FR-003, FR-015, FR-035 | 4 | various |
 
-5 + 3 + 12 + 4 = **24**, matching the rollup. The set was checked against the requirement tables
+4 + 1 + 3 + 12 + 4 = **24**, matching the rollup. `R4-02` split the invitations cause in two rather than reducing it: `FR-016` is now `Partial` for a narrower reason than the other four, and collapsing them would hide that its remaining gap is a table rather than a subsystem. The set was checked against the requirement tables
 directly, not assembled by hand: every row above appears in the tables as `Partial` or
 `Not implemented`, and every such row appears above.
 
@@ -169,7 +187,9 @@ one — which is the moment validation stops being optional.
 
 | FR | Status | Gap |
 |---|---|---|
-| FR-016 … FR-020 | Not implemented | Entirely absent. No `Invitation` type, no `rca_invitations` table (`test_rca001_migration.py` enumerates five: accounts, organizations, memberships, isolation_scopes, membership_events), no store method. FR-020 was doubly blocked at `ebfbe77`; `R2` supplied revocation (`organizations.py:382`), so it is now blocked by invitations alone (`R4`) |
+| FR-016 | **Partial — domain only** | `R4-02` (`d50ffe6`, #215) supplies the record and its hashed secret in `invitations.py`: a sealed `Invitation`, the four states discriminated by nullability, `is_expired_at` as the single expression of the boundary, the `kci1.` token, scrypt at RRA's parameters, and a sealed `InvitationSecret` whose only door is `issue_secret` — provenance rather than a shape check, which is what establishes "persisted only as a strong salted hash". **No table and no store method**: `RCA_TABLES` in `test_rca001_migration.py` enumerates seven and `rca_invitations` is not among them, and `R4-03` owes it plus the two `CHECK`s and the sweeper. (An earlier draft of this row said *five*, carried over from the text it replaced — accurate before `R3-03` added `rca_sessions` and `rca_external_identities`, stale after. A number quoted from the prose being rewritten still needs checking against source.) |
+| FR-017 … FR-019 | Not implemented | No service. Issuance and revocation are `R4-04`; redemption and the uniform-failure path are `R4-05`. **`FR-017`'s timing half is deliberately not in the domain** — `invitations.py`'s docstring records that `parse_token` and `verify_secret` cannot establish it alone, because the dummy lookup and dummy scrypt belong to the path that sequences them |
+| FR-020 | Not implemented | Blocked by invitations alone since `R2` supplied revocation (`organizations.py:382`); it was doubly blocked at `ebfbe77`. The cascade is `R4-06`, reordered before `R4-05` |
 
 ### Authorization
 
