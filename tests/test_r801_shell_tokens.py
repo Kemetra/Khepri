@@ -117,35 +117,72 @@ def test_shell_introduces_no_colour_outside_the_shipped_palette() -> None:
     )
 
 
-#: Each derived value paired with the shipped danger token whose saturation and lightness step it
-#: copies. `shell.css` states this relationship; the test below is what holds it.
+#: The token *pairings* the derivation asserts — which shipped ink supplies the hue, and which
+#: shipped step each companion copies. **Only names, no values.** The values come from `shell.css`.
+#:
+#: An earlier version carried the hex literals too, which made the whole test hermetic: it
+#: compared constants in the table against constants in the test body and never opened the
+#: stylesheet, so swapping `--ready-border` and `--ready-surface` in `shell.css` passed every
+#: assertion — the palette check permits the same value *set* either way. Reproduced. From review
+#: on `#219`, and it is the third round on this one test: each earlier fix widened the comparison
+#: without asking whether the assertion read the artifact or a restatement of it.
 _DERIVATION = (
-    ("--ready-border", "#a0d9be", "--danger-border", "#d9a49f"),
-    ("--ready-surface", "#eafaf3", "--danger-surface", "#faece9"),
+    ("--ready-border", "--danger-border"),
+    ("--ready-surface", "--danger-surface"),
 )
 
+#: The ink whose hue every companion above must hold.
+_DERIVED_FROM = "--ready"
 
-@pytest.mark.parametrize(("name", "value", "counterpart", "reference"), _DERIVATION)
+
+def _token_values(css: str) -> dict[str, str]:
+    """Every `--name: #value;` declaration in the stylesheet, comments excluded.
+
+    This is what makes the derivation test read the artifact rather than a copy of it.
+    """
+    return {
+        match.group(1): match.group(2).lower()
+        for match in re.finditer(
+            r"(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;", _declarations(css)
+        )
+    }
+
+
+def test_the_token_reader_sees_declarations_and_not_comments() -> None:
+    """Self-tested, because every assertion below now depends on it reading the right thing."""
+    sample = "/* --fake: #ff0000; */\n:root { --real: #00FF00; --other: #123456 }"
+
+    values = _token_values(sample)
+
+    assert values == {"--real": "#00ff00"}, "a comment leaked in, or a value without `;` was missed"
+
+
+@pytest.mark.parametrize(("name", "counterpart"), _DERIVATION)
 def test_each_derived_value_matches_its_counterpart_step_exactly(
-    name: str, value: str, counterpart: str, reference: str
+    name: str, counterpart: str
 ) -> None:
     """The allowance in the previous test is only honest if the derivation is the documented one.
 
     `shell.css` promises `--ready`'s hue **at the saturation and lightness steps the shipped danger
-    family uses** — three components, not one. An earlier version of this test checked only the hue,
-    which accepts a same-hue pastel at any saturation while violating the sentence it exists to
-    enforce. Found in review on `#219`, and it is the same class as the defect it originally caught:
-    a check that verifies part of a promise made in full.
+    family uses** — three components, not one, and read from the stylesheet rather than from a table
+    restating it. Two earlier versions failed differently: the first checked only the hue, accepting
+    a same-hue pastel at any saturation; the second checked all three but against literals in this
+    file, so swapping the two declarations in `shell.css` changed nothing it could see.
 
     Tolerances are one degree and one percent, which is 8-bit rounding and nothing more.
     """
-    hue, saturation, lightness = _hsl(value)
-    ready_hue = _hue("#1d6b45")
-    _, reference_saturation, reference_lightness = _hsl(reference)
+    declared = _token_values(SHELL.read_text(encoding="utf-8"))
 
-    assert abs(hue - ready_hue) <= 3, (
-        f"{name} is hue {hue}; --ready is {ready_hue}. A companion off the ink's hue is a new "
-        "colour wearing the name of a step."
+    for token in (name, counterpart, _DERIVED_FROM):
+        assert token in declared, f"{token} is not declared in shell.css"
+
+    hue, saturation, lightness = _hsl(declared[name])
+    ink_hue = _hue(declared[_DERIVED_FROM])
+    _, reference_saturation, reference_lightness = _hsl(declared[counterpart])
+
+    assert abs(hue - ink_hue) <= 3, (
+        f"{name} is {declared[name]} (hue {hue}); {_DERIVED_FROM} is hue {ink_hue}. A companion "
+        "off the ink's hue is a new colour wearing the name of a step."
     )
     assert abs(saturation - reference_saturation) <= 1, (
         f"{name} is S{saturation}; {counterpart} is S{reference_saturation}. The derivation copies "
@@ -158,14 +195,20 @@ def test_each_derived_value_matches_its_counterpart_step_exactly(
 
 
 def test_the_derivation_table_covers_every_declared_derived_value() -> None:
-    """`_DERIVED` is the allowance and `_DERIVATION` is the proof. A value added to the first and
-    forgotten in the second would be admitted by the palette check and never have its derivation
-    verified — the loophole the review finding describes, one level up."""
-    proven = {value for _, value, _, _ in _DERIVATION}
+    """`_DERIVED` is the allowance and `_DERIVATION` the proof, and the two must describe the same
+    values. A value added to the allowance and forgotten in the proof would be admitted by the
+    palette check and never have its derivation verified — the loophole one level up.
+
+    The proven set is resolved **through the stylesheet**, not from a literal, so this cannot pass
+    by two tables agreeing with each other while disagreeing with `shell.css`.
+    """
+    declared = _token_values(SHELL.read_text(encoding="utf-8"))
+    proven = {declared[name] for name, _ in _DERIVATION if name in declared}
 
     assert proven == _DERIVED, (
-        f"declared derived: {sorted(_DERIVED)}; proven derived: {sorted(proven)}. Every allowance "
-        "needs a row in _DERIVATION."
+        f"the palette check allows {sorted(_DERIVED)}; the derivation proves {sorted(proven)}, "
+        "resolved from shell.css. Every allowance needs a row in _DERIVATION, and every row must "
+        "name a token the stylesheet declares."
     )
 
 
