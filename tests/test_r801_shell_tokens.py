@@ -66,9 +66,19 @@ def _hexes(css: str) -> set[str]:
     return {value.lower() for value in re.findall(r"#[0-9a-fA-F]{3,8}", css)}
 
 
-def _hue(value: str) -> int:
+def _hsl(value: str) -> tuple[int, int, int]:
+    """`(hue, saturation, lightness)` in degrees and percent.
+
+    All three, not just the hue: the derivation `shell.css` documents fixes every component, and a
+    test checking one accepts a same-hue pastel at any saturation. Found in review on `#219`.
+    """
     red, green, blue = (int(value[index : index + 2], 16) / 255 for index in (1, 3, 5))
-    return round(colorsys.rgb_to_hls(red, green, blue)[0] * 360)
+    hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+    return round(hue * 360), round(saturation * 100), round(lightness * 100)
+
+
+def _hue(value: str) -> int:
+    return _hsl(value)[0]
 
 
 # --- the scanner is self-tested first ---------------------------------------------------------
@@ -107,16 +117,55 @@ def test_shell_introduces_no_colour_outside_the_shipped_palette() -> None:
     )
 
 
-@pytest.mark.parametrize("value", sorted(_DERIVED))
-def test_each_derived_value_holds_the_ready_hue(value: str) -> None:
-    """The allowance above is only honest if the derivation is real.
+#: Each derived value paired with the shipped danger token whose saturation and lightness step it
+#: copies. `shell.css` states this relationship; the test below is what holds it.
+_DERIVATION = (
+    ("--ready-border", "#a0d9be", "--danger-border", "#d9a49f"),
+    ("--ready-surface", "#eafaf3", "--danger-surface", "#faece9"),
+)
 
-    `--ready` is `#1d6b45`, hue 151. Both companions must sit on that hue — a 3° tolerance covers
-    8-bit rounding and nothing else. The rejected drafts were at 146, which this refuses.
+
+@pytest.mark.parametrize(("name", "value", "counterpart", "reference"), _DERIVATION)
+def test_each_derived_value_matches_its_counterpart_step_exactly(
+    name: str, value: str, counterpart: str, reference: str
+) -> None:
+    """The allowance in the previous test is only honest if the derivation is the documented one.
+
+    `shell.css` promises `--ready`'s hue **at the saturation and lightness steps the shipped danger
+    family uses** — three components, not one. An earlier version of this test checked only the hue,
+    which accepts a same-hue pastel at any saturation while violating the sentence it exists to
+    enforce. Found in review on `#219`, and it is the same class as the defect it originally caught:
+    a check that verifies part of a promise made in full.
+
+    Tolerances are one degree and one percent, which is 8-bit rounding and nothing more.
     """
-    assert abs(_hue(value) - _hue("#1d6b45")) <= 3, (
-        f"{value} is hue {_hue(value)}; --ready is {_hue('#1d6b45')}. A companion off the "
-        "ink's hue is a new colour wearing the name of a step."
+    hue, saturation, lightness = _hsl(value)
+    ready_hue = _hue("#1d6b45")
+    _, reference_saturation, reference_lightness = _hsl(reference)
+
+    assert abs(hue - ready_hue) <= 3, (
+        f"{name} is hue {hue}; --ready is {ready_hue}. A companion off the ink's hue is a new "
+        "colour wearing the name of a step."
+    )
+    assert abs(saturation - reference_saturation) <= 1, (
+        f"{name} is S{saturation}; {counterpart} is S{reference_saturation}. The derivation copies "
+        "the danger family's step, so a different saturation is a chosen value, not a derived one."
+    )
+    assert abs(lightness - reference_lightness) <= 1, (
+        f"{name} is L{lightness}; {counterpart} is L{reference_lightness}. Same reason as the "
+        "saturation: the step is the thing being copied."
+    )
+
+
+def test_the_derivation_table_covers_every_declared_derived_value() -> None:
+    """`_DERIVED` is the allowance and `_DERIVATION` is the proof. A value added to the first and
+    forgotten in the second would be admitted by the palette check and never have its derivation
+    verified — the loophole the review finding describes, one level up."""
+    proven = {value for _, value, _, _ in _DERIVATION}
+
+    assert proven == _DERIVED, (
+        f"declared derived: {sorted(_DERIVED)}; proven derived: {sorted(proven)}. Every allowance "
+        "needs a row in _DERIVATION."
     )
 
 

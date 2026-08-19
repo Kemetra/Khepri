@@ -235,10 +235,20 @@ with no membership must authenticate"). It gets a surface because it needs a cal
 that is the only reason.
 
 **Unauthorized — an authenticated actor asking for an organization they are not in — routes to the
-shared `unavailable` surface, not to a distinct one.** `FR-023` requires a foreign organization be
-indistinguishable from a nonexistent one, and `R6-06`'s scenario 14 already tests that at the
-service layer. A dedicated "you do not have access to this organization" page would restate, in the
-UI, the enumeration oracle the resolver refuses to be.
+shared `unavailable` surface, not to a distinct one.** The governing requirement is **`FR-025`**: "A
+denial for an object the actor may not reach MUST be indistinguishable from a denial for an object
+that does not exist. Denials MUST NOT disclose existence, ownership, or the identity of another
+organization." `R6-06`'s scenario 14 already tests it at the service layer. A dedicated "you do not
+have access to this organization" page would restate, in the UI, the enumeration oracle the resolver
+refuses to be — and its second sentence is the one a UI is most likely to break, because naming the
+organization is the natural thing for an error page to do.
+
+An earlier version of this paragraph cited `FR-023` instead. That requirement says possession of an
+object identifier confers no authority — true, and about *how authorization is decided* rather than
+*what a denial may reveal*. Scenario 14 cites `FR-023`, `FR-024` and `FR-025` together, which is what
+made the wrong one easy to reach for. Corrected in review on `#219`, because pointing `R8-03`'s
+implementation and tests at `FR-023` would have lost the privacy invariant this decision exists to
+preserve.
 
 ### 4.4 The shell chrome
 
