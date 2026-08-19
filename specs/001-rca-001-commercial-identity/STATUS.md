@@ -36,11 +36,14 @@ merged code. See `SUPERSEDED.md`.
 
 | Status | Count | Change since `R2-10` |
 |---|---|---|
-| Implemented | 16 | +3 (FR-027, FR-029, FR-030) |
-| Partial | 14 | +1 net (FR-026 in, FR-027/FR-029 out) |
-| Not implemented | 10 | −3 |
+| Implemented | 16 | — |
+| Partial | 15 | +1 (FR-016, by `R4-02`) |
+| Not implemented | 9 | −1 |
 
-**16 + 14 + 10 = 40**, matching `FR-001` … `FR-040`. The previous rollup read 13/13/14 = 40 with
+**16 + 15 + 9 = 40**, matching `FR-001` … `FR-040`. The change since `R2-10`/`R6-07` was
++3 Implemented (FR-027, FR-029, FR-030), +1 net Partial (FR-026 in, FR-027/FR-029 out), −3 Not
+implemented; `R4-02` (`d50ffe6`) then moved **FR-016** from Not implemented to Partial — the domain
+and hashed secret exist, the table and store do not. The previous rollup read 13/13/14 = 40 with
 the right total but the wrong split: it excluded the one `Implemented, vacuously` row (FR-040) from
 "Implemented". `R6-07` promotes exactly one row, `FR-030`; `FR-008` gains evidence but stays
 `Partial` (see its row).
@@ -64,7 +67,7 @@ one.
 
 ## The absences that explain the gap
 
-24 requirements are not fully implemented (14 partial + 10 not implemented).
+24 requirements are not fully implemented (15 partial + 9 not implemented).
 
 **Both structural absences this section was built around are now closed.** They are kept as history
 rather than deleted, because the roadmap's critical path was derived from them:
@@ -91,12 +94,13 @@ longer dominated by missing subsystems:
 
 | Cause | Requirements | Count | Roadmap |
 |---|---|---|---|
-| Invitations do not exist | FR-016 … FR-020 | 5 | `R4` |
+| Invitations have a domain but no service or table | FR-017, FR-018, FR-019, FR-020 | 4 | `R4-03` … `R4-06` |
+| Invitations have no table or store | FR-016 | 1 | `R4-03` |
 | Recovery does not exist | FR-005, FR-006, FR-007 | 3 | `R5` |
 | **No production path routes through the canonical checkpoint** | FR-008, FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 12 | `R7-05` |
 | Narrower single-clause reasons stated in their own rows | FR-001, FR-003, FR-015, FR-035 | 4 | various |
 
-5 + 3 + 12 + 4 = **24**, matching the rollup. The set was checked against the requirement tables
+4 + 1 + 3 + 12 + 4 = **24**, matching the rollup. `R4-02` split the invitations cause in two rather than reducing it: `FR-016` is now `Partial` for a narrower reason than the other four, and collapsing them would hide that its remaining gap is a table rather than a subsystem. The set was checked against the requirement tables
 directly, not assembled by hand: every row above appears in the tables as `Partial` or
 `Not implemented`, and every such row appears above.
 
@@ -169,7 +173,9 @@ one — which is the moment validation stops being optional.
 
 | FR | Status | Gap |
 |---|---|---|
-| FR-016 … FR-020 | Not implemented | Entirely absent. No `Invitation` type, no `rca_invitations` table (`test_rca001_migration.py` enumerates five: accounts, organizations, memberships, isolation_scopes, membership_events), no store method. FR-020 was doubly blocked at `ebfbe77`; `R2` supplied revocation (`organizations.py:382`), so it is now blocked by invitations alone (`R4`) |
+| FR-016 | **Partial — domain only** | `R4-02` (`d50ffe6`, #215) supplies the record and its hashed secret in `invitations.py`: a sealed `Invitation`, the four states discriminated by nullability, `is_expired_at` as the single expression of the boundary, the `kci1.` token, scrypt at RRA's parameters, and a sealed `InvitationSecret` whose only door is `issue_secret` — provenance rather than a shape check, which is what establishes "persisted only as a strong salted hash". **No table and no store method**: `test_rca001_migration.py` still enumerates five tables, and `R4-03` owes `rca_invitations` plus the two `CHECK`s and the sweeper |
+| FR-017 … FR-019 | Not implemented | No service. Issuance and revocation are `R4-04`; redemption and the uniform-failure path are `R4-05`. **`FR-017`'s timing half is deliberately not in the domain** — `invitations.py`'s docstring records that `parse_token` and `verify_secret` cannot establish it alone, because the dummy lookup and dummy scrypt belong to the path that sequences them |
+| FR-020 | Not implemented | Blocked by invitations alone since `R2` supplied revocation (`organizations.py:382`); it was doubly blocked at `ebfbe77`. The cascade is `R4-06`, reordered before `R4-05` |
 
 ### Authorization
 
