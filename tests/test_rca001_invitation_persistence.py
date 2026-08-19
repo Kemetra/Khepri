@@ -33,7 +33,7 @@ from khepri.rca.invitations import (
 )
 from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
-from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.persistence import InvitationRow, SqlAccountStore, SqlOrganizationStore
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     factory_fixture,
 )
@@ -93,13 +93,30 @@ def _invitation(
     return store, invitation, organization_id
 
 
+
+def _stored_verifier_columns(
+    factory: sessionmaker, invitation_id: str
+) -> tuple[object, object, object, object, object]:
+    """The five verifier columns as the database holds them, bypassing every destroying read.
+
+    `get_invitation`, `find_for_redemption` and `invitations_for_organization` all destroy an
+    expired verifier, so none can witness whether a *previous* call persisted its destruction. This
+    reads the row, which is what `SqlInvitationStore.get_invitation`'s own docstring tells a test to
+    do when it needs to observe undestroyed bytes.
+    """
+    with factory() as database:
+        row = database.get(InvitationRow, invitation_id)
+        assert row is not None
+        return (row.secret_salt, row.secret_digest, row.kdf_n, row.kdf_r, row.kdf_p)
+
+
 # --- the round trip ---------------------------------------------------------------------------
 
 
 def test_an_invitation_survives_a_round_trip_through_the_store(factory: sessionmaker) -> None:
     store, invitation, organization_id = _invitation(factory)
 
-    restored = store.get_invitation(invitation.invitation_id)
+    restored = store.get_invitation(invitation.invitation_id, now=NOW)
 
     assert restored is not None
     assert restored.organization_id == organization_id
@@ -128,7 +145,7 @@ def test_the_stored_verifier_still_verifies_the_secret_it_was_derived_from(
         )
     )
 
-    restored = store.get_invitation(secret.invitation_id)
+    restored = store.get_invitation(secret.invitation_id, now=NOW)
 
     assert restored is not None
     assert verify_secret(secret.secret, restored.verifier)
@@ -140,7 +157,7 @@ def test_timestamps_come_back_timezone_aware(factory: sessionmaker) -> None:
     and mis-decide expiry -- the one thing the column exists to decide. `_utc` is why this holds."""
     store, invitation, _ = _invitation(factory)
 
-    restored = store.get_invitation(invitation.invitation_id)
+    restored = store.get_invitation(invitation.invitation_id, now=NOW)
 
     assert restored is not None
     assert restored.expires_at.tzinfo is not None
@@ -162,7 +179,7 @@ def test_the_target_identity_is_canonicalized_at_rest(factory: sessionmaker) -> 
     form. Asserted at the store because that is the boundary that cannot be bypassed."""
     store, invitation, _ = _invitation(factory, target="Alice@Example.COM ")
 
-    restored = store.get_invitation(invitation.invitation_id)
+    restored = store.get_invitation(invitation.invitation_id, now=NOW)
 
     assert restored is not None
     assert restored.target_identity == "alice@example.com"
@@ -181,10 +198,11 @@ def test_listing_is_scoped_to_one_organization(factory: sessionmaker) -> None:
     )
     assert store.add_invitation(other)
 
-    held = store.invitations_for_organization(first_org)
+    held = store.invitations_for_organization(first_org, now=NOW)
 
     assert [invitation.invitation_id for invitation in held] == [first.invitation_id]
-    assert store.invitations_for_organization(second_org)[0].invitation_id == other.invitation_id
+    listed = store.invitations_for_organization(second_org, now=NOW)
+    assert listed[0].invitation_id == other.invitation_id
 
 
 # --- the four CHECK constraints ---------------------------------------------------------------
@@ -334,7 +352,7 @@ def test_there_is_no_unique_constraint_on_recipient_or_organization(
     )
 
     assert store.add_invitation(second)
-    held = store.invitations_for_organization(organization_id)
+    held = store.invitations_for_organization(organization_id, now=NOW)
     assert len(held) == 2
     assert {invitation.target_identity for invitation in held} == {TARGET}
 
@@ -355,7 +373,7 @@ def test_reading_an_expired_invitation_destroys_its_verifier(factory: sessionmak
 
     assert touched is not None
     assert touched.verifier is None
-    assert store.get_invitation(invitation.invitation_id).verifier is None
+    assert store.get_invitation(invitation.invitation_id, now=NOW).verifier is None
 
 
 def test_reading_a_live_invitation_leaves_its_verifier_intact(factory: sessionmaker) -> None:
@@ -367,7 +385,7 @@ def test_reading_a_live_invitation_leaves_its_verifier_intact(factory: sessionma
 
     assert found is not None
     assert found.verifier is not None
-    assert store.get_invitation(invitation.invitation_id).verifier is not None
+    assert store.get_invitation(invitation.invitation_id, now=NOW).verifier is not None
 
 
 def test_the_expiry_boundary_instant_destroys(factory: sessionmaker) -> None:
@@ -385,16 +403,68 @@ def test_reading_a_missing_invitation_returns_none(factory: sessionmaker) -> Non
     store = SqlInvitationStore(factory)
 
     assert store.find_for_redemption("inv_nothing", now=NOW) is None
-    assert store.get_invitation("inv_nothing") is None
+    assert store.get_invitation("inv_nothing", now=NOW) is None
 
 
-def test_get_invitation_does_not_destroy(factory: sessionmaker) -> None:
-    """`get_invitation` is `R4-04`'s revocation read and the tests' read. If it destroyed, every
-    assertion about stored bytes would be ambiguous about which call did the destroying."""
+def test_every_read_path_destroys_an_expired_verifier(factory: sessionmaker) -> None:
+    """**Found in review on #217, and this test replaces one that asserted the opposite.**
+
+    An earlier version documented `get_invitation` as deliberately non-destroying, so `R4-04`'s
+    revocation read and the tests could observe stored bytes unambiguously. That trade was wrong.
+    The reviewer traced where it leads and the next test reproduces it; this one asserts the rule:
+    *every* read destroys an expired verifier, because a read that does not is a day of unjustified
+    survival under `KHEPRI-DEC-015` §5.
+
+    Parametrizing would hide which path failed, so all three are asserted on their own rows.
+    """
+    store, first, organization_id = _invitation(factory, expires_at=NOW - timedelta(hours=1))
+    assert store.get_invitation(first.invitation_id, now=NOW).verifier is None
+
+    store, second, _ = _invitation(factory, expires_at=NOW - timedelta(hours=1))
+    assert store.find_for_redemption(second.invitation_id, now=NOW).verifier is None
+
+    store, third, third_org = _invitation(factory, expires_at=NOW - timedelta(hours=1))
+    listed = store.invitations_for_organization(third_org, now=NOW)
+    assert [held.verifier for held in listed] == [None]
+    # Read the ROW, not the record. Asserting through `get_invitation` cannot catch a listing that
+    # destroyed in memory without flushing, because that read destroys too and would repair exactly
+    # what the missing flush left behind. Found by a surviving mutant.
+    assert _stored_verifier_columns(factory, third.invitation_id) == (None,) * 5, (
+        "the listing must destroy in the database, not only in what it returns"
+    )
+
+
+def test_an_expired_invitation_cannot_strand_its_verifier_when_revocation_is_refused(
+    factory: sessionmaker,
+) -> None:
+    """**The dead end #217 traced, asserted end to end.**
+
+    `R4-04` reads an invitation to revoke it; `Invitation.revoked` refuses once the horizon has
+    passed (a guard added on `#215`); so nothing saves and, under the old non-destroying read,
+    nothing ever destroyed. With no scheduled sweeper the bytes survived indefinitely.
+
+    The read is now what closes it: by the time the refusal happens the verifier is already gone.
+    """
     store, invitation, _ = _invitation(factory, expires_at=NOW - timedelta(hours=1))
 
-    assert store.get_invitation(invitation.invitation_id).verifier is not None
-    assert store.get_invitation(invitation.invitation_id).verifier is not None
+    read = store.get_invitation(invitation.invitation_id, now=NOW)
+    assert read is not None
+    with pytest.raises(ValueError):
+        read.revoked(at=NOW)
+
+    assert store.get_invitation(invitation.invitation_id, now=NOW).verifier is None
+    assert not verify_secret("anything", read.verifier)
+
+
+def test_a_live_invitation_survives_every_read_path(factory: sessionmaker) -> None:
+    """The other half. Reads that destroyed unconditionally would satisfy both tests above and
+    brick every live invitation the moment anyone listed a team page."""
+    store, invitation, organization_id = _invitation(factory)
+
+    assert store.get_invitation(invitation.invitation_id, now=NOW).verifier is not None
+    assert store.find_for_redemption(invitation.invitation_id, now=NOW).verifier is not None
+    assert store.invitations_for_organization(organization_id, now=NOW)[0].verifier is not None
+    assert store.get_invitation(invitation.invitation_id, now=NOW).verifier is not None
 
 
 # --- state changes ----------------------------------------------------------------------------
@@ -411,7 +481,7 @@ def test_a_terminal_transition_persists_and_destroys_the_verifier(
     changed = getattr(invitation, operation)(at=NOW)
     assert store.save_invitation(changed)
 
-    restored = store.get_invitation(invitation.invitation_id)
+    restored = store.get_invitation(invitation.invitation_id, now=NOW)
     assert restored is not None
     assert getattr(restored, f"{operation}_at") == NOW
     assert restored.verifier is None
@@ -451,7 +521,7 @@ def test_an_expired_unredeemed_invitation_is_purged_in_the_same_pass(
     store, invitation, _ = _invitation(factory, expires_at=NOW - timedelta(seconds=1))
 
     assert _sweep(factory) == 1
-    assert store.get_invitation(invitation.invitation_id) is None
+    assert store.get_invitation(invitation.invitation_id, now=NOW) is None
 
 
 def test_a_revoked_invitation_is_purged_in_the_same_pass(factory: sessionmaker) -> None:
@@ -459,14 +529,14 @@ def test_a_revoked_invitation_is_purged_in_the_same_pass(factory: sessionmaker) 
     assert store.save_invitation(invitation.revoked(at=NOW - timedelta(days=1)))
 
     assert _sweep(factory) == 1
-    assert store.get_invitation(invitation.invitation_id) is None
+    assert store.get_invitation(invitation.invitation_id, now=NOW) is None
 
 
 def test_a_live_unredeemed_invitation_survives_the_sweep(factory: sessionmaker) -> None:
     store, invitation, _ = _invitation(factory)
 
     assert _sweep(factory) == 0
-    assert store.get_invitation(invitation.invitation_id) is not None
+    assert store.get_invitation(invitation.invitation_id, now=NOW) is not None
 
 
 def test_a_recently_redeemed_invitation_survives_the_sweep(factory: sessionmaker) -> None:
@@ -476,7 +546,7 @@ def test_a_recently_redeemed_invitation_survives_the_sweep(factory: sessionmaker
     assert store.save_invitation(invitation.redeemed(at=NOW - timedelta(days=1)))
 
     assert _sweep(factory) == 0
-    assert store.get_invitation(invitation.invitation_id) is not None
+    assert store.get_invitation(invitation.invitation_id, now=NOW) is not None
 
 
 def test_a_redeemed_invitation_is_purged_once_its_membership_event_would_be(
@@ -489,7 +559,7 @@ def test_a_redeemed_invitation_is_purged_once_its_membership_event_would_be(
     assert store.save_invitation(invitation.redeemed(at=long_ago))
 
     assert _sweep(factory) == 1
-    assert store.get_invitation(invitation.invitation_id) is None
+    assert store.get_invitation(invitation.invitation_id, now=NOW) is None
 
 
 def test_the_redeemed_horizon_is_anchored_to_the_event_horizon_not_a_literal(
@@ -544,7 +614,7 @@ def test_a_verifier_rebuilt_from_stored_columns_keeps_its_work_factor(
     wrong cost and silently reject every older secret."""
     store, invitation, _ = _invitation(factory)
 
-    restored = store.get_invitation(invitation.invitation_id)
+    restored = store.get_invitation(invitation.invitation_id, now=NOW)
 
     assert restored is not None
     assert restored.verifier is not None

@@ -305,10 +305,10 @@ class MemoryInvitationStore:
         self.invitations[invitation.invitation_id] = _canonicalized(invitation)
         return True
 
-    def get_invitation(self, invitation_id: str) -> Invitation | None:
-        return self.invitations.get(invitation_id)
+    def get_invitation(self, invitation_id: str, *, now: datetime) -> Invitation | None:
+        return self._read_destroying_expired(invitation_id, now=now)
 
-    def find_for_redemption(self, invitation_id: str, *, now: datetime) -> Invitation | None:
+    def _read_destroying_expired(self, invitation_id: str, *, now: datetime) -> Invitation | None:
         invitation = self.invitations.get(invitation_id)
         if invitation is None:
             return None
@@ -317,13 +317,20 @@ class MemoryInvitationStore:
             self.invitations[invitation_id] = invitation
         return invitation
 
+    def find_for_redemption(self, invitation_id: str, *, now: datetime) -> Invitation | None:
+        return self._read_destroying_expired(invitation_id, now=now)
+
     def save_invitation(self, invitation: Invitation) -> bool:
         if invitation.invitation_id not in self.invitations:
             return False
         self.invitations[invitation.invitation_id] = invitation
         return True
 
-    def invitations_for_organization(self, organization_id: str) -> tuple[Invitation, ...]:
+    def invitations_for_organization(
+        self, organization_id: str, *, now: datetime
+    ) -> tuple[Invitation, ...]:
+        for invitation_id in list(self.invitations):
+            self._read_destroying_expired(invitation_id, now=now)
         held = [
             invitation
             for invitation in self.invitations.values()

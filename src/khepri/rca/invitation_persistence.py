@@ -88,6 +88,18 @@ def _invitation_from_row(row: InvitationRow) -> Invitation:
     )
 
 
+def _expired(row: InvitationRow, now: datetime) -> bool:
+    """`expires_at <= now`, on the row rather than the record.
+
+    One spelling of the boundary for every read path, matching `Invitation.is_expired_at`. The
+    instant itself counts as expired; a `<` here would leave a one-instant window in which a read
+    hands back a verifier the domain already considers spent.
+    """
+    stored = _utc(row.expires_at)
+    assert stored is not None  # NOT NULL column
+    return stored <= now
+
+
 def _destroy_verifier(row: InvitationRow) -> None:
     """Null all five verifier columns together.
 
@@ -150,16 +162,37 @@ class SqlInvitationStore:
                 return False
         return True
 
-    def get_invitation(self, invitation_id: str) -> Invitation | None:
-        """Read one invitation without changing it.
+    def get_invitation(self, invitation_id: str, *, now: datetime) -> Invitation | None:
+        """Read one invitation, destroying its verifier first if the horizon has passed.
 
-        **Not the redemption path.** A redeemer goes through `find_for_redemption`, which destroys
-        an expired verifier before returning. This exists for `R4-04`'s revocation and for tests,
-        where a read that mutates would make every assertion about stored bytes ambiguous.
+        **Every read is expiry-aware, and an earlier version of this store had only one that was.**
+        That version documented this method as deliberately non-destroying, so `R4-04`'s revocation
+        path and the tests could observe stored bytes unambiguously. Review on `#217` traced where
+        that leads: a revocation attempted *after* expiry reads the verifier here, then
+        `Invitation.revoked` refuses because the invitation has expired, so nothing saves and
+        nothing destroys. With no scheduled sweeper -- see `invitation_retention.py` -- those bytes
+        survive indefinitely, which `KHEPRI-DEC-015` §5 forbids in exactly the terms it uses:
+        "every day it survives is unjustified risk".
+
+        Test convenience was the wrong thing to weigh against that. A test needing to observe an
+        undestroyed verifier reads the row, not the record.
         """
-        with self._factory() as database:
+        return self._read_destroying_expired(invitation_id, now=now)
+
+    def _read_destroying_expired(self, invitation_id: str, *, now: datetime) -> Invitation | None:
+        """The one read shape: load, destroy if expired, return.
+
+        Both public single-row reads route through this rather than each implementing the rule,
+        because a second implementation is how one of them ends up not destroying -- which is the
+        defect `#217` found.
+        """
+        with self._factory.begin() as database:
             row = database.get(InvitationRow, invitation_id)
-            return None if row is None else _invitation_from_row(row)
+            if row is None:
+                return None
+            if _expired(row, now):
+                _destroy_verifier(row)
+            return _invitation_from_row(row)
 
     def find_for_redemption(self, invitation_id: str, *, now: datetime) -> Invitation | None:
         """Read an invitation, destroying its verifier first if the horizon has passed.
@@ -173,17 +206,12 @@ class SqlInvitationStore:
         secret against a verifier this call has just destroyed. Refusing is still the caller's job:
         `FR-017`'s uniform failure and its timing discipline are `R4-05`'s, and a store that raised
         here would put one rule in two places.
+
+        Identical to `get_invitation` since `#217` made every read expiry-aware. Both names are
+        kept because they carry different obligations for their callers: a redeemer must not treat a
+        `None` verifier as a reason to raise, and `R4-04`'s revoker must.
         """
-        with self._factory.begin() as database:
-            row = database.get(InvitationRow, invitation_id)
-            if row is None:
-                return None
-            stored_expiry = _utc(row.expires_at)
-            assert stored_expiry is not None
-            if stored_expiry <= now:
-                _destroy_verifier(row)
-                database.flush()
-            return _invitation_from_row(row)
+        return self._read_destroying_expired(invitation_id, now=now)
 
     def save_invitation(self, invitation: Invitation) -> bool:
         """Persist a state change. Returns False if the row has gone.
@@ -216,19 +244,32 @@ class SqlInvitationStore:
                 row.kdf_p = verifier.kdf.p
         return True
 
-    def invitations_for_organization(self, organization_id: str) -> tuple[Invitation, ...]:
+    def invitations_for_organization(
+        self, organization_id: str, *, now: datetime
+    ) -> tuple[Invitation, ...]:
         """Every invitation an organization holds, in issuance order.
 
         Scoped by `organization_id` rather than returning all rows: `R4-01` §4.1 requires revocation
         be scoped by `(organization_id, invitation_id)` and never by identifier alone, and a listing
         that crossed organizations would be the enumeration oracle `FR-023` forbids.
+
+        **Expiry-aware like the single-row reads** (`#217`). A listing is the path `R8-05`'s team
+        screen will use, so it is the read most likely to touch a stale invitation nobody has
+        presented -- the exact row the sweeper cannot reach without a schedule.
         """
-        with self._factory() as database:
+        with self._factory.begin() as database:
             rows = database.scalars(
                 select(InvitationRow)
                 .where(InvitationRow.organization_id == organization_id)
                 .order_by(InvitationRow.issued_at, InvitationRow.invitation_id)
             ).all()
+            for row in rows:
+                if _expired(row, now):
+                    _destroy_verifier(row)
+            # No explicit flush. `factory.begin()` commits on exit, which flushes the pending
+            # updates -- verified by removing the flush and reading the row directly, which showed
+            # the columns already NULL. A `touched` flag guarding a redundant flush read as
+            # load-bearing while a mutant proved it was not, so it is gone rather than kept.
             return tuple(_invitation_from_row(row) for row in rows)
 
     def _purge_spent_invitations(self, horizon: datetime, *, now: datetime) -> int:
