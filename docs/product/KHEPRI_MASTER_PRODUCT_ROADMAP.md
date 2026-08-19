@@ -649,16 +649,34 @@ What actually happened:
    ORM change. No bridge service and no entry-point implementation are authorized here."
 3. `R7-02` therefore delivers the migration (`20260817_0017`) and stops there.
 
-**`R7-07` is appended for the bridge itself**, and it is blocked on governance rather than on code:
-`KHEPRI-DEC-020` §1 re-enacts the *admitted shape*, so the design is settled, but §3 withholds
-authorization for the code. Lifting that needs a successor record, which is the owner's to make.
+**`R7-07` is appended for the bridge itself.** It was blocked on governance rather than on code —
+`KHEPRI-DEC-020` §1 re-enacted the *admitted shape*, so the design was settled, but §3 withheld
+authorization for the code. **`KHEPRI-DEC-021` lifts exactly that bullet** and is the governing
+record for the slice.
 
-One note for whoever writes `R7-07`. `test_rca001_boundary.py` asserts the **RRA→RCA** import
-direction only (`test_no_rra_module_imports_rca`); `STATUS.md`'s `FR-036` row already records that
-no test asserts RCA→RRA. So the bridge's "no `rra_` import inside `src/khepri/rca/`" discipline rests
-on prose, not on a guard, and `isolation.py:7-8`'s `TYPE_CHECKING` pattern is the existing idiom for
-needing an RRA type without importing it at runtime. Adding the missing direction to the boundary
-test belongs in `R7-07`.
+`KHEPRI-DEC-021` settles three things this disposition previously left open, and they change what
+`R7-07` builds:
+
+1. **The bridge lives in `khepri.local`**, per its §3, resolving a conflict between `R7-01` §3
+   (which recommended it) and the paragraph this one replaces (which presumed an RCA-side bridge).
+   `wiring.py` already imports both packages, so the bridge needs no new import direction at all.
+2. **The scope is four parts, not one.** `rra/sessions.py` has no invitation-free session insert —
+   `BetaSessionRow` is written only inside `redeem_invitation` — so the entry point admitted by
+   `KHEPRI-DEC-019` §2 had nowhere to persist. `KHEPRI-DEC-021` §2 authorizes the entry point, an
+   additive `SessionStore` Protocol method with its `SqlSessionStore` implementation, a resume
+   lookup by `owner_id`, and the bridge.
+3. **The boundary assertion is a flat prohibition, not an allowlist**, which follows from (1).
+
+The note this paragraph replaces said the bridge's discipline was "no `rra_` import inside
+`src/khepri/rca/`". That framing is superseded by `KHEPRI-DEC-021` §3: with the bridge in
+`khepri.local`, `khepri.rca` imports **no** `khepri.rra` module at all, mirroring the existing
+prohibition rather than carving an exception from it. What remains correct is the *gap* it named:
+`test_rca001_boundary.py` asserts the **RRA→RCA** direction only
+(`test_no_rra_module_imports_rca`), `STATUS.md`'s `FR-036` row records that no test asserts
+RCA→RRA, and adding the missing direction belongs in `R7-07`.
+`find_rca_import_offenses(source, package)` is already parameterised on `package`, so the mirror is
+small. `isolation.py:3-8`'s `TYPE_CHECKING` pattern remains the idiom for needing a type without a
+runtime import, though a `khepri.local` bridge should not need it.
 
 ## Non-goals
 
@@ -1457,7 +1475,7 @@ bounded to programs still in flight.
 | R4 Invitations | READY_FOR_IMPLEMENTATION | `R4-01` design merged (#209) and **`R4-02` merged at `d50ffe6` (#215)** — `src/khepri/rca/invitations.py` carries the sealed `Invitation`, the `InvitationSecret` carrier, the `kci1.` token, and scrypt at RRA's parameters. **`R4-03` is the only task that can start**: `R4-04`'s own row depends on it for the store and schema its issuance service writes through, so the parallel column's "R5 recovery design" applies only once `R4-03` has merged. An earlier version of this row said `R4-04` may proceed in parallel, contradicting the task table above — found in review on `#214`. **`R4-05` is blocked only on `R4-06`**, reordered before it because the purge cascade must precede redemption. The two owner decisions it also waited on were answered 2026-08-18 — `R4-01` §8.2 accepts the issuance-versus-purge residual, and §8.5 reads `FR-019` as the last check. Three obligations `R4-02` leaves to `R4-03`: the `CHECK` keeping the five verifier columns NULL together, the `intended_role` `CHECK`, and the sweeper as the backstop for rows nobody presents (`verifier_destroyed()` already covers the touch-based half). Migration head is `20260817_0017`. **The §16 note's own instruction applies here**: `R4-02` should have updated this row in its own PR, and did not — the next thing to read the table caught it (#214) |
 | R5 Recovery | READY_FOR_PLAN | R5-01 design may proceed alongside R3 design; implementation depends on R3 session revocation |
 | R6 Canonical authorization | MERGED | All eight tasks `R6-01`…`R6-08` are merged: PRs `#192`…`#200`. Delivers `authorization.py` (the single door), `switching.py` (`R6-03`), `authorization_resolution.py` (the canonical resolver), and four evidence suites — `test_rca001_authorization_matrix.py`, `test_rca001_cross_organization.py`, `test_rca001_stale_session_authorization.py`, `test_rca001_resolver_chokepoint.py`. **This is what unblocks R7.** Read `STATUS.md` before building on it: `R6-01` §3.2 is uncovered and needs an `R6-02` change (self-versus-another-account has no target in `AuthorizationContext`); the three owner-only verbs check no authority of their own, so the gate is the authorized route but not a proven-exclusive one; and `R6-08`'s tripwire guards an empty room until a production consumer exists |
-| R7 Commercial RRA bridge | BLOCKED | R6 is merged, so that dependency is met. `R7-01` (`#201`), `R7-02` (`#203` finding + `#205` migration `20260817_0017`) and `R7-04` (`#207`) are merged. **`R7-02` shipped as the migration only** — `KHEPRI-DEC-020` §3 authorized "the migration and its ORM change" and explicitly withheld the bridge service; see the task disposition under Program R7. Every remaining task is blocked, which is what keeps the program `BLOCKED`: **`R7-07`** on governance (§1 re-enacts the admitted shape, so the design is settled, but lifting §3 needs a successor record, which is the owner's to make), and **`R7-03`, `R7-05`, `R7-06`** on `R7-02`'s unbuilt bridge portion. `R7-03` tests the resume path and needs that persistence: its `Depends on: R3, R6` row **understates the dependency**, and `KHEPRI-DEC-020`'s Consequences plus `R7-01` §4 govern instead of the table |
+| R7 Commercial RRA bridge | BLOCKED | R6 is merged, so that dependency is met. `R7-01` (`#201`), `R7-02` (`#203` finding + `#205` migration `20260817_0017`) and `R7-04` (`#207`) are merged. **`R7-02` shipped as the migration only** — `KHEPRI-DEC-020` §3 authorized "the migration and its ORM change" and explicitly withheld the bridge service. **A successor, `KHEPRI-DEC-021`, is proposed to lift that bullet** and additionally authorizes the store path the entry point needs, pins the bridge to `khepri.local`, and makes the RCA→RRA boundary a flat prohibition — see the task disposition under Program R7. **It is a proposal until the owner merges it** (`AGENTS.md`), so `R7-07` remains blocked and this row stays `BLOCKED` under §15. `R7-03`, `R7-05` and `R7-06` then depend on `R7-07` rather than on `R7-02`: `R7-03` tests the resume path and needs the persistence `R7-07` adds, so its `Depends on: R3, R6` row **understates the dependency** and `R7-01` §4 with `KHEPRI-DEC-021` governs instead of the table |
 | R8 Commercial shell | READY_FOR_PLAN | Design may proceed; implementation depends on R3/R4/R6/R7 |
 | OPS1 Production operations | READY_FOR_PLAN | `KHEPRI-DEC-008` is active and leaves target selection open by design; spend is an owner decision; deployment waits for R1 |
 | S1 RRA hardening | READY_FOR_PLAN | Triage only may begin in parallel |
