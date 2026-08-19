@@ -34,6 +34,7 @@ from khepri.rca.invitations import (
 from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import InvitationRow, SqlAccountStore, SqlOrganizationStore
+from tests.rca_fakes import MemoryInvitationStore
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     factory_fixture,
 )
@@ -203,6 +204,58 @@ def test_listing_is_scoped_to_one_organization(factory: sessionmaker) -> None:
     assert [invitation.invitation_id for invitation in held] == [first.invitation_id]
     listed = store.invitations_for_organization(second_org, now=NOW)
     assert listed[0].invitation_id == other.invitation_id
+
+
+def test_listing_one_organization_leaves_another_organizations_verifier_alone(
+    factory: sessionmaker,
+) -> None:
+    """**Found in review on #217**, as a divergence between the fake and the SQL store.
+
+    `MemoryInvitationStore.invitations_for_organization` destroyed expired verifiers for *every*
+    stored invitation before filtering, so listing organization A also destroyed B's. The SQL store
+    filters in the `SELECT` and touches only rows it returns, so a fake-backed test could observe B
+    as unverifiable where production leaves it alone.
+
+    Both implementations are exercised, because the claim is that they *agree*. The
+    signature-parity test cannot see this: the two agreed on shape and disagreed on effect. The two
+    branches build their fixtures differently because the difference is real -- the SQL store's
+    `RESTRICT` foreign key needs organization rows and the fake does not -- and hiding that behind a
+    helper would obscure more than it saved.
+    """
+    expired = NOW - timedelta(hours=1)
+
+    sql = SqlInvitationStore(factory)
+    first_org, first_actor = _organization(factory)
+    second_org, second_actor = _organization(factory)
+    first = Invitation.create(
+        _offer(first_org, first_actor), secret=issue_secret(), expires_at=expired, issued_at=ISSUED
+    )
+    second = Invitation.create(
+        _offer(second_org, second_actor),
+        secret=issue_secret(),
+        expires_at=expired,
+        issued_at=ISSUED,
+    )
+    assert sql.add_invitation(first)
+    assert sql.add_invitation(second)
+
+    fake = MemoryInvitationStore()
+    assert fake.add_invitation(first)
+    assert fake.add_invitation(second)
+
+    for store in (sql, fake):
+        listed = store.invitations_for_organization(first_org, now=NOW)
+
+        assert [held.verifier for held in listed] == [None], (
+            f"{type(store).__name__}: the listed organization's expired verifier survived"
+        )
+        # Read the other organization's row *before* its own expiry, so the read itself cannot be
+        # what destroys it -- otherwise this assertion could not distinguish the two behaviours.
+        untouched = store.get_invitation(second.invitation_id, now=ISSUED)
+        assert untouched is not None
+        assert untouched.verifier is not None, (
+            f"{type(store).__name__}: listing one organization destroyed another's verifier"
+        )
 
 
 # --- the four CHECK constraints ---------------------------------------------------------------

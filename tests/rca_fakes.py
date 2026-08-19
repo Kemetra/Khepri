@@ -329,13 +329,24 @@ class MemoryInvitationStore:
     def invitations_for_organization(
         self, organization_id: str, *, now: datetime
     ) -> tuple[Invitation, ...]:
-        for invitation_id in list(self.invitations):
-            self._read_destroying_expired(invitation_id, now=now)
-        held = [
-            invitation
-            for invitation in self.invitations.values()
+        """The organization's invitations, destroying expired verifiers **within that scope only**.
+
+        The filter comes first, and an earlier version had it second. That version called
+        `_read_destroying_expired` for every stored identifier, so listing organization A destroyed
+        B's expired verifier too -- while `SqlInvitationStore` filters by `organization_id` in the
+        `SELECT` and only touches rows it returns. A later fake-backed test could then observe B as
+        unverifiable where production would have left it alone. Found in review on `#217`, and it is
+        exactly the divergence class the signature-parity test exists to catch: the two
+        implementations agreed on shape and disagreed on effect.
+        """
+        scoped = [
+            invitation_id
+            for invitation_id, invitation in self.invitations.items()
             if invitation.organization_id == organization_id
         ]
+        for invitation_id in scoped:
+            self._read_destroying_expired(invitation_id, now=now)
+        held = [self.invitations[invitation_id] for invitation_id in scoped]
         held.sort(key=lambda invitation: (invitation.issued_at, invitation.invitation_id))
         return tuple(held)
 
