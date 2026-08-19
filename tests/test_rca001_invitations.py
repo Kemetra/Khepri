@@ -15,7 +15,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from khepri.rca.credentials import KDF_DKLEN, SALT_BYTES, Verifier, hash_credential
+from khepri.rca.authorization import AuthorizationContext
+from khepri.rca.credentials import KDF_DKLEN, SALT_BYTES, KdfParams, Verifier, hash_credential
 from khepri.rca.invitations import (
     INVITATION_ID_PREFIX,
     INVITATION_KDF,
@@ -23,6 +24,7 @@ from khepri.rca.invitations import (
     Invitation,
     InvitationLifecycle,
     InvitationOffer,
+    InvitationSecret,
     StoredInvitationSecret,
     issue_secret,
     parse_token,
@@ -114,6 +116,30 @@ def test_the_secret_is_returned_once_and_is_not_reachable_from_the_record() -> N
         secret.secret == getattr(invitation, field, None) for field in Invitation.__slots__
     )
     assert "secret" not in Invitation.__slots__
+
+
+def test_a_hand_built_verifier_at_a_weak_work_factor_cannot_create_an_invitation() -> None:
+    """**Found in review on #215.** `Verifier._from_storage` preserves any stored KDF parameters --
+    it must, since they exist so the factor can be raised without invalidating existing rows -- so a
+    caller can build a `Verifier` at `n=2` and hand it to the creation door. `FR-016` requires the
+    secret be persisted as a *strong* salted hash, and a caller-chosen work factor is not that.
+
+    Reconstruction stays permissive and creation does not, which is the two-door asymmetry applied
+    to the material rather than to the record. The practical effect is that `issue_secret` is the
+    only way to obtain a verifier a new invitation will accept.
+    """
+    weak = Verifier._from_storage(
+        salt=b"x" * SALT_BYTES, digest=b"not-a-real-digest".ljust(KDF_DKLEN, b"0"),
+        kdf=KdfParams(n=2, r=1, p=1),
+    )
+
+    with pytest.raises(ValueError):
+        Invitation.create(
+            _offer(),
+            secret=InvitationSecret(invitation_id="inv_x", secret="irrelevant", verifier=weak),
+            expires_at=LATER,
+            issued_at=NOW,
+        )
 
 
 # --- token format (section 4) ---------------------------------------------------------------
@@ -240,12 +266,52 @@ def test_the_expired_verifier_is_destroyable_without_a_state_change() -> None:
     one fact."""
     expired = _open(expires_at=NOW)
 
-    touched = expired.verifier_destroyed()
+    touched = expired.verifier_destroyed(at=NOW)
 
     assert touched.verifier is None
     assert touched.redeemed_at is None
     assert touched.revoked_at is None
     assert touched.expires_at == expired.expires_at
+
+
+def test_destroying_a_live_invitations_verifier_is_refused() -> None:
+    """**Found in review on #215.** Destroying the verifier of an unexpired invitation leaves both
+    terminal timestamps unset, so `is_open_at` keeps reporting it open while it can never be
+    redeemed -- a state the four-state table does not contain. `R4-03`'s sweeper is the caller that
+    matters, and one passing the wrong horizon would otherwise brick live invitations silently."""
+    live = _open()
+
+    with pytest.raises(ValueError):
+        live.verifier_destroyed(at=NOW)
+
+    assert live.is_open_at(NOW)
+    assert live.verifier is not None
+
+
+def test_destroying_an_already_destroyed_verifier_is_accepted_at_any_moment() -> None:
+    """The early return applies before the expiry check: a redeemed or revoked invitation has no
+    verifier left to destroy, so the sweeper need not care whether it also expired."""
+    redeemed = _open().redeemed(at=NOW)
+
+    assert redeemed.verifier_destroyed(at=NOW) is redeemed
+
+
+@pytest.mark.parametrize("operation", ["redeemed", "revoked"])
+def test_a_terminal_transition_is_refused_on_an_expired_invitation(operation: str) -> None:
+    """**Found in review on #215.** `_require_open` checked only the two timestamps, so
+    `redeemed(at=...)` on an invitation past its horizon produced a redeemed record -- a redemption
+    of an expired invitation, expressed in the domain.
+
+    Its docstring had excluded expiry because it "depends on a moment, and these operations take the
+    moment of the write rather than a separate clock". Both callers already receive that moment, so
+    the reasoning was false. This is not `FR-017`'s refusal, which needs the uniform failure and the
+    dummy work on `R4-05`'s service path; it is the narrower claim that the record cannot represent
+    a state its own table excludes.
+    """
+    expired = _open(expires_at=NOW)
+
+    with pytest.raises(ValueError):
+        getattr(expired, operation)(at=NOW)
 
 
 def test_a_state_change_is_refused_once_the_invitation_is_no_longer_open() -> None:
@@ -423,6 +489,140 @@ def test_reconstruction_accepts_a_role_the_creation_door_refuses() -> None:
     )
 
     assert restored.intended_role == "legacy"
+
+
+def test_no_caller_code_runs_while_the_construction_door_is_open() -> None:
+    """**A real vulnerability this slice introduced and then closed. Found in review on #215.**
+
+    Grouping `create`'s parameters into `InvitationOffer` turned plain locals into attribute reads,
+    and the reads sat *inside* `with through_door():`. `records.py` enumerates "caller code running
+    inside an open door" as one of four bypasses it closed, and an attribute read is caller code: an
+    offer subclass overriding `__getattribute__` runs arbitrary code while the capability is live.
+
+    Verified before the fix: the block below constructed an `AuthorizationContext` with
+    `account_id`, `organization_id` and `role` all set to a chosen value, and `assert_sealed`
+    accepted it -- the `R6` authorization door defeated through an invitation parameter object. The
+    flat signature it replaced had no such window, so the refactor caused this.
+
+    The fix is that every caller-owned field is snapshotted into a local before the door opens, so
+    the door's body is one constructor call. This test is what keeps that true: the defect returns
+    the moment someone moves an attribute read back inside, and no static scan in
+    `test_rca001_resolver_chokepoint.py` looks for that shape.
+    """
+    # Every read is attempted, not just the first. An earlier version of this test guarded with
+    # `and not forged` and then asserted on `attempts[0]`, which is the read that happens *outside*
+    # the door -- so it passed against a form that read one field inside it. The property is that no
+    # read at any point succeeds, so the assertion has to be over all of them.
+    attempts: list[object] = []
+
+    class Hostile(InvitationOffer):
+        def __getattribute__(self, name: str) -> object:
+            if name in {"organization_id", "intended_role", "target_identity", "issued_by"}:
+                try:
+                    attempts.append(
+                        AuthorizationContext(
+                            **dict.fromkeys(AuthorizationContext.__dataclass_fields__, "FORGED")
+                        )
+                    )
+                except TypeError as refusal:
+                    attempts.append(refusal)
+            return object.__getattribute__(self, name)
+
+    hostile = Hostile.__new__(Hostile)
+    for field, value in (
+        ("organization_id", ORG),
+        ("intended_role", MEMBER_ROLE),
+        ("target_identity", TARGET),
+        ("issued_by", ACTOR),
+    ):
+        object.__setattr__(hostile, field, value)
+
+    invitation = Invitation.create(
+        hostile, secret=issue_secret(), expires_at=LATER, issued_at=NOW
+    )
+
+    assert invitation.organization_id == ORG
+    assert attempts, "the hostile offer never ran, so this test proves nothing about the door"
+    succeeded = [a for a in attempts if not isinstance(a, TypeError)]
+    assert not succeeded, (
+        f"{len(succeeded)} of {len(attempts)} reads constructed a sealed record from inside the "
+        f"door: {succeeded[0]!r}"
+    )
+
+
+def test_the_reconstruction_door_is_closed_to_caller_code_too() -> None:
+    """The same window, on the door `R4-03`'s store will call.
+
+    `_from_storage` receives values that came from the database, but the *carriers* are still
+    caller-constructed objects, so the `__getattribute__` window is identical -- and this door
+    validates nothing by design, which makes it the more attractive of the two. Asserted separately
+    because the `create` test above passes unchanged when only this door reads inside itself.
+    """
+    attempts: list[object] = []
+
+    class Hostile(InvitationLifecycle):
+        def __getattribute__(self, name: str) -> object:
+            if name in {"redeemed_at", "revoked_at"}:
+                try:
+                    attempts.append(
+                        AuthorizationContext(
+                            **dict.fromkeys(AuthorizationContext.__dataclass_fields__, "FORGED")
+                        )
+                    )
+                except TypeError as refusal:
+                    attempts.append(refusal)
+            return object.__getattribute__(self, name)
+
+    hostile = Hostile.__new__(Hostile)
+    object.__setattr__(hostile, "redeemed_at", None)
+    object.__setattr__(hostile, "revoked_at", None)
+
+    restored = Invitation._from_storage(
+        _offer(),
+        StoredInvitationSecret(
+            invitation_id=INVITATION_ID_PREFIX + "x", verifier=None, expires_at=LATER
+        ),
+        issued_at=NOW,
+        lifecycle=hostile,
+    )
+
+    assert restored.redeemed_at is None
+    assert attempts, "the hostile lifecycle never ran, so this test proves nothing"
+    succeeded = [a for a in attempts if not isinstance(a, TypeError)]
+    assert not succeeded, (
+        f"a sealed record was built from inside the reconstruction door: {succeeded[0]!r}"
+    )
+
+
+def test_a_hostile_offer_cannot_change_the_role_between_check_and_use() -> None:
+    """The check-versus-use half of the same finding. A `__getattribute__` that returned a declared
+    role to the validation and an undeclared one to the constructor would put `"superadmin"` in a
+    sealed record past a guard that had just approved `"member"`. Snapshotting reads the field once,
+    so the value validated is the value stored."""
+    reads: list[str] = []
+
+    class TwoFaced(InvitationOffer):
+        def __getattribute__(self, name: str) -> object:
+            if name == "intended_role":
+                reads.append(name)
+                return MEMBER_ROLE if len(reads) == 1 else "superadmin"
+            return object.__getattribute__(self, name)
+
+    two_faced = TwoFaced.__new__(TwoFaced)
+    for field, value in (
+        ("organization_id", ORG),
+        ("intended_role", MEMBER_ROLE),
+        ("target_identity", TARGET),
+        ("issued_by", ACTOR),
+    ):
+        object.__setattr__(two_faced, field, value)
+
+    invitation = Invitation.create(
+        two_faced, secret=issue_secret(), expires_at=LATER, issued_at=NOW
+    )
+
+    assert len(reads) == 1, f"the role was read {len(reads)} times, so check and use can diverge"
+    assert invitation.intended_role == MEMBER_ROLE
 
 
 def test_the_target_identity_is_not_named_email() -> None:

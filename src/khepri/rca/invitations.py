@@ -30,7 +30,7 @@ from datetime import datetime
 
 from khepri.rca.credentials import SALT_BYTES, KdfParams, Verifier, hash_credential
 from khepri.rca.organizations import ROLES
-from khepri.rca.records import Sealed, register_sealed, through_door
+from khepri.rca.records import Sealed, assert_sealed, register_sealed, through_door
 
 #: `kci1.<invitation_id>.<secret>`, mirroring RRA's `kiv1.` with a distinct prefix so a beta token
 #: and a commercial token can never be confused at a boundary that accepts both. `R3-01` section
@@ -300,19 +300,44 @@ class Invitation(Sealed):
         `expires_at` is required and has no default: `FR-016` requires an explicit expiry and does
         not fix a lifetime, so baking one in would put a product decision in the domain.
         """
-        if offer.intended_role not in ROLES:
+        # Every caller-owned field is read into a local **before** the door opens, so the door's
+        # body contains one constructor call and no attribute access. `records.py` enumerates
+        # "caller code running inside an open door" as one of four bypasses it closed, and an
+        # attribute read is caller code: an `InvitationOffer` subclass overriding `__getattribute__`
+        # runs arbitrary code while the capability is live, and a forged `AuthorizationContext`
+        # built there passes `assert_sealed`. Reproduced against the flat-read form this replaces.
+        # Snapshotting also removes a check-versus-use gap: a `__getattribute__` returning a valid
+        # role to the validation below and a different one to the constructor.
+        organization_id = str(offer.organization_id)
+        intended_role = str(offer.intended_role)
+        target_identity = str(offer.target_identity)
+        issued_by = str(offer.issued_by)
+        verifier = secret.verifier
+        invitation_id = str(secret.invitation_id)
+        if intended_role not in ROLES:
+            raise ValueError(f"unknown role {intended_role!r}; an invitation may name only {ROLES}")
+        assert_sealed(verifier)
+        # A *new* invitation must carry the current work factor. `Verifier._from_storage` preserves
+        # any stored parameters -- it must, since they exist so the factor can be raised without
+        # invalidating existing rows -- so a caller can hand-build a `Verifier` at `n=2` and reach
+        # this door with it. Reconstruction stays permissive and creation does not: the same
+        # two-door asymmetry `records.py` applies to records, applied to the material they carry.
+        # `FR-016` requires the secret be persisted as a *strong* salted hash, and a work factor
+        # chosen by the caller is not that. Found in review on `#215`.
+        if verifier.kdf != INVITATION_KDF:
             raise ValueError(
-                f"unknown role {offer.intended_role!r}; an invitation may name only {ROLES}"
+                f"a new invitation must use the current work factor {INVITATION_KDF}, not "
+                f"{verifier.kdf}; obtain the verifier from issue_secret rather than building one"
             )
         with through_door():
             return Invitation(
-                organization_id=offer.organization_id,
-                intended_role=offer.intended_role,
-                target_identity=offer.target_identity,
-                verifier=secret.verifier,
-                invitation_id=secret.invitation_id,
+                organization_id=organization_id,
+                intended_role=intended_role,
+                target_identity=target_identity,
+                verifier=verifier,
+                invitation_id=invitation_id,
                 expires_at=expires_at,
-                issued_by=offer.issued_by,
+                issued_by=issued_by,
                 issued_at=issued_at,
                 redeemed_at=None,
                 revoked_at=None,
@@ -341,18 +366,37 @@ class Invitation(Sealed):
         the reader the thing that breaks, and the forgery this prevents is closed at the creation
         door and at the constraint.
         """
+        # Snapshotted before the door for the same reason as `create` -- see the comment there.
+        # This door is reached from `persistence` with values that came from the database, but the
+        # *carriers* are still caller-constructed objects, so the `__getattribute__` window is
+        # identical. No validation happens here by design; the snapshot is about what may run
+        # while the capability is live, not about what the values are.
+        fields = (
+            str(offer.organization_id),
+            str(offer.intended_role),
+            str(offer.target_identity),
+            str(offer.issued_by),
+        )
+        verifier = stored.verifier
+        invitation_id = str(stored.invitation_id)
+        expires_at = stored.expires_at
+        redeemed_at = lifecycle.redeemed_at
+        revoked_at = lifecycle.revoked_at
+        if verifier is not None:
+            assert_sealed(verifier)
+        organization_id, intended_role, target_identity, issued_by = fields
         with through_door():
             return Invitation(
-                organization_id=offer.organization_id,
-                intended_role=offer.intended_role,
-                target_identity=offer.target_identity,
-                verifier=stored.verifier,
-                invitation_id=stored.invitation_id,
-                expires_at=stored.expires_at,
-                issued_by=offer.issued_by,
+                organization_id=organization_id,
+                intended_role=intended_role,
+                target_identity=target_identity,
+                verifier=verifier,
+                invitation_id=invitation_id,
+                expires_at=expires_at,
+                issued_by=issued_by,
                 issued_at=issued_at,
-                redeemed_at=lifecycle.redeemed_at,
-                revoked_at=lifecycle.revoked_at,
+                redeemed_at=redeemed_at,
+                revoked_at=revoked_at,
             )
 
     def is_expired_at(self, moment: datetime) -> bool:
@@ -391,7 +435,7 @@ class Invitation(Sealed):
         claim about bytes and not only about authority: a redeemed invitation whose verifier
         survived is one whose secret still verifies.
         """
-        self._require_open()
+        self._require_open(at)
         return self._replacing(redeemed_at=at, revoked_at=None)
 
     def revoked(self, *, at: datetime) -> Invitation:
@@ -401,10 +445,10 @@ class Invitation(Sealed):
         identifier alone -- that is `R4-04`'s obligation, and this record carries the organization
         so the scoped form is expressible.
         """
-        self._require_open()
+        self._require_open(at)
         return self._replacing(redeemed_at=None, revoked_at=at)
 
-    def verifier_destroyed(self) -> Invitation:
+    def verifier_destroyed(self, *, at: datetime) -> Invitation:
         """Destroy the verifier and change nothing else -- the expiry case.
 
         **Expiry is not a write**: it is `expires_at <= now`, a derived state with no column and no
@@ -416,23 +460,50 @@ class Invitation(Sealed):
 
         No timestamp is set. Giving expiry a column would put two fields on one fact, and the state
         table above reads it off `expires_at` alone.
+
+        **The moment is required and expiry is verified, which an earlier version did not do.**
+        Without it, a caller could destroy the verifier of a *live* invitation, leaving both
+        terminal timestamps unset: `is_open_at` would keep reporting it open while it could never
+        be redeemed, a state the table above does not contain. `R4-03`'s sweeper is the caller
+        that matters here, and one passing the wrong horizon would otherwise brick live
+        invitations silently.
+        Found in review on `#215`.
+
+        A redeemed or revoked invitation is accepted whatever the moment: its verifier is already
+        `None`, so the early return applies and there is nothing left to destroy.
         """
         if self.verifier is None:
             return self
+        if not self.is_expired_at(at):
+            raise ValueError(
+                "this invitation has not expired; destroying its verifier would leave it open "
+                "and unredeemable"
+            )
         return self._replacing(redeemed_at=self.redeemed_at, revoked_at=self.revoked_at)
 
-    def _require_open(self) -> None:
-        """Refuse a second terminal transition.
+    def _require_open(self, at: datetime) -> None:
+        """Refuse a transition out of any state that is not open.
 
         Not the at-most-once guarantee -- that is the database's, per section 6.2 -- but a caller
-        should not be able to express the contradiction in memory either. Expiry is deliberately
-        not checked here: it depends on a moment, and these operations take the moment of the write
-        rather than a separate clock.
+        should not be able to express a state the table above forbids.
+
+        **Expiry is checked here, reversing this method's own earlier reasoning.** It previously
+        excluded expiry on the grounds that expiry "depends on a moment, and these operations take
+        the moment of the write rather than a separate clock". Both callers already receive that
+        moment, so the argument was false: `redeemed(at=...)` on an invitation whose horizon had
+        passed produced a redeemed record, which is a redemption of an expired invitation expressed
+        in the domain. Found in review on `#215`.
+
+        This is not `FR-017`'s refusal -- that lives on `R4-05`'s service path with the uniform
+        failure and the dummy work, and a domain check cannot supply timing uniformity. It is the
+        narrower claim that the record cannot represent a state its own table excludes.
         """
         if self.redeemed_at is not None:
             raise ValueError("this invitation is already redeemed")
         if self.revoked_at is not None:
             raise ValueError("this invitation is already revoked")
+        if self.is_expired_at(at):
+            raise ValueError("this invitation has expired")
 
     def _replacing(
         self, *, redeemed_at: datetime | None, revoked_at: datetime | None
