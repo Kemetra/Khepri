@@ -21,6 +21,9 @@ from khepri.rca.invitations import (
     INVITATION_KDF,
     TOKEN_PREFIX,
     Invitation,
+    InvitationLifecycle,
+    InvitationOffer,
+    StoredInvitationSecret,
     issue_secret,
     parse_token,
     verify_secret,
@@ -34,17 +37,15 @@ NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
 LATER = NOW + timedelta(days=7)
 
 
+def _offer(role: str = MEMBER_ROLE) -> InvitationOffer:
+    return InvitationOffer(
+        organization_id=ORG, intended_role=role, target_identity=TARGET, issued_by=ACTOR
+    )
+
+
 def _open(*, role: str = MEMBER_ROLE, expires_at: datetime = LATER) -> Invitation:
-    secret = issue_secret()
     return Invitation.create(
-        organization_id=ORG,
-        intended_role=role,
-        target_identity=TARGET,
-        verifier=secret.verifier,
-        invitation_id=secret.invitation_id,
-        expires_at=expires_at,
-        issued_by=ACTOR,
-        issued_at=NOW,
+        _offer(role), secret=issue_secret(), expires_at=expires_at, issued_at=NOW
     )
 
 
@@ -308,31 +309,35 @@ def test_the_role_forgery_guard_can_see_the_invitation_surface() -> None:
     is not written yet -- the scan is extended here to the surface that now takes a role. Every
     such parameter must be validated against `ROLES` before reaching a record.
     """
-    # `inspect.isroutine`, not `isfunction`: the two doors are `classmethod`s, and a bound
-    # classmethod accessed off the class is not a function. Written with `isfunction` first, which
-    # made this scan inspect nothing at all and pass -- caught only by the emptiness assertion
-    # below, which is why that assertion is here rather than assumed.
+    # The scan looks for `intended_role` wherever it is *declared*, not on a fixed class, because
+    # this scan has already lost its target twice in one slice: once written with
+    # `inspect.isfunction`, which does not see a `classmethod` accessed off the class, and once when
+    # the field moved from `create`'s parameter list onto `InvitationOffer`. Both times every
+    # assertion below it still passed, and only the emptiness check caught it -- which is the whole
+    # argument for keeping that check.
     role_takers = {
-        name: str(inspect.signature(member))
-        for name, member in inspect.getmembers(Invitation, inspect.isroutine)
-        if not name.startswith("__") and "intended_role" in inspect.signature(member).parameters
+        name: hint
+        for name, hint in (
+            *((f"InvitationOffer.{f}", f) for f in InvitationOffer.__annotations__),
+            *(
+                (f"Invitation.{n}", p)
+                for n, m in inspect.getmembers(Invitation, inspect.isroutine)
+                if not n.startswith("__")
+                for p in inspect.signature(m).parameters
+            ),
+        )
+        if hint == "intended_role"
     }
 
     assert role_takers, (
-        "no invitation operation takes a role, so this guard is scanning the wrong surface -- "
-        "the field was renamed or moved and the check silently stopped applying"
+        "nothing in the invitation surface names a role, so this guard is scanning the wrong "
+        "place -- the field was renamed or moved and the check silently stopped applying"
     )
-    assert "create" in role_takers, f"the creation door is not in scope: {sorted(role_takers)}"
+
+    # Whatever declares it, the creation door is what must refuse an undeclared value.
     with pytest.raises(ValueError):
         Invitation.create(
-            organization_id=ORG,
-            intended_role="superadmin",
-            target_identity=TARGET,
-            verifier=None,
-            invitation_id=INVITATION_ID_PREFIX + "x",
-            expires_at=LATER,
-            issued_by=ACTOR,
-            issued_at=NOW,
+            _offer("superadmin"), secret=issue_secret(), expires_at=LATER, issued_at=NOW
         )
 
 
@@ -377,7 +382,7 @@ def test_a_directly_constructed_invitation_is_refused() -> None:
             issued_at=NOW,
             redeemed_at=None,
             revoked_at=None,
-        )
+        )  # noqa: F821 -- the door refuses before any field is read
 
 
 def test_reconstruction_preserves_stored_values_without_re_deriving() -> None:
@@ -387,18 +392,16 @@ def test_reconstruction_preserves_stored_values_without_re_deriving() -> None:
     secret = issue_secret()
 
     restored = Invitation._from_storage(
-        organization_id=ORG,
-        intended_role=MEMBER_ROLE,
-        target_identity=TARGET,
-        verifier=Verifier._from_storage(
-            salt=secret.verifier.salt, digest=secret.verifier.digest, kdf=INVITATION_KDF
+        _offer(),
+        StoredInvitationSecret(
+            invitation_id=secret.invitation_id,
+            verifier=Verifier._from_storage(
+                salt=secret.verifier.salt, digest=secret.verifier.digest, kdf=INVITATION_KDF
+            ),
+            expires_at=LATER,
         ),
-        invitation_id=secret.invitation_id,
-        expires_at=LATER,
-        issued_by=ACTOR,
         issued_at=NOW,
-        redeemed_at=None,
-        revoked_at=None,
+        lifecycle=InvitationLifecycle(),
     )
 
     assert verify_secret(secret.secret, restored.verifier)
@@ -411,16 +414,12 @@ def test_reconstruction_accepts_a_role_the_creation_door_refuses() -> None:
     still be readable -- refusing it would make the reader the thing that breaks, and the forgery
     this prevents is closed at `create` and at the constraint, not here."""
     restored = Invitation._from_storage(
-        organization_id=ORG,
-        intended_role="legacy",
-        target_identity=TARGET,
-        verifier=None,
-        invitation_id=INVITATION_ID_PREFIX + "x",
-        expires_at=LATER,
-        issued_by=ACTOR,
+        _offer("legacy"),
+        StoredInvitationSecret(
+            invitation_id=INVITATION_ID_PREFIX + "x", verifier=None, expires_at=LATER
+        ),
         issued_at=NOW,
-        redeemed_at=None,
-        revoked_at=None,
+        lifecycle=InvitationLifecycle(),
     )
 
     assert restored.intended_role == "legacy"

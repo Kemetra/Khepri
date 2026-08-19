@@ -67,6 +67,60 @@ INVITATION_KDF = KdfParams(n=2**14, r=8, p=1)
 
 
 @dataclass(frozen=True, slots=True)
+class StoredInvitationSecret:
+    """The secret material as a row holds it: an identifier, a horizon, and a destructible verifier.
+
+    **Deliberately not `InvitationSecret`.** That carrier holds the *plaintext* secret, and a row
+    has none -- it was returned once at issuance and never stored. Reconstruction cannot produce
+    one and must not appear able to, which is why the two groups are separate types rather than one
+    with an optional field: an optional plaintext would be a field a store could fill.
+
+    `verifier` is `None` for a redeemed, revoked, or touched-after-expiry invitation. That is the
+    terminal shape, not a defect.
+    """
+
+    invitation_id: str
+    verifier: Verifier | None
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class InvitationLifecycle:
+    """The two terminal timestamps, as stored.
+
+    Exists for the reconstruction door only. `create` has no parameter for either -- a created
+    invitation is open by definition -- so grouping them keeps that asymmetry visible in the
+    signatures rather than leaving it as two arguments one door happens not to take.
+
+    Both default to `None`, the open shape, so a store reading a row need not name what is absent.
+    Expiry is deliberately not here: it is derived from `expires_at` and has no column; giving
+    it one would put two fields on one fact.
+    """
+
+    redeemed_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InvitationOffer:
+    """What is being offered, to whom, by whom -- the three values an owner supplies.
+
+    **Not sealed, because it carries no invariant and grants nothing.** These are inputs on their
+    way to `Invitation.create`, which is where `intended_role` is validated; sealing them would put
+    a construction boundary around a value object whose forgery buys an attacker nothing they
+    could not achieve by calling `create` directly. The record that results *is* sealed.
+
+    `issued_by` is the actor account, for `FR-014`-style attribution. `R4-04` supplies it from what
+    the gate resolved rather than from a caller's claim -- section 4's asymmetry with redemption.
+    """
+
+    organization_id: str
+    intended_role: str
+    target_identity: str
+    issued_by: str
+
+
+@dataclass(frozen=True, slots=True)
 class InvitationSecret:
     """The plaintext secret and the record material derived from it, returned once.
 
@@ -125,15 +179,17 @@ def parse_token(token: str) -> tuple[str, str]:
     if len(parts) != 3:
         raise ValueError(_MALFORMED)
     prefix, invitation_id, secret = parts
-    # The three rules are named and checked one at a time rather than chained into a single `or`.
-    # `rra/sessions.py:95` writes them as one conditional; separating them says *which* rule a token
-    # broke, which is what `R4-05` needs when it wraps this in a failure that deliberately says
-    # nothing to the caller. A three-clause conditional on a security boundary reads as one check.
-    if prefix != TOKEN_PREFIX:
-        raise ValueError(_MALFORMED)
-    if not invitation_id.startswith(INVITATION_ID_PREFIX):
-        raise ValueError(_MALFORMED)
-    if not secret:
+    # The rules are a tuple rather than a chained `or` or a run of `if`s. `rra/sessions.py:95`
+    # writes them as one three-clause conditional, which on a security boundary reads as a single
+    # check; a run of separate `if`s says which rule broke but multiplies the branch count. As data
+    # the rules are enumerable -- `R4-05` can report *which* one failed while still refusing
+    # uniformly to the caller -- and adding a fourth rule adds a row, not a branch.
+    rules = (
+        prefix == TOKEN_PREFIX,
+        invitation_id.startswith(INVITATION_ID_PREFIX),
+        bool(secret),
+    )
+    if not all(rules):
         raise ValueError(_MALFORMED)
     return invitation_id, secret
 
@@ -210,17 +266,22 @@ class Invitation(Sealed):
     @classmethod
     def create(
         cls,
+        offer: InvitationOffer,
         *,
-        organization_id: str,
-        intended_role: str,
-        target_identity: str,
-        verifier: Verifier | None,
-        invitation_id: str,
+        secret: InvitationSecret,
         expires_at: datetime,
-        issued_by: str,
         issued_at: datetime,
     ) -> Invitation:
         """The creation door: a new, open invitation.
+
+        **The parameters are grouped rather than listed flat**, following `ca7c572`'s fix for the
+        same shape in `khepri.rra`: ten positional-or-keyword names meant every caller restated the
+        record's field list, and adding a column would touch every call site. The grouping is the
+        one section 3 already describes -- what is offered to whom (`InvitationOffer`), the secret
+        material (`InvitationSecret`, which `issue_secret` returns as one whole), and the two
+        moments. It also removes a class of caller error the flat form allowed: an `invitation_id`
+        and a `verifier` from *different* `issue_secret` calls could be passed together, producing a
+        record whose stored digest verifies no secret anyone holds.
 
         **`intended_role` is validated here because this is where a caller-supplied role first
         enters the codebase.** Until now no operation took one: `promote_to_owner` and
@@ -239,19 +300,19 @@ class Invitation(Sealed):
         `expires_at` is required and has no default: `FR-016` requires an explicit expiry and does
         not fix a lifetime, so baking one in would put a product decision in the domain.
         """
-        if intended_role not in ROLES:
+        if offer.intended_role not in ROLES:
             raise ValueError(
-                f"unknown role {intended_role!r}; an invitation may name only {ROLES}"
+                f"unknown role {offer.intended_role!r}; an invitation may name only {ROLES}"
             )
         with through_door():
             return Invitation(
-                organization_id=organization_id,
-                intended_role=intended_role,
-                target_identity=target_identity,
-                verifier=verifier,
-                invitation_id=invitation_id,
+                organization_id=offer.organization_id,
+                intended_role=offer.intended_role,
+                target_identity=offer.target_identity,
+                verifier=secret.verifier,
+                invitation_id=secret.invitation_id,
                 expires_at=expires_at,
-                issued_by=issued_by,
+                issued_by=offer.issued_by,
                 issued_at=issued_at,
                 redeemed_at=None,
                 revoked_at=None,
@@ -260,19 +321,19 @@ class Invitation(Sealed):
     @classmethod
     def _from_storage(
         cls,
+        offer: InvitationOffer,
+        stored: StoredInvitationSecret,
         *,
-        organization_id: str,
-        intended_role: str,
-        target_identity: str,
-        verifier: Verifier | None,
-        invitation_id: str,
-        expires_at: datetime,
-        issued_by: str,
         issued_at: datetime,
-        redeemed_at: datetime | None,
-        revoked_at: datetime | None,
+        lifecycle: InvitationLifecycle,
     ) -> Invitation:
         """Rebuild from stored columns, preserving them verbatim.
+
+        Grouped like `create` and for the same reason, with one difference that matters: the secret
+        material arrives as a loose `verifier` and `invitation_id` rather than as an
+        `InvitationSecret`, because that carrier holds the *plaintext* secret and a row has none --
+        it was returned once at issuance and never stored. Reconstruction cannot produce one and
+        must not appear able to.
 
         Asserts nothing about the values -- including the role -- because they came from the
         database and the guarantee is that nothing but `create` could have put them there. A row
@@ -282,16 +343,16 @@ class Invitation(Sealed):
         """
         with through_door():
             return Invitation(
-                organization_id=organization_id,
-                intended_role=intended_role,
-                target_identity=target_identity,
-                verifier=verifier,
-                invitation_id=invitation_id,
-                expires_at=expires_at,
-                issued_by=issued_by,
+                organization_id=offer.organization_id,
+                intended_role=offer.intended_role,
+                target_identity=offer.target_identity,
+                verifier=stored.verifier,
+                invitation_id=stored.invitation_id,
+                expires_at=stored.expires_at,
+                issued_by=offer.issued_by,
                 issued_at=issued_at,
-                redeemed_at=redeemed_at,
-                revoked_at=revoked_at,
+                redeemed_at=lifecycle.redeemed_at,
+                revoked_at=lifecycle.revoked_at,
             )
 
     def is_expired_at(self, moment: datetime) -> bool:
