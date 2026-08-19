@@ -2,10 +2,16 @@
 
 **Task:** `R0-03` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 
-**Baseline:** `main` @ `00e0f47`, 2026-08-17. `uv run khepri-gov validate` passes; `uv run pytest`
-reports 2154 passed, 45 skipped. Migration head `20260815_0016` (single head).
+**Baseline:** `main` @ `d50ffe6`, 2026-08-19. `uv run khepri-gov validate` passes; `uv run pytest`
+reports 2256 passed, 47 skipped. Migration head `20260817_0017` (single head).
 
-**Updated through `R7-01`.** This pass reconciles two independent derivations: the `R6-03`-era
+**Coverage: rows updated through `R4-02`; the narrative below is written through `R7-01`.** The two
+are separated deliberately. `R4-02` (`d50ffe6`) changed the rollup and the Invitations rows, and the
+baseline above moves with them, but the reconciliation *story* in this section is still the `R7-01`-era
+pass and is not re-derived here. A reader can therefore tell which repository state supports the
+current counts without mistaking the older narrative for a fresh audit. The previous header pinned
+`00e0f47` / 2154 tests / `20260815_0016` while the rows had moved past it — found in review on `#214`,
+and it is the same drift this document exists to catch, one level up. This pass reconciles two independent derivations: the `R6-03`-era
 status work proposed in `#196`, and the row edits the `R6-05` … `R6-08` evidence slices made in
 `#197` … `#200`. `#196` was cut before those four merged, so its rows are re-derived here against
 the current tree rather than replayed.
@@ -34,19 +40,27 @@ merged code. See `SUPERSEDED.md`.
 
 ## Rollup
 
-| Status | Count | Change since `R2-10` |
-|---|---|---|
-| Implemented | 16 | — |
-| Partial | 15 | +1 (FR-016, by `R4-02`) |
-| Not implemented | 9 | −1 |
+| Status | Count | Since `R2-10` (13/13/14) | Of that, from `R4-02` |
+|---|---|---|---|
+| Implemented | 16 | +3 | — |
+| Partial | 15 | +2 | +1 (FR-016) |
+| Not implemented | 9 | −5 | −1 (FR-016) |
 
-**16 + 15 + 9 = 40**, matching `FR-001` … `FR-040`. The change since `R2-10`/`R6-07` was
-+3 Implemented (FR-027, FR-029, FR-030), +1 net Partial (FR-026 in, FR-027/FR-029 out), −3 Not
-implemented; `R4-02` (`d50ffe6`) then moved **FR-016** from Not implemented to Partial — the domain
-and hashed secret exist, the table and store do not. The previous rollup read 13/13/14 = 40 with
-the right total but the wrong split: it excluded the one `Implemented, vacuously` row (FR-040) from
-"Implemented". `R6-07` promotes exactly one row, `FR-030`; `FR-008` gains evidence but stays
-`Partial` (see its row).
+**16 + 15 + 9 = 40**, matching `FR-001` … `FR-040`.
+
+**Two delta columns, because one was ambiguous and wrong.** An earlier version of this table kept a
+single `Change since R2-10` column and filled it with the `R4-02` increment alone (`—/+1/−1`), which
+contradicts the `13/13/14` baseline this paragraph states: measured from there the cumulative deltas
+are **+3/+2/−5**. Found in review on `#214`. Splitting the columns means neither figure has to stand
+for both, and a future slice adds a row to the right-hand column rather than silently redefining the
+left.
+
+The cumulative +3/+2/−5 decomposes as: `R6-07` and the `R3`/`R6` slices promoted FR-027, FR-029 and
+FR-030 to Implemented and FR-026 to Partial; `R4-02` (`d50ffe6`) then moved FR-016 from Not
+implemented to Partial — its domain and hashed secret exist, its table and store do not.
+
+The `13/13/14` baseline itself had the right total and the wrong split: it excluded the one
+`Implemented, vacuously` row (FR-040) from "Implemented".
 
 **A correction to this correction, recorded because the method matters more than the number.** An
 earlier revision of this slice published 15/12/8 = 35, "counted from the requirement tables" — and
