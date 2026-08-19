@@ -283,6 +283,60 @@ def _cause_table_counts(document: str) -> list[int]:
     return counts
 
 
+def _cause_table_requirements(document: str) -> set[str]:
+    """Every requirement the cause table names, ranges expanded.
+
+    **The Count column is not the claim.** An earlier version read only the counts, so replacing an
+    incomplete requirement with an implemented one — `FR-005` for `FR-002` — passed every
+    assertion while the table described the wrong set. Reproduced before fixing. Found in review on
+    `#218`, and it is the second round of the same defect: the first fix widened the check from the
+    sentence to the Count column without asking what else the test's own name promised.
+    """
+    header = document.find("| Cause | Requirements | Count | Roadmap |")
+    assert header != -1, "the cause table's header is missing or reworded"
+    body = document[header:]
+    blank = body.find("\n\n")
+    table = body[: blank if blank != -1 else len(body)]
+
+    named: set[str] = set()
+    for row in table.split("\n")[2:]:
+        cells = [cell.strip().strip("*") for cell in row.split("|")]
+        if len(cells) < 5:
+            continue
+        for match in re.finditer(
+            r"`?(FR-0\d\d)`?(?:\s*(?:…|\.\.\.)\s*`?(FR-0\d\d)`?)?", cells[2]
+        ):
+            low = int(match.group(1)[3:])
+            high = int(match.group(2)[3:]) if match.group(2) else low
+            named.update(f"FR-{number:03d}" for number in range(low, high + 1))
+    return named
+
+
+def test_the_cause_table_names_exactly_the_incomplete_requirements() -> None:
+    """The counts agreeing is not the same claim as the *right requirements* being counted.
+
+    A row that swapped `FR-005` for `FR-002` — an Implemented requirement — kept its count at 3 and
+    passed every assertion in this file. So the identities are compared as sets against the
+    Partial-plus-Not-implemented rows, which is what the test below's name has always promised.
+    Found in review on `#218`.
+    """
+    document = STATUS.read_text(encoding="utf-8")
+    derived = derive_counts(document)
+
+    incomplete = {
+        requirement
+        for requirement, status in derived.items()
+        if status in ("Partial", "Not implemented")
+    }
+    named = _cause_table_requirements(document)
+
+    assert named == incomplete, (
+        f"the cause table names {sorted(named - incomplete)} that are not incomplete, and omits "
+        f"{sorted(incomplete - named)}. Counts matching does not mean the right requirements are "
+        "counted."
+    )
+
+
 def test_the_cause_table_accounts_for_every_incomplete_requirement() -> None:
     """The fifth place the same fact lives. Its rows name counts per cause and its closing line sums
     them, so a row edited without the sum -- or the reverse -- is the same defect one table over.
@@ -357,6 +411,74 @@ def test_the_baseline_commit_exists_in_history() -> None:
     )
 
 
+def _migration_metadata(source: str) -> tuple[str | None, str | None]:
+    """A migration's `(revision, down_revision)`, tolerant of how the value is quoted.
+
+    **Either quote style, and a missing annotation.** An earlier version matched
+    `revision: str = "…"` exactly, which silently ignored any migration whose value was
+    single-quoted — the shape `migrations/script.py.mako` generates, because its template is
+    `${repr(up_revision)}` and `repr` prefers single quotes. A generated migration would have been
+    skipped entirely, leaving `heads` unchanged and a stale documented head passing. Found in review
+    on `#218`.
+
+    `None` for `down_revision` means the value is `None` in the source — the base revision — a real
+    answer and not a parse failure. `_revisions_and_parents` distinguishes the two.
+    """
+    revision = re.search(
+        r"^revision(?::\s*str)?\s*=\s*['\"](\d{8}_\d{4})['\"]", source, re.MULTILINE
+    )
+    parent = re.search(
+        r"^down_revision(?::\s*[^=]+)?=\s*(?:['\"](\d{8}_\d{4})['\"]|None)", source, re.MULTILINE
+    )
+    return (
+        revision.group(1) if revision else None,
+        parent.group(1) if parent and parent.group(1) else None,
+    )
+
+
+def _revisions_and_parents() -> tuple[set[str], set[str]]:
+    """Every revision identifier and every parent, with unparsed files reported rather than skipped.
+
+    The assertion is the point: a migration this cannot read is a migration whose revision never
+    enters `revisions`, so it can never be the head and a stale documented head passes. Failing
+    loudly on an unreadable file is what makes the head check trustworthy.
+    """
+    revisions: set[str] = set()
+    parents: set[str] = set()
+    unreadable: list[str] = []
+
+    for path in sorted(MIGRATIONS.glob("*.py")):
+        revision, parent = _migration_metadata(path.read_text(encoding="utf-8"))
+        if revision is None:
+            unreadable.append(path.name)
+            continue
+        revisions.add(revision)
+        if parent is not None:
+            parents.add(parent)
+
+    assert not unreadable, (
+        f"could not read a revision identifier from {unreadable}. A migration this parser skips "
+        "cannot be the head, so a stale documented head would pass."
+    )
+    return revisions, parents
+
+
+def test_the_metadata_parser_accepts_both_quote_styles() -> None:
+    """Self-tested, because the whole head check rests on this parser seeing every migration.
+
+    The single-quoted case is not hypothetical: `migrations/script.py.mako` writes
+    `${repr(up_revision)}`, and `repr` prefers single quotes.
+    """
+    double = 'revision: str = "20260818_0018"\ndown_revision: str | None = "20260817_0017"\n'
+    single = "revision: str = '20260818_0018'\ndown_revision: str | None = '20260817_0017'\n"
+    base = 'revision: str = "20260101_0001"\ndown_revision: str | None = None\n'
+
+    assert _migration_metadata(double) == ("20260818_0018", "20260817_0017")
+    assert _migration_metadata(single) == ("20260818_0018", "20260817_0017")
+    assert _migration_metadata(base) == ("20260101_0001", None)
+    assert _migration_metadata("# not a migration\n") == (None, None)
+
+
 def test_the_stated_migration_head_is_the_real_head() -> None:
     """The header names a migration head. A stale one sends a reader to the wrong parent for the
     next revision, which is how a chain forks."""
@@ -365,30 +487,7 @@ def test_the_stated_migration_head_is_the_real_head() -> None:
     match = re.search(r"Migration head `(\d{8}_\d{4})`", document)
     assert match is not None, "the header states no migration head"
 
-    revisions = {
-        m.group(1)
-        for path in MIGRATIONS.glob("*.py")
-        for m in [
-            re.search(
-                r'^revision: str = "(\d{8}_\d{4})"',
-                path.read_text(encoding="utf-8"),
-                re.MULTILINE,
-            )
-        ]
-        if m
-    }
-    parents = {
-        m.group(1)
-        for path in MIGRATIONS.glob("*.py")
-        for m in [
-            re.search(
-                r'^down_revision: str \| None = "(\d{8}_\d{4})"',
-                path.read_text(encoding="utf-8"),
-                re.MULTILINE,
-            )
-        ]
-        if m
-    }
+    revisions, parents = _revisions_and_parents()
     heads = revisions - parents
 
     assert heads == {match.group(1)}, (
