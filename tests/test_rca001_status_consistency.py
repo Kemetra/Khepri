@@ -65,14 +65,16 @@ def classify(text: str) -> str | None:
     return None
 
 
-def derive_counts(document: str) -> dict[str, str]:
-    """Every requirement's status, with `FR-017 … FR-019` ranges expanded.
+def _classified_rows(document: str) -> list[tuple[str, str]]:
+    """Every `(requirement, status)` pair the document states, in document order, ranges expanded.
 
-    Later rows win, which is what makes this correct rather than convenient: the change table near
-    the top lists a handful of requirements with their *previous* status, and the authoritative
-    per-requirement tables come after it.
+    A *list*, not a dict, and that is the finding from review on `#218`: collapsing into a dict here
+    made a duplicated authoritative row invisible, because the second occurrence overwrote the first
+    and the count stayed at 40. A copied row -- or worse, two rows disagreeing where the *last* one
+    happens to match the rollup -- passed a test whose docstring promised each requirement was
+    classified exactly once.
     """
-    statuses: dict[str, str] = {}
+    pairs: list[tuple[str, str]] = []
     for first, last, cell in _ROW.findall(document):
         status = classify(cell)
         if status is None:
@@ -80,8 +82,35 @@ def derive_counts(document: str) -> dict[str, str]:
         low = int(first[3:])
         high = int(last[3:]) if last else low
         for number in range(low, high + 1):
-            statuses[f"FR-{number:03d}"] = status
-    return statuses
+            pairs.append((f"FR-{number:03d}", status))
+    return pairs
+
+
+def derive_counts(document: str) -> dict[str, str]:
+    """Every requirement's status, from the **authoritative** tables only.
+
+    Later rows win, which is what makes this correct rather than convenient: the change table near
+    the top lists a handful of requirements with their *previous* status, and the authoritative
+    per-requirement tables come after it.
+
+    `_classified_rows` keeps the duplicates this discards, and
+    `test_no_requirement_is_classified_twice_below_the_change_table` is what inspects them.
+    """
+    return dict(_classified_rows(document))
+
+
+def _change_table_end(document: str) -> int:
+    """Where the historical change table stops.
+
+    Its heading is stable prose in the document's opening pass -- "Four rows changed status" -- and
+    the authoritative tables begin at the first `## ` after it. Rows before this boundary state a
+    *previous* status and are expected to repeat a requirement the tables state again.
+    """
+    marker = document.find("rows changed status")
+    if marker == -1:
+        return 0
+    following = document.find("\n## ", marker)
+    return len(document) if following == -1 else following
 
 
 def _rollup_table(document: str) -> dict[str, int]:
@@ -160,6 +189,28 @@ def test_every_requirement_is_classified_exactly_once() -> None:
     assert len(derived) == _LAST - _FIRST + 1, f"classified {len(derived)}, expected 40"
 
 
+def test_no_requirement_is_classified_twice_below_the_change_table() -> None:
+    """**Found in review on #218**, and the test above could not see it.
+
+    `derive_counts` returns a dict, so a duplicated authoritative row overwrote its twin and the
+    count stayed at 40 -- a copied row passed, and two rows *disagreeing* passed whenever the later
+    one matched the rollup. Reproduced by duplicating `FR-011`'s row: all ten tests stayed green.
+
+    The change table near the top legitimately repeats requirements at their previous status, so the
+    duplicate check starts below it.
+    """
+    document = STATUS.read_text(encoding="utf-8")
+    authoritative = document[_change_table_end(document) :]
+
+    seen = Counter(requirement for requirement, _ in _classified_rows(authoritative))
+    repeated = {requirement: count for requirement, count in seen.items() if count > 1}
+
+    assert not repeated, (
+        f"classified more than once below the change table: {repeated}. Two rows for one "
+        "requirement means the rollup counts whichever happens to come last."
+    )
+
+
 def test_the_rollup_table_matches_the_requirement_rows() -> None:
     """The check that would have caught two of `#214`'s four review rounds.
 
@@ -205,9 +256,42 @@ def test_the_not_fully_implemented_sentence_matches_the_rollup() -> None:
     assert total == partial + absent, f"{total} != {partial} + {absent}"
 
 
+def _cause_table_counts(document: str) -> list[int]:
+    """The `Count` column of the cause table, read from its rows.
+
+    **This reads the table, and an earlier version read only the sentence.** That version extracted
+    the addends from `4 + 1 + 3 + 12 + 4 = **24**` and checked they summed to `24` -- which is a
+    tautology, since both halves come from the same sentence. Editing a row's count to `99` passed
+    all ten tests, and that is precisely the row-versus-sum drift the test's own docstring promised
+    to guard. Found in review on `#218`.
+
+    The cause table is the one whose header is `| Cause | Requirements | Count | Roadmap |`.
+    """
+    header = document.find("| Cause | Requirements | Count | Roadmap |")
+    assert header != -1, "the cause table's header is missing or reworded"
+    body = document[header:]
+    blank = body.find("\n\n")
+    table = body[: blank if blank != -1 else len(body)]
+    rows = table.split("\n")[2:]  # skip the header and separator rows
+
+    counts = []
+    for row in rows:
+        cells = [cell.strip().strip("*") for cell in row.split("|")]
+        if len(cells) < 5:
+            continue
+        counts.append(int(cells[3]))
+    return counts
+
+
 def test_the_cause_table_accounts_for_every_incomplete_requirement() -> None:
-    """The fifth place. Its rows name counts per cause and its closing line sums them, so a row
-    edited without the sum -- or the reverse -- is the same defect one table over."""
+    """The fifth place the same fact lives. Its rows name counts per cause and its closing line sums
+    them, so a row edited without the sum -- or the reverse -- is the same defect one table over.
+
+    Three comparisons, because two of them are not the same claim: the table's own rows must sum to
+    the sentence's total, the sentence's addends must match the table's rows *in order*, and the
+    total must equal the rollup's incomplete count. The first two are what an earlier version
+    collapsed into a tautology.
+    """
     document = STATUS.read_text(encoding="utf-8")
     stated = _rollup_table(document)
     incomplete = stated["Partial"] + stated["Not implemented"]
@@ -216,10 +300,17 @@ def test_the_cause_table_accounts_for_every_incomplete_requirement() -> None:
         r"^((?:\d+ \+ )+\d+) = \*\*(\d+)\*\*, matching the rollup", document, re.MULTILINE
     )
     assert match is not None, "the cause table's arithmetic line is missing or reworded"
-    addends = [int(part) for part in match.group(1).split(" + ")]
+    sentence_addends = [int(part) for part in match.group(1).split(" + ")]
     claimed = int(match.group(2))
+    table_counts = _cause_table_counts(document)
 
-    assert sum(addends) == claimed, f"{match.group(1)} sums to {sum(addends)}, stated {claimed}"
+    assert table_counts == sentence_addends, (
+        f"the cause table's rows are {table_counts}, the sentence adds {sentence_addends}. "
+        "One was edited without the other."
+    )
+    assert sum(table_counts) == claimed, (
+        f"the cause table's rows sum to {sum(table_counts)}, the sentence states {claimed}"
+    )
     assert claimed == incomplete, (
         f"the cause table accounts for {claimed}, the rollup has {incomplete} incomplete"
     )
@@ -236,16 +327,34 @@ def test_the_baseline_commit_exists_in_history() -> None:
     match = re.search(r"\*\*Baseline:\*\* `main` @ `([0-9a-f]{7,40})`", document)
     assert match is not None, "the header states no baseline commit"
 
-    result = subprocess.run(
-        ["git", "cat-file", "-t", match.group(1)],
-        cwd=_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+    def git(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *arguments], cwd=_ROOT, capture_output=True, text=True, check=False
+        )
+
+    # **Shallowness is established independently, and only then does this skip.** An earlier version
+    # skipped whenever `git cat-file` returned nonzero -- but that is the same exit status for "the
+    # object is absent because the clone is shallow" and "the SHA has a typo and never existed", so
+    # the advertised missing-commit defect could not fail in any checkout. From review on `#218`.
+    shallow = git("rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+
+    found = git("cat-file", "-t", match.group(1))
+    if found.returncode != 0:
+        if shallow:
+            pytest.skip(f"{match.group(1)} is outside a shallow clone's history")
+        raise AssertionError(
+            f"the baseline names {match.group(1)}, which is not an object in this repository. "
+            "The clone is not shallow, so the identifier is wrong."
+        )
+    assert found.stdout.strip() == "commit", (
+        f"{match.group(1)} resolves to a {found.stdout.strip()}, not a commit"
     )
-    if result.returncode != 0:
-        pytest.skip(f"commit {match.group(1)} unreachable in this checkout (shallow clone?)")
-    assert result.stdout.strip() == "commit", f"{match.group(1)} is not a commit"
+
+    # An abbreviated SHA that matches two objects is `git`'s ambiguity error, which the check above
+    # would report as "not an object". Naming it separately so the message is actionable.
+    assert "ambiguous" not in found.stderr.lower(), (
+        f"the baseline {match.group(1)} is ambiguous; use more characters"
+    )
 
 
 def test_the_stated_migration_head_is_the_real_head() -> None:
