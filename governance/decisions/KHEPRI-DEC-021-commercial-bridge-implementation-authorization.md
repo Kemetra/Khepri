@@ -117,23 +117,53 @@ path is unchanged; **the caller resolves the scope and never receives one**; and
   (`src/khepri/rca/isolation.py:30-40`) and passing the resulting opaque `owner_id` to the entry
   point.
 
-### 3. The bridge lives in `khepri.local`
+### 3. The bridge lives in `khepri.runtime`
 
-Resolving the conflict named in the Context, in favour of `R7-01` §3's recommendation.
+Resolving the conflict named in the Context — and rejecting both options the merged documents offered.
 
-`src/khepri/local/wiring.py` already imports `khepri.rca.persistence`,
-`khepri.rca.session_persistence`, `khepri.rca.lifecycle`, and roughly fifteen `khepri.rra.*`
-modules side by side. A bridge there **needs no new import direction at all**, and leaves both
-packages ignorant of each other. The alternative — a bridge inside `khepri.rca` — is permitted by
-today's tests but makes every RCA test transitively depend on RRA and, in `R7-01` §3's words,
-*"quietly spends the one-directional import budget"*.
+`R7-01` §3 evaluated three locations and recommended `khepri.local`, on the ground that
+`src/khepri/local/wiring.py` already imports `khepri.rca.*` and roughly fifteen `khepri.rra.*`
+modules side by side, so a bridge there needs no new import direction. **An earlier draft of this
+record adopted that recommendation. It is wrong, and the reason is packaging rather than layering.**
+Found in review on `#216`.
+
+`khepri.local` is not deployed:
+
+- `pyproject.toml:66` — `exclude = ["src/khepri/local"]`, and the comment there states the reason:
+  "development wiring… kept OUT of the built wheel, which is what the OCI image installs."
+- `src/khepri/local/__init__.py:1` — "Local development wiring. Not governed, not production, not
+  evidence… none of it is deployed."
+- `Dockerfile:72` validates `khepri.runtime.config, khepri.runtime.wiring, khepri.runtime.worker`.
+  It does not import `khepri.local`, because the image does not contain it.
+
+So a bridge in `khepri.local` is unreachable from the deployed web role, and `R7-05` would have to
+move or duplicate it — against a binding clause of this record. An authorization naming a location
+the product cannot use is not an authorization; it is a defect of the same shape as
+`KHEPRI-DEC-019`'s, which admitted an entry point the schema forbade.
+
+**`khepri.runtime` is the packaged composition layer**, described by its own `__init__` as "Production
+composition roots for the approved RRA web and worker roles", and it is what the Dockerfile
+validates. A bridge there is reachable from the role that will serve `R7-05`'s endpoint.
+
+**It does introduce a new import direction, and that is admitted deliberately.** `khepri.runtime`
+currently imports no `khepri.rca` module — verified across all four of its modules — so this is the
+first RCA import into the production composition layer. That is the correct place for it: composition
+roots exist to know about both sides, which is exactly what `khepri.local` does for development. What
+`R7-01` §3 was protecting against is a bridge inside **`khepri.rca`**, which would make every RCA test
+transitively depend on RRA and, in its words, *"quietly spends the one-directional import budget"*.
+That option remains rejected.
+
+**`khepri.local` may wire the same implementation** so the journey stays runnable on a developer's
+machine. One implementation, two composition roots — which is the relationship those two packages
+already have for every other service.
 
 Two consequences, both binding on `R7-07`:
 
 - **The boundary assertion is a flat prohibition, not an allowlist.** `khepri.rca` imports no
-  `khepri.rra` module, mirroring the existing `khepri.rra` → `khepri.rca` prohibition rather than
-  carving an exception out of it. This is the stricter of the two readings and the one that needs
-  no maintenance as the bridge grows.
+  `khepri.rra` module and `khepri.rra` imports no `khepri.rca` module, mirroring the existing
+  one-directional prohibition rather than carving an exception out of it. Both packages stay ignorant
+  of each other and `khepri.runtime` knows both, which is what a composition root is for. This is the
+  stricter of the two readings and needs no maintenance as the bridge grows.
 - **The roadmap's `R7-07` disposition is superseded on this point.** Its phrasing — *"the bridge's
   'no `rra_` import inside `src/khepri/rca/`' discipline rests on prose, not on a guard"* — remains
   correct about the *gap*; its implicit assumption that the bridge sits in `khepri.rca` does not
@@ -164,8 +194,8 @@ table should state which constraints on that table it has checked."* Applying it
 
 Every exclusion in `KHEPRI-DEC-020` §3 other than its first bullet is carried forward intact:
 
-- **No endpoint.** `R7-05`'s HTTP surface is not settled, proposed, or implied. The bridge is
-  reachable from `khepri.local` wiring only.
+- **No endpoint.** `R7-05`'s HTTP surface is not settled, proposed, or implied. `R7-07` places the
+  bridge in `khepri.runtime` so that surface *can* consume it later, and wires nothing to a route.
 - **No further schema change.** `rra_uploads.UNIQUE (session_id)` stands.
 - **No `RRA-001`, `RRA-002`, or `RCA-001` amendment.**
 - **No change to `redeem`**, its signature, its behavior, or the invitation lifecycle. The entry
