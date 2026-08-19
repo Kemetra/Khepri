@@ -40,10 +40,12 @@ does not cover, each of which would otherwise be decided by whoever implements `
    row that already exists. So the entry point `KHEPRI-DEC-019` §2 admitted has **nowhere to
    persist**, and authorizing it without its store path would authorize a function that cannot
    work.
-2. **Resume needs a query that does not exist.** `get_session` is keyed by `session_id`
-   (`sessions.py:~60`) and `BetaSessionRow`'s primary key is `session_id`
-   (`rra/persistence.py:73`). `R7-01` §4's create-once/resume-thereafter shape requires finding a
-   session by `owner_id`.
+2. **Resume needs a query that does not exist, and nothing settles what it selects.**
+   `get_session` is keyed by `session_id` (`sessions.py:~60`) and `BetaSessionRow`'s primary key is
+   `session_id` (`rra/persistence.py:73`), so `R7-01` §4's create-once/resume-thereafter shape needs
+   a new query. But `owner_id` is deliberately non-unique after `20260817_0017`, and `R7-01` §4 says
+   only that the bridge "looks up an existing session" — so *which* session a resume selects is
+   unspecified in every merged document. §2 settles it.
 3. **Two merged documents disagree about where the bridge lives**, and neither can override the
    other. `R7-01` §3 evaluates three locations and recommends `khepri.local`; the roadmap's `R7-07`
    disposition frames the discipline as *"no `rra_` import inside `src/khepri/rca/`"*, which
@@ -84,8 +86,33 @@ path is unchanged; **the caller resolves the scope and never receives one**; and
   touches. The obligation is not weakened: an *additive* method leaves every existing signature
   intact, so `RRA`'s existing tests must still pass unmodified. If they do not, that is the
   conflict §4 describes and it is to be **recorded, not resolved by editing the test**.
-- **The resume lookup.** One additive query finding a session by `owner_id`. Read-only; it adds no
-  column, no constraint, and no index — see §4 on why no index is needed.
+- **The resume lookup, scoped by `(owner_id, session_id)` and never by `owner_id` alone.** One
+  additive read-only query; it adds no column, no constraint, and no index — see §4.
+
+  **The scoping is the decision, and an earlier draft of this record got it wrong.** That draft
+  authorized "a resume lookup by `owner_id`", which contradicts §4 of this same record:
+  `20260817_0017` dropped `UNIQUE (owner_id)` precisely so one scope may hold many sessions, so
+  `owner_id` alone identifies a *set* and cannot say which analysis to resume. A conforming
+  implementation would fail on multiple rows or pick an arbitrary or stale one, and the bridge would
+  resume the wrong analysis. Found in review on `#216`.
+
+  `R7-01` §4 does not close this either — it says the bridge "looks up an existing session" without
+  saying which — so the gap is upstream of this record and is settled here rather than left to
+  `R7-07`:
+
+  - **The caller names the analysis it is resuming.** `session_id` is per-analysis and `RRA`'s to
+    mint, so a caller resuming holds one from the create call. A resume naming none would be a
+    request for "whichever session you have", which is not a behaviour anyone specified.
+  - **The lookup is `(owner_id, session_id)`** — exactly `uq_session_owner_scope`, which is why no
+    new index is needed and why the pair is the natural key rather than an invention.
+  - **It fails closed.** A `session_id` that exists under a *different* `owner_id` returns nothing,
+    not that session. This is `FR-023`'s object-identifier rule at the RRA boundary: the caller
+    supplies an identifier, and the scope it may act under comes from `resolve_scope` rather than
+    from the identifier. Refusing must be indistinguishable from "no such session".
+  - **No "current session" invariant is admitted.** A column or convention marking one session
+    current per scope would reintroduce, one layer up, the single-session cardinality
+    `20260817_0017` removed. `R7-05`'s surface may present a most-recent list; that is a query
+    ordering, not a schema fact, and this record authorizes no column for it.
 - **The bridge**, calling `IsolationService.resolve_scope(account_id, organization_id)`
   (`src/khepri/rca/isolation.py:30-40`) and passing the resulting opaque `owner_id` to the entry
   point.
@@ -126,9 +153,10 @@ table should state which constraints on that table it has checked."* Applying it
   **retained**. One upload per session remains `RRA`'s design. An organization now gets many
   sessions, each with one upload, so nothing about this record pressures it. The finding's Option B
   was refused by `KHEPRI-DEC-020` §3 and stays refused.
-- **No new index is required for the resume lookup.** `owner_id` is the **leading column** of
-  `uq_session_owner_scope`, so its backing index already serves `owner_id`-only lookups —
-  the same reasoning `KHEPRI-DEC-020` §2 recorded when it dropped `UNIQUE (owner_id)`.
+- **No new index is required for the resume lookup.** With §2's scoping the lookup *is*
+  `uq_session_owner_scope`'s column pair, so that constraint's own backing index serves it
+  exactly — a stronger statement than `KHEPRI-DEC-020` §2 needed, which relied on `owner_id`
+  merely being the leading column.
 - **`BetaSessionRow`'s primary key is `session_id`** (`rra/persistence.py:73`), which is why the
   resume lookup is a new query rather than an existing one reused.
 
