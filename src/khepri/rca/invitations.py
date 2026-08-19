@@ -43,6 +43,11 @@ TOKEN_PREFIX = "kci1"
 #: prefix discloses nothing.
 INVITATION_ID_PREFIX = "inv_"
 
+#: One message for every parse failure, so the four refusals below are already indistinguishable by
+#: text before `R4-05` makes them indistinguishable by timing. Following `_INVITATION_FAILURE` and
+#: `SCOPE_FAILURE`: a single constant cannot drift into four subtly different strings.
+_MALFORMED = "malformed invitation token"
+
 #: 18 bytes of CSPRNG output, matching every other opaque identifier in this package.
 _ID_BYTES = 18
 
@@ -118,10 +123,18 @@ def parse_token(token: str) -> tuple[str, str]:
     """
     parts = token.split(".")
     if len(parts) != 3:
-        raise ValueError("malformed invitation token")
+        raise ValueError(_MALFORMED)
     prefix, invitation_id, secret = parts
-    if prefix != TOKEN_PREFIX or not invitation_id.startswith(INVITATION_ID_PREFIX) or not secret:
-        raise ValueError("malformed invitation token")
+    # The three rules are named and checked one at a time rather than chained into a single `or`.
+    # `rra/sessions.py:95` writes them as one conditional; separating them says *which* rule a token
+    # broke, which is what `R4-05` needs when it wraps this in a failure that deliberately says
+    # nothing to the caller. A three-clause conditional on a security boundary reads as one check.
+    if prefix != TOKEN_PREFIX:
+        raise ValueError(_MALFORMED)
+    if not invitation_id.startswith(INVITATION_ID_PREFIX):
+        raise ValueError(_MALFORMED)
+    if not secret:
+        raise ValueError(_MALFORMED)
     return invitation_id, secret
 
 
