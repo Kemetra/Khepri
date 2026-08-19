@@ -45,9 +45,20 @@ def _offer(role: str = MEMBER_ROLE) -> InvitationOffer:
     )
 
 
-def _open(*, role: str = MEMBER_ROLE, expires_at: datetime = LATER) -> Invitation:
+def _open(
+    *, role: str = MEMBER_ROLE, expires_at: datetime = LATER, issued_at: datetime | None = None
+) -> Invitation:
+    """An open invitation, or -- with `expires_at` in the past -- one that has since expired.
+
+    `issued_at` defaults to just before `expires_at` rather than to a fixed `NOW`, because the
+    creation door requires `expires_at > issued_at`: an expired invitation is one that was validly
+    issued and then outlived its horizon, never one minted already expired.
+    """
     return Invitation.create(
-        _offer(role), secret=issue_secret(), expires_at=expires_at, issued_at=NOW
+        _offer(role),
+        secret=issue_secret(),
+        expires_at=expires_at,
+        issued_at=issued_at if issued_at is not None else expires_at - timedelta(days=1),
     )
 
 
@@ -118,27 +129,77 @@ def test_the_secret_is_returned_once_and_is_not_reachable_from_the_record() -> N
     assert "secret" not in Invitation.__slots__
 
 
-def test_a_hand_built_verifier_at_a_weak_work_factor_cannot_create_an_invitation() -> None:
-    """**Found in review on #215.** `Verifier._from_storage` preserves any stored KDF parameters --
-    it must, since they exist so the factor can be raised without invalidating existing rows -- so a
-    caller can build a `Verifier` at `n=2` and hand it to the creation door. `FR-016` requires the
-    secret be persisted as a *strong* salted hash, and a caller-chosen work factor is not that.
+def test_a_hand_built_carrier_cannot_create_an_invitation_at_all() -> None:
+    """**Found in review on #215, twice.** The first fix checked `verifier.kdf == INVITATION_KDF`,
+    which a caller defeats by passing the right parameters with an arbitrary digest --
+    `credentials.py:9-13` makes exactly that argument about its own case: "A digest cannot be
+    distinguished from an arbitrary 32-byte string by inspection, so shape checking cannot establish
+    that a real KDF produced it."
 
-    Reconstruction stays permissive and creation does not, which is the two-door asymmetry applied
-    to the material rather than to the record. The practical effect is that `issue_secret` is the
-    only way to obtain a verifier a new invitation will accept.
+    So the guarantee is provenance, not shape: `InvitationSecret` is sealed, `issue_secret` is its
+    only door, and `create` calls `assert_sealed`. A caller cannot assemble one at any work factor,
+    with any digest, or with a chosen identifier or secret.
     """
     weak = Verifier._from_storage(
-        salt=b"x" * SALT_BYTES, digest=b"not-a-real-digest".ljust(KDF_DKLEN, b"0"),
+        salt=b"x" * SALT_BYTES,
+        digest=b"not-a-real-digest".ljust(KDF_DKLEN, b"0"),
         kdf=KdfParams(n=2, r=1, p=1),
     )
 
-    with pytest.raises(ValueError):
+    # The carrier itself is unconstructible outside the door -- this is the load-bearing line.
+    with pytest.raises(TypeError):
+        InvitationSecret(invitation_id="inv_x", secret="chosen", verifier=weak)
+
+
+def test_object_new_is_not_claimed_to_be_refused_and_is_covered_elsewhere() -> None:
+    """**A test written, run, and deleted -- recorded so it is not written again.**
+
+    It asserted that `create` refuses an `InvitationSecret` built with `object.__new__`. It
+    does not, and it cannot: `assert_sealed` compares `type(record)` against the declared set, and
+    `object.__new__(InvitationSecret)` produces exactly that type. `records.py` says so directly --
+    `object.__new__`, `object.__setattr__` and `through_door` are the three bypasses it names as
+    permanently open, because "a guard against `object.__setattr__` is itself removable by
+    `object.__setattr__`; this is the language's design, not a gap in this module."
+
+    What separates those three from the four that were fixed is intent: nobody writes
+    `object.__new__` while trying to do the right thing. The defense is therefore *static*, and it
+    already exists -- `test_rca001_resolver_chokepoint.py` asserts that no module in any production
+    package calls `object.__new__` or `object.__setattr__`, repo-wide, and self-tests its scanner.
+
+    This test asserts the boundary rather than the bypass: `assert_sealed` in `create` is what
+    refuses a *different* sealed type or a subclass, which is the reachable case.
+    """
+    # An unsealed stand-in with exactly the right attributes. `assert_sealed` compares the
+    # declared type rather than the shape, so this is refused where a duck-typed check would
+    # accept it -- and before any attribute is read, which is the ordering that was wrong once.
+    class Lookalike:
+        invitation_id = "inv_chosen"
+        secret = "chosen-by-caller"
+        # A *genuine* verifier, so the refusal has to come from the carrier's own type. Written
+        # first with `verifier = None`, which `assert_sealed(verifier)` rejected instead -- the
+        # test passed while `assert_sealed(secret)` was removable, and only mutating that line
+        # exposed it. The mutant is what found this, not the assertion.
+        verifier = issue_secret().verifier
+
+    with pytest.raises(TypeError):
         Invitation.create(
             _offer(),
-            secret=InvitationSecret(invitation_id="inv_x", secret="irrelevant", verifier=weak),
+            secret=Lookalike(),  # type: ignore[arg-type]
             expires_at=LATER,
             issued_at=NOW,
+        )
+
+
+@pytest.mark.parametrize("expires_at", [NOW, NOW - timedelta(days=1)])
+def test_an_invitation_cannot_expire_at_or_before_its_issuance(expires_at: datetime) -> None:
+    """**Found in review on #215.** The design note's section 3 requires
+    `CHECK expires_at > issued_at`, following `ck_session_expiry_after_creation`. Without the same
+    rule at the door, creation mints an invitation already expired at issuance -- an initial state
+    the four-state table cannot express -- which circulates through domain code until persistence
+    rejects it. The boundary is `<=` for the same reason `is_expired_at` is."""
+    with pytest.raises(ValueError):
+        Invitation.create(
+            _offer(), secret=issue_secret(), expires_at=expires_at, issued_at=NOW
         )
 
 

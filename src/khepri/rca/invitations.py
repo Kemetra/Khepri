@@ -120,15 +120,27 @@ class InvitationOffer:
     issued_by: str
 
 
+@register_sealed
 @dataclass(frozen=True, slots=True)
-class InvitationSecret:
+class InvitationSecret(Sealed):
     """The plaintext secret and the record material derived from it, returned once.
 
-    **Not sealed, and not persisted.** This is the carrier that crosses from generation to the
-    caller who delivers the token, and it exists so that "the secret is returned once and never
-    stored" is unexpressible rather than merely forbidden: `Invitation` has no field the plaintext
-    could occupy, so a store cannot write it even by mistake. `Verifier` -- the half that *is*
-    stored -- is sealed on its own account.
+    **Not persisted, but sealed -- and the sealing is the FR-016 invariant, not decoration.**
+    An earlier version left this unsealed and had `create` check the verifier's work factor instead.
+    That does not work, for the reason `credentials.py:9-13` already states about its own case: "A
+    digest cannot be distinguished from an arbitrary 32-byte string by inspection, so shape checking
+    cannot establish that a real KDF produced it." A caller could build
+    `Verifier._from_storage(salt=..., digest=<anything>, kdf=INVITATION_KDF)`, put it in a
+    hand-constructed carrier, and obtain a sealed invitation whose token verifies nothing and whose
+    identifier and secret it chose. Found in review on `#215`, twice -- the first fix checked the
+    parameters and the second closes the provenance.
+
+    Sealing moves the guarantee from *what the values look like* to *where they came from*:
+    `issue_secret` is the only door, so an `Invitation` holding one of these carries material a
+    CSPRNG produced and this module's KDF hashed. `Verifier.derive` earns FR-002 the same way.
+
+    Still not persisted. The plaintext lives here and `Invitation` has no field it could occupy, so
+    "returned once and never stored" stays unexpressible rather than merely forbidden.
     """
 
     invitation_id: str
@@ -165,7 +177,7 @@ def issue_secret() -> InvitationSecret:
     digest = hash_credential(secret, salt, INVITATION_KDF)
     with through_door():
         verifier = Verifier(salt=salt, digest=digest, kdf=INVITATION_KDF)
-    return InvitationSecret(invitation_id=invitation_id, secret=secret, verifier=verifier)
+        return InvitationSecret(invitation_id=invitation_id, secret=secret, verifier=verifier)
 
 
 def parse_token(token: str) -> tuple[str, str]:
@@ -308,26 +320,34 @@ class Invitation(Sealed):
         # built there passes `assert_sealed`. Reproduced against the flat-read form this replaces.
         # Snapshotting also removes a check-versus-use gap: a `__getattribute__` returning a valid
         # role to the validation below and a different one to the constructor.
+        # **Provenance first, before any field is read.** `assert_sealed(secret)` is what
+        # establishes `FR-016`: the carrier can only have come from `issue_secret`, so the
+        # identifier is opaque, the secret is 32 CSPRNG bytes, and the digest is this module's KDF
+        # over them. An earlier version checked `verifier.kdf == INVITATION_KDF` instead, which a
+        # caller defeats by passing the right parameters with an arbitrary digest --
+        # `credentials.py:9-13` makes exactly this argument about its own case. Reconstruction stays
+        # permissive, because a stored digest is the only thing a candidate can be compared against.
+        #
+        # The order matters and was wrong once: this ran *after* the snapshot below, so an arbitrary
+        # object's `__getattribute__` executed before anything checked its type. The sequence is
+        # verify types, snapshot, validate values, open the door, construct.
+        assert_sealed(secret)
         organization_id = str(offer.organization_id)
         intended_role = str(offer.intended_role)
         target_identity = str(offer.target_identity)
         issued_by = str(offer.issued_by)
         verifier = secret.verifier
         invitation_id = str(secret.invitation_id)
+        assert_sealed(verifier)
         if intended_role not in ROLES:
             raise ValueError(f"unknown role {intended_role!r}; an invitation may name only {ROLES}")
-        assert_sealed(verifier)
-        # A *new* invitation must carry the current work factor. `Verifier._from_storage` preserves
-        # any stored parameters -- it must, since they exist so the factor can be raised without
-        # invalidating existing rows -- so a caller can hand-build a `Verifier` at `n=2` and reach
-        # this door with it. Reconstruction stays permissive and creation does not: the same
-        # two-door asymmetry `records.py` applies to records, applied to the material they carry.
-        # `FR-016` requires the secret be persisted as a *strong* salted hash, and a work factor
-        # chosen by the caller is not that. Found in review on `#215`.
-        if verifier.kdf != INVITATION_KDF:
+        # `expires_at > issued_at`, matching the design note's `CHECK` (§3) and
+        # `ck_session_expiry_after_creation`. Without it the door mints an invitation already
+        # expired at issuance -- an initial state the four-state table cannot express -- which then
+        # circulates through domain code until persistence rejects it. Found in review on `#215`.
+        if expires_at <= issued_at:
             raise ValueError(
-                f"a new invitation must use the current work factor {INVITATION_KDF}, not "
-                f"{verifier.kdf}; obtain the verifier from issue_secret rather than building one"
+                f"an invitation must expire after it is issued: {expires_at} <= {issued_at}"
             )
         with through_door():
             return Invitation(
