@@ -554,6 +554,57 @@ def test_saving_a_vanished_invitation_returns_false(factory: sessionmaker) -> No
     assert store.save_invitation(never_added) is False
 
 
+def test_a_stale_save_cannot_resurrect_a_destroyed_verifier(factory: sessionmaker) -> None:
+    """**A P1 found in review on #217, reproduced both ways before fixing.**
+
+    A caller holds a live invitation; a concurrent read destroys its verifier after expiry; saving
+    the stale instance wrote all five columns back and the secret verified again.
+    `KHEPRI-DEC-015` §5 makes that a retention failure rather than a lost update — destroyed bytes
+    that come back have survived, whatever the mechanism.
+
+    Asserted on the **row**, because every read destroys an expired verifier and would repair
+    exactly the resurrection this is trying to observe. My first attempt at reproducing it failed
+    for that reason.
+    """
+    store, invitation, _ = _invitation(factory)
+    live = store.get_invitation(invitation.invitation_id, now=NOW)
+    assert live is not None and live.verifier is not None
+
+    after_expiry = LATER + timedelta(hours=1)
+    store.get_invitation(invitation.invitation_id, now=after_expiry)
+    assert _stored_verifier_columns(factory, invitation.invitation_id) == (None,) * 5
+
+    assert store.save_invitation(live) is True, "the row is present, so the save reports success"
+
+    assert _stored_verifier_columns(factory, invitation.invitation_id) == (None,) * 5, (
+        "a stale save restored destroyed verifier material"
+    )
+
+
+@pytest.mark.parametrize("operation", ["redeemed", "revoked"])
+def test_a_stale_save_cannot_reopen_a_terminal_invitation(
+    factory: sessionmaker, operation: str
+) -> None:
+    """The second half of the same finding. Saving a live snapshot *after* a terminal transition
+    wrote `revoked_at = None` and reopened it. Terminal timestamps are write-once."""
+    store, invitation, _ = _invitation(factory)
+    live = store.get_invitation(invitation.invitation_id, now=NOW)
+    assert live is not None
+
+    assert store.save_invitation(getattr(live, operation)(at=NOW))
+    saved = store.get_invitation(invitation.invitation_id, now=NOW)
+    assert getattr(saved, f"{operation}_at") == NOW
+
+    assert store.save_invitation(live)
+
+    reread = store.get_invitation(invitation.invitation_id, now=NOW)
+    assert reread is not None
+    assert getattr(reread, f"{operation}_at") == NOW, (
+        f"a stale save cleared {operation}_at and reopened the invitation"
+    )
+    assert not reread.is_open_at(NOW)
+
+
 # --- the retention sweep (§3) -----------------------------------------------------------------
 
 

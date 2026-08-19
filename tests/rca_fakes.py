@@ -321,9 +321,37 @@ class MemoryInvitationStore:
         return self._read_destroying_expired(invitation_id, now=now)
 
     def save_invitation(self, invitation: Invitation) -> bool:
-        if invitation.invitation_id not in self.invitations:
+        """Monotonic, matching `SqlInvitationStore`.
+
+        A plain overwrite is what the SQL store did until `#217`, and it let a stale snapshot
+        restore a destroyed verifier or clear a terminal timestamp. The fake keeps the same rule
+        rather than the simpler one: a fake accepting a write production refuses would make an
+        `R4-05` concurrency test pass against a store that loses the race badly.
+        """
+        stored = self.invitations.get(invitation.invitation_id)
+        if stored is None:
             return False
-        self.invitations[invitation.invitation_id] = invitation
+
+        lifecycle = InvitationLifecycle(
+            redeemed_at=stored.redeemed_at or invitation.redeemed_at,
+            revoked_at=stored.revoked_at or invitation.revoked_at,
+        )
+        verifier = None if invitation.verifier is None else stored.verifier
+        self.invitations[invitation.invitation_id] = Invitation._from_storage(
+            InvitationOffer(
+                organization_id=stored.organization_id,
+                intended_role=stored.intended_role,
+                target_identity=stored.target_identity,
+                issued_by=stored.issued_by,
+            ),
+            StoredInvitationSecret(
+                invitation_id=stored.invitation_id,
+                verifier=verifier,
+                expires_at=stored.expires_at,
+            ),
+            issued_at=stored.issued_at,
+            lifecycle=lifecycle,
+        )
         return True
 
     def invitations_for_organization(

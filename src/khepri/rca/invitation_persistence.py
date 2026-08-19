@@ -221,27 +221,42 @@ class SqlInvitationStore:
         verifier is `None`, and a store that wrote the timestamp while leaving the bytes would
         undo the destruction the record performed.
 
+        **Monotonic, and an earlier version was not.** Every legitimate transition destroys the
+        verifier and sets a terminal timestamp, so this method only ever moves a row *forward*: it
+        never restores verifier bytes and never clears a terminal timestamp the row already carries.
+
+        Without that, a stale snapshot resurrected destroyed material. Reproduced both ways on
+        `#217`: a caller holds a live invitation, a concurrent read destroys its verifier after
+        expiry, and saving the stale instance wrote all five columns back — the secret verified
+        again. And saving a live snapshot *after* a revocation wrote `revoked_at = None`, reopening
+        it. `KHEPRI-DEC-015` §5 makes the first a retention failure, not a lost update.
+
         **Not the at-most-once guarantee.** Two concurrent redeemers both reading an open invitation
         would both reach here. `R4-01` §6.2 assigns that control to `R4-05`, which takes a lock or a
-        conditional update; this method is deliberately not it and does not pretend to be.
+        conditional update; this method is deliberately not it and does not pretend to be. What it
+        does guarantee is that losing that race cannot *undo* a completed transition.
         """
         assert_sealed(invitation)
         with self._factory.begin() as database:
             row = database.get(InvitationRow, invitation.invitation_id)
             if row is None:
                 return False
-            row.redeemed_at = invitation.redeemed_at
-            row.revoked_at = invitation.revoked_at
-            verifier = invitation.verifier
-            if verifier is None:
+
+            # Terminal timestamps are write-once. A row already redeemed or revoked keeps the
+            # instant it holds; a `None` from a stale snapshot is not a request to reopen it.
+            if row.redeemed_at is None:
+                row.redeemed_at = invitation.redeemed_at
+            if row.revoked_at is None:
+                row.revoked_at = invitation.revoked_at
+
+            # Destruction is one-way. `verifier is None` destroys; a non-`None` verifier is only
+            # ever the value the row already holds, so there is nothing to write, and writing it is
+            # how a stale snapshot resurrects bytes. The `assert_sealed` stays: handing this an
+            # unsealed verifier is a programming error whether or not the value is used.
+            if invitation.verifier is None:
                 _destroy_verifier(row)
             else:
-                assert_sealed(verifier)
-                row.secret_salt = verifier.salt
-                row.secret_digest = verifier.digest
-                row.kdf_n = verifier.kdf.n
-                row.kdf_r = verifier.kdf.r
-                row.kdf_p = verifier.kdf.p
+                assert_sealed(invitation.verifier)
         return True
 
     def invitations_for_organization(
