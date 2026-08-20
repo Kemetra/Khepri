@@ -89,9 +89,7 @@ class MemoryOrganizationStore:
     one from a test module and implemented a narrower subset of the protocol.
     """
 
-    def __init__(
-        self, accounts: MemoryAccountStore, *, fail_on_create: bool = False
-    ) -> None:
+    def __init__(self, accounts: MemoryAccountStore, *, fail_on_create: bool = False) -> None:
         self.organizations: dict[str, Organization] = {}
         self.memberships: dict[tuple[str, str], Membership] = {}
         self.scopes: dict[str, IsolationScope] = {}
@@ -181,6 +179,7 @@ class MemoryOrganizationStore:
         clause that can actually break is the SQL one, where a DELETE with the wrong WHERE takes
         the account's other memberships with it.
         """
+
         def revoke(key, membership: Membership) -> MembershipEvent:
             del self.memberships[key]
             return MembershipEvent.revoked(
@@ -321,7 +320,7 @@ class MemoryInvitationStore:
         return self._read_destroying_expired(invitation_id, now=now)
 
     def save_invitation(self, invitation: Invitation) -> bool:
-        """Monotonic, matching `SqlInvitationStore`.
+        """Monotonic, matching `SqlInvitationStore`, including its refusal.
 
         A plain overwrite is what the SQL store did until `#217`, and it let a stale snapshot
         restore a destroyed verifier or clear a terminal timestamp. The fake keeps the same rule
@@ -330,6 +329,15 @@ class MemoryInvitationStore:
         """
         stored = self.invitations.get(invitation.invitation_id)
         if stored is None:
+            return False
+
+        # A conflicting terminal transition is refused, as the SQL store refuses it. Taking the
+        # two fields independently built an invitation with *both* timestamps set -- a state
+        # `ck_rca_invitation_terminal_state` forbids, so the fake accepted what production
+        # rejects with `IntegrityError`. Found in review on `#217`.
+        if (invitation.redeemed_at is not None and stored.revoked_at is not None) or (
+            invitation.revoked_at is not None and stored.redeemed_at is not None
+        ):
             return False
 
         lifecycle = InvitationLifecycle(

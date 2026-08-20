@@ -214,7 +214,11 @@ class SqlInvitationStore:
         return self._read_destroying_expired(invitation_id, now=now)
 
     def save_invitation(self, invitation: Invitation) -> bool:
-        """Persist a state change. Returns False if the row has gone.
+        """Persist a state change. Returns False if the write did not land.
+
+        Two reasons it does not: the row has gone, or the snapshot proposes the terminal state
+        the row already excludes -- a redemption against a revoked row, or the reverse. Both
+        mean the caller's state is behind the row's, which is the same thing a caller handles.
 
         Writes the terminal timestamps and the verifier together, because the domain's transitions
         produce them together: `Invitation.redeemed` and `.revoked` both return a record whose
@@ -240,6 +244,24 @@ class SqlInvitationStore:
         with self._factory.begin() as database:
             row = database.get(InvitationRow, invitation.invitation_id)
             if row is None:
+                return False
+
+            # **The two fields are one decision, and checking them independently produced an
+            # impossible row.** A revoked row accepting a stale *redeemed* snapshot set both
+            # timestamps, which `ck_rca_invitation_terminal_state` forbids -- so the write
+            # raised `IntegrityError` at commit instead of refusing the stale transition. §5's
+            # state table excludes that pair, so arriving at it is never a lost update to
+            # merge. Found in review on `#217`.
+            #
+            # The refusal is keyed on what the snapshot *proposes*, not on the row being
+            # terminal: a stale snapshot carrying no terminal timestamp is a harmless no-op
+            # below, and reporting failure for it would make every late writer look like a
+            # conflict.
+            proposes_redeemed = invitation.redeemed_at is not None
+            proposes_revoked = invitation.revoked_at is not None
+            if (proposes_redeemed and row.revoked_at is not None) or (
+                proposes_revoked and row.redeemed_at is not None
+            ):
                 return False
 
             # Terminal timestamps are write-once. A row already redeemed or revoked keeps the

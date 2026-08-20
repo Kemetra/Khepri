@@ -94,7 +94,6 @@ def _invitation(
     return store, invitation, organization_id
 
 
-
 def _stored_verifier_columns(
     factory: sessionmaker, invitation_id: str
 ) -> tuple[object, object, object, object, object]:
@@ -288,9 +287,7 @@ def _insert_raw(factory: sessionmaker, organization_id: str, **overrides: object
     columns = ", ".join(values)
     binds = ", ".join(f":{name}" for name in values)
     with factory.begin() as database:
-        database.execute(
-            text(f"INSERT INTO rca_invitations ({columns}) VALUES ({binds})"), values
-        )
+        database.execute(text(f"INSERT INTO rca_invitations ({columns}) VALUES ({binds})"), values)
 
 
 def test_an_undeclared_role_is_refused_by_the_column(factory: sessionmaker) -> None:
@@ -301,9 +298,7 @@ def test_an_undeclared_role_is_refused_by_the_column(factory: sessionmaker) -> N
 
 
 @pytest.mark.parametrize("role", [OWNER_ROLE, MEMBER_ROLE])
-def test_either_declared_role_is_accepted_by_the_column(
-    factory: sessionmaker, role: str
-) -> None:
+def test_either_declared_role_is_accepted_by_the_column(factory: sessionmaker, role: str) -> None:
     """Both roles are storable, so the refusal above rejects forgery rather than everything."""
     organization_id, _ = _organization(factory)
 
@@ -605,15 +600,49 @@ def test_a_stale_save_cannot_reopen_a_terminal_invitation(
     assert not reread.is_open_at(NOW)
 
 
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("revoked", "redeemed"), ("redeemed", "revoked")],
+)
+def test_a_conflicting_terminal_save_is_refused_not_an_integrity_error(
+    factory: sessionmaker, first: str, second: str
+) -> None:
+    """The third stale-save shape, and the one the write-once checks could not see.
+
+    Two callers hold open snapshots; one saves a revocation, the other a redemption. Because
+    the two timestamps were checked independently, the second write set the *other* field and
+    produced a row with both -- which `ck_rca_invitation_terminal_state` forbids, so SQL raised
+    `IntegrityError` at commit rather than the store refusing the stale transition. Found in
+    review on `#217`.
+
+    Both orderings, because the two branches of the guard are not the same code path.
+    """
+    store, invitation, _ = _invitation(factory)
+    one = store.get_invitation(invitation.invitation_id, now=NOW)
+    other = store.get_invitation(invitation.invitation_id, now=NOW)
+    assert one is not None and other is not None
+
+    assert store.save_invitation(getattr(one, first)(at=NOW))
+
+    # No `IntegrityError`: the store refuses the conflicting transition and says so.
+    assert store.save_invitation(getattr(other, second)(at=NOW)) is False, (
+        "a {second} save against a {first} row must be refused, not attempted"
+    )
+
+    reread = store.get_invitation(invitation.invitation_id, now=NOW)
+    assert reread is not None
+    assert getattr(reread, f"{first}_at") == NOW, "the first transition must stand"
+    assert getattr(reread, f"{second}_at") is None, (
+        "the refused transition must leave no timestamp -- a row with both is the state "
+        "`ck_rca_invitation_terminal_state` excludes"
+    )
+
+
 # --- the retention sweep (§3) -----------------------------------------------------------------
 
 
 def _sweep(factory: sessionmaker, *, now: datetime = NOW) -> int:
-    return (
-        InvitationRetentionSweeper(SqlInvitationStore(factory))
-        .sweep(now=now)
-        .purged_invitations
-    )
+    return InvitationRetentionSweeper(SqlInvitationStore(factory)).sweep(now=now).purged_invitations
 
 
 def test_an_expired_unredeemed_invitation_is_purged_in_the_same_pass(
@@ -678,9 +707,11 @@ def test_the_redeemed_horizon_is_anchored_to_the_event_horizon_not_a_literal(
     """
     import inspect  # noqa: PLC0415
 
-    default = inspect.signature(InvitationRetentionSweeper.__init__).parameters[
-        "retention_months"
-    ].default
+    default = (
+        inspect.signature(InvitationRetentionSweeper.__init__)
+        .parameters["retention_months"]
+        .default
+    )
 
     assert default == MEMBERSHIP_EVENT_RETENTION_MONTHS
     source = inspect.getsource(InvitationRetentionSweeper.__init__)
