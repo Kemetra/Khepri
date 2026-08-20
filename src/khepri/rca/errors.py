@@ -58,3 +58,23 @@ class RoleChangeFailed(ValueError):
     caller probing role changes against account identifiers would otherwise enumerate
     memberships one refusal at a time.
     """
+
+
+# `R4-04`. Content-free like the rest, and for a sharper reason than most: `FR-025` requires a
+# denial for an object the actor may not reach to be indistinguishable from one for an object that
+# does not exist, and names disclosure of "existence, ownership, or the identity of another
+# organization" as the harm. A revoke that reported "not found" for an unknown identifier and
+# "not yours" for a real one would be an existence oracle for other organizations' invitations.
+#
+# One message covers four causes -- absent, already revoked, expired, and not reachable in this
+# scope -- following `resolve_scope`, where three distinct causes raise the identical
+# `ScopeAccessDenied`. `R4-01` §4.1 requires exactly that shape here.
+INVITATION_FAILURE = "Invitation is invalid or unavailable."
+
+
+class InvitationOperationFailed(PermissionError):
+    """An invitation operation that could not be applied.
+
+    `PermissionError` rather than `ValueError`, matching `ScopeAccessDenied`: the refusal is about
+    reachability, and the caller must not learn which of the four causes applied.
+    """

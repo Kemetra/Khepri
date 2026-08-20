@@ -107,6 +107,14 @@ class InvitationStore(Protocol):
 
     def save_invitation(self, invitation: Invitation) -> bool: ...
 
+    #: `R4-04`'s revocation, as one conditional statement rather than a read and a write.
+    #: Scoped by `(organization_id, invitation_id)` because `FR-023` gives an identifier no
+    #: authority, and returning a bool rather than raising keeps the four non-open causes
+    #: indistinguishable at this layer -- the statement cannot tell them apart either.
+    def delete_open_invitation(
+        self, organization_id: str, invitation_id: str, *, now: datetime
+    ) -> bool: ...
+
     def invitations_for_organization(
         self, organization_id: str, *, now: datetime
     ) -> tuple[Invitation, ...]: ...

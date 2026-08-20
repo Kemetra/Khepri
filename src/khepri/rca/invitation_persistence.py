@@ -326,6 +326,61 @@ class SqlInvitationStore:
             # load-bearing while a mutant proved it was not, so it is gone rather than kept.
             return tuple(_invitation_from_row(row) for row in rows)
 
+    def delete_open_invitation(
+        self, organization_id: str, invitation_id: str, *, now: datetime
+    ) -> bool:
+        """Delete one **open** invitation reachable in this scope. True when a row was removed.
+
+        `R4-01` §4.1's statement, and the whole of what revocation needs from persistence.
+
+        **Composite by requirement, not for tidiness.** `FR-023`: "possession of an object
+        identifier MUST confer no authority". Keyed by `invitation_id` alone, an owner of
+        organization `A` holding or guessing an `inv_` identifier belonging to `B` would revoke
+        `B`'s invitation -- and a verb reporting "not found" for a bad identifier and success for a
+        real one is an existence oracle for another organization's invitations. The
+        `organization_id` passed here is the scope the gate resolved for this actor, never a value
+        the caller supplied alongside the identifier.
+
+        **One statement rather than a read and a write.** `R4-01` §4.1: the composite lookup scopes
+        *which* row revocation may reach but does not make the open-to-revoked transition atomic,
+        and reading those two concerns as one is the defect. Run against a concurrent redemption,
+        a read-then-write revoke holds a stale snapshot and writes over a row that is already
+        redeemed -- either violating `ck_rca_invitation_terminal_state` *after* the membership has
+        committed, so the failure surfaces as an integrity error on the revoking transaction, or
+        silently overwriting terminal state.
+
+        **A `DELETE` rather than a state marker**, per §3's derivation: a never-redeemed invitation
+        loses *both* authorized purposes the moment it closes -- attribution never attached, and
+        §5 makes a deleted row indistinguishable from a retained closed one for replay refusal --
+        so retaining `target_identity` past that point is personal data outliving its purpose.
+        `revoked_at` remains in the schema for the redeemed-then-revoked case, not for a row this
+        method leaves behind.
+
+        **`expires_at > :now` is load-bearing and easy to omit.** §5 makes expiry a *derived*
+        terminal state with no column, so an expired row the sweeper has not reached still has
+        `redeemed_at IS NULL AND revoked_at IS NULL` and would match without it. Revocation would
+        then transition an expired invitation to revoked and report **success** -- a state change
+        the caller must not be able to make, reported in a way that distinguishes expired from
+        every other non-open cause.
+
+        Returning `False` rather than raising keeps the four causes indistinguishable *here*: this
+        method cannot tell them apart either, because one statement either matched or did not.
+        `InvitationService.revoke` translates that into `FR-025`'s uniform refusal.
+        """
+        with self._factory.begin() as database:
+            result = database.execute(
+                delete(InvitationRow).where(
+                    and_(
+                        InvitationRow.organization_id == organization_id,
+                        InvitationRow.invitation_id == invitation_id,
+                        InvitationRow.redeemed_at.is_(None),
+                        InvitationRow.revoked_at.is_(None),
+                        InvitationRow.expires_at > now,
+                    )
+                )
+            )
+            return int(result.rowcount or 0) == 1
+
     def _purge_spent_invitations(self, horizon: datetime, *, now: datetime) -> int:
         """Delete invitations whose purpose has ended. Returns the number of rows removed.
 

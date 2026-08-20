@@ -95,11 +95,30 @@ action's existing content-free refusal — never a message naming the cause, per
 | Revoke a membership | **PERMIT** | DENY¹ | DENY | DENY |
 | Resolve an isolation scope | **PERMIT** | **PERMIT** | DENY | DENY |
 | Switch active organization | **PERMIT** | **PERMIT** | DENY | DENY |
+| Issue an invitation | **PERMIT** | DENY | DENY | DENY |
+| Revoke an invitation | **PERMIT** | DENY | DENY | DENY |
 
 ¹ A member revoking *their own* membership (leaving an organization) is a plausible product
 behavior and is **not** in this matrix, because no operation expresses it. If one is added, it is a
 distinct action with its own row, not a widening of this cell — "revoke any membership" and "revoke
 my own" differ by exactly the authority this matrix exists to hold.
+
+**The two invitation rows** arrive from `R4-01` §6.3, in the slice that added the operations
+(`R4-04`) rather than later, because `test_every_protected_action_in_the_design_has_a_matrix_class`
+parses this table and fails when an action here has no test class. §7 anticipated `R4` extending
+this section; this is that extension. `FR-015` names *invite* as an owner capability, which settles
+the owner and member columns.
+
+**No footnote marker on those rows, deliberately.** `_actions_in_the_design` reads the action column
+verbatim and matches it against `ACTION_COVERAGE`'s keys, so a superscript there breaks the key and
+the exhaustiveness test fails -- verified by adding one and watching it fail. Any future annotation
+of a row belongs in prose below the table, as this one is.
+
+**Redemption is deliberately not a row.** Every action in this section is authorized by the actor's
+membership in the named organization, and a redeemer holds none by definition — redemption is
+authorized by the *secret*, not by a role. A non-member `DENY` cell would contradict `FR-019`, which
+requires exactly a non-member to be able to accept. Recorded because "add all three invitation verbs
+to the matrix" is the obvious wrong move.
 
 ### 3.2 Account-scoped actions
 
