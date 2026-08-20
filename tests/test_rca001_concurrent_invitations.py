@@ -237,16 +237,47 @@ def test_the_purge_blocks_on_a_held_issuance_lock(factory, attempt: int) -> None
     release = threading.Event()
 
     def hold_issuance() -> None:
-        """Take the lock and hold the transaction open until released."""
+        """Hold the identity lock, and write the invitation row on the *same* connection.
+
+        **`InvitationService.issue` cannot be called from in here, and the first version's attempt
+        to deadlocked the whole run.** `issue` writes through `add_invitation`, which opens its own
+        transaction on its own connection and takes this same advisory key -- so calling it while
+        this transaction holds the key means the test waits on itself forever, with no SQL error and
+        no output. Two rounds of CI cancellation traced to this.
+
+        So the row is inserted directly on the held connection. That is the state the test needs:
+        an invitation written under the lock, not yet committed. What it gives up is exercising
+        `issue`'s own lock acquisition -- and that is covered separately by
+        `test_rca001_identity_advisory_lock.py`'s source assertion that the call is present, which
+        is the right division: this file proves the *lock serializes*, that one proves *both paths
+        take it*.
+        """
         with factory.begin() as database:
-            database.execute(
-                text("SELECT pg_advisory_xact_lock(:key)"), {"key": key}
-            )
+            database.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
             holding.set()
             release.wait(timeout=BLOCK_TIMEOUT_SECONDS * 2)
-            # The invitation is written on this same connection, so it commits with the lock.
-            InvitationService(SqlInvitationStore(factory)).issue(
-                _offer(organization_id, owner_id, address), expires_at=LATER, now=NOW
+            database.execute(
+                text(
+                    "INSERT INTO rca_invitations (invitation_id, organization_id, "
+                    "intended_role, target_identity, secret_salt, secret_digest, "
+                    "kdf_n, kdf_r, kdf_p, expires_at, issued_by, issued_at) "
+                    "VALUES (:iid, :org, :role, :target, :salt, :digest, "
+                    ":n, :r, :p, :expires, :issued_by, :issued_at)"
+                ),
+                {
+                    "iid": f"inv_held{attempt}",
+                    "org": organization_id,
+                    "role": MEMBER_ROLE,
+                    "target": address,
+                    "salt": b"0" * 16,
+                    "digest": b"0" * 32,
+                    "n": 2**14,
+                    "r": 8,
+                    "p": 1,
+                    "expires": LATER,
+                    "issued_by": owner_id,
+                    "issued_at": NOW,
+                },
             )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -434,11 +465,13 @@ def test_revocation_and_redemption_cannot_both_win(factory, attempt: int) -> Non
         except InvitationOperationFailed:
             return "refused"
 
+    # **Both submitted before either is awaited.** Calling `.result()` inside the list literal
+    # blocks on the first future before the second is even submitted, so the barrier never reaches
+    # two participants and the test deadlocks -- the same shape as the self-deadlock above, found
+    # by auditing for it rather than by another CI cancellation.
     with ThreadPoolExecutor(max_workers=2) as pool:
-        outcomes = [
-            pool.submit(redeem).result(timeout=BLOCK_TIMEOUT_SECONDS * 2),
-            pool.submit(revoke).result(timeout=BLOCK_TIMEOUT_SECONDS * 2),
-        ]
+        futures = [pool.submit(redeem), pool.submit(revoke)]
+        outcomes = [future.result(timeout=BLOCK_TIMEOUT_SECONDS * 2) for future in futures]
 
     # One winner. Which one is timing, and asserting a fixed winner would be asserting the
     # scheduler -- §6.1's own instruction about this shape of test.
