@@ -1167,8 +1167,30 @@ actually has** rather than one outcome for both:
 
 | Ordering | Required assertion |
 |---|---|
-| Issuance first | The advisory lock serializes `issue` behind nothing and the purge's cascade catches its row: **no invitation open** afterwards |
+| Issuance first | The purge **blocks** on the advisory lock while `issue`'s transaction holds it, and its cascade then catches the row: **no invitation open** afterwards. The blocking is the assertion — see below |
 | Purge first | `issue` runs after the cascade and **leaves an invitation open** — the residual §8.2 accepts. Asserted as the *documented* outcome, not as a defect |
+
+**The issuance-first row asserts blocking, not just the outcome, because the outcome alone
+cannot fail on a missing lock.** "No invitation open afterwards" is what an implementation with
+**no lock at all** produces whenever issuance happens to commit before the purge's delete
+begins — which is most of the time on an unloaded test database. So a conforming-looking test
+would pass against the exact defect the lock exists to prevent, and would do so reliably enough
+to look trustworthy. Found in review on `#210`, deferred to `#211`, fixed here.
+
+So `R4-07` makes the ordering *deterministic* rather than hoping for it:
+
+1. Open `issue`'s transaction and let it take the advisory lock, then **hold it** — do not
+   commit. A second connection is required; this cannot be done in one session.
+2. Start the purge on that second connection and assert it **blocks** — e.g. it does not
+   complete within a short timeout, or `pg_locks` shows it waiting on the same key. Blocking is
+   the only observable that distinguishes a held lock from an absent one.
+3. Commit `issue`, then let the purge proceed and assert **no invitation open** afterwards.
+
+Step 2 is the one that fails when the lock is missing: without it the purge completes
+immediately and the test's own timing, not the implementation, decided the result. This is the
+same shape as §8's key-derivation test (`hash()` passing a two-process check because the
+children inherited the parent's seed) and it is now the fifth instance in this note — a test
+whose environment, rather than the code, supplies the property being asserted.
 
 An earlier revision required both orderings to leave nothing open. That is unsatisfiable alongside
 §8.2's acceptance, and it contradicted the same section's instruction to `xfail` the purge-first
