@@ -69,6 +69,48 @@ class SessionStore(Protocol):
 
     def get_session(self, session_id: str) -> BetaSession | None: ...
 
+    def open_commercial_session_row(self, session: BetaSession) -> None: ...
+
+    def get_session_for_owner(self, owner_id: str, session_id: str) -> BetaSession | None: ...
+
+
+def open_commercial_session(
+    store: SessionStore,
+    *,
+    owner_id: str,
+    now: datetime,
+) -> BetaSession:
+    """Open an analysis session for an already-resolved organization scope (`R7-07`).
+
+    Sibling to `InvitationService.redeem`, and deliberately unlike it in two ways.
+
+    **It accepts the `owner_id` rather than minting one.** `redeem` mints `own_...` per redemption
+    because a beta participant has no organization behind them. Here the organization's scope *is*
+    the analysis scope (`KHEPRI-DEC-019` §1), `allocate_owner_id` in `khepri.rca` is that key's
+    single definition, and `R7-01` §4 lists "mint an `owner_id` of its own" among the things the
+    bridge must never do -- a second minting site is how `FR-035`'s stability breaks.
+
+    **It performs no authorization, and takes nothing it could authorize with.** The parameters are
+    a store, an opaque key, and a clock. No `account_id`, `organization_id`, name, slug, or email
+    reaches this function, so `FR-032` and `FR-033` hold by absence rather than by inspection.
+    Authorization happens one layer up, in `khepri.runtime`'s bridge, through
+    `IsolationService.resolve_scope`. Two authorization sites is how two authorization answers
+    eventually differ.
+
+    `session_id` stays RRA's to mint: it is per-analysis, not per-organization, and one scope now
+    holds many sessions -- which is what migration `20260817_0017` enabled. `content_expires_at`
+    follows `redeem`'s horizon so a commercial analysis and a beta one age out identically; nothing
+    in `KHEPRI-DEC-021` authorizes a different one.
+    """
+    session = BetaSession(
+        owner_id=owner_id,
+        session_id=f"ses_{secrets.token_urlsafe(18)}",
+        created_at=now,
+        content_expires_at=now + timedelta(days=7),
+    )
+    store.open_commercial_session_row(session)
+    return session
+
 
 class InvitationService:
     def __init__(self, store: SessionStore) -> None:

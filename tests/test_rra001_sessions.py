@@ -57,6 +57,15 @@ class MemorySessionStore:
     def get_session(self, session_id: str) -> BetaSession | None:
         return self.sessions.get(session_id)
 
+    def open_commercial_session_row(self, session: BetaSession) -> None:
+        self.sessions[session.session_id] = session
+
+    def get_session_for_owner(self, owner_id: str, session_id: str) -> BetaSession | None:
+        session = self.sessions.get(session_id)
+        if session is None or session.owner_id != owner_id:
+            return None
+        return session
+
 
 def service_and_store() -> tuple[InvitationService, MemorySessionStore]:
     store = MemorySessionStore()
