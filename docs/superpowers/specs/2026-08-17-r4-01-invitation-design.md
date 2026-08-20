@@ -1785,3 +1785,22 @@ above rather than from the roadmap:
 | `R4-06` | Cascade in `revoke_membership`'s `write` callback, **not** the shared helper | §7 |
 | `R4-06` | Cascade at account purge, unscoped by organization | §7.1 |
 | `R4-07` | Correct-secret-against-expired refusal; addressee-mismatch and `email is None` refusals; demotion leaves invitations open | §3, §6.1.1, §7 |
+
+> **Correction, 2026-08-20 (`R4-07`).** Three of the four obligations in the `R4-07` row above were
+> delivered earlier, because §9's reordering moved `R4-06` ahead of `R4-05` after this table was
+> written: the addressee-mismatch and `email is None` refusals landed with redemption itself
+> (`R4-05`, §6.1.1 names them as *its* obligation too), and "demotion leaves invitations open" landed
+> with the cascade placement it tests (`R4-06`, where §7 names it). `R4-07` re-asserting them would
+> put two tests on one property, which is the divergence class the fake-parity test exists to catch,
+> so it records where they live instead.
+>
+> What `R4-07` actually adds: the correct-secret-against-non-open cases, the **uniformity set
+> assertion** (six causes, one message — the test that fails when a later slice adds a helpful
+> message to one branch), §7.1's motivating replacement-account case, and the three PostgreSQL races.
+>
+> **A finding about the expired case**, recorded because the obvious reading is wrong: the secret
+> verification is what refuses an expired invitation, not the state check. `find_for_redemption`
+> destroys the verifier of an expired row in the transaction that reads it (§3), so there is nothing
+> left to compare by the time `redeem` checks openness. That is §5's requirement satisfied *by
+> construction* rather than by two branches agreeing on a message — and it means a test pinning
+> which check fired would break if the destroy-on-touch rule moved.
