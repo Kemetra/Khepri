@@ -28,6 +28,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from khepri.rca.invitation_retention import InvitationRetentionSweeper
 from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
 from khepri.rca.session_retention import SessionRetentionSweeper
 from khepri.rra.deletion import DeletionRetryRequired, DeletionService
@@ -52,6 +53,12 @@ class SweepReport:
     # (`R3-07`). Two different tables and two different policies; one name for both would make a
     # report that reads as consistent while measuring unrelated things.
     purged_sessions: int = 0
+    # `R4-03`'s invitation horizon. Distinct from every count above for the same reason
+    # `purged_sessions` is distinct from `expired_sessions`: a different table and a different
+    # policy. This one carries a privacy obligation the others do not -- an invitation row holds a
+    # `target_identity`, so a pass that purged none when it should have is a retention failure
+    # rather than a housekeeping one.
+    purged_invitations: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,20 +76,29 @@ class RetentionPasses:
     accounts: AccountRetentionSweeper | None = None
     events: MembershipEventSweeper | None = None
     sessions: SessionRetentionSweeper | None = None
+    invitations: InvitationRetentionSweeper | None = None
 
-    def run(self, *, now: datetime) -> tuple[int, int, int]:
-        """All three passes, returning `(purged_accounts, purged_events, purged_sessions)`.
+    def run(self, *, now: datetime) -> tuple[int, int, int, int]:
+        """All four passes, returning the purged counts in field order.
 
         Independent of each other: §2a's twelve-month audit horizon is shorter than §2b's
         twenty-four month account horizon, so an event never outlives the account it refers to,
         and neither pass depends on the other having run. `R3-07`'s session horizon is shorter
         still and references neither — a session record is an operational artifact, so purging one
         removes no audit evidence and changes no authority.
+
+        **The invitation pass is anchored to the event pass but does not depend on it having run.**
+        `R4-03`'s redeemed-invitation horizon is `MEMBERSHIP_EVENT_RETENTION_MONTHS`, so the two
+        move
+        together by construction — but each evaluates its own predicate against `now`, and running
+        them in either order over the same instant gives the same result. Ordering here is field
+        order, not a dependency.
         """
         return (
             0 if self.accounts is None else self.accounts.sweep(now=now).purged_accounts,
             0 if self.events is None else self.events.sweep(now=now).purged_events,
             0 if self.sessions is None else self.sessions.sweep(now=now).purged_sessions,
+            0 if self.invitations is None else self.invitations.sweep(now=now).purged_invitations,
         )
 
 
@@ -113,7 +129,7 @@ class LocalSweeper:
         # `getattr` because a stack without RCA tables, and the test stubs that subclass this
         # without calling __init__, legitimately have no retention pass to run.
         retention = getattr(self, "_retention", None) or RetentionPasses()
-        purged_accounts, purged_events, purged_sessions = retention.run(now=now)
+        purged_accounts, purged_events, purged_sessions, purged_invitations = retention.run(now=now)
         return SweepReport(
             expired_leases=len(expired),
             orphaned_jobs=len(orphaned),
@@ -122,6 +138,7 @@ class LocalSweeper:
             purged_accounts=purged_accounts,
             purged_events=purged_events,
             purged_sessions=purged_sessions,
+            purged_invitations=purged_invitations,
         )
 
     def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:

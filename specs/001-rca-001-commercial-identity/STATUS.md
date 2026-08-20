@@ -2,8 +2,8 @@
 
 **Task:** `R0-03` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 
-**Baseline:** `main` @ `d50ffe6`, 2026-08-19. `uv run khepri-gov validate` passes; `uv run pytest`
-reports 2256 passed, 47 skipped. Migration head `20260817_0017` (single head).
+**Baseline:** `main` @ `42ff3c0`, 2026-08-20. `uv run khepri-gov validate` passes; `uv run pytest`
+reports 2315 passed, 47 skipped. Migration head `20260818_0018` (single head).
 
 **Coverage: rows updated through `R4-02`; the narrative below is written through `R7-01`.** The two
 are separated deliberately. `R4-02` (`d50ffe6`) changed the rollup and the Invitations rows, and the
@@ -108,13 +108,13 @@ longer dominated by missing subsystems:
 
 | Cause | Requirements | Count | Roadmap |
 |---|---|---|---|
-| Invitations have a domain but no service or table | FR-017, FR-018, FR-019, FR-020 | 4 | `R4-03` … `R4-06` |
-| Invitations have no table or store | FR-016 | 1 | `R4-03` |
+| Invitations have a domain and a table but no service | FR-017, FR-018, FR-019, FR-020 | 4 | `R4-04` … `R4-06` |
+| Invitations have no issuance operation | FR-016 | 1 | `R4-04` |
 | Recovery does not exist | FR-005, FR-006, FR-007 | 3 | `R5` |
 | **No production path routes through the canonical checkpoint** | FR-008, FR-009, FR-021, FR-022, FR-023, FR-024, FR-025, FR-026, FR-028, FR-031, FR-034, FR-038 | 12 | `R7-05` |
 | Narrower single-clause reasons stated in their own rows | FR-001, FR-003, FR-015, FR-035 | 4 | various |
 
-4 + 1 + 3 + 12 + 4 = **24**, matching the rollup. `R4-02` split the invitations cause in two rather than reducing it: `FR-016` is now `Partial` for a narrower reason than the other four, and collapsing them would hide that its remaining gap is a table rather than a subsystem. The set was checked against the requirement tables
+4 + 1 + 3 + 12 + 4 = **24**, matching the rollup. `R4-02` split the invitations cause in two rather than reducing it, and `R4-03` narrowed both halves without merging them: `FR-016`'s remaining gap is an issuance *operation*, while the other four still want a service. Collapsing the rows would hide that they are now one slice apart rather than a subsystem apart. **Neither slice reduced the count**, which is the point of stating it: a table and a store landing changes what is missing, not how much. The set was checked against the requirement tables
 directly, not assembled by hand: every row above appears in the tables as `Partial` or
 `Not implemented`, and every such row appears above.
 
@@ -187,7 +187,7 @@ one — which is the moment validation stops being optional.
 
 | FR | Status | Gap |
 |---|---|---|
-| FR-016 | **Partial — domain only** | `R4-02` (`d50ffe6`, #215) supplies the record and its hashed secret in `invitations.py`: a sealed `Invitation`, the four states discriminated by nullability, `is_expired_at` as the single expression of the boundary, the `kci1.` token, scrypt at RRA's parameters, and a sealed `InvitationSecret` whose only door is `issue_secret` — provenance rather than a shape check, which is what establishes "persisted only as a strong salted hash". **No table and no store method**: `RCA_TABLES` in `test_rca001_migration.py` enumerates seven and `rca_invitations` is not among them, and `R4-03` owes it plus the two `CHECK`s and the sweeper. (An earlier draft of this row said *five*, carried over from the text it replaced — accurate before `R3-03` added `rca_sessions` and `rca_external_identities`, stale after. A number quoted from the prose being rewritten still needs checking against source.) |
+| FR-016 | **Partial — no issuance operation** | `R4-02` (`d50ffe6`, #215) supplies the record and its hashed secret in `invitations.py`: a sealed `Invitation`, the four states discriminated by nullability, `is_expired_at` as the single expression of the boundary, the `kci1.` token, scrypt at RRA's parameters, and a sealed `InvitationSecret` whose only door is `issue_secret` — provenance rather than a shape check, which is what establishes "persisted only as a strong salted hash". **The table and store now exist, proposed by `R4-03`**: migration `20260818_0018` adds `rca_invitations` with four `CHECK`s — the role, the redeemed-or-revoked exclusion, expiry-after-issuance, and the five-column verifier invariant `AccountRow` lacks — plus `SqlInvitationStore`, its destroy-on-touch read path, and a sweeper anchored to the `MembershipEvent` horizon rather than a literal. **Still `Partial`**: `FR-016` also requires an issuance operation, which is `R4-04`. (An earlier draft of this row said *five*, carried over from the text it replaced — accurate before `R3-03` added `rca_sessions` and `rca_external_identities`, stale after. A number quoted from the prose being rewritten still needs checking against source.) |
 | FR-017 … FR-019 | Not implemented | No service. Issuance and revocation are `R4-04`; redemption and the uniform-failure path are `R4-05`. **`FR-017`'s timing half is deliberately not in the domain** — `invitations.py`'s docstring records that `parse_token` and `verify_secret` cannot establish it alone, because the dummy lookup and dummy scrypt belong to the path that sequences them |
 | FR-020 | Not implemented | Blocked by invitations alone since `R2` supplied revocation (`organizations.py:382`); it was doubly blocked at `ebfbe77`. The cascade is `R4-06`, reordered before `R4-05` |
 
