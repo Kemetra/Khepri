@@ -57,6 +57,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -160,6 +161,100 @@ def _disable(factory, account_id: str) -> None:
     assert accounts.save_account(live.disabled(now=NOW))
 
 
+class _Gate(NamedTuple):
+    """The two events that sequence a holder thread against its observer."""
+
+    holding: threading.Event
+    release: threading.Event
+
+
+class _Row(NamedTuple):
+    """What `_insert_invitation_row` needs, grouped so the helper stays under five parameters."""
+
+    invitation_id: str
+    organization_id: str
+    issued_by: str
+    address: str
+
+
+def _insert_invitation_row(
+    database,
+    *,
+    invitation_id: str,
+    organization_id: str,
+    issued_by: str,
+    address: str,
+) -> None:
+    """Write an open invitation row on the caller's connection, bypassing `issue`.
+
+    **Raw SQL on a supplied connection, deliberately.** `InvitationService.issue` opens its own
+    transaction and takes the identity advisory lock, so calling it from inside a transaction that
+    already holds that key deadlocks the caller against itself -- which cost two CI runs before it
+    was found. This writes the same row the service would, on the connection that holds the lock, so
+    the row commits with it.
+
+    The verifier columns are filler: nothing in the blocking test verifies a secret, and
+    `ck_rca_invitation_verifier_whole` only requires the five to be present or absent together.
+    """
+    database.execute(
+        text(
+            "INSERT INTO rca_invitations (invitation_id, organization_id, intended_role, "
+            "target_identity, secret_salt, secret_digest, kdf_n, kdf_r, kdf_p, "
+            "expires_at, issued_by, issued_at) "
+            "VALUES (:iid, :org, :role, :target, :salt, :digest, :n, :r, :p, "
+            ":expires, :issued_by, :issued_at)"
+        ),
+        {
+            "iid": invitation_id,
+            "org": organization_id,
+            "role": MEMBER_ROLE,
+            "target": address,
+            "salt": b"0" * 16,
+            "digest": b"0" * 32,
+            "n": 2**14,
+            "r": 8,
+            "p": 1,
+            "expires": LATER,
+            "issued_by": issued_by,
+            "issued_at": NOW,
+        },
+    )
+
+
+def _hold_lock_and_write(
+    factory,
+    gate: _Gate,
+    key: int,
+    row: _Row,
+) -> None:
+    """Hold the identity lock, then write an invitation row on the *same* connection.
+
+    **`InvitationService.issue` cannot be called from in here, and the first version's attempt to
+    deadlocked the whole run.** `issue` writes through `add_invitation`, which opens its own
+    transaction on its own connection and takes this same advisory key -- so calling it while this
+    transaction holds the key means waiting on a lock this thread already holds, forever, with no
+    SQL error and no output. Two rounds of CI cancellation traced to this.
+
+    What that gives up is exercising `issue`'s own acquisition, and that is the right division
+    rather than a gap: this file proves the lock **serializes**, and
+    `test_rca001_identity_advisory_lock.py`'s source assertion proves **both paths take it**.
+
+    Module-level rather than a closure inside the test, so the test body stays small enough for
+    CodeScene's Large Method rule -- a nested function counts toward the enclosing method's size.
+    """
+    with factory.begin() as database:
+        database.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+        gate.holding.set()
+        gate.release.wait(timeout=BLOCK_TIMEOUT_SECONDS * 2)
+        _insert_invitation_row(
+            database,
+            invitation_id=row.invitation_id,
+            organization_id=row.organization_id,
+            issued_by=row.issued_by,
+            address=row.address,
+        )
+
+
 def _advisory_rows(factory, key: int) -> list[tuple[bool, int]]:
     """Every `pg_locks` row for the advisory `key`, as `(granted, pid)`.
 
@@ -204,6 +299,20 @@ def _waiting_on(factory, key: int) -> bool:
     return any(not granted for granted, _ in _advisory_rows(factory, key))
 
 
+def _wait_until_blocked(factory, key: int) -> bool:
+    """Poll `pg_locks` until a backend is waiting on `key`, or the budget runs out.
+
+    Condition-based rather than a fixed sleep: a sleep long enough for a slow runner is dead time on
+    a fast one, and a sleep short enough to be quick is a flake.
+    """
+    tick = threading.Event()
+    for _ in range(int(BLOCK_TIMEOUT_SECONDS * 10)):
+        if _waiting_on(factory, key):
+            return True
+        tick.wait(0.1)
+    return False
+
+
 def _open_invitations(factory, organization_id: str) -> int:
     return len(
         SqlInvitationStore(factory).invitations_for_organization(organization_id, now=NOW)
@@ -233,55 +342,17 @@ def test_the_purge_blocks_on_a_held_issuance_lock(factory, attempt: int) -> None
     _disable(factory, addressee_id)
     key = identity_lock_key(address)
 
-    holding = threading.Event()
-    release = threading.Event()
-
-    def hold_issuance() -> None:
-        """Hold the identity lock, and write the invitation row on the *same* connection.
-
-        **`InvitationService.issue` cannot be called from in here, and the first version's attempt
-        to deadlocked the whole run.** `issue` writes through `add_invitation`, which opens its own
-        transaction on its own connection and takes this same advisory key -- so calling it while
-        this transaction holds the key means the test waits on itself forever, with no SQL error and
-        no output. Two rounds of CI cancellation traced to this.
-
-        So the row is inserted directly on the held connection. That is the state the test needs:
-        an invitation written under the lock, not yet committed. What it gives up is exercising
-        `issue`'s own lock acquisition -- and that is covered separately by
-        `test_rca001_identity_advisory_lock.py`'s source assertion that the call is present, which
-        is the right division: this file proves the *lock serializes*, that one proves *both paths
-        take it*.
-        """
-        with factory.begin() as database:
-            database.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
-            holding.set()
-            release.wait(timeout=BLOCK_TIMEOUT_SECONDS * 2)
-            database.execute(
-                text(
-                    "INSERT INTO rca_invitations (invitation_id, organization_id, "
-                    "intended_role, target_identity, secret_salt, secret_digest, "
-                    "kdf_n, kdf_r, kdf_p, expires_at, issued_by, issued_at) "
-                    "VALUES (:iid, :org, :role, :target, :salt, :digest, "
-                    ":n, :r, :p, :expires, :issued_by, :issued_at)"
-                ),
-                {
-                    "iid": f"inv_held{attempt}",
-                    "org": organization_id,
-                    "role": MEMBER_ROLE,
-                    "target": address,
-                    "salt": b"0" * 16,
-                    "digest": b"0" * 32,
-                    "n": 2**14,
-                    "r": 8,
-                    "p": 1,
-                    "expires": LATER,
-                    "issued_by": owner_id,
-                    "issued_at": NOW,
-                },
-            )
+    gate = _Gate(threading.Event(), threading.Event())
+    holding, release = gate.holding, gate.release
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        holder = pool.submit(hold_issuance)
+        holder = pool.submit(
+            _hold_lock_and_write,
+            factory,
+            gate,
+            key,
+            _Row(f"inv_held{attempt}", organization_id, owner_id, address),
+        )
         try:
             assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS), "the holder never took the lock"
 
@@ -300,13 +371,7 @@ def test_the_purge_blocks_on_a_held_issuance_lock(factory, attempt: int) -> None
                 )
             )
 
-            deadline = threading.Event()
-            blocked = False
-            for _ in range(int(BLOCK_TIMEOUT_SECONDS * 10)):
-                if _waiting_on(factory, key):
-                    blocked = True
-                    break
-                deadline.wait(0.1)
+            blocked = _wait_until_blocked(factory, key)
 
             assert blocked, (
                 "the purge did not block on the advisory lock. Either the lock is absent from "
