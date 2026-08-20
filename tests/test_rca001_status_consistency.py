@@ -283,6 +283,37 @@ def _cause_table_counts(document: str) -> list[int]:
     return counts
 
 
+def _cause_table_rows(document: str) -> list[tuple[int, set[str]]]:
+    """Each cause row as `(stated count, requirements that row names)`, association kept.
+
+    **The row association is what `_cause_table_requirements` throws away.** Unioning every
+    row's identities and validating the count list separately means neither check can see a
+    requirement that moved *between* rows: moving `FR-017` out of the four-item row into the
+    `FR-016` row leaves the union identical and the count list `[4, 1, 3, 12, 4]` identical,
+    while the two rows then name 3 and 2. Both cause tests passed on that edit. Found in review
+    on `#218`, and it is the third round of one defect -- each earlier fix widened *which* facts
+    are compared without asking whether they were still compared *per row*.
+    """
+    header = document.find("| Cause | Requirements | Count | Roadmap |")
+    assert header != -1, "the cause table's header is missing or reworded"
+    body = document[header:]
+    blank = body.find("\n\n")
+    table = body[: blank if blank != -1 else len(body)]
+
+    rows: list[tuple[int, set[str]]] = []
+    for row in table.split("\n")[2:]:
+        cells = [cell.strip().strip("*") for cell in row.split("|")]
+        if len(cells) < 5:
+            continue
+        named: set[str] = set()
+        for match in re.finditer(r"`?(FR-0\d\d)`?(?:\s*(?:…|\.\.\.)\s*`?(FR-0\d\d)`?)?", cells[2]):
+            low = int(match.group(1)[3:])
+            high = int(match.group(2)[3:]) if match.group(2) else low
+            named.update(f"FR-{number:03d}" for number in range(low, high + 1))
+        rows.append((int(cells[3]), named))
+    return rows
+
+
 def _cause_table_requirements(document: str) -> set[str]:
     """Every requirement the cause table names, ranges expanded.
 
@@ -303,9 +334,7 @@ def _cause_table_requirements(document: str) -> set[str]:
         cells = [cell.strip().strip("*") for cell in row.split("|")]
         if len(cells) < 5:
             continue
-        for match in re.finditer(
-            r"`?(FR-0\d\d)`?(?:\s*(?:…|\.\.\.)\s*`?(FR-0\d\d)`?)?", cells[2]
-        ):
+        for match in re.finditer(r"`?(FR-0\d\d)`?(?:\s*(?:…|\.\.\.)\s*`?(FR-0\d\d)`?)?", cells[2]):
             low = int(match.group(1)[3:])
             high = int(match.group(2)[3:]) if match.group(2) else low
             named.update(f"FR-{number:03d}" for number in range(low, high + 1))
@@ -335,6 +364,59 @@ def test_the_cause_table_names_exactly_the_incomplete_requirements() -> None:
         f"{sorted(incomplete - named)}. Counts matching does not mean the right requirements are "
         "counted."
     )
+
+
+def test_each_cause_row_counts_the_requirements_it_names() -> None:
+    """A `Count` cell must describe *its own row*, not the table's total.
+
+    The union and the count list are both blind to a requirement moving between rows, because
+    neither changes when one does. This is the assertion that does change. Found in review on
+    `#218`.
+    """
+    document = STATUS.read_text(encoding="utf-8")
+
+    for stated, named in _cause_table_rows(document):
+        assert stated == len(named), (
+            f"a cause row states {stated} but names {len(named)}: {sorted(named)}. "
+            "The Count column describes the row it sits in."
+        )
+
+
+def test_the_row_scanner_catches_a_requirement_moved_between_rows() -> None:
+    """**The mutation, planted.** Without this the helper above is unproven: the defect it
+    exists for leaves the table superficially plausible, so a passing suite is not evidence.
+
+    `FR-017` moves out of the four-item row into the `FR-016` row. Both counts are then wrong,
+    while the union of identities and the list of counts are both unchanged -- which is exactly
+    why the two older cause tests cannot see it.
+    """
+    sound = "\n".join(
+        (
+            "| Cause | Requirements | Count | Roadmap |",
+            "|---|---|---|---|",
+            "| a | FR-017, FR-018, FR-019, FR-020 | 4 | `R4` |",
+            "| b | FR-016 | 1 | `R4-03` |",
+        )
+    )
+    moved = "\n".join(
+        (
+            "| Cause | Requirements | Count | Roadmap |",
+            "|---|---|---|---|",
+            "| a | FR-018, FR-019, FR-020 | 4 | `R4` |",
+            "| b | FR-016, FR-017 | 1 | `R4-03` |",
+        )
+    )
+
+    # The union and the counts are identical across the two, so the older checks are blind.
+    assert _cause_table_requirements(sound) == _cause_table_requirements(moved)
+    assert _cause_table_counts(sound) == _cause_table_counts(moved)
+
+    # The per-row view is not.
+    assert all(stated == len(named) for stated, named in _cause_table_rows(sound))
+    assert [(stated, len(named)) for stated, named in _cause_table_rows(moved)] == [
+        (4, 3),
+        (1, 2),
+    ]
 
 
 def test_the_cause_table_accounts_for_every_incomplete_requirement() -> None:
@@ -402,6 +484,25 @@ def test_the_baseline_commit_exists_in_history() -> None:
         )
     assert found.stdout.strip() == "commit", (
         f"{match.group(1)} resolves to a {found.stdout.strip()}, not a commit"
+    )
+
+    # **Existing is not the claim; the header says `main`.** A SHA from a topic branch -- this
+    # PR's own head, say -- is a real commit object, so the check above passes while the stated
+    # baseline never belonged to the branch the document names. `--is-ancestor` is the
+    # difference between "this object exists somewhere" and "this is a state of `main`". Found
+    # in review on `#218`, and it is the same shape as the shallow-clone confusion above: one
+    # exit status standing for two different facts.
+    #
+    # `main` may be absent in a detached CI checkout, so its absence skips rather than fails --
+    # established independently, so a missing ref can never be misread as a bad ancestor.
+    if git("rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0:
+        pytest.skip("no local `main` ref in this checkout to test ancestry against")
+
+    ancestry = git("merge-base", "--is-ancestor", match.group(1), "main")
+    assert ancestry.returncode == 0, (
+        f"the baseline names {match.group(1)}, which is a commit but is not an ancestor of "
+        "`main`. The header claims a state of `main`, so a topic-branch or orphaned commit is "
+        "a false baseline even though the object exists."
     )
 
     # An abbreviated SHA that matches two objects is `git`'s ambiguity error, which the check above
