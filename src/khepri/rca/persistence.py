@@ -10,8 +10,10 @@ from sqlalchemy import (
     LargeBinary,
     String,
     UniqueConstraint,
+    and_,
     delete,
     func,
+    or_,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -373,6 +375,67 @@ def _canonical_or_none(email: str | None) -> str | None:
     return None if email is None else canonical_email(email)
 
 
+def _cascade_invitations(
+    database,
+    *,
+    organization_id: str | None,
+    target_identity: str | None = None,
+    issued_by: str | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Delete open invitations matched by a recipient and/or an issuer predicate (`R4-06`).
+
+    **A `DELETE`, not a `revoked_at` marker.** `R4-01` §3: "Both purposes therefore lapse for a
+    non-redeemed invitation the moment it is closed, and neither authorizes holding
+    `target_identity` past that point." Every row this reaches is `redeemed_at IS NULL` by
+    construction, so all of them are that rule's first row. §7 previously said to mark and keep,
+    contradicting §4.1's "§7's cascades take the same shape" as its `DELETE`; corrected in the note
+    on 2026-08-20 and recorded there rather than decided here.
+
+    **Takes `database` rather than opening a transaction.** Every caller is already inside one, and
+    that is the whole point: §7 argues at length that a cascade running *after* its trigger's
+    transaction commits leaves a window in which the membership is revoked and the invitation is
+    still redeemable, so the revoked member walks back in through a held token. The three writes --
+    the membership row, its `FR-014` event, and these invitations -- commit or roll back together.
+
+    **`organization_id=None` means every organization**, which only the purge trigger uses (§7.1):
+    "the trigger is the identity ending, not a membership ending, so every outstanding offer to that
+    person lapses at once". Passing `None` accidentally is the one dangerous mistake here, so the
+    two membership callers pass a real value and this is the only branch that widens.
+
+    **`now=None` omits the expiry clause**, which again only the purge trigger does. §4.1's
+    `expires_at > :now` stops *revocation* reporting success on a state its caller may not change;
+    this cascade has no actor and reports nothing, and an expired invitation to a purged address is
+    exactly a row §3 says may no longer hold its target identity. Corrected in §7.1 on 2026-08-20,
+    where "§7's cascades inherit this clause" was too broad.
+
+    Returns the number of rows deleted, for the caller's evidence rather than for control flow.
+    """
+    anchors = []
+    if target_identity is not None:
+        anchors.append(InvitationRow.target_identity == canonical_email(target_identity))
+    if issued_by is not None:
+        anchors.append(InvitationRow.issued_by == issued_by)
+    if not anchors:
+        # Neither anchor is resolvable -- a tombstone whose address is gone and no issuer given.
+        # Deleting on the remaining predicates alone would close every open invitation in the
+        # organization, so this fails closed by doing nothing.
+        return 0
+
+    conditions = [
+        or_(*anchors),
+        InvitationRow.redeemed_at.is_(None),
+        InvitationRow.revoked_at.is_(None),
+    ]
+    if organization_id is not None:
+        conditions.append(InvitationRow.organization_id == organization_id)
+    if now is not None:
+        conditions.append(InvitationRow.expires_at > now)
+
+    result = database.execute(delete(InvitationRow).where(and_(*conditions)))
+    return int(result.rowcount or 0)
+
+
 def _verifier_from_row(row: AccountRow) -> Verifier | None:
     """None once the verifier has been destroyed on disablement (KHEPRI-DEC-015).
 
@@ -470,6 +533,21 @@ class SqlAccountStore:
             row = database.get(AccountRow, account_id)
             if row is None or not _account_from_row(row).is_purgeable_at(horizon):
                 return False
+            # `R4-01` §7.1's third trigger, in this transaction and **after** the eligibility
+            # check above. A cascade placed before it would close invitations for an account that
+            # turned out not to be purgeable -- the "erased a re-enabled account's email" defect
+            # this method exists to prevent, in a second column.
+            #
+            # Unscoped by organization, deliberately: the trigger is the identity ending, so every
+            # outstanding offer to that person lapses at once. And no expiry clause -- an expired
+            # invitation to a released address is exactly a row whose `target_identity` §3 says may
+            # no longer be held.
+            #
+            # The address is read here, before the line below nulls it, which is the ordering §7.1
+            # fixes inside this transaction.
+            _cascade_invitations(
+                database, organization_id=None, target_identity=row.email
+            )
             row.email = None
             row.credential_salt = None
             row.credential_digest = None
@@ -971,6 +1049,32 @@ class SqlOrganizationStore:
                 account_id,
                 prior_role=row.role,
                 actor_account_id=actor_account_id,
+                now=now,
+            )
+            # `FR-020` and `KHEPRI-DEC-015` §2's fourth end trigger (`R4-06`), inside this
+            # transaction with the deletion and the event.
+            #
+            # **In this callback rather than in `_apply_membership_change`'s body**, and the
+            # placement is load-bearing: `demote_membership` delegates to the same helper, so a
+            # cascade in the helper would invalidate a *demoted* member's invitations, which
+            # `R4-01` §8.3 settles it must not. The callback is per-verb, so revocation scoping is
+            # by construction rather than by a guard someone can drop.
+            #
+            # **Both anchors, and the recipient one is not optional.** §7's counter-example: a
+            # person holding two invitations to this organization redeems one, is revoked, and
+            # redeems the second to rejoin immediately -- untouched by an `issued_by`-only
+            # cascade, because that column names the owner who sent it.
+            #
+            # The address is read inside this transaction, and `None` when the addressee's account
+            # is already a tombstone (`KHEPRI-DEC-015` §2b). The issuer half still runs then: it
+            # keys on `account_id`, which the tombstone retains, so an unresolvable address must
+            # not abort a trigger the decision governs.
+            addressee = database.get(AccountRow, account_id)
+            _cascade_invitations(
+                database,
+                organization_id=organization_id,
+                target_identity=None if addressee is None else addressee.email,
+                issued_by=account_id,
                 now=now,
             )
             database.delete(row)
