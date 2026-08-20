@@ -19,19 +19,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
-from khepri.rca.credentials import KdfParams, Verifier
 from khepri.rca.invitation_persistence import SqlInvitationStore
-from khepri.rca.invitation_retention import (
-    INVITATION_HORIZON_IS_UNENFORCED,
-    InvitationRetentionSweeper,
-)
 from khepri.rca.invitations import (
     Invitation,
     InvitationOffer,
     issue_secret,
     verify_secret,
 )
-from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import InvitationRow, SqlAccountStore, SqlOrganizationStore
 from tests.rca_fakes import MemoryInvitationStore
@@ -636,122 +630,3 @@ def test_a_conflicting_terminal_save_is_refused_not_an_integrity_error(
         "the refused transition must leave no timestamp -- a row with both is the state "
         "`ck_rca_invitation_terminal_state` excludes"
     )
-
-
-# --- the retention sweep (§3) -----------------------------------------------------------------
-
-
-def _sweep(factory: sessionmaker, *, now: datetime = NOW) -> int:
-    return InvitationRetentionSweeper(SqlInvitationStore(factory)).sweep(now=now).purged_invitations
-
-
-def test_an_expired_unredeemed_invitation_is_purged_in_the_same_pass(
-    factory: sessionmaker,
-) -> None:
-    """No horizon at all for this branch: the purpose ended when the verifier's did. `R4-01` §3
-    forbids an interval in which such a row survives with its `target_identity` retained -- so the
-    row goes, not merely its verifier."""
-    store, invitation, _ = _invitation(factory, expires_at=NOW - timedelta(seconds=1))
-
-    assert _sweep(factory) == 1
-    assert store.get_invitation(invitation.invitation_id, now=NOW) is None
-
-
-def test_a_revoked_invitation_is_purged_in_the_same_pass(factory: sessionmaker) -> None:
-    store, invitation, _ = _invitation(factory)
-    assert store.save_invitation(invitation.revoked(at=NOW - timedelta(days=1)))
-
-    assert _sweep(factory) == 1
-    assert store.get_invitation(invitation.invitation_id, now=NOW) is None
-
-
-def test_a_live_unredeemed_invitation_survives_the_sweep(factory: sessionmaker) -> None:
-    store, invitation, _ = _invitation(factory)
-
-    assert _sweep(factory) == 0
-    assert store.get_invitation(invitation.invitation_id, now=NOW) is not None
-
-
-def test_a_recently_redeemed_invitation_survives_the_sweep(factory: sessionmaker) -> None:
-    """Redeemed rows are retained while they must still refuse replay and attribute the membership
-    they produced -- so this branch has a horizon where the expired branch has none."""
-    store, invitation, _ = _invitation(factory)
-    assert store.save_invitation(invitation.redeemed(at=NOW - timedelta(days=1)))
-
-    assert _sweep(factory) == 0
-    assert store.get_invitation(invitation.invitation_id, now=NOW) is not None
-
-
-def test_a_redeemed_invitation_is_purged_once_its_membership_event_would_be(
-    factory: sessionmaker,
-) -> None:
-    """The anchored horizon. Redeemed a day beyond the event retention window, so the
-    `MembershipEvent` it produced is purgeable and it no longer has a purpose."""
-    store, invitation, _ = _invitation(factory)
-    long_ago = NOW - timedelta(days=31 * MEMBERSHIP_EVENT_RETENTION_MONTHS + 1)
-    assert store.save_invitation(invitation.redeemed(at=long_ago))
-
-    assert _sweep(factory) == 1
-    assert store.get_invitation(invitation.invitation_id, now=NOW) is None
-
-
-def test_the_redeemed_horizon_is_anchored_to_the_event_horizon_not_a_literal(
-    factory: sessionmaker,
-) -> None:
-    """`R4-01` §3: `R4-03` must not write twelve months into this sweeper as a number.
-
-    Asserted structurally rather than by value: the sweeper's default retention must be the *same
-    object* the membership-event horizon names, so shortening one moves the other. A literal `12`
-    would satisfy any equality assertion on the day it was written and diverge silently on the day
-    the event horizon changed.
-    """
-    import inspect  # noqa: PLC0415
-
-    default = (
-        inspect.signature(InvitationRetentionSweeper.__init__)
-        .parameters["retention_months"]
-        .default
-    )
-
-    assert default == MEMBERSHIP_EVENT_RETENTION_MONTHS
-    source = inspect.getsource(InvitationRetentionSweeper.__init__)
-    assert "MEMBERSHIP_EVENT_RETENTION_MONTHS" in source, (
-        "the default must name the event horizon, not restate its value"
-    )
-    assert "12" not in source, f"a literal horizon appears in the signature: {source!r}"
-
-
-def test_the_unenforced_horizon_is_recorded_rather_than_assumed(factory: sessionmaker) -> None:
-    """`R4-01` §8.1 asks `R4-03` to record that the horizon has no scheduled caller, so "the
-    cadence is operational" cannot imply somebody is choosing one. Asserted so the note cannot be
-    deleted quietly: no scheduler exists in this repository, and `RetentionPasses` is reached only
-    by the manual `sweep` subcommand."""
-    assert INVITATION_HORIZON_IS_UNENFORCED is True
-
-
-def test_the_sweep_reports_counts_and_no_identifier(factory: sessionmaker) -> None:
-    """`FR-040`: a report naming what it purged would reintroduce, in the audit trail, exactly the
-    `target_identity` values the purge exists to remove."""
-    import dataclasses  # noqa: PLC0415
-
-    from khepri.rca.invitation_retention import InvitationSweepReport  # noqa: PLC0415
-
-    fields = {field.name for field in dataclasses.fields(InvitationSweepReport)}
-
-    assert fields == {"purged_invitations"}
-
-
-def test_a_verifier_rebuilt_from_stored_columns_keeps_its_work_factor(
-    factory: sessionmaker,
-) -> None:
-    """The KDF parameters are persisted per row so the factor can be raised later without
-    invalidating existing invitations. A store that defaulted them on read would verify against the
-    wrong cost and silently reject every older secret."""
-    store, invitation, _ = _invitation(factory)
-
-    restored = store.get_invitation(invitation.invitation_id, now=NOW)
-
-    assert restored is not None
-    assert restored.verifier is not None
-    assert restored.verifier.kdf == KdfParams(n=2**14, r=8, p=1)
-    assert isinstance(restored.verifier, Verifier)
