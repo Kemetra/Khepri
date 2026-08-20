@@ -101,23 +101,32 @@ def _actor(factory: sessionmaker, account_id: str) -> ResolvedActor:
 
 def _invite(
     factory: sessionmaker,
-    organization_id: str,
-    owner_id: str,
-    target: str,
+    offer: InvitationOffer,
     *,
-    role: str = MEMBER_ROLE,
     expires_at: datetime = LATER,
 ) -> str:
-    """An open invitation. Returns its token."""
-    return _service(factory).issue(
-        InvitationOffer(
-            organization_id=organization_id,
-            intended_role=role,
-            target_identity=target,
-            issued_by=owner_id,
-        ),
-        expires_at=expires_at,
-        now=NOW,
+    """An open invitation. Returns its token.
+
+    Takes the `InvitationOffer` rather than its fields, matching `InvitationService.issue`. The flat
+    form had six parameters, which CodeScene scores as Excess Number of Function Arguments -- the
+    third occurrence of that shape in this program, so the grouping is now the default rather than a
+    fix applied after a gate failure.
+    """
+    return _service(factory).issue(offer, expires_at=expires_at, now=NOW)
+
+
+def _offer(
+    organization_id: str,
+    issued_by: str,
+    target: str,
+    role: str = MEMBER_ROLE,
+) -> InvitationOffer:
+    """The grouped inputs `issue` takes."""
+    return InvitationOffer(
+        organization_id=organization_id,
+        intended_role=role,
+        target_identity=target,
+        issued_by=issued_by,
     )
 
 
@@ -168,7 +177,7 @@ class TestTheHappyPath:
     def test_redemption_creates_the_membership(self, factory: sessionmaker) -> None:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "invitee")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
 
         _service(factory).redeem(token, _actor(factory, invitee_id), now=NOW)
 
@@ -178,7 +187,7 @@ class TestTheHappyPath:
         """An invitation naming `owner` creates an owner, not a member."""
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "coowner")
-        token = _invite(factory, organization_id, owner_id, invitee_email, role=OWNER_ROLE)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email, OWNER_ROLE))
 
         _service(factory).redeem(token, _actor(factory, invitee_id), now=NOW)
 
@@ -187,7 +196,7 @@ class TestTheHappyPath:
     def test_the_invitation_is_marked_redeemed(self, factory: sessionmaker) -> None:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "marked")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
         invitation_id, _ = parse_token(token)
 
         _service(factory).redeem(token, _actor(factory, invitee_id), now=NOW)
@@ -206,7 +215,7 @@ class TestTheHappyPath:
         """
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "evented")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
 
         _service(factory).redeem(token, _actor(factory, invitee_id), now=NOW)
 
@@ -236,7 +245,7 @@ class TestAtMostOnce:
     ) -> None:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "twice")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
         service = _service(factory)
 
         service.redeem(token, _actor(factory, invitee_id), now=NOW)
@@ -261,7 +270,7 @@ class TestAtMostOnce:
         organization_id, owner_id = _organization(factory)
         first_id, first_email = _account(factory, "first")
         second_id, _ = _account(factory, "second")
-        token = _invite(factory, organization_id, owner_id, first_email)
+        token = _invite(factory, _offer(organization_id, owner_id, first_email))
         service = _service(factory)
 
         service.redeem(token, _actor(factory, first_id), now=NOW)
@@ -291,7 +300,7 @@ class TestAtMostOnce:
                     role=MEMBER_ROLE,
                 )
             )
-        token = _invite(factory, organization_id, owner_id, member_email)
+        token = _invite(factory, _offer(organization_id, owner_id, member_email))
 
         with pytest.raises(InvitationOperationFailed) as refusal:
             _service(factory).redeem(token, _actor(factory, member_id), now=NOW)
@@ -315,7 +324,7 @@ class TestTheAddresseeMustBeTheActor:
         organization_id, owner_id = _organization(factory)
         _, addressed_email = _account(factory, "addressed")
         bearer_id, _ = _account(factory, "bearer")
-        token = _invite(factory, organization_id, owner_id, addressed_email)
+        token = _invite(factory, _offer(organization_id, owner_id, addressed_email))
 
         with pytest.raises(InvitationOperationFailed) as refusal:
             _service(factory).redeem(token, _actor(factory, bearer_id), now=NOW)
@@ -334,7 +343,9 @@ class TestTheAddresseeMustBeTheActor:
         """
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "mixed")
-        token = _invite(factory, organization_id, owner_id, f"  {invitee_email.upper()} ")
+        token = _invite(
+            factory, _offer(organization_id, owner_id, f"  {invitee_email.upper()} ")
+        )
 
         _service(factory).redeem(token, _actor(factory, invitee_id), now=NOW)
 
@@ -350,7 +361,7 @@ class TestTheAddresseeMustBeTheActor:
         """
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "tombstone")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
 
         live = _actor(factory, invitee_id)
         purged = ResolvedActor(session=live.session, account=_purged(live.account))
@@ -373,7 +384,7 @@ class TestTheSecretIsVerified:
     def test_a_wrong_secret_is_refused(self, factory: sessionmaker) -> None:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "wrongsecret")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
         invitation_id, _ = parse_token(token)
         forged = f"kci1.{invitation_id}.not-the-secret"
 
@@ -414,9 +425,7 @@ class TestNonOpenInvitations:
         invitee_id, invitee_email = _account(factory, "expired")
         token = _invite(
             factory,
-            organization_id,
-            owner_id,
-            invitee_email,
+            _offer(organization_id, owner_id, invitee_email),
             expires_at=NOW + timedelta(hours=1),
         )
 
@@ -432,7 +441,7 @@ class TestNonOpenInvitations:
         """Revocation deletes the row (§4.1), so this is the unknown-identifier path."""
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "revoked")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
         invitation_id, _ = parse_token(token)
         service = _service(factory)
         service.revoke(organization_id, invitation_id, actor_account_id=owner_id, now=NOW)
@@ -460,7 +469,9 @@ class TestNonOpenInvitations:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "boundary")
         token = _invite(
-            factory, organization_id, owner_id, invitee_email, expires_at=NOW + timedelta(hours=1)
+            factory,
+            _offer(organization_id, owner_id, invitee_email),
+            expires_at=NOW + timedelta(hours=1),
         )
 
         with pytest.raises(InvitationOperationFailed):
@@ -499,7 +510,7 @@ class TestTheAccountLivenessReRead:
     ) -> None:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "stale")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
 
         actor = _actor(factory, invitee_id)
 
@@ -527,7 +538,7 @@ class TestTheAccountLivenessReRead:
         """
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "unconsumed")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
         invitation_id, _ = parse_token(token)
 
         actor = _actor(factory, invitee_id)
@@ -558,7 +569,7 @@ class TestTheSessionMustBeLiveAtTheWrite:
     ) -> None:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "revokedsession")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
 
         sessions = SessionService(SqlSessionStore(factory), lifetime=LIFETIME)
         session_token = sessions.create(invitee_id, now=NOW)
@@ -584,7 +595,7 @@ class TestTheSessionMustBeLiveAtTheWrite:
         """
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, "expiredsession")
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
 
         actor = _actor(factory, invitee_id)
         after_expiry = NOW + LIFETIME + timedelta(seconds=1)
@@ -615,7 +626,7 @@ class TestTheConditionalStatementIsTheAtMostOnceGuard:
     def _prepare(self, factory, label):
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, label)
-        token = _invite(factory, organization_id, owner_id, invitee_email)
+        token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
         invitation_id, _ = parse_token(token)
         return organization_id, invitee_id, invitation_id
 
@@ -676,7 +687,9 @@ class TestTheConditionalStatementIsTheAtMostOnceGuard:
         invitee_id, invitee_email = _account(factory, "stmtexpired")
         short = NOW + timedelta(minutes=5)
         token = _invite(
-            factory, organization_id, owner_id, invitee_email, expires_at=short
+            factory,
+            _offer(organization_id, owner_id, invitee_email),
+            expires_at=short,
         )
         invitation_id, _ = parse_token(token)
         just_expired = short + timedelta(seconds=1)
