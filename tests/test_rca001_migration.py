@@ -41,6 +41,9 @@ RCA_REVISIONS = (
         "rca_sessions_and_external_identities",
         "20260814_0015",
     ),
+    # Parent is `20260817_0017`, an *RRA* revision -- the interleaving this block's comment warns
+    # about, now with an RCA revision on the far side of it.
+    ("20260818_0018", "rca_invitations", "20260817_0017"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -55,6 +58,7 @@ RCA_TABLES = {
     "rca_isolation_scopes",
     "rca_sessions",
     "rca_external_identities",
+    "rca_invitations",
 }
 
 
@@ -595,6 +599,67 @@ def test_the_downgrade_marks_attribution_it_cannot_reconstruct(sqlite_url: str) 
     # than a string precisely because PostgreSQL will not implicitly cast text into a
     # `TIMESTAMPTZ` here. Without this, that bind has no assertion behind it.
     assert "1970" in str(row.changed_at), "a swept event downgrades to the epoch placeholder"
+
+
+def test_every_invitation_check_agrees_between_the_migration_and_the_model(
+    sqlite_url: str,
+) -> None:
+    """`R4-03`'s four constraints have two homes and must say the same thing.
+
+    The invitation counterpart of the role test below, and broader: it compares constraint *names*
+    as sets rather than one constraint's values, because `rca_invitations` carries four and a test
+    pinning only the role check would leave three free to exist in one place. All four are
+    load-bearing -- the role CHECK, the redeemed-or-revoked exclusion, expiry-after-issuance, and
+    the five-column verifier invariant that `AccountRow` lacks.
+
+    `test_migration_columns_match_the_declared_models` cannot catch any of it: it compares column
+    names, and a CHECK is not a column.
+    """
+    from sqlalchemy.orm import sessionmaker  # noqa: PLC0415
+
+    from khepri.rca.persistence import Base  # noqa: PLC0415
+
+    _run(sqlite_url, "upgrade")
+    migrated = inspect(create_engine(sqlite_url)).get_check_constraints("rca_invitations")
+
+    model_engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(model_engine)
+    sessionmaker(model_engine)
+    declared = inspect(model_engine).get_check_constraints("rca_invitations")
+
+    expected = {
+        "ck_rca_invitation_role",
+        "ck_rca_invitation_terminal_state",
+        "ck_rca_invitation_expiry_after_issuance",
+        "ck_rca_invitation_verifier_whole",
+    }
+    assert {c["name"] for c in migrated} == expected, "migration declares the wrong set"
+    assert {c["name"] for c in declared} == expected, "model declares the wrong set"
+
+    def roles_named(constraints) -> set[str]:
+        joined = " ".join(c["sqltext"] for c in constraints)
+        return {role for role in ("owner", "member", "admin") if f"'{role}'" in joined}
+
+    assert roles_named(migrated) == roles_named(declared) == {"owner", "member"}, (
+        f"migration names {roles_named(migrated)}, model names {roles_named(declared)}"
+    )
+
+    # Every one of the five verifier columns must appear in the whole-verifier CHECK on both sides.
+    # A clause mentioning four would let a half-destroyed verifier through the fifth.
+    def verifier_columns(constraints) -> set[str]:
+        text = " ".join(
+            c["sqltext"] for c in constraints if c["name"] == "ck_rca_invitation_verifier_whole"
+        )
+        return {
+            column
+            for column in ("secret_salt", "secret_digest", "kdf_n", "kdf_r", "kdf_p")
+            if column in text
+        }
+
+    assert verifier_columns(migrated) == verifier_columns(declared)
+    assert len(verifier_columns(migrated)) == 5, (
+        f"the whole-verifier CHECK omits a column: {verifier_columns(migrated)}"
+    )
 
 
 def test_the_role_check_agrees_between_the_migration_and_the_model(sqlite_url: str) -> None:

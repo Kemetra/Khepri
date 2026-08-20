@@ -28,6 +28,7 @@ from __future__ import annotations
 import re
 import subprocess
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -455,6 +456,25 @@ def test_the_cause_table_accounts_for_every_incomplete_requirement() -> None:
 # --- the header's baseline is real ------------------------------------------------------------
 
 
+def _resolve_main_ref(git: Callable[..., subprocess.CompletedProcess[str]]) -> str | None:
+    """The ref `main` means here, or `None` when the checkout has neither.
+
+    **`origin/main` first, because a local `main` goes stale and the ancestry check would then
+    fail on a correct baseline.** Hit immediately after the check was added: with local `main` at
+    `b9c8755` and `origin/main` three commits ahead, a baseline naming the real tip was reported
+    as a false one. The remote-tracking ref is what `main` means in a repository where merges
+    land through PRs.
+
+    `None` rather than a skip so the caller owns the skip: a detached CI checkout may have
+    neither ref, and that must not be mistaken for a bad ancestor. Extracted because inlining
+    the search put `Bumpy Road Ahead` on the caller (10.00 -> 9.84).
+    """
+    for ref in ("refs/remotes/origin/main", "refs/heads/main"):
+        if git("rev-parse", "--verify", "--quiet", ref).returncode == 0:
+            return ref
+    return None
+
+
 def test_the_baseline_commit_exists_in_history() -> None:
     """`#214`'s round 4 found the header pinning `00e0f47` while the rows had moved past it.
     A commit that does not exist at all is the stronger version of the same defect."""
@@ -493,16 +513,15 @@ def test_the_baseline_commit_exists_in_history() -> None:
     # in review on `#218`, and it is the same shape as the shallow-clone confusion above: one
     # exit status standing for two different facts.
     #
-    # `main` may be absent in a detached CI checkout, so its absence skips rather than fails --
-    # established independently, so a missing ref can never be misread as a bad ancestor.
-    if git("rev-parse", "--verify", "--quiet", "refs/heads/main").returncode != 0:
-        pytest.skip("no local `main` ref in this checkout to test ancestry against")
+    main_ref = _resolve_main_ref(git)
+    if main_ref is None:
+        pytest.skip("no `main` ref in this checkout to test ancestry against")
 
-    ancestry = git("merge-base", "--is-ancestor", match.group(1), "main")
+    ancestry = git("merge-base", "--is-ancestor", match.group(1), main_ref)
     assert ancestry.returncode == 0, (
         f"the baseline names {match.group(1)}, which is a commit but is not an ancestor of "
-        "`main`. The header claims a state of `main`, so a topic-branch or orphaned commit is "
-        "a false baseline even though the object exists."
+        f"{main_ref}. The header claims a state of `main`, so a topic-branch or orphaned commit "
+        "is a false baseline even though the object exists."
     )
 
     # An abbreviated SHA that matches two objects is `git`'s ambiguity error, which the check above

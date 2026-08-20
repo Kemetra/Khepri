@@ -28,12 +28,18 @@ from __future__ import annotations
 
 import ast
 import inspect
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
+from khepri.rca.invitations import (
+    Invitation,
+    InvitationOffer,
+    issue_secret,
+)
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import (
     MEMBER_ROLE,
@@ -49,8 +55,8 @@ from khepri.rca.persistence import (
     SqlAccountStore,
     SqlOrganizationStore,
 )
-from khepri.rca.stores import AccountStore, OrganizationStore
-from tests.rca_fakes import MemoryAccountStore, MemoryOrganizationStore
+from khepri.rca.stores import AccountStore, InvitationStore, OrganizationStore
+from tests.rca_fakes import MemoryAccountStore, MemoryInvitationStore, MemoryOrganizationStore
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -123,9 +129,7 @@ def test_every_declared_role_survives_a_round_trip(factory: sessionmaker, role: 
     organization, subject = _real_organization(factory)
 
     with factory.begin() as database:
-        database.add(
-            MembershipRow(organization_id=organization, account_id=subject, role=role)
-        )
+        database.add(MembershipRow(organization_id=organization, account_id=subject, role=role))
 
     with factory() as database:
         stored = database.scalars(
@@ -151,14 +155,10 @@ def test_the_membership_table_refuses_a_forged_role(factory: sessionmaker) -> No
         factory.begin() as database,
     ):
         database.add(
-            MembershipRow(
-                organization_id=organization, account_id=subject, role=_FORGED_ROLE
-            )
+            MembershipRow(organization_id=organization, account_id=subject, role=_FORGED_ROLE)
         )
 
-    assert "ck_rca_membership_role" in str(refusal.value) or "CHECK" in str(
-        refusal.value
-    ).upper()
+    assert "ck_rca_membership_role" in str(refusal.value) or "CHECK" in str(refusal.value).upper()
 
 
 def test_the_event_table_does_not_constrain_its_roles(factory: sessionmaker) -> None:
@@ -189,9 +189,7 @@ def test_the_event_table_does_not_constrain_its_roles(factory: sessionmaker) -> 
 
     with factory() as database:
         stored = database.scalars(
-            select(MembershipEventRow.next_role).where(
-                MembershipEventRow.event_id == "mev_forged"
-            )
+            select(MembershipEventRow.next_role).where(MembershipEventRow.event_id == "mev_forged")
         ).all()
     assert stored == [_FORGED_ROLE], (
         "if this fails, a role CHECK was added to rca_membership_events -- replace this test "
@@ -247,9 +245,7 @@ def test_a_role_change_records_the_role_the_row_actually_held(factory: sessionma
     accounts, store = SqlAccountStore(factory), SqlOrganizationStore(factory)
     owner = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
     subject = AccountService(accounts).create_account(OTHER_EMAIL, CREDENTIAL)
-    organization = OrganizationService(store).create_organization(
-        "Acme", owner.account_id, now=NOW
-    )
+    organization = OrganizationService(store).create_organization("Acme", owner.account_id, now=NOW)
     with factory.begin() as database:
         database.add(
             MembershipRow(
@@ -268,9 +264,7 @@ def test_a_role_change_records_the_role_the_row_actually_held(factory: sessionma
         actor_account_id=owner.account_id,
         now=NOW,
     )
-    promoted = Membership.create(
-        organization.organization_id, subject.account_id, OWNER_ROLE
-    )
+    promoted = Membership.create(organization.organization_id, subject.account_id, OWNER_ROLE)
 
     assert not store.promote_membership(promoted, lying), (
         "a write whose event misdescribes the row's prior role must be refused"
@@ -288,11 +282,10 @@ def test_a_role_change_records_the_role_the_row_actually_held(factory: sessionma
     [
         pytest.param(OrganizationStore, MemoryOrganizationStore, id="organizations"),
         pytest.param(AccountStore, MemoryAccountStore, id="accounts"),
+        pytest.param(InvitationStore, MemoryInvitationStore, id="invitations"),
     ],
 )
-def test_every_fake_implements_its_whole_protocol(
-    protocol: type, fake: type
-) -> None:
+def test_every_fake_implements_its_whole_protocol(protocol: type, fake: type) -> None:
     """Fails closed when a slice widens a store protocol and forgets the fake.
 
     This is the actual future failure mode, not a hypothetical: a fake missing a method makes tests
@@ -322,6 +315,45 @@ def test_every_fake_implements_its_whole_protocol(
     assert not mismatched, f"{fake.__name__} signatures diverge from the protocol: {mismatched}"
 
 
+def test_the_memory_invitation_store_refuses_a_conflicting_terminal_save() -> None:
+    """Second regression cover of the same class, from `#217`.
+
+    `SqlInvitationStore.save_invitation` refuses a snapshot proposing the terminal state the row
+    already excludes, because `ck_rca_invitation_terminal_state` forbids a row holding both. The
+    fake took the two fields independently (`stored.x or invitation.x` each) and so *built* that
+    row instead -- accepting a write production rejects with `IntegrityError`.
+
+    Without this, removing the fake's guard breaks nothing: the whole invitation suite passed
+    against a fake constructing a state the schema excludes, which is exactly the
+    "passes wrongly" failure the protocol test above is about, one level deeper -- signatures
+    agreed the entire time.
+    """
+    store = MemoryInvitationStore()
+    invitation = Invitation.create(
+        InvitationOffer(
+            organization_id="org_1",
+            intended_role=MEMBER_ROLE,
+            target_identity=EMAIL,
+            issued_by="acc_1",
+        ),
+        secret=issue_secret(),
+        expires_at=NOW + timedelta(days=7),
+        issued_at=NOW,
+    )
+    store.add_invitation(invitation)
+
+    assert store.save_invitation(invitation.revoked(at=NOW))
+    assert store.save_invitation(invitation.redeemed(at=NOW)) is False, (
+        "the fake must refuse the conflicting transition, as SQL does"
+    )
+
+    stored = store.invitations[invitation.invitation_id]
+    assert stored.revoked_at == NOW, "the first transition stands"
+    assert stored.redeemed_at is None, (
+        "a fake holding both timestamps is a row `ck_rca_invitation_terminal_state` forbids"
+    )
+
+
 def test_the_memory_store_counts_effective_owners_not_rows() -> None:
     """Regression cover for the divergence that already shipped.
 
@@ -340,18 +372,14 @@ def test_the_memory_store_counts_effective_owners_not_rows() -> None:
         Membership.create(organization.organization_id, second.account_id, OWNER_ROLE)
     )
     assert (
-        organizations.count_owners(
-            organization.organization_id, excluding_account_id="acc_absent"
-        )
+        organizations.count_owners(organization.organization_id, excluding_account_id="acc_absent")
         == 2
     )
 
     LifecycleService(accounts, organizations).disable_account(second.account_id, now=NOW)
 
     assert (
-        organizations.count_owners(
-            organization.organization_id, excluding_account_id="acc_absent"
-        )
+        organizations.count_owners(organization.organization_id, excluding_account_id="acc_absent")
         == 1
     ), "a disabled account still holds its row but must not count as an owner"
 

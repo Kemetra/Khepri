@@ -386,7 +386,8 @@ class TestTheMigration:
         that adds a migration -- which is what forces that slice to notice it is now the one in
         flight. `R3-03` wrote `20260815_0016` here; `R7-02` (`KHEPRI-DEC-020` §2) added
         `20260817_0017` on top of it, dropping `rra_beta_sessions.UNIQUE (owner_id)` so one
-        commercial scope may hold more than one analysis.
+        commercial scope may hold more than one analysis. `R4-03` then added `20260818_0018`
+        (`rca_invitations`), which is the head this pin now names.
         """
         import subprocess
 
@@ -395,7 +396,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260817_0017" in result.stdout
+        assert "20260818_0018" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:
