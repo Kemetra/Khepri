@@ -177,14 +177,7 @@ class _Row(NamedTuple):
     address: str
 
 
-def _insert_invitation_row(
-    database,
-    *,
-    invitation_id: str,
-    organization_id: str,
-    issued_by: str,
-    address: str,
-) -> None:
+def _insert_invitation_row(database, row: _Row) -> None:
     """Write an open invitation row on the caller's connection, bypassing `issue`.
 
     **Raw SQL on a supplied connection, deliberately.** `InvitationService.issue` opens its own
@@ -195,6 +188,11 @@ def _insert_invitation_row(
 
     The verifier columns are filler: nothing in the blocking test verifies a secret, and
     `ck_rca_invitation_verifier_whole` only requires the five to be present or absent together.
+
+    Takes the `_Row` record rather than its four fields: the flat form was five parameters, which
+    CodeScene scores as Excess Number of Function Arguments. **The threshold is four, not five** --
+    measured here after three earlier PRs in this program each assumed five and each lost a CI
+    cycle to it.
     """
     database.execute(
         text(
@@ -205,17 +203,17 @@ def _insert_invitation_row(
             ":expires, :issued_by, :issued_at)"
         ),
         {
-            "iid": invitation_id,
-            "org": organization_id,
+            "iid": row.invitation_id,
+            "org": row.organization_id,
             "role": MEMBER_ROLE,
-            "target": address,
+            "target": row.address,
             "salt": b"0" * 16,
             "digest": b"0" * 32,
             "n": 2**14,
             "r": 8,
             "p": 1,
             "expires": LATER,
-            "issued_by": issued_by,
+            "issued_by": row.issued_by,
             "issued_at": NOW,
         },
     )
@@ -246,13 +244,7 @@ def _hold_lock_and_write(
         database.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
         gate.holding.set()
         gate.release.wait(timeout=BLOCK_TIMEOUT_SECONDS * 2)
-        _insert_invitation_row(
-            database,
-            invitation_id=row.invitation_id,
-            organization_id=row.organization_id,
-            issued_by=row.issued_by,
-            address=row.address,
-        )
+        _insert_invitation_row(database, row)
 
 
 def _advisory_rows(factory, key: int) -> list[tuple[bool, int]]:
