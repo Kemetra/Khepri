@@ -61,16 +61,7 @@ class InvitationService:
     def __init__(self, store: InvitationStore) -> None:
         self._store = store
 
-    def issue(
-        self,
-        organization_id: str,
-        intended_role: str,
-        target_identity: str,
-        *,
-        actor_account_id: str,
-        expires_at: datetime,
-        now: datetime,
-    ) -> str:
+    def issue(self, offer: InvitationOffer, *, expires_at: datetime, now: datetime) -> str:
         """Mint an invitation and return its token. The token is returned **once**.
 
         Only the `Verifier`'s salt and digest persist -- `FR-016`'s "persisted only as a strong
@@ -90,14 +81,23 @@ class InvitationService:
 
         `intended_role` is validated by `Invitation.create`, which is where a caller-supplied role
         first enters the codebase; it is not re-checked here.
+
+        **The parameters are grouped rather than listed flat**, matching `Invitation.create` and
+        `ca7c572`'s fix for the same shape in `khepri.rra`: `InvitationOffer` already carries
+        exactly these four values, and its own docstring says `R4-04` supplies `issued_by` "from
+        what the gate resolved rather than from a caller's claim". `R4-01` §4 states the signature
+        flat as prose shorthand; spelling it out cost 7 parameters and CodeScene scored the file
+        9.69 on Excess Number of Function Arguments. Reusing the existing grouping is what §4's own
+        argument about `create` recommends, and it keeps one organization value in the signature --
+        the `FR-024` property that a caller cannot name a scope beside the one the gate resolved.
         """
         secret = issue_secret()
         invitation = Invitation.create(
             InvitationOffer(
-                organization_id=organization_id,
-                intended_role=intended_role,
-                target_identity=canonical_email(target_identity),
-                issued_by=actor_account_id,
+                organization_id=offer.organization_id,
+                intended_role=offer.intended_role,
+                target_identity=canonical_email(offer.target_identity),
+                issued_by=offer.issued_by,
             ),
             secret=secret,
             expires_at=expires_at,

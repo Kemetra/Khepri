@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 import pytest
 from sqlalchemy import text
@@ -35,7 +36,12 @@ from khepri.rca.accounts import AccountService
 from khepri.rca.errors import INVITATION_FAILURE, InvitationOperationFailed
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_service import InvitationService
-from khepri.rca.invitations import parse_token, verify_secret
+from khepri.rca.invitations import (
+    Invitation,
+    InvitationOffer,
+    parse_token,
+    verify_secret,
+)
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
 from khepri.rca.persistence import InvitationRow, SqlAccountStore, SqlOrganizationStore
 from tests.rca_fakes import MemoryInvitationStore
@@ -71,6 +77,22 @@ def _service(factory: sessionmaker) -> InvitationService:
     return InvitationService(SqlInvitationStore(factory))
 
 
+def _offer(
+    organization_id: str,
+    actor_id: str,
+    *,
+    role: str = MEMBER_ROLE,
+    target: str = TARGET,
+) -> InvitationOffer:
+    """The grouped inputs `issue` takes, matching the sibling `R4-03` file's helper."""
+    return InvitationOffer(
+        organization_id=organization_id,
+        intended_role=role,
+        target_identity=target,
+        issued_by=actor_id,
+    )
+
+
 class TestIssuance:
     """`R4-01` §4 -- the token is returned once, and the stored address is canonical."""
 
@@ -79,10 +101,7 @@ class TestIssuance:
         service = _service(factory)
 
         token = service.issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_id,
+            _offer(organization_id, owner_id, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )
@@ -108,10 +127,7 @@ class TestIssuance:
         """
         organization_id, owner_id = _organization(factory)
         token = _service(factory).issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_id,
+            _offer(organization_id, owner_id, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )
@@ -147,10 +163,7 @@ class TestIssuance:
         """
         organization_id, owner_id = _organization(factory)
         token = _service(factory).issue(
-            organization_id,
-            MEMBER_ROLE,
-            "  Alice@Example.COM ",
-            actor_account_id=owner_id,
+            _offer(organization_id, owner_id, target="  Alice@Example.COM "),
             expires_at=LATER,
             now=NOW,
         )
@@ -160,16 +173,54 @@ class TestIssuance:
         assert stored is not None
         assert stored.target_identity == "alice@example.com"
 
+    def test_the_service_canonicalizes_independently_of_the_store(
+        self, factory: sessionmaker
+    ) -> None:
+        """`R4-01` §4 requires **both** layers to canonicalize, and one test cannot see both.
+
+        `test_a_mixed_case_address_is_stored_canonically` asserts the observable outcome, so it
+        passes with either layer alone -- verified by removing the service's `canonical_email` and
+        watching all 19 tests stay green, because `add_invitation` canonicalizes as a backstop.
+        That is a guard whose own test cannot fail, the shape this file exists to avoid.
+
+        §4's argument for the redundancy is the same one §3's `CHECK` constraints rest on: "a value
+        written by a store caller that bypasses `issue` would reintroduce the gap". So the two are
+        separately required, and each needs its own evidence. This test asks the *service* what it
+        produces, by handing its output to a store that does not canonicalize.
+        """
+        organization_id, owner_id = _organization(factory)
+        fake = MemoryInvitationStore()
+
+        # `MemoryInvitationStore.add_invitation` canonicalizes too, so the record is inspected
+        # before any store sees it: `Invitation.create` is reached through the service, and what
+        # the service put in the offer is what the domain record now carries.
+        recorded: list[Invitation] = []
+
+        class _Recording:
+            def add_invitation(self, invitation: Invitation) -> bool:
+                recorded.append(invitation)
+                return True
+
+        InvitationService(_Recording()).issue(  # type: ignore[arg-type]
+            _offer(organization_id, owner_id, target="  Alice@Example.COM "),
+            expires_at=LATER,
+            now=NOW,
+        )
+
+        assert recorded, "the service must have attempted a write"
+        assert recorded[0].target_identity == "alice@example.com", (
+            "the service must canonicalize before the store sees the value; relying on the "
+            "store's own canonicalization leaves a bypassing caller able to write a raw address"
+        )
+        assert fake.invitations == {}, "the recording store stood in for persistence"
+
     def test_two_issuances_mint_different_secrets(self, factory: sessionmaker) -> None:
         """Shape, not value: a CSPRNG secret is not assertable against a known constant."""
         organization_id, owner_id = _organization(factory)
         service = _service(factory)
         issued = [
             service.issue(
-                organization_id,
-                MEMBER_ROLE,
-                TARGET,
-                actor_account_id=owner_id,
+                _offer(organization_id, owner_id, target=TARGET),
                 expires_at=LATER,
                 now=NOW,
             )
@@ -183,10 +234,7 @@ class TestIssuance:
         organization_id, owner_id = _organization(factory)
         with pytest.raises(ValueError, match="unknown role"):
             _service(factory).issue(
-                organization_id,
-                "superuser",
-                TARGET,
-                actor_account_id=owner_id,
+                _offer(organization_id, owner_id, role="superuser"),
                 expires_at=LATER,
                 now=NOW,
             )
@@ -210,10 +258,7 @@ class TestRevocationIsScopedToTheOrganization:
         service = _service(factory)
 
         token = service.issue(
-            organization_b,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_b,
+            _offer(organization_b, owner_b, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )
@@ -237,10 +282,7 @@ class TestRevocationIsScopedToTheOrganization:
         organization_id, owner_id = _organization(factory)
         service = _service(factory)
         token = service.issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_id,
+            _offer(organization_id, owner_id, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )
@@ -269,10 +311,7 @@ class TestEveryNonOpenCauseTakesOneRefusal:
         elif cause == "other_organization":
             other, other_owner = _organization(factory)
             token = service.issue(
-                other,
-                MEMBER_ROLE,
-                TARGET,
-                actor_account_id=other_owner,
+                _offer(other, other_owner, target=TARGET),
                 expires_at=LATER,
                 now=NOW,
             )
@@ -280,10 +319,7 @@ class TestEveryNonOpenCauseTakesOneRefusal:
             moment = NOW
         else:
             token = service.issue(
-                organization_id,
-                MEMBER_ROLE,
-                TARGET,
-                actor_account_id=owner_id,
+                _offer(organization_id, owner_id, target=TARGET),
                 expires_at=LATER,
                 now=NOW,
             )
@@ -313,10 +349,7 @@ class TestEveryNonOpenCauseTakesOneRefusal:
         organization_id, owner_id = _organization(factory)
         service = _service(factory)
         token = service.issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_id,
+            _offer(organization_id, owner_id, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )
@@ -351,10 +384,7 @@ class TestARedeemedInvitationIsNotReachable:
     def test_revocation_cannot_delete_a_redeemed_invitation(self, factory: sessionmaker) -> None:
         organization_id, owner_id = _organization(factory)
         token = _service(factory).issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_id,
+            _offer(organization_id, owner_id, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )
@@ -387,10 +417,7 @@ class TestARedeemedInvitationIsNotReachable:
         organization_id, owner_id = _organization(factory)
         store = SqlInvitationStore(factory)
         token = InvitationService(store).issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_id,
+            _offer(organization_id, owner_id, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )
@@ -407,6 +434,30 @@ class TestARedeemedInvitationIsNotReachable:
         ), "the fake must refuse a redeemed row, as SQL does"
 
 
+class _ParityCase(NamedTuple):
+    """One SQL-versus-fake comparison: which scope and identifier are asked, and the answer.
+
+    A named tuple rather than four parallel `parametrize` axes, following `DENIED_CELLS` in
+    `test_rca001_authorization_matrix.py`: four axes is how that file's method grew six parameters,
+    which CodeScene scores as Excess Number of Function Arguments. Each field is read by name at
+    the point it is used.
+    """
+
+    name: str
+    own_scope: bool
+    own_identifier: bool
+    moment: datetime
+    expected: bool
+
+
+_PARITY_CASES = (
+    _ParityCase("open_in_scope", True, True, NOW, True),
+    _ParityCase("another_scope", False, True, NOW, False),
+    _ParityCase("absent_identifier", True, False, NOW, False),
+    _ParityCase("expired", True, True, LATER + timedelta(seconds=1), False),
+)
+
+
 class TestTheStoreMethodAndItsFakeAgree:
     """The divergence class `test_every_fake_implements_its_whole_protocol` exists to catch.
 
@@ -414,50 +465,29 @@ class TestTheStoreMethodAndItsFakeAgree:
     while production refused differently -- the shape that shipped once as `count_owners`.
     """
 
-    @pytest.mark.parametrize(
-        ("scope", "identifier", "moment", "expected"),
-        [
-            ("own", "own", NOW, True),
-            ("other", "own", NOW, False),
-            ("own", "absent", NOW, False),
-            ("own", "own", LATER + timedelta(seconds=1), False),
-        ],
-    )
-    def test_the_fake_matches_sql(
-        self,
-        factory: sessionmaker,
-        scope: str,
-        identifier: str,
-        moment: datetime,
-        expected: bool,
-    ) -> None:
+    @pytest.mark.parametrize("case", _PARITY_CASES, ids=lambda case: case.name)
+    def test_the_fake_matches_sql(self, factory: sessionmaker, case: _ParityCase) -> None:
         organization_id, owner_id = _organization(factory)
         other_organization, _ = _organization(factory)
         sql = SqlInvitationStore(factory)
         fake = MemoryInvitationStore()
 
-        service = InvitationService(sql)
-        token = service.issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=owner_id,
-            expires_at=LATER,
-            now=NOW,
+        token = InvitationService(sql).issue(
+            _offer(organization_id, owner_id), expires_at=LATER, now=NOW
         )
         invitation_id, _ = parse_token(token)
         stored = sql.get_invitation(invitation_id, now=NOW)
         assert stored is not None
         fake.add_invitation(stored)
 
-        asked_scope = organization_id if scope == "own" else other_organization
-        asked_id = invitation_id if identifier == "own" else "inv_absent"
+        asked_scope = organization_id if case.own_scope else other_organization
+        asked_id = invitation_id if case.own_identifier else "inv_absent"
 
         assert (
-            sql.delete_open_invitation(asked_scope, asked_id, now=moment) is expected
+            sql.delete_open_invitation(asked_scope, asked_id, now=case.moment) is case.expected
         ), "SQL disagreed with the expectation"
         assert (
-            fake.delete_open_invitation(asked_scope, asked_id, now=moment) is expected
+            fake.delete_open_invitation(asked_scope, asked_id, now=case.moment) is case.expected
         ), "the fake disagreed with SQL"
 
 
@@ -477,10 +507,7 @@ class TestAuthorizationLivesOutsideTheService:
         )
 
         token = _service(factory).issue(
-            organization_id,
-            MEMBER_ROLE,
-            TARGET,
-            actor_account_id=member.account_id,
+            _offer(organization_id, member.account_id, target=TARGET),
             expires_at=LATER,
             now=NOW,
         )

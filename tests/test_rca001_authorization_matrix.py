@@ -73,7 +73,7 @@ from khepri.rca.authorization_resolution import AuthorizationResolver
 from khepri.rca.errors import AuthenticationFailed, ScopeAccessDenied
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_service import InvitationService
-from khepri.rca.invitations import parse_token
+from khepri.rca.invitations import InvitationOffer, parse_token
 from khepri.rca.isolation import IsolationService
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
@@ -623,16 +623,21 @@ class TestTheInvitationRows:
     def _invitations(self, stack: Stack) -> SqlInvitationStore:
         return SqlInvitationStore(stack.factory)
 
+    def _offer(self, stack: Stack, actor_account_id: str) -> InvitationOffer:
+        return InvitationOffer(
+            organization_id=stack.organization_id,
+            intended_role=MEMBER_ROLE,
+            target_identity="invitee@example.test",
+            issued_by=actor_account_id,
+        )
+
     def _issue_as_owner(self, stack: Stack) -> str:
         """An open invitation, minted through the gated path. Returns its identifier."""
         context = _resolver(stack.factory).require_owner(
             stack.owner_token, organization_id=stack.organization_id, now=NOW
         )
         token = InvitationService(self._invitations(stack)).issue(
-            stack.organization_id,
-            MEMBER_ROLE,
-            "invitee@example.test",
-            actor_account_id=context.account_id,
+            self._offer(stack, context.account_id),
             expires_at=NOW + timedelta(days=7),
             now=NOW,
         )
@@ -680,10 +685,7 @@ class TestTheInvitationRows:
                 token, organization_id=stack.organization_id, now=NOW
             )
             InvitationService(self._invitations(stack)).issue(
-                stack.organization_id,
-                MEMBER_ROLE,
-                "invitee@example.test",
-                actor_account_id=context.account_id,
+                self._offer(stack, context.account_id),
                 expires_at=NOW + timedelta(days=7),
                 now=NOW,
             )
