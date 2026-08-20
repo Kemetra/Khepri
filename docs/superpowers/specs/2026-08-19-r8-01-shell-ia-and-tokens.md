@@ -179,10 +179,27 @@ consequences worth stating:
   into the existing flow; it does not re-implement four steps inside `/app/`. This is the guardrail's
   "reuse the current four-step journey as a workflow, not as the full product shell", expressed as a
   URL boundary.
-- **`R8-02` owns whether the shell shares `endpoints.security` or declares its own.** This note
-  raises it rather than settling it: the answer depends on whether the commercial session cookie
-  wants the same CSP and cache headers as the beta one, which is `R3-06` territory and not visual
-  design.
+- **`R8-02` owns the shell's response headers, and they are not `endpoints.security`.** An earlier
+  version of this bullet framed the question as whether the shell shares that middleware; it
+  cannot, because the middleware does not carry the headers. Corrected in review on `#219`, and
+  stated precisely here because a handoff naming the wrong mechanism would have `R8-02` ship
+  authenticated pages with no CSP:
+
+  - `endpoints.security` (`routes.py:58-66`) calls `require_same_origin` and nothing else. It
+    enforces same-origin **mutations**; it sets no header.
+  - CSP, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, and
+    `Cache-Control: private, no-store` are `SECURITY_HEADERS` (`journey/security.py:20`),
+    attached per response by `_page_response` (`routes.py:114`). Other handlers set caching
+    independently.
+  - The middleware is registered app-globally (`routes.py:126`,
+    `app.middleware("http")(endpoints.security)`) whenever journey services are enabled, so it
+    is not a per-shell choice to make either way.
+
+  So the actual obligation on `R8-02`: **every shell handler must attach the headers explicitly**,
+  by reusing `SECURITY_HEADERS` or a commercial equivalent, since nothing global will do it. What
+  genuinely remains open is whether the commercial session wants the *same* CSP and cache policy
+  as the beta one -- `R3-06` territory, not visual design -- and that question presumes the
+  headers are attached at all.
 
 ### 4.2 The surface map
 
