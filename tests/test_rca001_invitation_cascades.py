@@ -87,25 +87,35 @@ def _grant(factory: sessionmaker, organization_id: str, account_id: str, role: s
 
 def _issue(
     factory: sessionmaker,
-    organization_id: str,
+    offer: InvitationOffer,
     *,
+    expires_at: datetime = LATER,
+) -> str:
+    """One open invitation. Returns its identifier.
+
+    Takes the `InvitationOffer` rather than its four fields, matching `InvitationService.issue`
+    itself: the flat form had six parameters and CodeScene scored the file 9.69 on Excess Number of
+    Function Arguments. `_offer` below builds the common shape so call sites stay one line.
+    """
+    token = InvitationService(SqlInvitationStore(factory)).issue(
+        offer, expires_at=expires_at, now=NOW
+    )
+    return parse_token(token)[0]
+
+
+def _offer(
+    organization_id: str,
     issued_by: str,
     target: str,
     role: str = MEMBER_ROLE,
-    expires_at: datetime = LATER,
-) -> str:
-    """One open invitation. Returns its identifier."""
-    token = InvitationService(SqlInvitationStore(factory)).issue(
-        InvitationOffer(
-            organization_id=organization_id,
-            intended_role=role,
-            target_identity=target,
-            issued_by=issued_by,
-        ),
-        expires_at=expires_at,
-        now=NOW,
+) -> InvitationOffer:
+    """The grouped inputs, following the sibling `R4-04` file's helper."""
+    return InvitationOffer(
+        organization_id=organization_id,
+        intended_role=role,
+        target_identity=target,
+        issued_by=issued_by,
     )
-    return parse_token(token)[0]
 
 
 def _open_at(factory: sessionmaker, invitation_id: str, *, now: datetime = NOW) -> bool:
@@ -136,12 +146,8 @@ class TestDemotionLeavesInvitationsOpen:
         _grant(factory, organization_id, second_owner, OWNER_ROLE)
         invitee_id, invitee_email = _account(factory, "invitee")
 
-        issued = _issue(
-            factory, organization_id, issued_by=second_owner, target=invitee_email
-        )
-        addressed = _issue(
-            factory, organization_id, issued_by=owner_id, target=second_email
-        )
+        issued = _issue(factory, _offer(organization_id, second_owner, invitee_email))
+        addressed = _issue(factory, _offer(organization_id, owner_id, second_email))
 
         SqlOrganizationStore(factory).demote_membership(
             organization_id, second_owner, actor_account_id=owner_id, now=NOW
@@ -173,8 +179,8 @@ class TestTheRecipientCascade:
         organization_id, owner_id = _organization(factory)
         member_id, member_email = _account(factory, "member")
 
-        first = _issue(factory, organization_id, issued_by=owner_id, target=member_email)
-        second = _issue(factory, organization_id, issued_by=owner_id, target=member_email)
+        first = _issue(factory, _offer(organization_id, owner_id, member_email))
+        second = _issue(factory, _offer(organization_id, owner_id, member_email))
         _grant(factory, organization_id, member_id, MEMBER_ROLE)
 
         SqlOrganizationStore(factory).revoke_membership(
@@ -208,9 +214,7 @@ class TestTheRecipientCascade:
         organization_id, owner_id = _organization(factory)
         member_id, member_email = _account(factory, "mixed")
         _grant(factory, organization_id, member_id, MEMBER_ROLE)
-        invitation = _issue(
-            factory, organization_id, issued_by=owner_id, target=member_email
-        )
+        invitation = _issue(factory, _offer(organization_id, owner_id, member_email))
 
         # An un-canonical address at rest: what the cascade must not be defeated by.
         with factory.begin() as database:
@@ -240,8 +244,8 @@ class TestTheRecipientCascade:
         member_id, member_email = _account(factory, "shared")
         _grant(factory, organization_a, member_id, MEMBER_ROLE)
 
-        in_a = _issue(factory, organization_a, issued_by=owner_a, target=member_email)
-        in_b = _issue(factory, organization_b, issued_by=owner_b, target=member_email)
+        in_a = _issue(factory, _offer(organization_a, owner_a, member_email))
+        in_b = _issue(factory, _offer(organization_b, owner_b, member_email))
 
         SqlOrganizationStore(factory).revoke_membership(
             organization_a, member_id, actor_account_id=owner_a, now=NOW
@@ -269,9 +273,7 @@ class TestTheIssuerCascade:
         _grant(factory, organization_id, issuer_id, OWNER_ROLE)
         _, invitee_email = _account(factory, "stranger")
 
-        invitation = _issue(
-            factory, organization_id, issued_by=issuer_id, target=invitee_email
-        )
+        invitation = _issue(factory, _offer(organization_id, issuer_id, invitee_email))
 
         SqlOrganizationStore(factory).revoke_membership(
             organization_id, issuer_id, actor_account_id=owner_id, now=NOW
@@ -289,8 +291,8 @@ class TestTheIssuerCascade:
         _, first_email = _account(factory, "first")
         _, second_email = _account(factory, "second")
 
-        theirs = _issue(factory, organization_id, issued_by=issuer_id, target=first_email)
-        others = _issue(factory, organization_id, issued_by=owner_id, target=second_email)
+        theirs = _issue(factory, _offer(organization_id, issuer_id, first_email))
+        others = _issue(factory, _offer(organization_id, owner_id, second_email))
 
         SqlOrganizationStore(factory).revoke_membership(
             organization_id, issuer_id, actor_account_id=owner_id, now=NOW
@@ -319,9 +321,7 @@ class TestTheTombstoneCase:
         _grant(factory, organization_id, purged_id, OWNER_ROLE)
         _, invitee_email = _account(factory, "invitee")
 
-        issued = _issue(
-            factory, organization_id, issued_by=purged_id, target=invitee_email
-        )
+        issued = _issue(factory, _offer(organization_id, purged_id, invitee_email))
 
         accounts = SqlAccountStore(factory)
         stored = accounts.get_account(purged_id)
@@ -354,8 +354,8 @@ class TestThePurgeCascade:
         organization_b, owner_b = _organization(factory)
         addressee_id, addressee_email = _account(factory, "addressee")
 
-        in_a = _issue(factory, organization_a, issued_by=owner_a, target=addressee_email)
-        in_b = _issue(factory, organization_b, issued_by=owner_b, target=addressee_email)
+        in_a = _issue(factory, _offer(organization_a, owner_a, addressee_email))
+        in_b = _issue(factory, _offer(organization_b, owner_b, addressee_email))
 
         accounts = SqlAccountStore(factory)
         stored = accounts.get_account(addressee_id)
@@ -384,9 +384,7 @@ class TestThePurgeCascade:
 
         invitation = _issue(
             factory,
-            organization_id,
-            issued_by=owner_id,
-            target=addressee_email,
+            _offer(organization_id, owner_id, addressee_email),
             expires_at=NOW + timedelta(hours=1),
         )
 
@@ -409,8 +407,8 @@ class TestThePurgeCascade:
         purged_id, purged_email = _account(factory, "gone")
         _, kept_email = _account(factory, "kept")
 
-        theirs = _issue(factory, organization_id, issued_by=owner_id, target=purged_email)
-        others = _issue(factory, organization_id, issued_by=owner_id, target=kept_email)
+        theirs = _issue(factory, _offer(organization_id, owner_id, purged_email))
+        others = _issue(factory, _offer(organization_id, owner_id, kept_email))
 
         accounts = SqlAccountStore(factory)
         stored = accounts.get_account(purged_id)
@@ -431,9 +429,7 @@ class TestThePurgeCascade:
         """
         organization_id, owner_id = _organization(factory)
         addressee_id, addressee_email = _account(factory, "live")
-        invitation = _issue(
-            factory, organization_id, issued_by=owner_id, target=addressee_email
-        )
+        invitation = _issue(factory, _offer(organization_id, owner_id, addressee_email))
 
         accounts = SqlAccountStore(factory)
         assert not accounts.purge_if_still_eligible(addressee_id, NOW), (
