@@ -649,16 +649,39 @@ What actually happened:
    ORM change. No bridge service and no entry-point implementation are authorized here."
 3. `R7-02` therefore delivers the migration (`20260817_0017`) and stops there.
 
-**`R7-07` is appended for the bridge itself**, and it is blocked on governance rather than on code:
-`KHEPRI-DEC-020` §1 re-enacts the *admitted shape*, so the design is settled, but §3 withholds
-authorization for the code. Lifting that needs a successor record, which is the owner's to make.
+**`R7-07` is appended for the bridge itself.** It was blocked on governance rather than on code —
+`KHEPRI-DEC-020` §1 re-enacted the *admitted shape*, so the design was settled, but §3 withheld
+authorization for the code. **`KHEPRI-DEC-021` lifts exactly that bullet** and is the governing
+record for the slice.
 
-One note for whoever writes `R7-07`. `test_rca001_boundary.py` asserts the **RRA→RCA** import
-direction only (`test_no_rra_module_imports_rca`); `STATUS.md`'s `FR-036` row already records that
-no test asserts RCA→RRA. So the bridge's "no `rra_` import inside `src/khepri/rca/`" discipline rests
-on prose, not on a guard, and `isolation.py:7-8`'s `TYPE_CHECKING` pattern is the existing idiom for
-needing an RRA type without importing it at runtime. Adding the missing direction to the boundary
-test belongs in `R7-07`.
+`KHEPRI-DEC-021` settles three things this disposition previously left open, and they change what
+`R7-07` builds:
+
+1. **The bridge lives in `khepri.runtime`**, per its §3 — rejecting *both* options the merged
+   documents offered. `R7-01` §3 recommended `khepri.local`; `pyproject.toml:66` excludes that
+   package from the wheel the OCI image installs, its own `__init__` says "none of it is deployed",
+   and `Dockerfile:72` validates `khepri.runtime` instead — so a bridge there is unreachable from the
+   role that will serve `R7-05`. `khepri.runtime` is the packaged composition root. It is the first
+   `khepri.rca` import into that package, admitted deliberately: a composition root exists to know
+   both sides. The RCA-side option `R7-01` §3 warned about stays rejected.
+2. **The scope is four parts, not one.** `rra/sessions.py` has no invitation-free session insert —
+   `BetaSessionRow` is written only inside `redeem_invitation` — so the entry point admitted by
+   `KHEPRI-DEC-019` §2 had nowhere to persist. `KHEPRI-DEC-021` §2 authorizes the entry point, an
+   additive `SessionStore` Protocol method with its `SqlSessionStore` implementation, a resume
+   lookup scoped by **`(owner_id, session_id)`** — never `owner_id` alone, which is non-unique after
+   `20260817_0017` and would select an arbitrary or stale analysis — and the bridge.
+3. **The boundary assertion is a flat prohibition, not an allowlist**, which follows from (1).
+
+The note this paragraph replaces said the bridge's discipline was "no `rra_` import inside
+`src/khepri/rca/`". That framing is superseded by `KHEPRI-DEC-021` §3: with the bridge in
+`khepri.runtime`, `khepri.rca` imports **no** `khepri.rra` module at all, mirroring the existing
+prohibition rather than carving an exception from it. What remains correct is the *gap* it named:
+`test_rca001_boundary.py` asserts the **RRA→RCA** direction only
+(`test_no_rra_module_imports_rca`), `STATUS.md`'s `FR-036` row records that no test asserts
+RCA→RRA, and adding the missing direction belongs in `R7-07`.
+`find_rca_import_offenses(source, package)` is already parameterised on `package`, so the mirror is
+small. `isolation.py:3-8`'s `TYPE_CHECKING` pattern remains the idiom for needing a type without a
+runtime import, though a `khepri.runtime` bridge should not need it.
 
 ## Non-goals
 
@@ -1457,8 +1480,8 @@ bounded to programs still in flight.
 | R4 Invitations | READY_FOR_IMPLEMENTATION | `R4-01` design merged (#209), **`R4-02` merged at `d50ffe6` (#215)** and **`R4-03` proposed** — `invitations.py` carries the sealed record, `persistence.py` the `InvitationRow` with four `CHECK`s, `invitation_persistence.py` the store and its destroy-on-touch read, `invitation_retention.py` the sweeper, and migration `20260818_0018` the table. **`R4-04` is next once `R4-03` merges**; it depends on `R4-03` for the store and schema its issuance service writes through, so the parallel column's "R5 recovery design" applies only after that. **`R4-05` is blocked on `R4-06`**, reordered before it because the purge cascade must precede redemption. The two owner decisions it also waited on were answered 2026-08-18 — `R4-01` §8.2 accepts the issuance-versus-purge residual, and §8.5 reads `FR-019` as the last check. **One gap `R4-03` records rather than closes**: no scheduler exists, so `RetentionPasses` runs only from the manual `sweep` command and every governed horizon — accounts, events, sessions, invitations — is unenforced without one. `R4-01` §8.1 assigns that elsewhere |
 | R5 Recovery | READY_FOR_PLAN | R5-01 design may proceed alongside R3 design; implementation depends on R3 session revocation |
 | R6 Canonical authorization | MERGED | All eight tasks `R6-01`…`R6-08` are merged: PRs `#192`…`#200`. Delivers `authorization.py` (the single door), `switching.py` (`R6-03`), `authorization_resolution.py` (the canonical resolver), and four evidence suites — `test_rca001_authorization_matrix.py`, `test_rca001_cross_organization.py`, `test_rca001_stale_session_authorization.py`, `test_rca001_resolver_chokepoint.py`. **This is what unblocks R7.** Read `STATUS.md` before building on it: `R6-01` §3.2 is uncovered and needs an `R6-02` change (self-versus-another-account has no target in `AuthorizationContext`); the three owner-only verbs check no authority of their own, so the gate is the authorized route but not a proven-exclusive one; and `R6-08`'s tripwire guards an empty room until a production consumer exists |
-| R7 Commercial RRA bridge | BLOCKED | R6 is merged, so that dependency is met. `R7-01` (`#201`), `R7-02` (`#203` finding + `#205` migration `20260817_0017`) and `R7-04` (`#207`) are merged. **`R7-02` shipped as the migration only** — `KHEPRI-DEC-020` §3 authorized "the migration and its ORM change" and explicitly withheld the bridge service; see the task disposition under Program R7. Every remaining task is blocked, which is what keeps the program `BLOCKED`: **`R7-07`** on governance (§1 re-enacts the admitted shape, so the design is settled, but lifting §3 needs a successor record, which is the owner's to make), and **`R7-03`, `R7-05`, `R7-06`** on `R7-02`'s unbuilt bridge portion. `R7-03` tests the resume path and needs that persistence: its `Depends on: R3, R6` row **understates the dependency**, and `KHEPRI-DEC-020`'s Consequences plus `R7-01` §4 govern instead of the table |
-| R8 Commercial shell | READY_FOR_PLAN | **`R8-01` proposed** — `docs/superpowers/specs/2026-08-19-r8-01-shell-ia-and-tokens.md` carries the shell information architecture, and `src/khepri/rra/journey/assets/shell.css` the token set, with `tests/test_r801_shell_tokens.py` holding four consistency claims the note makes. Design output only: no template links the stylesheet and it is deliberately **not** in `routes.py`'s asset allowlist. Stays `READY_FOR_PLAN` until the owner merges it — a branch is a proposal (`AGENTS.md`). Three things the note settles rather than defers: the shell takes `/app/{language}/…` because `/beta/{language}/{step}` is a catch-all; expired, deleted, and session-unavailable stay collapsed into one surface because distinguishing them is the disclosure **`FR-025`** forbids — "denials MUST NOT disclose existence, ownership, or the identity of another organization", which is the invariant a UI breaks most easily since naming the organization is the natural thing for an error page to do — while *no membership* gets its own because it is the only one with a next step; and `docs/ui/design_handoff_khepri/` is reusable as IA reference but **not** as an asset plan — it specifies Google Fonts and a unpkg CDN, which the UI guardrails forbid. Two questions are left to `R8-02`: whether the shell shares the journey's global security middleware (a `R3-06` cookie question, not a visual one), and whether `account` stays nested under the organization path. `R8-02` is then the next task; implementation of the surfaces still depends on R3/R4/R6/R7 |
+| R7 Commercial RRA bridge | READY_FOR_IMPLEMENTATION | **Written for the state this row holds once `KHEPRI-DEC-021` merges**, following that record's own header device: the registry flips to `active` at the merge and Markdown does not, so a row written for the pre-merge state would contradict the authoritative registry from the first commit on `main`. Until then `R7-07` may not start — a branch is a proposal (`AGENTS.md`). Found in review on `#216`. — R6 is merged. `R7-01` (`#201`), `R7-02` (`#203` finding + `#205` migration `20260817_0017`) and `R7-04` (`#207`) are merged; **`R7-02` shipped as the migration only**, because `KHEPRI-DEC-020` §3 withheld the bridge service. `KHEPRI-DEC-021` lifts that bullet and additionally authorizes the store path the entry point needs, scopes the resume lookup to `(owner_id, session_id)` rather than `owner_id` alone, pins the bridge to `khepri.runtime` (not `khepri.local`, which the wheel excludes), and makes the RCA→RRA boundary a flat prohibition — see the task disposition under Program R7. **`R7-07` is then the next task**; `R7-03`, `R7-05` and `R7-06` depend on it rather than on `R7-02`, since `R7-03` tests the resume path and needs the persistence `R7-07` adds. Their `Depends on: R3, R6` rows **understate that**, and `R7-01` §4 with `KHEPRI-DEC-021` governs instead of the table |
+| R8 Commercial shell | READY_FOR_PLAN | **`R8-01` proposed** — `docs/superpowers/specs/2026-08-19-r8-01-shell-ia-and-tokens.md` carries the shell information architecture, and `src/khepri/rra/journey/assets/shell.css` the token set, with `tests/test_r801_shell_tokens.py` holding four consistency claims the note makes. Design output only: no template links the stylesheet and it is deliberately **not** in `routes.py`'s asset allowlist. Stays `READY_FOR_PLAN` until the owner merges it — a branch is a proposal (`AGENTS.md`). Three things the note settles rather than defers: the shell takes `/app/{language}/…` because `/beta/{language}/{step}` is a catch-all; expired, deleted, and session-unavailable stay collapsed into one surface because distinguishing them is the disclosure **`FR-025`** forbids — "denials MUST NOT disclose existence, ownership, or the identity of another organization", which is the invariant a UI breaks most easily since naming the organization is the natural thing for an error page to do — while *no membership* gets its own because it is the only one with a next step; and `docs/ui/design_handoff_khepri/` is reusable as IA reference but **not** as an asset plan — it specifies Google Fonts and a unpkg CDN, which the UI guardrails forbid. Two questions are left to `R8-02`: how the shell attaches its response headers -- **not** whether it shares `endpoints.security`, which carries none: that middleware only enforces same-origin mutations, while CSP and `Cache-Control: private, no-store` are `SECURITY_HEADERS` attached per response, and the middleware is registered app-globally either way (corrected in review on `#219`; the open part is whether the commercial session wants the same policy as the beta one, which is `R3-06`), and whether `account` stays nested under the organization path. `R8-02` is then the next task; implementation of the surfaces still depends on R3/R4/R6/R7 |
 | OPS1 Production operations | READY_FOR_PLAN | `KHEPRI-DEC-008` is active and leaves target selection open by design; spend is an owner decision; deployment waits for R1 |
 | S1 RRA hardening | READY_FOR_PLAN | Triage only may begin in parallel |
 | G2/G3 Workspace authority | PROPOSED | Needs product decisions, retention decision, and active spec |
