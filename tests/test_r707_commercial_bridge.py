@@ -522,19 +522,23 @@ def _source_root() -> Path:
     return Path(__file__).resolve().parents[1] / "src" / "khepri"
 
 
+def _imports_from(node: ast.AST, forbidden: str) -> bool:
+    """Whether one AST node imports anything under `forbidden`, in either import form."""
+    if isinstance(node, ast.ImportFrom):
+        return (node.module or "").startswith(forbidden)
+    if isinstance(node, ast.Import):
+        return any(alias.name.startswith(forbidden) for alias in node.names)
+    return False
+
+
 def _cross_imports(package: str, forbidden: str) -> list[str]:
-    offenders = []
-    for module in sorted((_source_root() / package).rglob("*.py")):
-        tree = ast.parse(module.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            imported_from = isinstance(node, ast.ImportFrom) and (
-                node.module or ""
-            ).startswith(forbidden)
-            imported_plain = isinstance(node, ast.Import) and any(
-                alias.name.startswith(forbidden) for alias in node.names
-            )
-            if imported_from or imported_plain:
-                offenders.append(module.name)
+    """Modules under `khepri.<package>` that import `forbidden`. Empty is the passing state."""
+    offenders = [
+        module.name
+        for module in sorted((_source_root() / package).rglob("*.py"))
+        for node in ast.walk(ast.parse(module.read_text(encoding="utf-8")))
+        if _imports_from(node, forbidden)
+    ]
     return sorted(set(offenders))
 
 
