@@ -100,6 +100,32 @@ def _expired(row: InvitationRow, now: datetime) -> bool:
     return stored <= now
 
 
+def _conflicts_with_terminal_state(invitation: Invitation, row: InvitationRow) -> bool:
+    """Whether a snapshot proposes the terminal state its row already excludes.
+
+    §5's state table has four states and excludes one pair: an invitation cannot be both
+    redeemed and revoked. `ck_rca_invitation_terminal_state` enforces it, so a write reaching
+    that pair raises `IntegrityError` at commit -- which is a crash where the store owes a
+    refusal. Two callers holding open snapshots, one saving a revocation and the other a
+    redemption, is how it happens. Found in review on `#217`.
+
+    **Keyed on what the snapshot proposes, not on the row being terminal.** A stale snapshot
+    carrying no terminal timestamp is a harmless no-op that `save_invitation` absorbs, and
+    refusing it would make every late writer look like a conflict --
+    `test_a_stale_save_cannot_reopen_a_terminal_invitation` asserts that write still reports
+    success.
+
+    Extracted rather than inlined: as a compound conditional it put `save_invitation` at
+    cyclomatic complexity 10 against CodeScene's threshold of 9, and a named predicate is the
+    repo's usual answer (`AGENTS.md:18` requires 10.00 on the file).
+    """
+    proposes_redeemed = invitation.redeemed_at is not None
+    proposes_revoked = invitation.revoked_at is not None
+    if proposes_redeemed and row.revoked_at is not None:
+        return True
+    return proposes_revoked and row.redeemed_at is not None
+
+
 def _destroy_verifier(row: InvitationRow) -> None:
     """Null all five verifier columns together.
 
@@ -252,16 +278,7 @@ class SqlInvitationStore:
             # raised `IntegrityError` at commit instead of refusing the stale transition. §5's
             # state table excludes that pair, so arriving at it is never a lost update to
             # merge. Found in review on `#217`.
-            #
-            # The refusal is keyed on what the snapshot *proposes*, not on the row being
-            # terminal: a stale snapshot carrying no terminal timestamp is a harmless no-op
-            # below, and reporting failure for it would make every late writer look like a
-            # conflict.
-            proposes_redeemed = invitation.redeemed_at is not None
-            proposes_revoked = invitation.revoked_at is not None
-            if (proposes_redeemed and row.revoked_at is not None) or (
-                proposes_revoked and row.redeemed_at is not None
-            ):
+            if _conflicts_with_terminal_state(invitation, row):
                 return False
 
             # Terminal timestamps are write-once. A row already redeemed or revoked keeps the
