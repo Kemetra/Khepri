@@ -388,6 +388,40 @@ class MemoryInvitationStore:
         del self.invitations[invitation_id]
         return True
 
+    def redeem_into_membership(
+        self,
+        invitation_id: str,
+        *,
+        account_id: str,
+        organization_id: str,
+        role: str,
+        now: datetime,
+        membership: Membership,
+        event: MembershipEvent,
+        session_id_hash: str,
+    ) -> bool:
+        """The conditional transition, without the row locks a fake has nothing to lock.
+
+        **What is copied and what is not.** The invitation predicate is copied exactly -- open,
+        unredeemed, unrevoked, unexpired at `now` -- because a fake that accepted a redemption
+        production refuses would make an at-most-once test pass against a store that loses the
+        race. The account and session re-reads are **not** modelled: this fake holds no accounts
+        or sessions, so it cannot answer those questions, and inventing an answer would be worse
+        than declining to. `R4-05`'s liveness tests run against SQL for that reason.
+
+        Recorded rather than left implicit, because the parity test compares signatures and cannot
+        see that two implementations answer a different number of questions.
+        """
+        invitation = self.invitations.get(invitation_id)
+        if invitation is None:
+            return False
+        if invitation.organization_id != organization_id:
+            return False
+        if not invitation.is_open_at(now):
+            return False
+        self.invitations[invitation_id] = invitation.redeemed(at=now)
+        return True
+
     def invitations_for_organization(
         self, organization_id: str, *, now: datetime
     ) -> tuple[Invitation, ...]:
