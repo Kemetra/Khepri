@@ -32,6 +32,7 @@ from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from khepri.rca.accounts import canonical_email
 from khepri.rca.credentials import KdfParams, Verifier
 from khepri.rca.invitations import (
     Invitation,
@@ -39,7 +40,12 @@ from khepri.rca.invitations import (
     InvitationOffer,
     StoredInvitationSecret,
 )
-from khepri.rca.persistence import InvitationRow, _canonical_or_none, _utc
+from khepri.rca.persistence import (
+    InvitationRow,
+    _canonical_or_none,
+    _utc,
+    take_identity_lock,
+)
 from khepri.rca.records import assert_sealed
 
 
@@ -162,6 +168,19 @@ class SqlInvitationStore:
         if verifier is not None:
             assert_sealed(verifier)
         with self._factory.begin() as database:
+            # `R4-01` §8.2's advisory lock over the addressee's identity, taken by this path and by
+            # `purge_if_still_eligible` identically. It closes the **issuance-first** ordering of
+            # §7.1's identity-transfer hazard: a purge that begins after this insert is held until
+            # this transaction commits, so its cascade sees the new row rather than missing it.
+            #
+            # Taken unconditionally, on the address rather than on an account, because there may be
+            # no account -- `FR-019` issues to a person before one exists -- and because the whole
+            # point of an advisory key is that it does not need a discoverable row. §7.1 retracted
+            # a row-lock design for exactly that reason.
+            #
+            # The purge-first ordering remains open: §8.2 records the owner accepting it on
+            # 2026-08-18 rather than amending `KHEPRI-DEC-015` to retain an address-derived marker.
+            take_identity_lock(database, canonical_email(invitation.target_identity))
             if database.get(InvitationRow, invitation.invitation_id) is not None:
                 return False
             database.add(

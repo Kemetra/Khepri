@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from hashlib import sha256
 
 from sqlalchemy import (
     CheckConstraint,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     func,
     or_,
     select,
+    text,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -375,6 +377,78 @@ def _canonical_or_none(email: str | None) -> str | None:
     return None if email is None else canonical_email(email)
 
 
+def identity_lock_key(canonical_address: str) -> int:
+    """The advisory-lock key for one canonical address (`R4-01` §8.2).
+
+    **A stable digest, never `hash()`.** `pg_advisory_xact_lock` takes a `bigint`, so the address
+    must be mapped to one -- and Python's `hash()` on a `str` is randomised per process under
+    PEP 456, so two workers would derive **different** keys for the same address, acquire
+    non-conflicting locks, and serialize nothing. The lock would look present in code review and in
+    any single-process test while doing nothing in production. That is the defect `#212`/`#213`
+    fixed once already in this note's own key derivation.
+
+    **The address must be canonical**, per §4's storage rule and for the same reason: a case
+    difference produces a different digest, and the two paths would lock different keys. Callers
+    pass a value already folded; this does not fold again, so that the key is a pure function of
+    what it is given and the test's committed constant means what it says.
+
+    `signed=True` because `bigint` is signed and PostgreSQL rejects an out-of-range key.
+    """
+    return int.from_bytes(sha256(canonical_address.encode()).digest()[:8], "big", signed=True)
+
+
+def identity_advisory_lock(canonical_address: str):
+    """A transaction-scoped advisory lock over one identity (`R4-01` §8.2).
+
+    A **module-level named statement** rather than an inline `text()` call, following
+    `owner_memberships_for_update` and its siblings: SQLite silently ignores what PostgreSQL
+    honours, so a lock the suite cannot compile is a lock the suite cannot assert. The evidence is
+    a dialect-compilation test, not a database round trip.
+
+    **What this closes and what it does not.** It serializes the **issuance-first** ordering: an
+    `issue` that begins before the purge is held behind it, so its invitation is visible to the
+    purge's cascade. It does **not** close the purge-first ordering -- an `issue` beginning after
+    the purge commits looks the addressee up by canonical address, finds the tombstone has no
+    address, takes no lock correctly (a post-purge miss is indistinguishable from `FR-019`'s
+    ordinary no-account case), and inserts an open invitation after the cascade has run. §7.1
+    retracted a row-lock fix for exactly this reason: "a **row** lock cannot serialize two
+    operations when the discriminating fact is that the row stops being *discoverable* by the key
+    one of them uses."
+
+    §8.2 records the owner's decision of 2026-08-18 to **accept that residual** rather than amend
+    `KHEPRI-DEC-015` to retain an address-derived marker. So this is half a fix, deliberately, and
+    this docstring says so rather than letting a reader mistake a half-closed race for a closed one
+    -- which §8.2 requires in those words.
+
+    It stores nothing and is transaction-scoped, so it releases on commit or rollback with no
+    cleanup path and prejudges none of the answers §8.2 left open.
+    """
+    return text("SELECT pg_advisory_xact_lock(:identity_lock_key)").bindparams(
+        identity_lock_key=identity_lock_key(canonical_address)
+    )
+
+
+def take_identity_lock(database, canonical_address: str) -> bool:
+    """Acquire the identity lock when the backend has one. True when it was taken.
+
+    **Guarded on the dialect, not on a setting.** `pg_advisory_xact_lock` does not exist in SQLite
+    -- executing the statement there raises `no such function` -- and the suite runs on SQLite while
+    production runs on PostgreSQL. An environment-flag guard would be worse than this: a lock that
+    silently vanishes when a variable is unset is the shape §8.2 warns about, where the code reads
+    correctly and serializes nothing. The dialect *is* the fact that decides whether the lock means
+    anything, so it is what the branch reads.
+
+    This is stated in §8.2: "SQLite emits no advisory lock, so `R4-07`'s race case runs against
+    PostgreSQL". A serialization claim made from a SQLite run is unfounded, and the returned bool is
+    what lets a test assert which happened rather than infer it.
+    """
+    bind = database.get_bind()
+    if bind.dialect.name != "postgresql":
+        return False
+    database.execute(identity_advisory_lock(canonical_address))
+    return True
+
+
 def _cascade_invitations(
     database,
     *,
@@ -533,6 +607,14 @@ class SqlAccountStore:
             row = database.get(AccountRow, account_id)
             if row is None or not _account_from_row(row).is_purgeable_at(horizon):
                 return False
+            # `R4-01` §8.2's advisory lock over the identity, taken before the cascade below and
+            # released when this transaction ends. It closes the **issuance-first** ordering: an
+            # `issue` for this address that began first holds the same key, so this blocks until it
+            # commits and the cascade then sees its row. The purge-first ordering stays open and is
+            # the residual the owner accepted -- see `identity_advisory_lock`.
+            #
+            # After the eligibility check, so a declined purge acquires nothing and blocks nobody.
+            take_identity_lock(database, canonical_email(row.email))
             # `R4-01` §7.1's third trigger, in this transaction and **after** the eligibility
             # check above. A cascade placed before it would close invitations for an account that
             # turned out not to be purgeable -- the "erased a re-enabled account's email" defect
