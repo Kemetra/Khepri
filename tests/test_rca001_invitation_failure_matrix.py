@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -114,6 +115,28 @@ def _disable_and_purge(factory: sessionmaker, account_id: str) -> None:
     assert live is not None
     assert accounts.save_account(live.disabled(now=NOW))
     assert accounts.purge_if_still_eligible(account_id, PURGE_HORIZON)
+
+
+class _Context(NamedTuple):
+    """What every cause-builder below needs to construct its token."""
+
+    organization_id: str
+    owner_id: str
+    invitee_email: str
+
+
+#: §5's refusal causes, each with a builder method named `_<cause>` on the class below.
+#:
+#: A list rather than six branches: a cause added here without a builder fails with an
+#: `AttributeError` naming the missing method, which is louder than an `elif` nobody wrote.
+_CAUSES = (
+    "unknown_invitation",
+    "malformed_token",
+    "wrong_secret",
+    "expired",
+    "revoked",
+    "foreign_addressee",
+)
 
 
 class TestACorrectSecretAgainstANonOpenInvitation:
@@ -290,64 +313,68 @@ class TestTheReplacementAccountCannotRedeem:
 class TestEveryCauseCollapsesToOneRefusal:
     """`FR-025` as one assertion over the whole cause set, not several in isolation.
 
-    Each case below is refused for a different reason and the test collects the messages, so the
-    uniformity claim is asserted as a property of the set. Checking each case's message where it is
-    raised proves the message is right; checking them together proves nothing distinguishes them,
-    which is the requirement.
+    Each case is refused for a different reason and the test collects the messages, so uniformity is
+    asserted as a property of the *set*. Checking each case's message where it is raised proves the
+    message is right; checking them together proves nothing distinguishes them, which is the
+    requirement. Verified: two distinct messages on the verification branch fail nine tests.
+
+    **A dispatch table rather than an if/elif chain.** The chain was six branches in one method,
+    which CodeScene scores as Complex Method -- and the table reads closer to §5's own state list,
+    where a missing cause is a missing row rather than a branch nobody counts.
     """
+
+    def _unknown_invitation(self, factory: sessionmaker, ctx: _Context) -> tuple[str, datetime]:
+        return "kci1.inv_absent.secret", NOW
+
+    def _malformed_token(self, factory: sessionmaker, ctx: _Context) -> tuple[str, datetime]:
+        return "not-a-token", NOW
+
+    def _wrong_secret(self, factory: sessionmaker, ctx: _Context) -> tuple[str, datetime]:
+        issued = _service(factory).issue(
+            _offer(ctx.organization_id, ctx.owner_id, ctx.invitee_email),
+            expires_at=LATER,
+            now=NOW,
+        )
+        return f"kci1.{parse_token(issued)[0]}.wrong-secret", NOW
+
+    def _expired(self, factory: sessionmaker, ctx: _Context) -> tuple[str, datetime]:
+        token = _service(factory).issue(
+            _offer(ctx.organization_id, ctx.owner_id, ctx.invitee_email),
+            expires_at=NOW + timedelta(hours=1),
+            now=NOW,
+        )
+        return token, NOW + timedelta(hours=2)
+
+    def _revoked(self, factory: sessionmaker, ctx: _Context) -> tuple[str, datetime]:
+        service = _service(factory)
+        token = service.issue(
+            _offer(ctx.organization_id, ctx.owner_id, ctx.invitee_email),
+            expires_at=LATER,
+            now=NOW,
+        )
+        service.revoke(
+            ctx.organization_id, parse_token(token)[0], actor_account_id=ctx.owner_id, now=NOW
+        )
+        return token, NOW
+
+    def _foreign_addressee(self, factory: sessionmaker, ctx: _Context) -> tuple[str, datetime]:
+        _, other_email = _account(factory, "other")
+        token = _service(factory).issue(
+            _offer(ctx.organization_id, ctx.owner_id, other_email), expires_at=LATER, now=NOW
+        )
+        return token, NOW
 
     def _refusal_for(self, factory: sessionmaker, cause: str) -> str:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, f"m{cause}")
-        service = _service(factory)
+        ctx = _Context(organization_id, owner_id, invitee_email)
 
-        if cause == "unknown_invitation":
-            token = "kci1.inv_absent.secret"
-        elif cause == "malformed_token":
-            token = "not-a-token"
-        elif cause == "wrong_secret":
-            issued = service.issue(
-                _offer(organization_id, owner_id, invitee_email), expires_at=LATER, now=NOW
-            )
-            token = f"kci1.{parse_token(issued)[0]}.wrong-secret"
-        elif cause == "expired":
-            token = service.issue(
-                _offer(organization_id, owner_id, invitee_email),
-                expires_at=NOW + timedelta(hours=1),
-                now=NOW,
-            )
-        elif cause == "revoked":
-            token = service.issue(
-                _offer(organization_id, owner_id, invitee_email), expires_at=LATER, now=NOW
-            )
-            service.revoke(
-                organization_id, parse_token(token)[0], actor_account_id=owner_id, now=NOW
-            )
-        elif cause == "foreign_addressee":
-            other_id, other_email = _account(factory, "other")
-            token = service.issue(
-                _offer(organization_id, owner_id, other_email), expires_at=LATER, now=NOW
-            )
-            assert other_id
-        else:  # pragma: no cover - guards a typo in the parametrization
-            raise AssertionError(f"unknown cause {cause!r}")
-
-        moment = NOW + timedelta(hours=2) if cause == "expired" else NOW
+        token, moment = getattr(self, f"_{cause}")(factory, ctx)
         with pytest.raises(InvitationOperationFailed) as refusal:
-            service.redeem(token, _actor(factory, invitee_id), now=moment)
+            _service(factory).redeem(token, _actor(factory, invitee_id), now=moment)
         return str(refusal.value)
 
-    @pytest.mark.parametrize(
-        "cause",
-        [
-            "unknown_invitation",
-            "malformed_token",
-            "wrong_secret",
-            "expired",
-            "revoked",
-            "foreign_addressee",
-        ],
-    )
+    @pytest.mark.parametrize("cause", _CAUSES)
     def test_the_message_is_the_uniform_one(self, factory: sessionmaker, cause: str) -> None:
         assert self._refusal_for(factory, cause) == INVITATION_FAILURE
 
@@ -355,20 +382,12 @@ class TestEveryCauseCollapsesToOneRefusal:
         """The set assertion: six causes, one message.
 
         This is the test that fails if a later slice adds a helpful message to any one branch --
-        which is the realistic regression, since each branch looks harmless on its own.
+        the realistic regression, since each branch looks harmless on its own.
         """
-        causes = [
-            "unknown_invitation",
-            "malformed_token",
-            "wrong_secret",
-            "expired",
-            "revoked",
-            "foreign_addressee",
-        ]
-        messages = {self._refusal_for(factory, cause) for cause in causes}
+        messages = {self._refusal_for(factory, cause) for cause in _CAUSES}
 
         assert messages == {INVITATION_FAILURE}, (
-            f"six distinct causes produced {len(messages)} distinct messages: {sorted(messages)}; "
-            "`FR-025` requires a denial for an unreachable object to be indistinguishable from one "
-            "for an object that does not exist"
+            f"six distinct causes produced {len(messages)} distinct messages: "
+            f"{sorted(messages)}; `FR-025` requires a denial for an unreachable object to be "
+            "indistinguishable from one for an object that does not exist"
         )

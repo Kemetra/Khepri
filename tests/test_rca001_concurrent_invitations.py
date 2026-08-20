@@ -94,10 +94,13 @@ BLOCK_TIMEOUT_SECONDS = 10.0
 
 pytestmark = pytest.mark.concurrency
 
-# Every contention test here repeats, following `test_rca001_concurrent_final_owner.py`: one green
-# run cannot distinguish a sound lock from a lucky interleaving. `R1` measured a real defect passing
-# two runs in three, which is what set this convention.
-ATTEMPTS = 5
+# Fewer repeats than `test_rca001_concurrent_final_owner.py`'s ten, deliberately. That file repeats
+# because its contract depends on *interleaving*, and a lucky schedule can hide a defect -- `R1`
+# measured one passing two runs in three. These tests assert the lock directly: the blocking test
+# reads `pg_locks` for a waiting backend, which is a state rather than a race outcome, so repetition
+# adds runtime without adding evidence. Three keeps a flake visible while staying inside the job's
+# ten-minute budget, which a first version exceeded.
+ATTEMPTS = 3
 
 DATABASE_URL = os.environ.get("KHEPRI_TEST_DATABASE_URL")
 
@@ -163,24 +166,30 @@ def _advisory_rows(factory, key: int) -> list[tuple[bool, int]]:
     Read from `pg_locks` rather than inferred from a timeout, because a timeout alone cannot
     distinguish "blocked on this key" from "slow for another reason".
 
-    **The key reconstruction is explicit** because PostgreSQL splits a bigint advisory key across
-    `classid` (high 32 bits) and `objid` (low 32 bits), and getting that wrong yields a query that
-    silently matches nothing -- which would make the blocking assertion below unfalsifiable in the
-    direction that matters. `_the_key_is_visible_at_all` asserts the reconstruction finds the
-    *granted* row first, so a broken query fails loudly instead of reporting "not blocked".
+    **The two halves are computed in Python, and the SQL casts nothing.** PostgreSQL splits a bigint
+    advisory key across `classid` (high 32 bits) and `objid` (low 32 bits). The first version
+    reassembled them in SQL with `:key::bigint`, which is a **syntax error**: SQLAlchemy
+    substitutes `:key` and PostgreSQL is then left with a stray `::`. It failed as
+    `syntax error at or near ":"`, and because the failure raised inside the polling loop the thread
+    holding the advisory lock never reached its release -- so the whole CI job deadlocked and was
+    cancelled at ten minutes. Found in the PostgreSQL server log, which is the only place the error
+    surfaced.
+
+    Two lessons kept in the code rather than in a commit message: a `text()` parameter and a
+    PostgreSQL cast cannot share a token, and a polling helper that can raise must not be the only
+    thing that releases a lock -- see the `try/finally` in the test below.
     """
+    high = (key >> 32) & 0xFFFFFFFF
+    low = key & 0xFFFFFFFF
     with factory() as database:
         return [
             (granted, pid)
             for granted, pid in database.execute(
                 text(
                     "SELECT granted, pid FROM pg_locks "
-                    "WHERE locktype = 'advisory' "
-                    "AND ((classid::bigint << 32) | (objid::bigint & 4294967295)) "
-                    "    = (:key::bigint & 9223372036854775807) "
-                    "OR (locktype = 'advisory' AND objid::bigint = (:key::bigint & 4294967295))"
+                    "WHERE locktype = 'advisory' AND classid = :high AND objid = :low"
                 ),
-                {"key": key},
+                {"high": high, "low": low},
             ).all()
         ]
 
@@ -242,39 +251,45 @@ def test_the_purge_blocks_on_a_held_issuance_lock(factory, attempt: int) -> None
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         holder = pool.submit(hold_issuance)
-        assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS), "the holder never took the lock"
+        try:
+            assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS), "the holder never took the lock"
 
-        # Before asserting anything about *waiting*, prove the query can see the lock at all.
-        # A `pg_locks` predicate that matches nothing would otherwise report "not blocked" for
-        # every implementation, sound or broken -- the unfalsifiable direction.
-        assert _holds(factory, key), (
-            "the held lock is not visible in `pg_locks` for this key, so the blocking assertion "
-            "below would be vacuous. Either the holder did not acquire it or the key "
-            "reconstruction in `_advisory_rows` is wrong"
-        )
-
-        purge = pool.submit(
-            lambda: SqlAccountStore(factory).purge_if_still_eligible(
-                addressee_id, PURGE_HORIZON
+            # Before asserting anything about *waiting*, prove the query can see the lock at all.
+            # A `pg_locks` predicate that matches nothing would otherwise report "not blocked" for
+            # every implementation, sound or broken -- the unfalsifiable direction.
+            assert _holds(factory, key), (
+                "the held lock is not visible in `pg_locks` for this key, so the blocking "
+                "assertion below would be vacuous: either the holder did not acquire it, or "
+                "the key reconstruction in `_advisory_rows` is wrong"
             )
-        )
 
-        deadline = threading.Event()
-        blocked = False
-        for _ in range(int(BLOCK_TIMEOUT_SECONDS * 10)):
-            if _waiting_on(factory, key):
-                blocked = True
-                break
-            deadline.wait(0.1)
+            purge = pool.submit(
+                lambda: SqlAccountStore(factory).purge_if_still_eligible(
+                    addressee_id, PURGE_HORIZON
+                )
+            )
 
-        assert blocked, (
-            "the purge did not block on the advisory lock. Either the lock is absent from one of "
-            "the two paths, or the two derive different keys -- both are the defect §8.2's key "
-            "derivation and named statement exist to prevent, and both leave this test's timing "
-            "rather than the implementation deciding the result"
-        )
+            deadline = threading.Event()
+            blocked = False
+            for _ in range(int(BLOCK_TIMEOUT_SECONDS * 10)):
+                if _waiting_on(factory, key):
+                    blocked = True
+                    break
+                deadline.wait(0.1)
 
-        release.set()
+            assert blocked, (
+                "the purge did not block on the advisory lock. Either the lock is absent from "
+                "one of the two paths, or the two derive different keys -- both are the defect "
+                "§8.2's key derivation and named statement exist to prevent, and both leave "
+                "this test's timing rather than the implementation deciding the result"
+            )
+
+        finally:
+            # **Always release the holder**, even when an assertion above fails or a helper raises.
+            # Without this the holding thread waits on `release` forever, the pool's `__exit__`
+            # waits on the thread, and the whole run deadlocks rather than reporting the failure --
+            # which is exactly how the `:key::bigint` syntax error turned into a cancelled job.
+            release.set()
         holder.result(timeout=BLOCK_TIMEOUT_SECONDS * 2)
         assert purge.result(timeout=BLOCK_TIMEOUT_SECONDS * 2) is True
 
@@ -314,20 +329,21 @@ def test_a_different_address_does_not_block(factory, attempt: int) -> None:
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         holder = pool.submit(hold_unrelated)
-        assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS)
+        try:
+            assert holding.wait(timeout=BLOCK_TIMEOUT_SECONDS)
 
-        purge = pool.submit(
-            lambda: SqlAccountStore(factory).purge_if_still_eligible(
-                addressee_id, PURGE_HORIZON
+            purge = pool.submit(
+                lambda: SqlAccountStore(factory).purge_if_still_eligible(
+                    addressee_id, PURGE_HORIZON
+                )
             )
-        )
 
-        assert purge.result(timeout=BLOCK_TIMEOUT_SECONDS) is True, (
-            "a lock held for a different address must not block this purge; if it does, the key is "
-            "not derived from the identity and the lock serializes unrelated work"
-        )
-
-        release.set()
+            assert purge.result(timeout=BLOCK_TIMEOUT_SECONDS) is True, (
+                "a lock held for a different address must not block this purge; if it does, the "
+                "key is not derived from the identity and the lock serializes unrelated work"
+            )
+        finally:
+            release.set()
         holder.result(timeout=BLOCK_TIMEOUT_SECONDS * 2)
 
 
