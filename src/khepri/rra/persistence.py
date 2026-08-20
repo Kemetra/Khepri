@@ -392,6 +392,63 @@ class SqlSessionStore:
             )
         return True
 
+    def open_commercial_session_row(self, session: BetaSession) -> None:
+        """Persist a session that no invitation produced (`KHEPRI-DEC-021` §2).
+
+        Before `R7-07` a `BetaSessionRow` was written in exactly one place -- inside
+        `redeem_invitation`, behind its invitation guard -- so the entry point
+        `KHEPRI-DEC-019` §2 admitted had nowhere to persist. That is the gap this method closes,
+        and §2 authorizes it explicitly "because the entry point is unimplementable without it".
+
+        **Additive, so every existing signature is untouched.** `KHEPRI-DEC-019` §4's first
+        obligation guards the surface a Protocol change touches: RRA's existing tests must still
+        pass unmodified. They do -- no invitation path reads or writes through here.
+        """
+        with self._factory.begin() as database:
+            database.add(
+                BetaSessionRow(
+                    owner_id=session.owner_id,
+                    session_id=session.session_id,
+                    created_at=session.created_at,
+                    content_expires_at=session.content_expires_at,
+                    consent_version=session.consent_version,
+                    consented_at=session.consented_at,
+                    deletion_requested_at=session.deletion_requested_at,
+                    content_deleted_at=session.content_deleted_at,
+                )
+            )
+
+    def get_session_for_owner(self, owner_id: str, session_id: str) -> BetaSession | None:
+        """The resume lookup, keyed on the pair rather than on `session_id` alone.
+
+        **Why the pair.** `KHEPRI-DEC-021` §2 settles what a resume selects, because no merged
+        document did: `owner_id` alone identifies a *set* once `20260817_0017` allowed one scope
+        many sessions, so a caller naming only a scope would be asking for "whichever session you
+        have". The caller names the analysis it is resuming, and the lookup is exactly
+        `uq_session_owner_scope`'s column pair -- which is why §4 could state that no new index is
+        required.
+
+        **Why it fails closed.** A `session_id` that exists under a different `owner_id` returns
+        `None`, not that session. This is `FR-023` at the RRA boundary: an object identifier grants
+        no authority, and the scope a caller may act under comes from `resolve_scope`. The `None`
+        is also indistinguishable from "no such session", which is `FR-025` -- a caller able to
+        tell the two apart learns that another organization holds that identifier.
+
+        Deliberately *not* a primary-key `get`: `BetaSessionRow`'s primary key is `session_id`, so
+        `database.get` would find the row and force the owner check into caller code. Putting the
+        predicate in the statement is what makes the guard unbypassable.
+        """
+        with self._factory() as database:
+            row = database.scalar(
+                select(BetaSessionRow).where(
+                    BetaSessionRow.owner_id == owner_id,
+                    BetaSessionRow.session_id == session_id,
+                )
+            )
+            if row is None:
+                return None
+            return _session_from_row(row)
+
     def get_session(self, session_id: str) -> BetaSession | None:
         with self._factory() as database:
             row = database.get(BetaSessionRow, session_id)
