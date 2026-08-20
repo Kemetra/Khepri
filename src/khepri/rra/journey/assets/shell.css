@@ -1,0 +1,159 @@
+/*
+ * Commercial shell design tokens (`R8-01`).
+ *
+ * **Design output, not yet wired.** No template links this file in `R8-01`; `R8-02` is what does.
+ * It is real CSS rather than a table in a design note so the later slices consume the tokens instead
+ * of reinterpreting them, which is how `.82rem`, `.83rem`, and `.84rem` came to coexist in
+ * `journey.css`.
+ *
+ * ## Every color here already ships
+ *
+ * Not one new hue. Sixteen values come from `journey.css:15-30` unchanged; ten more are the hex
+ * literals that stylesheet uses *below* its `:root` block, promoted to names. Exactly two values are
+ * new — `--ready-border` and `--ready-surface` — and both are `--ready`'s own hue at the saturation
+ * and lightness steps the shipped danger family uses, so the palette gains a step, never a colour.
+ * See the note beside them.
+ *
+ * A shell that looked different from the journey it wraps would fail the roadmap's guardrail asking
+ * the four-step journey be reused as a workflow rather than replaced. `R8-01` §3 records the count
+ * and the reasoning.
+ *
+ * `docs/ui/design_handoff_khepri/` is NOT the source. Its palette is dark against a shipped light
+ * one, and its asset plan names Google Fonts and a unpkg CDN, both forbidden by the roadmap's UI
+ * guardrails and unreachable under `journey/security.py`'s `default-src 'none'` CSP. The design spec
+ * (`2026-08-13-client-journey-ui-design.md:15-16`) marks it non-authoritative visual reference.
+ *
+ * ## What is deliberately absent
+ *
+ * No dark palette, no second typeface, no icon set, no elevation ramp, no component tokens. Each
+ * omission has a reason in `R8-01` §3.2 — briefly: `color-scheme: light` is shipped and a second
+ * palette is an unmade product decision; a new face or icon set must first pass the licence-plus-
+ * audited-digest process at `2026-08-13-client-journey-ui-design.md:214-217`; `--shadow: none` ships
+ * and a shadow ramp with no user is an empty widget one layer down; and nine surfaces do not exist
+ * yet, so component tokens now would encode guesses.
+ *
+ * Color tokens are named by ROLE (`--paper`, `--ink`) rather than by value, so a later slice can add
+ * a dark palette without renaming anything.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Ink and surface: journey.css:17-21, unchanged ---------------------------------------- */
+  --paper: #fbfcfd;
+  --surface: #fbfcfd;
+  --ink: #202326;
+  --muted: #55606d;
+  --line: #cfd6de;
+
+  /* A lighter rule than `--line`, from journey.css:44 (`#e4e8ed`) and one sibling (`#e3e7eb`).
+   * Two near-identical literals for one role; this is the role. */
+  --line-subtle: #e4e8ed;
+
+  /* A raised surface, from journey.css:62 (`#fafbfd`). One hex digit from `--surface`, which is what
+   * an eyeballed value looks like beside a chosen one — kept distinct because the drop zone does read
+   * as raised, and collapsing it is R8-02's call once a card component exists. */
+  --surface-raised: #fafbfd;
+
+  /* ---- Accent: journey.css:22-23 plus its tint ---------------------------------------------- */
+  --accent: #1e5b96;
+  --accent-dark: #174a7c;
+  /* journey.css:63, the drag-active fill. The only accent-tinted surface that ships. */
+  --accent-surface: #f0f5fa;
+
+  /* ---- Status, each ink with the companions its state needs -------------------------------- */
+  /* `--danger` shipped alone, so journey.css:73's error box invented its own border, surface, and
+   * ink. Those three are named here rather than left inline: a second error surface in the shell
+   * would otherwise invent a fourth set. */
+  --danger: #9a2d26;
+  --danger-border: #d9a49f;
+  --danger-surface: #faece9;
+  --danger-ink: #6d201b;
+
+  /* `--ready` gets the same pair by symmetry. Nothing ships using them, and that is the point: a
+   * success surface that has to be invented later is how a palette drifts. Not a widget — two values
+   * a later slice reads instead of choosing.
+   *
+   * **These two are the only values here not already in `journey.css`, and they are derived rather
+   * than picked.** `--ready`'s hue (151) held constant, at the saturation and lightness steps the
+   * shipped danger family already uses: `--danger-border` is S43/L74 and `--danger-surface` is
+   * S62/L95, so these are the same steps in green. A first draft eyeballed `#a9cbb8`/`#eef5f1`,
+   * which drifted the hue to 146 and matched neither step — close enough to look intentional and
+   * not derived from anything. The test in `R8-01` §7 is what caught it. */
+  --ready: #1d6b45;
+  --ready-border: #a0d9be;
+  --ready-surface: #eafaf3;
+
+  /* journey.css:74, the progress track. Warm, unlike every other rule, and genuinely its own value
+   * rather than a near-miss of `--line`. */
+  --track: #e3ded1;
+
+  --focus: #1f5fa8;
+
+  /* ---- Spacing: a 4px ramp the shipped values already cluster around ------------------------ */
+  /* journey.css uses .3/.35/.4/.45/.6/.65/.7/.75/1/1.5/2/2.8/4rem. That is close to a 4px ramp with
+   * three pairs of near-duplicates; the scale names what was nearly there. R8-02 replaces literals
+   * with these; R8-01 does not touch journey.css. */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.5rem; /* 24px */
+  --space-6: 2rem; /* 32px */
+  --space-7: 3rem; /* 48px */
+  --space-8: 4rem; /* 64px */
+
+  /* ---- Type: the near-duplicate runs collapsed --------------------------------------------- */
+  /* `.68/.7rem` -> `--text-xs`. `.82/.83/.84/.86rem` -> `--text-sm`. `1.15/1.16rem` -> one of
+   * `--text-base` or `--text-lede`. Four rules do not need four sizes one hundredth apart. */
+  --text-xs: 0.7rem;
+  --text-sm: 0.82rem;
+  --text-base: 1rem;
+
+  /* `--text-md` and `--text-lg` are **new values, not promoted ones**, and the distinction is
+   * load-bearing for `R8-02`. Every tier above and below is a font size the shipped stylesheet
+   * already sets. These two are not: in `journey.css`, `1.15rem` occurs only as the `h1` margin
+   * (`:53`) and `1.4rem` only as `.stages` padding-inline-start (`:87`). Numerically convenient
+   * neighbours of the type scale, but spacing measurements -- so calling them promoted would
+   * tell `R8-02` that a shipped rule already uses them at these sizes, and none does. They fill
+   * the gap between `--text-base` and `--text-xl`, which the shell's headings need and the
+   * journey never had. Found in review on `#219`. */
+  --text-md: 1.15rem;
+  --text-lg: 1.4rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.15rem;
+
+  /* Fluid where the shipped stylesheet is fluid, fixed where it is fixed. Both pairs are
+   * journey.css:53 and :55 verbatim. */
+  --text-display: clamp(1.9rem, 3vw, 2.25rem);
+  --text-lede: clamp(1rem, 2vw, 1.16rem);
+
+  --leading-tight: 1.15;
+  --leading-normal: 1.5;
+
+  /* ---- Radius: `--radius` retained as an alias so no existing rule changes meaning ---------- */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-pill: 999px;
+  --radius: var(--radius-sm);
+
+  /* ---- Measure and layout ------------------------------------------------------------------ */
+  /* journey.css:50 uses 1068px; a sibling rule uses 1050px. One shell width, not two. */
+  --shell-width: 1068px;
+  /* Prose measures already in use: h1 at 24ch, .lede at 62ch. */
+  --measure-heading: 24ch;
+  --measure-prose: 62ch;
+  /* The verified accessibility floor: test_rra_journey_browser.py measures every button, language
+   * link, and nav item at >= 44px in both languages and both viewports. A token so a new surface
+   * reads the number instead of rediscovering it. */
+  --touch-min: 44px;
+
+  --shadow: none;
+
+  /* ---- Typeface: local, digest-verified, both scripts --------------------------------------- */
+  /* The `@font-face` rules live in journey.css, which owns the asset paths. Noto Sans Arabic covers
+   * Arabic and Latin through two `unicode-range` subsets, ships as package data under
+   * `rendering/typefaces/`, and is verified against a SHA-256 manifest by `rendering/fonts.py`. No
+   * `@import`, no font host. */
+  --font-body: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+}

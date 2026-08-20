@@ -31,6 +31,8 @@ from khepri.local.packages import build_package_source
 from khepri.local.storage import build_local_object_store
 from khepri.local.sweeper import LocalSweeper, RetentionPasses, build_local_sweeper
 from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
+from khepri.rca.invitation_persistence import SqlInvitationStore
+from khepri.rca.invitation_retention import InvitationRetentionSweeper
 from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 
@@ -309,6 +311,10 @@ def build_worker_stack(
                 accounts=AccountRetentionSweeper(SqlAccountStore(stack.factory)),
                 events=MembershipEventSweeper(SqlOrganizationStore(stack.factory)),
                 sessions=SessionRetentionSweeper(SqlCommercialSessionStore(stack.factory)),
+                # `R4-03`. No horizon override for the same reason as the three above: the
+                # redeemed-invitation horizon is *anchored* to the event horizon rather than
+                # configured, so overriding it here would be the drift the anchor exists to prevent.
+                invitations=InvitationRetentionSweeper(SqlInvitationStore(stack.factory)),
             ),
         ),
     )

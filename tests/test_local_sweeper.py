@@ -195,7 +195,7 @@ class TestTheRetentionPassesAreWired:
         assert report.purged_sessions == 5
 
     def test_production_wires_both_horizons_with_no_override(self) -> None:
-        """`build_worker_stack` passes both passes, neither with a compressed horizon.
+        """`build_worker_stack` passes every retention pass, none with a compressed horizon.
 
         **Why the source and not the built object.** Constructing a real stack needs PostgreSQL and
         an object endpoint, so the equivalent assertion in `test_local_journey.py` is gated behind
@@ -219,10 +219,17 @@ class TestTheRetentionPassesAreWired:
         passes = next(word.value for word in calls[0].keywords if word.arg == "retention")
         wired = {word.arg: ast.unparse(word.value) for word in passes.keywords}  # type: ignore[attr-defined]
 
-        assert set(wired) == {"accounts", "events", "sessions"}, "all three horizons are wired"
+        assert set(wired) == {"accounts", "events", "sessions", "invitations"}, (
+            "all four horizons are wired"
+        )
         assert "AccountRetentionSweeper" in wired["accounts"]
         assert "MembershipEventSweeper" in wired["events"]
         assert "SessionRetentionSweeper" in wired["sessions"]
+        # `R4-03`. An unwired invitation sweeper would satisfy every sentence in its own module and
+        # destroy nothing, which is the failure `R4-01` §8.1 names -- and unlike the three above,
+        # the
+        # rows it fails to purge hold a `target_identity`.
+        assert "InvitationRetentionSweeper" in wired["invitations"]
         for name, expression in wired.items():
             assert "retention_months" not in expression, (
                 f"the {name} horizon must be the governed default, not an override"

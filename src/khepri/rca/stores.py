@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from khepri.rca.accounts import Account
+    from khepri.rca.invitations import Invitation
     from khepri.rca.organizations import (
         IsolationScope,
         Membership,
@@ -73,3 +74,41 @@ class OrganizationStore(Protocol):
         actor_account_id: str,
         now: datetime,
     ) -> str: ...
+
+
+class InvitationStore(Protocol):
+    """The invitation persistence surface (`R4-03`).
+
+    **Declared as a Protocol with a fake, unlike `R3-03`'s session store**, which
+    `SessionRetentionSweeper` and `SessionService` both take concretely. Two reasons for the
+    departure, recorded so the inconsistency is a decision rather than drift:
+
+    - The parity test this enables (`test_every_fake_implements_its_whole_protocol`) caught a real
+      shipped divergence once -- `MemoryOrganizationStore.count_owners` counted rows where the SQL
+      store counted *effective* owners, which made unit tests pass wrongly about the one invariant
+      `FR-013` exists to protect. An invitation fake has the same hazard: its purge predicate is two
+      lifecycle rules, and a fake implementing one of them would pass every domain test.
+    - `R4-04` through `R4-07` are four more slices against this surface. A Protocol now costs one
+      declaration; retrofitting one after four consumers exist costs four.
+
+    `_purge_spent_invitations` is underscore-prefixed and named here anyway, following
+    `OrganizationStore._purge_expired_events`: `R2-07`'s source audit reserved that spelling for a
+    retention sweep, and a sweeper's entry point that no service may call still has to appear in the
+    contract its sweeper types against.
+    """
+
+    def add_invitation(self, invitation: Invitation) -> bool: ...
+
+    def get_invitation(self, invitation_id: str, *, now: datetime) -> Invitation | None: ...
+
+    def find_for_redemption(
+        self, invitation_id: str, *, now: datetime
+    ) -> Invitation | None: ...
+
+    def save_invitation(self, invitation: Invitation) -> bool: ...
+
+    def invitations_for_organization(
+        self, organization_id: str, *, now: datetime
+    ) -> tuple[Invitation, ...]: ...
+
+    def _purge_spent_invitations(self, horizon: datetime, *, now: datetime) -> int: ...

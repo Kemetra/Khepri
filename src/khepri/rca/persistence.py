@@ -36,17 +36,22 @@ from khepri.rca.organizations import (
 from khepri.rca.records import assert_sealed
 
 
-def _role_in(roles: tuple[str, ...]) -> str:
-    """Render the FR-015 role CHECK from the declared roles.
+def _role_in(roles: tuple[str, ...], column: str = "role") -> str:
+    """Render a role CHECK from the declared roles, for the named column.
 
     Built from `ROLES` rather than spelled out, so adding a third role to the domain without a
     migration fails against the constraint rather than silently widening it. The values are
     module constants, never caller input, so quoting them here is not a parameterization
     boundary -- but the assertion keeps it that way if that ever stops being true.
+
+    `column` exists because `R4-03`'s invitation carries `intended_role` rather than `role`, and one
+    renderer for both keeps the two constraints from drifting into describing one rule two ways --
+    which is the whole reason this function is not a string literal.
     """
     assert all(role.isalpha() for role in roles), f"role names must be plain identifiers: {roles}"
+    assert column.replace("_", "").isalpha(), f"column must be an identifier: {column!r}"
     values = ", ".join(f"'{role}'" for role in roles)
-    return f"role IN ({values})"
+    return f"{column} IN ({values})"
 
 
 class Base(DeclarativeBase):
@@ -225,6 +230,118 @@ class ExternalIdentityRow(Base):
     # `R3-09` §3 chose a dedicated table over columns on `rca_accounts` for exactly this.
     account_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+def _verifier_columns_agree(prefix: str) -> str:
+    """Render the CHECK that the five verifier columns are NULL together or not at all.
+
+    `Verifier` is an optional *whole*: `credentials.py:77-80` records that destruction "replaces the
+    whole verifier with `None` and cannot be done by halves". Held as five independently-nullable
+    columns, a half-destroyed verifier -- salt gone, digest kept -- is expressible and nothing
+    in the schema refuses it. `_verifier_from_row` already treats them as one whole on read; this
+    makes the storage layer agree.
+
+    **`AccountRow` does not carry this constraint**, and `R4-03` adds what that table lacks rather
+    than retrofitting it: widening an existing table is a separate migration on its own slice, and
+    `KHEPRI-DEC-015`'s account path already destroys all five together at its one call site.
+    """
+    assert prefix.replace("_", "").isalnum(), f"prefix must be an identifier: {prefix!r}"
+    parts = [f"{prefix}salt", f"{prefix}digest", "kdf_n", "kdf_r", "kdf_p"]
+    first, *rest = parts
+    clauses = [f"(({first} IS NULL) = ({column} IS NULL))" for column in rest]
+    return " AND ".join(clauses)
+
+
+class InvitationRow(Base):
+    """One offer of one membership in one organization (`R4-01` §3, `R4-03`).
+
+    Declared here rather than in `invitation_persistence.py` because the `Base` metadata is shared
+    and this table carries a foreign key onto `rca_organizations`; only the store moves, following
+    the `R3-03` split recorded in `session_persistence.py:1-12`.
+
+    **Four states, discriminated by nullability rather than a status column**, matching
+    `Invitation`'s own model: a `status` column could disagree with the timestamps and then two
+    fields would describe one fact. Expiry has no column at all -- it is `expires_at <= now`.
+
+    **No `UNIQUE` of any kind, and that is a decision rather than an omission.** `R4-01` §3 is
+    explicit: one organization may hold many open invitations, and in particular there is no
+    `UNIQUE (organization_id, target_identity)` because the same person may hold two outstanding
+    invitations -- the scenario §7's counter-example turns on. Encoding a cardinality nobody
+    requires is the defect `R7-02` spent a slice unwinding (`KHEPRI-DEC-020`).
+
+    **`target_identity`, not `email`.** `KHEPRI-DEC-015` §2 governs "Login identity (email)" as its
+    own class with a fixed 24-month horizon; this field is lifecycle-derived and purged when replay
+    refusal no longer needs it. One name for both would make the shorter rule invisible. Stored
+    canonicalized, per §4.
+
+    **What no CHECK here can say.** "The verifier is NULL only in a terminal state" cannot be
+    expressed: expiry is time-derived, so a legitimately-swept expired invitation has a NULL
+    verifier and both timestamps NULL, which at the row level is indistinguishable from an open
+    invitation whose verifier was wrongly destroyed. `CHECK (... expires_at <= now())` is not
+    writable -- `now()` is not immutable and PostgreSQL refuses it. That invariant is the domain's,
+    held by the two paths that may destroy without a timestamp both evaluating `expires_at <= now`
+    in the destroying transaction. Recorded rather than papered over with a constraint that would be
+    wrong. """
+
+    __tablename__ = "rca_invitations"
+    __table_args__ = (
+        # Every CHECK below is declared here **as well as** in the migration. Store tests build
+        # their schema from `Base.metadata.create_all`, which reads this model and not the
+        # migration -- so a CHECK that existed only there would let the whole store suite write
+        # forbidden rows while production refused them. Same trap `ck_rca_membership_role`
+        # documents, and the same deliberate asymmetry: the migration spells the values literally
+        # because it is a historical record, this builds them from `ROLES`.
+        CheckConstraint(
+            _role_in(ROLES, "intended_role"),
+            name="ck_rca_invitation_role",
+        ),
+        # An invitation cannot be both redeemed and revoked. §5's state table has four states and
+        # this is the pair it excludes.
+        CheckConstraint(
+            "redeemed_at IS NULL OR revoked_at IS NULL",
+            name="ck_rca_invitation_terminal_state",
+        ),
+        # Following `ck_session_expiry_after_creation`. `Invitation.create` already refuses this in
+        # the domain; a store caller reaching the row directly would not.
+        CheckConstraint(
+            "expires_at > issued_at",
+            name="ck_rca_invitation_expiry_after_issuance",
+        ),
+        CheckConstraint(
+            _verifier_columns_agree("secret_"),
+            name="ck_rca_invitation_verifier_whole",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id"],
+            ["rca_organizations.organization_id"],
+            name="fk_rca_invitation_organization",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    invitation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    # Indexed: revocation is scoped by `(organization_id, invitation_id)` per §4.1, and listing an
+    # organization's open invitations is what `R8-05`'s team screens will ask for.
+    organization_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    intended_role: Mapped[str] = mapped_column(String, nullable=False)
+    # Indexed: the `FR-020` and purge cascades both look invitations up by recipient.
+    target_identity: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # The five verifier columns, nullable together or not at all -- see the CHECK above. `secret_`
+    # prefixed rather than `credential_` because this is not a credential: it verifies a bearer
+    # token, and one name for both classes would invite one retention rule for both.
+    secret_salt: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    secret_digest: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    kdf_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kdf_r: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kdf_p: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # `FR-014`-style attribution. No foreign key onto `rca_accounts`: the inviting account may be
+    # purged under `KHEPRI-DEC-015` §2b while an unredeemed invitation survives, and a `RESTRICT`
+    # here would make the purge fail. §8.2 accepted that residual explicitly.
+    issued_by: Mapped[str] = mapped_column(String, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class IsolationScopeRow(Base):
