@@ -164,12 +164,22 @@ _MAY_LOCK = frozenset(
     {
         # store-level: the methods that construct the lock
         "apply_owner_reducing_change",
+        # `R4-05`: redemption locks the **account row**, not owner memberships.
+        # `owner_memberships_for_update` selects rows in organizations the account already owns,
+        # and `FR-019`'s invitee owns none -- `FOR UPDATE` over an empty result set acquires no
+        # lock, so a concurrent `disable_account` would block on nothing. The account row is the
+        # one row both operations certainly touch.
+        "account_for_update",
+        "redeem_into_membership",
         "_apply_membership_change",
         "revoke_membership",
         "demote_membership",
         # service-level: the owner-reducing verbs that reach it
         "disable_account",
         "demote_to_member",
+        # `R4-05`'s service verb, listed because the scan follows delegation: `redeem` reaches
+        # `redeem_into_membership`, which constructs the lock.
+        "redeem",
     }
 )
 

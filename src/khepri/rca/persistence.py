@@ -377,6 +377,33 @@ def _canonical_or_none(email: str | None) -> str | None:
     return None if email is None else canonical_email(email)
 
 
+def account_for_update(account_id: str):
+    """Lock one account row for the duration of the caller's transaction (`R4-05`, §6.1).
+
+    A **module-level named statement** rather than an inline `.with_for_update()`, following
+    `owner_memberships_for_update` and `organization_owners_for_update` for the reason stated at
+    those: SQLite emits no `FOR UPDATE` and SQLAlchemy silently omits it for that dialect, so an
+    inline lock someone later dropped would leave the whole RCA suite green. Because it is named, a
+    test compiles it against the PostgreSQL dialect and asserts `FOR UPDATE` is present without
+    needing a database.
+
+    **Why redemption locks the account row and not the memberships.**
+    `owner_memberships_for_update` selects owner rows in organizations the account already owns, and
+    `FR-019`'s invitee owns none -- frequently the account did not exist when the invitation was
+    issued. `SELECT ... FOR UPDATE` over an **empty result set acquires no lock at all**, so a
+    concurrent `disable_account` would block on nothing. The account row is the one row both
+    operations certainly touch: disablement writes it, and redemption's liveness question is about
+    it.
+
+    **The counterpart writes need no change.** They already take conflicting row locks by virtue of
+    being `UPDATE`s -- `_apply_account` on the disable path, `save_session` and the bulk
+    `update(SessionRow)` on the session-ending paths -- so this lock is the second half of a mutual
+    exclusion rather than one waiting for a partner. §8.4 withdrew the counterpart slice two earlier
+    revisions of the design note required.
+    """
+    return select(AccountRow).where(AccountRow.account_id == account_id).with_for_update()
+
+
 def identity_lock_key(canonical_address: str) -> int:
     """The advisory-lock key for one canonical address (`R4-01` §8.2).
 

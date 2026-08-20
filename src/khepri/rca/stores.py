@@ -115,6 +115,22 @@ class InvitationStore(Protocol):
         self, organization_id: str, invitation_id: str, *, now: datetime
     ) -> bool: ...
 
+    #: `R4-05`'s redemption: consume the invitation and create its membership in one transaction,
+    #: holding the account row locked. One bool for every failure cause, because `FR-025` requires
+    #: the caller to be unable to distinguish them.
+    def redeem_into_membership(
+        self,
+        invitation_id: str,
+        *,
+        account_id: str,
+        organization_id: str,
+        role: str,
+        now: datetime,
+        membership: Membership,
+        event: MembershipEvent,
+        session_id_hash: str,
+    ) -> bool: ...
+
     def invitations_for_organization(
         self, organization_id: str, *, now: datetime
     ) -> tuple[Invitation, ...]: ...

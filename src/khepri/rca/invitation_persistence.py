@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -40,13 +40,20 @@ from khepri.rca.invitations import (
     InvitationOffer,
     StoredInvitationSecret,
 )
+from khepri.rca.organizations import Membership, MembershipEvent
 from khepri.rca.persistence import (
     InvitationRow,
+    MembershipRow,
+    SessionRow,
+    _account_from_row,
     _canonical_or_none,
+    _event_row,
     _utc,
+    account_for_update,
     take_identity_lock,
 )
 from khepri.rca.records import assert_sealed
+from khepri.rca.session_persistence import _session_from_row
 
 
 def _verifier_from_row(row: InvitationRow) -> Verifier | None:
@@ -315,6 +322,115 @@ class SqlInvitationStore:
                 _destroy_verifier(row)
             else:
                 assert_sealed(invitation.verifier)
+        return True
+
+    def redeem_into_membership(
+        self,
+        invitation_id: str,
+        *,
+        account_id: str,
+        organization_id: str,
+        role: str,
+        now: datetime,
+        membership: Membership,
+        event: MembershipEvent,
+        session_id_hash: str,
+    ) -> bool:
+        """Consume an open invitation and create its membership, atomically (`R4-05`, §6.2).
+
+        Returns False when the invitation was not open at the transition, when the account is not
+        live under the lock, or when the account is already a member. One bool for every cause,
+        because `FR-025` requires the caller to be unable to distinguish them -- the service raises
+        one refusal from it.
+
+        **Route B**, per §6.2's recommendation: at-most-once rests on a conditional `UPDATE`
+        affecting exactly one row rather than on a `SELECT ... FOR UPDATE` of the invitation. §6.2's
+        2026-08-18 correction notes §6.1's account-row lock is unavoidable either way, so the routes
+        are closer than the original text implied; Route B still avoids a second
+        predicate-by-predicate compilation test and leaves the at-most-once claim on `rowcount`
+        rather than on a lock a green SQLite suite would hide.
+
+        **The account row is locked first, and the order matters.** Taking the lock before the
+        conditional update means a concurrent `disable_account` either blocks until this commits and
+        then observes the membership, or commits first and this transaction's `FOR UPDATE` waits and
+        reads the disabled row. §6.1's window closes only if the two contend on the same row; a
+        plain re-read narrows it and does not close it.
+
+        **`can_act` is evaluated on the row read under the lock**, not on the caller's snapshot.
+        `Account.can_act` is "the single definition of live" (`accounts.py:68`), and growing a local
+        judgment here is the drift its docstring records `FR-013` making once.
+
+        **`expires_at > :now` with a `now` the caller re-read at transition time.** §5 verifies
+        before the lock, and this transaction may then wait; an invitation open at verification can
+        be expired by the time this statement runs, and the two timestamp columns are still
+        `NULL, NULL` because expiry has no column.
+
+        **Three writes, one transaction.** `FR-018`'s "exactly one" is a cardinality claim, and a
+        membership committed without the redemption mark is a token that redeems twice.
+        """
+        assert_sealed(membership, event)
+        with self._factory.begin() as database:
+            locked = database.scalars(account_for_update(account_id)).one_or_none()
+            if locked is None or not _account_from_row(locked).can_act:
+                return False
+
+            # The session is re-read **inside this transaction**, not taken from the caller's
+            # `ResolvedActor`. §6.1: that record carries a session *snapshot*, and `revoke` or
+            # `revoke_all` can end the session while this transaction waits on its locks -- so a
+            # membership could commit from a session that is no longer authenticated. The snapshot
+            # cannot see a revocation that happened after it was read.
+            #
+            # `is_live_at` rather than `is_revoked`: expiry is the clock and performs no write, so
+            # no lock reaches it, and the repo holds both conditions in one predicate
+            # (`sessions.py:113`). Evaluated here, after the account lock, which is as late as
+            # §6.1 requires -- "immediately before the write, so nothing remains to wait on".
+            session_row = database.get(SessionRow, session_id_hash)
+            if session_row is None or not _session_from_row(session_row).is_live_at(now):
+                return False
+
+            # Already a member: refuse rather than consume the token. The composite primary key
+            # makes the duplicate unexpressible anyway, so this is about not spending an offer on
+            # an `IntegrityError`.
+            if (
+                database.get(MembershipRow, (organization_id, account_id))
+                is not None
+            ):
+                return False
+
+            consumed = database.execute(
+                update(InvitationRow)
+                .where(
+                    and_(
+                        InvitationRow.invitation_id == invitation_id,
+                        InvitationRow.organization_id == organization_id,
+                        InvitationRow.redeemed_at.is_(None),
+                        InvitationRow.revoked_at.is_(None),
+                        InvitationRow.expires_at > now,
+                    )
+                )
+                .values(
+                    redeemed_at=now,
+                    # The verifier is destroyed at the trigger, as one whole (§3): a
+                    # half-destroyed verifier is a record that cannot be verified, and
+                    # `ck_rca_invitation_verifier_whole` refuses it.
+                    secret_salt=None,
+                    secret_digest=None,
+                    kdf_n=None,
+                    kdf_r=None,
+                    kdf_p=None,
+                )
+            )
+            if int(consumed.rowcount or 0) != 1:
+                return False
+
+            database.add(
+                MembershipRow(
+                    organization_id=organization_id,
+                    account_id=account_id,
+                    role=role,
+                )
+            )
+            database.add(_event_row(event))
         return True
 
     def invitations_for_organization(
