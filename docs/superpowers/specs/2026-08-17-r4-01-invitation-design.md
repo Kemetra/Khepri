@@ -1094,7 +1094,18 @@ and re-checks inside the writing transaction because a select-then-write across 
 same gap, plus the one §7's atomicity note names — a failure between the two leaves the address
 released and the invitation open, which is the whole defect. Predicate: `target_identity =
 canonical(<the address being purged>) AND redeemed_at IS NULL AND revoked_at IS NULL`, across
-**every** organization rather than one, since the purge is not scoped to a membership. The address
+**every** organization rather than one, since the purge is not scoped to a membership.
+
+> **Correction, 2026-08-20 (`R4-06`).** §4.1 says of its `expires_at > :now` clause that "§7's
+> cascades inherit this clause with the rest", and the predicate above omits it. The omission is
+> **correct here and the inheritance claim is what is too broad**, so the clause is deliberately
+> absent rather than forgotten. §4.1's clause exists to stop *revocation* reporting success on a
+> state the caller may not change — an actor-facing distinction. This cascade has no actor and
+> reports nothing: its trigger is the identity ending, and an already-expired invitation to a purged
+> address is precisely a row whose `target_identity` §3 says may no longer be held. Excluding it
+> would leave that identity in the table until an unscheduled sweeper ran — and `R4-03` records that
+> no scheduler exists. §7's two membership-scoped cascades keep the clause, because a revocation
+> that closes an already-expired invitation is a state change with an actor behind it. The address
 must be read before it is nulled, which fixes the ordering inside that transaction.
 
 **Note this is the one cascade with no organization in its predicate**, and that is correct: the
@@ -1216,9 +1227,28 @@ revocation — see the atomicity note below, which fixes *which* transaction tha
 | Recipient | `organization_id = O AND target_identity = <revoked member>` | `FR-020` |
 | Issuer | `organization_id = O AND issued_by = <revoked member>` | `KHEPRI-DEC-015` §2 |
 
-Both restricted to unredeemed and unrevoked rows, and both destroying the verifier as they mark
-`revoked_at`, per §3's destruction rule. The two predicates overlap only when someone invited
-themselves, so this is a union rather than a choice.
+Both restricted to unredeemed and unrevoked rows, and both **deleting the row**. The two predicates
+overlap only when someone invited themselves, so this is a union rather than a choice.
+
+> **Correction, 2026-08-20 (`R4-06`).** This paragraph read "both destroying the verifier as they
+> mark `revoked_at`", which contradicts §4.1's own statement that "**§7's cascades take the same
+> shape**" as its `DELETE` — and §4.1 is the later text, added when revocation was corrected from a
+> marker to a deletion. An implementer could not satisfy both, which is the unsatisfiable-instruction
+> class that is critical however it is labelled.
+>
+> §3 settles it rather than §4.1's cross-reference alone: "Both purposes therefore lapse for a
+> non-redeemed invitation the moment it is closed, and neither authorizes holding `target_identity`
+> past that point." Both cascade predicates filter `redeemed_at IS NULL`, so **every** row either one
+> touches is non-redeemed by construction — the exact case §3's first purge rule deletes. Marking
+> `revoked_at` and keeping the row would retain a target identity whose two authorized purposes have
+> both lapsed, which §3 forbids; `revoked_at` remains in the schema for the redeemed-then-revoked
+> case, as §4.1 says. The schema permits either shape (`ck_rca_invitation_terminal_state` excludes
+> only the redeemed-and-revoked pair), so it does not arbitrate — the retention derivation does.
+>
+> **Consequence for the evidence.** §7.1's "assert the invitation is closed and its verifier
+> destroyed" is asserted as the row's **absence**, since a deleted row has no verifier to inspect;
+> `get_invitation` returning `None` is the whole of it, and §5 already makes a deleted row
+> indistinguishable from a retained closed one for replay refusal.
 
 **The cascade is atomic with the membership deletion, and "the same transaction" means
 `_apply_membership_change`'s.** This is the §6.2 argument in a second verb, so it is stated with the

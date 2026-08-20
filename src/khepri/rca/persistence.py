@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from hashlib import sha256
 
 from sqlalchemy import (
     CheckConstraint,
@@ -10,9 +11,12 @@ from sqlalchemy import (
     LargeBinary,
     String,
     UniqueConstraint,
+    and_,
     delete,
     func,
+    or_,
     select,
+    text,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -373,6 +377,139 @@ def _canonical_or_none(email: str | None) -> str | None:
     return None if email is None else canonical_email(email)
 
 
+def identity_lock_key(canonical_address: str) -> int:
+    """The advisory-lock key for one canonical address (`R4-01` §8.2).
+
+    **A stable digest, never `hash()`.** `pg_advisory_xact_lock` takes a `bigint`, so the address
+    must be mapped to one -- and Python's `hash()` on a `str` is randomised per process under
+    PEP 456, so two workers would derive **different** keys for the same address, acquire
+    non-conflicting locks, and serialize nothing. The lock would look present in code review and in
+    any single-process test while doing nothing in production. That is the defect `#212`/`#213`
+    fixed once already in this note's own key derivation.
+
+    **The address must be canonical**, per §4's storage rule and for the same reason: a case
+    difference produces a different digest, and the two paths would lock different keys. Callers
+    pass a value already folded; this does not fold again, so that the key is a pure function of
+    what it is given and the test's committed constant means what it says.
+
+    `signed=True` because `bigint` is signed and PostgreSQL rejects an out-of-range key.
+    """
+    return int.from_bytes(sha256(canonical_address.encode()).digest()[:8], "big", signed=True)
+
+
+def identity_advisory_lock(canonical_address: str):
+    """A transaction-scoped advisory lock over one identity (`R4-01` §8.2).
+
+    A **module-level named statement** rather than an inline `text()` call, following
+    `owner_memberships_for_update` and its siblings: SQLite silently ignores what PostgreSQL
+    honours, so a lock the suite cannot compile is a lock the suite cannot assert. The evidence is
+    a dialect-compilation test, not a database round trip.
+
+    **What this closes and what it does not.** It serializes the **issuance-first** ordering: an
+    `issue` that begins before the purge is held behind it, so its invitation is visible to the
+    purge's cascade. It does **not** close the purge-first ordering -- an `issue` beginning after
+    the purge commits looks the addressee up by canonical address, finds the tombstone has no
+    address, takes no lock correctly (a post-purge miss is indistinguishable from `FR-019`'s
+    ordinary no-account case), and inserts an open invitation after the cascade has run. §7.1
+    retracted a row-lock fix for exactly this reason: "a **row** lock cannot serialize two
+    operations when the discriminating fact is that the row stops being *discoverable* by the key
+    one of them uses."
+
+    §8.2 records the owner's decision of 2026-08-18 to **accept that residual** rather than amend
+    `KHEPRI-DEC-015` to retain an address-derived marker. So this is half a fix, deliberately, and
+    this docstring says so rather than letting a reader mistake a half-closed race for a closed one
+    -- which §8.2 requires in those words.
+
+    It stores nothing and is transaction-scoped, so it releases on commit or rollback with no
+    cleanup path and prejudges none of the answers §8.2 left open.
+    """
+    return text("SELECT pg_advisory_xact_lock(:identity_lock_key)").bindparams(
+        identity_lock_key=identity_lock_key(canonical_address)
+    )
+
+
+def take_identity_lock(database, canonical_address: str) -> bool:
+    """Acquire the identity lock when the backend has one. True when it was taken.
+
+    **Guarded on the dialect, not on a setting.** `pg_advisory_xact_lock` does not exist in SQLite
+    -- executing the statement there raises `no such function` -- and the suite runs on SQLite while
+    production runs on PostgreSQL. An environment-flag guard would be worse than this: a lock that
+    silently vanishes when a variable is unset is the shape §8.2 warns about, where the code reads
+    correctly and serializes nothing. The dialect *is* the fact that decides whether the lock means
+    anything, so it is what the branch reads.
+
+    This is stated in §8.2: "SQLite emits no advisory lock, so `R4-07`'s race case runs against
+    PostgreSQL". A serialization claim made from a SQLite run is unfounded, and the returned bool is
+    what lets a test assert which happened rather than infer it.
+    """
+    bind = database.get_bind()
+    if bind.dialect.name != "postgresql":
+        return False
+    database.execute(identity_advisory_lock(canonical_address))
+    return True
+
+
+def _cascade_invitations(
+    database,
+    *,
+    organization_id: str | None,
+    target_identity: str | None = None,
+    issued_by: str | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Delete open invitations matched by a recipient and/or an issuer predicate (`R4-06`).
+
+    **A `DELETE`, not a `revoked_at` marker.** `R4-01` §3: "Both purposes therefore lapse for a
+    non-redeemed invitation the moment it is closed, and neither authorizes holding
+    `target_identity` past that point." Every row this reaches is `redeemed_at IS NULL` by
+    construction, so all of them are that rule's first row. §7 previously said to mark and keep,
+    contradicting §4.1's "§7's cascades take the same shape" as its `DELETE`; corrected in the note
+    on 2026-08-20 and recorded there rather than decided here.
+
+    **Takes `database` rather than opening a transaction.** Every caller is already inside one, and
+    that is the whole point: §7 argues at length that a cascade running *after* its trigger's
+    transaction commits leaves a window in which the membership is revoked and the invitation is
+    still redeemable, so the revoked member walks back in through a held token. The three writes --
+    the membership row, its `FR-014` event, and these invitations -- commit or roll back together.
+
+    **`organization_id=None` means every organization**, which only the purge trigger uses (§7.1):
+    "the trigger is the identity ending, not a membership ending, so every outstanding offer to that
+    person lapses at once". Passing `None` accidentally is the one dangerous mistake here, so the
+    two membership callers pass a real value and this is the only branch that widens.
+
+    **`now=None` omits the expiry clause**, which again only the purge trigger does. §4.1's
+    `expires_at > :now` stops *revocation* reporting success on a state its caller may not change;
+    this cascade has no actor and reports nothing, and an expired invitation to a purged address is
+    exactly a row §3 says may no longer hold its target identity. Corrected in §7.1 on 2026-08-20,
+    where "§7's cascades inherit this clause" was too broad.
+
+    Returns the number of rows deleted, for the caller's evidence rather than for control flow.
+    """
+    anchors = []
+    if target_identity is not None:
+        anchors.append(InvitationRow.target_identity == canonical_email(target_identity))
+    if issued_by is not None:
+        anchors.append(InvitationRow.issued_by == issued_by)
+    if not anchors:
+        # Neither anchor is resolvable -- a tombstone whose address is gone and no issuer given.
+        # Deleting on the remaining predicates alone would close every open invitation in the
+        # organization, so this fails closed by doing nothing.
+        return 0
+
+    conditions = [
+        or_(*anchors),
+        InvitationRow.redeemed_at.is_(None),
+        InvitationRow.revoked_at.is_(None),
+    ]
+    if organization_id is not None:
+        conditions.append(InvitationRow.organization_id == organization_id)
+    if now is not None:
+        conditions.append(InvitationRow.expires_at > now)
+
+    result = database.execute(delete(InvitationRow).where(and_(*conditions)))
+    return int(result.rowcount or 0)
+
+
 def _verifier_from_row(row: AccountRow) -> Verifier | None:
     """None once the verifier has been destroyed on disablement (KHEPRI-DEC-015).
 
@@ -470,6 +607,29 @@ class SqlAccountStore:
             row = database.get(AccountRow, account_id)
             if row is None or not _account_from_row(row).is_purgeable_at(horizon):
                 return False
+            # `R4-01` §8.2's advisory lock over the identity, taken before the cascade below and
+            # released when this transaction ends. It closes the **issuance-first** ordering: an
+            # `issue` for this address that began first holds the same key, so this blocks until it
+            # commits and the cascade then sees its row. The purge-first ordering stays open and is
+            # the residual the owner accepted -- see `identity_advisory_lock`.
+            #
+            # After the eligibility check, so a declined purge acquires nothing and blocks nobody.
+            take_identity_lock(database, canonical_email(row.email))
+            # `R4-01` §7.1's third trigger, in this transaction and **after** the eligibility
+            # check above. A cascade placed before it would close invitations for an account that
+            # turned out not to be purgeable -- the "erased a re-enabled account's email" defect
+            # this method exists to prevent, in a second column.
+            #
+            # Unscoped by organization, deliberately: the trigger is the identity ending, so every
+            # outstanding offer to that person lapses at once. And no expiry clause -- an expired
+            # invitation to a released address is exactly a row whose `target_identity` §3 says may
+            # no longer be held.
+            #
+            # The address is read here, before the line below nulls it, which is the ordering §7.1
+            # fixes inside this transaction.
+            _cascade_invitations(
+                database, organization_id=None, target_identity=row.email
+            )
             row.email = None
             row.credential_salt = None
             row.credential_digest = None
@@ -971,6 +1131,32 @@ class SqlOrganizationStore:
                 account_id,
                 prior_role=row.role,
                 actor_account_id=actor_account_id,
+                now=now,
+            )
+            # `FR-020` and `KHEPRI-DEC-015` §2's fourth end trigger (`R4-06`), inside this
+            # transaction with the deletion and the event.
+            #
+            # **In this callback rather than in `_apply_membership_change`'s body**, and the
+            # placement is load-bearing: `demote_membership` delegates to the same helper, so a
+            # cascade in the helper would invalidate a *demoted* member's invitations, which
+            # `R4-01` §8.3 settles it must not. The callback is per-verb, so revocation scoping is
+            # by construction rather than by a guard someone can drop.
+            #
+            # **Both anchors, and the recipient one is not optional.** §7's counter-example: a
+            # person holding two invitations to this organization redeems one, is revoked, and
+            # redeems the second to rejoin immediately -- untouched by an `issued_by`-only
+            # cascade, because that column names the owner who sent it.
+            #
+            # The address is read inside this transaction, and `None` when the addressee's account
+            # is already a tombstone (`KHEPRI-DEC-015` §2b). The issuer half still runs then: it
+            # keys on `account_id`, which the tombstone retains, so an unresolvable address must
+            # not abort a trigger the decision governs.
+            addressee = database.get(AccountRow, account_id)
+            _cascade_invitations(
+                database,
+                organization_id=organization_id,
+                target_identity=None if addressee is None else addressee.email,
+                issued_by=account_id,
                 now=now,
             )
             database.delete(row)
