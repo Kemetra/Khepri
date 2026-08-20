@@ -109,6 +109,15 @@
   --text-xs: 0.7rem;
   --text-sm: 0.82rem;
   --text-base: 1rem;
+
+  /* `--text-md` and `--text-lg` are **new values, not promoted ones**, and the distinction is
+   * load-bearing for `R8-02`. Every tier above and below is a font size the shipped stylesheet
+   * already sets. These two are not: in `journey.css`, `1.15rem` occurs only as the `h1` margin
+   * (`:53`) and `1.4rem` only as `.stages` padding-inline-start (`:87`). Numerically convenient
+   * neighbours of the type scale, but spacing measurements -- so calling them promoted would
+   * tell `R8-02` that a shipped rule already uses them at these sizes, and none does. They fill
+   * the gap between `--text-base` and `--text-xl`, which the shell's headings need and the
+   * journey never had. Found in review on `#219`. */
   --text-md: 1.15rem;
   --text-lg: 1.4rem;
   --text-xl: 1.75rem;

@@ -28,7 +28,25 @@ _DERIVED = {"#a0d9be", "#eafaf3"}
 
 #: `R8-01` §2's census of values `journey.css` uses below its `:root` block. The count is the
 #: baseline: a slice that adds an eleventh is choosing a colour outside the system.
-_ORPHAN_BASELINE = 10
+#: The exact hex literals `journey.css` uses below its `:root` block -- the census `R8-01`
+#: §2 took. Pinned as a **set** rather than a count: `len(orphans) <= 10` left a free slot,
+#: so replacing one literal with a different colour, or every literal with ten new ones,
+#: passed while the palette churned completely. `R8-02` removes from this set and must never
+#: add to it. Found in review on `#219`.
+_ORPHAN_BASELINE = frozenset(
+    {
+        "#667381",
+        "#6d201b",
+        "#7b817e",
+        "#d9a49f",
+        "#e3ded1",
+        "#e3e7eb",
+        "#e4e8ed",
+        "#f0f5fa",
+        "#faece9",
+        "#fafbfd",
+    }
+)
 
 #: Physical properties, forbidden in favour of their logical counterparts. Mirrors
 #: `test_rra006_html_surface.py`'s list, which cites `KHEPRI-DEC-005`.
@@ -253,22 +271,29 @@ def test_no_physical_css_property(physical: str) -> None:
 def test_the_orphan_value_count_does_not_grow() -> None:
     """§7's item 4, and the one that keeps this slice from eroding.
 
-    `journey.css` uses ten hex literals below its `:root` block. That is the census `R8-01` §2 took
-    and the number the token set exists to stop growing. `R8-02` should reduce it by replacing those
-    literals with tokens; nothing should increase it.
+    `journey.css` uses ten hex literals below its `:root` block -- the census `R8-01` §2 took.
+    `R8-02` should reduce that set by replacing literals with tokens; nothing should enter it.
 
-    Asserted as `<=` rather than `==` so the reduction `R8-02` performs does not fail the test that
-    asked for it.
+    **Asserted as a subset, not a count.** `<=` was chosen so the reduction `R8-02` performs
+    could not fail the test that asked for it, but it also let a substitution through: swap one
+    censused literal for a new colour and the count is unchanged, and ten new colours replacing
+    all ten pass identically. A subset check keeps the property that mattered -- removals pass
+    -- while refusing the additions the count could not see. Found in review on `#219`.
     """
     css = JOURNEY.read_text(encoding="utf-8")
     root_end = css.index("}", css.index(":root"))
     below_root = _declarations(css[root_end:])
 
     orphans = _hexes(below_root)
-    assert len(orphans) <= _ORPHAN_BASELINE, (
-        f"journey.css now uses {len(orphans)} literal colours below :root "
-        f"(baseline {_ORPHAN_BASELINE}): {sorted(orphans)}. A new literal is a colour chosen "
-        "outside the token set."
+
+    # Subset, not size. A count leaves a free slot for any substitution; this permits only
+    # removal, which is the direction `R8-02` moves in.
+    introduced = orphans - _ORPHAN_BASELINE
+    assert not introduced, (
+        f"journey.css uses {sorted(introduced)} below :root, which is not in the R8-01 census. "
+        "A colour outside the token set is a colour chosen outside the design, and replacing a "
+        "censused literal with a new one keeps the count identical -- so the count is not the "
+        "assertion."
     )
 
 
