@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import itertools
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -607,6 +608,19 @@ class TestTheSessionMustBeLiveAtTheWrite:
         assert _role_of(factory, organization_id, invitee_id) is None
 
 
+class _Target(NamedTuple):
+    """The three identifiers a store-level redemption attempt needs.
+
+    A named tuple rather than three parameters, following `DENIED_CELLS` in the matrix file: the
+    flat form put `_attempt` at six arguments, which CodeScene scores as Excess Number of Function
+    Arguments.
+    """
+
+    organization_id: str
+    account_id: str
+    invitation_id: str
+
+
 class TestTheConditionalStatementIsTheAtMostOnceGuard:
     """Route B's statement, tested at the store because the service shadows it.
 
@@ -623,23 +637,27 @@ class TestTheConditionalStatementIsTheAtMostOnceGuard:
     is `R4-07`'s per §7.1.
     """
 
-    def _prepare(self, factory, label):
+    def _prepare(self, factory, label) -> _Target:
         organization_id, owner_id = _organization(factory)
         invitee_id, invitee_email = _account(factory, label)
         token = _invite(factory, _offer(organization_id, owner_id, invitee_email))
         invitation_id, _ = parse_token(token)
-        return organization_id, invitee_id, invitation_id
+        return _Target(organization_id, invitee_id, invitation_id)
 
-    def _attempt(self, factory, organization_id, account_id, invitation_id, *, now=NOW):
+    def _attempt(self, factory, target: _Target, *, account_id=None, now=NOW):
+        """Call the store directly. `account_id` overrides the target's, for the
+        two-account case.
+        """
+        account_id = target.account_id if account_id is None else account_id
         return SqlInvitationStore(factory).redeem_into_membership(
-            invitation_id,
+            target.invitation_id,
             account_id=account_id,
-            organization_id=organization_id,
+            organization_id=target.organization_id,
             role=MEMBER_ROLE,
             now=now,
-            membership=Membership.create(organization_id, account_id, MEMBER_ROLE),
+            membership=Membership.create(target.organization_id, account_id, MEMBER_ROLE),
             event=MembershipEvent.created(
-                organization_id,
+                target.organization_id,
                 account_id,
                 MEMBER_ROLE,
                 actor_account_id=account_id,
@@ -654,18 +672,16 @@ class TestTheConditionalStatementIsTheAtMostOnceGuard:
         Two *different* accounts produce two distinct primary keys, so the composite key refuses
         neither and the existing-member guard does not fire. Only the statement refuses.
         """
-        organization_id, first_id, invitation_id = self._prepare(factory, "stmtfirst")
-        assert self._attempt(factory, organization_id, first_id, invitation_id) is True
+        target = self._prepare(factory, "stmtfirst")
+        assert self._attempt(factory, target) is True
 
         second_id, _ = _account(factory, "stmtsecond")
-        assert (
-            self._attempt(factory, organization_id, second_id, invitation_id) is False
-        ), (
+        assert self._attempt(factory, target, account_id=second_id) is False, (
             "without `redeemed_at IS NULL` both accounts win and `FR-018` is violated twice, with "
             "two memberships where the requirement permits one"
         )
-        assert _role_of(factory, organization_id, second_id) is None
-        assert _memberships(factory, organization_id) == 2
+        assert _role_of(factory, target.organization_id, second_id) is None
+        assert _memberships(factory, target.organization_id) == 2
 
     def test_an_expired_row_is_refused_by_the_statement(self, factory) -> None:
         """`expires_at > :now`, with `now` re-read at transition time.
@@ -692,14 +708,10 @@ class TestTheConditionalStatementIsTheAtMostOnceGuard:
             expires_at=short,
         )
         invitation_id, _ = parse_token(token)
+        target = _Target(organization_id, invitee_id, invitation_id)
         just_expired = short + timedelta(seconds=1)
 
-        assert (
-            self._attempt(
-                factory, organization_id, invitee_id, invitation_id, now=just_expired
-            )
-            is False
-        ), (
+        assert self._attempt(factory, target, now=just_expired) is False, (
             "the statement must refuse a row past its horizon; both timestamp columns are still "
             "NULL, so only `expires_at > :now` can refuse it"
         )
@@ -707,14 +719,14 @@ class TestTheConditionalStatementIsTheAtMostOnceGuard:
 
     def test_a_revoked_row_is_refused_by_the_statement(self, factory) -> None:
         """`revoked_at IS NULL`, in the marked form only redeemed-then-revoked produces."""
-        organization_id, invitee_id, invitation_id = self._prepare(factory, "stmtrevoked")
+        target = self._prepare(factory, "stmtrevoked")
         with factory.begin() as database:
-            row = database.get(InvitationRow, invitation_id)
+            row = database.get(InvitationRow, target.invitation_id)
             assert row is not None
             row.revoked_at = NOW
 
-        assert self._attempt(factory, organization_id, invitee_id, invitation_id) is False
-        assert _role_of(factory, organization_id, invitee_id) is None
+        assert self._attempt(factory, target) is False
+        assert _role_of(factory, target.organization_id, target.account_id) is None
 
     def test_no_membership_or_event_is_written_when_the_statement_refuses(
         self, factory
@@ -725,18 +737,18 @@ class TestTheConditionalStatementIsTheAtMostOnceGuard:
         commits for an invitation that was not open -- `FR-018`'s cardinality broken from the other
         side. This is the assertion that fails when `rowcount` is not consulted.
         """
-        organization_id, invitee_id, invitation_id = self._prepare(factory, "stmtrowcount")
+        target = self._prepare(factory, "stmtrowcount")
         with factory.begin() as database:
-            row = database.get(InvitationRow, invitation_id)
+            row = database.get(InvitationRow, target.invitation_id)
             assert row is not None
             row.redeemed_at = NOW
 
-        assert self._attempt(factory, organization_id, invitee_id, invitation_id) is False
-        assert _role_of(factory, organization_id, invitee_id) is None
+        assert self._attempt(factory, target) is False
+        assert _role_of(factory, target.organization_id, target.account_id) is None
         with factory() as database:
             events = (
                 database.query(MembershipEventRow)
-                .filter(MembershipEventRow.account_id == invitee_id)
+                .filter(MembershipEventRow.account_id == target.account_id)
                 .all()
             )
         assert events == [], "nor an `FR-014` event"
