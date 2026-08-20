@@ -362,6 +362,32 @@ class MemoryInvitationStore:
         )
         return True
 
+    def delete_open_invitation(
+        self, organization_id: str, invitation_id: str, *, now: datetime
+    ) -> bool:
+        """All five clauses of the SQL predicate, not four.
+
+        The organization clause and the expiry clause are the two a simplified fake would drop --
+        the first because the identifier is already unique in a dict, the second because
+        `is_open_at` looks like it covers "still open". Dropping either makes every
+        cross-organization and expired-revocation test pass against a store that refuses
+        differently, which is the divergence `test_every_fake_implements_its_whole_protocol`
+        exists to catch and which shipped once as `count_owners`.
+
+        `is_open_at` is used rather than restating the three timestamp conditions: `R4-01` §5 holds
+        that boundary in one predicate, and reaching past it to a local copy is the drift
+        `accounts.py:68` warns about for `can_act`.
+        """
+        invitation = self.invitations.get(invitation_id)
+        if invitation is None:
+            return False
+        if invitation.organization_id != organization_id:
+            return False
+        if not invitation.is_open_at(now):
+            return False
+        del self.invitations[invitation_id]
+        return True
+
     def invitations_for_organization(
         self, organization_id: str, *, now: datetime
     ) -> tuple[Invitation, ...]:

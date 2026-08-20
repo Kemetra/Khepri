@@ -71,6 +71,9 @@ from khepri.rca.accounts import AccountService
 from khepri.rca.actor_resolution import ActorResolver
 from khepri.rca.authorization_resolution import AuthorizationResolver
 from khepri.rca.errors import AuthenticationFailed, ScopeAccessDenied
+from khepri.rca.invitation_persistence import SqlInvitationStore
+from khepri.rca.invitation_service import InvitationService
+from khepri.rca.invitations import parse_token
 from khepri.rca.isolation import IsolationService
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import MEMBER_ROLE, OWNER_ROLE, OrganizationService
@@ -183,6 +186,8 @@ ACTION_COVERAGE = {
     "Revoke a membership": "TestTheOwnerOnlyRows",
     "Resolve an isolation scope": "TestResolveAnIsolationScope",
     "Switch active organization": "TestSwitchActiveOrganization",
+    "Issue an invitation": "TestTheInvitationRows",
+    "Revoke an invitation": "TestTheInvitationRows",
 }
 
 
@@ -599,3 +604,123 @@ def _plain_member_token(stack: Stack) -> str:
     token = stack.sessions.create(account_id, now=NOW)
     _switcher(stack).switch(token, stack.organization_id, now=NOW)
     return token
+
+
+class TestTheInvitationRows:
+    """`R6-01` §3.1's two invitation rows, from `R4-01` §6.3 (`R4-04`).
+
+    **Both cells go through the gate and then the verb**, like every other cell in this file: the
+    two invitation operations take `actor_account_id` for attribution and check no authority of
+    their own, so calling them directly succeeds whatever the caller's role. That is `R6-04`'s
+    placement, not a defect here, and `R6-08` is what makes the gated path the only route.
+
+    **The `DENY` cells assert an effect, not just an exception.** For issuance the effect is that no
+    invitation exists in the organization afterwards; for revocation, that the target invitation is
+    still open. A `pytest.raises` on `require_owner` alone would restate `TestTheOwnerGate` and
+    would hold even if the verb ran unconditionally.
+    """
+
+    def _invitations(self, stack: Stack) -> SqlInvitationStore:
+        return SqlInvitationStore(stack.factory)
+
+    def _issue_as_owner(self, stack: Stack) -> str:
+        """An open invitation, minted through the gated path. Returns its identifier."""
+        context = _resolver(stack.factory).require_owner(
+            stack.owner_token, organization_id=stack.organization_id, now=NOW
+        )
+        token = InvitationService(self._invitations(stack)).issue(
+            stack.organization_id,
+            MEMBER_ROLE,
+            "invitee@example.test",
+            actor_account_id=context.account_id,
+            expires_at=NOW + timedelta(days=7),
+            now=NOW,
+        )
+        return parse_token(token)[0]
+
+    def test_the_owner_may_issue(self, stack: Stack) -> None:
+        invitation_id = self._issue_as_owner(stack)
+
+        stored = self._invitations(stack).get_invitation(invitation_id, now=NOW)
+        assert stored is not None
+        assert stored.organization_id == stack.organization_id
+        assert stored.is_open_at(NOW)
+
+    def test_the_owner_may_revoke(self, stack: Stack) -> None:
+        invitation_id = self._issue_as_owner(stack)
+
+        context = _resolver(stack.factory).require_owner(
+            stack.owner_token, organization_id=stack.organization_id, now=NOW
+        )
+        InvitationService(self._invitations(stack)).revoke(
+            stack.organization_id,
+            invitation_id,
+            actor_account_id=context.account_id,
+            now=NOW,
+        )
+
+        assert self._invitations(stack).get_invitation(invitation_id, now=NOW) is None
+
+    @pytest.mark.parametrize(
+        ("column", "refusal"),
+        [
+            ("member", ScopeAccessDenied),
+            ("non_member", ScopeAccessDenied),
+            ("unauthenticated", AuthenticationFailed),
+        ],
+    )
+    def test_issuance_is_denied(
+        self, stack: Stack, column: str, refusal: type[Exception]
+    ) -> None:
+        """`FR-015` makes invite an owner capability, so the other three columns are DENY."""
+        token = _token_for(stack, column)
+
+        with pytest.raises(refusal):
+            context = _resolver(stack.factory).require_owner(
+                token, organization_id=stack.organization_id, now=NOW
+            )
+            InvitationService(self._invitations(stack)).issue(
+                stack.organization_id,
+                MEMBER_ROLE,
+                "invitee@example.test",
+                actor_account_id=context.account_id,
+                expires_at=NOW + timedelta(days=7),
+                now=NOW,
+            )
+
+        assert (
+            self._invitations(stack).invitations_for_organization(
+                stack.organization_id, now=NOW
+            )
+            == ()
+        ), "a denied issuance must leave no invitation behind"
+
+    @pytest.mark.parametrize(
+        ("column", "refusal"),
+        [
+            ("member", ScopeAccessDenied),
+            ("non_member", ScopeAccessDenied),
+            ("unauthenticated", AuthenticationFailed),
+        ],
+    )
+    def test_revocation_is_denied(
+        self, stack: Stack, column: str, refusal: type[Exception]
+    ) -> None:
+        invitation_id = self._issue_as_owner(stack)
+        token = _token_for(stack, column)
+
+        with pytest.raises(refusal):
+            context = _resolver(stack.factory).require_owner(
+                token, organization_id=stack.organization_id, now=NOW
+            )
+            InvitationService(self._invitations(stack)).revoke(
+                stack.organization_id,
+                invitation_id,
+                actor_account_id=context.account_id,
+                now=NOW,
+            )
+
+        surviving = self._invitations(stack).get_invitation(invitation_id, now=NOW)
+        assert surviving is not None and surviving.is_open_at(NOW), (
+            "a denied revocation must leave the invitation open"
+        )
