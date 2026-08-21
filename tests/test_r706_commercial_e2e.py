@@ -64,6 +64,29 @@ def test_a_member_can_consent_to_their_own_analysis(journey: Journey) -> None:
     assert response.content == b""
 
 
+def test_consenting_twice_is_not_an_error(journey: Journey) -> None:
+    """`KHEPRI-DEC-023` §2: consenting twice must not be distinguished.
+
+    **Added because a `409`-on-already-consented mutant survived the first version of this suite.**
+    Every other case consents once on a fresh journey, so nothing exercised a second consent and the
+    constraint was unverified. Refusing a repeat would require telling "already consented" apart
+    from "not yours", and a caller who can do that learns an analysis exists in a scope they cannot
+    reach.
+
+    The two responses are compared to each other rather than each against `204`, so a divergence in
+    body or status fails here regardless of which one changed.
+    """
+    client = _client(journey)
+    body = {"consent_version": "v1"}
+    path = f"/api/v1/commercial/analyses/{journey.session_id}/consent"
+
+    first = client.post(path, json=body, cookies={"khepri_session": journey.member_token})
+    second = client.post(path, json=body, cookies={"khepri_session": journey.member_token})
+
+    assert first.status_code == 204
+    assert (second.status_code, second.content) == (first.status_code, first.content)
+
+
 def _outsider(journey: Journey) -> str:
     """An account in a different organization, with a live session switched into it."""
     account = _account(journey.factory, "outsider@example.test")
