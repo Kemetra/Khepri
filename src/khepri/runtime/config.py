@@ -11,8 +11,9 @@ import json
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TypedDict
+from dataclasses import dataclass, field
+from typing import Literal, TypedDict
+from urllib.parse import urlsplit
 
 from sqlalchemy import URL
 
@@ -26,6 +27,12 @@ KMS_KEY_ARN_VARIABLE = "KHEPRI_KMS_KEY_ARN"
 BUCKET_OWNER_VARIABLE = "KHEPRI_EXPECTED_BUCKET_OWNER"
 QUEUE_URL_VARIABLE = "KHEPRI_QUEUE_URL"
 DEAD_LETTER_QUEUE_URL_VARIABLE = "KHEPRI_DLQ_URL"
+CLERK_MODE_VARIABLE = "KHEPRI_CLERK_MODE"
+CLERK_ISSUER_VARIABLE = "KHEPRI_CLERK_ISSUER"
+CLERK_JWT_KEY_VARIABLE = "KHEPRI_CLERK_JWT_KEY"
+CLERK_KEY_ID_VARIABLE = "KHEPRI_CLERK_KEY_ID"
+CLERK_AUTHORIZED_PARTIES_VARIABLE = "KHEPRI_CLERK_AUTHORIZED_PARTIES"
+CLERK_AUDIENCE_VARIABLE = "KHEPRI_CLERK_AUDIENCE"
 
 _ACCOUNT_ID = re.compile(r"^\d{12}$")
 _KMS_KEY_ARN = re.compile(
@@ -57,6 +64,22 @@ class _RuntimeCoordinates(TypedDict):
     dead_letter_queue_url: str
 
 
+ClerkMode = Literal["development", "test", "private_beta"]
+_CLERK_MODES = frozenset({"development", "test", "private_beta"})
+
+
+@dataclass(frozen=True, slots=True)
+class ClerkIdentitySettings:
+    """Pinned, networkless trust coordinates for one Clerk instance."""
+
+    mode: ClerkMode
+    issuer: str
+    jwt_key: str = field(repr=False)
+    key_id: str
+    authorized_parties: tuple[str, ...]
+    audience: str | None
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeSettings:
     database_url: URL
@@ -66,6 +89,7 @@ class RuntimeSettings:
     expected_bucket_owner: str
     queue_url: str
     dead_letter_queue_url: str
+    clerk: ClerkIdentitySettings | None
 
     @classmethod
     def from_environment(
@@ -76,6 +100,7 @@ class RuntimeSettings:
         return cls(
             database_url=_database_url(_required(source, DATABASE_SECRET_VARIABLE)),
             **_runtime_coordinates(source),
+            clerk=_clerk_settings(source),
         )
 
 
@@ -137,6 +162,65 @@ def _required(environment: Mapping[str, str], name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise RuntimeConfigurationError(f"{name} is required.")
     return value
+
+
+def _clerk_settings(environment: Mapping[str, str]) -> ClerkIdentitySettings | None:
+    mode = environment.get(CLERK_MODE_VARIABLE, "disabled")
+    if mode == "disabled":
+        return None
+    if mode not in _CLERK_MODES:
+        raise RuntimeConfigurationError(
+            f"{CLERK_MODE_VARIABLE} must be disabled, development, test, or private_beta."
+        )
+    return ClerkIdentitySettings(
+        mode=mode,  # type: ignore[arg-type]
+        issuer=_clerk_issuer(environment),
+        jwt_key=_clerk_public_key(environment),
+        key_id=_required(environment, CLERK_KEY_ID_VARIABLE),
+        authorized_parties=_clerk_authorized_parties(environment),
+        audience=_optional(environment, CLERK_AUDIENCE_VARIABLE),
+    )
+
+
+def _clerk_issuer(environment: Mapping[str, str]) -> str:
+    issuer = _required(environment, CLERK_ISSUER_VARIABLE)
+    location = urlsplit(issuer)
+    if location.scheme != "https" or not location.netloc or location.query or location.fragment:
+        raise RuntimeConfigurationError(f"{CLERK_ISSUER_VARIABLE} must be an HTTPS issuer URL.")
+    return issuer.rstrip("/")
+
+
+def _clerk_public_key(environment: Mapping[str, str]) -> str:
+    key = _required(environment, CLERK_JWT_KEY_VARIABLE)
+    if not key.startswith("-----BEGIN PUBLIC KEY-----") or not key.rstrip().endswith(
+        "-----END PUBLIC KEY-----"
+    ):
+        raise RuntimeConfigurationError(
+            f"{CLERK_JWT_KEY_VARIABLE} must be a PEM public key."
+        )
+    return key
+
+
+def _clerk_authorized_parties(environment: Mapping[str, str]) -> tuple[str, ...]:
+    name = CLERK_AUTHORIZED_PARTIES_VARIABLE
+    encoded = _required(environment, name)
+    try:
+        parties = json.loads(encoded)
+    except ValueError as error:
+        raise RuntimeConfigurationError(f"{name} must be a JSON string array.") from error
+    valid = (
+        isinstance(parties, list)
+        and bool(parties)
+        and all(isinstance(party, str) and party.strip() for party in parties)
+        and len(parties) == len(set(parties))
+    )
+    if not valid:
+        raise RuntimeConfigurationError(f"{name} must be a non-empty JSON string array.")
+    return tuple(parties)
+
+
+def _optional(environment: Mapping[str, str], name: str) -> str | None:
+    return None if name not in environment else _required(environment, name)
 
 
 def _database_url(encoded: str) -> URL:
@@ -214,6 +298,13 @@ def _invalid_database_secret() -> RuntimeConfigurationError:
 __all__ = [
     "BUCKET_OWNER_VARIABLE",
     "BUCKET_VARIABLE",
+    "CLERK_AUDIENCE_VARIABLE",
+    "CLERK_AUTHORIZED_PARTIES_VARIABLE",
+    "CLERK_ISSUER_VARIABLE",
+    "CLERK_JWT_KEY_VARIABLE",
+    "CLERK_KEY_ID_VARIABLE",
+    "CLERK_MODE_VARIABLE",
+    "ClerkIdentitySettings",
     "DATABASE_SECRET_VARIABLE",
     "DEAD_LETTER_QUEUE_URL_VARIABLE",
     "KMS_KEY_ARN_VARIABLE",

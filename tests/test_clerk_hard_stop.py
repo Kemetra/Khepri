@@ -1,0 +1,105 @@
+"""DEC-024 hard-stop evidence for already-issued Khepri sessions."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import pytest
+from sqlalchemy import URL, create_engine, func, select
+from sqlalchemy.orm import sessionmaker
+
+from khepri.rca.accounts import AccountService
+from khepri.rca.errors import AuthenticationFailed
+from khepri.rca.organizations import OrganizationService
+from khepri.rca.persistence import (
+    AccountRow,
+    ExternalIdentityRow,
+    MembershipRow,
+    SqlAccountStore,
+    SqlOrganizationStore,
+)
+from khepri.rca.persistence import Base as RcaBase
+from khepri.rca.session_persistence import SqlSessionStore
+from khepri.rca.session_service import SessionService
+from khepri.runtime.clerk_hard_stop import revoke_clerk_sessions
+from khepri.runtime.config import ClerkIdentitySettings, RuntimeConfigurationError, RuntimeSettings
+from khepri.runtime.external_auth_api import KHEPRI_SESSION_LIFETIME
+
+NOW = datetime(2026, 8, 21, 18, 0, tzinfo=UTC)
+
+
+def _settings(database_url: URL, *, enabled: bool = False) -> RuntimeSettings:
+    clerk = None
+    if enabled:
+        clerk = ClerkIdentitySettings(
+            mode="test",
+            issuer="https://test.clerk.accounts.example",
+            jwt_key="-----BEGIN PUBLIC KEY-----x-----END PUBLIC KEY-----",
+            key_id="test-key",
+            authorized_parties=("https://test.khepri.example",),
+            audience=None,
+        )
+    return RuntimeSettings(
+        database_url=database_url,
+        region="me-central-1",
+        bucket="test",
+        kms_key_arn="arn:aws:kms:me-central-1:123456789012:key/12345678-1234-1234-1234-123456789abc",
+        expected_bucket_owner="123456789012",
+        queue_url="https://sqs.example/jobs",
+        dead_letter_queue_url="https://sqs.example/jobs-dlq",
+        clerk=clerk,
+    )
+
+
+def _counts(factory: sessionmaker) -> tuple[int, int, int]:
+    with factory() as database:
+        return (
+            database.scalar(select(func.count()).select_from(AccountRow)),
+            database.scalar(select(func.count()).select_from(ExternalIdentityRow)),
+            database.scalar(select(func.count()).select_from(MembershipRow)),
+        )
+
+
+def test_hard_stop_revokes_every_clerk_linked_session_and_preserves_domain_state(
+    tmp_path,
+) -> None:
+    database_url = URL.create("sqlite+pysqlite", database=str(tmp_path / "hard-stop.db"))
+    engine = create_engine(database_url)
+    RcaBase.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, future=True)
+    accounts = AccountService(SqlAccountStore(factory))
+    organizations = OrganizationService(SqlOrganizationStore(factory))
+    sessions = SessionService(SqlSessionStore(factory), lifetime=KHEPRI_SESSION_LIFETIME)
+
+    clerk_only = accounts.preprovision_external_account(
+        "clerk@example.test", "clerk", "clerk-only", now=NOW
+    )
+    dual = accounts.create_account("dual@example.test", "correct horse battery staple")
+    unrelated = accounts.create_account("unrelated@example.test", "correct horse battery staple")
+    assert sessions.link_identity("clerk", "dual", dual.account_id, now=NOW)
+    assert sessions.link_identity("other", "other", unrelated.account_id, now=NOW)
+    organizations.create_organization("Clerk", clerk_only.account_id, now=NOW)
+
+    clerk_token = sessions.create(clerk_only.account_id, now=NOW)
+    dual_token = sessions.create(dual.account_id, now=NOW)
+    unrelated_token = sessions.create(unrelated.account_id, now=NOW)
+    before = _counts(factory)
+
+    assert revoke_clerk_sessions(_settings(database_url), now=NOW) == 2
+    assert revoke_clerk_sessions(_settings(database_url), now=NOW) == 0
+
+    for token in (clerk_token, dual_token):
+        with pytest.raises(AuthenticationFailed):
+            sessions.resolve(token, now=NOW)
+    assert sessions.resolve(unrelated_token, now=NOW).account_id == unrelated.account_id
+    assert _counts(factory) == before
+    assert sessions.account_for_identity("clerk", "clerk-only") == clerk_only.account_id
+    assert sessions.account_for_identity("clerk", "dual") == dual.account_id
+    engine.dispose()
+
+
+def test_hard_stop_refuses_to_run_while_clerk_authentication_is_enabled(tmp_path) -> None:
+    database_url = URL.create("sqlite+pysqlite", database=str(tmp_path / "enabled.db"))
+
+    with pytest.raises(RuntimeConfigurationError, match="must be disabled"):
+        revoke_clerk_sessions(_settings(database_url, enabled=True), now=NOW)

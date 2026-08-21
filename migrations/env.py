@@ -7,6 +7,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from khepri.rca.persistence import Base as RcaBase
+from khepri.rca.recovery_security_persistence import RecoverySecurityEventRow
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base
@@ -26,6 +27,9 @@ _RRA_ROWS = (
     ("Report delivery", ReportDeliveryRow),
 )
 
+# Imported explicitly because the row lives outside the already-large RCA persistence module.
+_RCA_ROWS = (("Recovery security event", RecoverySecurityEventRow),)
+
 
 def _verify_rra_rows_share_one_base() -> None:
     for label, row in _RRA_ROWS:
@@ -39,6 +43,9 @@ def _verify_rca_base_is_separate() -> None:
         raise RuntimeError("RCA metadata must stay separate from the RRA base (FR-039).")
     if any(name.startswith("rra_") for name in RcaBase.metadata.tables):
         raise RuntimeError("RCA metadata must not declare rra_* tables.")
+    for label, row in _RCA_ROWS:
+        if row.metadata is not RcaBase.metadata:
+            raise RuntimeError(f"{label} metadata is not registered with the RCA base.")
 
 
 _verify_rra_rows_share_one_base()

@@ -27,20 +27,30 @@ from __future__ import annotations
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
-from khepri.rca.errors import FinalOwnerProtected
+from khepri.rca.errors import AuthenticationFailed, FinalOwnerProtected
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.organizations import OWNER_ROLE, OrganizationService
-from khepri.rca.persistence import Base, MembershipRow, SqlAccountStore, SqlOrganizationStore
+from khepri.rca.persistence import (
+    AccountRow,
+    Base,
+    ExternalIdentityRow,
+    MembershipRow,
+    SqlAccountStore,
+    SqlOrganizationStore,
+)
+from khepri.rca.session_persistence import SqlSessionStore
+from khepri.rca.session_service import SessionService
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 CREDENTIAL = "correct horse battery staple"
+PROVIDER = "clerk"
 
 pytestmark = pytest.mark.concurrency
 
@@ -492,3 +502,92 @@ def test_the_two_lock_predicates_intersect_on_every_contended_organization(facto
     )
     assert _surviving_owners(factory, x.organization_id) >= 1, "X keeps A"
     assert _surviving_owners(factory, y.organization_id) >= 1, "Y keeps C"
+
+
+@requires_postgres
+def test_concurrent_preprovision_of_one_subject_leaves_no_orphan_account(factory) -> None:
+    barrier = threading.Barrier(2, timeout=10)
+
+    def provision(index: int) -> str:
+        barrier.wait()
+        try:
+            AccountService(SqlAccountStore(factory)).preprovision_external_account(
+                f"invitee-{index}@example.test",
+                PROVIDER,
+                "user_shared",
+                now=NOW,
+            )
+        except AuthenticationFailed:
+            return "refused"
+        return "applied"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = sorted(pool.map(provision, range(2)))
+
+    with factory() as database:
+        account_count = database.execute(select(func.count()).select_from(AccountRow)).scalar_one()
+        link_count = database.execute(
+            select(func.count()).select_from(ExternalIdentityRow)
+        ).scalar_one()
+
+    assert outcomes == ["applied", "refused"]
+    assert account_count == 1, "the losing transaction rolls its account row back"
+    assert link_count == 1
+
+
+@requires_postgres
+def test_concurrent_linking_of_one_subject_refuses_the_loser(factory) -> None:
+    accounts = AccountService(SqlAccountStore(factory))
+    first = accounts.create_account("first-link@example.test", CREDENTIAL)
+    second = accounts.create_account("second-link@example.test", CREDENTIAL)
+    barrier = threading.Barrier(2, timeout=10)
+
+    def link(account_id: str) -> bool:
+        barrier.wait()
+        return SqlSessionStore(factory).link_external_identity(
+            PROVIDER, "user_shared_link", account_id, now=NOW
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = sorted(pool.map(link, (first.account_id, second.account_id)))
+
+    assert outcomes == [False, True]
+
+
+@requires_postgres
+def test_concurrent_last_link_removal_leaves_one_external_owner(factory) -> None:
+    accounts = AccountService(SqlAccountStore(factory))
+    first = accounts.preprovision_external_account(
+        "external-a@example.test", PROVIDER, "user_a", now=NOW
+    )
+    second = accounts.preprovision_external_account(
+        "external-b@example.test", PROVIDER, "user_b", now=NOW
+    )
+    organization = OrganizationService(SqlOrganizationStore(factory)).create_organization(
+        "Acme", first.account_id, now=NOW
+    )
+    with factory.begin() as database:
+        database.add(
+            MembershipRow(
+                organization_id=organization.organization_id,
+                account_id=second.account_id,
+                role=OWNER_ROLE,
+            )
+        )
+
+    barrier = threading.Barrier(2, timeout=10)
+
+    def unlink(subject: str) -> str:
+        service = SessionService(SqlSessionStore(factory), lifetime=timedelta(hours=12))
+        barrier.wait()
+        try:
+            service.unlink_identity(PROVIDER, subject)
+        except FinalOwnerProtected:
+            return "refused"
+        return "applied"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = sorted(pool.map(unlink, ("user_a", "user_b")))
+
+    assert outcomes == ["applied", "refused"]
+    assert _surviving_owners(factory, organization.organization_id) == 1

@@ -23,8 +23,8 @@ reason `test_rca001_final_owner.py:247-263` compiles against the PostgreSQL dial
 positive direction is already covered there and in `test_rca001_revocation.py`; this file covers the
 negative direction two ways:
 
-1. **Statically**, across **every module in `src/khepri/rca`**: exactly six methods may reach a
-   lock, named in `_MAY_LOCK`. A seventh appearing fails the test rather than passing unnoticed. The
+1. **Statically**, across **every module in `src/khepri/rca`**: only methods named in `_MAY_LOCK`
+   may reach a lock. A new method fails the test rather than passing unnoticed. The
    scan follows delegation, so "reach" includes calling a helper that locks -- in any module.
 2. **By compilation**, asserting each locking statement's predicates clause by clause -- not merely
    that a predicate appears somewhere in the SQL.
@@ -158,6 +158,12 @@ _LOCK_CALL = "with_for_update"
 #: `FR-013` guard path, and `demote_to_member` can remove an organization's last owner. They
 #: appeared only once the scan widened past `persistence.py`, which is the widening working.
 #:
+#: Removing an external identity can now remove an external-only account's final authentication
+#: capability. `owner_reduction_outcome` is the shared final-owner decision, and the three unlink
+#: methods are its store/service call chain. They are listed explicitly for the same reason as the
+#: membership call chain: delegation is still a locking path, and this operation can reduce the
+#: effective-owner count even though it does not change the membership role.
+#:
 #: Adding a name here is the review conversation this allowlist exists to force, in the same spirit
 #: as `R6-08`'s `VERB_CALLER_ALLOWLIST`. It is not a list to extend for convenience.
 _MAY_LOCK = frozenset(
@@ -177,6 +183,11 @@ _MAY_LOCK = frozenset(
         # service-level: the owner-reducing verbs that reach it
         "disable_account",
         "demote_to_member",
+        # provider-neutral external-capability removal and its shared guard
+        "owner_reduction_outcome",
+        "unlink_external_identity_outcome",
+        "unlink_external_identity",
+        "unlink_identity",
         # `R4-05`'s service verb, listed because the scan follows delegation: `redeem` reaches
         # `redeem_into_membership`, which constructs the lock.
         "redeem",
@@ -345,7 +356,7 @@ def _close_over_callers(reaching: set[str], calls: dict[str, set[str]]) -> set[s
     return closed
 
 
-def test_only_the_two_owner_reducing_writes_reach_a_lock() -> None:
+def test_only_governed_owner_reducing_writes_reach_a_lock() -> None:
     """The load-bearing assertion. A new locking path fails here before it can add contention.
 
     Mutation-checked: adding `owner_memberships_for_update` to `promote_membership` fails this

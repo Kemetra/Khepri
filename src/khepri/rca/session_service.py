@@ -27,7 +27,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from khepri.rca.errors import AUTHENTICATION_FAILURE, AuthenticationFailed
+from khepri.rca.errors import (
+    AUTHENTICATION_FAILURE,
+    FINAL_OWNER_FAILURE,
+    OWNER_CHANGE_APPLIED,
+    OWNER_CHANGE_FINAL_OWNER,
+    AuthenticationFailed,
+    FinalOwnerProtected,
+)
 from khepri.rca.session_persistence import SqlSessionStore
 from khepri.rca.sessions import Session, hash_session_id
 
@@ -139,6 +146,15 @@ class SessionService:
         """
         return self._sessions.revoke_all_for_account(account_id, now=_require_aware(now))
 
+    def revoke_all_for_provider(self, provider: str, *, now: datetime) -> int:
+        """End every Khepri session affected by a provider hard stop.
+
+        The store derives the affected accounts from Khepri's local identity links. No provider
+        call, token, email, or provider claim participates, so this remains available when the
+        provider or its entitlement is unavailable.
+        """
+        return self._sessions.revoke_all_for_provider(provider, now=_require_aware(now))
+
     def link_identity(
         self, provider: str, provider_subject: str, account_id: str, *, now: datetime
     ) -> bool:
@@ -165,16 +181,19 @@ class SessionService:
     def unlink_identity(self, provider: str, provider_subject: str) -> bool:
         """Remove a link, leaving every other record standing (`R3-09` §5).
 
-        The account, its memberships, its audit events, and the final-owner invariant survive. The
-        account becomes unauthenticatable through that provider until relinked, which does not
-        change `can_act` — so an owner remains an effective owner and no `FR-013` reasoning applies.
+        The account, its memberships, and its audit events survive. Removing the last external
+        authentication capability is owner-reducing for an external-only account, so the store
+        applies the same locked final-owner decision used by disablement.
 
         **Does not revoke the account's sessions**, and that is deliberate rather than an omission.
         Unlinking removes a way to authenticate in future; it does not disable the account, and
         `FR-008` ties session revocation to disablement. Ending live sessions here would over-apply,
         logging out an account that may still hold a password credential.
         """
-        return self._sessions.unlink_external_identity(provider, provider_subject)
+        outcome = self._sessions.unlink_external_identity_outcome(provider, provider_subject)
+        if outcome == OWNER_CHANGE_FINAL_OWNER:
+            raise FinalOwnerProtected(FINAL_OWNER_FAILURE)
+        return outcome == OWNER_CHANGE_APPLIED
 
 
 __all__ = ["SessionService"]

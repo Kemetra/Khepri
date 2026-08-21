@@ -37,6 +37,7 @@ from khepri.rca.organizations import (
 class MemoryAccountStore:
     def __init__(self) -> None:
         self.accounts: dict[str, Account] = {}
+        self.external_identities: dict[tuple[str, str], str] = {}
 
     def add_account(self, account: Account) -> bool:
         if any(
@@ -46,6 +47,24 @@ class MemoryAccountStore:
             return False
         self.accounts[account.account_id] = account
         return True
+
+    def add_account_with_external_identity(
+        self,
+        account: Account,
+        provider: str,
+        provider_subject: str,
+        *,
+        linked_at: datetime,
+    ) -> bool:
+        del linked_at
+        key = (provider, provider_subject)
+        if key in self.external_identities or not self.add_account(account):
+            return False
+        self.external_identities[key] = account.account_id
+        return True
+
+    def account_for_external_identity(self, provider: str, provider_subject: str) -> str | None:
+        return self.external_identities.get((provider, provider_subject))
 
     def save_account(self, account: Account) -> bool:
         if account.account_id not in self.accounts:
@@ -277,7 +296,10 @@ class MemoryOrganizationStore:
 
     def _can_act(self, account_id: str) -> bool:
         account = self.accounts.get_account(account_id)
-        return account is not None and account.can_authenticate
+        has_external_identity = account_id in self.accounts.external_identities.values()
+        return account is not None and account.can_authenticate(
+            has_external_identity=has_external_identity
+        )
 
 
 class MemoryInvitationStore:

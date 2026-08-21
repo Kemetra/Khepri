@@ -32,8 +32,8 @@ from fastapi import Cookie
 #: Distinct from RRA's `khepri_beta_session`. See the module docstring.
 SESSION_COOKIE = "khepri_session"
 
-#: The commercial surface. Scoped rather than `/`, so the cookie is not offered to beta routes.
-SESSION_COOKIE_PATH = "/app"
+#: The commercial HTTP surface. Scoped rather than `/`, so it is not offered to beta routes.
+SESSION_COOKIE_PATH = "/api/v1/commercial"
 
 # What a caller is told when no usable session reached the route. One sentence for every cause --
 # absent cookie, unknown session, expired session, revoked session, disabled account -- because

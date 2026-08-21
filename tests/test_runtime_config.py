@@ -51,6 +51,67 @@ def test_valid_settings_build_a_tls_postgresql_url_without_exposing_the_password
     )
     assert PASSWORD not in repr(settings)
     assert PASSWORD not in str(settings.database_url)
+    assert settings.clerk is None
+
+
+def clerk_environment(**overrides: str) -> dict[str, str]:
+    values = environment(
+        KHEPRI_CLERK_MODE="private_beta",
+        KHEPRI_CLERK_ISSUER="https://private-beta.clerk.accounts.example",
+        KHEPRI_CLERK_JWT_KEY=(
+            "-----BEGIN PUBLIC KEY-----\npublic-material\n-----END PUBLIC KEY-----"
+        ),
+        KHEPRI_CLERK_KEY_ID="ins_private_beta",
+        KHEPRI_CLERK_AUTHORIZED_PARTIES='["https://beta.khepri.example"]',
+        KHEPRI_CLERK_AUDIENCE="khepri-private-beta",
+    )
+    values.update(overrides)
+    return values
+
+
+def test_clerk_settings_pin_one_private_beta_instance_without_exposing_its_key() -> None:
+    settings = RuntimeSettings.from_environment(clerk_environment())
+
+    assert settings.clerk is not None
+    assert settings.clerk.mode == "private_beta"
+    assert settings.clerk.issuer == "https://private-beta.clerk.accounts.example"
+    assert settings.clerk.key_id == "ins_private_beta"
+    assert settings.clerk.authorized_parties == ("https://beta.khepri.example",)
+    assert settings.clerk.audience == "khepri-private-beta"
+    assert "public-material" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "KHEPRI_CLERK_ISSUER",
+        "KHEPRI_CLERK_JWT_KEY",
+        "KHEPRI_CLERK_KEY_ID",
+        "KHEPRI_CLERK_AUTHORIZED_PARTIES",
+    ],
+)
+def test_every_enabled_clerk_trust_coordinate_is_required(missing: str) -> None:
+    values = clerk_environment()
+    del values[missing]
+
+    with pytest.raises(RuntimeConfigurationError, match=missing):
+        RuntimeSettings.from_environment(values)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("KHEPRI_CLERK_MODE", "commercial"),
+        ("KHEPRI_CLERK_ISSUER", "http://private-beta.clerk.accounts.example"),
+        ("KHEPRI_CLERK_JWT_KEY", "not-a-public-key"),
+        ("KHEPRI_CLERK_AUTHORIZED_PARTIES", "[]"),
+        ("KHEPRI_CLERK_AUTHORIZED_PARTIES", '["https://same.example", "https://same.example"]'),
+        ("KHEPRI_CLERK_AUDIENCE", " "),
+    ],
+)
+def test_invalid_or_commercial_clerk_configuration_fails_closed(name: str, value: str) -> None:
+    with pytest.raises(RuntimeConfigurationError, match=name):
+        RuntimeSettings.from_environment(clerk_environment(**{name: value}))
 
 
 @pytest.mark.parametrize(

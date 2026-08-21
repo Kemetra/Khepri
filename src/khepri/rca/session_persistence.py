@@ -16,9 +16,21 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from khepri.rca.persistence import ExternalIdentityRow, SessionRow, _utc
+from khepri.rca.errors import (
+    OWNER_CHANGE_APPLIED,
+    OWNER_CHANGE_FINAL_OWNER,
+    OWNER_CHANGE_NOT_APPLICABLE,
+)
+from khepri.rca.persistence import (
+    AccountRow,
+    ExternalIdentityRow,
+    SessionRow,
+    _utc,
+    owner_reduction_outcome,
+)
 from khepri.rca.records import assert_sealed
 from khepri.rca.sessions import Session, StoredSession
 
@@ -34,6 +46,10 @@ def _session_from_row(row: SessionRow) -> Session:
             revoked_at=_utc(row.revoked_at),
         )
     )
+
+
+def _loses_authentication_capability(has_local_verifier: bool, another_link) -> bool:
+    return not has_local_verifier and another_link is None
 
 
 class SqlSessionStore:
@@ -116,6 +132,28 @@ class SqlSessionStore:
             )
         return revoked.rowcount
 
+    def revoke_all_for_provider(self, provider: str, *, now: datetime) -> int:
+        """Revoke every live session for every account linked to one provider.
+
+        Khepri sessions deliberately carry no provider provenance, so the fail-closed affected
+        set at a provider hard stop is every session belonging to an account with that provider's
+        link. One statement selects and updates that set; a dual-capability account may be logged
+        out conservatively, while an unrelated account cannot be touched.
+        """
+        linked_accounts = select(ExternalIdentityRow.account_id).where(
+            ExternalIdentityRow.provider == provider
+        )
+        with self._factory.begin() as database:
+            revoked = database.execute(
+                update(SessionRow)
+                .where(
+                    SessionRow.account_id.in_(linked_accounts),
+                    SessionRow.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+        return revoked.rowcount
+
     def purge_sessions_dead_before(self, horizon: datetime) -> int:
         """Delete every session whose retention horizon has elapsed (`R3-07`).
 
@@ -158,18 +196,21 @@ class SqlSessionStore:
         rule against a caller that reaches the row directly, so this check is the courteous path
         rather than the guarantee.
         """
-        with self._factory.begin() as database:
-            existing = database.get(ExternalIdentityRow, (provider, provider_subject))
-            if existing is not None:
-                return False
-            database.add(
-                ExternalIdentityRow(
-                    provider=provider,
-                    provider_subject=provider_subject,
-                    account_id=account_id,
-                    linked_at=now,
+        try:
+            with self._factory.begin() as database:
+                existing = database.get(ExternalIdentityRow, (provider, provider_subject))
+                if existing is not None:
+                    return False
+                database.add(
+                    ExternalIdentityRow(
+                        provider=provider,
+                        provider_subject=provider_subject,
+                        account_id=account_id,
+                        linked_at=now,
+                    )
                 )
-            )
+        except IntegrityError:
+            return False
         return True
 
     def account_for_external_identity(
@@ -181,19 +222,41 @@ class SqlSessionStore:
             return None if row is None else row.account_id
 
     def unlink_external_identity(self, provider: str, provider_subject: str) -> bool:
+        return (
+            self.unlink_external_identity_outcome(provider, provider_subject)
+            == OWNER_CHANGE_APPLIED
+        )
+
+    def unlink_external_identity_outcome(self, provider: str, provider_subject: str) -> str:
         """Remove a link, leaving every other record standing (`KHEPRI-DEC-018` Â§7).
 
-        The account, its memberships, its audit events, and the final-owner invariant survive; the
-        account becomes unauthenticatable until relinked. Nothing here touches them, and no
-        `FR-013` reasoning applies -- unlinking does not change `can_act`, so an owner stays an
-        effective owner.
+        The account, memberships, and audit events survive. If this is the account's final
+        authentication capability, the shared locked owner-reduction decision refuses a change
+        that would strand an organization.
         """
         with self._factory.begin() as database:
             row = database.get(ExternalIdentityRow, (provider, provider_subject))
             if row is None:
-                return False
+                return OWNER_CHANGE_NOT_APPLICABLE
+            outcome = owner_reduction_outcome(database, row.account_id)
+            account = database.get(AccountRow, row.account_id)
+            another_link = database.execute(
+                select(ExternalIdentityRow.account_id).where(
+                    ExternalIdentityRow.account_id == row.account_id,
+                    or_(
+                        ExternalIdentityRow.provider != provider,
+                        ExternalIdentityRow.provider_subject != provider_subject,
+                    ),
+                )
+            ).first()
+            has_local_verifier = account is not None and account.credential_digest is not None
+            loses_capability = _loses_authentication_capability(
+                has_local_verifier, another_link
+            )
+            if loses_capability and outcome == OWNER_CHANGE_FINAL_OWNER:
+                return outcome
             database.delete(row)
-        return True
+        return OWNER_CHANGE_APPLIED
 
 
 __all__ = ["SqlSessionStore"]

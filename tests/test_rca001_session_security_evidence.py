@@ -290,11 +290,14 @@ class TestTheAbsencesAreLoadBearing:
         assert "assert_account_active" not in source
         assert "AccountStore" not in source
 
-    def test_the_chokepoint_has_exactly_one_production_caller(self) -> None:
-        """One chokepoint, one caller. A second call site is a second place to forget it.
+    def test_the_chokepoint_has_exactly_the_three_governed_production_callers(self) -> None:
+        """One chokepoint, three governed callers. A fourth is a place to forget it.
 
         `R3-01` §4 names RRA's four-call-site expiry predicate as the counter-example; this is the
-        same failure mode applied to the `FR-008` guard.
+        same failure mode applied to the `FR-008` guard. Actor resolution checks every protected
+        action; external authentication revalidates immediately before minting a Khepri session;
+        provider-owned recovery independently revalidates before recording its Khepri consequence.
+        All three are governed boundaries, and no other path may bypass them.
 
         **Counts calls, not mentions.** `session_service.py` names the chokepoint in its docstring
         to explain why it deliberately does not call it, and `R3-04`'s boundary test asserts that
@@ -306,4 +309,8 @@ class TestTheAbsencesAreLoadBearing:
             if path.name != "lifecycle.py"
             and "assert_account_active" in _attribute_calls(path.read_text(encoding="utf-8"))
         )
-        assert callers == ["actor_resolution.py"]
+        assert callers == [
+            "actor_resolution.py",
+            "external_auth_api.py",
+            "recovery_security.py",
+        ]
