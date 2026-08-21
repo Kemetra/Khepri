@@ -44,6 +44,14 @@ RCA_REVISIONS = (
     # Parent is `20260817_0017`, an *RRA* revision -- the interleaving this block's comment warns
     # about, now with an RCA revision on the far side of it.
     ("20260818_0018", "rca_invitations", "20260817_0017"),
+    # `#240`'s recovery security evidence. **This registration was missing**: the migration merged
+    # without being listed here, so every test driven by `_run` stopped one revision short of head
+    # and `test_migration_columns_match_the_declared_models` could not see the new table at all.
+    # It went unnoticed because the guard reads `RcaBase.metadata.tables`, which is populated by
+    # import side effects -- until some module imported `recovery_security_persistence`, the table
+    # was absent from *both* sides of the comparison and the equality held vacuously. A drift guard
+    # whose inputs depend on import order can pass while covering nothing.
+    ("20260821_0019", "rca_recovery_security_events", "20260818_0018"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -59,6 +67,9 @@ RCA_TABLES = {
     "rca_sessions",
     "rca_external_identities",
     "rca_invitations",
+    # `#240`'s table, omitted from this set for the same reason it was missing from
+    # `RCA_REVISIONS` above.
+    "rca_recovery_security_events",
 }
 
 

@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.rca.invitation_retention import InvitationRetentionSweeper
 from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
+from khepri.rca.recovery_security import RecoverySecurityEventSweeper
 from khepri.rca.session_retention import SessionRetentionSweeper
 from khepri.rra.deletion import DeletionRetryRequired, DeletionService
 from khepri.rra.job_persistence import SqlReportJobRepository
@@ -59,6 +60,26 @@ class SweepReport:
     # `target_identity`, so a pass that purged none when it should have is a retention failure
     # rather than a housekeeping one.
     purged_invitations: int = 0
+    # `KHEPRI-DEC-025` §4's recovery security evidence. Named apart from `purged_events` above
+    # rather than folded into it: that field counts FR-014 membership events, this one counts
+    # content-free provider-recovery evidence, and two different tables under one name would make
+    # a report that reads as consistent while measuring unrelated things.
+    purged_recovery_events: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionCounts:
+    """What the retention passes purged, by name.
+
+    Replaces a positional five-tuple. Every field is a distinct table under a distinct governed
+    horizon, so position is the wrong way to tell them apart.
+    """
+
+    accounts: int = 0
+    events: int = 0
+    sessions: int = 0
+    invitations: int = 0
+    recovery_events: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,9 +98,14 @@ class RetentionPasses:
     events: MembershipEventSweeper | None = None
     sessions: SessionRetentionSweeper | None = None
     invitations: InvitationRetentionSweeper | None = None
+    # `KHEPRI-DEC-025` §4's recovery security evidence, anchored to the same twelve-month audit
+    # horizon as `events` above. A fifth pass rather than a reuse of `events`: both purge at
+    # twelve months, but they are different tables under different requirements, and one sweeper
+    # covering both would purge either by accident if a horizon later moved.
+    recovery_events: RecoverySecurityEventSweeper | None = None
 
-    def run(self, *, now: datetime) -> tuple[int, int, int, int]:
-        """All four passes, returning the purged counts in field order.
+    def run(self, *, now: datetime) -> RetentionCounts:
+        """All five passes, returning the purged counts by name.
 
         Independent of each other: §2a's twelve-month audit horizon is shorter than §2b's
         twenty-four month account horizon, so an event never outlives the account it refers to,
@@ -93,12 +119,31 @@ class RetentionPasses:
         together by construction — but each evaluates its own predicate against `now`, and running
         them in either order over the same instant gives the same result. Ordering here is field
         order, not a dependency.
+
+        **The recovery-evidence pass is independent of all four.** It purges only the content-free
+        `RecoverySecurityEvent` rows, which reference an account but carry no identity data, so it
+        neither depends on nor blocks any other horizon.
+
+        Returns a named record rather than a tuple: this began as a four-element tuple destructured
+        by position, and a fifth pass is where that stops being readable. The same reasoning made
+        these sweepers one value object in the first place.
         """
-        return (
-            0 if self.accounts is None else self.accounts.sweep(now=now).purged_accounts,
-            0 if self.events is None else self.events.sweep(now=now).purged_events,
-            0 if self.sessions is None else self.sessions.sweep(now=now).purged_sessions,
-            0 if self.invitations is None else self.invitations.sweep(now=now).purged_invitations,
+        return RetentionCounts(
+            accounts=0 if self.accounts is None else self.accounts.sweep(now=now).purged_accounts,
+            events=0 if self.events is None else self.events.sweep(now=now).purged_events,
+            sessions=(
+                0 if self.sessions is None else self.sessions.sweep(now=now).purged_sessions
+            ),
+            invitations=(
+                0
+                if self.invitations is None
+                else self.invitations.sweep(now=now).purged_invitations
+            ),
+            recovery_events=(
+                0
+                if self.recovery_events is None
+                else self.recovery_events.sweep(now=now).purged_events
+            ),
         )
 
 
@@ -129,16 +174,17 @@ class LocalSweeper:
         # `getattr` because a stack without RCA tables, and the test stubs that subclass this
         # without calling __init__, legitimately have no retention pass to run.
         retention = getattr(self, "_retention", None) or RetentionPasses()
-        purged_accounts, purged_events, purged_sessions, purged_invitations = retention.run(now=now)
+        purged = retention.run(now=now)
         return SweepReport(
             expired_leases=len(expired),
             orphaned_jobs=len(orphaned),
             expired_sessions=swept,
             deletions_deferred=deferred,
-            purged_accounts=purged_accounts,
-            purged_events=purged_events,
-            purged_sessions=purged_sessions,
-            purged_invitations=purged_invitations,
+            purged_accounts=purged.accounts,
+            purged_events=purged.events,
+            purged_sessions=purged.sessions,
+            purged_invitations=purged.invitations,
+            purged_recovery_events=purged.recovery_events,
         )
 
     def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:
@@ -189,6 +235,7 @@ def build_local_sweeper(
 __all__ = [
     "REASON_EXPIRED",
     "LocalSweeper",
+    "RetentionCounts",
     "RetentionPasses",
     "SweepReport",
     "build_local_sweeper",

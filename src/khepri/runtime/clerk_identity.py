@@ -56,21 +56,52 @@ def _has_pinned_header(token: str, key_id: str) -> bool:
     )
 
 
-def _verified_subject(claims: dict[str, Any], *, issuer: str) -> str | None:
+def _timestamp(claim: Any) -> int | None:
+    """One integer-seconds claim, or `None`.
+
+    `bool` is a subclass of `int`, so `isinstance(True, int)` is `True` and the explicit exclusion
+    is load-bearing rather than defensive: without it `iat=True` reads as second 1 and the lifetime
+    check below silently becomes `exp - 1`.
+    """
+    if isinstance(claim, bool) or not isinstance(claim, int):
+        return None
+    return claim
+
+
+def _within_admitted_lifetime(claims: dict[str, Any]) -> bool:
+    """Both timestamps present as integers, and the window strictly positive and capped.
+
+    The lower bound is strict: a token expiring in the instant it was issued carries no valid
+    window, and `KHEPRI-DEC-025` §2 pins the maximum lifetime rather than only a maximum.
+    """
+    issued_at = _timestamp(claims.get("iat"))
+    expires_at = _timestamp(claims.get("exp"))
+    if issued_at is None or expires_at is None:
+        return False
+    return 0 < expires_at - issued_at <= _MAX_TOKEN_LIFETIME_SECONDS
+
+
+def _pinned_subject(claims: dict[str, Any], *, issuer: str) -> str | None:
+    """The non-empty string subject of a token from the pinned issuer, or `None`."""
+    if claims.get("iss") != issuer:
+        return None
     subject = claims.get("sub")
-    issued_at = claims.get("iat")
-    expires_at = claims.get("exp")
-    valid_times = (
-        isinstance(issued_at, int)
-        and not isinstance(issued_at, bool)
-        and isinstance(expires_at, int)
-        and not isinstance(expires_at, bool)
-        and 0 < expires_at - issued_at <= _MAX_TOKEN_LIFETIME_SECONDS
-    )
-    valid_identity = claims.get("iss") == issuer and isinstance(subject, str) and bool(subject)
-    if not valid_identity or not valid_times:
+    if not isinstance(subject, str) or not subject:
         return None
     return subject
+
+
+def _verified_subject(claims: dict[str, Any], *, issuer: str) -> str | None:
+    """The request-time subject, refusing on issuer, subject shape, or token window.
+
+    Split into two predicates because the identity contract and the token window are independent
+    checks over disjoint claims; they were one boolean expression, which `#240`'s CodeScene review
+    flagged as a Complex Method. Every clause is preserved exactly — this restructures the
+    grouping, never the decision.
+    """
+    if not _within_admitted_lifetime(claims):
+        return None
+    return _pinned_subject(claims, issuer=issuer)
 
 
 __all__ = ["ClerkIdentityProvider"]
