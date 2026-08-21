@@ -122,23 +122,29 @@ artifacts:
     state: retired
     document: governance/decisions/KHEPRI-DEC-019-commercial-scope-attachment.md
     depends_on: []
-    superseded_by: KHEPRI-DEC-022
+    superseded_by: KHEPRI-DEC-023
   - type: decision
     id: KHEPRI-DEC-020
     state: retired
     document: governance/decisions/KHEPRI-DEC-020-commercial-scope-attachment-with-schema.md
     depends_on: []
-    superseded_by: KHEPRI-DEC-022
+    superseded_by: KHEPRI-DEC-023
   - type: decision
     id: KHEPRI-DEC-021
     state: retired
     document: governance/decisions/KHEPRI-DEC-021-commercial-bridge-implementation-authorization.md
     depends_on: []
-    superseded_by: KHEPRI-DEC-022
+    superseded_by: KHEPRI-DEC-023
   - type: decision
     id: KHEPRI-DEC-022
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-022-commercial-endpoint-authorization.md
+    depends_on: []
+    superseded_by: KHEPRI-DEC-023
+  - type: decision
+    id: KHEPRI-DEC-023
+    state: active
+    document: governance/decisions/KHEPRI-DEC-023-commercial-consent-route-authorization.md
     depends_on: []
 
   - type: specification
