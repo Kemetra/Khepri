@@ -117,7 +117,7 @@ artifacts:
     state: retired
     document: governance/decisions/KHEPRI-DEC-018-external-identity-provider-boundary.md
     depends_on: []
-    superseded_by: KHEPRI-DEC-024
+    superseded_by: KHEPRI-DEC-025
   - type: decision
     id: KHEPRI-DEC-019
     state: retired
@@ -149,8 +149,14 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-024
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-024-staged-external-identity-provider-admission.md
+    depends_on: []
+    superseded_by: KHEPRI-DEC-025
+  - type: decision
+    id: KHEPRI-DEC-025
+    state: active
+    document: governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md
     depends_on: []
 
   - type: specification
