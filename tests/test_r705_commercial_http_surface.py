@@ -15,8 +15,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from khepri.rca.errors import SCOPE_FAILURE, AuthenticationFailed, ScopeAccessDenied
+from khepri.rca.organizations import OrganizationService
+from khepri.rca.persistence import SqlOrganizationStore
+from khepri.rca.switching import OrganizationSwitcher
 from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
-from tests.rca_lifecycle_support import NOW
+from tests.rca_lifecycle_support import NOW, factory_fixture  # noqa: F401 -- fixture
+from tests.test_r703_live_authorization_on_resume import (  # noqa: F401 -- fixture re-export
+    Journey,
+    _account,
+    _rca_sessions,
+    journey_fixture,
+)
+from tests.test_r703_live_authorization_on_resume import _resolver as _r703_resolver
 
 
 def test_an_unwired_app_declares_no_commercial_routes() -> None:
@@ -206,3 +216,116 @@ def test_commercial_services_holds_a_real_resolver_and_bridge() -> None:
     assert isinstance(services, CommercialServices)
     assert services.resolver is not None
     assert services.bridge is not None
+
+
+class _RealServices:
+    """`CommercialServices` built from `R7-03`'s journey, so the route drives the real graph.
+
+    Reuses `Journey` rather than rebuilding it: it already provides two owners (`FR-013` refuses to
+    demote a final owner, so a one-owner fixture would fail on an invariant that is not
+    authorization), separate RCA and RRA databases (`FR-039` independence), and an analysis opened
+    through the production path.
+    """
+
+    def __init__(self, journey: Journey) -> None:
+        self.journey = journey
+
+    def client(self) -> TestClient:
+        app = FastAPI()
+        add_commercial_routes(
+            app,
+            services=CommercialServices(
+                resolver=_r703_resolver(self.journey.factory),
+                bridge=self.journey.bridge,
+            ),
+            clock=lambda: NOW,
+        )
+        return TestClient(app)
+
+    def get(self, token: str, session_id: str) -> object:
+        return self.client().get(
+            f"/api/v1/commercial/analyses/{session_id}", cookies={"khepri_session": token}
+        )
+
+    def post(self, token: str) -> object:
+        return self.client().post(
+            "/api/v1/commercial/analyses", cookies={"khepri_session": token}
+        )
+
+
+def test_a_member_opens_and_resumes_through_the_route(journey: Journey) -> None:
+    """The fixture reaches RRA, so a later refusal cannot be a journey that never got there."""
+    services = _RealServices(journey)
+
+    opened = services.post(journey.member_token)
+    assert opened.status_code == 201
+
+    resumed = services.get(journey.member_token, opened.json()["session_id"])
+    assert resumed.status_code == 200
+    assert resumed.json() == {"session_id": opened.json()["session_id"]}
+
+
+def test_a_revoked_member_cannot_resume_through_the_route(journey: Journey) -> None:
+    """`FR-030` at the HTTP layer: the route does not cache the decision.
+
+    `R7-03` proved the bridge re-resolves. This proves the handler does not hold a context across
+    calls or skip the resolver on a second request.
+    """
+    services = _RealServices(journey)
+    assert services.get(journey.member_token, journey.session_id).status_code == 200
+
+    journey.revoke_membership_row(journey.member)
+
+    assert services.get(journey.member_token, journey.session_id).status_code == 404
+    assert journey.analysis_exists(), "the refusal must be authorization, not deletion"
+
+
+def test_a_disabled_account_cannot_resume_through_the_route(journey: Journey) -> None:
+    """`FR-008`: no dependence on session expiry. No time passes in this test."""
+    services = _RealServices(journey)
+    assert services.get(journey.member_token, journey.session_id).status_code == 200
+
+    journey.disable(journey.member)
+
+    assert services.get(journey.member_token, journey.session_id).status_code == 404
+    assert journey.analysis_exists()
+
+
+def test_a_demoted_owner_can_still_resume_through_the_route(journey: Journey) -> None:
+    """The negative case, and it is what keeps the guard from being a blanket refusal.
+
+    A demoted owner is still a member, so they keep access. A suite of only refusals would pass
+    against a route that refused everyone.
+    """
+    services = _RealServices(journey)
+
+    journey.demote(journey.second)
+
+    resumed = services.get(journey.second_token, journey.session_id)
+    assert resumed.status_code == 200, "a demoted owner is still a member and keeps access"
+
+
+def test_another_organizations_analysis_is_indistinguishable_from_an_absent_one(
+    journey: Journey,
+) -> None:
+    """`FR-025`, at the HTTP layer.
+
+    An actor outside the organization gets exactly what a nonexistent identifier returns. The two
+    responses are compared to each other: asserting `404` twice would pass even if one grew a body
+    naming the owner.
+    """
+    outsider = _account(journey.factory, "outsider@example.test")
+    other = OrganizationService(SqlOrganizationStore(journey.factory)).create_organization(
+        "Other", outsider, now=NOW
+    )
+    token = _rca_sessions(journey.factory).create(outsider, now=NOW)
+    OrganizationSwitcher(
+        _rca_sessions(journey.factory), SqlOrganizationStore(journey.factory)
+    ).switch(token, other.organization_id, now=NOW)
+
+    services = _RealServices(journey)
+    foreign = services.get(token, journey.session_id)
+    absent = services.get(token, "does-not-exist")
+
+    assert (foreign.status_code, foreign.content) == (absent.status_code, absent.content)
+    assert journey.analysis_exists()
