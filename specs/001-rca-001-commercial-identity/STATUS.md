@@ -2,9 +2,15 @@
 
 **Task:** `R0-03` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 
-**Baseline:** `main` @ `f5afc0088a732962357b75e27ec95e5d554eddc4`, 2026-08-21. The milestone
-candidate reports 2611 passed, 11 skipped, and 1 expected failure. Migration head `20260821_0019`
-(single head).
+**Baseline:** `main` @ `15a8175951c6c95f30726a68c4db1345adf389b1`, 2026-08-21 — the merged Clerk
+private-beta milestone (`#240`), not the candidate branch. Against real PostgreSQL 18 that merge
+reported 2611 passed, 11 skipped, 1 expected failure, and **zero concurrency skips**. On a
+workstation with `KHEPRI_TEST_DATABASE_URL` unset the same tree reports 2562 passed, 60 skipped,
+1 xfailed: the 49-test PostgreSQL concurrency set skips, and **a skipped concurrency test is not
+passing evidence** for `FR-013` or the identity advisory lock. Migration head `20260821_0019`
+(single head). Authorized by `KHEPRI-DEC-025`, which supersedes `-024`; the `#240` post-merge audit
+found no functional or security defect and two uncomposed capabilities (see the `R3`/`R5` rows in
+the roadmap §16).
 
 **Coverage: rows updated through `R4-02`; the narrative below is written through `R7-01`.** The two
 are separated deliberately. `R4-02` (`d50ffe6`) changed the rollup and the Invitations rows, and the
