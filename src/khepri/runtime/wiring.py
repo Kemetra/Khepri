@@ -231,6 +231,7 @@ def build_commercial_services(stack: RuntimeStack) -> CommercialServices:
             isolation=IsolationService(organizations, accounts),
             store=SqlSessionStore(stack.factory),
         ),
+        consent=InvitationService(SqlSessionStore(stack.factory)),
     )
 
 
