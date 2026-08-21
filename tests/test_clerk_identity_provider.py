@@ -152,6 +152,37 @@ def test_an_expired_token_is_refused() -> None:
     assert ClerkIdentityProvider(_settings()).verify(token) is None
 
 
+@pytest.mark.parametrize(
+    "claims",
+    [
+        pytest.param({"iat": True}, id="boolean-issued-at"),
+        pytest.param({"exp": True}, id="boolean-expires-at"),
+        pytest.param({"iat": True, "exp": True}, id="both-boolean"),
+    ],
+)
+def test_a_boolean_timestamp_is_not_a_valid_integer_claim(claims: dict[str, object]) -> None:
+    """`bool` is a subclass of `int`, so the type check needs the explicit exclusion.
+
+    Written to lock the behavior before `_verified_subject` was restructured. Without the
+    `not isinstance(..., bool)` clause, `iat=True` satisfies `isinstance(issued_at, int)` and the
+    lifetime arithmetic silently degrades to `exp - 1`; a refactor that dropped the clause would
+    still pass every other case in this file.
+    """
+    assert ClerkIdentityProvider(_settings()).verify(_token(claims=claims)) is None
+
+
+def test_a_token_that_expires_when_it_was_issued_is_refused() -> None:
+    """The lifetime bound is strict at zero, not merely capped at sixty seconds.
+
+    Locks the lower half of `0 < expires_at - issued_at <= _MAX_TOKEN_LIFETIME_SECONDS`. Only the
+    upper half had coverage, so a refactor relaxing `0 <` to `0 <=` would have gone unnoticed.
+    """
+    issued_at = int(datetime.now(UTC).timestamp())
+    token = _token(claims={"iat": issued_at, "exp": issued_at})
+
+    assert ClerkIdentityProvider(_settings()).verify(token) is None
+
+
 def test_audience_can_be_deliberately_unused() -> None:
     token = _token(claims={"aud": None})
 

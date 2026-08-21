@@ -34,6 +34,12 @@ dependencies = [
 
 [project.scripts]
 khepri-gov = "khepri_gov.cli:main"
+# `KHEPRI-DEC-025` §4. The hard stop is the control `KHEPRI-DEC-024` §9 relies on when educational
+# Clerk access lapses or a paying customer appears, and it shipped in `#240` with no way to invoke
+# it -- an unreachable emergency procedure is not one. `khepri.runtime` rather than `khepri.local`
+# deliberately: the wheel excludes `src/khepri/local`, so a command there would be absent from the
+# image that actually needs to run it.
+khepri-clerk-hard-stop = "khepri.runtime.clerk_hard_stop:main"
 
 [dependency-groups]
 dev = [

@@ -4,13 +4,22 @@ import json
 from datetime import UTC, datetime
 
 from khepri.rca.identity import IdentityProvider
+from khepri.rca.recovery_security import RecoverySecurityService
+from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.config import ClerkIdentitySettings, RuntimeSettings
 from khepri.runtime.external_auth_api import EXTERNAL_SESSION_PATH
-from khepri.runtime.wiring import RuntimeClients, build_report_services, build_stack, build_web_app
+from khepri.runtime.wiring import (
+    RuntimeClients,
+    build_external_authentication_services,
+    build_recovery_security_service,
+    build_report_services,
+    build_stack,
+    build_web_app,
+)
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -64,9 +73,10 @@ def test_disabled_provider_configuration_registers_no_external_session_route() -
     assert EXTERNAL_SESSION_PATH not in paths
 
 
-def test_stack_exposes_enabled_clerk_only_through_the_provider_seam() -> None:
+def clerk_enabled_settings() -> RuntimeSettings:
+    """The same settings with a configured private-beta provider."""
     configured = settings()
-    configured = RuntimeSettings(
+    return RuntimeSettings(
         database_url=configured.database_url,
         region=configured.region,
         bucket=configured.bucket,
@@ -84,13 +94,59 @@ def test_stack_exposes_enabled_clerk_only_through_the_provider_seam() -> None:
         ),
     )
 
-    stack = build_stack(
-        configured,
+
+def clerk_enabled_stack():
+    return build_stack(
+        clerk_enabled_settings(),
         clients=RuntimeClients(s3=AwsClientStub()),
         clock=lambda: NOW,
     )
 
-    assert isinstance(stack.identity_provider, IdentityProvider)
+
+def test_stack_exposes_enabled_clerk_only_through_the_provider_seam() -> None:
+    assert isinstance(clerk_enabled_stack().identity_provider, IdentityProvider)
+
+
+def test_the_recovery_consequence_is_constructible_from_the_production_root() -> None:
+    """`KHEPRI-DEC-025` §4: the consequence shipped with no production caller.
+
+    The gap this closes was not a missing behaviour — every clause of `complete()` was implemented
+    and tested — but a missing construction. `wiring.py` never built the service, so nothing in the
+    deployed wheel could reach it. Asserting the builder returns the real service, over the real
+    SQL event store, is what makes the composition evidence rather than a claim.
+    """
+    service = build_recovery_security_service(clerk_enabled_stack())
+
+    assert isinstance(service, RecoverySecurityService)
+    assert isinstance(service._events, SqlRecoverySecurityEventStore)
+
+
+def test_the_recovery_consequence_is_absent_when_no_provider_is_configured() -> None:
+    """It is a consequence *of provider-owned recovery*, so it has nothing to follow without one.
+
+    Mirrors `build_external_authentication_services`. Khepri-credential recovery is `R5-02`…`R5-04`,
+    which `KHEPRI-DEC-025` §3 keeps deferred while Clerk owns credentials — so a Clerk-disabled
+    deployment having no recovery consequence is the designed state, not a gap.
+    """
+    assert runtime_stack().identity_provider is None
+    assert build_recovery_security_service(runtime_stack()) is None
+
+
+def test_the_recovery_consequence_shares_one_definition_of_live_authority() -> None:
+    """Revocation and account state must not acquire a second definition here.
+
+    The service is given the same `SessionService` shape and lifetime the authentication route
+    uses. Two session services with different lifetimes would mean a session the route considers
+    live and the consequence considers expired, which is how one revocation rule becomes two.
+    """
+    stack = clerk_enabled_stack()
+    service = build_recovery_security_service(stack)
+    external = build_external_authentication_services(stack)
+
+    assert service is not None
+    assert external is not None
+    assert service._sessions._lifetime == external.sessions._lifetime
+    assert type(service._lifecycle) is type(external.lifecycle)
 
 
 def test_report_routes_use_queued_requests_and_session_scoped_deliveries() -> None:

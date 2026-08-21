@@ -103,3 +103,49 @@ def test_hard_stop_refuses_to_run_while_clerk_authentication_is_enabled(tmp_path
 
     with pytest.raises(RuntimeConfigurationError, match="must be disabled"):
         revoke_clerk_sessions(_settings(database_url, enabled=True), now=NOW)
+
+
+HARD_STOP_COMMAND = "khepri-clerk-hard-stop"
+
+
+def test_the_hard_stop_is_registered_as_an_operator_command() -> None:
+    """`KHEPRI-DEC-025` §4: the emergency procedure must be invokable, not merely implemented.
+
+    Read from `pyproject.toml` rather than `importlib.metadata.entry_points()`. Installed metadata
+    can be stale relative to the source declaration in an editable install, so a metadata-based
+    assertion can pass against a previous install or fail without a reinstall — either way it would
+    not be testing the declaration this slice adds.
+
+    The target string is then resolved to the real callable, so a typo in the module path or
+    function name fails here instead of at the operator's shell during an incident.
+    """
+    import importlib
+    import tomllib
+    from pathlib import Path
+
+    manifest = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    scripts = manifest["project"]["scripts"]
+
+    assert HARD_STOP_COMMAND in scripts, "the hard stop has no console entry point"
+    module_path, _, attribute = scripts[HARD_STOP_COMMAND].partition(":")
+    assert module_path == "khepri.runtime.clerk_hard_stop", (
+        "the command must live in khepri.runtime; the wheel excludes src/khepri/local, so a "
+        "command declared there would be absent from the image that has to run it"
+    )
+    resolved = getattr(importlib.import_module(module_path), attribute)
+
+    from khepri.runtime import clerk_hard_stop
+
+    assert resolved is clerk_hard_stop.main, "the command must invoke the existing implementation"
+
+
+def test_the_registered_command_reuses_the_single_hard_stop_implementation() -> None:
+    """`main` delegates rather than reimplementing, so one revocation rule cannot drift into two."""
+    import inspect
+
+    from khepri.runtime import clerk_hard_stop
+
+    body = inspect.getsource(clerk_hard_stop.main)
+
+    assert "revoke_clerk_sessions(" in body, "main must call the audited implementation"
+    assert "revoke_all_for_provider" not in body, "main must not duplicate revocation logic"

@@ -20,6 +20,8 @@ from khepri.rca.identity import IdentityProvider
 from khepri.rca.isolation import IsolationService
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.recovery_security import RecoverySecurityService
+from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
 from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
@@ -269,6 +271,36 @@ def build_external_authentication_services(
     )
 
 
+def build_recovery_security_service(stack: RuntimeStack) -> RecoverySecurityService | None:
+    """Compose the Khepri-owned consequence of provider-owned credential recovery.
+
+    **Authorized by `KHEPRI-DEC-025` §4**, which records that this service and its store shipped in
+    `#240` with no production caller and requires the composition before a private-beta tester is
+    admitted.
+
+    Returns `None` when no provider is configured, mirroring
+    `build_external_authentication_services`: the consequence is a consequence *of provider-owned
+    recovery*, so a deployment with Clerk disabled has nothing for it to follow. Khepri-credential
+    recovery is `R5-02`…`R5-04`, deferred while Clerk owns credentials.
+
+    The collaborators are the same live authorities the authentication route uses -- one
+    `SessionService` over the RCA session store and one `LifecycleService` -- rather than new ones,
+    so revocation and account state have a single definition. `KHEPRI-DEC-025` §3 keeps credential
+    replacement itself with the provider; nothing here writes a verifier.
+    """
+    if stack.identity_provider is None:
+        return None
+    accounts = SqlAccountStore(stack.factory)
+    organizations = SqlOrganizationStore(stack.factory)
+    return RecoverySecurityService(
+        sessions=RcaSessionService(
+            SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME
+        ),
+        lifecycle=LifecycleService(accounts, organizations),
+        events=SqlRecoverySecurityEventStore(stack.factory),
+    )
+
+
 def build_web_app(stack: RuntimeStack) -> FastAPI:
     app = create_app(
         service=stack.services.invitations,
@@ -328,6 +360,7 @@ __all__ = [
     "build_commercial_services",
     "build_external_authentication_services",
     "build_pipeline",
+    "build_recovery_security_service",
     "build_report_services",
     "build_stack",
     "build_web_app",

@@ -20,6 +20,7 @@ from khepri.runtime.commercial_api import COMMERCIAL_PREFIX
 
 EXTERNAL_SESSION_PATH = f"{COMMERCIAL_PREFIX}/auth/session"
 KHEPRI_SESSION_LIFETIME = timedelta(hours=12)
+_BEARER_SCHEME = "Bearer "
 
 OrganizationId = Annotated[
     str,
@@ -48,13 +49,28 @@ def _refusal() -> Response:
     return Response(status_code=status.HTTP_404_NOT_FOUND)
 
 
+def _is_opaque_credential(credential: str) -> bool:
+    """Non-empty and free of whitespace anywhere.
+
+    Whitespace is refused rather than trimmed. A credential is opaque material, so rewriting it
+    would make the value verified differ from the value the caller sent. The single `isspace`
+    scan covers surrounding and embedded whitespace alike, which is why no separate `strip`
+    comparison is needed — the original expression carried both, and the `strip` clause was
+    wholly subsumed. `tests/test_external_auth_bearer.py` pins both cases independently.
+    """
+    return bool(credential) and not any(character.isspace() for character in credential)
+
+
 def _bearer(authorization: str | None) -> str | None:
-    if authorization is None or not authorization.startswith("Bearer "):
+    """The credential from a well-formed `Bearer` header, or `None`.
+
+    The scheme is case-sensitive by design. Restructured from one four-clause conditional that
+    `#240`'s CodeScene review flagged; the decision is unchanged.
+    """
+    if authorization is None or not authorization.startswith(_BEARER_SCHEME):
         return None
-    credential = authorization.removeprefix("Bearer ")
-    if not credential or credential.strip() != credential or any(c.isspace() for c in credential):
-        return None
-    return credential
+    credential = authorization.removeprefix(_BEARER_SCHEME)
+    return credential if _is_opaque_credential(credential) else None
 
 
 def add_external_authentication_routes(

@@ -35,6 +35,8 @@ from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_retention import InvitationRetentionSweeper
 from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.recovery_security import RecoverySecurityEventSweeper
+from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 
 # Aliased because `khepri.rra.persistence` exports a class of the same name below. Two stores
 # called `SqlSessionStore` in one module is the identifier ambiguity `R3-01` §2.1 records between
@@ -315,6 +317,13 @@ def build_worker_stack(
                 # redeemed-invitation horizon is *anchored* to the event horizon rather than
                 # configured, so overriding it here would be the drift the anchor exists to prevent.
                 invitations=InvitationRetentionSweeper(SqlInvitationStore(stack.factory)),
+                # `KHEPRI-DEC-025` §4. Same anchored twelve-month horizon, so no override here
+                # either. Without this pass the content-free recovery evidence accumulates
+                # indefinitely -- the retention rule existed with no caller, which is the exact
+                # shape of the gap this slice closes.
+                recovery_events=RecoverySecurityEventSweeper(
+                    SqlRecoverySecurityEventStore(stack.factory)
+                ),
             ),
         ),
     )
