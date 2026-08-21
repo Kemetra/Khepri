@@ -177,3 +177,32 @@ def test_a_missing_cookie_is_refused_identically_to_a_denied_scope() -> None:
     )
 
     assert (absent.status_code, absent.content) == (no_cookie.status_code, no_cookie.content)
+
+
+def test_the_web_app_declares_the_commercial_group() -> None:
+    """The wiring exists and reaches the routes.
+
+    `runtime_stack()` in `tests/test_runtime_wiring.py` is a plain function, **not** a pytest
+    fixture -- it is called directly and builds against `AwsClientStub`. Importing it rather than
+    writing a second stack builder keeps one definition of the production graph under test.
+    """
+    from khepri.runtime.wiring import build_web_app
+    from tests.test_runtime_wiring import runtime_stack
+
+    app = build_web_app(runtime_stack())
+
+    paths = {getattr(route, "path", "") for route in app.routes}
+
+    assert "/api/v1/commercial/analyses" in paths
+    assert "/api/v1/commercial/analyses/{session_id}" in paths
+
+
+def test_commercial_services_holds_a_real_resolver_and_bridge() -> None:
+    from khepri.runtime.wiring import build_commercial_services
+    from tests.test_runtime_wiring import runtime_stack
+
+    services = build_commercial_services(runtime_stack())
+
+    assert isinstance(services, CommercialServices)
+    assert services.resolver is not None
+    assert services.bridge is not None
