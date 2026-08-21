@@ -14,6 +14,12 @@ from fastapi import FastAPI
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from khepri.rca.actor_resolution import ActorResolver
+from khepri.rca.authorization_resolution import AuthorizationResolver
+from khepri.rca.isolation import IsolationService
+from khepri.rca.lifecycle import LifecycleService
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -50,6 +56,8 @@ from khepri.rra.report_services import (
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import S3EncryptedObjectStore
+from khepri.runtime.bridge import CommercialBridge
+from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
 from khepri.runtime.config import RuntimeSettings
 
 # The web role publishes but never claims, so this identity appears in no lease. It
@@ -196,8 +204,38 @@ def build_report_services(stack: RuntimeStack) -> ReportServices:
     )
 
 
+def build_commercial_services(stack: RuntimeStack) -> CommercialServices:
+    """Build the RCA half of the graph and pair it with the bridge.
+
+    This is the first place `khepri.rca` is constructed in the production composition root.
+    `KHEPRI-DEC-021` §3 admits the import here deliberately: a composition root exists to know about
+    both sides, and what the boundary forbids is a bridge *inside* either package.
+
+    **Two session stores are in play and they are not interchangeable.** `SqlRcaSessionStore` holds
+    authentication sessions and belongs to `ActorResolver`; `SqlSessionStore` (RRA, imported
+    unaliased at the top of this module) holds analysis sessions and belongs to the bridge. The
+    alias exists so a reader can tell which is which rather than relying on import order.
+
+    The construction mirrors `tests/test_r703_live_authorization_on_resume.py`, which is the shape
+    `R7-03` proved the two live gates against.
+    """
+    accounts = SqlAccountStore(stack.factory)
+    organizations = SqlOrganizationStore(stack.factory)
+    actors = ActorResolver(
+        SqlRcaSessionStore(stack.factory),
+        LifecycleService(accounts, organizations),
+    )
+    return CommercialServices(
+        resolver=AuthorizationResolver(actors, organizations),
+        bridge=CommercialBridge(
+            isolation=IsolationService(organizations, accounts),
+            store=SqlSessionStore(stack.factory),
+        ),
+    )
+
+
 def build_web_app(stack: RuntimeStack) -> FastAPI:
-    return create_app(
+    app = create_app(
         service=stack.services.invitations,
         clock=stack.clock,
         intake_service=stack.services.intake,
@@ -207,6 +245,12 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
         report_services=build_report_services(stack),
         journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
+    add_commercial_routes(
+        app,
+        services=build_commercial_services(stack),
+        clock=stack.clock,
+    )
+    return app
 
 
 def build_pipeline(
@@ -241,6 +285,7 @@ __all__ = [
     "RuntimeStack",
     "SessionServices",
     "build_clients",
+    "build_commercial_services",
     "build_pipeline",
     "build_report_services",
     "build_stack",

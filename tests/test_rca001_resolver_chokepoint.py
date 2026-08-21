@@ -462,24 +462,41 @@ class TestWhatRemainsOpen:
                 "instead, this whole file's framing needs revisiting"
             )
 
-    def test_the_resolver_has_no_production_consumer_yet(self) -> None:
-        """The tripwire's honest caveat: it currently guards an empty room.
+    def test_the_only_resolver_consumers_are_the_composition_root(self) -> None:
+        """The tripwire, now confirmatory rather than preventative (`KHEPRI-DEC-022` §2).
 
-        No module outside `authorization_resolution.py` imports `AuthorizationResolver`, because
-        the HTTP surface that would use it is `R7`/`R8`. The inventory above is therefore
-        *preventative* rather than confirmatory -- it will catch the first bypass, and it has
-        caught none because none has been possible. Stating that here stops a later reader from
-        reading a green test as "every handler is gated".
+        `R7-05` filled the room the previous version guarded, so
+        `test_the_resolver_has_no_production_consumer_yet` was **deleted** rather than widened: its
+        name asserted an emptiness that is no longer true, and a relaxed test keeping that name
+        would assert something false.
+
+        Two consumers are expected and both are the composition root. `commercial_api.py` calls
+        `for_request`; `wiring.py` constructs the resolver to hand it there. Anything else -- an
+        `khepri.rra` handler, an `khepri.rca` service reaching past the door, a second route module
+        -- is the bypass this file has always watched for, and fails here.
+
+        **The emptiness assertion is not decoration.** A scan that finds nothing satisfies every
+        claim about what it found, so without it this test would go green if `_production_sources`
+        ever stopped matching the tree. That is the guard-that-cannot-see-the-new-surface shape,
+        and stubbing the scan to return nothing was confirmed to fail here rather than pass.
         """
-        importers = [
+        importers = sorted(
             _relative(path)
             for path in _production_sources()
             if _relative(path) != "khepri/rca/authorization_resolution.py"
             and "AuthorizationResolver" in path.read_text(encoding="utf-8")
-        ]
-        assert importers == [], (
-            "AuthorizationResolver now has a consumer; the chokepoint claim becomes checkable "
-            "for real, and this test should be replaced by one asserting that consumer's path"
+        )
+
+        assert importers, (
+            "the scan matched no files at all; _production_sources is no longer finding the tree, "
+            "so this test proves nothing about who consumes the resolver"
+        )
+        assert importers == [
+            "khepri/runtime/commercial_api.py",
+            "khepri/runtime/wiring.py",
+        ], (
+            "a new AuthorizationResolver consumer appeared outside the composition root; the "
+            "chokepoint claim is that one door is the only way in"
         )
 
 
