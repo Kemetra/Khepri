@@ -79,21 +79,20 @@ class Account(Sealed):
         """
         return self.is_enabled and not self.is_purged
 
-    @property
-    def can_authenticate(self) -> bool:
+    def can_authenticate(self, *, has_external_identity: bool) -> bool:
         """True only for an account that can actually log in and therefore exercise authority.
 
-        FR-013 asks whether an organization still has an owner who can *act*, and an owner with
-        no credential cannot. That gap was reachable: `enable_account` deliberately leaves the
-        verifier destroyed (KHEPRI-DEC-015 §5 gives it no path back), so disabling an owner,
-        re-enabling them, then disabling the other owner left an organization whose only
-        remaining owner could not authenticate. Verified before this property existed.
+        FR-013 asks whether an organization still has an owner who can *act*. Authentication
+        capability may come from Khepri's local verifier or from a durable external-identity
+        link, so the persistence caller supplies link existence explicitly rather than copying
+        it onto the account. A re-enabled account with neither capability does not count.
 
         `can_act` is deliberately weaker and stays that way: a verifier-less account must still
         be re-enablable and still resolve for the lifecycle chokepoint. Only ownership needs the
-        stronger question.
+        stronger question. Link existence is required rather than defaulted so a caller cannot
+        accidentally apply the old local-credential-only rule.
         """
-        return self.can_act and self.has_verifier
+        return self.can_act and (self.has_verifier or has_external_identity)
 
     def is_purgeable_at(self, horizon: datetime) -> bool:
         """True when KHEPRI-DEC-015 §2b's horizon has elapsed and identity is still present.
@@ -134,6 +133,19 @@ class Account(Sealed):
                 account_id=account_id,
                 email=canonical,
                 verifier=verifier,
+                disabled_at=None,
+            )
+
+    @classmethod
+    def _for_external_identity(cls, email: str) -> Account:
+        """Build the account half of an operator-controlled account-and-link transaction."""
+        account_id = f"acc_{secrets.token_urlsafe(18)}"
+        canonical = canonical_email(email)
+        with through_door():
+            return Account(
+                account_id=account_id,
+                email=canonical,
+                verifier=None,
                 disabled_at=None,
             )
 
@@ -272,6 +284,22 @@ class AccountService:
     def create_account(self, email: str, credential: str) -> Account:
         account = Account.create(email, credential)
         if not self._store.add_account(account):
+            raise AuthenticationFailed(AUTHENTICATION_FAILURE)
+        return account
+
+    def preprovision_external_account(
+        self,
+        email: str,
+        provider: str,
+        provider_subject: str,
+        *,
+        now: datetime,
+    ) -> Account:
+        """Atomically create an external-only account and its already-verified local link."""
+        account = Account._for_external_identity(email)
+        if not self._store.add_account_with_external_identity(
+            account, provider, provider_subject, linked_at=now
+        ):
             raise AuthenticationFailed(AUTHENTICATION_FAILURE)
         return account
 

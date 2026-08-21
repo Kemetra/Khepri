@@ -18,6 +18,7 @@ from khepri.rca.persistence import (
     SqlOrganizationStore,
     owner_memberships_for_update,
 )
+from khepri.rca.session_persistence import SqlSessionStore
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -266,17 +267,26 @@ def test_the_owner_membership_query_locks_its_rows_on_postgresql() -> None:
 
 
 @pytest.mark.parametrize(
-    ("email", "verifier", "disabled_at", "counts"),
+    ("email", "verifier", "external", "disabled_at", "counts"),
     [
-        ("live@example.test", True, None, True),
-        ("verifierless@example.test", False, None, False),
-        ("disabled@example.test", True, NOW, False),
-        (None, False, NOW, False),
+        ("live@example.test", True, False, None, True),
+        ("external@example.test", False, True, None, True),
+        ("both@example.test", True, True, None, True),
+        ("verifierless@example.test", False, False, None, False),
+        ("disabled@example.test", True, True, NOW, False),
+        (None, False, True, NOW, False),
     ],
-    ids=["enabled-with-verifier", "enabled-without-verifier", "disabled", "purged-tombstone"],
+    ids=[
+        "enabled-with-verifier",
+        "enabled-with-external-link",
+        "enabled-with-both",
+        "enabled-without-capability",
+        "disabled",
+        "purged-tombstone",
+    ],
 )
 def test_the_sql_predicate_and_can_authenticate_agree(
-    factory: sessionmaker, email, verifier, disabled_at, counts
+    factory: sessionmaker, email, verifier, external, disabled_at, counts
 ) -> None:
     """`R1-02` Invariant B: the effective-owner rule agrees in SQL and in Python.
 
@@ -311,10 +321,14 @@ def test_the_sql_predicate_and_can_authenticate_agree(
         disabled_at=disabled_at,
     )
     accounts.save_account(stored)
+    if external:
+        SqlSessionStore(factory).link_external_identity(
+            "clerk", f"subject-{subject.account_id}", subject.account_id, now=NOW
+        )
 
     counted = organizations.count_owners(
         organization.organization_id, excluding_account_id=holder.account_id
     )
 
-    assert stored.can_authenticate is counts, "the Python predicate"
+    assert stored.can_authenticate(has_external_identity=external) is counts, "the Python predicate"
     assert (counted == 1) is counts, "and the SQL predicate, on the same account"

@@ -24,7 +24,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
+from khepri.rca.errors import AuthenticationFailed
 from khepri.rca.persistence import (
+    AccountRow,
     ExternalIdentityRow,
     SessionRow,
     SqlAccountStore,
@@ -314,6 +316,29 @@ class TestTheExternalIdentityLink:
                 )
             )
 
+    def test_external_account_and_link_commit_together(self, factory: sessionmaker) -> None:
+        account = AccountService(SqlAccountStore(factory)).preprovision_external_account(
+            EMAIL, PROVIDER, SUBJECT, now=NOW
+        )
+
+        with factory() as database:
+            assert database.get(AccountRow, account.account_id) is not None
+            link = database.get(ExternalIdentityRow, (PROVIDER, SUBJECT))
+            assert link is not None and link.account_id == account.account_id
+
+    def test_duplicate_subject_leaves_no_orphan_account(self, factory: sessionmaker) -> None:
+        service = AccountService(SqlAccountStore(factory))
+        original = service.preprovision_external_account(EMAIL, PROVIDER, SUBJECT, now=NOW)
+
+        with pytest.raises(AuthenticationFailed):
+            service.preprovision_external_account(
+                OTHER_EMAIL, PROVIDER, SUBJECT, now=NOW
+            )
+
+        with factory() as database:
+            accounts = database.scalars(select(AccountRow)).all()
+            assert [row.account_id for row in accounts] == [original.account_id]
+
 
 class TestUnlinkingLeavesBusinessStateIntact:
     """`KHEPRI-DEC-018` §7: the account, its memberships, and its audit events survive."""
@@ -387,7 +412,8 @@ class TestTheMigration:
         flight. `R3-03` wrote `20260815_0016` here; `R7-02` (`KHEPRI-DEC-020` §2) added
         `20260817_0017` on top of it, dropping `rra_beta_sessions.UNIQUE (owner_id)` so one
         commercial scope may hold more than one analysis. `R4-03` then added `20260818_0018`
-        (`rca_invitations`), which is the head this pin now names.
+        (`rca_invitations`), and the reframed `R5-05` consequence added `20260821_0019`
+        (`rca_recovery_security_events`), which is the head this pin now names.
         """
         import subprocess
 
@@ -396,7 +422,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260818_0018" in result.stdout
+        assert "20260821_0019" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:

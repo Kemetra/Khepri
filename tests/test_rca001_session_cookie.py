@@ -18,6 +18,7 @@ from datetime import timedelta
 
 from khepri.rca.session_cookie import (
     SESSION_COOKIE,
+    SESSION_COOKIE_PATH,
     SESSION_INVALID,
     clear_session_cookie,
     issue_session_cookie,
@@ -46,6 +47,10 @@ class TestTheNameIsDistinct:
 
 
 class TestIssuedAttributes:
+    def test_the_cookie_is_scoped_to_the_live_commercial_http_surface(self) -> None:
+        assert SESSION_COOKIE_PATH == "/api/v1/commercial"
+        assert issue_session_cookie(TOKEN, lifetime=LIFETIME)["path"] == SESSION_COOKIE_PATH
+
     def test_the_cookie_carries_the_token(self) -> None:
         assert issue_session_cookie(TOKEN, lifetime=LIFETIME)["value"] == TOKEN
 

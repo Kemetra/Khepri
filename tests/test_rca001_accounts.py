@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import UTC, datetime
 
 import pytest
 
@@ -12,6 +13,9 @@ from tests.rca_fakes import MemoryAccountStore
 
 EMAIL = "owner@example.test"
 CREDENTIAL = "correct horse battery staple"
+NOW = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+PROVIDER = "clerk"
+SUBJECT = "user_2abcDEF"
 
 
 def _service() -> AccountService:
@@ -23,6 +27,33 @@ def test_create_account_establishes_durable_identity() -> None:
     account = service.create_account(EMAIL, CREDENTIAL)
     assert account.account_id.startswith("acc_")
     assert account.email == EMAIL
+
+
+def test_preprovision_external_account_creates_no_local_verifier() -> None:
+    store = MemoryAccountStore()
+
+    account = AccountService(store).preprovision_external_account(
+        EMAIL, PROVIDER, SUBJECT, now=NOW
+    )
+
+    assert account.account_id.startswith("acc_")
+    assert account.email == EMAIL
+    assert account.verifier is None
+    assert store.account_for_external_identity(PROVIDER, SUBJECT) == account.account_id
+
+
+def test_preprovision_duplicate_subject_rolls_back_the_new_account() -> None:
+    store = MemoryAccountStore()
+    service = AccountService(store)
+    original = service.preprovision_external_account(EMAIL, PROVIDER, SUBJECT, now=NOW)
+
+    with pytest.raises(AuthenticationFailed):
+        service.preprovision_external_account(
+            "intruder@example.test", PROVIDER, SUBJECT, now=NOW
+        )
+
+    assert list(store.accounts) == [original.account_id]
+    assert store.account_for_external_identity(PROVIDER, SUBJECT) == original.account_id
 
 
 def test_credential_is_never_stored_in_recoverable_form() -> None:

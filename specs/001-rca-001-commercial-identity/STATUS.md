@@ -2,8 +2,9 @@
 
 **Task:** `R0-03` in `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
 
-**Baseline:** `main` @ `42ff3c0`, 2026-08-20. `uv run khepri-gov validate` passes; `uv run pytest`
-reports 2315 passed, 47 skipped. Migration head `20260818_0018` (single head).
+**Baseline:** `main` @ `f5afc0088a732962357b75e27ec95e5d554eddc4`, 2026-08-21. The milestone
+candidate reports 2611 passed, 11 skipped, and 1 expected failure. Migration head `20260821_0019`
+(single head).
 
 **Coverage: rows updated through `R4-02`; the narrative below is written through `R7-01`.** The two
 are separated deliberately. `R4-02` (`d50ffe6`) changed the rollup and the Invitations rows, and the

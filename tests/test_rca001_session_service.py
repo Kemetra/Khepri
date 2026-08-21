@@ -23,8 +23,9 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
-from khepri.rca.errors import AuthenticationFailed
-from khepri.rca.persistence import SqlAccountStore
+from khepri.rca.errors import AuthenticationFailed, FinalOwnerProtected
+from khepri.rca.organizations import OrganizationService
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.session_persistence import SqlSessionStore
 from khepri.rca.session_service import SessionService
 from khepri.rca.sessions import SESSION_ID_PREFIX, hash_session_id
@@ -269,6 +270,21 @@ class TestExternalIdentity:
 
     def test_unlinking_an_absent_link_reports_false(self, factory: sessionmaker) -> None:
         assert _service(factory).unlink_identity(PROVIDER, SUBJECT) is False
+
+    def test_unlinking_the_final_external_only_owner_fails_closed(
+        self, factory: sessionmaker
+    ) -> None:
+        account = AccountService(SqlAccountStore(factory)).preprovision_external_account(
+            EMAIL, PROVIDER, SUBJECT, now=NOW
+        )
+        OrganizationService(SqlOrganizationStore(factory)).create_organization(
+            "Acme", account.account_id, now=NOW
+        )
+
+        with pytest.raises(FinalOwnerProtected):
+            _service(factory).unlink_identity(PROVIDER, SUBJECT)
+
+        assert _service(factory).account_for_identity(PROVIDER, SUBJECT) == account.account_id
 
 
 class TestSliceBoundary:

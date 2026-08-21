@@ -16,10 +16,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from khepri.rca.actor_resolution import ActorResolver
 from khepri.rca.authorization_resolution import AuthorizationResolver
+from khepri.rca.identity import IdentityProvider
 from khepri.rca.isolation import IsolationService
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
+from khepri.rca.session_service import SessionService as RcaSessionService
+from khepri.rca.switching import OrganizationSwitcher
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -57,8 +60,14 @@ from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.bridge import CommercialBridge
+from khepri.runtime.clerk_identity import ClerkIdentityProvider
 from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
 from khepri.runtime.config import RuntimeSettings
+from khepri.runtime.external_auth_api import (
+    KHEPRI_SESSION_LIFETIME,
+    ExternalAuthenticationServices,
+    add_external_authentication_routes,
+)
 
 # The web role publishes but never claims, so this identity appears in no lease. It
 # is required because `ClaimPolicy` refuses an anonymous worker, and a name that is
@@ -102,6 +111,7 @@ class RuntimeStack:
     factory: sessionmaker[Session]
     objects: S3EncryptedObjectStore
     clock: Callable[[], datetime]
+    identity_provider: IdentityProvider | None
 
 
 def build_clients(settings: RuntimeSettings) -> RuntimeClients:
@@ -173,6 +183,9 @@ def build_stack(
         factory=factory,
         objects=objects,
         clock=clock,
+        identity_provider=(
+            None if settings.clerk is None else ClerkIdentityProvider(settings.clerk)
+        ),
     )
 
 
@@ -222,7 +235,9 @@ def build_commercial_services(stack: RuntimeStack) -> CommercialServices:
     accounts = SqlAccountStore(stack.factory)
     organizations = SqlOrganizationStore(stack.factory)
     actors = ActorResolver(
-        SqlRcaSessionStore(stack.factory),
+        RcaSessionService(
+            SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME
+        ),
         LifecycleService(accounts, organizations),
     )
     return CommercialServices(
@@ -232,6 +247,25 @@ def build_commercial_services(stack: RuntimeStack) -> CommercialServices:
             store=SqlSessionStore(stack.factory),
         ),
         consent=InvitationService(SqlSessionStore(stack.factory)),
+    )
+
+
+def build_external_authentication_services(
+    stack: RuntimeStack,
+) -> ExternalAuthenticationServices | None:
+    """Compose provider proof with local identity, state, organization, and session stores."""
+    if stack.identity_provider is None:
+        return None
+    accounts = SqlAccountStore(stack.factory)
+    organizations = SqlOrganizationStore(stack.factory)
+    sessions = RcaSessionService(
+        SqlRcaSessionStore(stack.factory), lifetime=KHEPRI_SESSION_LIFETIME
+    )
+    return ExternalAuthenticationServices(
+        identity_provider=stack.identity_provider,
+        sessions=sessions,
+        lifecycle=LifecycleService(accounts, organizations),
+        switcher=OrganizationSwitcher(sessions, organizations),
     )
 
 
@@ -249,6 +283,11 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
     add_commercial_routes(
         app,
         services=build_commercial_services(stack),
+        clock=stack.clock,
+    )
+    add_external_authentication_routes(
+        app,
+        services=build_external_authentication_services(stack),
         clock=stack.clock,
     )
     return app
@@ -287,6 +326,7 @@ __all__ = [
     "SessionServices",
     "build_clients",
     "build_commercial_services",
+    "build_external_authentication_services",
     "build_pipeline",
     "build_report_services",
     "build_stack",

@@ -561,6 +561,20 @@ def _account_from_row(row: AccountRow) -> Account:
     )
 
 
+def _account_row(account: Account) -> AccountRow:
+    verifier = account.verifier
+    return AccountRow(
+        account_id=account.account_id,
+        email=_canonical_or_none(account.email),
+        credential_salt=None if verifier is None else verifier.salt,
+        credential_digest=None if verifier is None else verifier.digest,
+        kdf_n=None if verifier is None else verifier.kdf.n,
+        kdf_r=None if verifier is None else verifier.kdf.r,
+        kdf_p=None if verifier is None else verifier.kdf.p,
+        disabled_at=account.disabled_at,
+    )
+
+
 def _membership_from_row(row: MembershipRow) -> Membership:
     return Membership._from_storage(
         organization_id=row.organization_id,
@@ -597,19 +611,33 @@ class SqlAccountStore:
 
     def add_account(self, account: Account) -> bool:
         assert_sealed(account)
-        verifier = account.verifier
         try:
             with self._factory.begin() as database:
+                database.add(_account_row(account))
+        except IntegrityError:
+            return False
+        return True
+
+    def add_account_with_external_identity(
+        self,
+        account: Account,
+        provider: str,
+        provider_subject: str,
+        *,
+        linked_at: datetime,
+    ) -> bool:
+        """Commit an external-only account and its immutable subject mapping together."""
+        assert_sealed(account)
+        try:
+            with self._factory.begin() as database:
+                database.add(_account_row(account))
+                database.flush()
                 database.add(
-                    AccountRow(
+                    ExternalIdentityRow(
+                        provider=provider,
+                        provider_subject=provider_subject,
                         account_id=account.account_id,
-                        email=_canonical_or_none(account.email),
-                        credential_salt=None if verifier is None else verifier.salt,
-                        credential_digest=None if verifier is None else verifier.digest,
-                        kdf_n=None if verifier is None else verifier.kdf.n,
-                        kdf_r=None if verifier is None else verifier.kdf.r,
-                        kdf_p=None if verifier is None else verifier.kdf.p,
-                        disabled_at=account.disabled_at,
+                        linked_at=linked_at,
                     )
                 )
         except IntegrityError:
@@ -770,22 +798,28 @@ def _effective_owner_conditions() -> tuple:
     """The effective-owner rule, expressed once.
 
     An owner counts only if the account holds the owner role, is enabled (`disabled_at IS
-    NULL`), is not purged (`email IS NOT NULL`), and can actually authenticate
-    (`credential_digest IS NOT NULL`). The last is load-bearing and the least obvious:
+    NULL`), is not purged (`email IS NOT NULL`), and can actually authenticate through either a
+    local verifier or a durable external-identity link. The last is load-bearing:
     re-enablement deliberately leaves the verifier destroyed (`KHEPRI-DEC-015` §5), so an
     enabled, unpurged owner may still be unable to log in -- and FR-013 asks whether an owner
     can *act*. Verified before that clause existed: disable A, re-enable A, disable B left an
-    organization whose only remaining owner could not authenticate.
+    organization whose only remaining owner could not authenticate. A correlated `EXISTS` keeps
+    external capability live from the local link table rather than a copied account flag.
 
     This mirrors `Account.can_authenticate` in SQL. Extracted because it is now evaluated in two
     places -- the unlocked count and the locked guard -- and two copies of a rule this sharp
     drift. `test_rca001_final_owner.py` asserts the SQL and the Python agree state by state.
     """
+    external_identity_exists = (
+        select(ExternalIdentityRow.account_id)
+        .where(ExternalIdentityRow.account_id == AccountRow.account_id)
+        .exists()
+    )
     return (
         MembershipRow.role == OWNER_ROLE,
         AccountRow.disabled_at.is_(None),
         AccountRow.email.is_not(None),
-        AccountRow.credential_digest.is_not(None),
+        or_(AccountRow.credential_digest.is_not(None), external_identity_exists),
     )
 
 
@@ -862,6 +896,30 @@ def owner_memberships_for_update(account_id: str):
         .order_by(MembershipRow.organization_id, MembershipRow.account_id)
         .with_for_update()
     )
+
+
+def owner_reduction_outcome(database, account_id: str) -> str:
+    """Lock every affected owner set and decide whether losing this account would strand one."""
+    locked = database.scalars(owner_memberships_for_update(account_id)).all()
+    if database.get(AccountRow, account_id) is None:
+        return OWNER_CHANGE_NOT_APPLICABLE
+    owned_organizations = {
+        row.organization_id for row in locked if row.account_id == account_id
+    }
+    for organization_id in sorted(owned_organizations):
+        remaining = database.execute(
+            select(func.count())
+            .select_from(MembershipRow)
+            .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
+            .where(
+                MembershipRow.organization_id == organization_id,
+                MembershipRow.account_id != account_id,
+                *_effective_owner_conditions(),
+            )
+        ).scalar()
+        if not remaining:
+            return OWNER_CHANGE_FINAL_OWNER
+    return OWNER_CHANGE_APPLIED
 
 
 class SqlOrganizationStore:
@@ -1088,32 +1146,9 @@ class SqlOrganizationStore:
         `errors.py` with the rest of the refusal vocabulary.
         """
         with self._factory.begin() as database:
-            locked = database.scalars(owner_memberships_for_update(account_id)).all()
-            if database.get(AccountRow, account_id) is None:
-                return OWNER_CHANGE_NOT_APPLICABLE
-            # The locked set spans every owner row of every organization this account owns, so
-            # the organizations to check are the distinct ones it appears in as an owner -- not
-            # every organization in the locked set, which includes co-owners' rows.
-            owned_organizations = {
-                row.organization_id for row in locked if row.account_id == account_id
-            }
-            for organization_id in sorted(owned_organizations):
-                # Counted inside the transaction, on rows the statement above holds a lock over
-                # -- including the co-owners' rows this count reads. A competing owner-reducing
-                # operation on the same organization blocks at its own SELECT until this commits,
-                # so it observes the write rather than the state that preceded it.
-                remaining = database.execute(
-                    select(func.count())
-                    .select_from(MembershipRow)
-                    .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
-                    .where(
-                        MembershipRow.organization_id == organization_id,
-                        MembershipRow.account_id != account_id,
-                        *_effective_owner_conditions(),
-                    )
-                ).scalar()
-                if not remaining:
-                    return OWNER_CHANGE_FINAL_OWNER
+            outcome = owner_reduction_outcome(database, account_id)
+            if outcome != OWNER_CHANGE_APPLIED:
+                return outcome
             if not _apply_account(database, updated):
                 return OWNER_CHANGE_NOT_APPLICABLE
         return OWNER_CHANGE_APPLIED

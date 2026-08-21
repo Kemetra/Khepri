@@ -164,7 +164,9 @@ def test_revocation_does_not_touch_the_account(factory: sessionmaker) -> None:
 
     account = accounts.get_account(target.account_id)
     assert account is not None
-    assert account.can_authenticate, "the account survives its revoked membership"
+    assert account.can_authenticate(
+        has_external_identity=False
+    ), "the account survives its revoked membership"
 
 
 # --- FR-013: the guard, on the same seam R1 built ---------------------------------------------

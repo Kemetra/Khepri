@@ -18,6 +18,15 @@ if TYPE_CHECKING:
 class AccountStore(Protocol):
     def add_account(self, account: Account) -> bool: ...
 
+    def add_account_with_external_identity(
+        self,
+        account: Account,
+        provider: str,
+        provider_subject: str,
+        *,
+        linked_at: datetime,
+    ) -> bool: ...
+
     def save_account(self, account: Account) -> bool: ...
 
     def get_account_by_email(self, email: str) -> Account | None: ...
