@@ -114,9 +114,10 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-018
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-018-external-identity-provider-boundary.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-024
   - type: decision
     id: KHEPRI-DEC-019
     state: retired
@@ -145,6 +146,11 @@ artifacts:
     id: KHEPRI-DEC-023
     state: active
     document: governance/decisions/KHEPRI-DEC-023-commercial-consent-route-authorization.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-024
+    state: active
+    document: governance/decisions/KHEPRI-DEC-024-staged-external-identity-provider-admission.md
     depends_on: []
 
   - type: specification
