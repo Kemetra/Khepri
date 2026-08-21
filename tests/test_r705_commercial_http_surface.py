@@ -18,6 +18,7 @@ from khepri.rca.errors import SCOPE_FAILURE, AuthenticationFailed, ScopeAccessDe
 from khepri.rca.organizations import OrganizationService
 from khepri.rca.persistence import SqlOrganizationStore
 from khepri.rca.switching import OrganizationSwitcher
+from khepri.rra.sessions import InvitationService
 from khepri.runtime.commercial_api import CommercialServices, add_commercial_routes
 from tests.rca_lifecycle_support import NOW, factory_fixture  # noqa: F401 -- fixture
 from tests.test_r703_live_authorization_on_resume import (  # noqa: F401 -- fixture re-export
@@ -105,11 +106,26 @@ class _StubBridge:
         return self._session
 
 
+class _StubConsent:
+    """`R7-05` asserts nothing about consent; `R7-06` added the field this satisfies.
+
+    Present so this file's cases keep testing what they were written to test rather than acquiring a
+    consent dependency they never exercise.
+    """
+
+    def record_consent(self, session_id: str, *, consent_version: str, now: object) -> None:
+        raise AssertionError("R7-05's cases must not reach the consent recorder")
+
+
 def _client(resolver: object, bridge: object) -> TestClient:
     app = FastAPI()
     add_commercial_routes(
         app,
-        services=CommercialServices(resolver=resolver, bridge=bridge),  # type: ignore[arg-type]
+        services=CommercialServices(
+            resolver=resolver,
+            bridge=bridge,
+            consent=_StubConsent(),
+        ),  # type: ignore[arg-type]
         clock=lambda: NOW,
     )
     return TestClient(app)
@@ -237,6 +253,7 @@ class _RealServices:
             services=CommercialServices(
                 resolver=_r703_resolver(self.journey.factory),
                 bridge=self.journey.bridge,
+                consent=InvitationService(self.journey.rra_store),
             ),
             clock=lambda: NOW,
         )
