@@ -70,6 +70,7 @@ from khepri.runtime.external_auth_api import (
     ExternalAuthenticationServices,
     add_external_authentication_routes,
 )
+from khepri.runtime.shell_api import ShellServices, add_shell_routes
 
 # The web role publishes but never claims, so this identity appears in no lease. It
 # is required because `ClaimPolicy` refuses an anonymous worker, and a name that is
@@ -322,7 +323,22 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
         services=build_external_authentication_services(stack),
         clock=stack.clock,
     )
+    add_shell_routes(app, services=build_shell_services(stack), clock=stack.clock)
     return app
+
+
+def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
+    """The shell over the same resolver the commercial API uses (`RCA-002` `FR-041`).
+
+    Returns `None` when the commercial half is unwired, so the shell exists exactly when the
+    authority it renders does. Reusing `build_commercial_services` rather than constructing a
+    resolver here keeps one definition of the checkpoint: a second construction site is how the
+    shell and the API would come to disagree about who an actor is.
+    """
+    commercial = build_commercial_services(stack)
+    if commercial is None:
+        return None
+    return ShellServices(resolver=commercial.resolver)
 
 
 def build_pipeline(

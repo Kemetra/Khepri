@@ -25,6 +25,7 @@ from khepri.rca.persistence import (
     SqlOrganizationStore,
 )
 from khepri.rca.persistence import Base as RcaBase
+from khepri.rca.session_cookie import SESSION_COOKIE_PATH
 from khepri.rca.session_persistence import SqlSessionStore
 from khepri.rca.session_service import SessionService
 from khepri.rca.sessions import hash_session_id
@@ -146,7 +147,7 @@ def test_signed_clerk_identity_enters_the_existing_commercial_journey(
 
     assert authenticated.status_code == 204
     cookie = authenticated.headers["set-cookie"]
-    assert "Path=/api/v1/commercial" in cookie
+    assert f"Path={SESSION_COOKIE_PATH}" in cookie
     assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=strict" in cookie
     opened = journey.client.post(f"{COMMERCIAL_PREFIX}/analyses")
     assert opened.status_code == 201, "the browser must carry the Khepri cookie without help"

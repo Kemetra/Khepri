@@ -1,0 +1,15 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.unavailable_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  One branch, deliberately. `RCA-002` FR-050 collapses expired, deleted, deletion-requested,
+  session-unavailable, and actor-not-a-member into one indistinguishable surface, so this template
+  takes no state, reads no query parameter, and has nothing to branch on. The beta journey's
+  `expired.html.j2` branches on `?deletion=requested`; copying that here would reintroduce exactly
+  the disclosure this surface exists to prevent.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.unavailable_title }}</h1>
+  <p class="lede">{{ copy.unavailable_intro }}</p>
+</section>
+{% endblock %}
