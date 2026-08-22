@@ -52,6 +52,7 @@ from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
+from khepri.runtime.shell_journey_entry import add_journey_entry_route
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -130,6 +131,19 @@ class InvitationGateway(Protocol):
     ) -> None: ...  # pragma: no cover -- Protocol
 
 
+class AnalysisOpener(Protocol):
+    """Opens one analysis in an already-resolved scope (`R8-06`).
+
+    `CommercialBridge.open` is the implementation. Narrower than the bridge itself: the shell
+    starts analyses and does not resume them, because resuming is reached by returning to the
+    journey rather than by a shell surface.
+    """
+
+    def open(
+        self, *, account_id: str, organization_id: str, now: Any
+    ) -> Any: ...  # pragma: no cover -- Protocol
+
+
 @dataclass(frozen=True, slots=True)
 class ShellServices:
     """What the shell needs to render an authenticated frame, and nothing more."""
@@ -137,6 +151,7 @@ class ShellServices:
     resolver: ActorResolver
     organizations: OrganizationReader
     invitations: InvitationGateway | None = None
+    bridge: AnalysisOpener | None = None
 
 
 def shell_environment() -> Environment:
@@ -281,19 +296,16 @@ def add_shell_routes(
             headers=dict(SECURITY_HEADERS),
         )
 
-    add_invitation_routes(
-        app,
-        services=services,
-        rendering=ShellRendering(
-            environment=environment,
-            prefix=SHELL_PREFIX,
-            language_of=_language,
-            unavailable=_unavailable,
-            render=_render,
-            team=_team_response,
-        ),
-        clock=clock,
+    rendering = ShellRendering(
+        environment=environment,
+        prefix=SHELL_PREFIX,
+        language_of=_language,
+        unavailable=_unavailable,
+        render=_render,
+        team=_team_response,
     )
+    add_invitation_routes(app, services=services, rendering=rendering, clock=clock)
+    add_journey_entry_route(app, services=services, rendering=rendering, clock=clock)
 
     @app.get(f"{SHELL_PREFIX}/{{path:path}}")
     def shell_surface(

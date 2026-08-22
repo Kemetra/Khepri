@@ -344,6 +344,7 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         resolver=commercial.resolver,
         organizations=SqlOrganizationStore(stack.factory),
         invitations=RcaInvitationService(SqlInvitationStore(stack.factory)),
+        bridge=commercial.bridge,
     )
 
 

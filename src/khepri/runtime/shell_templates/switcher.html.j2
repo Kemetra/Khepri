@@ -16,11 +16,21 @@
   <ul class="organization-list">
     {% for organization in organizations %}
     <li class="organization-item">
-      <a href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/analyses">
+      <a href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/team">
         {{ organization.name }}
       </a>
     </li>
     {% endfor %}
   </ul>
+</section>
+
+{#
+  The entry point into the journey. A POST rather than a link because it opens an analysis, and a
+  GET that mutates is a GET a browser may prefetch.
+#}
+<section class="document-card">
+  <form method="post" action="{{ prefix }}/{{ language }}/{{ organizations[0].organization_id }}/analyses">
+    <button type="submit">{{ copy.new_analysis }}</button>
+  </form>
 </section>
 {% endblock %}
