@@ -1,0 +1,17 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.no_membership_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  `RCA-002` FR-048. The one edge state not collapsed into `unavailable`, because an authenticated
+  account in no organization is not being refused anything -- it is a state with a next step, and
+  a surface without that step would be `unavailable` wearing different words.
+
+  It names no organization, because there is none to name. That is not a disclosure decision here;
+  it is simply the state.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.no_membership_title }}</h1>
+  <p class="lede">{{ copy.no_membership_intro }}</p>
+  <p class="next-step">{{ copy.no_membership_action }}</p>
+</section>
+{% endblock %}

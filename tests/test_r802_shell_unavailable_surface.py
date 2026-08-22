@@ -48,6 +48,17 @@ class _StubContext:
     role: str | None = "member"
 
 
+class _StubOrganizations:
+    """No memberships by default, so every R8-02 case still reaches a refusal or the
+    no-membership surface rather than a switcher this slice did not deliver."""
+
+    def __init__(self, organizations: list[object] | None = None) -> None:
+        self._organizations = organizations or []
+
+    def organizations_for_account(self, account_id: str) -> list[object]:
+        return self._organizations
+
+
 class _StubResolver:
     """Returns a fixed context, or raises whatever it was given."""
 
@@ -84,7 +95,10 @@ def _client(
 ) -> TestClient:
     app = FastAPI()
     if services == "default":
-        services = ShellServices(resolver=resolver or _StubResolver())
+        services = ShellServices(
+            resolver=resolver or _StubResolver(),
+            organizations=_StubOrganizations(),
+        )
     add_shell_routes(app, services=services, clock=lambda: NOW)
     return TestClient(app)
 
@@ -99,7 +113,13 @@ class TestScope:
         by enumerating nothing, which is exactly how a scan self-disarms.
         """
         app = FastAPI()
-        add_shell_routes(app, services=ShellServices(resolver=_StubResolver()), clock=lambda: NOW)
+        add_shell_routes(
+            app,
+            services=ShellServices(
+                resolver=_StubResolver(), organizations=_StubOrganizations()
+            ),
+            clock=lambda: NOW,
+        )
 
         shell_paths = {
             path
@@ -164,7 +184,11 @@ class TestScenario5And2Indistinguishability:
         `AuthenticationFailed` stands for absent, unknown, expired, and revoked sessions;
         `ScopeAccessDenied` for an actor who is not a member of the organization asked for.
         """
-        absent = _client(services=ShellServices(resolver=_StubResolver(raises=None))).get(
+        absent = _client(
+            services=ShellServices(
+                resolver=_StubResolver(raises=None), organizations=_StubOrganizations()
+            )
+        ).get(
             f"{SHELL_PREFIX}/en/acme/analyses"
         )
         unauthenticated = _client(resolver=_StubResolver(raises=AuthenticationFailed())).get(

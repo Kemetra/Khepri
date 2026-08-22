@@ -81,11 +81,25 @@ class ActorResolver(Protocol):
     ) -> Any: ...  # pragma: no cover -- Protocol
 
 
+class OrganizationReader(Protocol):
+    """Reads the organizations one account currently belongs to (`R8-04`).
+
+    Narrower than `OrganizationStore` deliberately: the shell renders a switcher and must not be
+    handed the verbs that create organizations, promote, revoke, or demote. A reader that could
+    write would make "the shell changes no membership semantics" a convention rather than a fact.
+    """
+
+    def organizations_for_account(
+        self, account_id: str
+    ) -> list[Any]: ...  # pragma: no cover -- Protocol
+
+
 @dataclass(frozen=True, slots=True)
 class ShellServices:
     """What the shell needs to render an authenticated frame, and nothing more."""
 
     resolver: ActorResolver
+    organizations: OrganizationReader
 
 
 def shell_environment() -> Environment:
@@ -108,17 +122,61 @@ def _language(requested: str) -> str:
 
 def _unavailable(environment: Environment, *, language: str) -> Response:
     """The one surface every refusal reaches. Takes no cause, so it can disclose none."""
-    body = environment.get_template("unavailable.html.j2").render(
+    return _render(environment, "unavailable.html.j2", language=language, status_code=404)
+
+
+def _render(
+    environment: Environment,
+    template: str,
+    *,
+    language: str,
+    status_code: int,
+    **context: Any,
+) -> Response:
+    """One render path, so no surface can be added that forgets the headers.
+
+    `FR-043` requires every shell response to attach them explicitly, and nothing global will.
+    Funnelling every surface through here makes that structural rather than a rule each new
+    handler must remember.
+    """
+    body = environment.get_template(template).render(
         language=language,
         direction=DIRECTIONS[language],
         copy=SHELL_COPY[language],
         assets=SHELL_ASSETS,
+        prefix=SHELL_PREFIX,
+        **context,
     )
     return Response(
         content=body,
-        status_code=404,
+        status_code=status_code,
         media_type="text/html; charset=utf-8",
         headers=dict(SECURITY_HEADERS),
+    )
+
+
+def _no_membership(environment: Environment, *, language: str) -> Response:
+    """`FR-048`: the one edge state that is not collapsed into `unavailable`.
+
+    It is separated because it is different in kind, not in degree: an authenticated account in no
+    organization is not being refused anything, and `FR-028` requires the state to be reachable.
+    A `200` rather than a `404` for the same reason -- nothing is missing.
+    """
+    return _render(
+        environment, "no_membership.html.j2", language=language, status_code=200
+    )
+
+
+def _switcher(
+    environment: Environment, *, language: str, organizations: list[Any]
+) -> Response:
+    """`FR-051`: only what the reader returned, which is only current memberships."""
+    return _render(
+        environment,
+        "switcher.html.j2",
+        language=language,
+        status_code=200,
+        organizations=organizations,
     )
 
 
@@ -173,10 +231,14 @@ def add_shell_routes(
         if session is None:
             return _unavailable(environment, language=language)
         try:
-            services.resolver.for_request(session, organization_id=None, now=clock())
+            context = services.resolver.for_request(session, organization_id=None, now=clock())
         except PermissionError:
             return _unavailable(environment, language=language)
-        return _unavailable(environment, language=language)
+
+        organizations = services.organizations.organizations_for_account(context.account_id)
+        if not organizations:
+            return _no_membership(environment, language=language)
+        return _switcher(environment, language=language, organizations=organizations)
 
 
 __all__ = [
