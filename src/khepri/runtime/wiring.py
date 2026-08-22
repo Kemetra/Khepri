@@ -121,8 +121,17 @@ class RuntimeStack:
 
 def build_clients(settings: RuntimeSettings) -> RuntimeClients:
     retries = Config(retries={"max_attempts": 3, "mode": "standard"})
+    # One client for every S3-compatible target. The endpoint and region come from
+    # configuration, so AWS, Spaces, Hetzner, and MinIO differ here only in the
+    # strings they supply -- there is no provider branch and must never be one.
+    # Credentials are left to the environment rather than read into the process.
     return RuntimeClients(
-        s3=boto3.client("s3", region_name=settings.region, config=retries),
+        s3=boto3.client(
+            "s3",
+            endpoint_url=settings.storage_endpoint,
+            region_name=settings.storage_region,
+            config=retries,
+        ),
     )
 
 
@@ -138,8 +147,7 @@ def build_stack(
     objects = S3EncryptedObjectStore(
         client=resolved_clients.s3,
         bucket=settings.bucket,
-        kms_key_arn=settings.kms_key_arn,
-        expected_bucket_owner=settings.expected_bucket_owner,
+        master_key=settings.master_key,
     )
     sessions = SqlSessionStore(factory)
     uploads = SqlUploadRepository(factory)

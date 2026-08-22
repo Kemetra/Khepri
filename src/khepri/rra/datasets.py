@@ -25,6 +25,7 @@ from khepri.rra.sessions import (
     assert_same_scope,
     require_upload_consent,
 )
+from khepri.rra.storage import StoredEnvelope
 
 
 class UploadNotFound(LookupError):
@@ -102,7 +103,7 @@ class ProfileRepository(Protocol):
 
 
 class ProfileObjectReader(Protocol):
-    def get(self, key: str) -> bytes: ...
+    def get(self, key: str, *, envelope: StoredEnvelope) -> bytes: ...
 
 
 class ProfilingService:
@@ -145,7 +146,15 @@ class ProfilingService:
         if existing is not None:
             return _answering(existing, request), False
 
-        content = self._objects.get(upload.object_key)
+        content = self._objects.get(
+            upload.object_key,
+            envelope=StoredEnvelope(
+                ciphertext_sha256_hex=upload.ciphertext_sha256_hex,
+                sha256_hex=upload.sha256_hex,
+                encryption_algorithm=upload.encryption_algorithm,
+                envelope_version=upload.envelope_version,
+            ),
+        )
         if hashlib.sha256(content).hexdigest() != upload.sha256_hex:
             raise StoragePolicyViolation("Stored upload does not match its recorded digest.")
 

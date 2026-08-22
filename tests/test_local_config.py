@@ -45,9 +45,14 @@ class TestDefaults:
         assert settings.bucket == DEFAULT_BUCKET
         assert settings.database_url == DEFAULT_DATABASE_URL
 
-    def test_the_region_matches_the_one_the_store_requires(self) -> None:
-        """`S3EncryptedObjectStore` regex-refuses a key ARN outside me-central-1."""
-        assert DEFAULT_REGION == "me-central-1"
+    def test_the_region_is_not_the_retired_aws_one(self) -> None:
+        """`KHEPRI-DEC-008` leaves the store with no region requirement at all.
+
+        The default is now any string an S3-compatible client accepts. Asserting
+        it is *not* `me-central-1` keeps the retired pin from reappearing as a
+        default nobody chose.
+        """
+        assert DEFAULT_REGION == "us-east-1"
 
     def test_the_endpoint_is_loopback(self) -> None:
         """A local default that reached a network would be a surprising default."""

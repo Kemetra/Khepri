@@ -13,10 +13,17 @@ import os
 from dataclasses import dataclass
 
 DEFAULT_S3_ENDPOINT = "http://127.0.0.1:14566"
-DEFAULT_REGION = "me-central-1"
+# Any string the S3 client will accept. `us-east-1` is the conventional default
+# for S3-compatible emulators; the retired `me-central-1` was carried over from the
+# AWS-specific model `KHEPRI-DEC-008` replaced and named a region nothing uses.
+DEFAULT_REGION = "us-east-1"
 DEFAULT_BUCKET = "khepri-local-content"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://khepri:khepri@127.0.0.1:15432/khepri"
 DEFAULT_OBJECT_ROOT = "khepri-local"
+# 32 zero bytes, base64. Deliberately not a secret and deliberately not generated:
+# a random local key would make an object written by one process unreadable by the
+# next, and this key protects nothing.
+DEFAULT_MASTER_KEY_BASE64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +36,11 @@ class LocalSettings:
     database_url: str = DEFAULT_DATABASE_URL
     access_key: str = "test"
     secret_key: str = "test"
+    # Local development runs the same envelope encryption as the runtime rather
+    # than a plaintext shortcut: two correctness models would mean local runs
+    # never exercise the path that matters. A fixed non-secret key is right here
+    # precisely because the local stack holds no real content.
+    master_key_base64: str = DEFAULT_MASTER_KEY_BASE64
 
     @classmethod
     def from_environment(cls) -> LocalSettings:
@@ -39,12 +51,16 @@ class LocalSettings:
             database_url=os.environ.get("KHEPRI_LOCAL_DATABASE_URL", DEFAULT_DATABASE_URL),
             access_key=os.environ.get("KHEPRI_LOCAL_ACCESS_KEY", "test"),
             secret_key=os.environ.get("KHEPRI_LOCAL_SECRET_KEY", "test"),
+            master_key_base64=os.environ.get(
+                "KHEPRI_LOCAL_MASTER_KEY", DEFAULT_MASTER_KEY_BASE64
+            ),
         )
 
 
 __all__ = [
     "DEFAULT_BUCKET",
     "DEFAULT_DATABASE_URL",
+    "DEFAULT_MASTER_KEY_BASE64",
     "DEFAULT_OBJECT_ROOT",
     "DEFAULT_REGION",
     "DEFAULT_S3_ENDPOINT",

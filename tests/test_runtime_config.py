@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 
 import pytest
@@ -20,13 +21,13 @@ SECRET = {
 def environment(**overrides: str) -> dict[str, str]:
     values = {
         "KHEPRI_DATABASE_SECRET": json.dumps(SECRET),
-        "KHEPRI_AWS_REGION": "me-central-1",
+        # A non-AWS endpoint and a non-AWS region on purpose: the portable runtime
+        # must accept any conforming S3-compatible target, and a fixture pinned to
+        # AWS would let a reintroduced region allowlist pass unnoticed.
+        "KHEPRI_STORAGE_ENDPOINT": "https://fra1.digitaloceanspaces.example",
+        "KHEPRI_STORAGE_REGION": "fra1",
         "KHEPRI_BUCKET": "khepri-beta-content",
-        "KHEPRI_KMS_KEY_ARN": (
-            "arn:aws:kms:me-central-1:123456789012:"
-            "key/12345678-1234-1234-1234-123456789abc"
-        ),
-        "KHEPRI_EXPECTED_BUCKET_OWNER": "123456789012",
+        "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode("ascii"),
         "KHEPRI_QUEUE_URL": (
             "https://sqs.me-central-1.amazonaws.com/123456789012/report-jobs"
         ),
@@ -41,7 +42,8 @@ def environment(**overrides: str) -> dict[str, str]:
 def test_valid_settings_build_a_tls_postgresql_url_without_exposing_the_password() -> None:
     settings = RuntimeSettings.from_environment(environment())
 
-    assert settings.region == "me-central-1"
+    assert settings.storage_endpoint == "https://fra1.digitaloceanspaces.example"
+    assert settings.storage_region == "fra1"
     assert settings.database_url.drivername == "postgresql+psycopg"
     assert settings.database_url.query == {"sslmode": "require"}
     assert settings.database_url.password == PASSWORD
@@ -118,10 +120,10 @@ def test_invalid_or_commercial_clerk_configuration_fails_closed(name: str, value
     "missing",
     [
         "KHEPRI_DATABASE_SECRET",
-        "KHEPRI_AWS_REGION",
+        "KHEPRI_STORAGE_ENDPOINT",
+        "KHEPRI_STORAGE_REGION",
         "KHEPRI_BUCKET",
-        "KHEPRI_KMS_KEY_ARN",
-        "KHEPRI_EXPECTED_BUCKET_OWNER",
+        "KHEPRI_STORAGE_MASTER_KEY",
         "KHEPRI_QUEUE_URL",
         "KHEPRI_DLQ_URL",
     ],
@@ -165,19 +167,21 @@ def test_malformed_or_non_postgresql_secrets_are_refused(secret: str) -> None:
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("KHEPRI_AWS_REGION", "eu-west-1"),
+        ("KHEPRI_STORAGE_ENDPOINT", " "),
+        # Not HTTPS, so refused: the endpoint carries customer content.
+        ("KHEPRI_STORAGE_ENDPOINT", "http://spaces.example"),
+        ("KHEPRI_STORAGE_REGION", " "),
         ("KHEPRI_BUCKET", " "),
-        (
-            "KHEPRI_KMS_KEY_ARN",
-            "arn:aws:kms:eu-west-1:123456789012:"
-            "key/12345678-1234-1234-1234-123456789abc",
-        ),
-        ("KHEPRI_EXPECTED_BUCKET_OWNER", "123"),
+        ("KHEPRI_STORAGE_MASTER_KEY", " "),
+        # Not base64.
+        ("KHEPRI_STORAGE_MASTER_KEY", "not base64 at all!!"),
+        # Valid base64, wrong length: 16 bytes is not a 256-bit key.
+        ("KHEPRI_STORAGE_MASTER_KEY", "AAAAAAAAAAAAAAAAAAAAAA=="),
         ("KHEPRI_QUEUE_URL", " "),
         ("KHEPRI_DLQ_URL", " "),
     ],
 )
-def test_invalid_or_cross_region_coordinates_are_refused(name: str, value: str) -> None:
+def test_invalid_storage_coordinates_are_refused(name: str, value: str) -> None:
     with pytest.raises(RuntimeConfigurationError, match=name):
         RuntimeSettings.from_environment(environment(**{name: value}))
 
@@ -187,3 +191,55 @@ def test_source_and_dead_letter_queue_must_be_distinct() -> None:
 
     with pytest.raises(RuntimeConfigurationError, match="KHEPRI_DLQ_URL"):
         RuntimeSettings.from_environment(environment(KHEPRI_DLQ_URL=source))
+
+
+def test_any_conforming_endpoint_and_region_are_accepted() -> None:
+    """No provider is recognised by name and no region is allowlisted.
+
+    `KHEPRI-DEC-008` states the runtime as a capability contract, so the only
+    question about an endpoint is whether it is an HTTPS URL. A regression that
+    reintroduced `me-central-1`, an account identifier, or a provider check would
+    fail one of these rows.
+    """
+    for endpoint, region in (
+        ("https://fra1.digitaloceanspaces.example", "fra1"),
+        ("https://s3.eu-central-1.amazonaws.example", "eu-central-1"),
+        ("https://nbg1.your-objectstorage.example", "nbg1"),
+        ("https://minio.internal.example:9000", "us-east-1"),
+        ("https://s3.me-central-1.amazonaws.example", "me-central-1"),
+    ):
+        settings = RuntimeSettings.from_environment(
+            environment(
+                KHEPRI_STORAGE_ENDPOINT=endpoint,
+                KHEPRI_STORAGE_REGION=region,
+            )
+        )
+        assert settings.storage_endpoint == endpoint
+        assert settings.storage_region == region
+
+
+def test_no_aws_specific_coordinate_is_required() -> None:
+    """The retired coordinates must not be readmitted as requirements."""
+    values = environment()
+    for retired in (
+        "KHEPRI_AWS_REGION",
+        "KHEPRI_KMS_KEY_ARN",
+        "KHEPRI_EXPECTED_BUCKET_OWNER",
+    ):
+        assert retired not in values
+    # Present but unread: supplying them changes nothing.
+    settings = RuntimeSettings.from_environment(
+        environment(
+            KHEPRI_AWS_REGION="me-central-1",
+            KHEPRI_KMS_KEY_ARN="arn:aws:kms:me-central-1:123456789012:key/x",
+            KHEPRI_EXPECTED_BUCKET_OWNER="123456789012",
+        )
+    )
+    assert settings.storage_region == "fra1"
+
+
+def test_the_master_key_never_appears_in_a_repr() -> None:
+    settings = RuntimeSettings.from_environment(environment())
+
+    assert (b"k" * 32).hex() not in repr(settings)
+    assert "material" not in repr(settings.master_key)
