@@ -38,6 +38,13 @@ _EN = {
     "role_member": "Member",
     "invitations_title": "Pending invitations",
     "invitations_empty": "There are no pending invitations.",
+    "invitation_revoke": "Withdraw",
+    "invitation_issued_title": "Invitation created",
+    "invitation_issued_intro": "Send this link to the person you invited.",
+    "invitation_token_once": (
+        "This is shown once. We cannot show it again, so copy it before you leave this page."
+    ),
+    "back_to_team": "Back to the team",
 }
 
 _AR = {
@@ -60,6 +67,13 @@ _AR = {
     "role_member": "عضو",
     "invitations_title": "الدعوات المعلَّقة",
     "invitations_empty": "لا توجد دعوات معلَّقة.",
+    "invitation_revoke": "سحب",
+    "invitation_issued_title": "تم إنشاء الدعوة",
+    "invitation_issued_intro": "أرسل هذا الرابط إلى الشخص الذي دعوته.",
+    "invitation_token_once": (
+        "يظهر هذا مرة واحدة. لا يمكننا عرضه مرة أخرى، فانسخه قبل مغادرة هذه الصفحة."
+    ),
+    "back_to_team": "العودة إلى الفريق",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

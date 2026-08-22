@@ -42,12 +42,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from importlib.resources import files
 from typing import Any, Protocol
+from urllib.parse import parse_qs
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 
+from khepri.rca.invitations import InvitationOffer
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
@@ -61,6 +64,20 @@ SHELL_PREFIX = "/app"
 SHELL_ASSETS = f"{SHELL_PREFIX}/assets"
 
 _DEFAULT_LANGUAGE = "en"
+
+#: How long an issued invitation stays redeemable.
+#:
+#: `InvitationService.issue` takes `expires_at` with no default, deliberately: `FR-016` requires an
+#: explicit expiry and fixes no lifetime, so a constant in the domain would put a product decision
+#: there. The shell supplies one, and seven days is chosen to match the seven-day object expiry and
+#: backup retention `KHEPRI-DEC-008` fixes -- its rule that "no retention horizon is quietly longer
+#: than another" applies to an invitation as much as to content.
+INVITATION_LIFETIME = timedelta(days=7)
+
+#: The roles a request may name. `FR-015` fixes exactly two, and an unknown value is refused rather
+#: than passed to the domain to reject: a role reaching `Invitation.create` from a form is
+#: caller-supplied input, and the allowlist is where it stops.
+_ROLES = ("owner", "member")
 
 #: What the shell serves, by exact name. `shell.css` ships from `R8-01` and lives beside the
 #: journey's assets; it is read from there rather than copied, because two copies of a stylesheet
@@ -78,6 +95,10 @@ class ActorResolver(Protocol):
 
     def for_request(
         self, token: str, *, organization_id: str | None, now: Any
+    ) -> Any: ...  # pragma: no cover -- Protocol
+
+    def require_owner(
+        self, token: str, *, organization_id: str, now: Any
     ) -> Any: ...  # pragma: no cover -- Protocol
 
 
@@ -98,12 +119,40 @@ class OrganizationReader(Protocol):
     ) -> list[Any]: ...  # pragma: no cover -- Protocol
 
 
+class InvitationGateway(Protocol):
+    """Listing, issuing, and revoking invitations (`R8-05b`).
+
+    The write verbs appear here and the membership verbs do not, and that asymmetry is the point:
+    the shell may invite and un-invite, and may not promote, demote, or revoke a membership. A
+    gateway carrying those would make "the shell changes no membership semantics" a convention
+    rather than something the type forbids.
+    """
+
+    def invitations_for_organization(
+        self, organization_id: str, *, now: Any
+    ) -> Any: ...  # pragma: no cover -- Protocol
+
+    def issue(
+        self, offer: Any, *, expires_at: Any, now: Any
+    ) -> str: ...  # pragma: no cover -- Protocol
+
+    def revoke(
+        self,
+        organization_id: str,
+        invitation_id: str,
+        *,
+        actor_account_id: str,
+        now: Any,
+    ) -> None: ...  # pragma: no cover -- Protocol
+
+
 @dataclass(frozen=True, slots=True)
 class ShellServices:
     """What the shell needs to render an authenticated frame, and nothing more."""
 
     resolver: ActorResolver
     organizations: OrganizationReader
+    invitations: InvitationGateway | None = None
 
 
 def shell_environment() -> Environment:
@@ -184,10 +233,77 @@ def _switcher(
     )
 
 
-def _team(environment: Environment, *, language: str, members: list[Any]) -> Response:
-    """`FR-051`: exactly the organization-scoped read, rendered without further filtering."""
+def _form(body: bytes) -> dict[str, str]:
+    """Parse a URL-encoded form body with the standard library.
+
+    **No `python-multipart`, and that is a dependency decision rather than a style one.** FastAPI's
+    `Form()` requires it, and the shell posts plain `application/x-www-form-urlencoded` bodies
+    because the content security policy admits no inline script to build anything else. Adding a
+    runtime dependency to the deployed wheel to parse two fields is a supply-chain surface the
+    guardrails' "no external runtime assets" rule exists to avoid.
+
+    Last value wins on a repeated key, matching form semantics; a missing key is absent rather than
+    empty, so the caller's `not email` check still distinguishes them.
+    """
+    parsed = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    return {key: values[-1] for key, values in parsed.items() if values}
+
+
+def _owner_or_none(
+    services: ShellServices,
+    session: str | None,
+    clock: Callable[[], Any],
+    *,
+    organization_id: str,
+) -> Any:
+    """The owner gate, or `None` for every reason a caller must not tell apart.
+
+    Absent cookie, unresolvable session, non-owner, and an unwired invitation gateway all return
+    `None`, and every caller renders the same `unavailable`. Returning a context rather than a
+    boolean follows `require_owner`'s own reasoning: a caller cannot ask the question and ignore
+    the answer.
+
+    **`organization_id` is passed in, and its only permitted source is the session.**
+    `require_owner` requires a target organization where `for_request` does not, and that asymmetry
+    exists because a gate defaulting to the session's active organization would authorize against A
+    while the caller mutated B. Handlers here read it from the resolved context, never from the
+    path.
+    """
+    if session is None or services.invitations is None:
+        return None
+    try:
+        return services.resolver.require_owner(
+            session, organization_id=organization_id, now=clock()
+        )
+    except PermissionError:
+        return None
+
+
+def _team_response(
+    services: ShellServices,
+    environment: Environment,
+    *,
+    language: str,
+    context: Any,
+) -> Response:
+    """The team surface, rendered from the session's organization."""
+    members = services.organizations.memberships_for_organization(context.organization_id)
+    invitations: tuple[Any, ...] = ()
+    if services.invitations is not None:
+        invitations = tuple(
+            services.invitations.invitations_for_organization(
+                context.organization_id, now=None
+            )
+        )
     return _render(
-        environment, "team.html.j2", language=language, status_code=200, members=members
+        environment,
+        "team.html.j2",
+        language=language,
+        status_code=200,
+        members=members,
+        invitations=invitations,
+        is_owner=getattr(context, "is_owner", False),
+        organization_id=context.organization_id,
     )
 
 
@@ -227,6 +343,89 @@ def add_shell_routes(
             headers=dict(SECURITY_HEADERS),
         )
 
+    @app.post(f"{SHELL_PREFIX}/{{language}}/{{organization}}/team/invitations")
+    async def issue_invitation(
+        request: Request,
+        language: str,
+        organization: str,
+        session: CommercialSessionCookie = None,
+    ) -> Response:
+        """Invite one person, as an owner of the session's active organization.
+
+        **`require_owner`, never `for_request`.** `InvitationService.issue` takes
+        `actor_account_id` for attribution and checks no authority of its own, so this gate is the
+        only thing between a member and the ability to invite. `R6-04` placed the check here
+        deliberately; a route reaching for the weaker gate would not fail any test the service owns.
+
+        **The organization named in the path is passed to the gate, not trusted.** `require_owner`
+        requires a target precisely so the caller must name it, and it resolves the actor's live
+        role in *that* organization before permitting anything -- so a path naming an organization
+        the actor does not own is refused there. This is `FR-024`'s comparison happening at the
+        gate rather than in the handler, which is what "the organization that was authorized is
+        the one in the caller's hand" means.
+        """
+        rendered = _language(language)
+        context = _owner_or_none(
+            services, session, clock, organization_id=organization
+        )
+        if context is None or context.organization_id is None:
+            return _unavailable(environment, language=rendered)
+        submitted = _form(await request.body())
+        email = submitted.get("email", "")
+        role = submitted.get("role", "")
+        if role not in _ROLES or not email:
+            return _unavailable(environment, language=rendered)
+
+        offer = InvitationOffer(
+            organization_id=context.organization_id,
+            intended_role=role,
+            target_identity=email,
+            issued_by=context.account_id,
+        )
+        now = clock()
+        token = services.invitations.issue(
+            offer, expires_at=now + INVITATION_LIFETIME, now=now
+        )
+        return _render(
+            environment,
+            "invitation_issued.html.j2",
+            language=rendered,
+            status_code=200,
+            token=token,
+            email=email,
+        )
+
+    @app.post(
+        f"{SHELL_PREFIX}/{{language}}/{{organization}}/team/invitations/{{invitation}}/revoke"
+    )
+    def revoke_invitation(
+        language: str,
+        organization: str,
+        invitation: str,
+        session: CommercialSessionCookie = None,
+    ) -> Response:
+        """Withdraw one open invitation in the session's active organization.
+
+        The service refuses four causes identically -- absent, revoked, redeemed, expired, or
+        another organization's -- so this handler adds no check that could distinguish them.
+        """
+        rendered = _language(language)
+        context = _owner_or_none(
+            services, session, clock, organization_id=organization
+        )
+        if context is None or context.organization_id is None:
+            return _unavailable(environment, language=rendered)
+        try:
+            services.invitations.revoke(
+                context.organization_id,
+                invitation,
+                actor_account_id=context.account_id,
+                now=clock(),
+            )
+        except Exception:  # noqa: BLE001 -- one refusal for every cause, per `FR-025`
+            return _unavailable(environment, language=rendered)
+        return _team_response(services, environment, language=rendered, context=context)
+
     @app.get(f"{SHELL_PREFIX}/{{path:path}}")
     def shell_surface(
         path: str, session: CommercialSessionCookie = None
@@ -257,10 +456,9 @@ def add_shell_routes(
 
         surface = segments[2] if len(segments) > 2 else ""
         if surface == "team" and context.organization_id is not None:
-            members = services.organizations.memberships_for_organization(
-                context.organization_id
+            return _team_response(
+                services, environment, language=language, context=context
             )
-            return _team(environment, language=language, members=members)
         if surface == "":
             return _switcher(environment, language=language, organizations=organizations)
         return _unavailable(environment, language=language)

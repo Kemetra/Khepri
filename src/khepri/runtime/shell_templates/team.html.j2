@@ -30,4 +30,33 @@
   <p class="empty-state">{{ copy.team_empty }}</p>
   {% endif %}
 </section>
+
+<section class="document-card" aria-labelledby="invitations-title">
+  <h2 id="invitations-title">{{ copy.invitations_title }}</h2>
+  {#
+    No token is rendered here and none could be: `issue` returns the secret once and only a salted
+    hash persists. The list shows who was invited and in what role, which is what an owner needs to
+    decide whether to revoke.
+  #}
+  {% if invitations %}
+  <ul class="invitation-list">
+    {% for invitation in invitations %}
+    <li class="invitation-item">
+      <span class="invitation-identity" dir="ltr">{{ invitation.target_identity }}</span>
+      <span class="invitation-role">
+        {%- if invitation.intended_role == "owner" %}{{ copy.role_owner }}{% else %}{{ copy.role_member }}{% endif -%}
+      </span>
+      {% if is_owner %}
+      <form method="post"
+            action="{{ prefix }}/{{ language }}/{{ organization_id }}/team/invitations/{{ invitation.invitation_id }}/revoke">
+        <button type="submit">{{ copy.invitation_revoke }}</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ copy.invitations_empty }}</p>
+  {% endif %}
+</section>
 {% endblock %}
