@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ copy.product }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ assets }}/shell.css">
+</head>
+<body data-language="{{ language }}">
+  <a class="skip-link" href="#main-content">{{ copy.skip }}</a>
+  <header class="shell-identity">
+    <span class="brand">KHEPRI</span>
+  </header>
+  <main id="main-content" class="shell-main" tabindex="-1">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

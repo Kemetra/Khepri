@@ -470,10 +470,21 @@ class TestWhatRemainsOpen:
         name asserted an emptiness that is no longer true, and a relaxed test keeping that name
         would assert something false.
 
-        Two consumers are expected and both are the composition root. `commercial_api.py` calls
-        `for_request`; `wiring.py` constructs the resolver to hand it there. Anything else -- an
-        `khepri.rra` handler, an `khepri.rca` service reaching past the door, a second route module
-        -- is the bypass this file has always watched for, and fails here.
+        Three consumers are expected and all are the composition root. `commercial_api.py` calls
+        `for_request`; `shell_api.py` calls the same method for a page render (`R8-02`, authorized
+        by `RCA-002` `FR-041`); `wiring.py` constructs the resolver once and hands it to both.
+        Anything else -- an `khepri.rra` handler, an `khepri.rca` service reaching past the door --
+        is the bypass this file has always watched for, and fails here.
+
+        **`shell_api.py` was admitted deliberately, and the reasoning is the test's own.** A second
+        route module is exactly what this assertion watches for, so adding one is a decision rather
+        than a formality. It is admitted because it satisfies the property the chokepoint protects
+        rather than merely sitting in a permitted directory: it calls `for_request` and never
+        `resolve`, it names no organization (`organization_id=None`), it declares no membership or
+        scope reader of its own -- which `RCA-002` `FR-041` forbids outright -- and `wiring.py`
+        builds it from `build_commercial_services`, so the shell and the API share one resolver
+        instance rather than constructing two. A route module failing any of those is a bypass no
+        matter which package holds it.
 
         **The emptiness assertion is not decoration.** A scan that finds nothing satisfies every
         claim about what it found, so without it this test would go green if `_production_sources`
@@ -493,6 +504,7 @@ class TestWhatRemainsOpen:
         )
         assert importers == [
             "khepri/runtime/commercial_api.py",
+            "khepri/runtime/shell_api.py",
             "khepri/runtime/wiring.py",
         ], (
             "a new AuthorizationResolver consumer appeared outside the composition root; the "

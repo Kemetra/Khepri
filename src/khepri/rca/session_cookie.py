@@ -32,8 +32,15 @@ from fastapi import Cookie
 #: Distinct from RRA's `khepri_beta_session`. See the module docstring.
 SESSION_COOKIE = "khepri_session"
 
-#: The commercial HTTP surface. Scoped rather than `/`, so it is not offered to beta routes.
-SESSION_COOKIE_PATH = "/api/v1/commercial"
+#: Every commercial surface. `R3-01` §5 scopes this to "the commercial surface", which is a role
+#: rather than a literal: it was `/api/v1/commercial` while the API was the only such surface, and
+#: `RCA-002` adds the shell. A cookie the shell never receives cannot authenticate a page render.
+#:
+#: **What keeps this safe is the name, not the path.** `R3-01` requires the RCA name to differ from
+#: RRA's "regardless of path" precisely so that a shared prefix cannot cause a silent misread, and
+#: `khepri_session` is not `khepri_beta_session`. The beta routes therefore see a cookie they do
+#: not read, which is the same posture they had before this widened.
+SESSION_COOKIE_PATH = "/"
 
 # What a caller is told when no usable session reached the route. One sentence for every cause --
 # absent cookie, unknown session, expired session, revoked session, disabled account -- because

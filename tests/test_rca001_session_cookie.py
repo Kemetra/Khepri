@@ -47,9 +47,26 @@ class TestTheNameIsDistinct:
 
 
 class TestIssuedAttributes:
-    def test_the_cookie_is_scoped_to_the_live_commercial_http_surface(self) -> None:
-        assert SESSION_COOKIE_PATH == "/api/v1/commercial"
+    def test_the_cookie_reaches_every_commercial_surface(self) -> None:
+        """`R3-01` §5 scopes the cookie to "the commercial surface", which is a role.
+
+        It was `/api/v1/commercial` while the API was the only such surface. `RCA-002` adds a
+        second one -- the shell -- and a cookie the shell never receives cannot authenticate a page
+        render. The path widens; the *name* stays distinct, which is the property `R3-01` requires
+        "regardless of path" and the one that keeps an RCA cookie from being read as a beta
+        `session_id`.
+        """
+        assert SESSION_COOKIE_PATH == "/"
         assert issue_session_cookie(TOKEN, lifetime=LIFETIME)["path"] == SESSION_COOKIE_PATH
+
+    def test_the_cookie_reaches_both_the_api_and_the_shell(self) -> None:
+        """The consequence stated as the two paths that must be covered, not as one literal.
+
+        Asserting only the literal would pass if a later change scoped the cookie to `/app` alone
+        and silently logged every API caller out.
+        """
+        for surface in ("/api/v1/commercial/analyses", "/app/en/acme/analyses"):
+            assert surface.startswith(SESSION_COOKIE_PATH)
 
     def test_the_cookie_carries_the_token(self) -> None:
         assert issue_session_cookie(TOKEN, lifetime=LIFETIME)["value"] == TOKEN
