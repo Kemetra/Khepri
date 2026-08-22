@@ -260,3 +260,12 @@ artifacts:
       - RCA
       - RRA-001
       - RRA-002
+  - type: specification
+    id: RCA-002
+    state: active
+    document: governance/specifications/RCA-002.md
+    depends_on:
+      - RCA
+      - RCA-001
+      - RRA-006
+      - RRA-009
