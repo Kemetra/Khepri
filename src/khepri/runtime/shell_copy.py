@@ -45,6 +45,7 @@ _EN = {
         "This is shown once. We cannot show it again, so copy it before you leave this page."
     ),
     "back_to_team": "Back to the team",
+    "new_analysis": "Start a new analysis",
 }
 
 _AR = {
@@ -74,6 +75,7 @@ _AR = {
         "يظهر هذا مرة واحدة. لا يمكننا عرضه مرة أخرى، فانسخه قبل مغادرة هذه الصفحة."
     ),
     "back_to_team": "العودة إلى الفريق",
+    "new_analysis": "ابدأ تحليلًا جديدًا",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

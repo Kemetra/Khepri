@@ -43,6 +43,10 @@ DELIVERED_PATHS = {
     # decision it exists to force.
     f"{SHELL_PREFIX}/{{language}}/{{organization}}/team/invitations",
     f"{SHELL_PREFIX}/{{language}}/{{organization}}/team/invitations/{{invitation}}/revoke",
+    # `R8-06`'s journey entry. Only declared when a bridge is wired, which is why
+    # `test_it_declares_every_surface_when_fully_wired` exists below: a conditionally registered
+    # route is invisible to a scan that never enables it.
+    f"{SHELL_PREFIX}/{{language}}/{{organization}}/analyses",
 }
 
 
@@ -122,6 +126,35 @@ class TestScope:
             app,
             services=ShellServices(
                 resolver=_StubResolver(), organizations=_StubOrganizations()
+            ),
+            clock=lambda: NOW,
+        )
+
+        shell_paths = {
+            path
+            for route in app.routes
+            if (path := getattr(route, "path", "")).startswith(SHELL_PREFIX)
+        }
+
+        assert shell_paths, "the scan found no shell routes, so it proves nothing"
+        assert shell_paths <= DELIVERED_PATHS
+
+    def test_it_declares_every_surface_when_fully_wired(self) -> None:
+        """The surface set asserted in the configuration production actually runs.
+
+        The scan above builds `ShellServices` with no bridge and no invitation gateway, so the
+        conditionally registered routes never appear in it -- an honest scan of a configuration
+        that is not the deployed one. This asserts the full set, so a new conditional route
+        cannot slip in behind a null guard.
+        """
+        app = FastAPI()
+        add_shell_routes(
+            app,
+            services=ShellServices(
+                resolver=_StubResolver(),
+                organizations=_StubOrganizations(),
+                invitations=object(),
+                bridge=object(),
             ),
             clock=lambda: NOW,
         )
