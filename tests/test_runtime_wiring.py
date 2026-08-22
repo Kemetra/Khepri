@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from datetime import UTC, datetime
 
@@ -7,6 +8,7 @@ from khepri.rca.identity import IdentityProvider
 from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 from khepri.rra.artifact_publication import ReportArtifactPublisher
+from khepri.rra.envelope import MasterKey
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
@@ -20,6 +22,8 @@ from khepri.runtime.wiring import (
     build_stack,
     build_web_app,
 )
+
+_MASTER_KEY = MasterKey(material=b"k" * 32)
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -41,13 +45,10 @@ def settings() -> RuntimeSettings:
                     "dbname": "khepri",
                 }
             ),
-            "KHEPRI_AWS_REGION": "me-central-1",
+            "KHEPRI_STORAGE_ENDPOINT": "https://fra1.spaces.example",
+            "KHEPRI_STORAGE_REGION": "fra1",
             "KHEPRI_BUCKET": "khepri-beta-content",
-            "KHEPRI_KMS_KEY_ARN": (
-                "arn:aws:kms:me-central-1:123456789012:"
-                "key/12345678-1234-1234-1234-123456789abc"
-            ),
-            "KHEPRI_EXPECTED_BUCKET_OWNER": "123456789012",
+            "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode("ascii"),
             "KHEPRI_QUEUE_URL": "https://sqs.example/report-jobs",
             "KHEPRI_DLQ_URL": "https://sqs.example/report-jobs-dlq",
         }
@@ -78,10 +79,10 @@ def clerk_enabled_settings() -> RuntimeSettings:
     configured = settings()
     return RuntimeSettings(
         database_url=configured.database_url,
-        region=configured.region,
+        storage_endpoint=configured.storage_endpoint,
+        storage_region=configured.storage_region,
         bucket=configured.bucket,
-        kms_key_arn=configured.kms_key_arn,
-        expected_bucket_owner=configured.expected_bucket_owner,
+        master_key=_MASTER_KEY,
         queue_url=configured.queue_url,
         dead_letter_queue_url=configured.dead_letter_queue_url,
         clerk=ClerkIdentitySettings(

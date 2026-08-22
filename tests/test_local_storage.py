@@ -63,8 +63,7 @@ class TestTheRoundTrip:
             key=KEY,
             content=CONTENT,
             media_type="text/csv",
-            sha256_hex=SHA256_HEX,
-            encryption_context=CONTEXT,
+            sha256_hex=SHA256_HEX
         )
 
         assert stored.encryption_algorithm == "aws:kms"
@@ -80,8 +79,7 @@ class TestTheRoundTrip:
             key=KEY,
             content=CONTENT,
             media_type="text/csv",
-            sha256_hex=SHA256_HEX,
-            encryption_context=CONTEXT,
+            sha256_hex=SHA256_HEX
         )
 
         assert store.get(KEY) == CONTENT
@@ -95,8 +93,7 @@ class TestTheRoundTrip:
             key=KEY,
             content=CONTENT,
             media_type="text/csv",
-            sha256_hex=SHA256_HEX,
-            encryption_context=CONTEXT,
+            sha256_hex=SHA256_HEX
         )
 
         store.delete(KEY)

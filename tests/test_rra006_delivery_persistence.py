@@ -759,8 +759,9 @@ def test_the_pipeline_runs_one_leased_job_against_the_stored_ports() -> None:
                     sha256_hex=payload.sha256_hex,
                     created_at=NOW,
                     expires_at=test.session.content_expires_at,
-                    encryption_algorithm="aws:kms",
-                    kms_key_id="arn:aws:kms:me-central-1:123456789012:key/example",
+                    encryption_algorithm="AES-256-GCM",
+                    envelope_version=1,
+                    ciphertext_sha256_hex="c" * 64,
                 )
                 for payload in publication.artifacts
             )

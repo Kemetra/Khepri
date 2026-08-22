@@ -7,9 +7,10 @@ into a plain connection string or included in this settings object's repr.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
-import re
+from binascii import Error as BinasciiError
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal, TypedDict
@@ -17,14 +18,22 @@ from urllib.parse import urlsplit
 
 from sqlalchemy import URL
 
-REGION = "me-central-1"
+from khepri.rra.envelope import EnvelopeError, MasterKey
+
 DATABASE_NAME = "khepri"
 
 DATABASE_SECRET_VARIABLE = "KHEPRI_DATABASE_SECRET"
-REGION_VARIABLE = "KHEPRI_AWS_REGION"
+# `KHEPRI-DEC-008` states the runtime as a capability contract, so the storage coordinates are the
+# ones an S3-compatible client needs and nothing more. There is no region allowlist and no account
+# identifier: a region is whatever the configured endpoint expects, and ownership is established by
+# the credentials rather than asserted on every call.
+STORAGE_ENDPOINT_VARIABLE = "KHEPRI_STORAGE_ENDPOINT"
+STORAGE_REGION_VARIABLE = "KHEPRI_STORAGE_REGION"
 BUCKET_VARIABLE = "KHEPRI_BUCKET"
-KMS_KEY_ARN_VARIABLE = "KHEPRI_KMS_KEY_ARN"
-BUCKET_OWNER_VARIABLE = "KHEPRI_EXPECTED_BUCKET_OWNER"
+# The envelope master key, base64-encoded 32 bytes, drawn from the secret store. The secret
+# *source* is a deployment decision no artifact settles; this is only the boundary it arrives
+# through.
+MASTER_KEY_VARIABLE = "KHEPRI_STORAGE_MASTER_KEY"
 QUEUE_URL_VARIABLE = "KHEPRI_QUEUE_URL"
 DEAD_LETTER_QUEUE_URL_VARIABLE = "KHEPRI_DLQ_URL"
 CLERK_MODE_VARIABLE = "KHEPRI_CLERK_MODE"
@@ -34,11 +43,6 @@ CLERK_KEY_ID_VARIABLE = "KHEPRI_CLERK_KEY_ID"
 CLERK_AUTHORIZED_PARTIES_VARIABLE = "KHEPRI_CLERK_AUTHORIZED_PARTIES"
 CLERK_AUDIENCE_VARIABLE = "KHEPRI_CLERK_AUDIENCE"
 
-_ACCOUNT_ID = re.compile(r"^\d{12}$")
-_KMS_KEY_ARN = re.compile(
-    r"^arn:aws:kms:me-central-1:\d{12}:"
-    r"key/[0-9a-fA-F-]{36}$"
-)
 _SECRET_FIELDS = frozenset({"username", "password", "engine", "host", "port", "dbname"})
 
 
@@ -56,10 +60,10 @@ class _DatabaseSecret(TypedDict):
 
 
 class _RuntimeCoordinates(TypedDict):
-    region: str
+    storage_endpoint: str
+    storage_region: str
     bucket: str
-    kms_key_arn: str
-    expected_bucket_owner: str
+    master_key: MasterKey
     queue_url: str
     dead_letter_queue_url: str
 
@@ -83,10 +87,10 @@ class ClerkIdentitySettings:
 @dataclass(frozen=True, slots=True)
 class RuntimeSettings:
     database_url: URL
-    region: str
+    storage_endpoint: str
+    storage_region: str
     bucket: str
-    kms_key_arn: str
-    expected_bucket_owner: str
+    master_key: MasterKey
     queue_url: str
     dead_letter_queue_url: str
     clerk: ClerkIdentitySettings | None
@@ -113,38 +117,45 @@ def _environment_source(
 def _runtime_coordinates(environment: Mapping[str, str]) -> _RuntimeCoordinates:
     queue_url, dead_letter_url = _queue_urls(environment)
     return _RuntimeCoordinates(
-        region=_region(environment),
+        storage_endpoint=_storage_endpoint(environment),
+        storage_region=_required(environment, STORAGE_REGION_VARIABLE),
         bucket=_required(environment, BUCKET_VARIABLE),
-        kms_key_arn=_kms_key_arn(environment),
-        expected_bucket_owner=_bucket_owner(environment),
+        master_key=_master_key(environment),
         queue_url=queue_url,
         dead_letter_queue_url=dead_letter_url,
     )
 
 
-def _region(environment: Mapping[str, str]) -> str:
-    region = _required(environment, REGION_VARIABLE)
-    if region != REGION:
-        raise RuntimeConfigurationError(f"{REGION_VARIABLE} must be {REGION}.")
-    return region
-
-
-def _kms_key_arn(environment: Mapping[str, str]) -> str:
-    key_arn = _required(environment, KMS_KEY_ARN_VARIABLE)
-    if _KMS_KEY_ARN.fullmatch(key_arn) is None:
+def _storage_endpoint(environment: Mapping[str, str]) -> str:
+    """Any HTTPS S3-compatible endpoint. No provider is recognised by name."""
+    endpoint = _required(environment, STORAGE_ENDPOINT_VARIABLE)
+    location = urlsplit(endpoint)
+    if location.scheme != "https" or not location.netloc or location.query or location.fragment:
         raise RuntimeConfigurationError(
-            f"{KMS_KEY_ARN_VARIABLE} must be a KMS key ARN in {REGION}."
+            f"{STORAGE_ENDPOINT_VARIABLE} must be an HTTPS endpoint URL."
         )
-    return key_arn
+    return endpoint.rstrip("/")
 
 
-def _bucket_owner(environment: Mapping[str, str]) -> str:
-    owner = _required(environment, BUCKET_OWNER_VARIABLE)
-    if _ACCOUNT_ID.fullmatch(owner) is None:
+def _master_key(environment: Mapping[str, str]) -> MasterKey:
+    """Decode the envelope master key, refusing anything that is not 32 bytes.
+
+    The error names the variable and never the value. A malformed key that was
+    echoed here would be echoed into whatever log caught the startup failure.
+    """
+    encoded = _required(environment, MASTER_KEY_VARIABLE)
+    try:
+        material = base64.b64decode(encoded, validate=True)
+    except (BinasciiError, ValueError) as error:
         raise RuntimeConfigurationError(
-            f"{BUCKET_OWNER_VARIABLE} must be a 12-digit account ID."
-        )
-    return owner
+            f"{MASTER_KEY_VARIABLE} must be base64-encoded."
+        ) from error
+    try:
+        return MasterKey(material=material)
+    except EnvelopeError as error:
+        raise RuntimeConfigurationError(
+            f"{MASTER_KEY_VARIABLE} must decode to 32 bytes."
+        ) from error
 
 
 def _queue_urls(environment: Mapping[str, str]) -> tuple[str, str]:
@@ -296,7 +307,6 @@ def _invalid_database_secret() -> RuntimeConfigurationError:
 
 
 __all__ = [
-    "BUCKET_OWNER_VARIABLE",
     "BUCKET_VARIABLE",
     "CLERK_AUDIENCE_VARIABLE",
     "CLERK_AUTHORIZED_PARTIES_VARIABLE",
@@ -307,10 +317,10 @@ __all__ = [
     "ClerkIdentitySettings",
     "DATABASE_SECRET_VARIABLE",
     "DEAD_LETTER_QUEUE_URL_VARIABLE",
-    "KMS_KEY_ARN_VARIABLE",
+    "MASTER_KEY_VARIABLE",
     "QUEUE_URL_VARIABLE",
-    "REGION",
-    "REGION_VARIABLE",
+    "STORAGE_ENDPOINT_VARIABLE",
+    "STORAGE_REGION_VARIABLE",
     "RuntimeConfigurationError",
     "RuntimeSettings",
 ]

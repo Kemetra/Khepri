@@ -15,10 +15,11 @@ from khepri.rra.artifact_persistence import (
     ArtifactCorrupted,
     StoredArtifact,
 )
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
 from khepri.rra.intake import StoragePolicyViolation
 from khepri.rra.pipeline import DeliveryRecord, ReportPublication
 from khepri.rra.report_artifacts import ARTIFACT_METADATA, ArtifactPayload
-from khepri.rra.storage import ObjectWrite, PutResult
+from khepri.rra.storage import ObjectWrite, PutResult, StoredEnvelope
 
 _ATTEMPT_ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -51,7 +52,7 @@ class PublishedObject:
 class ArtifactObjectStore(Protocol):
     def put_or_verify(self, request: ObjectWrite) -> PutResult: ...
 
-    def get(self, key: str) -> bytes: ...
+    def get(self, key: str, *, envelope: StoredEnvelope) -> bytes: ...
 
     def delete(self, key: str) -> None: ...
 
@@ -203,7 +204,6 @@ class ReportArtifactPublisher:
                 content=payload.content,
                 media_type=payload.media_type,
                 sha256_hex=payload.sha256_hex,
-                encryption_context=_encryption_context(context, payload.kind),
             )
         )
         _require_proven(result, key=key, publication=payload)
@@ -236,7 +236,15 @@ class ReportArtifactPublisher:
             raise ArtifactUnavailable("Report artifacts are unavailable.") from error
 
     def _read_document(self, metadata: StoredArtifact) -> ArtifactDocument:
-        content = self._objects.get(metadata.object_key)
+        content = self._objects.get(
+            metadata.object_key,
+            envelope=StoredEnvelope(
+                ciphertext_sha256_hex=metadata.ciphertext_sha256_hex,
+                sha256_hex=metadata.sha256_hex,
+                encryption_algorithm=metadata.encryption_algorithm,
+                envelope_version=metadata.envelope_version,
+            ),
+        )
         _require_verified_content(metadata, content)
         return ArtifactDocument(
             content=content,
@@ -259,19 +267,6 @@ def _object_key(context: PublicationContext, artifact_kind: str) -> str:
         f"{context.record.bundle_id}/attempts/{context.attempt_id}/{artifact_kind}"
     )
 
-
-def _encryption_context(
-    context: PublicationContext,
-    artifact_kind: str,
-) -> dict[str, str]:
-    return {
-        "owner_id": context.boundary.owner_id,
-        "session_id": context.boundary.session_id,
-        "job_id": context.record.job_id,
-        "bundle_id": context.record.bundle_id,
-        "artifact_kind": artifact_kind,
-        "publication_attempt_id": context.attempt_id,
-    }
 
 
 def _new_attempt_id() -> str:
@@ -304,7 +299,8 @@ def _stored_artifact(
         created_at=context.created_at,
         expires_at=context.boundary.expires_at,
         encryption_algorithm=result.stored.encryption_algorithm,
-        kms_key_id=result.stored.kms_key_id,
+        envelope_version=result.stored.envelope_version,
+        ciphertext_sha256_hex=result.stored.ciphertext_sha256_hex,
     )
 
 
@@ -334,7 +330,8 @@ def _require_proven(
         len(publication.content),
         publication.sha256_hex,
         publication.media_type,
-        "aws:kms",
+        ALGORITHM_AES_256_GCM,
+        ENVELOPE_VERSION,
     )
     actual = (
         result.stored.key,
@@ -342,8 +339,9 @@ def _require_proven(
         result.stored.sha256_hex,
         result.stored.media_type,
         result.stored.encryption_algorithm,
+        result.stored.envelope_version,
     )
-    if actual != expected or not result.stored.kms_key_id:
+    if actual != expected or len(result.stored.ciphertext_sha256_hex) != 64:
         raise StoragePolicyViolation("Object storage did not prove publication policy.")
 
 

@@ -19,6 +19,12 @@ dependencies = [
     "boto3>=1.43.58,<2",
     "botocore>=1.43.58,<2",
     "clerk-backend-api>=7,<8",
+    # `KHEPRI-DEC-008` replaces the five provider-header proofs with application-side envelope
+    # encryption, and the standard library has no authenticated AES-GCM. `khepri.rra.envelope`
+    # imports `AESGCM` directly, so this is a direct dependency rather than a transitive one:
+    # it currently resolves only through `clerk-backend-api`, and a Clerk release is free to drop
+    # it. One crypto library, pinned where the graph already resolved it.
+    "cryptography>=50,<51",
     "fastapi>=0.116,<1",
     "fastexcel>=0.12,<1",
     "jinja2>=3.1,<4",

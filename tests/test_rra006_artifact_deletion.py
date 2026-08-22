@@ -303,8 +303,9 @@ def test_sql_completion_removes_upload_and_artifact_metadata_together() -> None:
             media_type=CSV_MEDIA_TYPE,
             created_at=NOW,
             expires_at=test.session.content_expires_at,
-            encryption_algorithm="aws:kms",
-            kms_key_id="arn:aws:kms:me-central-1:123456789012:key/example",
+            encryption_algorithm="AES-256-GCM",
+            envelope_version=1,
+            ciphertext_sha256_hex="c" * 64,
         )
     )
     objects.values[input_key] = (input_content, CSV_MEDIA_TYPE, input_digest)

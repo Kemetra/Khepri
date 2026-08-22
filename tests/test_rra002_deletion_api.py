@@ -37,7 +37,6 @@ class LifecycleMemoryObjectStore:
         content: bytes,
         media_type: str,
         sha256_hex: str,
-        encryption_context: dict[str, str],
     ) -> StoredObject:
         self.objects[key] = content
         return StoredObject(
@@ -45,8 +44,9 @@ class LifecycleMemoryObjectStore:
             size_bytes=len(content),
             sha256_hex=sha256_hex,
             media_type=media_type,
-            encryption_algorithm="aws:kms",
-            kms_key_id="kms-beta-content",
+            encryption_algorithm="AES-256-GCM",
+            envelope_version=1,
+            ciphertext_sha256_hex="c" * 64,
         )
 
     def abort_multipart_uploads(self, prefix: str) -> None:

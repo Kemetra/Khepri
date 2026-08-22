@@ -21,9 +21,12 @@ from khepri.rca.persistence import (
 from khepri.rca.persistence import Base as RcaBase
 from khepri.rca.session_persistence import SqlSessionStore
 from khepri.rca.session_service import SessionService
+from khepri.rra.envelope import MasterKey
 from khepri.runtime.clerk_hard_stop import revoke_clerk_sessions
 from khepri.runtime.config import ClerkIdentitySettings, RuntimeConfigurationError, RuntimeSettings
 from khepri.runtime.external_auth_api import KHEPRI_SESSION_LIFETIME
+
+_MASTER_KEY = MasterKey(material=b"k" * 32)
 
 NOW = datetime(2026, 8, 21, 18, 0, tzinfo=UTC)
 
@@ -41,10 +44,10 @@ def _settings(database_url: URL, *, enabled: bool = False) -> RuntimeSettings:
         )
     return RuntimeSettings(
         database_url=database_url,
-        region="me-central-1",
+        storage_endpoint="https://fra1.spaces.example",
+        storage_region="fra1",
         bucket="test",
-        kms_key_arn="arn:aws:kms:me-central-1:123456789012:key/12345678-1234-1234-1234-123456789abc",
-        expected_bucket_owner="123456789012",
+        master_key=_MASTER_KEY,
         queue_url="https://sqs.example/jobs",
         dead_letter_queue_url="https://sqs.example/jobs-dlq",
         clerk=clerk,

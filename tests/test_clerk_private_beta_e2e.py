@@ -29,6 +29,7 @@ from khepri.rca.session_cookie import SESSION_COOKIE_PATH
 from khepri.rca.session_persistence import SqlSessionStore
 from khepri.rca.session_service import SessionService
 from khepri.rca.sessions import hash_session_id
+from khepri.rra.envelope import MasterKey
 from khepri.rra.persistence import Base as RraBase
 from khepri.runtime.commercial_api import COMMERCIAL_PREFIX
 from khepri.runtime.config import ClerkIdentitySettings, RuntimeSettings
@@ -42,6 +43,9 @@ PARTY = "https://beta.khepri.example"
 KEY_ID = "ins_private_beta"
 SUBJECT = "user_private_beta_123"
 
+
+
+_MASTER_KEY = MasterKey(material=b"k" * 32)
 
 class AwsClientStub:
     pass
@@ -95,13 +99,10 @@ class PrivateBetaJourney:
 def journey_fixture(tmp_path) -> PrivateBetaJourney:
     settings = RuntimeSettings(
         database_url=URL.create("sqlite+pysqlite", database=str(tmp_path / "private-beta.db")),
-        region="me-central-1",
+        storage_endpoint="https://fra1.spaces.example",
+        storage_region="fra1",
         bucket="khepri-beta-content",
-        kms_key_arn=(
-            "arn:aws:kms:me-central-1:123456789012:"
-            "key/12345678-1234-1234-1234-123456789abc"
-        ),
-        expected_bucket_owner="123456789012",
+        master_key=_MASTER_KEY,
         queue_url="https://sqs.example/report-jobs",
         dead_letter_queue_url="https://sqs.example/report-jobs-dlq",
         clerk=ClerkIdentitySettings(

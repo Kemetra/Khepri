@@ -47,13 +47,14 @@ class MemoryObjects:
                 size_bytes=len(request.content),
                 sha256_hex=request.sha256_hex,
                 media_type=request.media_type,
-                encryption_algorithm="aws:kms",
-                kms_key_id="arn:aws:kms:me-central-1:123456789012:key/example",
+                encryption_algorithm="AES-256-GCM",
+                envelope_version=1,
+                ciphertext_sha256_hex="c" * 64,
             ),
             created=created,
         )
 
-    def get(self, key: str) -> bytes:
+    def get(self, key: str, **_: object) -> bytes:
         return self.values[key][0]
 
     def delete(self, key: str) -> None:
