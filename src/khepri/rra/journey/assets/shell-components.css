@@ -1,0 +1,160 @@
+/* The shell's component layer (`R8-07`).
+ *
+ * `shell.css` ships tokens and, by `test_r801_shell_tokens.py`, must declare no rules. This is
+ * where the rules live. It consumes those tokens and introduces no colour of its own, so the
+ * palette stays declared in exactly one place.
+ *
+ * **Logical properties only.** `journey.css` and `report.css` are held to this and so is the token
+ * file; an RTL layout that mirrors correctly cannot be built from `left`/`right`/`margin-left`.
+ *
+ * **No external reference.** No `@import`, no `url()`, no font host. The UI guardrails forbid
+ * external fonts, analytics, CDNs, and runtime assets, and the design handoff proposed two of
+ * them.
+ *
+ * **44px is a requirement, not a preference.** `RCA-002` `FR-056` requires every interactive
+ * target to meet the size the existing journey tests enforce, in both languages at every
+ * supported viewport. `R8-07` found every shell target rendering at 17px, because the tokens
+ * shipped without a component layer to apply them.
+ */
+
+.shell-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  padding-block: var(--space-3, 0.75rem);
+  padding-inline: var(--space-4, 1rem);
+  border-block-end: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.shell-identity .brand {
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.04em;
+}
+
+.shell-main {
+  padding-block: var(--space-4, 1rem);
+  padding-inline: var(--space-4, 1rem);
+  color: var(--ink);
+}
+
+/* The skip link is visible only while focused, and is the first focusable element in the body so
+ * a keyboard reader reaches it before the identity row. Sized to the same minimum as every other
+ * target: a skip link too small to hit is one that only exists for the test. */
+.skip-link {
+  position: absolute;
+  inset-inline-start: -9999px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: var(--space-3, 0.75rem);
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.skip-link:focus {
+  inset-inline-start: var(--space-3, 0.75rem);
+  z-index: 1;
+}
+
+.document-card {
+  max-inline-size: 60rem;
+  margin-block-end: var(--space-4, 1rem);
+  padding: var(--space-4, 1rem);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.lede {
+  color: var(--muted);
+}
+
+/* Every list on a shell surface: organizations, members, invitations. One rule rather than three
+ * near-identical ones, because they differ in content and not in shape. */
+.organization-list,
+.member-list,
+.invitation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.organization-item,
+.member-item,
+.invitation-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  min-height: 44px;
+  padding-block: var(--space-2, 0.5rem);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+/* `FR-056`. Applied to the element itself rather than to a wrapper: the measurement is of the
+ * thing a finger lands on, and a padded parent around a 17px anchor still leaves a 17px anchor. */
+.shell-main a,
+.shell-main button,
+.organization-item a,
+.member-item a,
+.invitation-item button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+}
+
+.shell-main button,
+.invitation-item button {
+  min-height: 44px;
+  padding-inline: var(--space-4, 1rem);
+  border: 1px solid var(--accent);
+  background: var(--accent-surface);
+  color: var(--accent-dark);
+  cursor: pointer;
+}
+
+/* A disabled member is shown and marked rather than hidden, so the list agrees with the
+ * organization's actual membership. The state reads as text, not as colour alone. */
+.member-item--disabled .member-identity {
+  color: var(--muted);
+}
+
+.member-state {
+  padding-inline: var(--space-2, 0.5rem);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.member-role,
+.invitation-role {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.empty-state {
+  color: var(--muted);
+}
+
+/* The one-time invitation token. Monospace and wrapped, because it is copied by hand and a token
+ * that overflows its container is a token that cannot be. */
+.invitation-token code {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: var(--space-3, 0.75rem);
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.invitation-warning {
+  color: var(--danger);
+}
+
+/* Matches the journey's ring exactly. `journey.css` ships `outline-offset: 3px`, and a ring that
+ * shifted between the journey and the shell wrapping it would read as a defect. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
