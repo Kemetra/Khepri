@@ -93,6 +93,10 @@ class OrganizationReader(Protocol):
         self, account_id: str
     ) -> list[Any]: ...  # pragma: no cover -- Protocol
 
+    def memberships_for_organization(
+        self, organization_id: str
+    ) -> list[Any]: ...  # pragma: no cover -- Protocol
+
 
 @dataclass(frozen=True, slots=True)
 class ShellServices:
@@ -180,6 +184,13 @@ def _switcher(
     )
 
 
+def _team(environment: Environment, *, language: str, members: list[Any]) -> Response:
+    """`FR-051`: exactly the organization-scoped read, rendered without further filtering."""
+    return _render(
+        environment, "team.html.j2", language=language, status_code=200, members=members
+    )
+
+
 def add_shell_routes(
     app: FastAPI,
     *,
@@ -220,14 +231,19 @@ def add_shell_routes(
     def shell_surface(
         path: str, session: CommercialSessionCookie = None
     ) -> Response:
-        """Resolve the actor, then render.
+        """Resolve the actor, then dispatch on the surface the address names.
 
-        Until a later slice adds an addressable surface, every resolved request reaches the same
-        page as an unresolved one. That is `FR-046` holding by construction rather than by a check:
-        an unknown path and a forbidden one are the same response because there is no other
-        response to give.
+        **The address supplies the surface name and the language, never the scope.** `FR-042`
+        gives the session's active organization that job, so the organization segment of the path
+        is not read at all -- there is no parameter on which the comparison could be skipped
+        because nothing here consults one.
+
+        A surface this slice does not deliver falls through to `unavailable`, which is `FR-046`
+        holding by construction: an unknown surface and a forbidden one are the same response
+        because there is no other response to give.
         """
-        language = _language(path.split("/")[0] if path else "")
+        segments = path.split("/")
+        language = _language(segments[0] if segments else "")
         if session is None:
             return _unavailable(environment, language=language)
         try:
@@ -238,7 +254,16 @@ def add_shell_routes(
         organizations = services.organizations.organizations_for_account(context.account_id)
         if not organizations:
             return _no_membership(environment, language=language)
-        return _switcher(environment, language=language, organizations=organizations)
+
+        surface = segments[2] if len(segments) > 2 else ""
+        if surface == "team" and context.organization_id is not None:
+            members = services.organizations.memberships_for_organization(
+                context.organization_id
+            )
+            return _team(environment, language=language, members=members)
+        if surface == "":
+            return _switcher(environment, language=language, organizations=organizations)
+        return _unavailable(environment, language=language)
 
 
 __all__ = [

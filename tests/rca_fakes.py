@@ -31,6 +31,7 @@ from khepri.rca.organizations import (
     Membership,
     MembershipEvent,
     Organization,
+    OrganizationMember,
 )
 
 
@@ -298,6 +299,28 @@ class MemoryOrganizationStore:
             found,
             key=lambda organization: (organization.name, organization.organization_id),
         )
+
+    def memberships_for_organization(self, organization_id: str) -> list[OrganizationMember]:
+        """Mirrors `SqlOrganizationStore`, including the account-state join.
+
+        Reading `disabled` from the account store rather than defaulting it is the same obligation
+        `count_owners` has here: a fake that reported every member as live would let a test pass
+        against the fake on exactly the case the join was added for.
+        """
+        found = []
+        for (held_organization, account_id), membership in self.memberships.items():
+            if held_organization != organization_id:
+                continue
+            account = self.accounts.get_account(account_id)
+            found.append(
+                OrganizationMember(
+                    account_id=account_id,
+                    email=None if account is None else account.email,
+                    role=membership.role,
+                    disabled=account is not None and account.disabled_at is not None,
+                )
+            )
+        return sorted(found, key=lambda member: (member.email or "", member.account_id))
 
     def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int:
         """Effective owners, mirroring the SQL store's join onto account state.
