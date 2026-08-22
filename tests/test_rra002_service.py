@@ -63,7 +63,7 @@ class MemorySessionReader:
 
 
 class MemoryEncryptedObjectStore(EncryptedObjectStore):
-    def __init__(self, *, encryption_algorithm: str = "aws:kms") -> None:
+    def __init__(self, *, encryption_algorithm: str = "AES-256-GCM") -> None:
         self.encryption_algorithm = encryption_algorithm
         self.objects: dict[str, bytes] = {}
         self.deleted_keys: list[str] = []
@@ -75,7 +75,6 @@ class MemoryEncryptedObjectStore(EncryptedObjectStore):
         content: bytes,
         media_type: str,
         sha256_hex: str,
-        encryption_context: dict[str, str],
     ) -> StoredObject:
         self.objects[key] = content
         return StoredObject(
@@ -84,7 +83,8 @@ class MemoryEncryptedObjectStore(EncryptedObjectStore):
             sha256_hex=sha256_hex,
             media_type=media_type,
             encryption_algorithm=self.encryption_algorithm,
-            kms_key_id="kms-beta-content",
+            envelope_version=1,
+            ciphertext_sha256_hex="c" * 64,
         )
 
     def delete(self, key: str) -> None:
@@ -140,7 +140,7 @@ def test_consent_is_required_before_any_upload_is_buffered() -> None:
     assert uploads.uploads == {}
 
 
-def test_completed_upload_is_bound_to_one_opaque_scope_and_kms_metadata() -> None:
+def test_completed_upload_is_bound_to_one_opaque_scope_and_envelope_metadata() -> None:
     service, objects, uploads = intake_service()
     intake = service.begin(
         session_id="ses_alpha",
@@ -161,8 +161,9 @@ def test_completed_upload_is_bound_to_one_opaque_scope_and_kms_metadata() -> Non
         media_type=CSV_MEDIA_TYPE,
         created_at=NOW + timedelta(seconds=1),
         expires_at=NOW + timedelta(days=7),
-        encryption_algorithm="aws:kms",
-        kms_key_id="kms-beta-content",
+        encryption_algorithm="AES-256-GCM",
+        envelope_version=1,
+        ciphertext_sha256_hex="c" * 64,
     )
     assert objects.objects[metadata.object_key] == b"date,revenue\n2026-01,1\n"
     assert uploads.get_upload_in_scope(
@@ -208,7 +209,7 @@ def test_expired_session_is_rechecked_before_object_storage() -> None:
     assert uploads.uploads == {}
 
 
-def test_non_kms_storage_response_is_rejected_and_object_is_removed() -> None:
+def test_ungoverned_encryption_algorithm_is_rejected_and_object_is_removed() -> None:
     objects = MemoryEncryptedObjectStore(encryption_algorithm="AES256")
     service, _, uploads = intake_service(objects=objects)
     intake = service.begin(session_id="ses_alpha", declared_size=8, now=NOW)

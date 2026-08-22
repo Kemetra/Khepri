@@ -105,8 +105,16 @@ class UploadRow(Base):
             name="ck_upload_expiry_after_creation",
         ),
         CheckConstraint(
-            "encryption_algorithm = 'aws:kms'",
-            name="ck_upload_kms_encryption",
+            "encryption_algorithm = 'AES-256-GCM'",
+            name="ck_upload_envelope_encryption",
+        ),
+        CheckConstraint(
+            "length(ciphertext_sha256_hex) = 64",
+            name="ck_upload_ciphertext_sha256_length",
+        ),
+        CheckConstraint(
+            "envelope_version > 0",
+            name="ck_upload_envelope_version",
         ),
         UniqueConstraint("session_id", name="uq_upload_session"),
         ForeignKeyConstraint(
@@ -131,7 +139,8 @@ class UploadRow(Base):
         index=True,
     )
     encryption_algorithm: Mapped[str] = mapped_column(String, nullable=False)
-    kms_key_id: Mapped[str] = mapped_column(String, nullable=False)
+    envelope_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    ciphertext_sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class DatasetProfileRow(Base):
@@ -486,7 +495,8 @@ class SqlUploadRepository:
                         created_at=upload.created_at,
                         expires_at=upload.expires_at,
                         encryption_algorithm=upload.encryption_algorithm,
-                        kms_key_id=upload.kms_key_id,
+                        envelope_version=upload.envelope_version,
+                        ciphertext_sha256_hex=upload.ciphertext_sha256_hex,
                     )
                 )
             return True
@@ -853,7 +863,8 @@ def _upload_from_row(row: UploadRow) -> UploadMetadata:
         created_at=_utc(row.created_at),
         expires_at=_utc(row.expires_at),
         encryption_algorithm=row.encryption_algorithm,
-        kms_key_id=row.kms_key_id,
+        envelope_version=row.envelope_version,
+        ciphertext_sha256_hex=row.ciphertext_sha256_hex,
     )
 
 

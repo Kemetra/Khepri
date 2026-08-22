@@ -151,6 +151,7 @@ def _run(database_url: str, direction: str, *, through: str | None = None) -> No
                 module.op = token
 
 
+
 def _run_artifact(database_url: str, direction: str) -> None:
     engine = create_engine(database_url)
     with engine.begin() as connection:
@@ -204,15 +205,36 @@ def test_report_artifacts_are_chained_after_the_rca_revision_it_followed() -> No
     assert module.down_revision == "20260813_0011"
 
 
+# What `20260822_0020` changes about `rra_report_artifacts`. Stated here rather than
+# replayed, because that revision swaps CHECK constraints and SQLite cannot ALTER a
+# constraint -- nor drop a column a CHECK still references. The revision's real DDL is
+# proved against PostgreSQL in `test_rra_portable_encryption_migration.py`; this guard
+# is about model/migration column parity, so it applies the delta as data.
+_PORTABLE_ENCRYPTION_REMOVES = frozenset({"kms_key_id"})
+_PORTABLE_ENCRYPTION_ADDS = frozenset({"envelope_version", "ciphertext_sha256_hex"})
+
+
 def test_report_artifact_migration_matches_its_declared_columns(sqlite_url: str) -> None:
+    """The declared model must match the schema after every revision that touches it.
+
+    `20260813_0012` creates the table and `20260822_0020` retires `kms_key_id` for the
+    envelope columns, so comparing the model against `0012` alone would report drift
+    that does not exist. Both revisions are accounted for.
+    """
     from khepri.rra.artifact_persistence import ReportArtifactRow  # noqa: PLC0415
 
     _run_artifact(sqlite_url, "upgrade")
     inspector = inspect(create_engine(sqlite_url))
-    migrated = {
+    created = {
         column["name"]
         for column in inspector.get_columns(ReportArtifactRow.__tablename__)
     }
+    # The delta must actually apply to what `0012` created, or this guard would pass
+    # while describing a migration that could not run.
+    assert created >= _PORTABLE_ENCRYPTION_REMOVES
+    assert not _PORTABLE_ENCRYPTION_ADDS & created
+
+    migrated = (created - _PORTABLE_ENCRYPTION_REMOVES) | _PORTABLE_ENCRYPTION_ADDS
     declared = {column.name for column in ReportArtifactRow.__table__.columns}
     assert migrated == declared
 
