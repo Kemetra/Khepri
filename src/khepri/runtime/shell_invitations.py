@@ -16,6 +16,7 @@ service-level test would notice.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -88,26 +89,42 @@ def owner_or_none(
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class ShellRendering:
+    """The shell's own render surface, grouped rather than passed as five arguments.
+
+    **Grouped for the reason `Invitation.create` and `InvitationOffer` are.** Spelling these flat
+    cost nine parameters and CodeScene scored the file 9.69 on Excess Number of Function Arguments
+    -- the same trap a `khepri.rra` signature hit before. They travel together on every call and
+    have no meaning apart, which is what makes them one value rather than a list.
+
+    Passed in rather than imported so this module cannot render a surface the shell does not own,
+    and so `shell_api.py` keeps one definition of the security headers every response carries.
+    """
+
+    environment: Environment
+    prefix: str
+    language_of: Callable[[str], str]
+    unavailable: Callable[..., Response]
+    render: Callable[..., Response]
+    team: Callable[..., Response]
+
+
 def add_invitation_routes(
     app: FastAPI,
     *,
     services: Any,
-    environment: Environment,
+    rendering: ShellRendering,
     clock: Callable[[], Any],
-    prefix: str,
-    language_of: Callable[[str], str],
-    unavailable: Callable[..., Response],
-    render: Callable[..., Response],
-    team: Callable[..., Response],
 ) -> None:
-    """Declare the two mutating routes, given the shell's own render helpers.
+    """Declare the two mutating routes."""
+    environment = rendering.environment
+    language_of = rendering.language_of
+    unavailable = rendering.unavailable
+    render = rendering.render
+    team = rendering.team
 
-    The helpers are passed in rather than imported so this module cannot render a surface the shell
-    does not own, and so `shell_api.py` keeps one definition of the security headers every response
-    carries.
-    """
-
-    @app.post(f"{prefix}/{{language}}/{{organization}}/team/invitations")
+    @app.post(f"{rendering.prefix}/{{language}}/{{organization}}/team/invitations")
     async def issue_invitation(
         request: Request,
         language: str,
@@ -147,7 +164,8 @@ def add_invitation_routes(
         )
 
     @app.post(
-        f"{prefix}/{{language}}/{{organization}}/team/invitations/{{invitation}}/revoke"
+        f"{rendering.prefix}/{{language}}/{{organization}}/team/invitations"
+        f"/{{invitation}}/revoke"
     )
     def revoke_invitation(
         language: str,
@@ -178,6 +196,7 @@ def add_invitation_routes(
 
 __all__ = [
     "INVITATION_LIFETIME",
+    "ShellRendering",
     "ROLES",
     "add_invitation_routes",
     "owner_or_none",

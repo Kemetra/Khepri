@@ -134,16 +134,27 @@ class _StubOrganizations:
         return self._members
 
 
+@dataclass
+class _Given:
+    """The fixture's inputs, grouped rather than passed as five parameters.
+
+    Same reasoning as `ShellRendering` in the module under test: they describe one scenario and
+    have no meaning apart, and spelling them flat scored 9.69 on Excess Number of Function
+    Arguments.
+    """
+
+    context: _Context | None = None
+    raises: Exception | None = None
+    owner_raises: Exception | None = None
+    invitations: _StubInvitations | None = None
+
+
 def _shell(
-    *,
-    context: _Context | None = None,
-    raises: Exception | None = None,
-    owner_raises: Exception | None = None,
-    invitations: _StubInvitations | None = None,
-    resolver: _StubResolver | None = None,
+    given: _Given | None = None,
 ) -> tuple[TestClient, _StubInvitations, _StubResolver]:
-    resolver = resolver or _StubResolver(context, raises, owner_raises)
-    invitations = invitations or _StubInvitations()
+    given = given or _Given()
+    resolver = _StubResolver(given.context, given.raises, given.owner_raises)
+    invitations = given.invitations or _StubInvitations()
     app = FastAPI()
     add_shell_routes(
         app,
@@ -185,7 +196,7 @@ class TestTheOwnerGate:
 
         Asserting `raises` alone would hold even if the verb ran unconditionally afterwards.
         """
-        client, invitations, _ = _shell(owner_raises=ScopeAccessDenied())
+        client, invitations, _ = _shell(_Given(owner_raises=ScopeAccessDenied()))
 
         response = client.post(
             f"{SHELL_PREFIX}/en/org-acme/team/invitations",
@@ -196,7 +207,7 @@ class TestTheOwnerGate:
         assert invitations.issued == []
 
     def test_a_member_cannot_revoke_and_the_invitation_survives(self) -> None:
-        client, invitations, _ = _shell(owner_raises=ScopeAccessDenied())
+        client, invitations, _ = _shell(_Given(owner_raises=ScopeAccessDenied()))
 
         response = client.post(
             f"{SHELL_PREFIX}/en/org-acme/team/invitations/inv-1/revoke"
@@ -216,7 +227,7 @@ class TestScopeIsNamedAtTheGate:
     """
 
     def test_the_gate_is_given_the_organization_the_request_names(self) -> None:
-        client, _, resolver = _shell(context=_Context("acct-1", "org-acme"))
+        client, _, resolver = _shell(_Given(context=_Context("acct-1", "org-acme")))
 
         client.post(
             f"{SHELL_PREFIX}/en/org-somewhere-else/team/invitations",
@@ -227,7 +238,7 @@ class TestScopeIsNamedAtTheGate:
 
     def test_a_foreign_organization_is_refused_and_nothing_is_issued(self) -> None:
         """The effect of that gate refusing, not merely that it was called."""
-        client, invitations, _ = _shell(owner_raises=ScopeAccessDenied())
+        client, invitations, _ = _shell(_Given(owner_raises=ScopeAccessDenied()))
 
         response = client.post(
             f"{SHELL_PREFIX}/en/org-somewhere-else/team/invitations",
@@ -238,7 +249,7 @@ class TestScopeIsNamedAtTheGate:
         assert invitations.issued == []
 
     def test_revocation_writes_to_the_organization_the_gate_authorized(self) -> None:
-        client, invitations, _ = _shell(context=_Context("acct-1", "org-acme"))
+        client, invitations, _ = _shell(_Given(context=_Context("acct-1", "org-acme")))
 
         client.post(f"{SHELL_PREFIX}/en/org-acme/team/invitations/inv-1/revoke")
 
@@ -262,8 +273,10 @@ class TestTheToken:
     def test_the_pending_list_carries_no_token(self) -> None:
         """It could not, and the surface must not imply otherwise."""
         client, _, _ = _shell(
-            invitations=_StubInvitations(
-                pending=[_Invitation("inv-1", "invitee@example.test", "member")]
+            _Given(
+                invitations=_StubInvitations(
+                    pending=[_Invitation("inv-1", "invitee@example.test", "member")]
+                )
             )
         )
 

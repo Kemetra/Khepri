@@ -51,7 +51,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
-from khepri.runtime.shell_invitations import add_invitation_routes
+from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -284,13 +284,15 @@ def add_shell_routes(
     add_invitation_routes(
         app,
         services=services,
-        environment=environment,
+        rendering=ShellRendering(
+            environment=environment,
+            prefix=SHELL_PREFIX,
+            language_of=_language,
+            unavailable=_unavailable,
+            render=_render,
+            team=_team_response,
+        ),
         clock=clock,
-        prefix=SHELL_PREFIX,
-        language_of=_language,
-        unavailable=_unavailable,
-        render=_render,
-        team=_team_response,
     )
 
     @app.get(f"{SHELL_PREFIX}/{{path:path}}")
