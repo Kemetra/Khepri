@@ -158,6 +158,11 @@ artifacts:
     state: active
     document: governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md
     depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-026
+    state: active
+    document: governance/decisions/KHEPRI-DEC-026-narrative-model-provider-selection.md
+    depends_on: []
 
   - type: specification
     id: FND-001
