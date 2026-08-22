@@ -277,6 +277,28 @@ class MemoryOrganizationStore:
             if holder == account_id
         ]
 
+    def organizations_for_account(self, account_id: str) -> list[Organization]:
+        """Mirrors `SqlOrganizationStore`: membership decides, and the order is by name.
+
+        Sorting matters even in a fake. The SQL store orders so a switcher renders the same list
+        twice; a fake returning insertion order would let a test depend on an order production
+        does not guarantee.
+        """
+        held = {
+            organization_id
+            for (organization_id, holder) in self.memberships
+            if holder == account_id
+        }
+        found = [
+            organization
+            for organization_id, organization in self.organizations.items()
+            if organization_id in held
+        ]
+        return sorted(
+            found,
+            key=lambda organization: (organization.name, organization.organization_id),
+        )
+
     def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int:
         """Effective owners, mirroring the SQL store's join onto account state.
 

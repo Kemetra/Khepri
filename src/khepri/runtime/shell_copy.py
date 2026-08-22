@@ -23,6 +23,13 @@ _EN = {
     "unavailable_intro": (
         "We cannot show this page. Check the address, or return to your organization's home page."
     ),
+    "no_membership_title": "You are not in an organization yet",
+    "no_membership_intro": (
+        "Your account is active, but it does not belong to an organization."
+    ),
+    "no_membership_action": "Ask an organization owner to invite you.",
+    "switcher_title": "Choose an organization",
+    "switcher_intro": "You belong to these organizations.",
 }
 
 _AR = {
@@ -32,6 +39,11 @@ _AR = {
     "unavailable_intro": (
         "لا يمكننا عرض هذه الصفحة. تحقق من العنوان، أو عد إلى الصفحة الرئيسية لمؤسستك."
     ),
+    "no_membership_title": "لست ضمن أي مؤسسة بعد",
+    "no_membership_intro": "حسابك نشط، لكنه لا ينتمي إلى أي مؤسسة.",
+    "no_membership_action": "اطلب من مالك المؤسسة دعوتك.",
+    "switcher_title": "اختر مؤسسة",
+    "switcher_intro": "أنت عضو في هذه المؤسسات.",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

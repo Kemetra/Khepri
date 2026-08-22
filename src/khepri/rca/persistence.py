@@ -1079,6 +1079,36 @@ class SqlOrganizationStore:
             ).all()
             return [_membership_from_row(row) for row in rows]
 
+    def organizations_for_account(self, account_id: str) -> list[Organization]:
+        """Every organization this account currently belongs to (`RCA-002` `FR-051`).
+
+        **One statement, joining membership to organization**, rather than reading memberships and
+        looking each organization up in turn. The same reasoning as `count_owners`: a predicate
+        applied in a second query is a predicate that can disagree with the first, and here the
+        disagreement would enumerate an organization whose membership had just been revoked.
+
+        Revocation deletes the membership row, so "current" needs no state column: a row present is
+        a membership held. Ordering is by name so a switcher renders the same list twice.
+        """
+        with self._factory() as database:
+            rows = database.execute(
+                select(OrganizationRow)
+                .join(
+                    MembershipRow,
+                    MembershipRow.organization_id == OrganizationRow.organization_id,
+                )
+                .where(MembershipRow.account_id == account_id)
+                .order_by(OrganizationRow.name, OrganizationRow.organization_id)
+            ).scalars()
+            return [
+                Organization._from_storage(
+                    organization_id=row.organization_id,
+                    name=row.name,
+                    created_at=row.created_at,
+                )
+                for row in rows
+            ]
+
     def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int:
         """How many *effective* owners this organization would still have without that account.
 

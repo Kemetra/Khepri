@@ -338,7 +338,10 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     commercial = build_commercial_services(stack)
     if commercial is None:
         return None
-    return ShellServices(resolver=commercial.resolver)
+    return ShellServices(
+        resolver=commercial.resolver,
+        organizations=SqlOrganizationStore(stack.factory),
+    )
 
 
 def build_pipeline(

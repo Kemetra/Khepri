@@ -1,0 +1,26 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.switcher_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  `RCA-002` FR-051. This renders exactly what the reader returned and never filters here: a filter
+  in the template would be a second place the membership rule is decided, and the two could
+  disagree. The reader's query is the single definition of "organizations this actor belongs to".
+
+  No count is rendered. "You belong to 3 organizations" says something about the actor's
+  memberships that the list already says, and a count that disagreed with the list would be a
+  disclosure about rows the list withheld.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.switcher_title }}</h1>
+  <p class="lede">{{ copy.switcher_intro }}</p>
+  <ul class="organization-list">
+    {% for organization in organizations %}
+    <li class="organization-item">
+      <a href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/analyses">
+        {{ organization.name }}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}
