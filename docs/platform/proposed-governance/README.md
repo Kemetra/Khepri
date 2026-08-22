@@ -4,6 +4,16 @@
 `governance/` was created or modified; no registry entry exists; no identifier is allocated;
 no approval state changed. `uv run khepri-gov validate` passes unchanged.
 
+> **Progress note added 2026-08-22.** `specification-draft-rca-002-commercial-shell.md` has been
+> promoted. `RCA-002` now exists at `governance/specifications/RCA-002.md` and is `active` in
+> `governance/registry.yaml`, so **that file is no longer a draft and the paragraph above does not
+> describe it.** It is retained here as the review record — what was proposed, so a later reader can
+> compare it against what landed. Two deliberate differences: the promoted specification drops the
+> draft's framing sections (the DRAFT banner, "Placement", "Two placements this specification
+> settles", and "Note on scope discipline"), which argued *for* the specification rather than
+> stating it; and its registry entry depends on `RRA-006` and `RRA-009` as well as `RCA` and
+> `RCA-001`, because `FR-054` and `FR-057`/`FR-058` carry obligations those specifications fix.
+>
 > **Progress note added 2026-08-08 (`main` @ `04acba3`).** Two of the four drafts below have
 > since been promoted and approved. `KHEPRI-DEC-012-amendment.md` and
 > `family-charter-draft-commercial.md` are no longer pending: `KHEPRI-DEC-012` was amended then
