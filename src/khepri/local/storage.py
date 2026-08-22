@@ -1,33 +1,40 @@
 """Point the real `S3EncryptedObjectStore` at a local S3-compatible endpoint.
 
-**There is no local object store class here, and that is the point.** An earlier
-plan for this slice was a `FilesystemObjectStore` implementing
-`EncryptedObjectStore` over a directory. It cannot be written honestly:
-`intake._storage_response_is_valid` requires `encryption_algorithm == "aws:kms"`
-with a non-empty key id, and `rra_uploads` carries a CHECK constraint
-(`ck_upload_kms_encryption`) enforcing the same string. A filesystem store
-returning it would persist a durable claim that plaintext bytes on disk are
-KMS-encrypted. That is fabricated evidence, not a test double, and the fact that
-it would satisfy every assertion is exactly what makes it dangerous.
+**There is no local object store class here, and that is still the point.** A
+`FilesystemObjectStore` over a directory would have to report an encryption
+algorithm it did not perform, and a durable claim that plaintext bytes on disk are
+encrypted is fabricated evidence rather than a test double. Local development uses
+the production class against a real endpoint instead, so the code exercised here is
+the code that runs in the runtime.
 
-So this module supplies a real endpoint instead. LocalStack provides genuine KMS:
-`create_key` returns an actual `me-central-1` ARN over a 12-digit account, the
-object really is encrypted with it, and `put_object` echoes back the same ARN. The
-unmodified store's five policy proofs then pass because they are true, not because
-something agreed to say so.
+**What `KHEPRI-DEC-008` changed about this module.** It used to provision a
+LocalStack KMS key and pass its ARN and account to the store, because the store
+proved its policy by reading `ServerSideEncryption`, `SSEKMSKeyId`, and
+`BucketKeyEnabled` off the response. Encryption is now the application's own work,
+so none of that is needed: no KMS client, no key, no account identifier. What
+remains is an endpoint, a bucket, and the same envelope master key the runtime
+uses.
 
-**MinIO does not work here**, and the reason is worth recording. Its SSE-KMS
-encryption is real, but it rewrites `SSEKMSKeyId` to the fixed form
-`arn:aws:kms:<keyname>`, which can express neither region nor account, and it never
-returns `BucketKeyEnabled=True`. Three of the five proofs pass and two cannot.
+**MinIO now works, and so does any conforming store.** The earlier note recorded
+that MinIO could not be used because it rewrites `SSEKMSKeyId` to a form carrying
+neither region nor account and never returns `BucketKeyEnabled=True`. Both facts
+are still true and neither matters any more: the store no longer reads those
+fields. The required surface is put, get, delete, list, abort multipart, and
+`IfNoneMatch`.
 
-The bucket is created **unversioned** deliberately: `_response_proves_policy`
-rejects any response carrying a `VersionId`, because RRA-002 requires deletion to
-actually delete rather than leave a recoverable prior version behind.
+**Local and runtime share one correctness model.** The local master key is a fixed
+non-secret value from `khepri.local.config`, which is safe precisely because the
+local stack holds no real content -- and important because a plaintext local path
+would mean the encryption path were never exercised until deployment.
+
+The bucket is created **unversioned** deliberately: the store rejects any response
+carrying a `VersionId`, because `RRA-002` requires deletion to actually delete
+rather than leave a recoverable prior version behind.
 """
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import boto3
@@ -35,9 +42,8 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from khepri.local.config import LocalSettings
+from khepri.rra.envelope import MasterKey
 from khepri.rra.storage import S3EncryptedObjectStore
-
-_KEY_DESCRIPTION = "khepri local beta content key"
 
 
 def local_client(settings: LocalSettings, service: str) -> Any:
@@ -60,18 +66,9 @@ def local_client(settings: LocalSettings, service: str) -> Any:
     )
 
 
-def ensure_local_key(kms: Any) -> tuple[str, str]:
-    """Find or create the local content key, and return its ARN and account.
-
-    Reused across restarts by description rather than recreated, so a bucket
-    written before a restart is still readable after one.
-    """
-    for entry in kms.list_keys().get("Keys", []):
-        described = kms.describe_key(KeyId=entry["KeyId"])["KeyMetadata"]
-        if described.get("Description") == _KEY_DESCRIPTION:
-            return described["Arn"], described["AWSAccountId"]
-    created = kms.create_key(Description=_KEY_DESCRIPTION)["KeyMetadata"]
-    return created["Arn"], created["AWSAccountId"]
+def local_master_key(settings: LocalSettings) -> MasterKey:
+    """The local envelope master key, decoded the same way the runtime decodes it."""
+    return MasterKey(material=base64.b64decode(settings.master_key_base64, validate=True))
 
 
 def ensure_local_bucket(s3: Any, settings: LocalSettings) -> None:
@@ -89,21 +86,18 @@ def ensure_local_bucket(s3: Any, settings: LocalSettings) -> None:
 
 def build_local_object_store(settings: LocalSettings) -> S3EncryptedObjectStore:
     """The production store class, unmodified, over a local endpoint."""
-    kms = local_client(settings, "kms")
     s3 = local_client(settings, "s3")
-    key_arn, account_id = ensure_local_key(kms)
     ensure_local_bucket(s3, settings)
     return S3EncryptedObjectStore(
         client=s3,
         bucket=settings.bucket,
-        kms_key_arn=key_arn,
-        expected_bucket_owner=account_id,
+        master_key=local_master_key(settings),
     )
 
 
 __all__ = [
     "build_local_object_store",
     "ensure_local_bucket",
-    "ensure_local_key",
     "local_client",
+    "local_master_key",
 ]

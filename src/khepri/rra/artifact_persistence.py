@@ -23,6 +23,7 @@ from khepri.rra.delivery_persistence import (
     _commit_delivery,
     _leased_job,
 )
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.jobs import JOB_RUNNING
 from khepri.rra.persistence import Base, BetaSessionRow, _utc
@@ -73,12 +74,20 @@ class ReportArtifactRow(Base):
             "expires_at > created_at", name="ck_report_artifact_expiry"
         ),
         CheckConstraint(
-            "encryption_algorithm = 'aws:kms'",
+            "encryption_algorithm = 'AES-256-GCM'",
             name="ck_report_artifact_encryption",
         ),
         CheckConstraint(
-            "length(object_key) > 0 AND length(kms_key_id) > 0",
+            "length(object_key) > 0",
             name="ck_report_artifact_storage_identity",
+        ),
+        CheckConstraint(
+            "length(ciphertext_sha256_hex) = 64",
+            name="ck_report_artifact_ciphertext_digest",
+        ),
+        CheckConstraint(
+            "envelope_version > 0",
+            name="ck_report_artifact_envelope_version",
         ),
         ForeignKeyConstraint(
             ["job_id", "bundle_id"],
@@ -109,7 +118,8 @@ class ReportArtifactRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     encryption_algorithm: Mapped[str] = mapped_column(String, nullable=False)
-    kms_key_id: Mapped[str] = mapped_column(String, nullable=False)
+    envelope_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    ciphertext_sha256_hex: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +137,8 @@ class StoredArtifact:
     created_at: datetime
     expires_at: datetime
     encryption_algorithm: str
-    kms_key_id: str
+    envelope_version: int
+    ciphertext_sha256_hex: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,8 +379,9 @@ def _validate_published_artifact(
 
 def _validate_storage_metadata(stored: StoredArtifact) -> None:
     _require_storage_value(bool(stored.object_key))
-    _require_storage_value(stored.encryption_algorithm == "aws:kms")
-    _require_storage_value(bool(stored.kms_key_id))
+    _require_storage_value(stored.encryption_algorithm == ALGORITHM_AES_256_GCM)
+    _require_storage_value(stored.envelope_version == ENVELOPE_VERSION)
+    _require_storage_value(len(stored.ciphertext_sha256_hex) == 64)
     _require_storage_value(stored.expires_at > stored.created_at)
 
 
@@ -504,7 +516,8 @@ def _from_row(row: ReportArtifactRow) -> StoredArtifact:
         created_at=created_at,
         expires_at=expires_at,
         encryption_algorithm=row.encryption_algorithm,
-        kms_key_id=row.kms_key_id,
+        envelope_version=row.envelope_version,
+        ciphertext_sha256_hex=row.ciphertext_sha256_hex,
     )
 
 

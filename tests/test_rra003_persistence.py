@@ -91,8 +91,9 @@ def session_and_upload(
         media_type=CSV_MEDIA_TYPE,
         created_at=NOW,
         expires_at=NOW + timedelta(days=7),
-        encryption_algorithm="aws:kms",
-        kms_key_id="kms-beta-content",
+        encryption_algorithm="AES-256-GCM",
+        envelope_version=1,
+        ciphertext_sha256_hex="c" * 64,
     )
     assert uploads.add_upload(metadata) is True
     return (

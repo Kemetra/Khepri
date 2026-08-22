@@ -67,14 +67,23 @@ from khepri.infra.database import GovernedDatabase
 from khepri.infra.network import GovernedNetwork
 from khepri.infra.sizing import MIN_EPHEMERAL_STORAGE_GIB, ServiceSizing, TaskSize
 from khepri.runtime.config import (
-    BUCKET_OWNER_VARIABLE,
     BUCKET_VARIABLE,
     DEAD_LETTER_QUEUE_URL_VARIABLE,
-    KMS_KEY_ARN_VARIABLE,
     QUEUE_URL_VARIABLE,
-    REGION,
-    REGION_VARIABLE,
 )
+
+# These four described the AWS-specific object-storage model `KHEPRI-DEC-008`
+# retired, and they moved here when the portable runtime stopped requiring them.
+# They are not a second definition of anything: `khepri.runtime.config` no longer
+# has these coordinates at all, because a KMS ARN, an AWS account identifier, and
+# a fixed region are not capabilities an S3-compatible store provides. This module
+# is the frozen worked example of the AWS task definition, so the names belong
+# where the AWS task definition is written. It follows that this stack describes
+# the retired deployment and would not boot the portable runtime.
+REGION = "me-central-1"
+REGION_VARIABLE = "KHEPRI_AWS_REGION"
+KMS_KEY_ARN_VARIABLE = "KHEPRI_KMS_KEY_ARN"
+BUCKET_OWNER_VARIABLE = "KHEPRI_EXPECTED_BUCKET_OWNER"
 
 WEB_CONTAINER_NAME = "web"
 WORKER_CONTAINER_NAME = "worker"

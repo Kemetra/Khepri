@@ -413,7 +413,9 @@ class TestTheMigration:
         `20260817_0017` on top of it, dropping `rra_beta_sessions.UNIQUE (owner_id)` so one
         commercial scope may hold more than one analysis. `R4-03` then added `20260818_0018`
         (`rca_invitations`), and the reframed `R5-05` consequence added `20260821_0019`
-        (`rca_recovery_security_events`), which is the head this pin now names.
+        (`rca_recovery_security_events`). The `KHEPRI-DEC-008` portability slice then added
+        `20260822_0020`, which retires the `aws:kms` CHECK constraints and the `kms_key_id`
+        column on both storage tables, and is the head this pin now names.
         """
         import subprocess
 
@@ -422,7 +424,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260821_0019" in result.stdout
+        assert "20260822_0020" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Protocol
 from xml.etree import ElementTree
 
+from khepri.rra.envelope import ALGORITHM_AES_256_GCM, ENVELOPE_VERSION
 from khepri.rra.sessions import (
     BetaSession,
     SessionExpired,
@@ -64,12 +65,17 @@ class ValidatedUpload:
 
 @dataclass(frozen=True, slots=True)
 class StoredObject:
+    """One stored object. `sha256_hex` is the plaintext digest and the content
+    address; `ciphertext_sha256_hex` proves the bytes read back are the bytes
+    written, and differs for every copy because encryption is randomised."""
+
     key: str
     size_bytes: int
     sha256_hex: str
     media_type: str
     encryption_algorithm: str
-    kms_key_id: str
+    envelope_version: int
+    ciphertext_sha256_hex: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +90,8 @@ class UploadMetadata:
     created_at: datetime
     expires_at: datetime
     encryption_algorithm: str
-    kms_key_id: str
+    envelope_version: int
+    ciphertext_sha256_hex: str
 
     @property
     def scope(self) -> SessionScope:
@@ -115,7 +122,6 @@ class EncryptedObjectStore(Protocol):
         content: bytes,
         media_type: str,
         sha256_hex: str,
-        encryption_context: dict[str, str],
     ) -> StoredObject: ...
 
     def delete(self, key: str) -> None: ...
@@ -211,11 +217,6 @@ class IntakeService:
             content=validated.content,
             media_type=validated.media_type,
             sha256_hex=validated.sha256_hex,
-            encryption_context={
-                "owner_id": session.owner_id,
-                "session_id": session.session_id,
-                "upload_id": upload_id,
-            },
         )
         if not _storage_response_is_valid(stored, object_key, validated):
             self._objects.delete(object_key)
@@ -231,7 +232,8 @@ class IntakeService:
             created_at=now,
             expires_at=session.content_expires_at,
             encryption_algorithm=stored.encryption_algorithm,
-            kms_key_id=stored.kms_key_id,
+            envelope_version=stored.envelope_version,
+            ciphertext_sha256_hex=stored.ciphertext_sha256_hex,
         )
         try:
             created = self._uploads.add_upload(metadata)
@@ -285,8 +287,9 @@ def _storage_response_is_valid(
         and stored.size_bytes == upload.size_bytes
         and stored.sha256_hex == upload.sha256_hex
         and stored.media_type == upload.media_type
-        and stored.encryption_algorithm == "aws:kms"
-        and bool(stored.kms_key_id)
+        and stored.encryption_algorithm == ALGORITHM_AES_256_GCM
+        and stored.envelope_version == ENVELOPE_VERSION
+        and len(stored.ciphertext_sha256_hex) == 64
     )
 
 

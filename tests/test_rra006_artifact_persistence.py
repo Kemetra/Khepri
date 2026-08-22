@@ -68,8 +68,9 @@ def _stored(test: Harness, publication: ReportPublication) -> tuple[StoredArtifa
             sha256_hex=payload.sha256_hex,
             created_at=NOW,
             expires_at=test.session.content_expires_at,
-            encryption_algorithm="aws:kms",
-            kms_key_id="arn:aws:kms:me-central-1:123456789012:key/example",
+            encryption_algorithm="AES-256-GCM",
+            envelope_version=1,
+            ciphertext_sha256_hex="c" * 64,
         )
         for payload in publication.artifacts
     )
