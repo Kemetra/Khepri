@@ -1551,7 +1551,7 @@ bounded to programs still in flight.
 | G6/B1 Billing | PROPOSED | Begin after M4 proves repeat value |
 | G7/A1 Agency | PROPOSED | Begin after billing and stable authorization |
 | G8/S2 Recurring delivery | PROPOSED | Separate spec/runtime decision required |
-| G9/AI1 AI assistant | PROPOSED | Requires stable evidence contracts and provider/privacy authority |
+| G9/AI1 AI assistant | PROPOSED | Requires stable evidence contracts; `KHEPRI-DEC-026` settles the narrative model-provider boundary but selects no provider and authorizes no adapter, so `G9-02` still owes the provider evaluation and the ZDR gates remain unsatisfied |
 | E1 Enterprise GA | PROPOSED | Final hardening program built on all prior milestones |
 
 ---
