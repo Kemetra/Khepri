@@ -1,0 +1,18 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.invitation_issued_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  The token appears here and nowhere else, ever. `InvitationService.issue` returns it once and
+  persists only a salted hash, so it cannot be recovered -- the pending list on the team surface
+  shows the invitation with no secret because there is no secret left to show. The copy says so
+  rather than leaving an owner to discover it by looking for a token that is gone.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.invitation_issued_title }}</h1>
+  <p class="lede">{{ copy.invitation_issued_intro }}</p>
+  <p class="invitation-recipient" dir="ltr">{{ email }}</p>
+  <p class="invitation-token" dir="ltr"><code>{{ token }}</code></p>
+  <p class="invitation-warning">{{ copy.invitation_token_once }}</p>
+  <p><a href="{{ prefix }}/{{ language }}/team">{{ copy.back_to_team }}</a></p>
+</section>
+{% endblock %}

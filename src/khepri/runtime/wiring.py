@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from khepri.rca.actor_resolution import ActorResolver
 from khepri.rca.authorization_resolution import AuthorizationResolver
 from khepri.rca.identity import IdentityProvider
+from khepri.rca.invitation_persistence import SqlInvitationStore
+from khepri.rca.invitation_service import InvitationService as RcaInvitationService
 from khepri.rca.isolation import IsolationService
 from khepri.rca.lifecycle import LifecycleService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
@@ -341,6 +343,7 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     return ShellServices(
         resolver=commercial.resolver,
         organizations=SqlOrganizationStore(stack.factory),
+        invitations=RcaInvitationService(SqlInvitationStore(stack.factory)),
     )
 
 

@@ -51,6 +51,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
+from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -80,6 +81,10 @@ class ActorResolver(Protocol):
         self, token: str, *, organization_id: str | None, now: Any
     ) -> Any: ...  # pragma: no cover -- Protocol
 
+    def require_owner(
+        self, token: str, *, organization_id: str, now: Any
+    ) -> Any: ...  # pragma: no cover -- Protocol
+
 
 class OrganizationReader(Protocol):
     """Reads the organizations one account currently belongs to (`R8-04`).
@@ -98,12 +103,40 @@ class OrganizationReader(Protocol):
     ) -> list[Any]: ...  # pragma: no cover -- Protocol
 
 
+class InvitationGateway(Protocol):
+    """Listing, issuing, and revoking invitations (`R8-05b`).
+
+    The write verbs appear here and the membership verbs do not, and that asymmetry is the point:
+    the shell may invite and un-invite, and may not promote, demote, or revoke a membership. A
+    gateway carrying those would make "the shell changes no membership semantics" a convention
+    rather than something the type forbids.
+    """
+
+    def invitations_for_organization(
+        self, organization_id: str, *, now: Any
+    ) -> Any: ...  # pragma: no cover -- Protocol
+
+    def issue(
+        self, offer: Any, *, expires_at: Any, now: Any
+    ) -> str: ...  # pragma: no cover -- Protocol
+
+    def revoke(
+        self,
+        organization_id: str,
+        invitation_id: str,
+        *,
+        actor_account_id: str,
+        now: Any,
+    ) -> None: ...  # pragma: no cover -- Protocol
+
+
 @dataclass(frozen=True, slots=True)
 class ShellServices:
     """What the shell needs to render an authenticated frame, and nothing more."""
 
     resolver: ActorResolver
     organizations: OrganizationReader
+    invitations: InvitationGateway | None = None
 
 
 def shell_environment() -> Environment:
@@ -184,10 +217,31 @@ def _switcher(
     )
 
 
-def _team(environment: Environment, *, language: str, members: list[Any]) -> Response:
-    """`FR-051`: exactly the organization-scoped read, rendered without further filtering."""
+def _team_response(
+    services: ShellServices,
+    environment: Environment,
+    *,
+    language: str,
+    context: Any,
+) -> Response:
+    """The team surface, rendered from the session's organization."""
+    members = services.organizations.memberships_for_organization(context.organization_id)
+    invitations: tuple[Any, ...] = ()
+    if services.invitations is not None:
+        invitations = tuple(
+            services.invitations.invitations_for_organization(
+                context.organization_id, now=None
+            )
+        )
     return _render(
-        environment, "team.html.j2", language=language, status_code=200, members=members
+        environment,
+        "team.html.j2",
+        language=language,
+        status_code=200,
+        members=members,
+        invitations=invitations,
+        is_owner=getattr(context, "is_owner", False),
+        organization_id=context.organization_id,
     )
 
 
@@ -227,6 +281,20 @@ def add_shell_routes(
             headers=dict(SECURITY_HEADERS),
         )
 
+    add_invitation_routes(
+        app,
+        services=services,
+        rendering=ShellRendering(
+            environment=environment,
+            prefix=SHELL_PREFIX,
+            language_of=_language,
+            unavailable=_unavailable,
+            render=_render,
+            team=_team_response,
+        ),
+        clock=clock,
+    )
+
     @app.get(f"{SHELL_PREFIX}/{{path:path}}")
     def shell_surface(
         path: str, session: CommercialSessionCookie = None
@@ -257,10 +325,9 @@ def add_shell_routes(
 
         surface = segments[2] if len(segments) > 2 else ""
         if surface == "team" and context.organization_id is not None:
-            members = services.organizations.memberships_for_organization(
-                context.organization_id
+            return _team_response(
+                services, environment, language=language, context=context
             )
-            return _team(environment, language=language, members=members)
         if surface == "":
             return _switcher(environment, language=language, organizations=organizations)
         return _unavailable(environment, language=language)

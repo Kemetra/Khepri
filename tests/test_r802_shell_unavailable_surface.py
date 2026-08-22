@@ -38,6 +38,11 @@ NOW = "2026-08-22T00:00:00Z"
 DELIVERED_PATHS = {
     f"{SHELL_PREFIX}/{{path:path}}",
     f"{SHELL_ASSETS}/{{name}}",
+    # `R8-05b`'s two mutating routes. Added here deliberately rather than by relaxing the
+    # assertion: this tripwire fires whenever the shell's reachable surface grows, which is the
+    # decision it exists to force.
+    f"{SHELL_PREFIX}/{{language}}/{{organization}}/team/invitations",
+    f"{SHELL_PREFIX}/{{language}}/{{organization}}/team/invitations/{{invitation}}/revoke",
 }
 
 
