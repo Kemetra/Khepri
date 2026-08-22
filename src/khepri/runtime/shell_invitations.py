@@ -1,0 +1,184 @@
+"""Issuing and revoking invitations from the shell's team surface (`R8-05b`).
+
+**Its own module rather than two more handlers in `shell_api.py`**, following the split that
+already separates `commercial_api.py` from `external_auth_api.py`. `add_shell_routes` had grown a
+route per slice, and the registrar was becoming the place every future surface lands regardless of
+what it does. These two are a distinct concern: they are the shell's only *mutating* routes, and
+they are the only ones that go through the owner gate.
+
+**Both use `require_owner`, and that is the whole security property of this module.**
+`InvitationService.issue` and `.revoke` take `actor_account_id` for attribution and check no
+authority of their own -- both docstrings say so -- so `R6-04` placed the check in the gate. A
+route here reaching for `for_request` would hand every member the ability to invite, and no
+service-level test would notice.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import timedelta
+from typing import Any
+
+from fastapi import FastAPI, Request, Response
+from jinja2 import Environment
+
+from khepri.rca.invitations import InvitationOffer
+from khepri.rca.session_cookie import CommercialSessionCookie
+
+#: How long an issued invitation stays redeemable.
+#:
+#: `InvitationService.issue` takes `expires_at` with no default, deliberately: `FR-016` requires an
+#: explicit expiry and fixes no lifetime, so a constant in the domain would put a product decision
+#: there. The shell supplies one, and seven days matches the seven-day object expiry and backup
+#: retention `KHEPRI-DEC-008` fixes -- its rule that "no retention horizon is quietly longer than
+#: another" applies to an invitation as much as to content.
+INVITATION_LIFETIME = timedelta(days=7)
+
+#: The roles a request may name. `FR-015` fixes exactly two, and an unknown value is refused rather
+#: than passed to the domain to reject: a role reaching `Invitation.create` from a form is
+#: caller-supplied input, and the allowlist is where it stops.
+ROLES = ("owner", "member")
+
+
+def _form(body: bytes) -> dict[str, str]:
+    """Parse a URL-encoded form body with the standard library.
+
+    **No `python-multipart`, and that is a dependency decision rather than a style one.** FastAPI's
+    `Form()` requires it, and the shell posts plain `application/x-www-form-urlencoded` bodies
+    because the content security policy admits no inline script to build anything else. Adding a
+    runtime dependency to the deployed wheel to parse two fields is a supply-chain surface the
+    guardrails' "no external runtime assets" rule exists to avoid.
+
+    Last value wins on a repeated key, matching form semantics; a missing key is absent rather than
+    empty, so a caller's `not email` check still distinguishes them.
+    """
+    from urllib.parse import parse_qs
+
+    parsed = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    return {key: values[-1] for key, values in parsed.items() if values}
+
+
+def owner_or_none(
+    services: Any,
+    session: str | None,
+    clock: Callable[[], Any],
+    *,
+    organization_id: str,
+) -> Any:
+    """The owner gate, or `None` for every reason a caller must not tell apart.
+
+    Absent cookie, unresolvable session, non-owner, and an unwired invitation gateway all return
+    `None`, and every caller renders the same `unavailable`. Returning a context rather than a
+    boolean follows `require_owner`'s own reasoning: a caller cannot ask the question and ignore
+    the answer.
+
+    **The organization is named to the gate rather than defaulted.** `require_owner` requires a
+    target where `for_request` does not, precisely so the caller must name one -- "a default that
+    is safe only when the caller remembers to pass the same value twice is not a default worth
+    having" -- and it resolves the actor's live role in *that* organization before permitting
+    anything.
+    """
+    if session is None or services.invitations is None:
+        return None
+    try:
+        return services.resolver.require_owner(
+            session, organization_id=organization_id, now=clock()
+        )
+    except PermissionError:
+        return None
+
+
+def add_invitation_routes(
+    app: FastAPI,
+    *,
+    services: Any,
+    environment: Environment,
+    clock: Callable[[], Any],
+    prefix: str,
+    language_of: Callable[[str], str],
+    unavailable: Callable[..., Response],
+    render: Callable[..., Response],
+    team: Callable[..., Response],
+) -> None:
+    """Declare the two mutating routes, given the shell's own render helpers.
+
+    The helpers are passed in rather than imported so this module cannot render a surface the shell
+    does not own, and so `shell_api.py` keeps one definition of the security headers every response
+    carries.
+    """
+
+    @app.post(f"{prefix}/{{language}}/{{organization}}/team/invitations")
+    async def issue_invitation(
+        request: Request,
+        language: str,
+        organization: str,
+        session: CommercialSessionCookie = None,
+    ) -> Response:
+        """Invite one person, as an owner of the organization the request names."""
+        rendered = language_of(language)
+        context = owner_or_none(services, session, clock, organization_id=organization)
+        if context is None or context.organization_id is None:
+            return unavailable(environment, language=rendered)
+
+        submitted = _form(await request.body())
+        email = submitted.get("email", "")
+        role = submitted.get("role", "")
+        if role not in ROLES or not email:
+            return unavailable(environment, language=rendered)
+
+        now = clock()
+        token = services.invitations.issue(
+            InvitationOffer(
+                organization_id=context.organization_id,
+                intended_role=role,
+                target_identity=email,
+                issued_by=context.account_id,
+            ),
+            expires_at=now + INVITATION_LIFETIME,
+            now=now,
+        )
+        return render(
+            environment,
+            "invitation_issued.html.j2",
+            language=rendered,
+            status_code=200,
+            token=token,
+            email=email,
+        )
+
+    @app.post(
+        f"{prefix}/{{language}}/{{organization}}/team/invitations/{{invitation}}/revoke"
+    )
+    def revoke_invitation(
+        language: str,
+        organization: str,
+        invitation: str,
+        session: CommercialSessionCookie = None,
+    ) -> Response:
+        """Withdraw one open invitation.
+
+        The service refuses four causes identically -- absent, revoked, redeemed, expired, or
+        another organization's -- so this handler adds no check that could distinguish them.
+        """
+        rendered = language_of(language)
+        context = owner_or_none(services, session, clock, organization_id=organization)
+        if context is None or context.organization_id is None:
+            return unavailable(environment, language=rendered)
+        try:
+            services.invitations.revoke(
+                context.organization_id,
+                invitation,
+                actor_account_id=context.account_id,
+                now=clock(),
+            )
+        except Exception:  # noqa: BLE001 -- one refusal for every cause, per `FR-025`
+            return unavailable(environment, language=rendered)
+        return team(services, environment, language=rendered, context=context)
+
+
+__all__ = [
+    "INVITATION_LIFETIME",
+    "ROLES",
+    "add_invitation_routes",
+    "owner_or_none",
+]

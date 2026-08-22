@@ -29,12 +29,8 @@ from fastapi.testclient import TestClient
 
 from khepri.rca.errors import ScopeAccessDenied
 from khepri.rca.session_cookie import SESSION_COOKIE
-from khepri.runtime.shell_api import (
-    INVITATION_LIFETIME,
-    SHELL_PREFIX,
-    ShellServices,
-    add_shell_routes,
-)
+from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
+from khepri.runtime.shell_invitations import INVITATION_LIFETIME
 
 NOW = datetime(2026, 8, 22, tzinfo=UTC)
 
