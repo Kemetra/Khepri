@@ -67,7 +67,10 @@ _DEFAULT_LANGUAGE = "en"
 #: What the shell serves, by exact name. `shell.css` ships from `R8-01` and lives beside the
 #: journey's assets; it is read from there rather than copied, because two copies of a stylesheet
 #: are two things to keep in step and `test_r801_shell_tokens.py` asserts against the original.
-_ASSETS = {"shell.css": "text/css; charset=utf-8"}
+_ASSETS = {
+    "shell.css": "text/css; charset=utf-8",
+    "shell-components.css": "text/css; charset=utf-8",
+}
 
 
 class ActorResolver(Protocol):
