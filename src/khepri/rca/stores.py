@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         Membership,
         MembershipEvent,
         Organization,
+        OrganizationMember,
     )
 
 
@@ -61,6 +62,10 @@ class OrganizationStore(Protocol):
     def memberships_for_account(self, account_id: str) -> list[Membership]: ...
 
     def organizations_for_account(self, account_id: str) -> list[Organization]: ...
+
+    def memberships_for_organization(
+        self, organization_id: str
+    ) -> list[OrganizationMember]: ...
 
     def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int: ...
 

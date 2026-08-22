@@ -1,0 +1,33 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.team_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  `RCA-002` FR-051. The members shown are whatever the organization-scoped read returned; this
+  template filters nothing. A filter here would be a second place the scope is decided, and the
+  rows it removed would be other organizations' people.
+
+  A disabled member is shown and labelled rather than hidden. Hiding them would make the list
+  disagree with the organization's actual membership, and an owner cannot act on a person they
+  cannot see. Disablement never touches `rca_memberships`, so the label is the only thing that
+  distinguishes them.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.team_title }}</h1>
+  <p class="lede">{{ copy.team_intro }}</p>
+  {% if members %}
+  <ul class="member-list">
+    {% for member in members %}
+    <li class="member-item{% if member.disabled %} member-item--disabled{% endif %}">
+      <span class="member-identity" dir="ltr">{{ member.email }}</span>
+      <span class="member-role">
+        {%- if member.role == "owner" %}{{ copy.role_owner }}{% else %}{{ copy.role_member }}{% endif -%}
+      </span>
+      {% if member.disabled %}<span class="member-state">{{ copy.member_disabled }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ copy.team_empty }}</p>
+  {% endif %}
+</section>
+{% endblock %}

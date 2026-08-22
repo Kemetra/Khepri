@@ -30,6 +30,14 @@ _EN = {
     "no_membership_action": "Ask an organization owner to invite you.",
     "switcher_title": "Choose an organization",
     "switcher_intro": "You belong to these organizations.",
+    "team_title": "Team",
+    "team_intro": "People in this organization.",
+    "team_empty": "No one else is in this organization yet.",
+    "member_disabled": "Account disabled",
+    "role_owner": "Owner",
+    "role_member": "Member",
+    "invitations_title": "Pending invitations",
+    "invitations_empty": "There are no pending invitations.",
 }
 
 _AR = {
@@ -44,6 +52,14 @@ _AR = {
     "no_membership_action": "اطلب من مالك المؤسسة دعوتك.",
     "switcher_title": "اختر مؤسسة",
     "switcher_intro": "أنت عضو في هذه المؤسسات.",
+    "team_title": "الفريق",
+    "team_intro": "الأشخاص في هذه المؤسسة.",
+    "team_empty": "لا يوجد أحد آخر في هذه المؤسسة بعد.",
+    "member_disabled": "الحساب معطَّل",
+    "role_owner": "مالك",
+    "role_member": "عضو",
+    "invitations_title": "الدعوات المعلَّقة",
+    "invitations_empty": "لا توجد دعوات معلَّقة.",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

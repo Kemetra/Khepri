@@ -36,6 +36,7 @@ from khepri.rca.organizations import (
     Membership,
     MembershipEvent,
     Organization,
+    OrganizationMember,
 )
 from khepri.rca.records import assert_sealed
 
@@ -1107,6 +1108,40 @@ class SqlOrganizationStore:
                     created_at=row.created_at,
                 )
                 for row in rows
+            ]
+
+    def memberships_for_organization(self, organization_id: str) -> list[OrganizationMember]:
+        """Everyone in one organization, with the account state a listing must not omit.
+
+        **Scoped by `organization_id` in the statement**, never filtered afterwards. This is the
+        first read whose result shows one person's identity to another, so the scope is a
+        disclosure boundary: a filter applied after the query is a filter a later refactor can
+        skip, and the rows it would have removed are other organizations' members.
+
+        **Joined to `rca_accounts` for the same reason `count_owners` is.** A membership row
+        survives disablement untouched, so a listing built from memberships alone renders a
+        disabled person as an ordinary member. `disabled` is carried rather than filtered, because
+        a team screen showing fewer people than the organization has is its own confusion --
+        the surface says so instead.
+
+        Ordered by email then account so two renders agree. Email is nullable, and `NULLS` ordering
+        differs between engines, so the account identifier is the stable tiebreak.
+        """
+        with self._factory() as database:
+            rows = database.execute(
+                select(MembershipRow, AccountRow)
+                .join(AccountRow, AccountRow.account_id == MembershipRow.account_id)
+                .where(MembershipRow.organization_id == organization_id)
+                .order_by(AccountRow.email, AccountRow.account_id)
+            ).all()
+            return [
+                OrganizationMember(
+                    account_id=membership.account_id,
+                    email=account.email,
+                    role=membership.role,
+                    disabled=account.disabled_at is not None,
+                )
+                for membership, account in rows
             ]
 
     def count_owners(self, organization_id: str, *, excluding_account_id: str) -> int:

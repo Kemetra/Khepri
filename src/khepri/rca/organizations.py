@@ -50,6 +50,27 @@ class Organization(Sealed):
             return Organization(organization_id=organization_id, name=name, created_at=created_at)
 
 
+@dataclass(frozen=True, slots=True)
+class OrganizationMember:
+    """One row of a team listing: who, in what role, and whether they can still act.
+
+    **Not `Sealed`, and not a record the domain acts on.** It is a read projection assembled for a
+    surface, carries no authority, and is never written back. Sealing it would imply a door exists
+    to construct it through, which would be a second way to represent a membership.
+
+    **`disabled` is the field that stops this being a lie.** Disablement never touches
+    `rca_memberships`, so a listing built from membership rows alone renders a disabled person as
+    an ordinary member. `count_owners` already had to join account state for the same reason, and
+    this is that requirement one layer up: a membership row is not evidence that the person behind
+    it can act.
+    """
+
+    account_id: str
+    email: str | None
+    role: str
+    disabled: bool
+
+
 @register_sealed
 @dataclass(frozen=True, slots=True)
 class Membership(Sealed):
