@@ -20,7 +20,17 @@ certs="$(dirname "$0")/certs"
 mkdir -p "$certs/minio"
 cd "$certs"
 
-if [ -f minio/public.crt ] && [ -f server.crt ] && [ -f ca.crt ]; then
+# Every file the stack mounts, not a representative three. An interrupted earlier
+# run can leave `minio/public.crt` written but `minio/ca.crt` not yet copied, and a
+# key can be removed on its own; checking a subset then reports success and the
+# stack fails later with a TLS error that points nowhere near the missing file.
+complete=1
+for required in   ca.crt ca.key server.crt server.key   minio/public.crt minio/private.key minio/ca.crt
+do
+  [ -f "$required" ] || complete=0
+done
+
+if [ "$complete" -eq 1 ]; then
   echo "[OK] certificates already present"
   exit 0
 fi
