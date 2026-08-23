@@ -72,6 +72,13 @@ class ReportWorker:
         *,
         heartbeat: Callable[[], None] | None = None,
     ) -> ReportJob | None:
+        """Claim the job, then run it. For callers that have not claimed it yet.
+
+        `khepri.local.worker` polls without transitioning, so the lease here is its
+        only claim. A caller that already holds the lease must use `execute`: leasing
+        a second time finds the row `running` and refuses, which is the composition
+        defect this split removes.
+        """
         leased = self._jobs.lease(
             LeaseRequest(
                 job_id=message.job_id,
@@ -82,9 +89,21 @@ class ReportWorker:
         )
         if leased is None:
             return None
+        return self.execute(leased, heartbeat=heartbeat)
 
-        self._execute(leased, heartbeat=heartbeat)
-        return self._jobs.complete(self._lease_action(leased))
+    def execute(
+        self,
+        job: ReportJob,
+        *,
+        heartbeat: Callable[[], None] | None = None,
+    ) -> ReportJob:
+        """Run an already-claimed job and complete it.
+
+        The one execution path: `process` claims and delegates here, so a job runs
+        and settles identically whichever caller claimed it.
+        """
+        self._execute(job, heartbeat=heartbeat)
+        return self._jobs.complete(self._lease_action(job))
 
     def _execute(
         self,

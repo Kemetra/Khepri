@@ -42,9 +42,17 @@ CLAIMABLE_STATES = (JOB_QUEUED, JOB_RETRYABLE)
 
 @dataclass(frozen=True, slots=True)
 class ClaimedDelivery:
-    """One claimed job, carrying its opaque identifier and nothing about its content."""
+    """One claimed job: its opaque identifier and the leased row `receive` transitioned.
+
+    The claim already read this job to lease it, so carrying the result spares the
+    executor a second read and closes the gap in which the row could change between
+    the two. `ReportJob` is job metadata -- identifiers, state, attempt counts, lease
+    ownership -- and carries no report content, so this holds the boundary the
+    identifier-only shape was protecting.
+    """
 
     message: ReportJobMessage
+    job: ReportJob
 
 
 class ClaimPolicy:
@@ -108,7 +116,10 @@ class ClaimingReportQueue:
         )
         if leased is None:
             return None
-        return ClaimedDelivery(message=ReportJobMessage(job_id=leased.job_id))
+        return ClaimedDelivery(
+            message=ReportJobMessage(job_id=leased.job_id),
+            job=leased,
+        )
 
     def heartbeat(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob:
         """Extend the claim, which is what a visibility-timeout renewal used to do."""

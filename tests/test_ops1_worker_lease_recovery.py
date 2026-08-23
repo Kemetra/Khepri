@@ -39,7 +39,6 @@ from khepri.rra.jobs import (
 from khepri.rra.persistence import Base, SqlSessionStore
 from khepri.rra.report_services import JobReader
 from khepri.rra.sessions import InvitationService, SessionScope
-from khepri.rra.worker import ReportJobMessage
 from khepri.runtime.worker import LEASE_FOR, ClaimWorkerLoop
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
@@ -56,14 +55,14 @@ class RefusingWorker:
     test set up the wrong state rather than that the loop misbehaved.
     """
 
-    def process(self, message: ReportJobMessage, *, heartbeat: object) -> ReportJob | None:
-        raise AssertionError(f"no job should have been claimable, got {message.job_id}")
+    def execute(self, job: ReportJob, *, heartbeat: object) -> ReportJob | None:
+        raise AssertionError(f"no job should have been claimable, got {job.job_id}")
 
 
 class PassiveWorker:
     """Accepts whatever it is given and reports nothing completed."""
 
-    def process(self, message: ReportJobMessage, *, heartbeat: object) -> ReportJob | None:
+    def execute(self, job: ReportJob, *, heartbeat: object) -> ReportJob | None:
         return None
 
 
@@ -227,10 +226,8 @@ def test_an_expired_lease_is_recovered_while_other_work_is_claimable() -> None:
     processed: list[str] = []
 
     class RecordingWorker:
-        def process(
-            self, message: ReportJobMessage, *, heartbeat: object
-        ) -> ReportJob | None:
-            processed.append(message.job_id)
+        def execute(self, job: ReportJob, *, heartbeat: object) -> ReportJob | None:
+            processed.append(job.job_id)
             return None
 
     loop = ClaimWorkerLoop(
@@ -260,9 +257,7 @@ def test_recovery_does_not_depend_on_an_idle_iteration() -> None:
         test.enqueue(name)
 
     class BusyWorker:
-        def process(
-            self, message: ReportJobMessage, *, heartbeat: object
-        ) -> ReportJob | None:
+        def execute(self, job: ReportJob, *, heartbeat: object) -> ReportJob | None:
             return None
 
     loop = ClaimWorkerLoop(
