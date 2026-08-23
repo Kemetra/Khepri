@@ -11,8 +11,9 @@ the calculation validation and local pharmacy staging gates.
 
 **Architecture:** Semantic admission proves what each normalized retail event means; population
 eligibility proves which events and transactions each formula may combine; calculation applies one
-pinned formula to one certified population. All implementation work lands through one atomic
-calculation-correction pull request so no intermediate successor contract reaches `main`.
+pinned formula to one certified population. Implementation lands as ordered slices, one governed
+successor version per slice, so no intermediate successor contract reaches `main` and no slice
+widens past the specification that admits it.
 
 **Tech Stack:** Python 3.13, Polars, `Decimal`, Pydantic/FastAPI, pytest, PostgreSQL, MinIO,
 Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-side PR gate.
@@ -25,9 +26,10 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 - Correction architecture: PR #262 merged at `18019b5`.
 - Governed semantics: PR #264 merged at `f86507920155077fd3c87eb8878d29fb1624db69`.
 - Active authorities: `RRA-003`, `RRA-004`, `RRA-008`, and `RRA-009` on `main`.
+- Roadmap: PR #266 merged at `b16744e`; `CAL1` is `READY_FOR_PLAN` and this plan is its ledger.
 - Next task: independent RED calculation proofs.
-- Required delivery: one atomic `calculations-correction` PR based on `f865079` or a later fresh
-  `origin/main` if main advances before execution.
+- Required delivery: the ordered slices in "Delivery slices" below, each its own PR against a fresh
+  `origin/main`, starting from `b16744e` or later.
 
 ## Global constraints
 
@@ -37,7 +39,7 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 - Publish exactly `rra003.mapping.v3`, `rra004.package.v3`, `rra004.formula.v2`,
   `rra008.comparison.v2`, `rra008.growth.v2`, `rra008.basket.v2`, and
   `rra008.concentration.v2`.
-- Preserve C0-before-C1-C4 as commit and review order inside the atomic PR.
+- Preserve the slice merge order below; `V-mapping` merges before every other slice.
 - Do not publish an intermediate successor version from `main`.
 - Every code change follows RED, verified intended failure, minimal GREEN, focused regression,
   self-review, and independent task review.
@@ -51,6 +53,60 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
   refactor, or renderer-side calculation.
 - Run `uv run khepri-gov validate`, `uv run ruff check .`, and `uv run pytest` before every handoff.
 - CI must pass benchmark, image, and CodeScene gates; local evidence must not claim those checks.
+
+---
+
+## Delivery slices
+
+**This mission does not ship as one atomic pull request.** An earlier revision of this
+plan required that, on the ground that no intermediate successor contract may reach
+`main`. The ground is sound and is kept; the conclusion was not available.
+`governance/CONSTITUTION.md` Article IV admits product code "only in small,
+independently verifiable slices linked to an active specification", `AGENTS.md` repeats
+it, and the merged design at `18019b5` says "C0 must merge before C1-C4. Each correction
+is a separate mapping- or formula-versioned slice with its own RED/GREEN/reconciliation
+gate." That is a *merge* order, not a commit order inside one branch.
+
+What protects `main` is that **each governed version is published by exactly one slice,
+complete**. The tasks below are units of work; the slices below are units of merge, and
+a task that contributes to two versions contributes a part to each.
+
+| Slice | Publishes | Parts inside it | Merges after |
+|---|---|---|---|
+| `V-mapping` | `rra003.mapping.v3` | Task 3, less its package-v3 structural fields | — |
+| `V-package` | `rra004.package.v3` | Task 3's package-v3 structural fields; Task 4's coverage signatures, daily bases and projections; Task 5's rounding-residual evidence | `V-mapping` |
+| `V-formula` | `rra004.formula.v2` | Task 8, **plus** the `RRA-004` core-formula rows inside Tasks 4, 6 and 7 — absolute and percentage delta, items per transaction, attach rate, concentration curve point, top decile and quartile share | `V-package` |
+| `V-comparison` | `rra008.comparison.v2` | Task 4's comparison facts and refusals | `V-formula` |
+| `V-growth` | `rra008.growth.v2` | Task 5's growth family | `V-formula` |
+| `V-basket` | `rra008.basket.v2` | Task 6's basket family | `V-formula` |
+| `V-concentration` | `rra008.concentration.v2` | Task 7's concentration family | `V-formula` |
+
+Three consequences the task order alone does not give:
+
+- **`rra004.package.v3` spans three tasks.** `RRA-004` defines that one version to
+  authorize readable population provenance, canonical transaction keys, retained
+  reconciliation bases, coverage-manifest identity, coverage signatures, aligned daily
+  bases, currency, and growth rounding-residual evidence. Tasks 3, 4 and 5 each produce
+  part of it. They merge together, or the version reaches `main` incomplete and is
+  mutated afterwards without a new identity.
+- **`rra004.formula.v2` merges before the four `RRA-008` families, not after them.**
+  `RRA-008`'s exclusions name `rra004.formula.v2` as consumed there, and the formula
+  rows for delta, attach, items-per-transaction and concentration shares live in
+  `RRA-004`'s single core-formula table. Task 8 sitting last would leave Tasks 4, 6 and
+  7 proving families against formulas that then change under them.
+- **`V-mapping` carries every admission change `rra003.mapping.v3` governs**, including
+  the normalized measures — revenue and returns, discounts, cost inputs, units — not
+  only identity, currency and coverage confirmation.
+
+Each slice runs its own RED, verified failure, minimal GREEN, focused regression,
+independent oracle, bilingual refusal wording, reconciliation, and the three required
+gates before it is proposed. The validation gate in Task 10 runs against the assembled
+contract once the last slice is merged, and no slice reaches a design partner before it
+passes.
+
+`docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` §CAL1 carries the same slice map under
+the identifiers `CAL1-03` … `CAL1-10`; where this plan and that roadmap disagree, the
+active specification governs both and the disagreement is a defect in one of them.
 
 ---
 
@@ -123,8 +179,10 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 
 **Interfaces:**
 - Consumes: a profiled upload plus explicit normalized source contract.
-- Produces: mapping v3, admitted normalized events, readable population evidence, and package-v3
-  structural fields consumed by C1-C4.
+- Produces: mapping v3, admitted normalized events, and readable population evidence — every
+  admission change `rra003.mapping.v3` governs, normalized measures included.
+- Slices: `V-mapping`, except the package-v3 structural fields it also produces, which are part of
+  `V-package` and merge with it.
 
 - [ ] Extend `POST /api/v1/beta/profile` with a required `extra="forbid"` source-contract object
   containing contract/evidence identity, semantic column positions, event-kind column or sale-only
@@ -166,6 +224,8 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 - Consumes: C0 normalized events and an input-bound coverage manifest.
 - Produces: structural coverage signatures, aligned daily bases, accepted PoP/YoY windows, and
   `rra008.comparison.v2` facts/refusals.
+- Slices: coverage signatures, daily bases and projections are `V-package`; the absolute and
+  percentage delta formula rows are `V-formula`; the comparison family is `V-comparison`.
 
 - [ ] Add the coverage-manifest document: version/evidence identity, input digest, timezone,
   aggregate scope or full store roster, covered scope/date pairs, included event kinds/statuses,
@@ -202,6 +262,8 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
   `sales_complete_revenue_units` daily bases.
 - Produces: `rra008.growth.v2` revenue change, volume effect, realized price/mix effect, and
   rounding-residual evidence.
+- Slices: the rounding-residual evidence field is `V-package`; the growth family is `V-growth`,
+  over the landed package and formula versions.
 
 - [ ] Refuse returns, missing paired rows, non-positive units, unproven/mixed currency, or C1
   structural incompatibility in either window.
@@ -227,6 +289,8 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 **Interfaces:**
 - Consumes: complete sale units, canonical sale-transaction sets, and dimension membership bases.
 - Produces: `rra008.basket.v2` items-per-transaction and product/category attach families.
+- Slices: the items-per-transaction and attach-rate formula rows are `V-formula`; the basket family
+  is `V-basket`.
 
 - [ ] Calculate items per transaction from positive posted-sale units, including free/bonus items,
   divided by distinct canonical posted-sale transactions over the identical complete population.
@@ -252,6 +316,8 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 **Interfaces:**
 - Consumes: complete non-null posted-sale dimension revenue bases.
 - Produces: `rra008.concentration.v2` authoritative curves and top-decile/quartile shares.
+- Slices: the curve-point and top decile/quartile formula rows are `V-formula`; the concentration
+  family is `V-concentration`.
 
 - [ ] Refuse a dimension when any eligible sale row lacks its value, including zero-revenue rows,
   or when the full set exceeds admissibility limits.
@@ -278,6 +344,8 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 **Interfaces:**
 - Consumes: C0 admitted events and retained compatible bases.
 - Produces: complete `rra004.formula.v2` headlines and ratios.
+- Slices: `V-formula`, which is this task **plus** the `RRA-004` formula rows named in Tasks 4, 6
+  and 7. It merges after `V-package` and before the four `RRA-008` family slices, which consume it.
 
 - [ ] Revenue: sum complete signed net VAT-exclusive posted sale/return revenue.
 - [ ] Units: sum complete signed integral posted physical movement.
@@ -334,14 +402,14 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 - [ ] Prove every renderer uses bundle strings and performs no business arithmetic.
 - [ ] Run focused mutation/golden/surface suites and the three required gates. Commit and review.
 
-### Task 10: Pass the calculation gate and open the atomic correction PR
+### Task 10: Pass the calculation gate across the merged slices
 
 **Files:** No additional behavior unless a RED test exposes a defect; any fix repeats TDD and task
 review before this gate.
 
 **Interfaces:**
-- Consumes: all reviewed GREEN commit groups.
-- Produces: one mergeable atomic successor-contract PR.
+- Consumes: every slice merged, each having passed its own RED/GREEN/reconciliation gate.
+- Produces: the assembled successor contract, validated as one analytical system.
 
 - [ ] Run `uv run khepri-gov validate`, `uv run ruff check .`, and `uv run pytest` at exact head.
 - [ ] Verify every metric has clean, messy, and adversarial independent-oracle evidence.
@@ -353,8 +421,11 @@ review before this gate.
 - [ ] Verify every changed fact/refusal carries the named successor version and stable identity.
 - [ ] Obtain broad external calculation/code review; fix all Critical/Important findings and
   re-review the fix diff.
-- [ ] Push `calculations-correction` and open one PR against current `main`, documenting every RED
-  command/failure, GREEN command/result, independent oracle, compatibility impact, and exclusions.
+- [ ] Each slice is proposed as its own PR against current `main`, documenting its RED
+  command/failure, GREEN command/result, independent oracle, the single governed version it
+  publishes, compatibility impact, and exclusions.
+- [ ] Run this gate against the assembled contract after the last slice merges, not against any
+  single slice: a slice can be internally green while the system it joins is not.
 - [ ] Require CI governance, Ruff, pytest, benchmark, image, and CodeScene gates before owner merge.
 
 ### Task 11: Run full PostgreSQL/MinIO local pharmacy staging
@@ -363,7 +434,7 @@ review before this gate.
 task's RED/GREEN loop.
 
 **Interfaces:**
-- Consumes: the exact reviewed atomic-PR head after the calculation gate is green.
+- Consumes: merged `main` with every slice landed and the calculation gate green.
 - Produces: design-partner-equivalent end-to-end staging evidence.
 
 - [ ] Start `docker compose -f docker-compose.local.yml up -d`; use current PostgreSQL and MinIO,
@@ -384,10 +455,11 @@ task's RED/GREEN loop.
 **Files:** No tracked change.
 
 **Interfaces:**
-- Consumes: green atomic PR, server-side gates, staging evidence, and owner approval.
+- Consumes: every slice merged, server-side gates, staging evidence, and owner approval.
 - Produces: validated successor calculation contract on `main`.
 
-- [ ] Owner merges the atomic correction PR; automation never merges or treats checks as approval.
+- [ ] Owner merges each slice in the order above; automation never merges or treats checks as
+  approval.
 - [ ] Fetch fresh `origin/main`, verify the merge SHA, and update the calculations worktree without
   destructive reset.
 - [ ] Rerun governance validation, Ruff, and full pytest on merged `main`.
@@ -398,6 +470,6 @@ task's RED/GREEN loop.
 
 ## Completion definition
 
-The mission is complete only when the owner has merged the atomic correction PR and merged-main
+The mission is complete only when the owner has merged every slice and merged-main
 evidence proves the complete normalized-event, population, formula, reconciliation, bilingual,
 mutation, pharmacy-oracle, and local-staging contract. A green unit suite alone is insufficient.
