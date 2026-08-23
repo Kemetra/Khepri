@@ -89,6 +89,30 @@ def business_cells(language: str = LANGUAGE_ENGLISH):
     return [cell for cell in build_cells(bundle(), language) if cell.kind != KIND_ROWS]
 
 
+def period_labels() -> set[str]:
+    """The period labels the fixture produces, as the report spells them."""
+    return {
+        cell.label
+        for cell in business_cells()
+        if cell.label and re.fullmatch(r"2026-\d\d", cell.label)
+    }
+
+
+def shared_period_figures() -> dict[str, set[str]]:
+    """Period labels carrying more than one metric, with the texts they carry.
+
+    Extracted from the test that reads it rather than inlined: nesting the
+    grouping loop inside the assertion loop is the "Bumpy Road" CodeScene flagged,
+    and a helper named for what it returns reads better than the two levels did.
+    """
+    labels = period_labels()
+    by_label: dict[str, set[str]] = {}
+    for cell in business_cells():
+        if cell.label in labels:
+            by_label.setdefault(cell.label, set()).add(cell.text)
+    return {label: texts for label, texts in by_label.items() if len(texts) > 1}
+
+
 def overview_rows(html: str) -> list[str]:
     """Every `<tr>` of every figure table in the document.
 
@@ -106,39 +130,24 @@ class TestASeriesBecomesOneRowPerLabel:
         # The core assertion. Before the pivot, `2026-01` headed two rows in the
         # overview -- one for revenue and one for units.
         rows = overview_rows(document())
-        periods = [
-            label
-            for label in {
-                cell.label
-                for cell in business_cells()
-                if cell.label and re.fullmatch(r"2026-\d\d", cell.label)
-            }
-        ]
+        periods = sorted(period_labels())
         assert len(periods) >= 4, f"the fixture must produce several periods: {periods}"
 
-        for period in periods:
-            carrying = [row for row in rows if period in row]
-            assert len(carrying) == 1, (
-                f"{period} appears in {len(carrying)} rows, expected 1"
-            )
+        appearances = {
+            period: sum(1 for row in rows if period in row) for period in periods
+        }
+        assert all(count == 1 for count in appearances.values()), appearances
 
     def test_a_pivoted_row_carries_every_metric_for_its_label(self) -> None:
         # A row is only useful if it holds the whole period: revenue *and* units.
         rows = overview_rows(document())
-        by_label: dict[str, set[str]] = {}
-        for cell in business_cells():
-            if cell.label and re.fullmatch(r"2026-\d\d", cell.label):
-                by_label.setdefault(cell.label, set()).add(cell.text)
-
-        shared = {
-            label: texts for label, texts in by_label.items() if len(texts) > 1
-        }
+        shared = shared_period_figures()
         assert shared, "the fixture must produce a label carrying several metrics"
 
         for label, texts in shared.items():
             row = next(row for row in rows if label in row)
-            for text in texts:
-                assert text in row, f"{label} row is missing {text}"
+            missing = [text for text in texts if text not in row]
+            assert not missing, f"{label} row is missing {missing}"
 
     def test_the_metric_name_is_stated_as_a_column_not_per_row(self) -> None:
         # The repetition that made the table long: `Revenue` once per period.
