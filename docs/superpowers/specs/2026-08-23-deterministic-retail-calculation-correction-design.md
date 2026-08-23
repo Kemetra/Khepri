@@ -320,7 +320,7 @@ All sums use admitted unrounded decimals. `count_distinct` operates on canonical
 | Percentage delta | `(current - prior) / prior` | Absolute delta refused or prior denominator `<= 0` |
 | Items per transaction | `sum(sale units) / distinct sale transactions` | Incomplete units/keys or denominator `<= 0` |
 | Attach rate for value | `distinct containing keys / all eligible keys` | Incomplete dimension/keys or denominator `<= 0` |
-| Concentration curve point | `cumulative revenue / total ranked revenue` | Incomplete inputs, negative value, or total `<= 0` |
+| Concentration curve point | `cumulative revenue / total ranked revenue` | Missing dimension on any eligible sale, negative value, or total `<= 0` |
 | Top decile share | Curve share after `ceil(distinct values / 10)` ranked values | Concentration curve refused |
 | Top quartile share | Curve share after `ceil(distinct values / 4)` ranked values | Concentration curve refused |
 
@@ -390,8 +390,9 @@ disagreeing with the published revenue delta.
 Concentration uses posted sale revenue over the full, non-null, admissible product or category set
 before display truncation. Its business name is **sales revenue concentration**. When a package
 contains returns, every surface states that the result reconciles to the retained sale-revenue
-basis, not return-inclusive headline revenue. A missing value on any revenue-bearing sale row
-refuses that dimension; `None` and the synthetic `unlabelled` bucket are never ranked as products.
+basis, not return-inclusive headline revenue. A missing value on any eligible posted sale row,
+including a zero-revenue row, refuses that dimension; `None` and the synthetic `unlabelled` bucket
+are never ranked as products.
 
 The curve refuses when total ranked revenue is non-positive or any ranked value has negative
 revenue. Zero-revenue values remain distinct and rank last, producing a flat tail. The top decile
@@ -541,7 +542,7 @@ Add manually calculated tests for:
 - refusal without an authoritative coverage manifest and acceptance of an attested zero-sales day;
 - disjoint revenue and unit rows;
 - partial sale-unit coverage;
-- missing product/category values;
+- missing product/category values, including on zero-revenue sale rows;
 - cross-headline revenue/cost population mismatch;
 - repeated transaction identifiers in different stores;
 - return-containing periods proving sale-only ASP and return-inclusive headlines;
@@ -554,13 +555,22 @@ reason. Expected values may not call production calculation helpers.
 
 ### Phase 3 — Core corrections
 
+- **C0:** `rra003.mapping.v3` semantic admission for event kind, status, currency, normalized signed
+  revenue, integral units, event identity, canonical transaction identity, and the readable
+  population codes required by C1-C4;
 - **C1:** package coverage signatures and period alignment;
 - **C2:** retained reconciliation bases, population-certified growth inputs, and deterministic
   growth residual assignment;
 - **C3:** sale-only, complete-coverage basket inputs;
 - **C4:** non-null full-set concentration eligibility.
 
-Each correction is a separate formula-versioned slice with its own RED/GREEN/reconciliation gate.
+C0 must merge before C1-C4. Each correction is a separate mapping- or formula-versioned slice with
+its own RED/GREEN/reconciliation gate. A refusal reason or caveat, its governed code, accepted
+Arabic and English customer prose, audit representation, bundle and surface propagation,
+language-parity checks, and reconciliation tests must ship in the same slice that introduces it.
+C1 ships the partial-window caveat, C2 ships the realized-price/mix and rounding-residual evidence,
+and C3-C4 ship their population-specific refusals and caveats. No slice reaches GREEN while its
+result can be published or refused without the wording and evidence required by RRA-009.
 
 ### Phase 4 — Policy-dependent corrections
 
@@ -568,14 +578,18 @@ Each correction is a separate formula-versioned slice with its own RED/GREEN/rec
 - sale-only ASP population;
 - complete financial cost/gross-profit population;
 - attach denominator and dimension-complete refusal;
-- canonical event/transaction identity;
-- strict normalized revenue, discount, return, currency, event-kind, status, and cost admission.
+- strict headline revenue and return processing over the C0 normalized event contract;
+- additive discount and extended-cost admission and their dependent facts.
+
+Each Phase 4 correction follows the same-slice refusal, caveat, bilingual prose, evidence, and
+reconciliation rule as C0-C4. AOV and ASP ship their sale-only population caveats; cost, gross
+profit, gross margin, discounts, returns, and attach ship every new refusal reason with complete
+RRA-009 customer wording in the slice that first emits it.
 
 ### Phase 5 — Hardening
 
-- accurate per-result refusal reasons;
 - concentration-curve sampling bound and caveat;
-- metric- and population-specific bilingual caveats;
+- catalogue-wide proof that no earlier slice deferred a refusal reason or bilingual caveat;
 - deliberate mutation evidence for load-bearing formulas and refusals;
 - clean, messy, and adversarial pharmacy golden fixtures.
 
