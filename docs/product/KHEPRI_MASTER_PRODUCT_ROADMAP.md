@@ -434,17 +434,21 @@ CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.m
 
 **The governed successor versions are per family**, so a family-shaped slice publishes exactly one successor and creates no transitional version:
 
-| Slice | Publishes | Governed by |
-|---|---|---|
-| C0 semantic admission | `rra003.mapping.v3` | `RRA-003` |
-| C1 package, bases, and window alignment | `rra004.package.v3` | `RRA-004` |
-| C1 comparison facts | `rra008.comparison.v2` | `RRA-008` |
-| C2 growth decomposition | `rra008.growth.v2` | `RRA-008` |
-| C3 basket | `rra008.basket.v2` | `RRA-008` |
-| C4 concentration | `rra008.concentration.v2` | `RRA-008` |
-| Policy-dependent formula corrections | `rra004.formula.v2` | `RRA-004` |
+| Slice | Publishes | Governed by | Tasks that must be inside it |
+|---|---|---|---|
+| C0 semantic admission | `rra003.mapping.v3` | `RRA-003` | CAL1-03 |
+| C1 package, bases, and window alignment | `rra004.package.v3` | `RRA-004` | CAL1-04, CAL1-06, and CAL1-08's rounding-residual evidence field |
+| C2 core formulas and refusal rules | `rra004.formula.v2` | `RRA-004` | The `RRA-004` formula half of CAL1-05, CAL1-07, CAL1-09, and CAL1-10 |
+| C3 comparison facts | `rra008.comparison.v2` | `RRA-008` | CAL1-07 |
+| C4 growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08 |
+| C5 basket | `rra008.basket.v2` | `RRA-008` | CAL1-09 |
+| C6 concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10 |
 
 What the shared `rra004.package.v3` dependency requires is **ordering, not atomicity**, which is exactly what the merged design states: *"C0 must merge before C1-C4. Each correction is a separate mapping- or formula-versioned slice with its own RED/GREEN/reconciliation gate."*
+
+**Two of these versions span more than one task, and the fourth column is the binding part of this table.** A slice is not a task; it is the smallest set of tasks that can publish one governed version complete.
+
+**`rra004.formula.v2` is one version over one table.** `RRA-004` §"Core formulas and refusal rules" defines Revenue through Returns, absolute and percentage delta, items per transaction, attach rate for value, the concentration curve point, and top decile and quartile share in a single governed table, and `rra004.formula.v2` "governs the formulas, compatible populations, signs, zero/null/negative behavior, precision, and refusal rules **in this specification**". Those rows are spread across `CAL1-05`, `CAL1-07`, `CAL1-09`, and `CAL1-10`. Publishing `formula.v2` with `CAL1-05` alone would leave it incomplete and mutate it later without a new version; deferring it past the `RRA-008` slices would make those families consume a version that has not landed, which `RRA-008`'s exclusions forbid. **So C2 lands every `RRA-004` formula change as one slice, and it merges before C3 through C6**, which consume it and publish only their own `rra008.*` versions.
 
 **`rra004.package.v3` publishes once, when C1 is complete, and C1 is larger than one task.** `RRA-004` defines that version to authorize readable population provenance, canonical transaction keys, retained reconciliation bases, coverage-manifest identity, **coverage signatures, aligned daily bases**, currency, and **growth rounding-residual evidence**. `CAL1-04` alone does not produce all of it: coverage signatures and aligned daily bases are `CAL1-06`, and the residual-evidence field is the package-shape half of `CAL1-08`. Merging `CAL1-04` as an independently mergeable predecessor would either publish an incomplete `v3` and later mutate it without a new version, or change the `v2` shape — both forbidden by the rules below. So `CAL1-04`, `CAL1-06`, and `CAL1-08`'s residual-evidence field are **one slice**, and `CAL1-08`'s growth formula work follows as C2 over the published package.
 
@@ -453,10 +457,11 @@ The release rules are therefore:
 - Governance has already merged separately, at `f865079`.
 - **C0 merges before C1 through C4.** Each correction is one independently verifiable slice carrying its own RED, GREEN, and reconciliation evidence.
 - Each family publishes its single governed successor version once. **No intermediate or transitional package, mapping, or formula version is published on `main`**, and no extra version is invented to accommodate a partial implementation.
-- A refusal reason or caveat, its governed code, accepted Arabic and English customer prose, audit representation, bundle and surface propagation, parity checks, and reconciliation tests ship in **the same slice that introduces it**, per `RRA-008` and `RRA-009`.
+- A refusal reason or caveat, its governed code, accepted Arabic and English customer prose, audit representation, **bundle, narrative, chart, and HTML/PDF/Excel propagation**, parity checks, and reconciliation tests ship in **the same slice that introduces it**. `RRA-008` states it directly: "Every later code slice that adds a refusal or caveat must add its complete customer wording in both languages in the same slice under `RRA-009`." No slice reaches GREEN while a result it can publish or refuse lacks that wording or surface representation. **`CAL1-11` is therefore a final sweep, not the task where surfaces catch up** — a slice that leaves its refusal unsurfaced for `CAL1-11` has already broken this rule.
 - A slice does not reach GREEN by weakening a semantic guard to preserve an existing fixture. Fixture migration stages after the RED proofs.
 - Current versions stay authoritative for each family until that family's successor slice merges. Historical serialized packages remain valid under their recorded versions and are not rewritten in place.
 - The validation gate in `CAL1-13` runs against the assembled successor contract, not against any single slice. No slice is released to a design partner before that gate passes.
+- **`CAL1-01` owns the exact slice boundaries.** The table above fixes which version each slice publishes and which tasks must be inside it; the ledger fixes the file-level split and proves that no task contributing to a governed version sits outside that version's slice. A boundary that would publish a version twice, publish it incomplete, or make a later family consume an unlanded version is a stop condition, not a judgement call.
 
 ## Tasks
 
@@ -466,13 +471,13 @@ The release rules are therefore:
 | CAL1-02 | Add independent RED golden and adversarial fixtures before production changes | CAL1-01 | Expected values derived outside production helpers; tests fail against current defects for the intended reasons |
 | CAL1-03 | Implement C0 semantic admission: normalized event kind/status, source-contract declarations, currency, event identity, canonical transaction identity, and coverage-manifest validation | CAL1-02 | `rra003.mapping.v3` behavior; ambiguous source semantics refuse affected populations |
 | CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases. **Ships as one C1 slice with `CAL1-06` and `CAL1-08`'s residual-evidence field**; it is not independently mergeable | CAL1-03 merged | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
-| CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns | CAL1-04 | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
+| CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns. **Its `RRA-004` formula rows ship in C2** | C1 merged | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
 | CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows. **Same C1 slice as `CAL1-04`** — `RRA-004` puts coverage signatures and aligned daily bases inside `rra004.package.v3` | CAL1-03 merged | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
-| CAL1-07 | Correct comparison facts and bilingual incomplete-window behavior | CAL1-06 | Absolute/percentage deltas use the same aligned population; zero/negative base rules preserved |
+| CAL1-07 | Correct comparison facts and bilingual incomplete-window behavior. **Its absolute and percentage delta rows ship in C2**; the comparison family is C3 | C1, then C2 for the family work | Absolute/percentage deltas use the same aligned population; zero/negative base rules preserved |
 | CAL1-08 | Correct growth decomposition populations and return exclusion. Its **rounding-residual evidence field ships inside C1**; its growth formula is C2 over the published package | C1 merged | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
-| CAL1-09 | Correct basket populations and dimension eligibility | CAL1-04 | Items/transaction and attach rate use complete sale populations and canonical transaction keys; repeated lines do not inflate attach |
-| CAL1-10 | Correct concentration eligibility and full-set behavior | CAL1-04 | Null/unlabelled dimensions do not become products; full-set curve remains independent of display truncation; ceiling convention is pinned |
-| CAL1-11 | Update bundle, narrative, charts, HTML/PDF/Excel, caveats, refusals, and version compatibility | CAL1-05 through CAL1-10 | No surface recalculates; all successor facts/refusals/caveats reconcile in both languages |
+| CAL1-09 | Correct basket populations and dimension eligibility. **Its items-per-transaction and attach-rate rows ship in C2**; the basket family is C5 | C1, then C2 for the family work | Items/transaction and attach rate use complete sale populations and canonical transaction keys; repeated lines do not inflate attach |
+| CAL1-10 | Correct concentration eligibility and full-set behavior. **Its curve-point and top decile/quartile rows ship in C2**; the concentration family is C6 | C1, then C2 for the family work | Null/unlabelled dimensions do not become products; full-set curve remains independent of display truncation; ceiling convention is pinned |
+| CAL1-11 | **Final compatibility sweep only.** Prove no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and close version compatibility across the assembled contract | CAL1-05 through CAL1-10 | A catalogue-wide proof that every governed refusal and caveat already shipped with its wording and surfaces; no surface recalculates; the successor facts reconcile in both languages |
 | CAL1-12 | Add mutation evidence and pharmacy-focused golden fixtures | CAL1-11 | Named mutants for row-vs-transaction, unequal windows, unmatched populations, full-set concentration, sign/currency rules, and publication gating are killed |
 | CAL1-13 | Run the calculation validation gate | CAL1-12 | Governance, Ruff, full tests, independent fixtures, report reconciliation, deterministic reruns, version checks, and no skipped required behavior |
 | CAL1-14 | Run PostgreSQL/MinIO production-like local staging end to end | CAL1-13 | Upload -> admission -> facts -> worker -> HTML/PDF/Excel -> evidence; restart/retry/recovery and bilingual artifacts verified |
@@ -1417,16 +1422,18 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 
 1. **CAL1-01/02:** create the execution ledger from `f865079`, fix the slice sequence, add independent RED fixtures.
 2. **CAL1-03:** implement and merge C0 semantic admission. It merges before every later slice.
-3. **CAL1-04 + CAL1-06 + CAL1-08's residual-evidence field:** merge the complete C1 package-and-window slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone — see the CAL1 release strategy. Then **CAL1-07**, **CAL1-05**, **CAL1-08**, **CAL1-09**, and **CAL1-10** as ordered slices over the published package.
-4. **CAL1-11/12:** update every surface; add mutation and pharmacy golden evidence.
-5. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
-6. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
-7. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
-8. **OPS1-01/09:** complete the environment descriptor and reissue the sizing authority.
-9. **OPS1-02 through OPS1-07:** hosted non-production, recovery and capacity evidence, and the pilot runbook.
-10. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
-11. **G2/G3:** activate retention and workspace authority.
-12. **W1-01 onward:** begin durable workspace/history implementation.
+3. **CAL1-04 + CAL1-06 + CAL1-08's residual-evidence field:** merge the complete C1 package-and-window slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone.
+4. **The `RRA-004` formula half of CAL1-05, CAL1-07, CAL1-09, and CAL1-10:** merge C2, publishing `rra004.formula.v2` once and complete. It merges before the derived families, which consume it.
+5. **CAL1-07, CAL1-08, CAL1-09, CAL1-10:** merge C3 through C6 as ordered slices, each publishing one `rra008.*` version over the landed package and formula versions. Every slice carries its own refusals, bilingual wording, and surfaces.
+6. **CAL1-11/12:** run the final compatibility sweep; add mutation and pharmacy golden evidence.
+7. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
+8. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
+9. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
+10. **OPS1-01/09:** complete the environment descriptor and reissue the sizing authority.
+11. **OPS1-02 through OPS1-07:** hosted non-production, recovery and capacity evidence, and the pilot runbook.
+12. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
+13. **G2/G3:** activate retention and workspace authority.
+14. **W1-01 onward:** begin durable workspace/history implementation.
 
 ### Parallel-safe work now
 
