@@ -52,7 +52,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 from typing import Protocol
 
 from khepri.rra.analysis import basket, comparison, concentration, growth
@@ -1874,24 +1874,28 @@ def _grouped(text: str) -> str:
 def _percentage(text: str) -> str:
     """Scale a stored ratio to a percentage at two decimal places.
 
-    Two places rather than the ratio's four: `0.8665` is `86.65%` exactly, so
-    the scaling is a decimal-point move and not a rounding. The stored
-    `Decimal` stays on the figure's `value`, which is what reconciliation and
-    the audit trail read -- the percentage is presentation, and the figure it
-    was derived from remains addressable.
+    **Exact, and therefore free of any rounding mode.** Every ratio-kind fact is
+    quantized to `facts.RATIO_PRECISION` -- four places -- by all four producers
+    (`facts`, `analysis.basket`, `analysis.comparison`, `analysis.concentration`),
+    so multiplying by a hundred moves the point two places and always lands
+    within two: `0.8665` is `86.65%` and `1.0000` is `100.00%`, with nothing to
+    round away. `test_scaling_a_ratio_by_one_hundred_is_exact` asserts that
+    invariant rather than a rounding behaviour, because a rounding mode chosen
+    here would be a second rounding on top of the one the fact boundary already
+    performed -- and the mode would then have to agree with a decision this
+    module does not own.
 
-    **`ROUND_HALF_UP` is stated rather than inherited.** `f"{Decimal:.2f}"`
-    formats half-even, so a ratio ending `...5` at the fourth place would round
-    to the even neighbour -- `0.12345` presenting as `12.34%` while the same
-    figure in a reader's own arithmetic gives `12.35%`. A presentation layer
-    disagreeing with the reader is the defect this slice exists to remove, and
-    quantizing explicitly means the mode is a decision in the source rather than
-    a property of an f-string.
+    The stored `Decimal` stays on the figure's `value`, which is what
+    reconciliation and the audit trail read: the percentage is presentation, and
+    the figure it was derived from remains addressable.
     """
     parsed = _decimal(text)
     if parsed is None:
         return text
-    scaled = (parsed * 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # `quantize` to two places without a mode: exact by the invariant above, and
+    # it raises rather than rounds silently if a producer ever exceeds four
+    # places, which is the failure worth hearing about.
+    scaled = (parsed * 100).quantize(Decimal("0.01"))
     return f"{_grouped(str(scaled))}%"
 
 

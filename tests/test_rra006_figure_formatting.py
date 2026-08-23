@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from decimal import Decimal
 
 from khepri.rra import bundle as bundle_module
 from khepri.rra.admissibility import assess_admissibility
@@ -37,6 +38,7 @@ from khepri.rra.bundle import (
     ReportBundle,
 )
 from khepri.rra.facts import (
+    RATIO_PRECISION,
     UNIT_COUNT,
     UNIT_MONETARY,
     UNIT_RATIO,
@@ -177,13 +179,29 @@ class TestRatioFigures:
             english = entry.renderings[LANGUAGE_ENGLISH]
             assert not english.endswith("%"), f"{entry.metric} scaled to: {english}"
 
-    def test_the_half_way_case_rounds_up_rather_than_to_the_even_neighbour(self) -> None:
-        # `f"{Decimal:.2f}"` is half-even, so `0.12345` would present as `12.34%`
-        # while a reader's own arithmetic gives `12.35%`. Asserted directly
-        # because no fixture value reliably lands on the boundary, and a
-        # tolerance-based check passes under either mode.
-        assert bundle_module._percentage("0.12345") == "12.35%"
-        assert bundle_module._percentage("0.12335") == "12.34%"
+    def test_scaling_a_ratio_by_one_hundred_is_exact(self) -> None:
+        # The invariant that makes the percentage form free of any rounding mode,
+        # asserted instead of a rounding behaviour. Every ratio-kind fact is
+        # quantized to `RATIO_PRECISION` -- four places -- by all four producers,
+        # so moving the point two places always lands within two and there is
+        # nothing to round. An earlier version of this test asserted half-up on
+        # `0.12345`, a five-place input no governed fact can produce: it pinned a
+        # branch unreachable in production while leaving the real property
+        # unchecked.
+        for entry in figures_of(UNIT_RATIO):
+            assert entry.value is not None
+            places = -entry.value.as_tuple().exponent
+            assert places <= RATIO_PRECISION, (entry.metric, entry.value)
+            scaled = entry.value * 100
+            assert scaled == scaled.quantize(Decimal("0.01")), (entry.metric, scaled)
+
+    def test_the_percentage_form_needs_no_rounding_decision(self) -> None:
+        # The direct consequence: `_percentage` is exact on a four-place ratio, so
+        # no rounding mode is chosen here and none has to agree with the mode the
+        # fact boundary already applied.
+        assert bundle_module._percentage("0.8665") == "86.65%"
+        assert bundle_module._percentage("1.0000") == "100.00%"
+        assert bundle_module._percentage("0.0001") == "0.01%"
 
 
 class TestTheRatioClassificationIsComplete:

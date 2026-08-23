@@ -100,6 +100,12 @@ _CHROME: dict[str, dict[str, str]] = {
         "figures_caption": "Every figure in this report, beside the fact it cites",
         "business_caption": "The figures in this section",
         "business_figure": "Figure",
+        # The first column of a pivoted series table. Deliberately generic: the
+        # labels down that column are periods in one section and branches or
+        # products in another, and the alternative -- naming the dimension -- would
+        # make this module decide what a customer's own labels mean.
+        "series_caption": "The figures in this section by breakdown",
+        "series_label": "Breakdown",
         "caveats": "Data caveats",
         "commentary": "Commentary",
         # The colophon is the one place the business report names itself. It carries
@@ -150,6 +156,8 @@ _CHROME: dict[str, dict[str, str]] = {
         "figures_caption": "كل رقم في هذا التقرير، بجانب الحقيقة التي يُسند إليها",
         "business_caption": "أرقام هذا القسم",
         "business_figure": "البيان",
+        "series_caption": "أرقام هذا القسم حسب التصنيف",
+        "series_label": "التصنيف",
         "caveats": "تحذيرات البيانات",
         "commentary": "التعليق",
         "colophon_reference": "مرجع التقرير",
@@ -629,18 +637,50 @@ def _document_bytes(documents: dict[str, str]) -> int:
 
 
 @dataclass(frozen=True, slots=True)
+class _SeriesRow:
+    """One label's figures, in the column order its group declares."""
+
+    label: str
+    texts: tuple[str | None, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _SeriesTable:
+    """A repeated series as a table: one column per metric, one row per label.
+
+    The shape a series wants. Rendered as one row per cell, a five-period series
+    carrying revenue and units produced ten rows, each repeating a metric name and
+    stating one number, with the two halves of the comparison a reader wanted in
+    different parts of the table.
+
+    `headings` is metric names and `rows` is one entry per label, so a `None` in
+    `texts` is a metric that carried no figure for that label rather than a zero.
+    Nothing here is computed: every string is a cell `build_cells` already made.
+    """
+
+    headings: tuple[str, ...]
+    rows: tuple[_SeriesRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _SectionView:
     """One governed section as the template needs it: heading, chart, cells, caveats.
 
     Assembled here rather than in the template because a template choosing which
     cells belong to a section could disagree with `bundle.section_ids`, which is
     what every surface is reconciled against.
+
+    `cells` holds the scalars -- the figures with no label -- and `series` the
+    pivoted groups. The split is made here for the same reason the section
+    membership is: a template deciding which figures form a series could group
+    two that the bundle never related.
     """
 
     section_id: str
     state: str
     reason: str | None
     cells: tuple[FigureCell, ...]
+    series: tuple[_SeriesTable, ...]
     caveats: tuple[str, ...]
     chart: ChartView | None
 
@@ -673,16 +713,146 @@ def _section_views(
             # `build_cells` output and still shows every one. Nothing is dropped
             # from the bundle: `reconcile` compares figure coverage across
             # surfaces and would refuse a report that had actually lost a figure.
-            cells=tuple(
-                cell
-                for cell in cells
-                if cell.section == section.section_id and cell.kind != KIND_ROWS
-            ),
+            cells=_scalar_cells(_stated(cells, section.section_id)),
+            series=_series_tables(_stated(cells, section.section_id)),
             caveats=_stated_once(bundle, section.section_id, language),
             chart=_chart_of(section, figures, language),
         )
         for section in bundle.sections
     ]
+
+
+def _stated(cells: tuple[FigureCell, ...], section_id: str) -> tuple[FigureCell, ...]:
+    """One section's cells, less the provenance the audit surface states.
+
+    `KIND_ROWS` is excluded here rather than in `build_cells`, which stays total. A
+    bucket emits its value and the count of source rows behind it as a pair, and
+    rendering both interleaved them: a five-period series became ten rows, and a
+    real upload put 39 `rows counted` rows among the findings. The count is
+    provenance -- `wording` classifies its qualifier Audit-tier -- so it belongs on
+    the audit surface, which renders from the same untouched `build_cells` output
+    and still shows every one. Nothing is dropped from the bundle: `reconcile`
+    compares figure coverage across surfaces and would refuse a report that had
+    actually lost a figure.
+    """
+    return tuple(
+        cell
+        for cell in cells
+        if cell.section == section_id and cell.kind != KIND_ROWS
+    )
+
+
+def _scalar_cells(cells: tuple[FigureCell, ...]) -> tuple[FigureCell, ...]:
+    """The figures that are not part of a series, in the bundle's order.
+
+    A figure with no label is a total and states itself. A labelled figure whose
+    metric is the only one at that label is *also* left here: giving it a pivoted
+    table would add a column heading stating what its single column already said,
+    and `concentration_curve` -- four ranks, one metric, no governed name -- is
+    exactly that case.
+    """
+    grouped = _series_metrics(cells)
+    return tuple(
+        cell for cell in cells if cell.label is None or cell.metric not in grouped
+    )
+
+
+def _series_metrics(cells: tuple[FigureCell, ...]) -> frozenset[str]:
+    """The metrics that share a label with another metric, and so form columns.
+
+    Sharing is the test rather than "has a label", because a column heading only
+    means something when there is more than one column to tell apart.
+
+    **A metric with no governed name is excluded, and that is a disclosure rule
+    rather than a cosmetic one.** A column needs a heading, and the only string
+    available for one that has no `metric_name` is the metric identifier --
+    `revenue_by_category`. `RRA-009` classifies the metric identifier Audit-tier
+    and renders it on the evidence surface, so putting it in a customer-facing
+    `<th>` would move an Audit field onto the business page to satisfy a layout.
+    Those series keep the row-per-cell form, where the label alone names the row
+    and no identifier is needed. `revenue_by_period` is unaffected: it carries
+    `Revenue`.
+    """
+    by_label: dict[str, set[str]] = {}
+    named = {cell.metric for cell in cells if cell.metric_name}
+    for cell in cells:
+        if cell.label is not None and cell.metric in named:
+            by_label.setdefault(cell.label, set()).add(cell.metric)
+    return frozenset(
+        metric
+        for metrics in by_label.values()
+        if len(metrics) > 1
+        for metric in metrics
+    )
+
+
+def _series_tables(cells: tuple[FigureCell, ...]) -> tuple[_SeriesTable, ...]:
+    """The section's repeated series, one table per set of co-occurring metrics.
+
+    Grouped by the *set* of metrics sharing a label rather than by section, so a
+    section carrying both a by-period series and a by-branch series renders two
+    tables instead of one table with empty halves. Column order follows the order
+    the metrics first appear, which is the bundle's; row order follows the order
+    the labels first appear, for the same reason.
+
+    A metric with no figure at a given label contributes `None`, which the
+    template renders as an empty cell -- not a zero, which would be a number this
+    module invented.
+    """
+    grouped = _series_metrics(cells)
+    if not grouped:
+        return ()
+    names, values = _series_index(cells, grouped)
+    return tuple(
+        _SeriesTable(
+            headings=tuple(names[metric] for metric in family),
+            rows=tuple(
+                _SeriesRow(
+                    label=label,
+                    texts=tuple(values[label].get(metric) for metric in family),
+                )
+                for label in labels
+            ),
+        )
+        for family, labels in _series_families(names, values).items()
+    )
+
+
+def _series_index(
+    cells: tuple[FigureCell, ...],
+    grouped: frozenset[str],
+) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    """The column names and the label/metric grid, both in first-appearance order.
+
+    `_series_metrics` admits only named metrics, so `metric_name` is the name here
+    rather than a fallback: an identifier reaching a column heading would put an
+    Audit-tier field on the business page.
+    """
+    names: dict[str, str] = {}
+    values: dict[str, dict[str, str]] = {}
+    for cell in cells:
+        if cell.label is None or cell.metric not in grouped:
+            continue
+        names.setdefault(cell.metric, cell.metric_name or "")
+        values.setdefault(cell.label, {})[cell.metric] = cell.text
+    return names, values
+
+
+def _series_families(
+    names: dict[str, str],
+    values: dict[str, dict[str, str]],
+) -> dict[tuple[str, ...], list[str]]:
+    """Labels grouped by the set of metrics present at them.
+
+    Grouped by the metric set rather than by section, so a section carrying both a
+    by-period and a by-branch series renders two tables instead of one table with
+    empty halves. Column order follows `names`, which is the bundle's order.
+    """
+    families: dict[tuple[str, ...], list[str]] = {}
+    for label, present in values.items():
+        family = tuple(metric for metric in names if metric in present)
+        families.setdefault(family, []).append(label)
+    return families
 
 
 def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[str, ...]:
