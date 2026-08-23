@@ -82,12 +82,20 @@ services:
     environment:
       # Must match `LocalSettings.access_key` and `.secret_key`, which read
       # `KHEPRI_LOCAL_ACCESS_KEY` and `KHEPRI_LOCAL_SECRET_KEY` from the
-      # environment. Substituting the same two names here means overriding them
-      # moves the client and the server together; hardcoding the defaults would
-      # make an override 403 every call while looking like a network fault. The
-      # defaults after `:-` are the ones `khepri.local.config` falls back to.
-      MINIO_ROOT_USER: ${KHEPRI_LOCAL_ACCESS_KEY:-test}
-      MINIO_ROOT_PASSWORD: ${KHEPRI_LOCAL_SECRET_KEY:-testtest}
+      # environment. Substituting the same two names means overriding them moves
+      # the client and the server together; hardcoding the defaults would make an
+      # override 403 every call while looking like a network fault.
+      #
+      # `-` and not `:-`, which is the whole point. `${VAR:-default}` substitutes
+      # when the variable is unset OR empty, while `os.environ.get(name, default)`
+      # substitutes only when it is unset -- so with `KHEPRI_LOCAL_ACCESS_KEY=`
+      # exported, the client would send `''` and the server would be configured
+      # with `test`, recreating the divergence this substitution exists to remove.
+      # `-` matches Python's semantics exactly, so an empty override reaches both
+      # sides and MinIO refuses to start rather than the mismatch surfacing later
+      # as a 403.
+      MINIO_ROOT_USER: ${KHEPRI_LOCAL_ACCESS_KEY-test}
+      MINIO_ROOT_PASSWORD: ${KHEPRI_LOCAL_SECRET_KEY-testtest}
     # 14566 is inherited from the endpoint `DEFAULT_S3_ENDPOINT` already names; it
     # is not a LocalStack remnant, and changing it would mean editing that default
     # and everything asserting it. 19001 is the browser console, which nothing reads.

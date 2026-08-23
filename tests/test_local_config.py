@@ -130,14 +130,19 @@ class TestComposeContract:
         would make `KHEPRI_LOCAL_ACCESS_KEY=other` move the client without moving
         the server. The `:-` fallbacks must still be the settings' own defaults, or
         an unset environment starts a server the defaults cannot reach.
+
+        The form is `-` and not `:-` on purpose: `:-` also substitutes for an empty
+        value, while `os.environ.get` treats empty as a present value, so `:-` would
+        configure the server with the default while the client sent `""`. This
+        asserts the exact operator, because the two differ only in that case.
         """
         environment = _compose()["services"]["minio"]["environment"]
 
         assert environment["MINIO_ROOT_USER"] == (
-            "${KHEPRI_LOCAL_ACCESS_KEY:-" + DEFAULT_ACCESS_KEY + "}"
+            "${KHEPRI_LOCAL_ACCESS_KEY-" + DEFAULT_ACCESS_KEY + "}"
         )
         assert environment["MINIO_ROOT_PASSWORD"] == (
-            "${KHEPRI_LOCAL_SECRET_KEY:-" + DEFAULT_SECRET_KEY + "}"
+            "${KHEPRI_LOCAL_SECRET_KEY-" + DEFAULT_SECRET_KEY + "}"
         )
 
     def test_the_object_store_secret_satisfies_the_minio_minimum(self) -> None:
