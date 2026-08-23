@@ -28,7 +28,7 @@ Three corrections applied to the draft as a result of that review, marked in pla
 
 1. **`CAL1` claimed an exception to the small-slice rule that no artifact grants it.** `governance/CONSTITUTION.md` Article IV admits product code only in small, independently verifiable slices, and the merged design at `18019b5` states that `C0` must merge before `C1`-`C4` as separately versioned slices. The draft's justification — that the successor families share package and formula identities — does not hold, because the governed successor versions are per family. See the `CAL1` release strategy.
 2. **Task identifiers were being renumbered across the replacement**, which would have retargeted `KHEPRI-DEC-027`'s blocking clause from CI-only provisioning to a sizing reissue, and left `RCA-002`'s `R8-01` and `R5-02`/`R5-04` citations, plus `KHEPRI-DEC-025`'s `R5-02`…`R5-06`, resolving to nothing at this path. See section 0.1, the `OPS1` table, and the `R5` program.
-3. **The status vocabulary was used without being defined, and open issues had no home.** Section 16.1 restores the convention and the next-actionable-task rule; section 0.2 carries `#152`, `#211`, and `#231` forward.
+3. **The status vocabulary was used without being defined, and open issues had no home.** Section 16.1 restores the convention and the next-actionable-task rule, and records that it is the section `KHEPRI-DEC-025` cites as `§15`; section 0.2 carries `#152`, `#211`, and `#231` forward.
 
 ---
 
@@ -44,7 +44,7 @@ Merge procedure, as executed:
 
 1. The previous roadmap moved to `docs/product/history/KHEPRI_MASTER_PRODUCT_ROADMAP_2026-08-24.md` with its historical dispositions unedited.
 2. This document was placed at `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
-3. **Task identifiers are stable across the replacement.** The repository does not cite this file by section number; it cites it by task ID, and four active governed artifacts do. Section 0.1 records the identifiers that may not be reassigned, and where each program's task table now lives.
+3. **Task identifiers are stable across the replacement, and one section number is mapped.** The repository cites this file mostly by task ID — four active governed artifacts do — but `KHEPRI-DEC-025` cites a section number, and the archived `§15` is not this document's `§15`. Section 0.1 records both the identifiers that may not be reassigned and that section mapping, and says where each program's task table now lives.
 4. Historical status prose is not copied forward; the archived roadmap and the merged pull requests preserve it. Tracked open defects are the deliberate exception and carry forward in section 0.2, because an issue with no planning home is an issue nobody sequences.
 5. Update this roadmap only after a merge to `main`, except for clearly marked proposals.
 
@@ -62,6 +62,14 @@ Citations in **active** governed artifacts:
 | `governance/specifications/RCA-002.md` | `R5-02`, `R5-04`, `R8-01` | `R8-01`'s surface map and its open browser-security-policy question; the two deferred `R5` credential tasks. |
 | `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` | `R3-11`, `R5-02`…`R5-06` | The Clerk credential-ownership dispositions. |
 | `governance/decisions/KHEPRI-DEC-023-commercial-consent-route-authorization.md` | `R6-01`, `R6-08`, `R7-04`, `R7-05`, `R7-06` | The merged commercial-bridge slice boundaries. |
+
+Citations by **section number**, which the replacement renumbers:
+
+| Artifact | Cites | Resolves to |
+|---|---|---|
+| `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` (active) | "§15's rule that `MERGED` requires a `main` SHA" | **§16.1** of this document. In the archived roadmap `§15` was the status convention; here `§15` is the immediate execution order and the convention moved to `§16.1`. The rule itself is unchanged and still governs. |
+
+That is the only section-number citation found in an active governed artifact, and it is why `§16.1` names its archived predecessor in place. A future reorganization of this document must re-check that citation rather than assume identifiers are the only cross-reference.
 
 Merged design, plan, and reconciliation documents add citations to `R0-02`, `R0-03`, `R0-05`, `R1-01`, `R1-02`, `R3-09`, `R4-01`, `R5-01`, `R6-01`, `R7-01`, `R7-02`, `R7-05`, `R7-06`, `R8-01`, `R8-02`, `OPS1-01`, `OPS1-02`, and `OPS1-05` across `specs/001-rca-001-commercial-identity/`, `docs/superpowers/`, and `docs/platform/proposed-governance/`.
 
@@ -436,13 +444,13 @@ CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.m
 
 | Slice | Publishes | Governed by | Tasks that must be inside it |
 |---|---|---|---|
-| `V-mapping` semantic admission | `rra003.mapping.v3` | `RRA-003` | CAL1-03, including the normalized-measure admission half of CAL1-05 |
-| `V-package` package, bases, and window alignment | `rra004.package.v3` | `RRA-004` | CAL1-04, CAL1-06, and CAL1-08's rounding-residual evidence field |
-| `V-formula` core formulas and refusal rules | `rra004.formula.v2` | `RRA-004` | The `RRA-004` formula half of CAL1-05, CAL1-07, CAL1-09, and CAL1-10 |
-| `V-comparison` comparison facts | `rra008.comparison.v2` | `RRA-008` | CAL1-07 |
-| `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08 |
-| `V-basket` basket | `rra008.basket.v2` | `RRA-008` | CAL1-09 |
-| `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10 |
+| `V-mapping` semantic admission | `rra003.mapping.v3` | `RRA-003` | CAL1-03 and CAL1-05a |
+| `V-package` package, bases, and window alignment | `rra004.package.v3` | `RRA-004` | CAL1-04, CAL1-06, and CAL1-08a |
+| `V-formula` core formulas and refusal rules | `rra004.formula.v2` | `RRA-004` | CAL1-05b, CAL1-07a, CAL1-09a, CAL1-10a |
+| `V-comparison` comparison facts | `rra008.comparison.v2` | `RRA-008` | CAL1-07b |
+| `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08b |
+| `V-basket` basket | `rra008.basket.v2` | `RRA-008` | CAL1-09b |
+| `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10b |
 
 **These labels are deliberately not the design's `C0`-`C4`.** `CAL1-01` must read both this table and the merged design, and reusing `C1`-`C4` for different scopes would make the same label mean two things. `C1` is also this roadmap's comparison program, whose tasks are `C1-01` through `C1-08` — a third meaning the `V-` prefix avoids. The design's phase list and this slice map reconcile as follows:
 
@@ -484,19 +492,38 @@ The release rules are therefore:
 |---|---|---|---|
 | CAL1-01 | Create an execution ledger against current `main`; map every RRA-003/004/008 requirement to implementation and test work | active successor specifications | Reviewed ledger; exact allowed/forbidden files per slice; the C0-first slice sequence and its version-publication order |
 | CAL1-02 | Add independent RED golden and adversarial fixtures before production changes | CAL1-01 | Expected values derived outside production helpers; tests fail against current defects for the intended reasons |
-| CAL1-03 | Implement **every** `V-mapping` semantic admission change `rra003.mapping.v3` governs: normalized event kind/status, source-contract declarations, currency, event and canonical transaction identity, coverage-manifest confirmation, **and the normalized measures — revenue and returns, additive discounts, extended-cost inputs, and units** | CAL1-02 | `rra003.mapping.v3` behavior, complete in one slice; ambiguous source semantics refuse affected populations |
+| CAL1-03 | Implement **every** `V-mapping` semantic admission change `rra003.mapping.v3` governs, taking `CAL1-05a` with it: normalized event kind/status, source-contract declarations, currency, event and canonical transaction identity, coverage-manifest confirmation, **and the normalized measures — revenue and returns, additive discounts, extended-cost inputs, and units** | CAL1-02 | `rra003.mapping.v3` behavior, complete in one slice; ambiguous source semantics refuse affected populations |
 | CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases. **Ships as one `V-package` slice with `CAL1-06` and `CAL1-08`'s residual-evidence field**; it is not independently mergeable | `V-mapping` merged | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
-| CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns. **Its admission semantics ship in `V-mapping` and its `RRA-004` formula rows in `V-formula`** — this row contributes no third slice | `V-mapping`, `V-package` merged | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
+| CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns. **Split across two slices — see the contribution table below** | per part | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
 | CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows. **Same `V-package` slice as `CAL1-04`** — `RRA-004` puts coverage signatures and aligned daily bases inside `rra004.package.v3` | `V-mapping` merged | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
-| CAL1-07 | Correct comparison facts and bilingual incomplete-window behavior. **Its absolute and percentage delta rows ship in `V-formula`**; the comparison family is `V-comparison` | `V-mapping`, `V-package`, `V-formula` merged | Absolute/percentage deltas use the same aligned population; zero/negative base rules preserved |
-| CAL1-08 | Correct growth decomposition populations and return exclusion. Its **rounding-residual evidence field ships inside `V-package`**; its growth formula is **`V-growth`**, over the landed package and formula versions | `V-mapping`, `V-package`, `V-formula` merged | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
-| CAL1-09 | Correct basket populations and dimension eligibility. **Its items-per-transaction and attach-rate rows ship in `V-formula`**; the basket family is `V-basket` | `V-mapping`, `V-package`, `V-formula` merged | Items/transaction and attach rate use complete sale populations and canonical transaction keys; repeated lines do not inflate attach |
-| CAL1-10 | Correct concentration eligibility and full-set behavior. **Its curve-point and top decile/quartile rows ship in `V-formula`**; the concentration family is `V-concentration` | `V-mapping`, `V-package`, `V-formula` merged | Null/unlabelled dimensions do not become products; full-set curve remains independent of display truncation; ceiling convention is pinned |
+| CAL1-07 | Correct comparison facts and bilingual incomplete-window behavior. **Split across two slices — see the contribution table below** | per part | Absolute/percentage deltas use the same aligned population; zero/negative base rules preserved |
+| CAL1-08 | Correct growth decomposition populations and return exclusion. **Split across two slices — see the contribution table below** | per part | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
+| CAL1-09 | Correct basket populations and dimension eligibility. **Split across two slices — see the contribution table below** | per part | Items/transaction and attach rate use complete sale populations and canonical transaction keys; repeated lines do not inflate attach |
+| CAL1-10 | Correct concentration eligibility and full-set behavior. **Split across two slices — see the contribution table below** | per part | Null/unlabelled dimensions do not become products; full-set curve remains independent of display truncation; ceiling convention is pinned |
 | CAL1-11 | **Final compatibility sweep only.** Prove no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and close version compatibility across the assembled contract | CAL1-05 through CAL1-10 | A catalogue-wide proof that every governed refusal and caveat already shipped with its wording and surfaces; no surface recalculates; the successor facts reconcile in both languages |
 | CAL1-12 | Add mutation evidence and pharmacy-focused golden fixtures | CAL1-11 | Named mutants for row-vs-transaction, unequal windows, unmatched populations, full-set concentration, sign/currency rules, and publication gating are killed |
 | CAL1-13 | Run the calculation validation gate | CAL1-12 | Governance, Ruff, full tests, independent fixtures, report reconciliation, deterministic reruns, version checks, and no skipped required behavior |
 | CAL1-14 | Run PostgreSQL/MinIO production-like local staging end to end | CAL1-13 | Upload -> admission -> facts -> worker -> HTML/PDF/Excel -> evidence; restart/retry/recovery and bilingual artifacts verified |
 | CAL1-15 | Complete external review and merge the remaining correction slices | CAL1-14 | No unresolved P0/P1 finding; CodeScene passes; every family sits on its single governed successor version, and no transitional version was published on the way |
+
+## Slice contributions of the split tasks
+
+Five tasks contribute to a slice they also build on. Stated at task level that reads as a cycle — `CAL1-08` cannot both ship inside `V-package` and wait for `V-package` to merge. It is not a cycle, because the two halves are different work. They carry separate identifiers so the ledger graph is executable without interpretation.
+
+| Part | Work | Slice | Depends on |
+|---|---|---|---|
+| CAL1-05a | Normalized-measure admission for revenue, returns, discounts, extended cost, and units | `V-mapping` | CAL1-02 |
+| CAL1-05b | The `RRA-004` core-metric formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-07a | Absolute and percentage delta formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-07b | Comparison facts and bilingual incomplete-window behavior | `V-comparison` | `V-formula` merged |
+| CAL1-08a | Growth rounding-residual evidence field in the package shape | `V-package` | `V-mapping` merged |
+| CAL1-08b | Growth decomposition populations, return exclusion, and the growth formula | `V-growth` | `V-formula` merged |
+| CAL1-09a | Items-per-transaction and attach-rate formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-09b | Basket populations and dimension eligibility | `V-basket` | `V-formula` merged |
+| CAL1-10a | Concentration curve-point and top decile/quartile formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-10b | Concentration eligibility and full-set behavior | `V-concentration` | `V-formula` merged |
+
+`CAL1-03` takes `CAL1-05a` with it; `CAL1-04` and `CAL1-06` take `CAL1-08a` with them. Every `a` part is a prerequisite of the slice it sits in, never a consumer of it. `CAL1-01` validates this graph before the first slice opens: a part that both contributes to a slice and depends on it is a ledger defect, not a sequencing judgement.
 
 ## Stop conditions
 
@@ -1445,10 +1472,10 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 ### Critical path
 
 1. **CAL1-01/02:** create the execution ledger from `f865079`, fix the slice sequence, add independent RED fixtures.
-2. **CAL1-03, with the normalized-measure admission half of CAL1-05:** implement and merge `V-mapping` complete. It merges before every later slice.
-3. **CAL1-04 + CAL1-06 + CAL1-08's residual-evidence field:** merge the complete `V-package` slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone.
-4. **The `RRA-004` formula half of CAL1-05, CAL1-07, CAL1-09, and CAL1-10:** merge `V-formula`, publishing `rra004.formula.v2` once and complete. It merges before the derived families, which consume it.
-5. **CAL1-07, CAL1-08, CAL1-09, CAL1-10:** merge `V-comparison`, `V-growth`, `V-basket`, and `V-concentration` as ordered slices, each publishing one `rra008.*` version over the landed package and formula versions. Every slice carries its own refusals, bilingual wording, and surfaces.
+2. **CAL1-03 + CAL1-05a:** implement and merge `V-mapping` complete. It merges before every later slice.
+3. **CAL1-04 + CAL1-06 + CAL1-08a:** merge the complete `V-package` slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone.
+4. **CAL1-05b + CAL1-07a + CAL1-09a + CAL1-10a:** merge `V-formula`, publishing `rra004.formula.v2` once and complete. It merges before the derived families, which consume it.
+5. **CAL1-07b, CAL1-08b, CAL1-09b, CAL1-10b:** merge `V-comparison`, `V-growth`, `V-basket`, and `V-concentration` as ordered slices, each publishing one `rra008.*` version over the landed package and formula versions. Every slice carries its own refusals, bilingual wording, and surfaces.
 6. **CAL1-11/12:** run the final compatibility sweep; add mutation and pharmacy golden evidence.
 7. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
 8. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
@@ -1485,6 +1512,8 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 
 ### 16.1 Status convention
 
+*(This is the archived roadmap's `§15`, which `KHEPRI-DEC-025` cites for the rule that `MERGED` requires a `main` SHA. The rule is unchanged; only its section number moved.)*
+
 Use these statuses only. Inventing one is a review finding — it happened on `#214`, where `MERGED_EXCEPT_R3-11` and `PARTIAL` appeared because the next-actionable-task rule below had not been applied.
 
 - `PROPOSED` — roadmap or specification work exists but is not approved or active.
@@ -1511,7 +1540,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R2 Membership lifecycle | MERGED | Program complete |
 | R3 Authentication sessions/provider seam | MERGED | Invite-only Clerk path and local session composition merged |
 | R4 Invitations | MERGED | Program complete |
-| R5 Recovery | READY_FOR_PLAN | Provider-owned credential work remains deferred; the local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. Reopening needs a credential-ownership decision rather than an engineering one, and it arrives with `G6-00` at M5. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
+| R5 Recovery | BLOCKED | **`BLOCKED`, not `READY_FOR_PLAN`, because §16.1 reserves `READY_FOR_PLAN` for programs whose design work may start now, and `R5`'s cannot.** `KHEPRI-DEC-025` defers `R5-02`/`R5-03`/`R5-04` while Clerk owns credentials, and the named dependency that reopens them is `G6-00`'s successor credential-ownership decision at M5. The local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
 | R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
 | R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
 | R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
