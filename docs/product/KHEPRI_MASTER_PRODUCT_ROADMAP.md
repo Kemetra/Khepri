@@ -320,7 +320,7 @@ These are permissions and route groups inside the current architecture. A separa
 | **M2** | Calculation-validated design-partner alpha | CAL1 complete; shell and approved browser/assisted auth work; analysis quality and evidence are visible; activation telemetry exists; full journey passes in production-like local staging and an owner-approved non-production hosted environment before external use |
 | **M3** | Durable trust workspace beta | Active retention/workspace authority; multiple dataset versions and analyses retained; history, report reopen, deletion, evidence, and metric catalog work |
 | **M4** | Sellable decision workspace | Governed multi-period comparison, curated semantic views, executive overview, branch/product/basket/concentration modules, evidence drawer, and deterministic guided drill-down work |
-| **M5** | Paid self-serve candidate | Public or assisted onboarding under active authority, plans, billing, entitlements, quotas, usage, invoices, and supportable operations work |
+| **M5** | Paid self-serve candidate | Successor commercial identity authority replacing the provisional Clerk admission; public or assisted onboarding under active authority; plans, billing, entitlements, quotas, usage, invoices, and supportable operations work |
 | **M6** | Multi-tenant and distribution growth | Agency portfolios, deterministic watchlists, recurring delivery, selected governed connectors, and optional read-only embedding/API distribution work |
 | **M7** | Evidence-backed intelligence | Ask Khepri passes grounding, refusal, privacy, bilingual, and evidence evaluations; optional Seshat statistical evidence may ship only under its own successor authority |
 | **M8** | Enterprise GA | Independent security review, restore/deletion exercises, capacity evidence, SSO/SCIM roadmap, release controls, incident/support procedures, semantic operations, and accurate customer documentation are complete |
@@ -583,7 +583,7 @@ Build a coherent, accessible, server-rendered decision experience without introd
 | R5-05 | Revoke every existing session in the same successful recovery transaction | REFRAME, **MERGED and composed** — Khepri revalidates account state, revokes every Khepri session, and records content-free security evidence after provider recovery. Merged at `15a8175` (`#240`); the composition gap that audit found was closed at `1e3b63c` (`#242`) under `KHEPRI-DEC-025` §4 — `build_recovery_security_service` in `runtime/wiring.py` constructs the service over the real store, and the sweeper is the fifth `RetentionPasses` entry at the governed twelve-month horizon |
 | R5-06 | Add replay, expiry, concurrent use, and logging tests | REFRAME, **MERGED** — proves those local consequences, idempotency, disabled/purged refusal, and identity-link integrity rather than reproducing Clerk recovery internals |
 
-The Clerk credential change and the Khepri consequence cannot share the transaction `R5-01` designed for local credentials. `KHEPRI-DEC-025` §1 accepts that cross-system residual for non-paying private beta only and keeps it open for commercial admission — so **`R5` reopens at M5, not before**, and reopening requires a credential-ownership decision rather than an engineering one.
+The Clerk credential change and the Khepri consequence cannot share the transaction `R5-01` designed for local credentials. `KHEPRI-DEC-025` §1 accepts that cross-system residual for non-paying private beta only and keeps it open for commercial admission — so **`R5` reopens at M5 with `G6-00`, not before**, and reopening requires a credential-ownership decision rather than an engineering one.
 
 **Nothing in `R5` is outstanding implementation work.** Every implementable task is merged or deferred, which is why the program reads `READY_FOR_PLAN` rather than `MERGED`: `R5-02`/`R5-03`/`R5-04` have no `main` SHA by design. Do not plan a composition slice for `R5-05`; that work is merged.
 
@@ -797,7 +797,9 @@ Expose recurring decision value without duplicating calculations outside RRA fac
 
 ## M4 exit gate
 
-A paying design partner can return to a workspace, compare governed periods, view an executive decision page, drill through supported breakdowns, inspect evidence and limitations for every material claim, and download reconciled bilingual reports.
+A design partner can return to a workspace, compare governed periods, view an executive decision page, drill through supported breakdowns, inspect evidence and limitations for every material claim, and download reconciled bilingual reports.
+
+**M4 is explicitly non-paying, and that is a governance boundary rather than a product preference.** `KHEPRI-DEC-025` §5 carries forward `KHEPRI-DEC-024` §9's hard stop unchanged: the provisional Clerk admission "becomes inoperative immediately before accepting consideration from any customer, opening a commercial production service, or losing the current educational access". Clerk is the only authorized identity path, and no successor commercial identity authority is scheduled before M4. So M4 proves the workspace is worth paying for; **taking the money is M5**, and it cannot happen until the successor authority named under `G6` is merged.
 
 ---
 
@@ -856,14 +858,19 @@ Move beyond operator-provisioned design partners only after M4 proves repeat dec
 
 Monetize only after M4 demonstrates repeat value.
 
+## Identity precondition
+
+**Billing cannot ship over the provisional Clerk admission.** `KHEPRI-DEC-025` §5 makes that admission inoperative "immediately before accepting consideration from any customer", and it records that every `KHEPRI-DEC-024` §8 commercial gate remains unrecorded, with §7's accepted gaps — including provider-session revocation and the recovery window — accepted **only** for private-beta scope and lifetime. Elapsed time, a successful beta, and the absence of an incident satisfy none of them. `G6-00` is therefore the first task in this program, and `R5`'s deferred credential tasks reopen with it.
+
 ## Governance tasks
 
 | ID | Task | Depends on | Output |
 |---|---|---|---|
+| G6-00 | Activate successor commercial identity authority: credential ownership, the `KHEPRI-DEC-024` §8 commercial gates, provider-session revocation, and the recovery window | M4 evidence | Authority to accept consideration; `R5-02`…`R5-06` re-dispositioned |
 | G6-01 | Define plans, entitlement vocabulary, billable units, trial/free behavior, and overage policy | M4 evidence | Product catalog |
 | G6-02 | Define cancellation, downgrade, payment failure, refunds, invoices, tax responsibility, and retention consequences | G6-01 | Lifecycle rules |
 | G6-03 | Select a billing provider behind an adapter and approve data flow | G6-01/02 | Provider decision |
-| G6-04 | Activate billing/entitlement specification | G6-01 through G6-03 | Authority |
+| G6-04 | Activate billing/entitlement specification | G6-00 through G6-03 | Authority |
 
 ## Implementation tasks
 
