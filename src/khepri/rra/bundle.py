@@ -52,11 +52,11 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Protocol
 
 from khepri.rra.analysis import basket, comparison, concentration, growth
-from khepri.rra.facts import Fact, FactPackage, RefusedResult
+from khepri.rra.facts import UNIT_RATIO, Fact, FactPackage, RefusedResult
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -1626,7 +1626,9 @@ def _analysis_figure(fact: Fact, section_id: str, label: str | None) -> CitedFig
         # dimension value. Without it two attach rates render as two identical rows.
         label=label,
         value=_decimal(fact.value),
-        renderings=_renderings(fact.value),
+        renderings=_renderings(
+            fact.value, unit_kind=fact.unit_kind, kind=KIND_VALUE, metric=fact.metric
+        ),
     )
 
 
@@ -1735,7 +1737,7 @@ def _figure(
         section=section,
         label=label,
         value=_decimal(text),
-        renderings=_renderings(text),
+        renderings=_renderings(text, unit_kind=unit_kind, kind=kind, metric=metric),
     )
 
 
@@ -1759,20 +1761,138 @@ def _figure_id(citation_id: str, kind: str, position: int | None) -> str:
     return f"{citation_id}/{kind}/{position}"
 
 
-def _renderings(text: str) -> dict[str, str]:
+def _renderings(
+    text: str,
+    *,
+    unit_kind: str | None = None,
+    kind: str = KIND_VALUE,
+    metric: str | None = None,
+) -> dict[str, str]:
     """The one English and one Arabic form of a supplied figure.
 
-    The English rendering is the package's own string, reproduced rather than
-    reformatted: it already carries the precision the fact was computed to, and
-    re-rendering it here would make this module the thing deciding how many
-    decimal places a governed figure has.
+    The English rendering keeps the precision the fact was computed to and adds
+    only what makes it legible: digit grouping, and a percent sign for a ratio.
+    **`RRA-006` requires "units, formats"** in the same scope line that requires
+    accessible tables, and an ungrouped `726919.57` beside a margin printed as
+    `0.8665` satisfies neither. The earlier rule here was to reproduce the
+    package's string verbatim, on the ground that re-rendering would make this
+    module decide a governed figure's precision. That ground is sound and is
+    kept: grouping inserts separators and the ratio scaling is exact, so the
+    significant digits crossing this function are the ones that entered it.
 
-    The Arabic rendering is that same string transliterated character by
-    character — every digit to one Arabic-Indic digit, the separators to their
-    Arabic counterparts. The two forms differ in script and in nothing else: no
-    rounding, no reformatting, no arithmetic.
+    **Formatted here rather than in a renderer, deliberately.** This is the one
+    place the `Decimal` and its `unit_kind` sit together, and the single string
+    all four surfaces copy. `rendering/html.py` refuses to format because four
+    renderers formatting independently is four renderers disagreeing about
+    precision; that refusal only holds if the string reaching them is already
+    the finished one.
+
+    **No currency marker, at any unit.** `facts` appends
+    `CAVEAT_CURRENCY_NOT_DECLARED` to every package carrying a monetary fact,
+    because the currency is not derivable from an upload. A symbol here would
+    assert what that caveat exists to disclaim.
+
+    `unit_kind` is optional so a caller with no unit in hand -- a label, a
+    timestamp, anything that is not a measured quantity -- gets the previous
+    verbatim behaviour rather than a guess.
     """
-    return {LANGUAGE_ENGLISH: text, LANGUAGE_ARABIC: _arabic(text)}
+    english = _presented(text, unit_kind=unit_kind, kind=kind, metric=metric)
+    return {LANGUAGE_ENGLISH: english, LANGUAGE_ARABIC: _arabic(english)}
+
+
+#: The `UNIT_RATIO` metrics that are *proportions* and therefore presentable as
+#: percentages, named rather than inferred.
+#:
+#: **`unit_kind` does not carry this distinction, and cannot be made to here.**
+#: `basket._fact` stamps `UNIT_RATIO` on both of its metrics through one helper:
+#: `basket_attach_rate` is a proportion of transactions, while
+#: `basket_items_per_transaction` is a *rate* -- 3.6667 items in an average
+#: basket. Scaling the second by a hundred prints `366.67%`, which is not a
+#: smaller defect than the `0.8665` this slice set out to fix. The honest
+#: long-term fix is a fourth unit kind on `Fact`, which is an `RRA-004` change to
+#: a digested document and not something a presentation slice may make; this
+#: allowlist is the bounded form, and it fails *closed*.
+#:
+#: A ratio metric absent from this set renders as a plain grouped number, which
+#: is wrong-looking rather than wrong. `test_every_ratio_metric_is_classified`
+#: enumerates what a rich package actually produces and fails when a new one
+#: appears, because an allowlist nobody is forced to extend is an allowlist that
+#: silently mis-formats the next metric added.
+PERCENTAGE_METRICS = frozenset(
+    {
+        "gross_margin",
+        "revenue_delta_percent",
+        "concentration_top_decile_share",
+        "concentration_top_quartile_share",
+        "concentration_curve",
+        "basket_attach_rate",
+    }
+)
+
+#: The `UNIT_RATIO` metrics that are rates rather than proportions, named so the
+#: coverage test can tell "classified as not-a-percentage" from "forgotten".
+#:
+#: `basket_items_per_transaction` is the whole reason this pair of sets exists: a
+#: rich package renders it as `3825.0000` items per basket, which as a percentage
+#: is `382500.00%`.
+RATE_METRICS = frozenset({"basket_items_per_transaction"})
+
+
+def _presented(text: str, *, unit_kind: str | None, kind: str, metric: str | None = None) -> str:
+    """Group a figure's digits, and scale a ratio to a percentage.
+
+    **A row count is a count whatever it counts.** `KIND_ROWS` figures inherit
+    their owner's `unit_kind`, so dispatching on unit alone would take the row
+    count beside a margin and print `28200.00%`. The kind is checked first for
+    that reason, and the check is not defensive: `_bucket` builds exactly such a
+    pair on every aggregated fact.
+
+    A value this cannot parse is returned untouched. Refusing would turn a
+    presentation concern into a bundle failure, and the caller already treats a
+    non-numeric figure as legitimate -- `_decimal` returns `None` for one.
+    """
+    if kind == KIND_ROWS:
+        return _grouped(text)
+    if unit_kind == UNIT_RATIO and metric in PERCENTAGE_METRICS:
+        return _percentage(text)
+    return _grouped(text)
+
+
+def _grouped(text: str) -> str:
+    """Insert thousands separators, preserving the decimal places as given."""
+    parsed = _decimal(text)
+    if parsed is None:
+        return text
+    whole, _, fraction = text.strip().partition(".")
+    try:
+        grouped = f"{int(whole):,}"
+    except ValueError:
+        return text
+    return f"{grouped}.{fraction}" if fraction else grouped
+
+
+def _percentage(text: str) -> str:
+    """Scale a stored ratio to a percentage at two decimal places.
+
+    Two places rather than the ratio's four: `0.8665` is `86.65%` exactly, so
+    the scaling is a decimal-point move and not a rounding. The stored
+    `Decimal` stays on the figure's `value`, which is what reconciliation and
+    the audit trail read -- the percentage is presentation, and the figure it
+    was derived from remains addressable.
+
+    **`ROUND_HALF_UP` is stated rather than inherited.** `f"{Decimal:.2f}"`
+    formats half-even, so a ratio ending `...5` at the fourth place would round
+    to the even neighbour -- `0.12345` presenting as `12.34%` while the same
+    figure in a reader's own arithmetic gives `12.35%`. A presentation layer
+    disagreeing with the reader is the defect this slice exists to remove, and
+    quantizing explicitly means the mode is a decision in the source rather than
+    a property of an f-string.
+    """
+    parsed = _decimal(text)
+    if parsed is None:
+        return text
+    scaled = (parsed * 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return f"{_grouped(str(scaled))}%"
 
 
 def _arabic(text: str) -> str:

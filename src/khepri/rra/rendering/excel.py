@@ -916,8 +916,26 @@ def _write_chart_value(
     representation of exactly what a reader is shown, whatever that invariant does
     later; `float(figure.value)` would have quietly written more precision than the
     report ever claimed, which is the relaxation `APP-013` refuses.
+
+    **The presentation is removed before parsing, not looked past.** The rendering now
+    carries grouping separators, and a ratio carries a percent sign, because `RRA-006`
+    requires formats. `Decimal` accepts neither, so this parsed cleanly only while the
+    string happened to be bare -- the coupling this docstring already warned was held
+    elsewhere. Undoing exactly the two transforms `bundle._presented` applies keeps
+    this write addressing what the reader is shown rather than reaching for the
+    `Decimal` the decision refuses: a percentage is divided back by one hundred, so
+    the series plots the ratio the section sheet states.
     """
-    sheet.write_number(row, column, float(Decimal(figure.renderings[_CHART_NUMBER_LANGUAGE])))
+    sheet.write_number(row, column, _chart_number(figure))
+
+
+def _chart_number(figure: CitedFigure) -> float:
+    """The authoritative string as a double, with grouping and percent undone."""
+    shown = figure.renderings[_CHART_NUMBER_LANGUAGE]
+    bare = shown.replace(",", "")
+    if bare.endswith("%"):
+        return float(Decimal(bare.rstrip("%")) / 100)
+    return float(Decimal(bare))
 
 
 def _chart_for(workbook: Workbook, block: _ChartBlock, language: str) -> Chart:

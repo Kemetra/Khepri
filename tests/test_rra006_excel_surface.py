@@ -528,11 +528,40 @@ def _allowed_business_names(bundle: ReportBundle) -> set[str]:
     }
 
 
+def _allowed_chart_series(bundle: ReportBundle) -> set[str]:
+    """The chart series values, which are numbers rather than presented strings.
+
+    `_write_chart_number` writes the plotted double, and it must be the *value*
+    rather than the presented string: a percentage cannot be plotted as `67.15%`
+    on an axis of ratios, and grouping separators are not parseable at all. The
+    section sheet still carries the authoritative presented figure, and
+    `APP-013` permits this one numeric write precisely because the chartdata
+    sheet holds no citation.
+
+    Derived through the renderer's own helper rather than restated here. Writing
+    `str(figure.value)` would pass while the two agreed and go stale the moment
+    presentation changed again -- which is exactly what happened to this test.
+    """
+    return {
+        _chart_number_text(figure)
+        for section in bundle.sections
+        if section.chart is not None
+        for figure in (excel._plotted(bundle, section.chart) or ())
+    }
+
+
+def _chart_number_text(figure: CitedFigure) -> str:
+    """One chart series value as the workbook reader reports it."""
+    number = excel._chart_number(figure)
+    return str(int(number)) if number == int(number) else str(number)
+
+
 def _allowed_text(bundle: ReportBundle) -> set[str]:
     return (
         _allowed_identity_text(bundle)
         | _allowed_figure_text(bundle)
         | _allowed_business_names(bundle)
+        | _allowed_chart_series(bundle)
     )
 
 
