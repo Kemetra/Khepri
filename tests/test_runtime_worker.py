@@ -46,11 +46,16 @@ class QueueStub:
         self.receives = 0
         self.acknowledged: list[ClaimedDelivery] = []
         self.heartbeats: list[ClaimedDelivery] = []
+        self.recoveries = 0
 
     def receive(self, *, now: datetime) -> ClaimedDelivery | None:
         self.receives += 1
         delivery, self.delivery = self.delivery, None
         return delivery
+
+    def recover(self, *, now: datetime) -> tuple[ReportJob, ...]:
+        self.recoveries += 1
+        return ()
 
     def acknowledge(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob:
         self.acknowledged.append(delivery)

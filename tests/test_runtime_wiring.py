@@ -49,8 +49,6 @@ def settings() -> RuntimeSettings:
             "KHEPRI_STORAGE_REGION": "fra1",
             "KHEPRI_BUCKET": "khepri-beta-content",
             "KHEPRI_STORAGE_MASTER_KEY": base64.b64encode(b"k" * 32).decode("ascii"),
-            "KHEPRI_QUEUE_URL": "https://sqs.example/report-jobs",
-            "KHEPRI_DLQ_URL": "https://sqs.example/report-jobs-dlq",
         }
     )
 
@@ -83,8 +81,6 @@ def clerk_enabled_settings() -> RuntimeSettings:
         storage_region=configured.storage_region,
         bucket=configured.bucket,
         master_key=_MASTER_KEY,
-        queue_url=configured.queue_url,
-        dead_letter_queue_url=configured.dead_letter_queue_url,
         clerk=ClerkIdentitySettings(
             mode="private_beta",
             issuer="https://private-beta.clerk.accounts.example",

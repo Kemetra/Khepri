@@ -48,8 +48,6 @@ def _settings(database_url: URL, *, enabled: bool = False) -> RuntimeSettings:
         storage_region="fra1",
         bucket="test",
         master_key=_MASTER_KEY,
-        queue_url="https://sqs.example/jobs",
-        dead_letter_queue_url="https://sqs.example/jobs-dlq",
         clerk=clerk,
     )
 

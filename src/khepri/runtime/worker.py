@@ -36,6 +36,8 @@ WORKBOOK_DIRECTORY = Path("/tmp/khepri-workbooks")
 class QueuePort(Protocol):
     def receive(self, *, now: datetime) -> ClaimedDelivery | None: ...
 
+    def recover(self, *, now: datetime) -> tuple[ReportJob, ...]: ...
+
     def heartbeat(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob: ...
 
     def acknowledge(self, delivery: ClaimedDelivery, *, now: datetime) -> ReportJob: ...
@@ -71,7 +73,30 @@ class ClaimWorkerLoop:
         self._clock = clock
 
     def run_once(self) -> bool:
-        delivery = self._queue.receive(now=self._clock())
+        """Recover expired leases, then claim and settle one job.
+
+        `KHEPRI-DEC-008` replaced the broker with "a claim query and a redrive
+        sweep", and the sweep had no caller on the deployed path: the only one was
+        `khepri.local.sweeper`, which `pyproject.toml` excludes from the wheel. A
+        lease whose holder died was therefore never reclaimed in the image that
+        actually runs, and the job stayed `running` until a human intervened.
+
+        **The sweep runs before every claim, not only when the queue is idle.**
+        Gating it behind `delivery is None` starves recovery under exactly the
+        conditions that produce abandoned leases: a busy queue always has something
+        claimable, so the idle branch never runs, so a worker that died mid-job
+        holds its lease until traffic stops. Recovery must not depend on the
+        absence of work.
+
+        One clock reading serves both calls, so a job cannot be judged expired by
+        the sweep and unexpired by the claim within one iteration. `recover` is
+        idempotent and bounded by `lease_expires_at <= now`, and reclaiming cannot
+        touch this worker's own job because it holds no lease at this point -- the
+        previous iteration settled or released it before returning.
+        """
+        now = self._clock()
+        self._queue.recover(now=now)
+        delivery = self._queue.receive(now=now)
         if delivery is None:
             return False
         try:

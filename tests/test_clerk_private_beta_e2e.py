@@ -103,8 +103,6 @@ def journey_fixture(tmp_path) -> PrivateBetaJourney:
         storage_region="fra1",
         bucket="khepri-beta-content",
         master_key=_MASTER_KEY,
-        queue_url="https://sqs.example/report-jobs",
-        dead_letter_queue_url="https://sqs.example/report-jobs-dlq",
         clerk=ClerkIdentitySettings(
             mode="test",
             issuer=ISSUER,
