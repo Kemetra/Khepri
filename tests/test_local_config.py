@@ -8,6 +8,7 @@ all.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,14 @@ from khepri.local.config import (
     DEFAULT_S3_ENDPOINT,
     DEFAULT_SECRET_KEY,
     LocalSettings,
+)
+from khepri.runtime.config import (
+    _SECRET_FIELDS,
+    BUCKET_VARIABLE,
+    DATABASE_SECRET_VARIABLE,
+    MASTER_KEY_VARIABLE,
+    STORAGE_ENDPOINT_VARIABLE,
+    STORAGE_REGION_VARIABLE,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -81,10 +90,12 @@ class TestOverrides:
             settings.bucket = "changed"  # type: ignore[misc]
 
 
-def _compose() -> dict:
-    return yaml.safe_load(
-        (REPOSITORY_ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
-    )
+def _compose(name: str = "docker-compose.local.yml") -> dict:
+    return yaml.safe_load((REPOSITORY_ROOT / name).read_text(encoding="utf-8"))
+
+
+def _staging() -> dict:
+    return _compose("docker-compose.staging.yml")
 
 
 class TestComposeContract:
@@ -136,6 +147,112 @@ class TestComposeContract:
         assert "15432:5432" in services["postgres"]["ports"]
         assert DEFAULT_S3_ENDPOINT.endswith(":14566")
         assert ":15432/" in DEFAULT_DATABASE_URL
+
+
+class TestStagingComposeContract:
+    """The staging stack runs the built image, so its contract is the runtime's.
+
+    `docker-compose.local.yml` is checked against `LocalSettings`; this file is
+    checked against what `khepri.runtime.config` refuses to start without. Both
+    are compose files and neither substitutes for the other.
+    """
+
+    def test_no_service_floats_its_image_tag(self) -> None:
+        services = _staging()["services"]
+
+        assert services, "a compose file with no services would vacuously pass"
+        for name, service in services.items():
+            tag = service.get("image", "").rpartition(":")[2]
+            assert tag, f"{name} must pin a tag rather than defaulting to latest"
+            assert tag not in {"latest", "stable", "edge"}, f"{name} floats on {tag}"
+
+    def test_the_database_secret_is_the_json_document_the_runtime_parses(self) -> None:
+        """`_database_secret` parses a Secrets Manager document, not a URL.
+
+        Supplying a connection string here would fail at boot inside
+        `RuntimeSettings.from_environment`, so the shape is asserted rather than
+        assumed -- and asserted through the runtime's own field set, so adding a
+        required field to the secret fails here rather than in a container.
+        """
+        environment = _staging()["services"]["web"]["environment"]
+        document = json.loads(environment[DATABASE_SECRET_VARIABLE])
+
+        assert set(document) >= _SECRET_FIELDS
+        assert isinstance(document["port"], int), "port must not be a string"
+
+    def test_every_runtime_variable_the_web_service_needs_is_present(self) -> None:
+        """The four coordinates `_runtime_coordinates` requires, plus the secret."""
+        environment = _staging()["services"]["web"]["environment"]
+
+        for variable in (
+            DATABASE_SECRET_VARIABLE,
+            STORAGE_ENDPOINT_VARIABLE,
+            STORAGE_REGION_VARIABLE,
+            BUCKET_VARIABLE,
+            MASTER_KEY_VARIABLE,
+        ):
+            assert environment.get(variable), f"{variable} must be set and non-empty"
+
+    def test_the_worker_and_web_share_one_runtime_environment(self) -> None:
+        """They read the same rows and the same bucket; divergence is a split brain."""
+        services = _staging()["services"]
+
+        assert services["web"]["environment"] == services["worker"]["environment"]
+
+    def test_no_clerk_variable_is_supplied_empty(self) -> None:
+        """`_clerk_settings` reads these through `_optional`.
+
+        Absent is valid and means invitation sessions. Present-but-empty is not:
+        `_required` rejects it, so an empty value turns an intentional omission
+        into a boot failure.
+        """
+        environment = _staging()["services"]["web"]["environment"]
+
+        clerk = {k: v for k, v in environment.items() if k.startswith("KHEPRI_CLERK")}
+        assert all(clerk.values()), f"empty Clerk variables would fail boot: {clerk}"
+
+    def test_both_storage_hops_are_encrypted(self) -> None:
+        """`_database_url` pins `sslmode=require` and offers no override.
+
+        A plaintext PostgreSQL is therefore not merely weaker here, it is
+        unreachable by this image. The object-store hop is TLS for the same
+        reason the deployed one will be, and botocore verifies its chain.
+        """
+        services = _staging()["services"]
+        environment = services["web"]["environment"]
+
+        assert environment[STORAGE_ENDPOINT_VARIABLE].startswith("https://")
+        assert environment["AWS_CA_BUNDLE"], "botocore must be told to trust the local CA"
+        assert "ssl=on" in services["postgres"]["command"]
+        assert "sslmode=require" in services["migrate"]["environment"]["KHEPRI_DATABASE_URL"]
+
+    def test_web_and_worker_wait_for_migrations_and_the_bucket(self) -> None:
+        """Either racing the schema or the bucket fails in a way that looks flaky."""
+        services = _staging()["services"]
+
+        for role in ("web", "worker"):
+            depends = services[role]["depends_on"]
+            assert depends["migrate"]["condition"] == "service_completed_successfully"
+            assert depends["minio-init"]["condition"] == "service_completed_successfully"
+
+    def test_the_one_shot_services_do_not_restart(self) -> None:
+        """A completed one-shot that restarts never satisfies its dependents."""
+        services = _staging()["services"]
+
+        assert services["migrate"]["restart"] == "no"
+        assert services["minio-init"]["restart"] == "no"
+
+    def test_the_two_stacks_do_not_contend_for_ports(self) -> None:
+        """Both are local, and a developer may reasonably run them at once."""
+
+        def published(compose: dict) -> set[str]:
+            return {
+                mapping.split(":")[0]
+                for service in compose["services"].values()
+                for mapping in service.get("ports", [])
+            }
+
+        assert not published(_compose()) & published(_staging())
 
 
 class TestMigrationContract:

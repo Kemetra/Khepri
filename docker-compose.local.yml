@@ -43,6 +43,11 @@
 #   uv run uvicorn khepri.local.app:app --reload
 #   uv run python -m khepri.local.cli work
 
+# Compose derives a project name from the directory, so without this both compose
+# files claim the same project and starting one stack recreates the other's
+# containers. The staging stack sets its own.
+name: khepri-local
+
 services:
   postgres:
     image: postgres:17.11-alpine
