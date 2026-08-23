@@ -28,7 +28,7 @@ Three corrections applied to the draft as a result of that review, marked in pla
 
 1. **`CAL1` claimed an exception to the small-slice rule that no artifact grants it.** `governance/CONSTITUTION.md` Article IV admits product code only in small, independently verifiable slices, and the merged design at `18019b5` states that `C0` must merge before `C1`-`C4` as separately versioned slices. The draft's justification — that the successor families share package and formula identities — does not hold, because the governed successor versions are per family. See the `CAL1` release strategy.
 2. **Task identifiers were being renumbered across the replacement**, which would have retargeted `KHEPRI-DEC-027`'s blocking clause from CI-only provisioning to a sizing reissue, and left `RCA-002`'s `R8-01` and `R5-02`/`R5-04` citations, plus `KHEPRI-DEC-025`'s `R5-02`…`R5-06`, resolving to nothing at this path. See section 0.1, the `OPS1` table, and the `R5` program.
-3. **The status vocabulary was used without being defined, and open issues had no home.** Section 16.1 restores the convention and the next-actionable-task rule, and records that it is the section `KHEPRI-DEC-025` cites as `§15`; section 0.2 carries `#152`, `#211`, and `#231` forward.
+3. **The status vocabulary was used without being defined, and open issues had no home.** Section 15 restores the convention and the next-actionable-task rule, at the section number `KHEPRI-DEC-025` cites; section 0.2 carries `#152`, `#211`, and `#231` forward.
 
 ---
 
@@ -44,7 +44,7 @@ Merge procedure, as executed:
 
 1. The previous roadmap moved to `docs/product/history/KHEPRI_MASTER_PRODUCT_ROADMAP_2026-08-24.md` with its historical dispositions unedited.
 2. This document was placed at `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
-3. **Task identifiers are stable across the replacement, and one section number is mapped.** The repository cites this file mostly by task ID — four active governed artifacts do — but `KHEPRI-DEC-025` cites a section number, and the archived `§15` is not this document's `§15`. Section 0.1 records both the identifiers that may not be reassigned and that section mapping, and says where each program's task table now lives.
+3. **Task identifiers and the one cited section number are stable across the replacement.** The repository cites this file mostly by task ID — four active governed artifacts do — and `KHEPRI-DEC-025` additionally cites `§15`, which therefore still holds the status convention. Section 0.1 records what may not be renumbered, and says where each program's task table now lives.
 4. Historical status prose is not copied forward; the archived roadmap and the merged pull requests preserve it. Tracked open defects are the deliberate exception and carry forward in section 0.2, because an issue with no planning home is an issue nobody sequences.
 5. Update this roadmap only after a merge to `main`, except for clearly marked proposals.
 
@@ -67,9 +67,9 @@ Citations by **section number**, which the replacement renumbers:
 
 | Artifact | Cites | Resolves to |
 |---|---|---|
-| `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` (active) | "§15's rule that `MERGED` requires a `main` SHA" | **§16.1** of this document. In the archived roadmap `§15` was the status convention; here `§15` is the immediate execution order and the convention moved to `§16.1`. The rule itself is unchanged and still governs. |
+| `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` (active) | "§15's rule that `MERGED` requires a `main` SHA" | **§15**, unchanged. The status convention keeps that section number here, and the later sections are numbered around it. |
 
-That is the only section-number citation found in an active governed artifact, and it is why `§16.1` names its archived predecessor in place. A future reorganization of this document must re-check that citation rather than assume identifiers are the only cross-reference.
+That is the only section-number citation found in an active governed artifact. It is honoured by keeping the section where the decision expects it, not by a redirect note: this roadmap does not govern, so it cannot retarget a decision's reference. A future reorganization must either preserve `§15` or amend `KHEPRI-DEC-025` through the governed process first.
 
 Merged design, plan, and reconciliation documents add citations to `R0-02`, `R0-03`, `R0-05`, `R1-01`, `R1-02`, `R3-09`, `R4-01`, `R5-01`, `R6-01`, `R7-01`, `R7-02`, `R7-05`, `R7-06`, `R8-01`, `R8-02`, `OPS1-01`, `OPS1-02`, and `OPS1-05` across `specs/001-rca-001-commercial-identity/`, `docs/superpowers/`, and `docs/platform/proposed-governance/`.
 
@@ -1465,7 +1465,30 @@ Do not combine:
 
 ---
 
-## 15. Immediate execution order from current `main`
+## 15. Roadmap status convention
+
+*This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-025` makes `R3-11` satisfiable "subject to §15's rule that `MERGED` requires a `main` SHA". Moving the rule elsewhere would leave that governed reference pointing at unrelated content, and a note in a non-governing roadmap cannot retarget a decision. The later sections are numbered around it.*
+
+Use these statuses only. Inventing one is a review finding — it happened on `#214`, where `MERGED_EXCEPT_R3-11` and `PARTIAL` appeared because the next-actionable-task rule below had not been applied.
+
+- `PROPOSED` — roadmap or specification work exists but is not approved or active.
+- `READY_FOR_PLAN` — governing authority exists; design questions remain.
+- `READY_FOR_IMPLEMENTATION` — an approved bounded plan and its RED tests exist.
+- `IN_IMPLEMENTATION` — one approved branch is implementing the task.
+- `IN_REVIEW` — implementation is complete and under adversarial review.
+- `MERGED` — the owner merged to `main`.
+- `BLOCKED` — a named dependency or owner decision prevents progress.
+- `SUPERSEDED` — a later roadmap or artifact replaces this task.
+
+A program's status is the status of its **next actionable task**. Where design may proceed but implementation cannot, the program is `READY_FOR_PLAN` and the blocking implementation dependency is named in the reason. `BLOCKED` is reserved for programs whose next task — design included — cannot start.
+
+Never mark a task complete because it exists on a branch. Use `MERGED` only with a `main` SHA. A green CI run and a merged pull-request title prove a slice landed, never that its requirements closed.
+
+**The status table in §17 is the one document a merged slice never has to touch, so it is the one that drifts.** Four rows described a stale repository in the archived roadmap because a slice's Definition of Done requires its own artifacts and tests and nothing more. Verify a status claim against the merged commits and the files the slice was supposed to produce before building on it. Fixing a stale row means reading what governs the dependency, not only what the table says about it.
+
+---
+
+## 16. Immediate execution order from current `main`
 
 This is the no-hesitation queue. Do not begin a later item merely because it is interesting.
 
@@ -1508,30 +1531,9 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 
 ---
 
-## 16. Recommended current status at `f865079`
+## 17. Recommended current status at `f865079`
 
-### 16.1 Status convention
-
-*(This is the archived roadmap's `§15`, which `KHEPRI-DEC-025` cites for the rule that `MERGED` requires a `main` SHA. The rule is unchanged; only its section number moved.)*
-
-Use these statuses only. Inventing one is a review finding — it happened on `#214`, where `MERGED_EXCEPT_R3-11` and `PARTIAL` appeared because the next-actionable-task rule below had not been applied.
-
-- `PROPOSED` — roadmap or specification work exists but is not approved or active.
-- `READY_FOR_PLAN` — governing authority exists; design questions remain.
-- `READY_FOR_IMPLEMENTATION` — an approved bounded plan and its RED tests exist.
-- `IN_IMPLEMENTATION` — one approved branch is implementing the task.
-- `IN_REVIEW` — implementation is complete and under adversarial review.
-- `MERGED` — the owner merged to `main`.
-- `BLOCKED` — a named dependency or owner decision prevents progress.
-- `SUPERSEDED` — a later roadmap or artifact replaces this task.
-
-A program's status is the status of its **next actionable task**. Where design may proceed but implementation cannot, the program is `READY_FOR_PLAN` and the blocking implementation dependency is named in the reason. `BLOCKED` is reserved for programs whose next task — design included — cannot start.
-
-Never mark a task complete because it exists on a branch. Use `MERGED` only with a `main` SHA. A green CI run and a merged pull-request title prove a slice landed, never that its requirements closed.
-
-**This table is the one document a merged slice never has to touch, so it is the one that drifts.** Four rows described a stale repository in the archived roadmap because a slice's Definition of Done requires its own artifacts and tests and nothing more. Verify a status claim against the merged commits and the files the slice was supposed to produce before building on it. Fixing a stale row means reading what governs the dependency, not only what the table says about it.
-
-### 16.2 Status table
+### 17.1 Status table
 
 | Program | Status | Reason / next action |
 |---|---|---|
@@ -1540,7 +1542,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R2 Membership lifecycle | MERGED | Program complete |
 | R3 Authentication sessions/provider seam | MERGED | Invite-only Clerk path and local session composition merged |
 | R4 Invitations | MERGED | Program complete |
-| R5 Recovery | BLOCKED | **`BLOCKED`, not `READY_FOR_PLAN`, because §16.1 reserves `READY_FOR_PLAN` for programs whose design work may start now, and `R5`'s cannot.** `KHEPRI-DEC-025` defers `R5-02`/`R5-03`/`R5-04` while Clerk owns credentials, and the named dependency that reopens them is `G6-00`'s successor credential-ownership decision at M5. The local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
+| R5 Recovery | BLOCKED | **`BLOCKED`, not `READY_FOR_PLAN`, because §15 reserves `READY_FOR_PLAN` for programs whose design work may start now, and `R5`'s cannot.** `KHEPRI-DEC-025` defers `R5-02`/`R5-03`/`R5-04` while Clerk owns credentials, and the named dependency that reopens them is `G6-00`'s successor credential-ownership decision at M5. The local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
 | R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
 | R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
 | R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
@@ -1568,13 +1570,13 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 
 ---
 
-## 17. Decision rules that prevent hesitation
+## 18. Decision rules that prevent hesitation
 
 When choosing the next task, apply these rules in order:
 
 1. **Governance first:** no product code without active authority.
 2. **Correctness before convenience:** unresolved calculation or isolation risk beats new UI.
-3. **One critical path:** execute the first incomplete item in section 15 unless a named blocker exists.
+3. **One critical path:** execute the first incomplete item in section 16 unless a named blocker exists.
 4. **Design may lead code, not outrun contracts:** UI/UX design can proceed against a frozen interface; implementation waits.
 5. **No duplicate truth:** a new surface consumes existing definitions/facts/views or stops.
 6. **No speculative platform work:** connectors, embedding, caching, pre-aggregation, AI, and Seshat require demand and prerequisites.
@@ -1587,7 +1589,7 @@ If two tasks appear equally valid, choose the one that closes an exit gate for t
 
 ---
 
-## 18. Final sequencing statement
+## 19. Final sequencing statement
 
 Khepri's complete sequence is:
 
