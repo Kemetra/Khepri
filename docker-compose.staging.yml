@@ -87,8 +87,13 @@ services:
       POSTGRES_USER: khepri
       POSTGRES_PASSWORD: khepri
       POSTGRES_DB: khepri
+    # Bound to loopback explicitly. Compose's short syntax omits the host IP and
+    # therefore publishes on every interface, which would put PostgreSQL and the
+    # object store -- both carrying fixed, published-in-this-file credentials -- on
+    # the LAN of any machine this runs on. The usage comment advertises 127.0.0.1;
+    # this is what makes that true.
     ports:
-      - "25432:5432"
+      - "127.0.0.1:25432:5432"
     volumes:
       - khepri-staging-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -106,8 +111,8 @@ services:
       MINIO_ROOT_USER: khepristaging
       MINIO_ROOT_PASSWORD: khepristaging
     ports:
-      - "29000:9000"
-      - "29001:9001"
+      - "127.0.0.1:29000:9000"
+      - "127.0.0.1:29001:9001"
     volumes:
       - khepri-staging-miniodata:/data
       # MinIO serves TLS when it finds a key pair here; no flag enables it.
@@ -126,7 +131,7 @@ services:
       timeout: 5s
       retries: 30
 
-  # One-shot. Creates the private bucket and the two lifecycle rules, then exits.
+  # One-shot. Creates the private bucket and its expiry rule, then exits.
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: khepri-staging-minio-init
@@ -161,7 +166,21 @@ services:
         # guard that cannot fail is worse than none, because it reads as proof.
         # The add itself is the evidence, and it is no longer allowed to fail.
         mc ilm rule add --expire-days 7 staging/khepri-staging-content
-        mc ilm rule add --expire-delete-marker staging/khepri-staging-content
+        # Incomplete-multipart cleanup is NOT configured, and saying so is the
+        # honest outcome rather than an omission. This `mc` has no
+        # `--abort-incomplete-multipart-days` flag at all, and importing the
+        # equivalent `AbortIncompleteMultipartUpload` lifecycle JSON is rejected by
+        # single-drive MinIO ("did not validate against our published schema"),
+        # while an `Expiration` rule imports fine -- tested both ways in isolation.
+        # An earlier revision papered over this with `--expire-delete-marker`, which
+        # is worse than nothing: the bucket is deliberately unversioned, so there
+        # are no delete markers and the rule expires exactly zero objects while
+        # reading like multipart cleanup. `S3EncryptedObjectStore.
+        # abort_multipart_uploads` already exists and the deletion path calls it, so
+        # the application clears its own parts; the provider-side sweep belongs to
+        # the target-selection artifact `KHEPRI-DEC-027` leaves open, where Spaces
+        # supports the rule this local substitute does not.
+        echo "[note] incomplete-multipart cleanup: unsupported by this MinIO, see comment"
         echo "[OK] bucket private, lifecycle configured"
     restart: "no"
 
@@ -199,7 +218,7 @@ services:
       - --port
       - "8000"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./ops/staging/certs/ca.crt:/opt/khepri/tls/ca.crt:ro
     deploy:

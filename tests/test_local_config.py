@@ -242,12 +242,35 @@ class TestStagingComposeContract:
         assert services["migrate"]["restart"] == "no"
         assert services["minio-init"]["restart"] == "no"
 
+    def test_every_published_port_is_bound_to_loopback(self) -> None:
+        """Compose's short syntax publishes on every interface, not just localhost.
+
+        This stack carries fixed credentials written in the file itself, so on any
+        machine reachable from another the short form would put PostgreSQL and the
+        object store on the LAN. The header advertises `127.0.0.1`; this is what
+        makes that true rather than aspirational.
+        """
+        services = _staging()["services"]
+
+        published = [
+            (name, mapping)
+            for name, service in services.items()
+            for mapping in service.get("ports", [])
+        ]
+
+        assert published, "a stack publishing nothing would vacuously pass"
+        for name, mapping in published:
+            assert mapping.startswith("127.0.0.1:"), (
+                f"{name} publishes {mapping} on every interface"
+            )
+
     def test_the_two_stacks_do_not_contend_for_ports(self) -> None:
         """Both are local, and a developer may reasonably run them at once."""
 
         def published(compose: dict) -> set[str]:
+            """The host port, whether or not the mapping names a bind address."""
             return {
-                mapping.split(":")[0]
+                mapping.split(":")[-2]
                 for service in compose["services"].values()
                 for mapping in service.get("ports", [])
             }
