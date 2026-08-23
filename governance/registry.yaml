@@ -163,6 +163,11 @@ artifacts:
     state: active
     document: governance/decisions/KHEPRI-DEC-026-narrative-model-provider-selection.md
     depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-027
+    state: active
+    document: governance/decisions/KHEPRI-DEC-027-digitalocean-fra1-target-direction.md
+    depends_on: []
 
   - type: specification
     id: FND-001
