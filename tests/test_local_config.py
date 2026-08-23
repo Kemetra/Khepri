@@ -118,17 +118,32 @@ class TestComposeContract:
             assert tag, f"{name} must pin a tag rather than defaulting to latest"
             assert tag not in {"latest", "stable", "edge"}, f"{name} floats on {tag}"
 
-    def test_the_object_store_credentials_match_the_settings(self) -> None:
+    def test_the_object_store_credentials_follow_the_settings(self) -> None:
         """MinIO rejects any credential but its configured root user.
 
         LocalStack accepted anything, so this pair could drift silently and the
         journey still worked. It cannot now: a mismatch fails every S3 call with a
         403 that reads like a networking fault rather than a configuration one.
+
+        Asserted as substitution rather than as literals, because the settings read
+        the same two variables from the environment: hardcoding the defaults here
+        would make `KHEPRI_LOCAL_ACCESS_KEY=other` move the client without moving
+        the server. The `:-` fallbacks must still be the settings' own defaults, or
+        an unset environment starts a server the defaults cannot reach.
+
+        The form is `-` and not `:-` on purpose: `:-` also substitutes for an empty
+        value, while `os.environ.get` treats empty as a present value, so `:-` would
+        configure the server with the default while the client sent `""`. This
+        asserts the exact operator, because the two differ only in that case.
         """
         environment = _compose()["services"]["minio"]["environment"]
 
-        assert environment["MINIO_ROOT_USER"] == DEFAULT_ACCESS_KEY
-        assert environment["MINIO_ROOT_PASSWORD"] == DEFAULT_SECRET_KEY
+        assert environment["MINIO_ROOT_USER"] == (
+            "${KHEPRI_LOCAL_ACCESS_KEY-" + DEFAULT_ACCESS_KEY + "}"
+        )
+        assert environment["MINIO_ROOT_PASSWORD"] == (
+            "${KHEPRI_LOCAL_SECRET_KEY-" + DEFAULT_SECRET_KEY + "}"
+        )
 
     def test_the_object_store_secret_satisfies_the_minio_minimum(self) -> None:
         """MinIO refuses to start with a root password under eight characters.
@@ -143,10 +158,52 @@ class TestComposeContract:
         """The endpoint and database URL defaults are only correct if these agree."""
         services = _compose()["services"]
 
-        assert "14566:9000" in services["minio"]["ports"]
-        assert "15432:5432" in services["postgres"]["ports"]
+        assert "127.0.0.1:14566:9000" in services["minio"]["ports"]
+        assert "127.0.0.1:15432:5432" in services["postgres"]["ports"]
         assert DEFAULT_S3_ENDPOINT.endswith(":14566")
         assert ":15432/" in DEFAULT_DATABASE_URL
+
+    def test_no_project_env_file_can_split_the_two_runtimes(self) -> None:
+        """Compose interpolates from `.env`; `LocalSettings` reads `os.environ`.
+
+        A credential written to a project `.env` therefore configures MinIO and
+        never reaches a client started with `uv run`, which is the same divergence
+        the substitution closes, arriving through a different door. Reproduced:
+        with a `.env` present, `docker compose config` resolved the file's value
+        while the settings still returned the default.
+
+        The repository must have no committed `.env`, and `.gitignore` must keep
+        it that way -- a committed one would split every developer's stack at once,
+        and the failure surfaces as a 403 that reads like a network fault.
+        """
+        assert not (REPOSITORY_ROOT / ".env").exists(), (
+            "a committed .env would configure MinIO without reaching uv run clients"
+        )
+        ignored = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
+        assert any(
+            line.strip() == ".env" for line in ignored.splitlines()
+        ), ".gitignore must exclude .env so one cannot be committed"
+
+    def test_every_local_port_is_bound_to_loopback(self) -> None:
+        """The same exposure the staging stack had: short syntax means all interfaces.
+
+        These credentials are fixed and published in the file, so a developer host
+        reachable from another machine would be offering its database and object
+        store to the network.
+        """
+        services = _compose()["services"]
+
+        published = [
+            (name, mapping)
+            for name, service in services.items()
+            for mapping in service.get("ports", [])
+        ]
+
+        assert published, "a stack publishing nothing would vacuously pass"
+        for name, mapping in published:
+            assert mapping.startswith("127.0.0.1:"), (
+                f"{name} publishes {mapping} on every interface"
+            )
 
 
 class TestStagingComposeContract:
@@ -234,6 +291,17 @@ class TestStagingComposeContract:
             depends = services[role]["depends_on"]
             assert depends["migrate"]["condition"] == "service_completed_successfully"
             assert depends["minio-init"]["condition"] == "service_completed_successfully"
+
+    def test_the_worker_has_no_fixed_container_name(self) -> None:
+        """Its own comment says to scale by replicas, and a fixed name forbids that.
+
+        Compose can give exactly one container a given name, so `--scale worker=2`
+        fails outright. The other services keep theirs because one of each is right.
+        """
+        services = _staging()["services"]
+
+        assert "container_name" not in services["worker"]
+        assert "container_name" in services["web"]
 
     def test_the_one_shot_services_do_not_restart(self) -> None:
         """A completed one-shot that restarts never satisfies its dependents."""

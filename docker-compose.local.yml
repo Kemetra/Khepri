@@ -59,8 +59,11 @@ services:
       POSTGRES_DB: khepri
     # Host port 15432 rather than 5432: it is what `DEFAULT_DATABASE_URL` in
     # `khepri.local.config` points at, and it leaves a system PostgreSQL alone.
+    # Bound to loopback. Compose's short syntax omits the host IP and publishes on
+    # every interface, which would put a fixed-credential database on the LAN of
+    # any machine this runs on.
     ports:
-      - "15432:5432"
+      - "127.0.0.1:15432:5432"
     volumes:
       - khepri-local-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -77,15 +80,37 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      # Must match `LocalSettings.access_key` and `.secret_key`.
-      MINIO_ROOT_USER: test
-      MINIO_ROOT_PASSWORD: testtest
+      # Must match `LocalSettings.access_key` and `.secret_key`, which read
+      # `KHEPRI_LOCAL_ACCESS_KEY` and `KHEPRI_LOCAL_SECRET_KEY` from the
+      # environment. Substituting the same two names means overriding them moves
+      # the client and the server together; hardcoding the defaults would make an
+      # override 403 every call while looking like a network fault.
+      #
+      # **Set these by exporting them, never in a project `.env`.** Compose
+      # interpolates from a `.env` beside the compose file automatically, while
+      # `LocalSettings` reads `os.environ` only, so a credential written there
+      # configures MinIO and never reaches a `uv run` client -- the same split this
+      # substitution exists to close, arriving through a different door. There is
+      # no `.env` in this repository and `.gitignore` keeps it that way; if one is
+      # ever added for other purposes, run compose with `--env-file /dev/null` or
+      # export these two alongside it.
+      #
+      # `-` and not `:-`, which is the whole point. `${VAR:-default}` substitutes
+      # when the variable is unset OR empty, while `os.environ.get(name, default)`
+      # substitutes only when it is unset -- so with `KHEPRI_LOCAL_ACCESS_KEY=`
+      # exported, the client would send `''` and the server would be configured
+      # with `test`, recreating the divergence this substitution exists to remove.
+      # `-` matches Python's semantics exactly, so an empty override reaches both
+      # sides and MinIO refuses to start rather than the mismatch surfacing later
+      # as a 403.
+      MINIO_ROOT_USER: ${KHEPRI_LOCAL_ACCESS_KEY-test}
+      MINIO_ROOT_PASSWORD: ${KHEPRI_LOCAL_SECRET_KEY-testtest}
     # 14566 is inherited from the endpoint `DEFAULT_S3_ENDPOINT` already names; it
     # is not a LocalStack remnant, and changing it would mean editing that default
     # and everything asserting it. 19001 is the browser console, which nothing reads.
     ports:
-      - "14566:9000"
-      - "19001:9001"
+      - "127.0.0.1:14566:9000"
+      - "127.0.0.1:19001:9001"
     volumes:
       - khepri-local-miniodata:/data
     healthcheck:

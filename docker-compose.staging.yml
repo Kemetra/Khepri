@@ -230,7 +230,10 @@ services:
 
   worker:
     image: khepri-runtime:staging
-    container_name: khepri-staging-worker
+    # No `container_name`, deliberately. The comment below says to scale by
+    # replicas, and a fixed name makes `--scale worker=2` fail outright: Compose
+    # can only give one container that name. The other services keep theirs
+    # because exactly one of each is correct.
     depends_on:
       migrate:
         condition: service_completed_successfully

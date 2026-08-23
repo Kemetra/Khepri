@@ -39,3 +39,10 @@ cdk.out/
 # shared: a committed private key is a committed private key regardless of what it
 # protects, and these are meant to be regenerated per machine.
 ops/staging/certs/
+
+# Compose interpolates from a project `.env` automatically while
+# `khepri.local.config` reads `os.environ` only, so a credential written there
+# would configure MinIO and never reach a `uv run` client. Export the variables
+# instead; this keeps a committed `.env` from splitting the two runtimes for
+# everyone at once.
+.env
