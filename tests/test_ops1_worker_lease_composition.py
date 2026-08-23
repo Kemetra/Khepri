@@ -25,7 +25,7 @@ from sqlalchemy.pool import StaticPool
 
 from khepri.rra.claim_queue import ClaimingReportQueue, ClaimPolicy
 from khepri.rra.job_persistence import SqlReportJobRepository
-from khepri.rra.jobs import JOB_SUCCEEDED, EnqueueJob, ReportJob
+from khepri.rra.jobs import JOB_RETRYABLE, JOB_SUCCEEDED, EnqueueJob, ReportJob
 from khepri.rra.persistence import Base, SqlSessionStore
 from khepri.rra.report_services import JobReader
 from khepri.rra.sessions import InvitationService, SessionScope
@@ -54,6 +54,12 @@ class HeartbeatHandler(Handler):
     def __call__(self, execution: WorkerExecution) -> None:
         self.jobs.append(execution.job)
         execution.heartbeat()
+
+
+class FailingHandler(Handler):
+    def __call__(self, execution: WorkerExecution) -> None:
+        self.jobs.append(execution.job)
+        raise RuntimeError("customer content must not escape the handler")
 
 
 class Harness:
@@ -158,6 +164,22 @@ def _worker_id_arguments(call: ast.Call) -> list[str]:
         for keyword in call.keywords
         if keyword.arg == "worker_id"
     ]
+
+
+def test_a_failing_handler_reschedules_the_job_it_claimed() -> None:
+    """This slice is what first makes the failure path reachable in production.
+
+    While the second lease refused, the handler never ran, so `_record_failure`
+    was dead on the deployed path. It settles through `WorkerPolicy.worker_id`
+    against a `lease_owner` that `ClaimPolicy` wrote, so it depends on the same
+    coupling this slice made load-bearing -- and the only case covering it used
+    the stub seam whose blindness the cases above demonstrate.
+    """
+    test = Harness(FailingHandler())
+
+    assert test.loop.run_once() is True, "a claimed job is work, even when it fails"
+    assert test.state() == JOB_RETRYABLE
+    assert test.attempts() == 1
 
 
 def test_the_built_loop_names_one_worker_identity_for_both_policies() -> None:
