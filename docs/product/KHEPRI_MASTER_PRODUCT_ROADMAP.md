@@ -24,7 +24,7 @@ Checked against `main` at `f86507920155077fd3c87eb8878d29fb1624db69` before this
 - `KHEPRI-DEC-027` is `active` and blocks `OPS1-02` by name; `KHEPRI-DEC-013` is retired with no successor, so `STAT1`'s reciprocal-authority precondition is stated correctly;
 - the handoff gates and the CodeScene requirement match `AGENTS.md`.
 
-Three corrections applied to the draft as a result of that review, marked in place:
+Three corrections applied to the draft as a result of that review, marked in place. Successive rounds of adversarial review on `#266` found fifteen more, each verified against the active artifact before it was applied; those corrections are recorded at the sections they touch rather than listed here:
 
 1. **`CAL1` claimed an exception to the small-slice rule that no artifact grants it.** `governance/CONSTITUTION.md` Article IV admits product code only in small, independently verifiable slices, and the merged design at `18019b5` states that `C0` must merge before `C1`-`C4` as separately versioned slices. The draft's justification — that the successor families share package and formula identities — does not hold, because the governed successor versions are per family. See the `CAL1` release strategy.
 2. **Task identifiers were being renumbered across the replacement**, which would have retargeted `KHEPRI-DEC-027`'s blocking clause from CI-only provisioning to a sizing reissue, and left `RCA-002`'s `R8-01` and `R5-02`/`R5-04` citations, plus `KHEPRI-DEC-025`'s `R5-02`…`R5-06`, resolving to nothing at this path. See section 0.1, the `OPS1` table, and the `R5` program.
