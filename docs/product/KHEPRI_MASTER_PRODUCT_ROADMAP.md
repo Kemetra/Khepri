@@ -44,7 +44,7 @@ Merge procedure, as executed:
 
 1. The previous roadmap moved to `docs/product/history/KHEPRI_MASTER_PRODUCT_ROADMAP_2026-08-24.md` with its historical dispositions unedited.
 2. This document was placed at `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
-3. **Task identifiers and the one cited section number are stable across the replacement.** The repository cites this file mostly by task ID — four active governed artifacts do — and `KHEPRI-DEC-025` additionally cites `§15`, which therefore still holds the status convention. Section 0.1 records what may not be renumbered, and says where each program's task table now lives.
+3. **Task identifiers and the two cited section numbers are stable across the replacement.** The repository cites this file mostly by task ID — four active governed artifacts do — and two of them additionally cite section numbers: `KHEPRI-DEC-025` cites `§15` and `KHEPRI-DEC-023` cites `§16`. Both keep their contents. Section 0.1 records what may not be renumbered, and says where each program's task table now lives.
 4. Historical status prose is not copied forward; the archived roadmap and the merged pull requests preserve it. Tracked open defects are the deliberate exception and carry forward in section 0.2, because an issue with no planning home is an issue nobody sequences.
 5. Update this roadmap only after a merge to `main`, except for clearly marked proposals.
 
@@ -67,9 +67,12 @@ Citations by **section number**, which the replacement renumbers:
 
 | Artifact | Cites | Resolves to |
 |---|---|---|
-| `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` (active) | "§15's rule that `MERGED` requires a `main` SHA" | **§15**, unchanged. The status convention keeps that section number here, and the later sections are numbered around it. |
+| `governance/decisions/KHEPRI-DEC-025-...` (active) | "§15's rule that `MERGED` requires a `main` SHA" | **§15**, unchanged — the status convention keeps that number. |
+| `governance/decisions/KHEPRI-DEC-023-...` (active) | `R7-06`'s definition of done includes "flipping §16's `R7` row" | **§16**, unchanged — the status table keeps that number. |
 
-That is the only section-number citation found in an active governed artifact. It is honoured by keeping the section where the decision expects it, not by a redirect note: this roadmap does not govern, so it cannot retarget a decision's reference. A future reorganization must either preserve `§15` or amend `KHEPRI-DEC-025` through the governed process first.
+**`§15` and `§16` are therefore fixed points, and the rest of the document is numbered around them.** Both are honoured by keeping each section where its decision expects it, not by a redirect note: this roadmap does not govern, so it cannot retarget a decision's reference. An earlier revision of this replacement moved the convention to `§16.1` and added a note; that was wrong for exactly this reason. A future reorganization must either preserve both numbers or amend the citing decisions through the governed process first.
+
+These two were found by searching every `active` artifact in `governance/registry.yaml` for a section citation next to roadmap vocabulary — a row, a status, the `MERGED` rule. A search for task identifiers alone misses them.
 
 Merged design, plan, and reconciliation documents add citations to `R0-02`, `R0-03`, `R0-05`, `R1-01`, `R1-02`, `R3-09`, `R4-01`, `R5-01`, `R6-01`, `R7-01`, `R7-02`, `R7-05`, `R7-06`, `R8-01`, `R8-02`, `OPS1-01`, `OPS1-02`, and `OPS1-05` across `specs/001-rca-001-commercial-identity/`, `docs/superpowers/`, and `docs/platform/proposed-governance/`.
 
@@ -625,7 +628,7 @@ Build a coherent, accessible, server-rendered decision experience without introd
 
 The Clerk credential change and the Khepri consequence cannot share the transaction `R5-01` designed for local credentials. `KHEPRI-DEC-025` §1 accepts that cross-system residual for non-paying private beta only and keeps it open for commercial admission — so **`R5` reopens at M5 with `G6-00`, not before**, and reopening requires a credential-ownership decision rather than an engineering one.
 
-**Nothing in `R5` is outstanding implementation work.** Every implementable task is merged or deferred, which is why the program reads `READY_FOR_PLAN` rather than `MERGED`: `R5-02`/`R5-03`/`R5-04` have no `main` SHA by design. Do not plan a composition slice for `R5-05`; that work is merged.
+**Nothing in `R5` is outstanding implementation work, and none of it may be planned yet.** Every implementable task is merged or deferred, so the program reads `BLOCKED`: `R5-02`/`R5-03`/`R5-04` have no `main` SHA by design and cannot acquire one before `G6-00`'s credential-ownership decision at M5. It is not `MERGED`, because three tasks have no SHA; it is not `READY_FOR_PLAN`, because no design may start. Do not plan a composition slice for `R5-05` either; that work is merged.
 
 ---
 
@@ -1484,11 +1487,52 @@ A program's status is the status of its **next actionable task**. Where design m
 
 Never mark a task complete because it exists on a branch. Use `MERGED` only with a `main` SHA. A green CI run and a merged pull-request title prove a slice landed, never that its requirements closed.
 
-**The status table in §17 is the one document a merged slice never has to touch, so it is the one that drifts.** Four rows described a stale repository in the archived roadmap because a slice's Definition of Done requires its own artifacts and tests and nothing more. Verify a status claim against the merged commits and the files the slice was supposed to produce before building on it. Fixing a stale row means reading what governs the dependency, not only what the table says about it.
+**The status table in §16 is the one document a merged slice never has to touch, so it is the one that drifts.** Four rows described a stale repository in the archived roadmap because a slice's Definition of Done requires its own artifacts and tests and nothing more. Verify a status claim against the merged commits and the files the slice was supposed to produce before building on it. Fixing a stale row means reading what governs the dependency, not only what the table says about it.
 
 ---
 
-## 16. Immediate execution order from current `main`
+## 16. Recommended current status at `f865079`
+
+*This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-023` makes `R7-06`'s definition of done include "flipping §16's `R7` row". Like `§15`, it may not be renumbered without amending the decision that cites it.*
+
+### 16.1 Status table
+
+| Program | Status | Reason / next action |
+|---|---|---|
+| R0 Roadmap/spec reconciliation | MERGED | Historical program complete |
+| R1 Concurrent final-owner safety | MERGED | Concurrency gate cleared by merged fixes |
+| R2 Membership lifecycle | MERGED | Program complete |
+| R3 Authentication sessions/provider seam | MERGED | Invite-only Clerk path and local session composition merged |
+| R4 Invitations | MERGED | Program complete |
+| R5 Recovery | BLOCKED | **`BLOCKED`, not `READY_FOR_PLAN`, because §15 reserves `READY_FOR_PLAN` for programs whose design work may start now, and `R5`'s cannot.** `KHEPRI-DEC-025` defers `R5-02`/`R5-03`/`R5-04` while Clerk owns credentials, and the named dependency that reopens them is `G6-00`'s successor credential-ownership decision at M5. The local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
+| R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
+| R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
+| R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
+| **CAL1 Calculation correction** | **READY_FOR_PLAN** | RRA-003/004/008 successor semantics are active at `f865079` and the design merged at `18019b5`, but `READY_FOR_IMPLEMENTATION` requires an approved bounded plan and RED tests, and neither exists: `docs/superpowers/plans/` holds no CAL1 plan and there is no execution ledger. `CAL1-01`/`CAL1-02` produce both, and the program becomes `READY_FOR_IMPLEMENTATION` when they are approved |
+| **T1 Trust/catalog** | PROPOSED | Needs bounded authority; design can proceed during late CAL1 |
+| **U1 Design system** | READY_FOR_PLAN | Shell primitives exist; data/evidence component work depends on T1 contracts |
+| **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain |
+| S1 RRA hardening | READY_FOR_PLAN | Triage only; avoid CAL1 hotspots. Owns `#152` through `S1-05`, and ranks `#231` in `S1-02` |
+| G2/G3 Workspace authority | PROPOSED | Needs M2 learnings and retention decisions |
+| W1 Workspace/history | BLOCKED | No active G2/G3 authority |
+| G4/C1 Comparison | BLOCKED | Depends on W1/M3 and new split authority |
+| SV1 Semantic views | BLOCKED | Depends on T1 and stable C1 contracts |
+| D1 Decision workspace | BLOCKED | Depends on SV1/C1 |
+| X1 Guided exploration | BLOCKED | Depends on M4 semantic views and dashboard |
+| G5/ON1 Onboarding | PROPOSED | Begins after M4 proves value |
+| G6/B1 Billing | PROPOSED | Begins after M4 and owner pricing decisions |
+| API1 Embedding/API | PROPOSED | Demand-backed post-M4 track |
+| ING1 Connectors | PROPOSED | Demand-backed post-M4 track |
+| G7/A1 Agency | PROPOSED | Depends on M5, billing, and stable authorization |
+| G8/MON1/S2 Alerts/delivery | PROPOSED | Depends on history, stable metrics, and scheduling authority |
+| STAT1 Seshat evidence | PROPOSED | Optional post-M4; needs reciprocal successor authority |
+| G9/AI1 Ask Khepri | PROPOSED | Depends on M4, T1, SV1, and provider/privacy authority |
+| OPS2 Semantic operations | PROPOSED | Begins after M4 query/view evidence exists |
+| E1 Enterprise GA | PROPOSED | Final hardening over all preceding capabilities |
+
+---
+
+## 17. Immediate execution order from current `main`
 
 This is the no-hesitation queue. Do not begin a later item merely because it is interesting.
 
@@ -1531,52 +1575,13 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 
 ---
 
-## 17. Recommended current status at `f865079`
-
-### 17.1 Status table
-
-| Program | Status | Reason / next action |
-|---|---|---|
-| R0 Roadmap/spec reconciliation | MERGED | Historical program complete |
-| R1 Concurrent final-owner safety | MERGED | Concurrency gate cleared by merged fixes |
-| R2 Membership lifecycle | MERGED | Program complete |
-| R3 Authentication sessions/provider seam | MERGED | Invite-only Clerk path and local session composition merged |
-| R4 Invitations | MERGED | Program complete |
-| R5 Recovery | BLOCKED | **`BLOCKED`, not `READY_FOR_PLAN`, because §15 reserves `READY_FOR_PLAN` for programs whose design work may start now, and `R5`'s cannot.** `KHEPRI-DEC-025` defers `R5-02`/`R5-03`/`R5-04` while Clerk owns credentials, and the named dependency that reopens them is `G6-00`'s successor credential-ownership decision at M5. The local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
-| R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
-| R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
-| R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
-| **CAL1 Calculation correction** | **READY_FOR_PLAN** | RRA-003/004/008 successor semantics are active at `f865079` and the design merged at `18019b5`, but `READY_FOR_IMPLEMENTATION` requires an approved bounded plan and RED tests, and neither exists: `docs/superpowers/plans/` holds no CAL1 plan and there is no execution ledger. `CAL1-01`/`CAL1-02` produce both, and the program becomes `READY_FOR_IMPLEMENTATION` when they are approved |
-| **T1 Trust/catalog** | PROPOSED | Needs bounded authority; design can proceed during late CAL1 |
-| **U1 Design system** | READY_FOR_PLAN | Shell primitives exist; data/evidence component work depends on T1 contracts |
-| **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain |
-| S1 RRA hardening | READY_FOR_PLAN | Triage only; avoid CAL1 hotspots. Owns `#152` through `S1-05`, and ranks `#231` in `S1-02` |
-| G2/G3 Workspace authority | PROPOSED | Needs M2 learnings and retention decisions |
-| W1 Workspace/history | BLOCKED | No active G2/G3 authority |
-| G4/C1 Comparison | BLOCKED | Depends on W1/M3 and new split authority |
-| SV1 Semantic views | BLOCKED | Depends on T1 and stable C1 contracts |
-| D1 Decision workspace | BLOCKED | Depends on SV1/C1 |
-| X1 Guided exploration | BLOCKED | Depends on M4 semantic views and dashboard |
-| G5/ON1 Onboarding | PROPOSED | Begins after M4 proves value |
-| G6/B1 Billing | PROPOSED | Begins after M4 and owner pricing decisions |
-| API1 Embedding/API | PROPOSED | Demand-backed post-M4 track |
-| ING1 Connectors | PROPOSED | Demand-backed post-M4 track |
-| G7/A1 Agency | PROPOSED | Depends on M5, billing, and stable authorization |
-| G8/MON1/S2 Alerts/delivery | PROPOSED | Depends on history, stable metrics, and scheduling authority |
-| STAT1 Seshat evidence | PROPOSED | Optional post-M4; needs reciprocal successor authority |
-| G9/AI1 Ask Khepri | PROPOSED | Depends on M4, T1, SV1, and provider/privacy authority |
-| OPS2 Semantic operations | PROPOSED | Begins after M4 query/view evidence exists |
-| E1 Enterprise GA | PROPOSED | Final hardening over all preceding capabilities |
-
----
-
 ## 18. Decision rules that prevent hesitation
 
 When choosing the next task, apply these rules in order:
 
 1. **Governance first:** no product code without active authority.
 2. **Correctness before convenience:** unresolved calculation or isolation risk beats new UI.
-3. **One critical path:** execute the first incomplete item in section 16 unless a named blocker exists.
+3. **One critical path:** execute the first incomplete item in section 17 unless a named blocker exists.
 4. **Design may lead code, not outrun contracts:** UI/UX design can proceed against a frozen interface; implementation waits.
 5. **No duplicate truth:** a new surface consumes existing definitions/facts/views or stops.
 6. **No speculative platform work:** connectors, embedding, caching, pre-aggregation, AI, and Seshat require demand and prerequisites.
