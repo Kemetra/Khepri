@@ -163,6 +163,27 @@ class TestComposeContract:
         assert DEFAULT_S3_ENDPOINT.endswith(":14566")
         assert ":15432/" in DEFAULT_DATABASE_URL
 
+    def test_no_project_env_file_can_split_the_two_runtimes(self) -> None:
+        """Compose interpolates from `.env`; `LocalSettings` reads `os.environ`.
+
+        A credential written to a project `.env` therefore configures MinIO and
+        never reaches a client started with `uv run`, which is the same divergence
+        the substitution closes, arriving through a different door. Reproduced:
+        with a `.env` present, `docker compose config` resolved the file's value
+        while the settings still returned the default.
+
+        The repository must have no committed `.env`, and `.gitignore` must keep
+        it that way -- a committed one would split every developer's stack at once,
+        and the failure surfaces as a 403 that reads like a network fault.
+        """
+        assert not (REPOSITORY_ROOT / ".env").exists(), (
+            "a committed .env would configure MinIO without reaching uv run clients"
+        )
+        ignored = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
+        assert any(
+            line.strip() == ".env" for line in ignored.splitlines()
+        ), ".gitignore must exclude .env so one cannot be committed"
+
     def test_every_local_port_is_bound_to_loopback(self) -> None:
         """The same exposure the staging stack had: short syntax means all interfaces.
 

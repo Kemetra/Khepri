@@ -86,6 +86,15 @@ services:
       # the client and the server together; hardcoding the defaults would make an
       # override 403 every call while looking like a network fault.
       #
+      # **Set these by exporting them, never in a project `.env`.** Compose
+      # interpolates from a `.env` beside the compose file automatically, while
+      # `LocalSettings` reads `os.environ` only, so a credential written there
+      # configures MinIO and never reaches a `uv run` client -- the same split this
+      # substitution exists to close, arriving through a different door. There is
+      # no `.env` in this repository and `.gitignore` keeps it that way; if one is
+      # ever added for other purposes, run compose with `--env-file /dev/null` or
+      # export these two alongside it.
+      #
       # `-` and not `:-`, which is the whole point. `${VAR:-default}` substitutes
       # when the variable is unset OR empty, while `os.environ.get(name, default)`
       # substitutes only when it is unset -- so with `KHEPRI_LOCAL_ACCESS_KEY=`
