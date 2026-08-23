@@ -20,6 +20,13 @@ DEFAULT_REGION = "us-east-1"
 DEFAULT_BUCKET = "khepri-local-content"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://khepri:khepri@127.0.0.1:15432/khepri"
 DEFAULT_OBJECT_ROOT = "khepri-local"
+# These must match `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` in
+# `docker-compose.local.yml`. MinIO, unlike the LocalStack it replaced, rejects any
+# credential but its configured root user, and requires a secret of at least eight
+# characters -- which is why the secret is not simply `test`. Neither value is a
+# secret: the local stack holds no real content.
+DEFAULT_ACCESS_KEY = "test"
+DEFAULT_SECRET_KEY = "testtest"
 # 32 zero bytes, base64. Deliberately not a secret and deliberately not generated:
 # a random local key would make an object written by one process unreadable by the
 # next, and this key protects nothing.
@@ -34,8 +41,8 @@ class LocalSettings:
     region: str = DEFAULT_REGION
     bucket: str = DEFAULT_BUCKET
     database_url: str = DEFAULT_DATABASE_URL
-    access_key: str = "test"
-    secret_key: str = "test"
+    access_key: str = DEFAULT_ACCESS_KEY
+    secret_key: str = DEFAULT_SECRET_KEY
     # Local development runs the same envelope encryption as the runtime rather
     # than a plaintext shortcut: two correctness models would mean local runs
     # never exercise the path that matters. A fixed non-secret key is right here
@@ -49,8 +56,8 @@ class LocalSettings:
             region=os.environ.get("KHEPRI_LOCAL_REGION", DEFAULT_REGION),
             bucket=os.environ.get("KHEPRI_LOCAL_BUCKET", DEFAULT_BUCKET),
             database_url=os.environ.get("KHEPRI_LOCAL_DATABASE_URL", DEFAULT_DATABASE_URL),
-            access_key=os.environ.get("KHEPRI_LOCAL_ACCESS_KEY", "test"),
-            secret_key=os.environ.get("KHEPRI_LOCAL_SECRET_KEY", "test"),
+            access_key=os.environ.get("KHEPRI_LOCAL_ACCESS_KEY", DEFAULT_ACCESS_KEY),
+            secret_key=os.environ.get("KHEPRI_LOCAL_SECRET_KEY", DEFAULT_SECRET_KEY),
             master_key_base64=os.environ.get(
                 "KHEPRI_LOCAL_MASTER_KEY", DEFAULT_MASTER_KEY_BASE64
             ),
@@ -58,8 +65,10 @@ class LocalSettings:
 
 
 __all__ = [
+    "DEFAULT_ACCESS_KEY",
     "DEFAULT_BUCKET",
     "DEFAULT_DATABASE_URL",
+    "DEFAULT_SECRET_KEY",
     "DEFAULT_MASTER_KEY_BASE64",
     "DEFAULT_OBJECT_ROOT",
     "DEFAULT_REGION",

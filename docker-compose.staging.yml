@@ -1,0 +1,256 @@
+# The local staging stack: the production image, end to end, on one machine.
+#
+# This is the sibling of `docker-compose.local.yml` and not a replacement for it.
+# That file stands up two backing services for a developer running Khepri from the
+# host with `uv`; this one runs the built image itself -- web, worker, migrations --
+# against TLS-enabled backing services, so what is exercised here is the artifact
+# that would be deployed rather than a source tree.
+#
+# **It selects no provider and authorizes nothing.** `KHEPRI-DEC-027` names
+# DigitalOcean FRA1 as the target direction while explicitly reserving the concrete
+# product selections, sizing, RTO/RPO, and the envelope-master-key secret source as
+# unresolved stop-gates before provisioning. MinIO below substitutes for Spaces
+# locally without choosing it; the CPU and memory limits are local comfort values
+# and not the sizing `KHEPRI-DEC-007` governs; nothing here is benchmark, residency,
+# recovery, or approval evidence, and none of it authorizes spend.
+#
+# **TLS is not optional here, it is what makes the stack work.**
+# `khepri.runtime.config` builds every database URL with `sslmode=require` and
+# offers no override, so a plaintext PostgreSQL is unreachable by this image. The
+# certificates are local, self-signed, and written by `ops/staging/generate-certs.sh`.
+# PostgreSQL's is trusted implicitly because `require` encrypts without verifying a
+# chain, while MinIO's is issued by a local CA that botocore verifies through
+# `AWS_CA_BUNDLE` -- a variable it reads natively, so neither the image nor
+# `wiring.py` is modified to accommodate the local stack.
+#
+# **No broker, no KMS, no separate browser.** `KHEPRI-DEC-008` replaced the message
+# broker with a PostgreSQL claim query and moved encryption into the application, and
+# `KHEPRI-DEC-007` bakes Chromium into the image so the pin is transitive. Redis,
+# Kafka, RabbitMQ, SQS, LocalStack, KMS, and a Chromium container would all be
+# machinery for capabilities that no longer exist.
+#
+# **Clerk is absent deliberately.** `_clerk_settings` reads its variables through
+# `_optional`, so their absence is valid and the stack runs on invitation sessions.
+# Supplying them empty would fail `_required`. Add real values only to test real
+# Clerk authentication.
+#
+#   sh ops/staging/generate-certs.sh
+#   docker compose -f docker-compose.staging.yml up -d --build
+#   # web on http://127.0.0.1:8000, MinIO console on https://127.0.0.1:29001
+#
+# **`name:` is load-bearing.** Compose derives a project name from the directory,
+# so without it both files claim the same project and starting one stack tears down
+# and recreates the other's containers -- observed, not theorised. The published
+# ports are disjoint for the same reason: the two stacks are meant to be able to run
+# at once.
+#
+# Docker-in-WSL note (Windows): a container started from a one-shot
+# `wsl -- bash -lc ...` receives SIGTERM when that WSL session ends. Keep a
+# long-lived WSL process open, or start the stack from a shell that stays open.
+
+name: khepri-staging
+
+x-runtime-environment: &runtime-environment
+  # One Secrets Manager-shaped JSON document, which is what `_database_secret`
+  # parses. It is not a URL: the runtime never joins the password into a string.
+  KHEPRI_DATABASE_SECRET: '{"username":"khepri","password":"khepri","engine":"postgres","host":"postgres","port":5432,"dbname":"khepri"}'
+  KHEPRI_STORAGE_ENDPOINT: https://minio:9000
+  KHEPRI_STORAGE_REGION: us-east-1
+  KHEPRI_BUCKET: khepri-staging-content
+  # 32 zero bytes, base64. Deliberately fixed and deliberately not a secret: a
+  # generated key would make objects written by one container unreadable by the
+  # next. The real secret source is a `KHEPRI-DEC-027` stop-gate.
+  KHEPRI_STORAGE_MASTER_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  AWS_ACCESS_KEY_ID: khepristaging
+  AWS_SECRET_ACCESS_KEY: khepristaging
+  # botocore reads this natively, so the local CA is trusted without modifying the
+  # image's trust store -- which the image could not do anyway, as it runs as `pwuser`.
+  AWS_CA_BUNDLE: /opt/khepri/tls/ca.crt
+
+services:
+  postgres:
+    build:
+      context: ./ops/staging
+      dockerfile: postgres-tls.Dockerfile
+    image: khepri-staging-postgres:17.11-tls
+    container_name: khepri-staging-postgres
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
+    environment:
+      POSTGRES_USER: khepri
+      POSTGRES_PASSWORD: khepri
+      POSTGRES_DB: khepri
+    # Bound to loopback explicitly. Compose's short syntax omits the host IP and
+    # therefore publishes on every interface, which would put PostgreSQL and the
+    # object store -- both carrying fixed, published-in-this-file credentials -- on
+    # the LAN of any machine this runs on. The usage comment advertises 127.0.0.1;
+    # this is what makes that true.
+    ports:
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - khepri-staging-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U khepri -d khepri"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: khepri-staging-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: khepristaging
+      MINIO_ROOT_PASSWORD: khepristaging
+    ports:
+      - "127.0.0.1:29000:9000"
+      - "127.0.0.1:29001:9001"
+    volumes:
+      - khepri-staging-miniodata:/data
+      # MinIO serves TLS when it finds a key pair here; no flag enables it.
+      - ./ops/staging/certs/minio:/root/.minio/certs:ro
+    # `mc ready local` is wrong here and passes on the plaintext local stack, which
+    # is what makes it dangerous: the bundled `mc` has no `local` alias configured
+    # and cannot validate this self-signed leaf, so the probe fails against a server
+    # that is serving correctly -- and because `depends_on` gates on it, the whole
+    # stack refuses to start. `/minio/health/live` is unauthenticated and needs only
+    # the CA, which is already mounted for the certs.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS --cacert /root/.minio/certs/ca.crt https://127.0.0.1:9000/minio/health/live || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot. Creates the private bucket and its expiry rule, then exits.
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: khepri-staging-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./ops/staging/certs/ca.crt:/certs/ca.crt:ro
+    entrypoint: ["/bin/sh", "-c"]
+    # `--insecure` is deliberately not used: the CA is installed so the leaf is
+    # actually verified, which is the posture the application itself takes.
+    command:
+      - |
+        set -eu
+        mkdir -p /root/.mc/certs/CAs
+        cp /certs/ca.crt /root/.mc/certs/CAs/khepri-local-staging-ca.crt
+        mc alias set staging https://minio:9000 khepristaging khepristaging
+        mc mb --ignore-existing staging/khepri-staging-content
+        mc anonymous set none staging/khepri-staging-content
+        # No `|| echo` on these. An earlier revision forgave every failure so that
+        # re-running stayed idempotent, which also swallowed bad credentials, TLS
+        # trouble, and flags this `mc` does not accept: the container exited 0 and
+        # `depends_on` started the stack on a bucket that expires nothing. Under
+        # `set -eu` a failed `ilm rule add` now stops the stack, which is the point
+        # of running it as a gate. `mc mb --ignore-existing` and `anonymous set`
+        # are already idempotent, and re-adding a lifecycle rule is accepted.
+        #
+        # There is deliberately no read-back assertion. `mc ilm rule export` and
+        # `ls` cannot serve as one here: single-drive MinIO answers `GetLifecycle`
+        # with "not supported for filesystem" and `export` still exits 0, so a
+        # verification built on it would pass whether or not a rule exists -- a
+        # guard that cannot fail is worse than none, because it reads as proof.
+        # The add itself is the evidence, and it is no longer allowed to fail.
+        mc ilm rule add --expire-days 7 staging/khepri-staging-content
+        # Incomplete-multipart cleanup is NOT configured, and saying so is the
+        # honest outcome rather than an omission. This `mc` has no
+        # `--abort-incomplete-multipart-days` flag at all, and importing the
+        # equivalent `AbortIncompleteMultipartUpload` lifecycle JSON is rejected by
+        # single-drive MinIO ("did not validate against our published schema"),
+        # while an `Expiration` rule imports fine -- tested both ways in isolation.
+        # An earlier revision papered over this with `--expire-delete-marker`, which
+        # is worse than nothing: the bucket is deliberately unversioned, so there
+        # are no delete markers and the rule expires exactly zero objects while
+        # reading like multipart cleanup. `S3EncryptedObjectStore.
+        # abort_multipart_uploads` already exists and the deletion path calls it, so
+        # the application clears its own parts; the provider-side sweep belongs to
+        # the target-selection artifact `KHEPRI-DEC-027` leaves open, where Spaces
+        # supports the rule this local substitute does not.
+        echo "[note] incomplete-multipart cleanup: unsupported by this MinIO, see comment"
+        echo "[OK] bucket private, lifecycle configured"
+    restart: "no"
+
+  # One-shot. Must finish before web or worker start, or they race the schema.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: khepri-runtime:staging
+    container_name: khepri-staging-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # `migrations/env.py` prefers this over `alembic.ini`, whose pinned URL points
+      # at the *local* stack. `sslmode=require` matches what the runtime will use.
+      KHEPRI_DATABASE_URL: postgresql+psycopg://khepri:khepri@postgres:5432/khepri?sslmode=require
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  web:
+    image: khepri-runtime:staging
+    container_name: khepri-staging-web
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment: *runtime-environment
+    command:
+      - uvicorn
+      - khepri.runtime.web:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./ops/staging/certs/ca.crt:/opt/khepri/tls/ca.crt:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
+    restart: unless-stopped
+
+  worker:
+    image: khepri-runtime:staging
+    container_name: khepri-staging-worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment: *runtime-environment
+    # In-task concurrency is exactly 1: `ClaimWorkerLoop` claims and settles one job
+    # at a time, and a second process here would not be a second worker but a second
+    # claimant racing the same rows. Scale by replicas, never by threads.
+    command: ["python", "-m", "khepri.runtime.worker"]
+    volumes:
+      - ./ops/staging/certs/ca.crt:/opt/khepri/tls/ca.crt:ro
+    # Chromium renders the reports, and it is memory-hungry rather than CPU-hungry.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
+    restart: unless-stopped
+
+volumes:
+  khepri-staging-pgdata:
+  khepri-staging-miniodata:
