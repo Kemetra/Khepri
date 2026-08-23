@@ -9,6 +9,7 @@ from jinja2 import Environment
 
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import (
+    KIND_ROWS,
     LANGUAGE_DIRECTION,
     SECTION_OVERVIEW,
     SECTION_PRESENT,
@@ -312,7 +313,12 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
     assert bundle.caveats
     for language, document in documents.items():
         for entry in bundle.figures:
-            assert entry.renderings[language] in document
+            # A row count states itself on the audit surface, so parity for one
+            # is checked there. Asserting it against the business document would
+            # pass only by coincidence -- a count of `1` appears in almost any
+            # page -- which is a weaker check than the one it looks like.
+            stated = document if entry.kind != KIND_ROWS else surface.evidence[language]
+            assert entry.renderings[language] in stated
             # The citation identifier is Audit-tier under RRA-009 and reaches the
             # evidence document rather than the business page. Asserted there, in
             # the same loop, so parity still covers it: a citation present in one
@@ -334,7 +340,16 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
         for language, document in documents.items()
     }
     assert rows[LANGUAGE_ARABIC] == rows[LANGUAGE_ENGLISH]
-    assert rows[LANGUAGE_ENGLISH] == len(bundle.figures)
+    # Counted against the figures the business page *states*, not against every
+    # figure the bundle carries. `KIND_ROWS` figures are provenance and render on
+    # the audit surface instead, so equality with `len(bundle.figures)` would now
+    # assert the defect rather than the property -- and the two numbers differing
+    # by exactly the row-count total is what the identity below pins.
+    business = [figure for figure in bundle.figures if figure.kind != KIND_ROWS]
+    counts = [figure for figure in bundle.figures if figure.kind == KIND_ROWS]
+    assert counts, "the fixture must carry row counts for this split to mean anything"
+    assert rows[LANGUAGE_ENGLISH] == len(business)
+    assert len(business) + len(counts) == len(bundle.figures)
     for document in documents.values():
         assert "data-figure-id" not in document
 

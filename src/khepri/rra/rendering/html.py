@@ -39,6 +39,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from khepri.rra.bundle import (
     GOVERNED_FIGURE_LABELS,
+    KIND_ROWS,
     LANGUAGE_DIRECTION,
     SECTION_REFUSED,
     SURFACE_WEB,
@@ -662,18 +663,58 @@ def _section_views(
             section_id=section.section_id,
             state=section.state,
             reason=section.reason,
+            # `KIND_ROWS` is excluded here rather than in `build_cells`, which
+            # stays total. A bucket emits its value and the count of source rows
+            # behind it as a pair, and rendering both interleaved them: a
+            # five-period series became ten rows, and a real upload put 39
+            # `rows counted` rows among the findings. The count is provenance --
+            # `wording` classifies its qualifier Audit-tier -- so it belongs on
+            # the audit surface, which renders from the same untouched
+            # `build_cells` output and still shows every one. Nothing is dropped
+            # from the bundle: `reconcile` compares figure coverage across
+            # surfaces and would refuse a report that had actually lost a figure.
             cells=tuple(
-                cell for cell in cells if cell.section == section.section_id
+                cell
+                for cell in cells
+                if cell.section == section.section_id and cell.kind != KIND_ROWS
             ),
-            caveats=tuple(
-                caveat.code
-                for caveat in bundle.caveats
-                if caveat.section == section.section_id
-            ),
+            caveats=_stated_once(bundle, section.section_id, language),
             chart=_chart_of(section, figures, language),
         )
         for section in bundle.sections
     ]
+
+
+def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[str, ...]:
+    """One section's caveat codes, with codes that read identically collapsed.
+
+    **Deduplicated by prose rather than by code, because the codes differ and the
+    sentences do not.** A single-period upload emits
+    `revenue_delta_absolute.year_over_year:prior_window_absent` and
+    `revenue_delta_percent.year_over_year:prior_window_absent` -- two governed
+    codes, one per affected metric, which is correct: the caveat is a property of
+    a figure and both figures have it. `caveat_prose` then maps both to the same
+    paragraph, so the comparison section stated "comparison with an earlier
+    period is not available" twice in consecutive list items.
+    See `test_no_section_caveat_paragraph_is_repeated`.
+
+    The first code wins and the bundle's order is preserved, so the surviving
+    entry is the one a reader would have seen first. No code is dropped from the
+    bundle: `_reconcile_language` compares the caveat *codes* both languages
+    carry and would refuse a surface that had actually lost one -- this narrows
+    what is *printed*, which is the same distinction `RRA-006` draws between a
+    figure and its presentation.
+
+    Collapsing is per language deliberately. Two codes sharing English prose need
+    not share Arabic prose, and deduplicating on one language's text would drop a
+    sentence the other language still distinguishes.
+    """
+    stated: dict[str, str] = {}
+    for caveat in bundle.caveats:
+        if caveat.section != section_id:
+            continue
+        stated.setdefault(caveat_prose(caveat.code, language), caveat.code)
+    return tuple(stated.values())
 
 
 def _chart_of(
