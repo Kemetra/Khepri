@@ -437,13 +437,16 @@ CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.m
 | Slice | Publishes | Governed by |
 |---|---|---|
 | C0 semantic admission | `rra003.mapping.v3` | `RRA-003` |
-| C1 package, bases, and window alignment | `rra004.package.v3`, `rra008.comparison.v2` | `RRA-004`, `RRA-008` |
+| C1 package, bases, and window alignment | `rra004.package.v3` | `RRA-004` |
+| C1 comparison facts | `rra008.comparison.v2` | `RRA-008` |
 | C2 growth decomposition | `rra008.growth.v2` | `RRA-008` |
 | C3 basket | `rra008.basket.v2` | `RRA-008` |
 | C4 concentration | `rra008.concentration.v2` | `RRA-008` |
 | Policy-dependent formula corrections | `rra004.formula.v2` | `RRA-004` |
 
 What the shared `rra004.package.v3` dependency requires is **ordering, not atomicity**, which is exactly what the merged design states: *"C0 must merge before C1-C4. Each correction is a separate mapping- or formula-versioned slice with its own RED/GREEN/reconciliation gate."*
+
+**`rra004.package.v3` publishes once, when C1 is complete, and C1 is larger than one task.** `RRA-004` defines that version to authorize readable population provenance, canonical transaction keys, retained reconciliation bases, coverage-manifest identity, **coverage signatures, aligned daily bases**, currency, and **growth rounding-residual evidence**. `CAL1-04` alone does not produce all of it: coverage signatures and aligned daily bases are `CAL1-06`, and the residual-evidence field is the package-shape half of `CAL1-08`. Merging `CAL1-04` as an independently mergeable predecessor would either publish an incomplete `v3` and later mutate it without a new version, or change the `v2` shape — both forbidden by the rules below. So `CAL1-04`, `CAL1-06`, and `CAL1-08`'s residual-evidence field are **one slice**, and `CAL1-08`'s growth formula work follows as C2 over the published package.
 
 The release rules are therefore:
 
@@ -462,11 +465,11 @@ The release rules are therefore:
 | CAL1-01 | Create an execution ledger against current `main`; map every RRA-003/004/008 requirement to implementation and test work | active successor specifications | Reviewed ledger; exact allowed/forbidden files per slice; the C0-first slice sequence and its version-publication order |
 | CAL1-02 | Add independent RED golden and adversarial fixtures before production changes | CAL1-01 | Expected values derived outside production helpers; tests fail against current defects for the intended reasons |
 | CAL1-03 | Implement C0 semantic admission: normalized event kind/status, source-contract declarations, currency, event identity, canonical transaction identity, and coverage-manifest validation | CAL1-02 | `rra003.mapping.v3` behavior; ambiguous source semantics refuse affected populations |
-| CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases | CAL1-03 | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
+| CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases. **Ships as one C1 slice with `CAL1-06` and `CAL1-08`'s residual-evidence field**; it is not independently mergeable | CAL1-03 merged | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
 | CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns | CAL1-04 | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
-| CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows | CAL1-04 | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
+| CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows. **Same C1 slice as `CAL1-04`** — `RRA-004` puts coverage signatures and aligned daily bases inside `rra004.package.v3` | CAL1-03 merged | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
 | CAL1-07 | Correct comparison facts and bilingual incomplete-window behavior | CAL1-06 | Absolute/percentage deltas use the same aligned population; zero/negative base rules preserved |
-| CAL1-08 | Correct growth decomposition populations and return exclusion | CAL1-04, CAL1-06 | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
+| CAL1-08 | Correct growth decomposition populations and return exclusion. Its **rounding-residual evidence field ships inside C1**; its growth formula is C2 over the published package | C1 merged | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
 | CAL1-09 | Correct basket populations and dimension eligibility | CAL1-04 | Items/transaction and attach rate use complete sale populations and canonical transaction keys; repeated lines do not inflate attach |
 | CAL1-10 | Correct concentration eligibility and full-set behavior | CAL1-04 | Null/unlabelled dimensions do not become products; full-set curve remains independent of display truncation; ceiling convention is pinned |
 | CAL1-11 | Update bundle, narrative, charts, HTML/PDF/Excel, caveats, refusals, and version compatibility | CAL1-05 through CAL1-10 | No surface recalculates; all successor facts/refusals/caveats reconcile in both languages |
@@ -568,10 +571,12 @@ Build a coherent, accessible, server-rendered decision experience without introd
 | R5-02 | Add recovery secret domain and persistence | DEFER — no Khepri recovery-secret domain, table, or migration while Clerk owns the credential |
 | R5-03 | Implement uniform recovery initiation for existing and unknown accounts | DEFER — Clerk owns initiation, delivery, and anti-enumeration behavior |
 | R5-04 | Implement one-use credential replacement | DEFER — Clerk owns one-use credential replacement |
-| R5-05 | Revoke every existing session in the same successful recovery transaction | REFRAME — Khepri revalidates account state, revokes every Khepri session, and records content-free security evidence after provider recovery. **Merged but not composed** |
-| R5-06 | Add replay, expiry, concurrent use, and logging tests | REFRAME — prove those local consequences, idempotency, disabled/purged refusal, and identity-link integrity rather than reproducing Clerk recovery internals |
+| R5-05 | Revoke every existing session in the same successful recovery transaction | REFRAME, **MERGED and composed** — Khepri revalidates account state, revokes every Khepri session, and records content-free security evidence after provider recovery. Merged at `15a8175` (`#240`); the composition gap that audit found was closed under `KHEPRI-DEC-025` §4 — `build_recovery_security_service` in `runtime/wiring.py` constructs the service over the real store, and the sweeper is a `RetentionPasses` entry at the governed twelve-month horizon |
+| R5-06 | Add replay, expiry, concurrent use, and logging tests | REFRAME, **MERGED** — proves those local consequences, idempotency, disabled/purged refusal, and identity-link integrity rather than reproducing Clerk recovery internals |
 
 The Clerk credential change and the Khepri consequence cannot share the transaction `R5-01` designed for local credentials. `KHEPRI-DEC-025` §1 accepts that cross-system residual for non-paying private beta only and keeps it open for commercial admission — so **`R5` reopens at M5, not before**, and reopening requires a credential-ownership decision rather than an engineering one.
+
+**Nothing in `R5` is outstanding implementation work.** Every implementable task is merged or deferred, which is why the program reads `READY_FOR_PLAN` rather than `MERGED`: `R5-02`/`R5-03`/`R5-04` have no `main` SHA by design. Do not plan a composition slice for `R5-05`; that work is merged.
 
 ---
 
@@ -615,11 +620,13 @@ The production-like local staging stack is merged: one built Khepri image runs w
 | OPS1-05 | Run the governed benchmark, capacity, and soak tests | OPS1-03, CAL1 | no | Web/worker/DB sizing and concurrency evidence |
 | OPS1-06 | Add content-free alerts, dashboards, runbooks, and break-glass evidence | OPS1-03 | R8-08 | Operability |
 | OPS1-07 | Define release, rollback, database migration, and incident procedures | OPS1-04 | no | Alpha/pilot runbook |
-| OPS1-10 | Authorize external private-beta traffic only after M2 gates pass | all M2 dependencies | no | Explicit go/no-go record |
+| OPS1-10 | Authorize external private-beta traffic only after M2 gates pass | all M2 dependencies; `KHEPRI-DEC-008` pre-beta demonstrations | no | **An owner-merged beta-authorization artifact defining the client count and the observation period**, which `KHEPRI-DEC-008` requires and which no other task produces, plus the explicit go/no-go record |
 
 ## M2 operational gate
 
 No external design partner uses Khepri until hosted non-production, recovery evidence, calculation validation, authentication handoff, and the pilot runbook are complete.
+
+**A go/no-go record is not sufficient to open external traffic.** `KHEPRI-DEC-008` is active and states that "the later beta-authorization artifact must still define the client count and observation period", and it lists what implementation must demonstrate before beta launch: cross-session isolation and consent enforcement; deterministic reconciliation and reruns; raw-row exclusion from narrative requests; Arabic/English fact and caveat parity; accessible RTL web and PDF output; safe Excel output; immediate deletion and seven-day expiry; restart, retry, dead-letter, and orphan recovery; content-free telemetry; and at least 95% complete report bundles within ten minutes for the approved benchmark workload. `OPS1-10` produces that artifact for the owner to merge; it does not substitute for it.
 
 ---
 
@@ -1409,8 +1416,8 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 ### Critical path
 
 1. **CAL1-01/02:** create the execution ledger from `f865079`, fix the slice sequence, add independent RED fixtures.
-2. **CAL1-03/04:** implement and merge C0 semantic admission and the population/basis package foundations, in that order.
-3. **CAL1-05 through CAL1-10:** implement core, windows, comparison, growth, basket, and concentration corrections as ordered slices on top of merged C0.
+2. **CAL1-03:** implement and merge C0 semantic admission. It merges before every later slice.
+3. **CAL1-04 + CAL1-06 + CAL1-08's residual-evidence field:** merge the complete C1 package-and-window slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone — see the CAL1 release strategy. Then **CAL1-07**, **CAL1-05**, **CAL1-08**, **CAL1-09**, and **CAL1-10** as ordered slices over the published package.
 4. **CAL1-11/12:** update every surface; add mutation and pharmacy golden evidence.
 5. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
 6. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
