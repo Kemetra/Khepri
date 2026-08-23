@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import hashlib
 import re
-from decimal import Decimal
+from decimal import Decimal, Inexact
+
+import pytest
 
 from khepri.rra import bundle as bundle_module
 from khepri.rra.admissibility import assess_admissibility
@@ -200,6 +202,20 @@ class TestRatioFigures:
         # no rounding mode is chosen here and none has to agree with the mode the
         # fact boundary already applied.
         assert bundle_module._percentage("0.8665") == "86.65%"
+
+    def test_a_fifth_place_raises_rather_than_rounding_unheard(self) -> None:
+        # The guard the two tests above rely on, fired rather than assumed. No
+        # governed producer emits five places, so nothing reaches this in
+        # production -- which is exactly why it needs its own proof: an
+        # unreachable guard is indistinguishable from an absent one until the
+        # day it is reached.
+        #
+        # Without the trapped context this returns "86.66%": `Decimal`'s default
+        # context does not trap `Inexact`, so a five-place ratio is rounded
+        # half-even and printed with no signal. That silent path is the defect
+        # this asserts is closed.
+        with pytest.raises(Inexact):
+            bundle_module._percentage("0.86655")
         assert bundle_module._percentage("1.0000") == "100.00%"
         assert bundle_module._percentage("0.0001") == "0.01%"
 

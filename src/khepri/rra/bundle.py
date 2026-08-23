@@ -52,7 +52,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, DivisionByZero, Inexact, InvalidOperation, Overflow
 from typing import Protocol
 
 from khepri.rra.analysis import basket, comparison, concentration, growth
@@ -1871,6 +1871,22 @@ def _grouped(text: str) -> str:
     return f"{grouped}.{fraction}" if fraction else grouped
 
 
+#: The context `_percentage` quantizes in: exact or nothing.
+#:
+#: **A bare `quantize` does not raise, and the comment that said so was wrong.**
+#: `Decimal`'s default context traps `InvalidOperation`, `DivisionByZero` and
+#: `Overflow` but not `Inexact`, so a five-place ratio would have been rounded
+#: half-even and printed without a word -- `0.86655` as `86.66%`. That is a mode
+#: chosen by inheritance, which is the thing this module declines to do
+#: deliberately. Trapping `Inexact` makes the exactness claim enforced rather
+#: than asserted: the quantize either drops trailing zeros the scaling produced
+#: or it raises.
+#:
+#: The other three traps are carried over from the default context, because
+#: `Context(traps=...)` replaces the trap set rather than adding to it.
+_EXACT = Context(traps=[Inexact, InvalidOperation, DivisionByZero, Overflow])
+
+
 def _percentage(text: str) -> str:
     """Scale a stored ratio to a percentage at two decimal places.
 
@@ -1885,6 +1901,10 @@ def _percentage(text: str) -> str:
     performed -- and the mode would then have to agree with a decision this
     module does not own.
 
+    `_EXACT` enforces that rather than trusting it. If a producer ever emits a
+    fifth place, this raises `Inexact` instead of half-even rounding a governed
+    margin behind the reader's back.
+
     The stored `Decimal` stays on the figure's `value`, which is what
     reconciliation and the audit trail read: the percentage is presentation, and
     the figure it was derived from remains addressable.
@@ -1892,10 +1912,7 @@ def _percentage(text: str) -> str:
     parsed = _decimal(text)
     if parsed is None:
         return text
-    # `quantize` to two places without a mode: exact by the invariant above, and
-    # it raises rather than rounds silently if a producer ever exceeds four
-    # places, which is the failure worth hearing about.
-    scaled = (parsed * 100).quantize(Decimal("0.01"))
+    scaled = (parsed * 100).quantize(Decimal("0.01"), context=_EXACT)
     return f"{_grouped(str(scaled))}%"
 
 
