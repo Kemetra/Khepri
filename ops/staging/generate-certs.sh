@@ -11,14 +11,19 @@
 # the staging stack exercises the same TLS paths the runtime will use in a
 # provisioned environment.
 set -eu
-cd "$(dirname "$0")/certs"
+# The directory is gitignored, so on a clean checkout it does not exist and this
+# script IS the documented first command -- `cd` into an absent directory would
+# fail before anything is generated. `set -e` does not save a `cd` inside a `sh`
+# script invoked as `sh script.sh`, which exits 0 regardless, so a caller chaining
+# commands would go on to start a stack with no certificates at all.
+certs="$(dirname "$0")/certs"
+mkdir -p "$certs/minio"
+cd "$certs"
 
 if [ -f minio/public.crt ] && [ -f server.crt ] && [ -f ca.crt ]; then
   echo "[OK] certificates already present"
   exit 0
 fi
-
-mkdir -p minio
 
 # One local CA, so the MinIO leaf can be verified rather than blindly trusted.
 openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \

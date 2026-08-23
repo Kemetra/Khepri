@@ -146,10 +146,22 @@ services:
         mc alias set staging https://minio:9000 khepristaging khepristaging
         mc mb --ignore-existing staging/khepri-staging-content
         mc anonymous set none staging/khepri-staging-content
-        mc ilm rule add --expire-days 7 staging/khepri-staging-content ||
-          echo "[note] expiry rule already present"
-        mc ilm rule add --expire-delete-marker --noncurrent-expire-days 1 staging/khepri-staging-content ||
-          echo "[note] noncurrent rule not applicable"
+        # No `|| echo` on these. An earlier revision forgave every failure so that
+        # re-running stayed idempotent, which also swallowed bad credentials, TLS
+        # trouble, and flags this `mc` does not accept: the container exited 0 and
+        # `depends_on` started the stack on a bucket that expires nothing. Under
+        # `set -eu` a failed `ilm rule add` now stops the stack, which is the point
+        # of running it as a gate. `mc mb --ignore-existing` and `anonymous set`
+        # are already idempotent, and re-adding a lifecycle rule is accepted.
+        #
+        # There is deliberately no read-back assertion. `mc ilm rule export` and
+        # `ls` cannot serve as one here: single-drive MinIO answers `GetLifecycle`
+        # with "not supported for filesystem" and `export` still exits 0, so a
+        # verification built on it would pass whether or not a rule exists -- a
+        # guard that cannot fail is worse than none, because it reads as proof.
+        # The add itself is the evidence, and it is no longer allowed to fail.
+        mc ilm rule add --expire-days 7 staging/khepri-staging-content
+        mc ilm rule add --expire-delete-marker staging/khepri-staging-content
         echo "[OK] bucket private, lifecycle configured"
     restart: "no"
 
