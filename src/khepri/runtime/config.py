@@ -34,6 +34,17 @@ BUCKET_VARIABLE = "KHEPRI_BUCKET"
 # *source* is a deployment decision no artifact settles; this is only the boundary it arrives
 # through.
 MASTER_KEY_VARIABLE = "KHEPRI_STORAGE_MASTER_KEY"
+# Inert. `KHEPRI-DEC-008` removed Amazon SQS, "its adapter, and its one-message
+# driver", and job delivery is now the PostgreSQL claim query -- but the runtime went
+# on *requiring* both URLs and rejecting them when equal, so every new environment had
+# to invent two values nothing read. That requirement is gone: neither name reaches
+# `RuntimeSettings`, `_RuntimeCoordinates`, or any `_required` call, and an environment
+# still carrying them boots and ignores them.
+#
+# The names survive only because `src/khepri/infra/compute.py` writes them into the
+# retired AWS task definition it describes, and that module is frozen reference under
+# the same decision -- closed to new slices, kept green by CI, not the deployment path.
+# Deleting them here would edit the frozen example by proxy.
 QUEUE_URL_VARIABLE = "KHEPRI_QUEUE_URL"
 DEAD_LETTER_QUEUE_URL_VARIABLE = "KHEPRI_DLQ_URL"
 CLERK_MODE_VARIABLE = "KHEPRI_CLERK_MODE"
@@ -64,8 +75,6 @@ class _RuntimeCoordinates(TypedDict):
     storage_region: str
     bucket: str
     master_key: MasterKey
-    queue_url: str
-    dead_letter_queue_url: str
 
 
 ClerkMode = Literal["development", "test", "private_beta"]
@@ -91,8 +100,6 @@ class RuntimeSettings:
     storage_region: str
     bucket: str
     master_key: MasterKey
-    queue_url: str
-    dead_letter_queue_url: str
     clerk: ClerkIdentitySettings | None
 
     @classmethod
@@ -115,14 +122,11 @@ def _environment_source(
 
 
 def _runtime_coordinates(environment: Mapping[str, str]) -> _RuntimeCoordinates:
-    queue_url, dead_letter_url = _queue_urls(environment)
     return _RuntimeCoordinates(
         storage_endpoint=_storage_endpoint(environment),
         storage_region=_required(environment, STORAGE_REGION_VARIABLE),
         bucket=_required(environment, BUCKET_VARIABLE),
         master_key=_master_key(environment),
-        queue_url=queue_url,
-        dead_letter_queue_url=dead_letter_url,
     )
 
 
@@ -156,16 +160,6 @@ def _master_key(environment: Mapping[str, str]) -> MasterKey:
         raise RuntimeConfigurationError(
             f"{MASTER_KEY_VARIABLE} must decode to 32 bytes."
         ) from error
-
-
-def _queue_urls(environment: Mapping[str, str]) -> tuple[str, str]:
-    queue_url = _required(environment, QUEUE_URL_VARIABLE)
-    dead_letter_url = _required(environment, DEAD_LETTER_QUEUE_URL_VARIABLE)
-    if dead_letter_url == queue_url:
-        raise RuntimeConfigurationError(
-            f"{DEAD_LETTER_QUEUE_URL_VARIABLE} must differ from {QUEUE_URL_VARIABLE}."
-        )
-    return queue_url, dead_letter_url
 
 
 def _required(environment: Mapping[str, str], name: str) -> str:
