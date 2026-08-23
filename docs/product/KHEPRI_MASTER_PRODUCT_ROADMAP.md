@@ -156,7 +156,7 @@ Repository rules:
 - No external fonts, CDNs, analytics scripts, or runtime assets.
 - Arabic and English state, action, fact, caveat, refusal, and evidence coverage must remain equal.
 - Operational and product telemetry must remain content-free.
-- No customer raw rows, filenames, secrets, opaque identifiers, or storage paths may be sent to an AI provider.
+- No customer raw rows, source column values, unapproved personal data, filenames, secrets, **opaque owner or session identifiers**, or storage paths may be sent to an AI provider. The qualifier is load-bearing: `RRA-005` requires `NarrativeAdapter` to send approved aggregate facts, safe labels, caveats, language instructions, and **citation identifiers**, and to validate the response against those supplied fact IDs. A blanket ban on identifiers would make grounded, cited provider output impossible.
 - One Alembic head must be preserved.
 - Required handoff gates are `uv run khepri-gov validate`, `uv run ruff check .`, `uv run pytest`, relevant integration tests, and the required server-side CodeScene gate.
 
