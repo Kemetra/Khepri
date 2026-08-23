@@ -37,7 +37,10 @@ def job(state: str) -> ReportJob:
     )
 
 
-DELIVERY = ClaimedDelivery(message=ReportJobMessage(job_id="job_alpha"))
+DELIVERY = ClaimedDelivery(
+    message=ReportJobMessage(job_id="job_alpha"),
+    job=job(JOB_RUNNING),
+)
 
 
 class QueueStub:
@@ -79,8 +82,8 @@ class WorkerStub:
         self.pulse = pulse
         self.messages: list[ReportJobMessage] = []
 
-    def process(self, message: ReportJobMessage, *, heartbeat: object) -> ReportJob | None:
-        self.messages.append(message)
+    def execute(self, leased: ReportJob, *, heartbeat: object) -> ReportJob | None:
+        self.messages.append(ReportJobMessage(job_id=leased.job_id))
         if self.pulse:
             heartbeat()  # type: ignore[operator]
         if self.error is not None:

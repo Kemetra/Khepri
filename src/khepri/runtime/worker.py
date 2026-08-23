@@ -21,7 +21,6 @@ from khepri.rra.rendering.chromium import launch_chromium
 from khepri.rra.report_services import JobReader
 from khepri.rra.worker import (
     ReportExecutionFailed,
-    ReportJobMessage,
     ReportWorker,
     WorkerPolicy,
 )
@@ -44,9 +43,9 @@ class QueuePort(Protocol):
 
 
 class WorkerPort(Protocol):
-    def process(
+    def execute(
         self,
-        message: ReportJobMessage,
+        job: ReportJob,
         *,
         heartbeat: Callable[[], None],
     ) -> ReportJob | None: ...
@@ -93,6 +92,10 @@ class ClaimWorkerLoop:
         idempotent and bounded by `lease_expires_at <= now`, and reclaiming cannot
         touch this worker's own job because it holds no lease at this point -- the
         previous iteration settled or released it before returning.
+
+        **The claim happens once, in `receive`.** The executor is handed the job the
+        claim already leased rather than leasing again: a second lease finds the row
+        `running`, refuses, and the job never runs at all.
         """
         now = self._clock()
         self._queue.recover(now=now)
@@ -100,8 +103,8 @@ class ClaimWorkerLoop:
         if delivery is None:
             return False
         try:
-            completed = self._worker.process(
-                delivery.message,
+            completed = self._worker.execute(
+                delivery.job,
                 heartbeat=lambda: self._queue.heartbeat(delivery, now=self._clock()),
             )
         except (LeaseLost, ReportExecutionFailed):
