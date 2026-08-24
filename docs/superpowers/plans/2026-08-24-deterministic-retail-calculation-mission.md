@@ -74,7 +74,7 @@ a task that contributes to two versions contributes a part to each.
 | Slice | Publishes | Parts inside it | Merges after |
 |---|---|---|---|
 | `V-mapping` | `rra003.mapping.v3` | Task 3, less its package-v3 structural fields, **plus the coverage manifest and its ingestion path** (`RRA-003` puts manifest confirmation in this version) **and the version compatibility gate below** | — |
-| `V-package` | `rra004.package.v3` | Task 3's package-v3 structural fields; Task 4's coverage signatures, daily bases and projections; Task 5's rounding-residual evidence | `V-mapping` |
+| `V-package` | `rra004.package.v3` | Task 3's package-v3 structural fields; Task 4's coverage signatures, daily bases and projections; Task 5's rounding-residual evidence — **whose placement is unresolved, see Task 1** | `V-mapping` |
 | `V-formula` | `rra004.formula.v2` | Task 8, **plus** the `RRA-004` core-formula rows inside Tasks 4, 6 and 7 — absolute and percentage delta, items per transaction, attach rate, concentration curve point, top decile and quartile share | `V-package` |
 | `V-comparison` | `rra008.comparison.v2` | Task 4's comparison facts and refusals | `V-formula` |
 | `V-growth` | `rra008.growth.v2` | Task 5's growth family | `V-comparison` |
@@ -88,7 +88,9 @@ Five consequences the task order alone does not give:
   reconciliation bases, coverage-manifest identity, coverage signatures, aligned daily
   bases, currency, and growth rounding-residual evidence. Tasks 3, 4 and 5 each produce
   part of it. They merge together, or the version reaches `main` incomplete and is
-  mutated afterwards without a new identity.
+  mutated afterwards without a new identity. **The residual is the one piece no task on
+  this map can write**: the runtime derives growth in the bundle, after the package is
+  persisted, so Task 1 settles its placement before `V-package` is drafted.
 - **`rra004.formula.v2` merges before the four `RRA-008` families, not after them.**
   `RRA-008`'s exclusions name `rra004.formula.v2` as consumed there, and the formula
   rows for delta, attach, items-per-transaction and concentration shares live in
@@ -209,6 +211,30 @@ active specification governs both and the disagreement is a defect in one of the
   worktree.
 - [ ] Run the three required checks and record the baseline test count and environmental skips.
 - [ ] Create the subagent-development ledger with the base SHA, task order, and this plan path.
+- [ ] **Resolve the growth rounding-residual placement before any slice opens. It is not decided
+  by this plan.** `RRA-004` puts the residual in the *package* — "The package also records …
+  and growth rounding-residual evidence when applicable", and `rra004.package.v3` "authorizes …
+  growth rounding-residual evidence". The runtime derives growth in the *bundle*:
+  `packages.py:321-332` builds the `FactPackage` and persists its `as_document()`, and
+  `bundle._FAMILIES` calls `growth.derive` afterwards over the finished package. Nothing on that
+  path can write a residual into the package, and no `residual` exists anywhere in `facts.py`,
+  `packages.py`, or `analysis/growth.py` today.
+
+  **So the slice map as drawn cannot satisfy the specification.** `CAL1-08a` gives `V-package`
+  the residual *field* while `CAL1-08b` gives `V-growth` the *computation*, and neither can
+  populate it: `V-package` merges before `rra004.formula.v2` and before comparison selects the
+  window the residual depends on, and `V-growth` runs after the package is immutable. Following
+  the map ships `rra004.package.v3` without evidence its own version authorizes, or mutates a
+  published package after its slice.
+
+  Decide the runtime shape here, with the specification in hand, and record the decision before
+  `V-package` is drafted. The options are not equivalent and both have real cost: moving growth
+  derivation into the package build pulls comparison in with it, since growth consumes
+  comparison's window — two `RRA-008` families leaving the bundle, and a slice sequence redrawn
+  around them. Reading "when applicable" as scoping the clause, so the package records the bases
+  and the growth fact's audit evidence carries the residual, needs an owner ruling because it
+  reinterprets what `package.v3` authorizes. **A slice may not pick between these on its own**,
+  and none may open while this is unresolved.
 
 ### Task 2: Add independent RED calculation proofs
 
