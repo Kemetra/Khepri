@@ -221,6 +221,24 @@ class TestRatioFigures:
         )
         assert bundle_module._percentage(enormous).endswith("%")
 
+    def test_the_scaling_itself_runs_at_the_governed_precision(self) -> None:
+        # The other half, and the subtler one. Passing `context=` to `quantize`
+        # governs the quantize only: `parsed * 100` would still run under the
+        # ambient 28-digit context and round a high-magnitude ratio *before* the
+        # exactness trap could inspect it. The quantize is then exact on an
+        # already-damaged value, so nothing raises and nothing looks wrong.
+        #
+        # This ratio is what 400 rows of `9999999999999999.98` against a prior of
+        # `0.000003` produces -- every input admissible, the ratio quantized to
+        # `RATIO_PRECISION` as every producer quantizes it.
+        governed = "1333333333333333330666665.6667"
+        rendered = bundle_module._percentage(governed)
+
+        # Scaling by a hundred moves the point two places and nothing else.
+        assert rendered == "133,333,333,333,333,333,066,666,566.67%"
+        # The specific corruption this guards: a trailing `.70` instead of `.67`.
+        assert not rendered.endswith("566.70%")
+
     def test_a_fifth_place_raises_rather_than_rounding_unheard(self) -> None:
         # The guard the two tests above rely on, fired rather than assumed. No
         # governed producer emits five places, so nothing reaches this in

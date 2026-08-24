@@ -52,7 +52,15 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Context, Decimal, DivisionByZero, Inexact, InvalidOperation, Overflow
+from decimal import (
+    Context,
+    Decimal,
+    DivisionByZero,
+    Inexact,
+    InvalidOperation,
+    Overflow,
+    localcontext,
+)
 from typing import Protocol
 
 from khepri.rra.analysis import basket, comparison, concentration, growth
@@ -1926,7 +1934,14 @@ def _percentage(text: str) -> str:
     parsed = _decimal(text)
     if parsed is None:
         return text
-    scaled = (parsed * 100).quantize(Decimal("0.01"), context=_EXACT)
+    # **Both operations inside the context, not just the quantize.** Passing
+    # `context=` to `quantize` alone leaves `parsed * 100` running under the
+    # ambient 28-digit context, where a high-magnitude ratio is rounded *before*
+    # the trap can inspect it: a governed `…566.6667` scaled to `…566.70%`
+    # instead of `…566.67%`, silently, because the quantize it was handed was
+    # then exact on an already-damaged value.
+    with localcontext(_EXACT):
+        scaled = (parsed * 100).quantize(Decimal("0.01"))
     return f"{_grouped(str(scaled))}%"
 
 
