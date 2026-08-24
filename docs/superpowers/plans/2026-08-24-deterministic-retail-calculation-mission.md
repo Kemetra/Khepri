@@ -520,21 +520,26 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Run every Task 2 core RED case to GREEN, then complete package/bundle/surface suites and all
   required gates. Commit and independently review the entire formula-v2 group.
 
-### Task 9: Harden evidence, presentation, mutations, and pharmacy oracles
+### Task 9: Harden evidence, mutations, and pharmacy oracles
 
 **Files:**
-- Modify: `src/khepri/rra/bundle.py`
-- Modify: `src/khepri/rra/rendering/wording.py`
 - Modify: appropriate RRA-004/006/008/009 tests.
 - Create only if existing fixture modules cannot carry the cases cleanly: one focused pharmacy
   golden-fixture module under `tests/`.
 
+`src/khepri/rra/bundle.py` and `src/khepri/rra/rendering/wording.py` were listed here for the
+presentation sampling that now belongs to `V-concentration`. **This task is test-only**, and
+saying so is what makes "no slice" safe rather than a hole.
+
 **Interfaces:**
 - Consumes: the complete corrected successor package.
 - Produces: calculation-validation evidence independent of production formulas.
-- Slices: none. Every task above names the version it feeds; this one moves no governed version,
-  which is why its presentation sampling had to leave it for `V-concentration`. Evidence that
-  proves an already-published contract is the only work with no slice of its own.
+- Slices: none, **because it changes no production behaviour**. Every task above names the version
+  it feeds. A task that touched `src/` and named no slice would be worse than one in the wrong
+  slice: its changes could not be on the final slice's PR head that Tasks 10 and 11 validate, so
+  the assembled gate would certify a tree that is not the one shipping. Anything this task
+  *discovers* is a defect in the slice that introduced it and is fixed there, under that slice's
+  version — never patched here.
 
 - [ ] Enumerate the complete refusal and caveat catalogues and prove Arabic/English, audit, bundle,
   web, PDF, and Excel coverage equality.
