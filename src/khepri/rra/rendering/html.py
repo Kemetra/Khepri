@@ -895,19 +895,37 @@ def _series_families(
     Column order follows `names`, which is the bundle's order, so a bucket's count
     sits beside the value it explains.
     """
-    series: list[tuple[set[tuple[str, str]], list[str]]] = []
-    for label, present in values.items():
-        columns = set(present)
-        joined = [entry for entry in series if entry[0] & columns]
-        merged_columns = columns.union(*(entry[0] for entry in joined))
-        merged_labels = [label for entry in joined for label in entry[1]]
-        merged_labels.append(label)
-        series = [entry for entry in series if entry not in joined]
-        series.append((merged_columns, merged_labels))
     return {
         tuple(column for column in names if column in columns): labels
-        for columns, labels in series
+        for columns, labels in _merged_series(values)
     }
+
+
+#: One series being accumulated: the columns it spans, and the labels in it.
+_Series = tuple[set[tuple[str, str]], list[str]]
+
+
+def _merged_series(values: dict[str, dict[tuple[str, str], str]]) -> list[_Series]:
+    """Labels folded into series, each carrying the union of its columns."""
+    series: list[_Series] = []
+    for label, present in values.items():
+        series = _absorb(series, set(present), label)
+    return series
+
+
+def _absorb(series: list[_Series], columns: set[tuple[str, str]], label: str) -> list[_Series]:
+    """One label joined to every series it shares a column with, or standing alone.
+
+    Joining rather than matching is what tolerates a sparse label: it need only
+    share *one* column with its neighbours to stay among them, where an exact
+    match would have set it apart. Absorbing every overlapping series at once
+    also merges two groups that were separate until this label bridged them.
+    """
+    joined = [entry for entry in series if entry[0] & columns]
+    apart = [entry for entry in series if not entry[0] & columns]
+    labels = [existing for entry in joined for existing in entry[1]]
+    labels.append(label)
+    return [*apart, (columns.union(*(entry[0] for entry in joined)), labels)]
 
 
 def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[str, ...]:
