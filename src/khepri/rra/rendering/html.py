@@ -39,6 +39,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from khepri.rra.bundle import (
     GOVERNED_FIGURE_LABELS,
+    KIND_VALUE,
     LANGUAGE_DIRECTION,
     SECTION_REFUSED,
     SURFACE_WEB,
@@ -71,7 +72,11 @@ from khepri.rra.report_artifacts import (
     MaterializedSurface,
 )
 
-HTML_SURFACE_VERSION = "rra006.html.v1"
+# v2 restructures the business tables: a repeated series renders as one row per
+# label with a column per (metric, kind) pair, where every figure was its own row.
+# The version is machine-readable provenance, and a consumer that selected its
+# parser from v1 would look for a row per figure and find a grid.
+HTML_SURFACE_VERSION = "rra006.html.v2"
 
 TEMPLATE_PACKAGE = "khepri.rra.rendering"
 TEMPLATE_DIRECTORY = "templates"
@@ -99,6 +104,12 @@ _CHROME: dict[str, dict[str, str]] = {
         "figures_caption": "Every figure in this report, beside the fact it cites",
         "business_caption": "The figures in this section",
         "business_figure": "Figure",
+        # The first column of a pivoted series table. Deliberately generic: the
+        # labels down that column are periods in one section and branches or
+        # products in another, and the alternative -- naming the dimension -- would
+        # make this module decide what a customer's own labels mean.
+        "series_caption": "The figures in this section by breakdown",
+        "series_label": "Breakdown",
         "caveats": "Data caveats",
         "commentary": "Commentary",
         # The colophon is the one place the business report names itself. It carries
@@ -149,6 +160,8 @@ _CHROME: dict[str, dict[str, str]] = {
         "figures_caption": "كل رقم في هذا التقرير، بجانب الحقيقة التي يُسند إليها",
         "business_caption": "أرقام هذا القسم",
         "business_figure": "البيان",
+        "series_caption": "أرقام هذا القسم حسب التصنيف",
+        "series_label": "التصنيف",
         "caveats": "تحذيرات البيانات",
         "commentary": "التعليق",
         "colophon_reference": "مرجع التقرير",
@@ -628,18 +641,50 @@ def _document_bytes(documents: dict[str, str]) -> int:
 
 
 @dataclass(frozen=True, slots=True)
+class _SeriesRow:
+    """One label's figures, in the column order its group declares."""
+
+    label: str
+    texts: tuple[str | None, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _SeriesTable:
+    """A repeated series as a table: one column per metric, one row per label.
+
+    The shape a series wants. Rendered as one row per cell, a five-period series
+    carrying revenue and units produced ten rows, each repeating a metric name and
+    stating one number, with the two halves of the comparison a reader wanted in
+    different parts of the table.
+
+    `headings` is metric names and `rows` is one entry per label, so a `None` in
+    `texts` is a metric that carried no figure for that label rather than a zero.
+    Nothing here is computed: every string is a cell `build_cells` already made.
+    """
+
+    headings: tuple[str, ...]
+    rows: tuple[_SeriesRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _SectionView:
     """One governed section as the template needs it: heading, chart, cells, caveats.
 
     Assembled here rather than in the template because a template choosing which
     cells belong to a section could disagree with `bundle.section_ids`, which is
     what every surface is reconciled against.
+
+    `cells` holds the scalars -- the figures with no label -- and `series` the
+    pivoted groups. The split is made here for the same reason the section
+    membership is: a template deciding which figures form a series could group
+    two that the bundle never related.
     """
 
     section_id: str
     state: str
     reason: str | None
     cells: tuple[FigureCell, ...]
+    series: tuple[_SeriesTable, ...]
     caveats: tuple[str, ...]
     chart: ChartView | None
 
@@ -662,18 +707,296 @@ def _section_views(
             section_id=section.section_id,
             state=section.state,
             reason=section.reason,
-            cells=tuple(
-                cell for cell in cells if cell.section == section.section_id
-            ),
-            caveats=tuple(
-                caveat.code
-                for caveat in bundle.caveats
-                if caveat.section == section.section_id
-            ),
+            # Every figure this section states, provenance included: a bucket's
+            # row count is a Business-tier value per the visibility matrix, and
+            # `_series_tables` gives it a column beside the value it explains
+            # rather than a row interleaved with it.
+            cells=_scalar_cells(_stated(cells, section.section_id)),
+            series=_series_tables(_stated(cells, section.section_id)),
+            caveats=_stated_once(bundle, section.section_id, language),
             chart=_chart_of(section, figures, language),
         )
         for section in bundle.sections
     ]
+
+
+def _stated(cells: tuple[FigureCell, ...], section_id: str) -> tuple[FigureCell, ...]:
+    """One section's cells, in the bundle's order.
+
+    **`KIND_ROWS` is not filtered out here, and an earlier revision of this slice
+    was wrong to do it.** The interleaving it was fixing is real -- a five-period
+    series became ten rows, and a real upload put 39 `rows counted` rows among the
+    findings -- but dropping the figures is the wrong instrument, for two reasons
+    found in review.
+
+    `docs/reporting/presentation-visibility-matrix.md` classifies a figure's
+    `text` **B** ("the number") and only its `kind` column **A**. Removing the
+    whole row moves a Business-tier value into the audit region, which is a
+    governed tier change rather than a layout choice. And the earlier reasoning
+    read `wording` backwards: `KIND_QUALIFIERS` exists *because* `kind` is
+    Audit-tier and cannot appear, so a row count needs customer wording to be
+    legible on the business page -- "the raw code stays in the audit region; this
+    is its customer wording". It is the machinery that makes these figures
+    presentable here, not evidence that they belong elsewhere.
+
+    `rendering/excel.py::_write_business_sheet` never filtered them either, so the
+    filter also left the surfaces disagreeing about what the business region
+    contains.
+
+    The interleaving is fixed where it actually belongs: `_series_tables` gives a
+    bucket's count its own column beside the value it explains.
+    """
+    return tuple(cell for cell in cells if cell.section == section_id)
+
+
+def _scalar_cells(cells: tuple[FigureCell, ...]) -> tuple[FigureCell, ...]:
+    """The figures that are not part of a series, in the bundle's order.
+
+    A figure with no label is a total and states itself. A labelled figure whose
+    metric is the only one at that label is *also* left here: giving it a pivoted
+    table would add a column heading stating what its single column already said,
+    and `concentration_curve` -- four ranks, one metric, no governed name -- is
+    exactly that case.
+    """
+    grouped = _series_columns(cells)
+    return tuple(
+        cell for cell in cells if cell.label is None or _column(cell) not in grouped
+    )
+
+
+#: How a breakdown metric names its dimension: `revenue_by_period` breaks down by
+#: period, `units_by_store` by store.
+_BY = "_by_"
+
+
+def _dimension(cell: FigureCell) -> str:
+    """The series a cell belongs to, which is its breakdown rather than its label.
+
+    **A display label is not a series identity, and treating it as one merged two
+    breakdowns.** Rows were keyed by label alone, so a product literally named
+    `2026-01` shared a key with the January period. Grouping then bridged the
+    by-period and by-product series into one table with `Revenue` and `Units sold`
+    appearing twice, and a product row sitting under period columns.
+
+    `CitedFigure` carries no dimension, and adding one is a governed change --
+    `as_document` feeds the bundle digest -- so the dimension is read from the
+    metric identifier, which already states it: everything after `_by_`. A metric
+    that names no breakdown falls back to its section, which keeps the comparison
+    deltas (`revenue_delta_absolute` and `revenue_delta_percent`, one row per
+    mode) in one series as they were.
+
+    The identifier is used to *group*, never to display: `RRA-009` classifies it
+    Audit-tier and `_series_columns` still refuses a column whose heading would
+    have to be one. `test_every_series_metric_declares_its_dimension` pins the
+    convention so a metric that stops following it fails here rather than
+    grouping oddly on a customer surface.
+    """
+    _, separator, dimension = cell.metric.partition(_BY)
+    return dimension if separator else cell.section
+
+
+def _column(cell: FigureCell) -> tuple[str, str]:
+    """A cell's column identity: its metric *and* its kind.
+
+    Keyed on both because a bucket emits two figures carrying the same metric and
+    the same label -- the value, and the count of rows behind it. Keyed on metric
+    alone they collide, and one silently overwrites the other in the grid.
+    """
+    return (cell.metric, cell.kind)
+
+
+def _series_columns(cells: tuple[FigureCell, ...]) -> frozenset[tuple[str, str]]:
+    """The columns that share a label with another column, and so form a table.
+
+    Sharing is the test rather than "has a label", because a column heading only
+    means something when there is more than one column to tell apart. A bucket's
+    value and its row count are two columns by that test, which is what turns the
+    interleaving into a grid: `concentration_curve`'s four ranks were eight rows
+    alternating a share and a count, and become four rows with a column each.
+
+    **A metric whose value has no governed name is excluded entirely, and that is
+    a disclosure rule rather than a cosmetic one.** A column needs a heading, and
+    the only string available for one that has no `metric_name` is the metric
+    identifier -- `revenue_by_category`. `RRA-009` classifies the metric
+    identifier Audit-tier and renders it on the evidence surface, so putting it in
+    a customer-facing `<th>` would move an Audit field onto the business page to
+    satisfy a layout. Those series keep the row-per-cell form, where the label
+    alone names the row and no identifier is needed.
+
+    The test is on the **value** cell's name, not on each cell's own: a row count
+    always has customer wording (`kind_qualifier` supplies "rows counted" even
+    with no metric name), so testing each cell would admit an unnamed metric's
+    count column while its value column stayed row-form -- the count separated
+    from the number it explains. `revenue_by_period` is unaffected: it carries
+    `Revenue`, so both its columns are admitted.
+    """
+    by_label: dict[str, set[tuple[str, str]]] = {}
+    named = {cell.metric for cell in cells if cell.kind == KIND_VALUE and cell.metric_name}
+    for cell in cells:
+        if cell.label is not None and cell.metric in named:
+            by_label.setdefault(cell.label, set()).add(_column(cell))
+    return frozenset(
+        column
+        for columns in by_label.values()
+        if len(columns) > 1
+        for column in columns
+    )
+
+
+def _series_tables(cells: tuple[FigureCell, ...]) -> tuple[_SeriesTable, ...]:
+    """The section's repeated series, one table per set of co-occurring metrics.
+
+    Grouped by the *set* of metrics sharing a label rather than by section, so a
+    section carrying both a by-period series and a by-branch series renders two
+    tables instead of one table with empty halves. Column order follows the order
+    the metrics first appear, which is the bundle's; row order follows the order
+    the labels first appear, for the same reason.
+
+    A metric with no figure at a given label contributes `None`, which the
+    template renders as an empty cell -- not a zero, which would be a number this
+    module invented.
+    """
+    grouped = _series_columns(cells)
+    if not grouped:
+        return ()
+    names, values = _series_index(cells, grouped)
+    return tuple(
+        _SeriesTable(
+            headings=tuple(names[column] for column in family),
+            rows=tuple(
+                _SeriesRow(
+                    label=row[1],
+                    texts=tuple(values[row].get(column) for column in family),
+                )
+                for row in rows
+            ),
+        )
+        for family, rows in _series_families(names, values).items()
+    )
+
+
+def _series_index(
+    cells: tuple[FigureCell, ...],
+    grouped: frozenset[tuple[str, str]],
+) -> tuple[dict[tuple[str, str], str], dict[str, dict[tuple[str, str], str]]]:
+    """The column names and the label/column grid, both in first-appearance order.
+
+    `_series_columns` admits only columns whose metric has a governed name, so
+    `metric_name` is the name here rather than a fallback: an identifier reaching a
+    column heading would put an Audit-tier field on the business page. A row
+    count's name already carries its qualifier -- `_business_name` composes
+    "Revenue (rows counted)" -- so the count column says what it counts.
+    """
+    names: dict[tuple[str, str], str] = {}
+    values: dict[tuple[str, str], dict[tuple[str, str], str]] = {}
+    for cell in cells:
+        column = _column(cell)
+        if cell.label is None or column not in grouped:
+            continue
+        names.setdefault(column, cell.metric_name or "")
+        values.setdefault((_dimension(cell), cell.label), {})[column] = cell.text
+    return names, values
+
+
+def _series_families(
+    names: dict[tuple[str, str], str],
+    values: dict[tuple[str, str], dict[tuple[str, str], str]],
+) -> dict[tuple[tuple[str, str], ...], list[tuple[str, str]]]:
+    """Labels grouped into series, each carrying the union of its columns.
+
+    A section carrying both a by-period and a by-branch series renders two tables
+    instead of one with empty halves, and that separation is what this does. What
+    it must *not* do is separate on missingness.
+
+    **Grouping by the exact set of columns present did both, and the second was a
+    defect.** A label whose bucket lacks one figure -- a period where every
+    revenue input is null -- has a different exact set from its neighbours, so it
+    formed a family of its own and rendered as a one-row table beside the series
+    it belongs to. Worse, the split made `_SeriesTable`'s empty cell unreachable:
+    every label in a family had every column by construction, so the `None` that
+    `_series_tables` looks up and the template renders as a blank could not occur.
+    The docstring promised a behaviour the grouping had ruled out.
+
+    So labels are joined when they **share any column**, and the family carries
+    the union. `revenue_by_period` never appears at a branch label, so the
+    by-period and by-branch series still separate; a sparse period still shares
+    `units_by_period` with its neighbours and stays with them, its missing figure
+    now an empty cell rather than a table.
+
+    Column order follows `names`, which is the bundle's order, so a bucket's count
+    sits beside the value it explains.
+    """
+    return {
+        tuple(column for column in names if column in columns): rows
+        for columns, rows in _merged_series(values)
+    }
+
+
+#: One series being accumulated: the columns it spans, and the (dimension, label)
+#: rows in it.
+_Series = tuple[set[tuple[str, str]], list[tuple[str, str]]]
+
+
+def _merged_series(
+    values: dict[tuple[str, str], dict[tuple[str, str], str]],
+) -> list[_Series]:
+    """Rows folded into series, each carrying the union of its columns."""
+    series: list[_Series] = []
+    for row, present in values.items():
+        series = _absorb(series, set(present), row)
+    return series
+
+
+def _absorb(
+    series: list[_Series],
+    columns: set[tuple[str, str]],
+    row: tuple[str, str],
+) -> list[_Series]:
+    """One row joined to every series it shares a column with, or standing alone.
+
+    Joining rather than matching is what tolerates a sparse row: it need only
+    share *one* column with its neighbours to stay among them, where an exact
+    match would have set it apart. A row is `(dimension, label)`, so two
+    breakdowns that happen to share a display label no longer bridge here --
+    their columns never meet at one row.
+    """
+    joined = [entry for entry in series if entry[0] & columns]
+    apart = [entry for entry in series if not entry[0] & columns]
+    rows = [existing for entry in joined for existing in entry[1]]
+    rows.append(row)
+    return [*apart, (columns.union(*(entry[0] for entry in joined)), rows)]
+
+
+def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[str, ...]:
+    """One section's caveat codes, with codes that read identically collapsed.
+
+    **Deduplicated by prose rather than by code, because the codes differ and the
+    sentences do not.** A single-period upload emits
+    `revenue_delta_absolute.year_over_year:prior_window_absent` and
+    `revenue_delta_percent.year_over_year:prior_window_absent` -- two governed
+    codes, one per affected metric, which is correct: the caveat is a property of
+    a figure and both figures have it. `caveat_prose` then maps both to the same
+    paragraph, so the comparison section stated "comparison with an earlier
+    period is not available" twice in consecutive list items.
+    See `test_no_section_caveat_paragraph_is_repeated`.
+
+    The first code wins and the bundle's order is preserved, so the surviving
+    entry is the one a reader would have seen first. No code is dropped from the
+    bundle: `_reconcile_language` compares the caveat *codes* both languages
+    carry and would refuse a surface that had actually lost one -- this narrows
+    what is *printed*, which is the same distinction `RRA-006` draws between a
+    figure and its presentation.
+
+    Collapsing is per language deliberately. Two codes sharing English prose need
+    not share Arabic prose, and deduplicating on one language's text would drop a
+    sentence the other language still distinguishes.
+    """
+    stated: dict[str, str] = {}
+    for caveat in bundle.caveats:
+        if caveat.section != section_id:
+            continue
+        stated.setdefault(caveat_prose(caveat.code, language), caveat.code)
+    return tuple(stated.values())
 
 
 def _chart_of(

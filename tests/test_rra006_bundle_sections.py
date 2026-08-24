@@ -606,5 +606,13 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # `revenue_by_period` appears where `revenue` did. Every affected figure's document
     # changes and every bundle id with it, and a consumer comparing a stored figure's
     # metric across the two shapes would read a rename as a different measurement.
-    assert BUNDLE_VERSION == "rra006.bundle.v6"
+    #
+    # v7 moves the document without touching a fact: `renderings` now carry
+    # presentation -- `726,919.57` for a bare `726919.57`, `86.65%` for `0.8665`,
+    # `٪` for `%` in Arabic. `renderings` is inside `CitedFigure.as_document`, so
+    # every figure's document and every bundle id changes while the fact package
+    # behind them is byte-identical. That is exactly the case the first paragraph
+    # of this test names: two bundles from identical inputs must not claim one
+    # schema version while having different identities.
+    assert BUNDLE_VERSION == "rra006.bundle.v7"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION

@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 
-from khepri.rra.bundle import ReportBundle
+from khepri.rra.bundle import KIND_ROWS, ReportBundle
 from khepri.rra.facts import METRIC_REVENUE
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
@@ -363,11 +363,29 @@ def test_the_business_body_drops_the_audit_only_column_headers() -> None:
             heading = _CHROME[language][key]
             assert heading not in business_headers, (key, language)
             assert heading in evidence_headers, (key, language)
-        # And the business table keeps exactly its two.
-        assert business_headers == {
-            _CHROME[language]["business_figure"],
-            _CHROME[language]["value"],
-        }, language
+
+        # The chrome the business tables are built from: the scalar table's two,
+        # and a pivoted series table's label column. A series column header is a
+        # governed *metric name* -- `Revenue`, `Units sold` -- which is Business
+        # tier, so the set is no longer fixed and asserting equality against two
+        # entries would forbid the pivot rather than the disclosure.
+        #
+        # The property the equality stood in for is the one above: no header
+        # names an audit field. It is restated here positively so a header from
+        # some third source cannot slip in unnoticed -- every business header is
+        # either governed chrome or a metric name the bundle supplies.
+        chrome_headers = {
+            _CHROME[language][key]
+            for key in ("business_figure", "value", "series_label")
+        }
+        metric_names = {
+            cell.metric_name
+            for cell in build_cells(_bundle(), language)
+            if cell.metric_name
+        }
+        unexplained = business_headers - chrome_headers - metric_names
+        assert not unexplained, (language, unexplained)
+        assert chrome_headers <= business_headers, language
 
 
 def _printed_html(language: str = LANGUAGE_ENGLISH) -> str:
@@ -441,10 +459,18 @@ def test_a_row_with_both_a_name_and_a_label_shows_both() -> None:
     surface = HtmlReportRenderer().render_html(bundle)
     for language in REQUIRED_LANGUAGES:
         visible = _visible_text(surface.documents[language])
-        for cell in build_cells(bundle, language):
-            if cell.metric_name and cell.label:
-                assert cell.metric_name in visible, (cell.metric, language)
-                assert cell.label in visible, (cell.metric, cell.label, language)
+        # `build_cells` is the total mapping and includes the `KIND_ROWS` cells the
+        # audit surface renders; the business page states the findings. Checked
+        # against the business cells, with the emptiness assertion below so
+        # narrowing the set cannot be how this test stops failing.
+        business = [
+            cell for cell in build_cells(bundle, language) if cell.kind != KIND_ROWS
+        ]
+        named = [cell for cell in business if cell.metric_name and cell.label]
+        assert named, f"no {language} business cell carries both a name and a label"
+        for cell in named:
+            assert cell.metric_name in visible, (cell.metric, language)
+            assert cell.label in visible, (cell.metric, cell.label, language)
 
 
 def test_a_customer_label_reaches_the_business_body_escaped() -> None:
