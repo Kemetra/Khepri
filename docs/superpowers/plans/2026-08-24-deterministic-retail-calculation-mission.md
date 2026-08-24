@@ -75,7 +75,7 @@ a task that contributes to two versions contributes a part to each.
 |---|---|---|---|
 | `V-mapping` | `rra003.mapping.v3` | Task 3, less its package-v3 structural fields | — |
 | `V-package` | `rra004.package.v3` | Task 3's package-v3 structural fields; Task 4's coverage signatures, daily bases and projections; Task 5's rounding-residual evidence | `V-mapping` |
-| `V-formula` | `rra004.formula.v2` | Task 8, **plus** the `RRA-004` core-formula rows inside Tasks 4, 6 and 7 — absolute and percentage delta, items per transaction, attach rate, concentration curve point, top decile and quartile share | `V-package` |
+| `V-formula` | `rra004.formula.v2` | Task 8, **plus** the `RRA-004` core-formula rows inside Tasks 4, 6 and 7 — absolute and percentage delta, items per transaction, attach rate, concentration curve point, top decile and quartile share — **plus the family compatibility gate below** | `V-package` |
 | `V-comparison` | `rra008.comparison.v2` | Task 4's comparison facts and refusals | `V-formula` |
 | `V-growth` | `rra008.growth.v2` | Task 5's growth family | `V-formula` |
 | `V-basket` | `rra008.basket.v2` | Task 6's basket family | `V-formula` |
@@ -97,6 +97,43 @@ Three consequences the task order alone does not give:
 - **`V-mapping` carries every admission change `rra003.mapping.v3` governs**, including
   the normalized measures — revenue and returns, discounts, cost inputs, units — not
   only identity, currency and coverage confirmation.
+
+### The family compatibility gate, and why `V-formula` cannot land without it
+
+`V-formula` changes the delta, attach, items-per-transaction and concentration-share rows
+that the four `RRA-008` families consume. Those families do not check what they are
+consuming: `bundle._FAMILIES` dispatches `comparison.derive`, `growth.derive`,
+`basket.derive` and `concentration.derive` unconditionally, and each stamps its own
+constant — `rra008.comparison.v1`, `rra008.growth.v1`, `rra008.basket.v1`,
+`rra008.concentration.v1` — with no comparison against the package's `formula_version`.
+
+So between `V-formula` merging and each family successor merging, `main` would compute
+with the successor formula semantics and publish the result under a **predecessor family
+identity**. `RRA-004` forbids exactly that: "A new input, mapping, formula, population,
+interpretation, correction, or serialized shape creates a new recorded version and stable
+identity." Ordering alone does not fix it, because the defect is in the window, not the
+order.
+
+**`V-formula` therefore ships a fail-closed compatibility gate in the same slice.** Each
+family compares the `rra004.formula.v2` identity it is being handed against the family
+version it stamps, and refuses its whole family when the formula is newer than the family
+is certified for. The refusal carries a governed reason code and complete accepted Arabic
+and English wording, like every other refusal in this mission.
+
+The consequence is deliberate and must not be worked around: **between `V-formula` and the
+last family successor, comparison, growth, basket and concentration refuse on `main`.**
+That is a visible, reasoned refusal rather than a plausible number under a stale version,
+which is the trade this product exists to make. It also gives each family slice a precise
+definition of done — the gate opens for exactly that family when its successor lands, and
+`V-concentration`, the last of the four, closes the window.
+
+An implementer who finds the window unacceptable must not remove the gate. The alternative
+is to co-land `V-formula` with all four family successors as one larger slice, which needs
+owner approval because it changes the reviewable unit.
+
+Each family slice's definition of done includes **opening the gate for its own family**:
+it publishes the family successor version and the compatibility check then passes for it.
+A family slice that leaves its own gate closed has not landed.
 
 Each slice runs its own RED, verified failure, minimal GREEN, focused regression,
 independent oracle, bilingual refusal wording, reconciliation, and the three required
@@ -352,8 +389,17 @@ active specification governs both and the disagreement is a defect in one of the
 - Consumes: C0 admitted events and retained compatible bases.
 - Produces: complete `rra004.formula.v2` headlines and ratios.
 - Slices: `V-formula`, which is this task **plus** the `RRA-004` formula rows named in Tasks 4, 6
-  and 7. It merges after `V-package` and before the four `RRA-008` family slices, which consume it.
+  and 7, **plus** the family compatibility gate. It merges after `V-package` and before the four
+  `RRA-008` family slices, which consume it.
 
+- [ ] Add the fail-closed family compatibility gate: each `RRA-008` family compares the
+  `rra004.formula.v2` identity it is handed against the family version it stamps and refuses its
+  whole family when the formula is newer, with a governed reason code and complete accepted Arabic
+  and English wording in this slice.
+- [ ] Add the RED proof that the gate fires: with `formula.v2` landed and a family still at `v1`,
+  that family refuses and states why, and no fact is published under the predecessor identity.
+- [ ] Add the mutation evidence that the gate can fail: removing the comparison kills a named
+  mutant, so a green suite is not mistaken for a guard.
 - [ ] Revenue: sum complete signed net VAT-exclusive posted sale/return revenue.
 - [ ] Units: sum complete signed integral posted physical movement.
 - [ ] Transactions: distinct canonical posted-sale transaction keys only.
