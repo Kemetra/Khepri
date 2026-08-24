@@ -297,6 +297,16 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Add the RED proof that the gate fires at each seam: with one version moved and its consumer
   unmoved, the consumer refuses and states why, and no fact is published under the predecessor
   identity.
+- [ ] **Hold the gate's refusal to the package-level obligation, not the surface one.** It refuses
+  before a package exists, so `api.py:353` returns a 409 and `review.js` — which posts
+  `/api/v1/beta/facts` before `/api/v1/beta/reports` — never creates a report. There is no bundle
+  to propagate into. The roadmap's §CAL1 rule scopes its bundle/narrative/chart/HTML/PDF/Excel
+  clause to `RefusedResult`, which refuses one metric inside a package that was produced and does
+  reach every surface; `PackageRefused` owes the rest of the rule in full instead — governed code,
+  accepted Arabic and English prose in the response body, and audit representation. Four
+  `PackageRefused` raises in `packages.py` already behave this way on `main`, so this is the
+  existing tier boundary rather than a new exemption. Ship the gate's refusal against that
+  obligation and prove all three parts.
 - [ ] Add the mutation evidence that the gate can fail: removing a seam's comparison kills a named
   mutant, so a green suite is not mistaken for a guard.
 - [ ] **Add the coverage-manifest document, its binding, and its production ingestion path here,
