@@ -29,13 +29,19 @@ import random
 import re
 
 from khepri.rra.admissibility import assess_admissibility
-from khepri.rra.bundle import KIND_ROWS, KIND_VALUE, LANGUAGE_ENGLISH, ReportBundle
+from khepri.rra.bundle import (
+    KIND_ROWS,
+    KIND_VALUE,
+    LANGUAGE_ARABIC,
+    LANGUAGE_ENGLISH,
+    ReportBundle,
+)
 from khepri.rra.facts import build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering.html import HtmlReportRenderer, build_cells
-from khepri.rra.rendering.wording import kind_qualifier
+from khepri.rra.rendering.wording import business_metric_name, kind_qualifier
 
 
 def _content() -> bytes:
@@ -90,14 +96,52 @@ def english_document() -> str:
 
 
 class TestARowCountIsNotAFinding:
-    def test_the_rendered_table_shows_no_rows_counted_row(self) -> None:
-        # The reader-facing assertion, on the document rather than the model.
+    """A bucket's row count stays a business figure, and stops being a row.
+
+    An earlier revision of this slice filtered `KIND_ROWS` out of the business
+    tables. That was the wrong instrument for a real problem, and review caught
+    it: `docs/reporting/presentation-visibility-matrix.md` classifies a figure's
+    `text` **B** and only its `kind` column **A**, so removing the whole row moved
+    a Business-tier value into the audit region. `rendering/excel.py` never
+    filtered them, so the surfaces disagreed as well.
+
+    The interleaving is fixed by giving the count its own column beside the value
+    it explains. These tests pin the corrected property: the counts are present,
+    and they are not rows.
+    """
+
+    def test_the_count_is_still_stated_on_the_business_page(self) -> None:
+        # The tier assertion. The count is a Business-tier value; it must reach a
+        # reader, in the region the matrix puts it in.
         qualifier = kind_qualifier(KIND_ROWS, LANGUAGE_ENGLISH)
         assert qualifier, "the row-kind qualifier must exist for this to check"
+        assert qualifier in english_document(), (
+            f"{qualifier!r} no longer appears in the rendered report"
+        )
 
+    def test_a_named_series_states_its_count_as_a_column_not_a_row(self) -> None:
+        # The legibility assertion, and the whole point of the correction: the
+        # count sits in a column headed by what it counts, rather than as its own
+        # row interleaved with the figures.
         document = english_document()
-        assert qualifier not in document, (
-            f"{qualifier!r} still appears in the rendered report"
+        qualifier = kind_qualifier(KIND_ROWS, LANGUAGE_ENGLISH)
+        headings = re.findall(r'<th scope="col">([^<]*)</th>', document)
+        counted_headings = [head for head in headings if qualifier in head]
+        assert counted_headings, "no count column was rendered"
+        assert all(head != qualifier for head in counted_headings), (
+            "a count column must name what it counts, not read 'rows counted' alone"
+        )
+
+    def test_the_interleaved_count_rows_are_gone_for_named_series(self) -> None:
+        # The negative that makes the column assertion mean something. Only
+        # `concentration_curve` has no governed metric name and so keeps the row
+        # form; every named series pivots.
+        document = english_document()
+        qualifier = kind_qualifier(KIND_ROWS, LANGUAGE_ENGLISH)
+        row_headers = re.findall(r'<th scope="row">([^<]*)</th>', document)
+        counted_rows = [head for head in row_headers if qualifier in head]
+        assert all(head.strip().startswith(qualifier) for head in counted_rows), (
+            "a named series is still stating its count as an interleaved row"
         )
 
     def test_the_fixture_would_have_produced_many_such_rows(self) -> None:
@@ -113,8 +157,8 @@ class TestARowCountIsNotAFinding:
         )
 
     def test_the_row_counts_are_still_carried_by_the_bundle(self) -> None:
-        # Moved out of the table, not deleted. `reconcile` compares figure
-        # coverage between surfaces, and the audit trail lists every identifier.
+        # `reconcile` compares figure coverage between surfaces, and the audit
+        # trail lists every identifier.
         assert any(figure.kind == KIND_ROWS for figure in bundle().figures)
 
     def test_the_view_model_still_offers_every_figure(self) -> None:
@@ -125,7 +169,7 @@ class TestARowCountIsNotAFinding:
         assert any(cell.kind == KIND_ROWS for cell in assembled)
 
     def test_the_value_rows_survive(self) -> None:
-        # The direct negative: the filter removed the counts and not the figures.
+        # The direct negative: the pivot rearranged the figures and lost none.
         document = english_document()
         values = [
             figure
@@ -139,6 +183,62 @@ class TestARowCountIsNotAFinding:
             if figure.renderings[LANGUAGE_ENGLISH] in document
         ]
         assert len(shown) >= len(values) // 2, "value rows were removed with the counts"
+
+
+class TestEverySeriesNamesItsMeasure:
+    """A labelled series states what it measures, in both languages.
+
+    `revenue_by_category`, `units_by_category`, `revenue_by_store` and
+    `units_by_store` were missing from the wording table while the by-period and
+    by-product names were present, and nothing failed: an unnamed series rendered
+    its label and a number with no measure, so the revenue and unit series in one
+    section stated `Antibiotics` twice with nothing telling them apart. That is
+    the exact defect the by-period names exist to prevent.
+
+    This lives here rather than beside the other wording tests because it needs
+    this module's fixture: the `RRA-009` split fixture produces no by-category or
+    by-store series at all, so the same assertion there is blind to the omission.
+    Verified by mutation -- removing `revenue_by_category` from the table fails
+    this test and passes there.
+    """
+
+    #: The one labelled series with no accepted business name. Named rather than
+    #: skipped, so adding a name is a deliberate edit and a *new* unnamed series
+    #: fails instead of joining it silently.
+    UNNAMED_BY_DESIGN = frozenset({"concentration_curve"})
+
+    def test_every_labelled_series_metric_is_named_in_both_languages(self) -> None:
+        for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+            cells = build_cells(bundle(), language)
+            series = {
+                cell.metric
+                for cell in cells
+                if cell.label is not None and cell.kind == KIND_VALUE
+            }
+            assert series, "fixture carries no labelled series figures"
+            missing = {
+                metric
+                for metric in series - self.UNNAMED_BY_DESIGN
+                if business_metric_name(metric, language) is None
+            }
+            assert not missing, (
+                f"{language}: labelled series metrics with no accepted business "
+                f"name: {sorted(missing)}"
+            )
+
+    def test_the_fixture_carries_the_series_that_were_missing(self) -> None:
+        # The emptiness assertion. Without it the check above passes on a fixture
+        # that happens to produce none of the affected series -- which is exactly
+        # how the omission survived in the first place.
+        cells = build_cells(bundle(), LANGUAGE_ENGLISH)
+        produced = {cell.metric for cell in cells}
+        for metric in (
+            "revenue_by_category",
+            "units_by_category",
+            "revenue_by_store",
+            "units_by_store",
+        ):
+            assert metric in produced, f"fixture no longer produces {metric}"
 
 
 class TestACaveatStatesItselfOnce:

@@ -340,16 +340,16 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
         for language, document in documents.items()
     }
     assert rows[LANGUAGE_ARABIC] == rows[LANGUAGE_ENGLISH]
-    # Counted against the figures the business page *states*, not against every
-    # figure the bundle carries. `KIND_ROWS` figures are provenance and render on
-    # the audit surface instead, so equality with `len(bundle.figures)` would now
-    # assert the defect rather than the property -- and the two numbers differing
-    # by exactly the row-count total is what the identity below pins.
-    business = [figure for figure in bundle.figures if figure.kind != KIND_ROWS]
+    # **The business page states every figure the bundle carries, row counts
+    # included.** An earlier revision of this slice filtered `KIND_ROWS` out of the
+    # business tables and this assertion was relaxed to match, counting only the
+    # non-count figures. That inverted it: the visibility matrix classifies a
+    # figure's `text` Business and only its `kind` column Audit, so the relaxed
+    # form asserted the defect. The count is now stated in its own column beside
+    # the value it explains, and the identity is whole again.
     counts = [figure for figure in bundle.figures if figure.kind == KIND_ROWS]
     assert counts, "the fixture must carry row counts for this split to mean anything"
-    assert rows[LANGUAGE_ENGLISH] == len(business)
-    assert len(business) + len(counts) == len(bundle.figures)
+    assert rows[LANGUAGE_ENGLISH] == len(bundle.figures)
     for document in documents.values():
         assert "data-figure-id" not in document
 

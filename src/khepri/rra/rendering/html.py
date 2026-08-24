@@ -39,7 +39,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from khepri.rra.bundle import (
     GOVERNED_FIGURE_LABELS,
-    KIND_ROWS,
+    KIND_VALUE,
     LANGUAGE_DIRECTION,
     SECTION_REFUSED,
     SURFACE_WEB,
@@ -703,16 +703,10 @@ def _section_views(
             section_id=section.section_id,
             state=section.state,
             reason=section.reason,
-            # `KIND_ROWS` is excluded here rather than in `build_cells`, which
-            # stays total. A bucket emits its value and the count of source rows
-            # behind it as a pair, and rendering both interleaved them: a
-            # five-period series became ten rows, and a real upload put 39
-            # `rows counted` rows among the findings. The count is provenance --
-            # `wording` classifies its qualifier Audit-tier -- so it belongs on
-            # the audit surface, which renders from the same untouched
-            # `build_cells` output and still shows every one. Nothing is dropped
-            # from the bundle: `reconcile` compares figure coverage across
-            # surfaces and would refuse a report that had actually lost a figure.
+            # Every figure this section states, provenance included: a bucket's
+            # row count is a Business-tier value per the visibility matrix, and
+            # `_series_tables` gives it a column beside the value it explains
+            # rather than a row interleaved with it.
             cells=_scalar_cells(_stated(cells, section.section_id)),
             series=_series_tables(_stated(cells, section.section_id)),
             caveats=_stated_once(bundle, section.section_id, language),
@@ -723,23 +717,32 @@ def _section_views(
 
 
 def _stated(cells: tuple[FigureCell, ...], section_id: str) -> tuple[FigureCell, ...]:
-    """One section's cells, less the provenance the audit surface states.
+    """One section's cells, in the bundle's order.
 
-    `KIND_ROWS` is excluded here rather than in `build_cells`, which stays total. A
-    bucket emits its value and the count of source rows behind it as a pair, and
-    rendering both interleaved them: a five-period series became ten rows, and a
-    real upload put 39 `rows counted` rows among the findings. The count is
-    provenance -- `wording` classifies its qualifier Audit-tier -- so it belongs on
-    the audit surface, which renders from the same untouched `build_cells` output
-    and still shows every one. Nothing is dropped from the bundle: `reconcile`
-    compares figure coverage across surfaces and would refuse a report that had
-    actually lost a figure.
+    **`KIND_ROWS` is not filtered out here, and an earlier revision of this slice
+    was wrong to do it.** The interleaving it was fixing is real -- a five-period
+    series became ten rows, and a real upload put 39 `rows counted` rows among the
+    findings -- but dropping the figures is the wrong instrument, for two reasons
+    found in review.
+
+    `docs/reporting/presentation-visibility-matrix.md` classifies a figure's
+    `text` **B** ("the number") and only its `kind` column **A**. Removing the
+    whole row moves a Business-tier value into the audit region, which is a
+    governed tier change rather than a layout choice. And the earlier reasoning
+    read `wording` backwards: `KIND_QUALIFIERS` exists *because* `kind` is
+    Audit-tier and cannot appear, so a row count needs customer wording to be
+    legible on the business page -- "the raw code stays in the audit region; this
+    is its customer wording". It is the machinery that makes these figures
+    presentable here, not evidence that they belong elsewhere.
+
+    `rendering/excel.py::_write_business_sheet` never filtered them either, so the
+    filter also left the surfaces disagreeing about what the business region
+    contains.
+
+    The interleaving is fixed where it actually belongs: `_series_tables` gives a
+    bucket's count its own column beside the value it explains.
     """
-    return tuple(
-        cell
-        for cell in cells
-        if cell.section == section_id and cell.kind != KIND_ROWS
-    )
+    return tuple(cell for cell in cells if cell.section == section_id)
 
 
 def _scalar_cells(cells: tuple[FigureCell, ...]) -> tuple[FigureCell, ...]:
@@ -751,38 +754,57 @@ def _scalar_cells(cells: tuple[FigureCell, ...]) -> tuple[FigureCell, ...]:
     and `concentration_curve` -- four ranks, one metric, no governed name -- is
     exactly that case.
     """
-    grouped = _series_metrics(cells)
+    grouped = _series_columns(cells)
     return tuple(
-        cell for cell in cells if cell.label is None or cell.metric not in grouped
+        cell for cell in cells if cell.label is None or _column(cell) not in grouped
     )
 
 
-def _series_metrics(cells: tuple[FigureCell, ...]) -> frozenset[str]:
-    """The metrics that share a label with another metric, and so form columns.
+def _column(cell: FigureCell) -> tuple[str, str]:
+    """A cell's column identity: its metric *and* its kind.
+
+    Keyed on both because a bucket emits two figures carrying the same metric and
+    the same label -- the value, and the count of rows behind it. Keyed on metric
+    alone they collide, and one silently overwrites the other in the grid.
+    """
+    return (cell.metric, cell.kind)
+
+
+def _series_columns(cells: tuple[FigureCell, ...]) -> frozenset[tuple[str, str]]:
+    """The columns that share a label with another column, and so form a table.
 
     Sharing is the test rather than "has a label", because a column heading only
-    means something when there is more than one column to tell apart.
+    means something when there is more than one column to tell apart. A bucket's
+    value and its row count are two columns by that test, which is what turns the
+    interleaving into a grid: `concentration_curve`'s four ranks were eight rows
+    alternating a share and a count, and become four rows with a column each.
 
-    **A metric with no governed name is excluded, and that is a disclosure rule
-    rather than a cosmetic one.** A column needs a heading, and the only string
-    available for one that has no `metric_name` is the metric identifier --
-    `revenue_by_category`. `RRA-009` classifies the metric identifier Audit-tier
-    and renders it on the evidence surface, so putting it in a customer-facing
-    `<th>` would move an Audit field onto the business page to satisfy a layout.
-    Those series keep the row-per-cell form, where the label alone names the row
-    and no identifier is needed. `revenue_by_period` is unaffected: it carries
-    `Revenue`.
+    **A metric whose value has no governed name is excluded entirely, and that is
+    a disclosure rule rather than a cosmetic one.** A column needs a heading, and
+    the only string available for one that has no `metric_name` is the metric
+    identifier -- `revenue_by_category`. `RRA-009` classifies the metric
+    identifier Audit-tier and renders it on the evidence surface, so putting it in
+    a customer-facing `<th>` would move an Audit field onto the business page to
+    satisfy a layout. Those series keep the row-per-cell form, where the label
+    alone names the row and no identifier is needed.
+
+    The test is on the **value** cell's name, not on each cell's own: a row count
+    always has customer wording (`kind_qualifier` supplies "rows counted" even
+    with no metric name), so testing each cell would admit an unnamed metric's
+    count column while its value column stayed row-form -- the count separated
+    from the number it explains. `revenue_by_period` is unaffected: it carries
+    `Revenue`, so both its columns are admitted.
     """
-    by_label: dict[str, set[str]] = {}
-    named = {cell.metric for cell in cells if cell.metric_name}
+    by_label: dict[str, set[tuple[str, str]]] = {}
+    named = {cell.metric for cell in cells if cell.kind == KIND_VALUE and cell.metric_name}
     for cell in cells:
         if cell.label is not None and cell.metric in named:
-            by_label.setdefault(cell.label, set()).add(cell.metric)
+            by_label.setdefault(cell.label, set()).add(_column(cell))
     return frozenset(
-        metric
-        for metrics in by_label.values()
-        if len(metrics) > 1
-        for metric in metrics
+        column
+        for columns in by_label.values()
+        if len(columns) > 1
+        for column in columns
     )
 
 
@@ -799,17 +821,17 @@ def _series_tables(cells: tuple[FigureCell, ...]) -> tuple[_SeriesTable, ...]:
     template renders as an empty cell -- not a zero, which would be a number this
     module invented.
     """
-    grouped = _series_metrics(cells)
+    grouped = _series_columns(cells)
     if not grouped:
         return ()
     names, values = _series_index(cells, grouped)
     return tuple(
         _SeriesTable(
-            headings=tuple(names[metric] for metric in family),
+            headings=tuple(names[column] for column in family),
             rows=tuple(
                 _SeriesRow(
                     label=label,
-                    texts=tuple(values[label].get(metric) for metric in family),
+                    texts=tuple(values[label].get(column) for column in family),
                 )
                 for label in labels
             ),
@@ -820,37 +842,41 @@ def _series_tables(cells: tuple[FigureCell, ...]) -> tuple[_SeriesTable, ...]:
 
 def _series_index(
     cells: tuple[FigureCell, ...],
-    grouped: frozenset[str],
-) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
-    """The column names and the label/metric grid, both in first-appearance order.
+    grouped: frozenset[tuple[str, str]],
+) -> tuple[dict[tuple[str, str], str], dict[str, dict[tuple[str, str], str]]]:
+    """The column names and the label/column grid, both in first-appearance order.
 
-    `_series_metrics` admits only named metrics, so `metric_name` is the name here
-    rather than a fallback: an identifier reaching a column heading would put an
-    Audit-tier field on the business page.
+    `_series_columns` admits only columns whose metric has a governed name, so
+    `metric_name` is the name here rather than a fallback: an identifier reaching a
+    column heading would put an Audit-tier field on the business page. A row
+    count's name already carries its qualifier -- `_business_name` composes
+    "Revenue (rows counted)" -- so the count column says what it counts.
     """
-    names: dict[str, str] = {}
-    values: dict[str, dict[str, str]] = {}
+    names: dict[tuple[str, str], str] = {}
+    values: dict[str, dict[tuple[str, str], str]] = {}
     for cell in cells:
-        if cell.label is None or cell.metric not in grouped:
+        column = _column(cell)
+        if cell.label is None or column not in grouped:
             continue
-        names.setdefault(cell.metric, cell.metric_name or "")
-        values.setdefault(cell.label, {})[cell.metric] = cell.text
+        names.setdefault(column, cell.metric_name or "")
+        values.setdefault(cell.label, {})[column] = cell.text
     return names, values
 
 
 def _series_families(
-    names: dict[str, str],
-    values: dict[str, dict[str, str]],
-) -> dict[tuple[str, ...], list[str]]:
-    """Labels grouped by the set of metrics present at them.
+    names: dict[tuple[str, str], str],
+    values: dict[str, dict[tuple[str, str], str]],
+) -> dict[tuple[tuple[str, str], ...], list[str]]:
+    """Labels grouped by the set of columns present at them.
 
-    Grouped by the metric set rather than by section, so a section carrying both a
+    Grouped by the column set rather than by section, so a section carrying both a
     by-period and a by-branch series renders two tables instead of one table with
-    empty halves. Column order follows `names`, which is the bundle's order.
+    empty halves. Column order follows `names`, which is the bundle's order, so a
+    bucket's count sits beside the value it explains.
     """
-    families: dict[tuple[str, ...], list[str]] = {}
+    families: dict[tuple[tuple[str, str], ...], list[str]] = {}
     for label, present in values.items():
-        family = tuple(metric for metric in names if metric in present)
+        family = tuple(column for column in names if column in present)
         families.setdefault(family, []).append(label)
     return families
 
