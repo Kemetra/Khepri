@@ -27,6 +27,22 @@ both because they are what the package supplies and what the workbook surface
 renders; converting them would be a rendering decision this module has no mandate
 to make.
 
+**Why a proportion is quoted as a percentage.** `RRA-006`'s surfaces render a
+ratio fact as `55.89%`, and prose quoting the bare `0.5589` beside that table
+states the same fact in a second unit. The percentage form is *supplied* --
+`narrative._stated` attaches `value_percent` to every ratio fact so that a
+narrative saying `66.67%` is quoting rather than converting -- so choosing it
+costs this module none of its "never computed" rule.
+
+Which ratios are proportions is read from `bundle.PERCENTAGE_METRICS`, because
+`unit_kind` cannot tell one from a rate: `basket_items_per_transaction` is
+`ratio`-kind too, and quoting its supplied `value_percent` would say a basket
+holds `382500.0000%` items. That import points from `RRA-005` at an `RRA-006`
+module, which is the wrong direction; the set describes what a metric *is*
+rather than how it is drawn, so `facts` is its likelier home. Moving it is a
+separate change and is deliberately not made here, where the defect to fix is
+the unit a customer reads.
+
 **What is deliberately never declared.** `direction` and `labels` are left unset.
 `_assert_declared_direction` requires the cited facts to exhibit exactly one
 movement, and movement is derived only from series `points`; a section citing a
@@ -46,6 +62,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from khepri.rra.bundle import PERCENTAGE_METRICS
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -57,7 +74,11 @@ from khepri.rra.narrative import (
     NarrativeSection,
 )
 
-ADAPTER_VERSION = "rra005.deterministic.v1"
+# v2 quotes a proportion in the percentage form the request supplies, where v1
+# quoted the bare ratio and read `0.5589` beside a table stating `55.89%`. The
+# version is recorded on every `NarrativeAttempt`, so a stored run says which of
+# the two unit conventions its prose was written in.
+ADAPTER_VERSION = "rra005.deterministic.v2"
 
 # Kept well inside the section budget a fact package can produce. A narrative is
 # a summary; quoting every fact would be a transcript.
@@ -160,16 +181,44 @@ def _figure(entry: dict[str, object], kind: str) -> str | None:
 
     Never computed and never reformatted. A supplied string is quoted verbatim
     or nothing is quoted at all, because deriving a rendering is how a narrative
-    states a number the package did not carry.
+    states a number the package did not carry. Choosing *which* supplied string
+    to quote is not deriving one, which is what `_proportion` does.
     """
     if kind == "facts":
-        value = entry.get("value")
-        return value if isinstance(value, str) else None
+        return _fact_figure(entry)
     buckets = entry.get("points") or entry.get("buckets") or ()
     if not isinstance(buckets, list) or not buckets:
         return None
     last = buckets[-1]
     value = last.get("value") if isinstance(last, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def _fact_figure(entry: dict[str, object]) -> str | None:
+    """A fact's quotable figure: its percentage form when it has one.
+
+    **A proportion quoted as a bare ratio contradicted the table beside it.**
+    `RRA-006`\'s surfaces render `gross_margin` as `55.89%`; this module quoted
+    the package value and the same report read "The recorded gross margin is
+    0.5589" in its commentary. Both numbers are correct and they are not in the
+    same unit, so a reader comparing prose against table sees two figures.
+
+    Nothing is converted here. `narrative._stated` attaches `value_percent` to
+    the request precisely so a narrative can say `66.67%` without calculating,
+    and this quotes that string with the sign appended -- which
+    `_assert_grounded_numbers` grounds against `percents` rather than `numbers`,
+    so a percentage claim is checked as a percentage.
+
+    The digits are the request\'s, not the table\'s: `value_percent` carries the
+    fact\'s own precision, so a margin reads `55.8900%` in prose where the table
+    states `55.89%`. Same unit and same value; quantizing to match would be this
+    module reformatting a supplied figure, which is the rule it does not break.
+    """
+    if entry.get("metric") in PERCENTAGE_METRICS:
+        percent = entry.get("value_percent")
+        if isinstance(percent, str):
+            return f"{percent}%"
+    value = entry.get("value")
     return value if isinstance(value, str) else None
 
 
