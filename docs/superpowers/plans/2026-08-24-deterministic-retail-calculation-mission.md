@@ -330,8 +330,15 @@ active specification governs both and the disagreement is a defect in one of the
   manifest unreachable: Task 11's staging journey could not submit one, and completeness-dependent
   comparisons and growth would refuse permanently in production rather than for a stated reason
   about the data. Include the authorized submission route with `extra="forbid"` validation, the
-  input-digest and source-contract binding, persistence, and an end-to-end test that a submitted
-  manifest admits a comparison the same upload refuses without one.
+  input-digest and source-contract binding, persistence, and an end-to-end test **at the mapping
+  boundary**: a submitted manifest is accepted, bound to the input digest and source contract,
+  persisted, and confirmed by `rra003.mapping.v3`.
+
+  **The assertion that a manifest *admits a comparison* cannot be made here, and belongs to
+  `V-comparison`.** The gate this slice introduces refuses `mapping.v3` against the still-current
+  `rra004.package.v2` and `rra004.formula.v1`, so both uploads — with a manifest and without —
+  stop at version skew before any comparison runs. Writing that test in this slice would prove
+  only that the gate fires, under a name claiming it proved something about coverage.
 - [ ] Extend `POST /api/v1/beta/profile` with a required `extra="forbid"` source-contract object
   containing contract/evidence identity, semantic column positions, event-kind column or sale-only
   declaration, status column or posted-only declaration, currency column or constant ISO code,
@@ -392,6 +399,11 @@ active specification governs both and the disagreement is a defect in one of the
   is `<= 0`.
 - [ ] Add the partial-window/refusal codes and accepted Arabic/English wording in the same commit;
   propagate them through bundle, audit evidence, web, PDF, and Excel without recomputation.
+- [ ] **Make the manifest's comparison assertion here, deferred from `V-mapping`.** This is the
+  first slice whose version pairing the gate admits, so it is the first place the end-to-end claim
+  is testable: a submitted coverage manifest admits a comparison that the same upload refuses
+  without one. `V-mapping` proves the manifest is accepted, bound, persisted and confirmed;
+  proving what it *unlocks* waits for the slice that can run it.
 - [ ] Run focused RED/GREEN tests, comparison and surface suites, the three required gates, commit,
   and obtain independent task review.
 
