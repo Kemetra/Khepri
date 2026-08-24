@@ -333,15 +333,27 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Add the RED proof that the gate fires at each seam: with one version moved and its consumer
   unmoved, the consumer refuses and states why, and no fact is published under the predecessor
   identity.
-- [ ] **Hold the gate's refusal to the package-level obligation, not the surface one.** It refuses
-  before a package exists, so `api.py:353` returns a 409 and `review.js` — which posts
-  `/api/v1/beta/facts` before `/api/v1/beta/reports` — never creates a report. There is no bundle
-  to propagate into. The roadmap's §CAL1 rule scopes its bundle/narrative/chart/HTML/PDF/Excel
-  clause to `RefusedResult`, which refuses one metric inside a package that was produced and does
-  reach every surface; `PackageRefused` owes the rest of the rule in full instead — governed code,
-  accepted Arabic and English prose in the response body, audit representation, and **rendering on
-  the review page**, which `docs/superpowers/specs/2026-08-13-client-journey-ui-design.md` requires
-  of a fact-package refusal: "Remain on review with governed reason."
+- [ ] **Refuse at the right scope for each seam; the gate straddles two.** Its table pairs package
+  and formula against mapping *and* each `RRA-008` family against the formula, and those fire in
+  different places.
+
+  A **mapping/package/formula** mismatch is caught while the package is built, so it is a
+  `PackageRefused`: `api.py:353` returns a 409 and `review.js` — which posts `/api/v1/beta/facts`
+  before `/api/v1/beta/reports` — never creates a report, so there is no bundle to propagate into.
+  The roadmap's §CAL1 rule scopes its bundle/narrative/chart/HTML/PDF/Excel clause to
+  `RefusedResult` for that reason; a `PackageRefused` owes the rest of the rule in full instead —
+  governed code, accepted Arabic and English prose in the response body, audit representation, and
+  **rendering on the review page**, which
+  `docs/superpowers/specs/2026-08-13-client-journey-ui-design.md` requires of a fact-package
+  refusal: "Remain on review with governed reason."
+
+  A **family-against-formula** mismatch must be a `RefusedResult` in `bundle._FAMILIES`, and owes
+  the propagation rule in full — bundle, narrative, chart, HTML, PDF and Excel. `RRA-008` requires
+  it: "A failure or missing optional input refuses only dependent results, leaving independently
+  answerable facts and the rest of the report intact." So does the shrinking refusing set this plan
+  describes, which is only meaningful if families refuse one at a time. Raising `PackageRefused`
+  for a family pairing would suppress every independently answerable result until the last family
+  merged — a blackout, not a shrinking set.
 
   **Build that path; do not assume it exists.** No current `PackageRefused` meets the obligation:
   it is a bare `ValueError` subclass with no code and no audit hook, the four raises in
