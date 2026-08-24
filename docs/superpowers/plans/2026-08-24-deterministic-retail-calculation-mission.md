@@ -260,7 +260,20 @@ active specification governs both and the disagreement is a defect in one of the
   `/api/v1/beta/profile` at two call sites and nothing collects a source contract, so making the
   object required without touching that client returns 422 on every web upload and strands the
   user on the upload page. `V-mapping` therefore includes the collection surface, the client
-  change, and journey regression coverage that a normal browser upload still reaches a report.
+  change, and journey regression coverage over the whole flow.
+
+  **What that coverage may assert is the governed refusal, not a report.** The gate below lands in
+  this same slice, and after it `mapping.v3` against `rra004.package.v2` is an unlisted pair, so
+  `packages.py` refuses. `review.js:36-37` posts `/api/v1/beta/facts` and only then
+  `/api/v1/beta/reports`, so the journey cannot reach a report while the window is open — an
+  acceptance criterion demanding one would be unmeetable by construction, and the only ways to meet
+  it are removing the gate or co-landing the consumer successors, which the owner decision below
+  rules out. The criterion is therefore: **a normal browser upload reaches the governed bilingual
+  refusal, stating which version pairing was refused, rather than a 422 or a stranded page.** That
+  is what the client change buys during the window, and it is a real regression target — a 422 from
+  a missing contract and a stated refusal from an unadmitted pairing are different outcomes and the
+  journey must produce the second. `V-concentration` empties the refusing set, and the criterion
+  returns to reaching a report there; the last slice carries that assertion.
 - [ ] Add the fail-closed version compatibility gate, whole, in this slice: an explicit table of
   admitted version pairings — package and formula against mapping, and each `RRA-008` family
   against the formula — publishing only on a listed pair and refusing every other, including any
@@ -443,6 +456,11 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Reconcile to retained sale-revenue basis and caveat the difference from return-inclusive
   headline revenue when returns exist.
 - [ ] Ship all refusal/caveat evidence and bilingual surface wording.
+- [ ] **Close the refusal window in the browser journey.** `V-concentration` is the last family to
+  publish its successor, so the admitted-pair table now names every pairing the runtime combines
+  and nothing refuses on version skew. The journey regression `V-mapping` left asserting a governed
+  refusal is moved back to its real target here: a normal browser upload reaches a report. Leaving
+  it asserting a refusal would pin the transitional behaviour as the permanent one.
 - [ ] Run focused RED/GREEN tests, aggregate/concentration/surface suites, required gates, commit,
   and review.
 
