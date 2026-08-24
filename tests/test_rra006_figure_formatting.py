@@ -203,6 +203,24 @@ class TestRatioFigures:
         # fact boundary already applied.
         assert bundle_module._percentage("0.8665") == "86.65%"
 
+    def test_a_high_magnitude_ratio_renders_rather_than_aborting(self) -> None:
+        # The precision half of the exactness context, and the reason it is not
+        # `Context()`'s default 28. A comparison against a very small prior period
+        # is admissible and produces a ratio needing more than 28 digits --
+        # `test_rra008_comparison.py::test_a_high_magnitude_ratio_does_not_abort_
+        # the_comparison` builds one from 18-digit values and six governed decimal
+        # places. Scaling it by a hundred under a 28-digit context raises
+        # `InvalidOperation`, which takes `ReportBundle.of` down: neither a fact
+        # nor a governed refusal, and the one outcome this module may not produce.
+        #
+        # Twenty-nine significant digits, shaped as a governed ratio: quantized to
+        # `RATIO_PRECISION`, so the scaling itself is still exact.
+        enormous = "3999999999999999600000000.0000"
+        assert len(Decimal(enormous).as_tuple().digits) > 28, (
+            "this input must exceed the default context to be the case at issue"
+        )
+        assert bundle_module._percentage(enormous).endswith("%")
+
     def test_a_fifth_place_raises_rather_than_rounding_unheard(self) -> None:
         # The guard the two tests above rely on, fired rather than assumed. No
         # governed producer emits five places, so nothing reaches this in

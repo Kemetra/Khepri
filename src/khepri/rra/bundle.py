@@ -56,7 +56,7 @@ from decimal import Context, Decimal, DivisionByZero, Inexact, InvalidOperation,
 from typing import Protocol
 
 from khepri.rra.analysis import basket, comparison, concentration, growth
-from khepri.rra.facts import UNIT_RATIO, Fact, FactPackage, RefusedResult
+from khepri.rra.facts import ARITHMETIC_PRECISION, UNIT_RATIO, Fact, FactPackage, RefusedResult
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -1871,7 +1871,8 @@ def _grouped(text: str) -> str:
     return f"{grouped}.{fraction}" if fraction else grouped
 
 
-#: The context `_percentage` quantizes in: exact or nothing.
+#: The context `_percentage` quantizes in: exact or nothing, at the governed
+#: arithmetic precision.
 #:
 #: **A bare `quantize` does not raise, and the comment that said so was wrong.**
 #: `Decimal`'s default context traps `InvalidOperation`, `DivisionByZero` and
@@ -1884,7 +1885,20 @@ def _grouped(text: str) -> str:
 #:
 #: The other three traps are carried over from the default context, because
 #: `Context(traps=...)` replaces the trap set rather than adding to it.
-_EXACT = Context(traps=[Inexact, InvalidOperation, DivisionByZero, Overflow])
+#:
+#: **`prec` is the governed arithmetic precision, not `Context`'s default 28.**
+#: A comparison against a very small prior period is admissible and produces a
+#: ratio needing more than 28 digits -- `test_a_high_magnitude_ratio_does_not_
+#: abort_the_comparison` builds one from 18-digit values and six governed decimal
+#: places, which is 29. Scaling that by a hundred and quantizing under a 28-digit
+#: context raises `InvalidOperation` and takes `ReportBundle.of` down with it:
+#: neither a fact nor a governed refusal, which is the one outcome this module
+#: may not produce. `facts` already computes under `ARITHMETIC_PRECISION` for the
+#: same reason; presentation borrows it rather than silently narrowing it.
+_EXACT = Context(
+    prec=ARITHMETIC_PRECISION,
+    traps=[Inexact, InvalidOperation, DivisionByZero, Overflow],
+)
 
 
 def _percentage(text: str) -> str:
