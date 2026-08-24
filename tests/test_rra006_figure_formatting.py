@@ -221,6 +221,25 @@ class TestRatioFigures:
         )
         assert bundle_module._percentage(enormous).endswith("%")
 
+    def test_a_negative_with_a_zero_whole_part_keeps_its_sign(self) -> None:
+        # `int("-0")` is `0`, so grouping through the integer dropped the sign of
+        # every negative between -1 and 0. A monetary decrease of half a unit was
+        # published as an increase, on every surface, because they all copy this
+        # string. Governed figures reach this range routinely: an absolute revenue
+        # delta, a growth effect, a negative gross profit.
+        assert bundle_module._grouped("-0.50") == "-0.50"
+        assert bundle_module._grouped("-0.0001") == "-0.0001"
+        # And the sign survives grouping proper, which was never broken.
+        assert bundle_module._grouped("-1234.56") == "-1,234.56"
+        # A positive is unchanged, so the fix is not a blanket prefix.
+        assert bundle_module._grouped("0.50") == "0.50"
+
+    def test_a_small_negative_ratio_is_not_published_as_a_gain(self) -> None:
+        # The consequence at the percentage path, which scales before grouping:
+        # `-0.0001` is a tenth of a percent down and was printed as `0.01%` up.
+        assert bundle_module._percentage("-0.0001") == "-0.01%"
+        assert bundle_module._percentage("-0.5000") == "-50.00%"
+
     def test_the_arabic_rendering_uses_the_arabic_percent_sign(self) -> None:
         # The rest of the Arabic string already leaves ASCII behind -- Arabic-Indic
         # digits, `٫` for the decimal point, `٬` for the group separator. An ASCII

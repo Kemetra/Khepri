@@ -1877,15 +1877,25 @@ def _presented(text: str, *, unit_kind: str | None, kind: str, metric: str | Non
 
 
 def _grouped(text: str) -> str:
-    """Insert thousands separators, preserving the decimal places as given."""
+    """Insert thousands separators, preserving the sign and decimal places as given.
+
+    **The sign is carried explicitly because `int` loses it on a zero whole
+    part.** `int("-0")` is `0`, so grouping `-0.50` through the integer produced
+    `0.50` and a decrease was published as an increase -- on a monetary delta, a
+    growth effect, or, after scaling, a `-0.0001` ratio printed as `0.01%`. Every
+    surface copies this string, so the sign had to survive here or nowhere.
+    """
     parsed = _decimal(text)
     if parsed is None:
         return text
-    whole, _, fraction = text.strip().partition(".")
+    stripped = text.strip()
+    whole, _, fraction = stripped.lstrip("+-").partition(".")
     try:
         grouped = f"{int(whole):,}"
     except ValueError:
         return text
+    if stripped.startswith("-"):
+        grouped = f"-{grouped}"
     return f"{grouped}.{fraction}" if fraction else grouped
 
 
