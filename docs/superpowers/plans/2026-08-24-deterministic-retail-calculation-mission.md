@@ -202,6 +202,12 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Run every new focused test against current production code and record the intended numerical
   or refusal mismatch. Fix test setup errors until each case fails for its intended reason.
 - [ ] Commit the verified RED tests locally. Do not push the branch while its head is RED.
+- [ ] **Hold each slice's RED tests with that slice, not all of them here.** The required handoff
+  runs the full `pytest`, and a branch carrying committed failures for `V-package` through
+  `V-concentration` cannot produce a green gate while only `V-mapping` is implemented. This task
+  derives and verifies every expected literal — that work is done once, outside production helpers —
+  and each slice then adds its own verified-RED cases immediately before its GREEN. The oracle is
+  shared; the failing tests are not.
 
 ### Task 3: Implement C0 normalized semantic admission
 
@@ -221,6 +227,12 @@ active specification governs both and the disagreement is a defect in one of the
 - Slices: `V-mapping`, except the package-v3 structural fields it also produces, which are part of
   `V-package` and merge with it.
 
+- [ ] **Carry the browser journey with the contract, in this slice.**
+  `src/khepri/rra/journey/assets/upload.js` posts `{requested_semantics: []}` to
+  `/api/v1/beta/profile` at two call sites and nothing collects a source contract, so making the
+  object required without touching that client returns 422 on every web upload and strands the
+  user on the upload page. `V-mapping` therefore includes the collection surface, the client
+  change, and journey regression coverage that a normal browser upload still reaches a report.
 - [ ] Extend `POST /api/v1/beta/profile` with a required `extra="forbid"` source-contract object
   containing contract/evidence identity, semantic column positions, event-kind column or sale-only
   declaration, status column or posted-only declaration, currency column or constant ISO code,
@@ -274,6 +286,14 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Validate that binding on use, not only on write: a manifest whose source-contract identity
   differs from the contract the events were admitted under refuses the completeness-dependent
   results rather than being reused.
+- [ ] **Build the manifest's production ingestion path in this slice.** No coverage-manifest route,
+  schema, or storage exists anywhere in `src/khepri` today, so a plan that only changes calculation,
+  bundle and wording leaves the manifest unreachable: Task 11's staging journey could not submit
+  one, and completeness-dependent comparisons and growth would refuse permanently in production
+  rather than for a stated reason about the data. `V-package` therefore includes the authorized
+  submission route with `extra="forbid"` validation, the input-digest and source-contract binding,
+  persistence, and an end-to-end test that a submitted manifest admits a comparison the same
+  upload refuses without one.
 - [ ] Retain structural coverage signatures containing only manifest/input binding, scope/store
   set, filters, completeness mode, and relative covered ordinals. Exclude absolute dates and all
   measure values.
