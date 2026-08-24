@@ -198,6 +198,17 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "units_by_period": "Units sold",
         "revenue_by_product": "Revenue",
         "units_by_product": "Units sold",
+        # The by-category and by-store series were omitted when the four above
+        # were added, and the omission was not benign: with no name, a category
+        # row states "Antibiotics" and a number, and the revenue and unit series
+        # in the same section state it twice with nothing saying which measure is
+        # which -- exactly the ambiguity the comment above describes. These reuse
+        # the accepted wording for the identical measures rather than coining new
+        # vocabulary.
+        "revenue_by_category": "Revenue",
+        "units_by_category": "Units sold",
+        "revenue_by_store": "Revenue",
+        "units_by_store": "Units sold",
     },
     LANGUAGE_ARABIC: {
         "basket_items_per_transaction": "عدد الأصناف لكل عملية بيع",
@@ -212,6 +223,10 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "units_by_period": "الوحدات المبيعة",
         "revenue_by_product": "الإيرادات",
         "units_by_product": "الوحدات المبيعة",
+        "revenue_by_category": "الإيرادات",
+        "units_by_category": "الوحدات المبيعة",
+        "revenue_by_store": "الإيرادات",
+        "units_by_store": "الوحدات المبيعة",
     },
 }
 

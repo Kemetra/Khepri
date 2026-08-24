@@ -107,6 +107,40 @@
 </tbody>
 </table>
 </div>
+{#
+  A repeated series as a table rather than as rows. One row per label, one column
+  per metric: a five-period series carrying revenue and units was ten rows before
+  this, each repeating a metric name and stating one number, with the two halves
+  of the comparison a reader wanted in different parts of the table.
+
+  `_series_tables` decides the grouping and the column order, not this template --
+  a template relating two metrics the bundle never related would be this surface
+  inventing a series. An empty `<td>` is a metric carrying no figure at that
+  label; it is deliberately not a zero, which would be a number nobody computed.
+#}
+{% for table in section.series %}
+<div class="scroller">
+<table class="figures figures--series">
+<caption>{{ chrome.series_caption }}</caption>
+<thead>
+<tr>
+<th scope="col">{{ chrome.series_label }}</th>
+{% for heading in table.headings %}<th scope="col">{{ heading }}</th>
+{% endfor %}
+</tr>
+</thead>
+<tbody>
+{% for row in table.rows %}
+<tr>
+<th scope="row">{{ row.label }}</th>
+{% for text in row.texts %}<td class="figure">{{ text if text is not none else "" }}</td>
+{% endfor %}
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endfor %}
 {% endif %}
 {% if section.caveats %}
 <ul class="caveats caveats--section">

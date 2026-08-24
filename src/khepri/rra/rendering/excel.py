@@ -77,7 +77,6 @@ identifier written above each block, not their absence from the tab bar.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -138,7 +137,14 @@ from khepri.rra.report_artifacts import (
 # machine-readable provenance a consumer selects its parser from, so a workbook with a
 # new layout claiming an old version sends that consumer looking for a grid that is no
 # longer there -- and, at v3, leaves it unprepared for a sheet whose cells are numbers.
-EXCEL_SURFACE_VERSION = "rra006.excel.v3"
+#
+# v4 changes what those numbers *mean*: a percentage series plots `86.65` where it
+# plotted `0.8665`, because the renderer no longer divides to recover the ratio.
+# A consumer parsing v3 chart data and applying its own percent formatting would
+# report `8665%`. The section-sheet strings are formatted too -- `726,919.57` for a
+# bare `726919.57` -- so a consumer parsing those cells as numbers now meets a
+# grouping separator that was never there at v3.
+EXCEL_SURFACE_VERSION = "rra006.excel.v4"
 WORKBOOK_SUFFIX = ".xlsx"
 
 # Every coercion XlsxWriter would otherwise apply to a string, switched off.
@@ -916,8 +922,41 @@ def _write_chart_value(
     representation of exactly what a reader is shown, whatever that invariant does
     later; `float(figure.value)` would have quietly written more precision than the
     report ever claimed, which is the relaxation `APP-013` refuses.
+
+    **The presentation is removed before parsing, not looked past.** The rendering now
+    carries grouping separators, and a ratio carries a percent sign, because `RRA-006`
+    requires formats. `Decimal` accepts neither, so this parsed cleanly only while the
+    string happened to be bare -- the coupling this docstring already warned was held
+    elsewhere. Undoing exactly the two transforms `bundle._presented` applies keeps
+    this write addressing what the reader is shown rather than reaching for the
+    `Decimal` the decision refuses: a percentage is divided back by one hundred, so
+    the series plots the ratio the section sheet states.
     """
-    sheet.write_number(row, column, float(Decimal(figure.renderings[_CHART_NUMBER_LANGUAGE])))
+    sheet.write_number(row, column, _chart_number(figure))
+
+
+def _chart_number(figure: CitedFigure) -> float:
+    """The authoritative string as a double, with its presentation removed.
+
+    **Nothing is recomputed here, and that is a governed requirement rather than
+    a preference.** `RRA-009`'s preservation rules say: "Recompute no figure in a
+    renderer, and hold no decimal value there." An earlier revision divided a
+    percentage by a hundred to recover the stored ratio, which is arithmetic on a
+    `Decimal` inside a renderer -- exactly what that rule forbids, and a second
+    place where the value could drift from the one the reader is shown.
+
+    So the separators and the sign are stripped and nothing else happens: a
+    figure shown as `86.65%` plots `86.65`. The series is then in the same units
+    as the business cell beside it, which is the consistency the workbook was
+    missing while the sheet said `86.65%` and the chart plotted `0.8665`.
+
+    Supplying the chart value from the bundle would be better still, and is not
+    available here: `CitedFigure.as_document` feeds the bundle digest, so adding
+    a field is a governed serialized-shape change under `RRA-004` and needs its
+    own authority rather than a presentation slice.
+    """
+    shown = figure.renderings[_CHART_NUMBER_LANGUAGE]
+    return float(shown.replace(",", "").rstrip("%"))
 
 
 def _chart_for(workbook: Workbook, block: _ChartBlock, language: str) -> Chart:
