@@ -137,7 +137,14 @@ from khepri.rra.report_artifacts import (
 # machine-readable provenance a consumer selects its parser from, so a workbook with a
 # new layout claiming an old version sends that consumer looking for a grid that is no
 # longer there -- and, at v3, leaves it unprepared for a sheet whose cells are numbers.
-EXCEL_SURFACE_VERSION = "rra006.excel.v3"
+#
+# v4 changes what those numbers *mean*: a percentage series plots `86.65` where it
+# plotted `0.8665`, because the renderer no longer divides to recover the ratio.
+# A consumer parsing v3 chart data and applying its own percent formatting would
+# report `8665%`. The section-sheet strings are formatted too -- `726,919.57` for a
+# bare `726919.57` -- so a consumer parsing those cells as numbers now meets a
+# grouping separator that was never there at v3.
+EXCEL_SURFACE_VERSION = "rra006.excel.v4"
 WORKBOOK_SUFFIX = ".xlsx"
 
 # Every coercion XlsxWriter would otherwise apply to a string, switched off.

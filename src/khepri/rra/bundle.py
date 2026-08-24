@@ -84,12 +84,15 @@ from khepri.rra.profiling import canonical_json
 #   v4  a caveat is a (code, section) pair rather than a bare code
 #   v5  `figures` is ordered by governed section rather than by derivation
 #   v6  a bucket figure's `metric` is its fact's metric, not the measure behind it
+#   v7  every figure's `renderings` carry presentation -- digit grouping, a
+#       percentage form for proportions, the Arabic percent sign -- where they
+#       reproduced the package's bare string
 #
 # The section model ships as several independently verifiable slices, and each
 # one that moves the document earns a version. That is version churn on purpose:
 # every string here named a shape that really existed on `main`, which is worth
 # more than a tidy sequence.
-BUNDLE_VERSION = "rra006.bundle.v6"
+BUNDLE_VERSION = "rra006.bundle.v7"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"

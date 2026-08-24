@@ -72,7 +72,11 @@ from khepri.rra.report_artifacts import (
     MaterializedSurface,
 )
 
-HTML_SURFACE_VERSION = "rra006.html.v1"
+# v2 restructures the business tables: a repeated series renders as one row per
+# label with a column per (metric, kind) pair, where every figure was its own row.
+# The version is machine-readable provenance, and a consumer that selected its
+# parser from v1 would look for a row per figure and find a grid.
+HTML_SURFACE_VERSION = "rra006.html.v2"
 
 TEMPLATE_PACKAGE = "khepri.rra.rendering"
 TEMPLATE_DIRECTORY = "templates"
