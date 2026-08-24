@@ -764,6 +764,37 @@ def _scalar_cells(cells: tuple[FigureCell, ...]) -> tuple[FigureCell, ...]:
     )
 
 
+#: How a breakdown metric names its dimension: `revenue_by_period` breaks down by
+#: period, `units_by_store` by store.
+_BY = "_by_"
+
+
+def _dimension(cell: FigureCell) -> str:
+    """The series a cell belongs to, which is its breakdown rather than its label.
+
+    **A display label is not a series identity, and treating it as one merged two
+    breakdowns.** Rows were keyed by label alone, so a product literally named
+    `2026-01` shared a key with the January period. Grouping then bridged the
+    by-period and by-product series into one table with `Revenue` and `Units sold`
+    appearing twice, and a product row sitting under period columns.
+
+    `CitedFigure` carries no dimension, and adding one is a governed change --
+    `as_document` feeds the bundle digest -- so the dimension is read from the
+    metric identifier, which already states it: everything after `_by_`. A metric
+    that names no breakdown falls back to its section, which keeps the comparison
+    deltas (`revenue_delta_absolute` and `revenue_delta_percent`, one row per
+    mode) in one series as they were.
+
+    The identifier is used to *group*, never to display: `RRA-009` classifies it
+    Audit-tier and `_series_columns` still refuses a column whose heading would
+    have to be one. `test_every_series_metric_declares_its_dimension` pins the
+    convention so a metric that stops following it fails here rather than
+    grouping oddly on a customer surface.
+    """
+    _, separator, dimension = cell.metric.partition(_BY)
+    return dimension if separator else cell.section
+
+
 def _column(cell: FigureCell) -> tuple[str, str]:
     """A cell's column identity: its metric *and* its kind.
 
@@ -834,13 +865,13 @@ def _series_tables(cells: tuple[FigureCell, ...]) -> tuple[_SeriesTable, ...]:
             headings=tuple(names[column] for column in family),
             rows=tuple(
                 _SeriesRow(
-                    label=label,
-                    texts=tuple(values[label].get(column) for column in family),
+                    label=row[1],
+                    texts=tuple(values[row].get(column) for column in family),
                 )
-                for label in labels
+                for row in rows
             ),
         )
-        for family, labels in _series_families(names, values).items()
+        for family, rows in _series_families(names, values).items()
     )
 
 
@@ -857,20 +888,20 @@ def _series_index(
     "Revenue (rows counted)" -- so the count column says what it counts.
     """
     names: dict[tuple[str, str], str] = {}
-    values: dict[str, dict[tuple[str, str], str]] = {}
+    values: dict[tuple[str, str], dict[tuple[str, str], str]] = {}
     for cell in cells:
         column = _column(cell)
         if cell.label is None or column not in grouped:
             continue
         names.setdefault(column, cell.metric_name or "")
-        values.setdefault(cell.label, {})[column] = cell.text
+        values.setdefault((_dimension(cell), cell.label), {})[column] = cell.text
     return names, values
 
 
 def _series_families(
     names: dict[tuple[str, str], str],
-    values: dict[str, dict[tuple[str, str], str]],
-) -> dict[tuple[tuple[str, str], ...], list[str]]:
+    values: dict[tuple[str, str], dict[tuple[str, str], str]],
+) -> dict[tuple[tuple[str, str], ...], list[tuple[str, str]]]:
     """Labels grouped into series, each carrying the union of its columns.
 
     A section carrying both a by-period and a by-branch series renders two tables
@@ -896,36 +927,44 @@ def _series_families(
     sits beside the value it explains.
     """
     return {
-        tuple(column for column in names if column in columns): labels
-        for columns, labels in _merged_series(values)
+        tuple(column for column in names if column in columns): rows
+        for columns, rows in _merged_series(values)
     }
 
 
-#: One series being accumulated: the columns it spans, and the labels in it.
-_Series = tuple[set[tuple[str, str]], list[str]]
+#: One series being accumulated: the columns it spans, and the (dimension, label)
+#: rows in it.
+_Series = tuple[set[tuple[str, str]], list[tuple[str, str]]]
 
 
-def _merged_series(values: dict[str, dict[tuple[str, str], str]]) -> list[_Series]:
-    """Labels folded into series, each carrying the union of its columns."""
+def _merged_series(
+    values: dict[tuple[str, str], dict[tuple[str, str], str]],
+) -> list[_Series]:
+    """Rows folded into series, each carrying the union of its columns."""
     series: list[_Series] = []
-    for label, present in values.items():
-        series = _absorb(series, set(present), label)
+    for row, present in values.items():
+        series = _absorb(series, set(present), row)
     return series
 
 
-def _absorb(series: list[_Series], columns: set[tuple[str, str]], label: str) -> list[_Series]:
-    """One label joined to every series it shares a column with, or standing alone.
+def _absorb(
+    series: list[_Series],
+    columns: set[tuple[str, str]],
+    row: tuple[str, str],
+) -> list[_Series]:
+    """One row joined to every series it shares a column with, or standing alone.
 
-    Joining rather than matching is what tolerates a sparse label: it need only
+    Joining rather than matching is what tolerates a sparse row: it need only
     share *one* column with its neighbours to stay among them, where an exact
-    match would have set it apart. Absorbing every overlapping series at once
-    also merges two groups that were separate until this label bridged them.
+    match would have set it apart. A row is `(dimension, label)`, so two
+    breakdowns that happen to share a display label no longer bridge here --
+    their columns never meet at one row.
     """
     joined = [entry for entry in series if entry[0] & columns]
     apart = [entry for entry in series if not entry[0] & columns]
-    labels = [existing for entry in joined for existing in entry[1]]
-    labels.append(label)
-    return [*apart, (columns.union(*(entry[0] for entry in joined)), labels)]
+    rows = [existing for entry in joined for existing in entry[1]]
+    rows.append(row)
+    return [*apart, (columns.union(*(entry[0] for entry in joined)), rows)]
 
 
 def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[str, ...]:

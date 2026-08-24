@@ -39,9 +39,12 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering.html import (
+    _BY,
     FigureCell,
     HtmlReportRenderer,
+    _series_columns,
     _series_tables,
+    _stated,
     build_cells,
 )
 
@@ -276,3 +279,138 @@ class TestASparseLabelStaysInItsSeries:
         )
 
         assert len(_series_tables(mixed)) == 2
+
+
+class TestADisplayLabelIsNotASeriesIdentity:
+    """Two breakdowns sharing a label stay two tables.
+
+    Rows were keyed by display label alone, so a product literally named
+    `2026-01` shared a key with the January period. Once labels were joined on
+    shared columns, that collision bridged the by-period and by-product series
+    into one table with `Revenue` and `Units sold` twice over, and a product row
+    sitting under period columns. The row key is now `(dimension, label)`, read
+    from the metric identifier rather than from a customer-supplied string.
+    """
+
+    def _colliding(self) -> tuple[FigureCell, ...]:
+        return (
+            _cell("revenue_by_period", "value", "2026-01", "10.00"),
+            _cell("units_by_period", "value", "2026-01", "5"),
+            _cell("revenue_by_period", "value", "2026-02", "20.00"),
+            _cell("units_by_period", "value", "2026-02", "6"),
+            # A product whose name happens to read as a period.
+            _cell("revenue_by_product", "value", "2026-01", "99.00"),
+            _cell("units_by_product", "value", "2026-01", "1"),
+            _cell("revenue_by_product", "value", "Vitamins", "7.00"),
+            _cell("units_by_product", "value", "Vitamins", "2"),
+        )
+
+    def test_the_two_breakdowns_render_as_two_tables(self) -> None:
+        tables = _series_tables(self._colliding())
+
+        assert len(tables) == 2, [table.headings for table in tables]
+
+    def test_neither_table_repeats_a_heading(self) -> None:
+        # The visible symptom of the bridge: `Revenue` and `Units sold` appearing
+        # twice in one header row, naming columns from unrelated breakdowns.
+        for table in _series_tables(self._colliding()):
+            assert len(set(table.headings)) == len(table.headings), table.headings
+
+    def test_no_row_carries_a_figure_from_the_other_breakdown(self) -> None:
+        # The bridge put `Vitamins` under period columns with `None` beside it.
+        # Every row here is complete, because each table holds one series.
+        for table in _series_tables(self._colliding()):
+            for row in table.rows:
+                assert all(text is not None for text in row.texts), (
+                    table.headings,
+                    row,
+                )
+
+    def test_the_colliding_labels_land_in_different_tables(self) -> None:
+        # Both series carry a `2026-01` row, and they are not the same row.
+        tables = _series_tables(self._colliding())
+        carrying = [
+            table for table in tables if any(row.label == "2026-01" for row in table.rows)
+        ]
+
+        assert len(carrying) == 2
+        assert {
+            row.texts for table in carrying for row in table.rows if row.label == "2026-01"
+        } == {("10.00", "5"), ("99.00", "1")}
+
+
+def _pivoting_metrics() -> dict[str, set[str]]:
+    """Per section, the metrics whose columns `_series_columns` actually admits.
+
+    Read from the admitted columns rather than from every labelled cell, because
+    only an admitted column is grouped by `_dimension`. `concentration_curve` is
+    labelled and dimensionless but carries no governed name, so it never reaches
+    the pivot and its identifier is not a grouping key -- asserting over it would
+    demand a convention it is not held to.
+    """
+    cells = build_cells(bundle(), LANGUAGE_ENGLISH)
+    admitted: dict[str, set[str]] = {}
+    for section in {cell.section for cell in cells}:
+        stated = _stated(cells, section)
+        columns = _series_columns(stated)
+        if columns:
+            admitted[section] = {metric for metric, _ in columns}
+    return admitted
+
+
+def test_every_series_metric_declares_its_dimension() -> None:
+    """The naming convention `_dimension` reads, pinned so it cannot drift.
+
+    `_dimension` takes everything after `_by_` in the metric identifier and falls
+    back to the section for a metric that names no breakdown. The fallback is
+    correct only while the section's dimensionless metrics are genuinely one
+    series -- true for the comparison deltas, which are one row per mode. A new
+    dimensionless metric joining such a section would silently merge into it, so
+    each exception is named here rather than discovered on a customer surface.
+    """
+    section_grouped = {"revenue_delta_absolute", "revenue_delta_percent"}
+    metrics = {
+        metric for section in _pivoting_metrics().values() for metric in section
+    }
+
+    assert metrics, "fixture pivots no series at all"
+    undeclared = {
+        metric
+        for metric in metrics - section_grouped
+        if _BY not in metric
+    }
+    assert not undeclared, (
+        f"pivoted metrics that declare no dimension: {sorted(undeclared)}"
+    )
+
+
+def test_each_named_exception_is_one_still_taken() -> None:
+    """The allowlist above cannot quietly outlive the metrics it excuses.
+
+    An exception set that no longer matches anything is an exception set that
+    stops being read: the next dimensionless metric would be waved through by a
+    name left behind from a metric that had since been renamed or dropped.
+    """
+    section_grouped = {"revenue_delta_absolute", "revenue_delta_percent"}
+    metrics = {
+        metric for section in _pivoting_metrics().values() for metric in section
+    }
+
+    assert section_grouped <= metrics, (
+        f"excused metrics no longer pivot: {sorted(section_grouped - metrics)}"
+    )
+
+
+def test_a_dimensionless_metric_shares_its_section_series() -> None:
+    """Why the fallback is safe *here*, stated as behaviour rather than as prose.
+
+    The comparison deltas name no breakdown, so both fall back to `comparison`
+    and their labels key one series. The section renders one table, which is the
+    property the exception above is granted for.
+    """
+    cells = build_cells(bundle(), LANGUAGE_ENGLISH)
+    comparison = _stated(cells, "comparison")
+
+    tables = _series_tables(comparison)
+    assert len(tables) == 1, [table.headings for table in tables]
+    assert len(tables[0].headings) == 2, tables[0].headings
