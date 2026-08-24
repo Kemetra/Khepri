@@ -549,8 +549,11 @@ review before this gate.
 - [ ] Each slice is proposed as its own PR against current `main`, documenting its RED
   command/failure, GREEN command/result, independent oracle, the single governed version it
   publishes, compatibility impact, and exclusions.
-- [ ] Run this gate against the assembled contract after the last slice merges, not against any
-  single slice: a slice can be internally green while the system it joins is not.
+- [ ] Run this gate against the assembled contract on the final slice's PR head — every earlier
+  slice merged, the last one still a proposal — and not against any single slice in isolation: a
+  slice can be internally green while the system it joins is not. It runs **before** the owner
+  merges that final slice, because a gate that ran afterwards would be validating something already
+  governing.
 - [ ] Require CI governance, Ruff, pytest, benchmark, image, and CodeScene gates before owner merge.
 
 ### Task 11: Run full PostgreSQL/MinIO local pharmacy staging
