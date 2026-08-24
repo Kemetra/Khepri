@@ -73,7 +73,7 @@ a task that contributes to two versions contributes a part to each.
 
 | Slice | Publishes | Parts inside it | Merges after |
 |---|---|---|---|
-| `V-mapping` | `rra003.mapping.v3` | Task 3, less its package-v3 structural fields, **plus the version compatibility gate below** | — |
+| `V-mapping` | `rra003.mapping.v3` | Task 3, less its package-v3 structural fields, **plus the coverage manifest and its ingestion path** (`RRA-003` puts manifest confirmation in this version) **and the version compatibility gate below** | — |
 | `V-package` | `rra004.package.v3` | Task 3's package-v3 structural fields; Task 4's coverage signatures, daily bases and projections; Task 5's rounding-residual evidence | `V-mapping` |
 | `V-formula` | `rra004.formula.v2` | Task 8, **plus** the `RRA-004` core-formula rows inside Tasks 4, 6 and 7 — absolute and percentage delta, items per transaction, attach rate, concentration curve point, top decile and quartile share | `V-package` |
 | `V-comparison` | `rra008.comparison.v2` | Task 4's comparison facts and refusals | `V-formula` |
@@ -276,6 +276,29 @@ active specification governs both and the disagreement is a defect in one of the
   identity.
 - [ ] Add the mutation evidence that the gate can fail: removing a seam's comparison kills a named
   mutant, so a green suite is not mistaken for a guard.
+- [ ] **Add the coverage-manifest document, its binding, and its production ingestion path here,
+  not in `V-package`.** `RRA-003`'s stable contract states that `rra003.mapping.v3` governs
+  "coverage-manifest confirmation", so a `V-mapping` that publishes the successor without the
+  manifest publishes a mapping identity that cannot accept or confirm one — and `V-package` would
+  then change behaviour governed by an already-published identity. Only the package coverage
+  signatures, retained daily bases and structural projections wait for `V-package`.
+- [ ] Record the manifest fields: version/evidence identity, input digest, **the source-contract or
+  attestation identity and its evidence**, timezone, aggregate scope or full store roster, covered
+  scope/date pairs, included event kinds/statuses, closures, extraction gaps, and partial terminal
+  boundary. `RRA-003` names the source-contract binding separately from the input digest, and the
+  reason is reuse: identical bytes re-uploaded under a corrected semantic contract would otherwise
+  match an old manifest whose event-kind and status coverage was attested against different
+  semantics, admitting comparison and growth without authoritative proof.
+- [ ] Validate that binding on use, not only on write: a manifest whose source-contract identity
+  differs from the contract the events were admitted under refuses the completeness-dependent
+  results rather than being reused.
+- [ ] Build the ingestion path. No coverage-manifest route, schema, or storage exists anywhere in
+  `src/khepri` today, so a plan that only changes calculation, bundle and wording leaves the
+  manifest unreachable: Task 11's staging journey could not submit one, and completeness-dependent
+  comparisons and growth would refuse permanently in production rather than for a stated reason
+  about the data. Include the authorized submission route with `extra="forbid"` validation, the
+  input-digest and source-contract binding, persistence, and an end-to-end test that a submitted
+  manifest admits a comparison the same upload refuses without one.
 - [ ] Extend `POST /api/v1/beta/profile` with a required `extra="forbid"` source-contract object
   containing contract/evidence identity, semantic column positions, event-kind column or sale-only
   declaration, status column or posted-only declaration, currency column or constant ISO code,
@@ -316,27 +339,10 @@ active specification governs both and the disagreement is a defect in one of the
 - Consumes: C0 normalized events and an input-bound coverage manifest.
 - Produces: structural coverage signatures, aligned daily bases, accepted PoP/YoY windows, and
   `rra008.comparison.v2` facts/refusals.
-- Slices: coverage signatures, daily bases and projections are `V-package`; the absolute and
-  percentage delta formula rows are `V-formula`; the comparison family is `V-comparison`.
+- Slices: the manifest document, binding and ingestion are `V-mapping`; coverage signatures, daily
+  bases and projections are `V-package`; the absolute and percentage delta formula rows are
+  `V-formula`; the comparison family is `V-comparison`.
 
-- [ ] Add the coverage-manifest document: version/evidence identity, input digest, **the
-  source-contract or attestation identity and its evidence**, timezone, aggregate scope or full
-  store roster, covered scope/date pairs, included event kinds/statuses, closures, extraction gaps,
-  and partial terminal boundary. `RRA-003` names the source-contract binding separately from the
-  input digest, and the reason is reuse: identical bytes re-uploaded under a corrected semantic
-  contract would otherwise match an old manifest whose event-kind and status coverage was attested
-  against different semantics, admitting comparison and growth without authoritative proof.
-- [ ] Validate that binding on use, not only on write: a manifest whose source-contract identity
-  differs from the contract the events were admitted under refuses the completeness-dependent
-  results rather than being reused.
-- [ ] **Build the manifest's production ingestion path in this slice.** No coverage-manifest route,
-  schema, or storage exists anywhere in `src/khepri` today, so a plan that only changes calculation,
-  bundle and wording leaves the manifest unreachable: Task 11's staging journey could not submit
-  one, and completeness-dependent comparisons and growth would refuse permanently in production
-  rather than for a stated reason about the data. `V-package` therefore includes the authorized
-  submission route with `extra="forbid"` validation, the input-digest and source-contract binding,
-  persistence, and an end-to-end test that a submitted manifest admits a comparison the same
-  upload refuses without one.
 - [ ] Retain structural coverage signatures containing only manifest/input binding, scope/store
   set, filters, completeness mode, and relative covered ordinals. Exclude absolute dates and all
   measure values.
