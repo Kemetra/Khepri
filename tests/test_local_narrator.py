@@ -97,7 +97,7 @@ class TestTheDraftSurvivesTheRealValidator:
         _, draft = draft_for(package())
 
         assert draft.adapter_version == ADAPTER_VERSION
-        assert ADAPTER_VERSION == "rra005.deterministic.v1"
+        assert ADAPTER_VERSION == "rra005.deterministic.v2"
 
 
 class TestBothLanguagesAreProduced:
