@@ -453,7 +453,7 @@ CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.m
 | `V-comparison` comparison facts | `rra008.comparison.v2` | `RRA-008` | CAL1-07b |
 | `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08b. **Merges after `V-comparison`**, not merely after `V-formula` |
 | `V-basket` basket | `rra008.basket.v2` | `RRA-008` | CAL1-09b |
-| `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10b |
+| `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10b. **Merges last of the four families**, so the refusal window has a determinate end |
 
 **These labels are deliberately not the design's `C0`-`C4`.** `CAL1-01` must read both this table and the merged design, and reusing `C1`-`C4` for different scopes would make the same label mean two things. `C1` is also this roadmap's comparison program, whose tasks are `C1-01` through `C1-08` — a third meaning the `V-` prefix avoids. The design's phase list and this slice map reconcile as follows:
 
@@ -485,6 +485,8 @@ So every slice opens a window, not only the formula one. `V-mapping` alone makes
 *A "newer than" predicate would be wrong, and stating why prevents it being reintroduced.* These identifiers are independent namespaces — `rra003.mapping.v3`, `rra004.formula.v2` and `rra008.basket.v2` share a numbering convention and nothing else — so their suffixes define no ordering to compare. A one-sided rule also guards one direction only: once a family reached `v2`, "refuse when the formula is newer" would happily stamp a successor family identity onto a package still carrying `rra004.formula.v1`. And it leaves an unrecognised version's handling undefined, where a table refuses it by construction. `RRA-008` frames the contract the same way — its `v2` families consume "the exact `rra003.mapping.v3`, `rra004.package.v3`, and `rra004.formula.v2` changes" — so every pairing outside the table refuses.
 
 Each later slice adds its own admitted pairs, with governed reason codes and complete accepted Arabic and English wording. The consequence is deliberate and recorded rather than hidden: **each family refuses from the moment a version it consumes moves until its own successor lands**, so the refusing set is largest right after `V-formula` and shrinks with each family slice — after `V-comparison`, three families still refuse; after `V-basket`, one. `V-concentration` empties it. A reasoned refusal is what this product offers in place of a plausible number under a stale identity. An implementer who finds the window unacceptable must not remove the gate; co-landing the dependent successors is the alternative, and it needs owner approval because it changes the reviewable unit.
+
+**`V-concentration` merges last of the four, and the ordering statement above is not enough on its own.** `RRA-008` requires only growth after comparison, so basket and concentration have no inter-family order of their own — the dependency column, not the prose, is what an implementer executes, and it left `V-concentration` free to merge straight after `V-formula`. In that valid ordering three families still stamp `v1`, so "`V-concentration` empties it" above would be false and the refusal window would have no determinate end. One family has to be designated last for that sentence to mean anything; concentration is it, and its row now depends on the other three.
 
 **`V-growth` merges after `V-comparison`.** `RRA-008` states that growth "consumes the exact PoP window selected by period comparison and may not select another", over "the structural coverage compatibility already accepted by comparison" and "comparison's accepted aligned daily measure bases". A `V-growth` landing first would have to consume comparison `v1`'s window or reselect one itself, and the specification forbids both.
 
@@ -538,7 +540,7 @@ Five tasks contribute to a slice they also build on. Stated at task level that r
 | CAL1-09a | Items-per-transaction and attach-rate formula and refusal rows | `V-formula` | `V-package` merged |
 | CAL1-09b | Basket populations and dimension eligibility | `V-basket` | `V-formula` merged |
 | CAL1-10a | Concentration curve-point and top decile/quartile formula and refusal rows | `V-formula` | `V-package` merged |
-| CAL1-10b | Concentration eligibility and full-set behavior | `V-concentration` | `V-formula` merged |
+| CAL1-10b | Concentration eligibility and full-set behavior | `V-concentration` | `V-comparison`, `V-growth`, and `V-basket` merged |
 
 `CAL1-03` takes `CAL1-05a` **and `CAL1-03g`** with it; `CAL1-04` and `CAL1-06` take `CAL1-08a` with them. Every `a` part is a prerequisite of the slice it sits in, never a consumer of it. `CAL1-01` validates this graph before the first slice opens: a part that both contributes to a slice and depends on it is a ledger defect, not a sequencing judgement.
 
