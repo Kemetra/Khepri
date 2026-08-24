@@ -79,9 +79,9 @@ a task that contributes to two versions contributes a part to each.
 | `V-comparison` | `rra008.comparison.v2` | Task 4's comparison facts and refusals | `V-formula` |
 | `V-growth` | `rra008.growth.v2` | Task 5's growth family | `V-comparison` |
 | `V-basket` | `rra008.basket.v2` | Task 6's basket family | `V-formula` |
-| `V-concentration` | `rra008.concentration.v2` | Task 7's concentration family | `V-formula` |
+| `V-concentration` | `rra008.concentration.v2` | Task 7's concentration family, **plus Task 9's presentation sampling and its bilingual caveat** (`RRA-008` puts both in the concentration contract) | `V-formula` |
 
-Three consequences the task order alone does not give:
+Four consequences the task order alone does not give:
 
 - **`rra004.package.v3` spans three tasks.** `RRA-004` defines that one version to
   authorize readable population provenance, canonical transaction keys, retained
@@ -97,6 +97,16 @@ Three consequences the task order alone does not give:
 - **`V-mapping` carries every admission change `rra003.mapping.v3` governs**, including
   the normalized measures — revenue and returns, discounts, cost inputs, units — not
   only identity, currency and coverage confirmation.
+- **`V-concentration` carries presentation sampling, which Task 9 held.** `RRA-008` puts
+  it inside the concentration contract — "The full curve remains authoritative.
+  Presentation-only sampling keeps no more than 100 points, including the final 100%
+  point, and carries a bilingual sampling caveat" — and names sampling in that
+  specification's own Verification list. Shipping `rra008.concentration.v2` without it
+  would publish the identity incomplete and let Task 9 change governed behaviour under an
+  already-published version, which is the same defect the `V-package` bullet above
+  refuses. The merged roadmap states the rule directly at §CAL1: a caveat and its wording
+  "ship in **the same slice that introduces it**", and `CAL1-11` "is therefore a final
+  sweep, not the task where surfaces catch up".
 
 ### The version compatibility gate, and why `V-mapping` cannot land without it
 
@@ -455,6 +465,10 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Use `ceil(n / 10)` and `ceil(n / 4)` with at least one value; assign no fixed bands.
 - [ ] Reconcile to retained sale-revenue basis and caveat the difference from return-inclusive
   headline revenue when returns exist.
+- [ ] **Sample presentation curves here, not in Task 9.** No more than 100 measured points,
+  always including the final 100%, without changing the authoritative curve, with the bilingual
+  sampling caveat shipped alongside. `RRA-008` puts both in the concentration contract, so
+  `rra008.concentration.v2` cannot publish without them.
 - [ ] Ship all refusal/caveat evidence and bilingual surface wording.
 - [ ] **Close the refusal window in the browser journey.** `V-concentration` is the last family to
   publish its successor, so the admitted-pair table now names every pairing the runtime combines
@@ -518,9 +532,10 @@ active specification governs both and the disagreement is a defect in one of the
 **Interfaces:**
 - Consumes: the complete corrected successor package.
 - Produces: calculation-validation evidence independent of production formulas.
+- Slices: none. Every task above names the version it feeds; this one moves no governed version,
+  which is why its presentation sampling had to leave it for `V-concentration`. Evidence that
+  proves an already-published contract is the only work with no slice of its own.
 
-- [ ] Sample presentation curves to no more than 100 measured points, always including final 100%,
-  without changing the authoritative curve; add bilingual sampling caveat.
 - [ ] Enumerate the complete refusal and caveat catalogues and prove Arabic/English, audit, bundle,
   web, PDF, and Excel coverage equality.
 - [ ] Add named mutation proofs that fail if code substitutes observed-day counts for calendar
