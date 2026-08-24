@@ -447,11 +447,11 @@ CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.m
 
 | Slice | Publishes | Governed by | Tasks that must be inside it |
 |---|---|---|---|
-| `V-mapping` semantic admission | `rra003.mapping.v3` | `RRA-003` | CAL1-03 and CAL1-05a |
+| `V-mapping` semantic admission | `rra003.mapping.v3` | `RRA-003` | CAL1-03, CAL1-05a, and CAL1-03g |
 | `V-package` package, bases, and window alignment | `rra004.package.v3` | `RRA-004` | CAL1-04, CAL1-06, and CAL1-08a |
 | `V-formula` core formulas and refusal rules | `rra004.formula.v2` | `RRA-004` | CAL1-05b, CAL1-07a, CAL1-09a, CAL1-10a |
 | `V-comparison` comparison facts | `rra008.comparison.v2` | `RRA-008` | CAL1-07b |
-| `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08b |
+| `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08b. **Merges after `V-comparison`**, not merely after `V-formula` |
 | `V-basket` basket | `rra008.basket.v2` | `RRA-008` | CAL1-09b |
 | `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10b |
 
@@ -476,6 +476,18 @@ What the shared `rra004.package.v3` dependency requires is **ordering, not atomi
 
 **`rra004.formula.v2` is one version over one table.** `RRA-004` §"Core formulas and refusal rules" defines Revenue through Returns, absolute and percentage delta, items per transaction, attach rate for value, the concentration curve point, and top decile and quartile share in a single governed table, and `rra004.formula.v2` "governs the formulas, compatible populations, signs, zero/null/negative behavior, precision, and refusal rules **in this specification**". Those rows are spread across `CAL1-05`, `CAL1-07`, `CAL1-09`, and `CAL1-10`. Publishing `formula.v2` with `CAL1-05` alone would leave it incomplete and mutate it later without a new version; deferring it past the `RRA-008` slices would make those families consume a version that has not landed, which `RRA-008`'s exclusions forbid. **So `V-formula` lands every `RRA-004` formula change as one slice, and it merges before the four `RRA-008` family slices**, which consume it and publish only their own `rra008.*` versions.
 
+**Ordering alone is not sufficient, and `V-mapping` carries a fail-closed gate for every window the sequence opens.** Nothing in the runtime checks that the versions it combines agree. `packages.py` stamps `package_version=PACKAGE_VERSION`, `formula_version=FORMULA_VERSION` and `mapping_version=MAPPING_VERSION` from three independent constants with no compatibility refusal in that path; `bundle._FAMILIES` dispatches `comparison.derive`, `growth.derive`, `basket.derive` and `concentration.derive` unconditionally, each stamping its own `rra008.*.v1` constant without consulting `formula_version`.
+
+So every slice opens a window, not only the formula one. `V-mapping` alone makes the normalized-measure admission changes live — void-row exclusion, return derivation — while `rra004.package.v2` and `rra004.formula.v1` remain current, publishing changed results under legacy identities. `V-formula` alone changes the delta, attach, items-per-transaction and concentration-share rows while all four families still stamp `v1`. `RRA-004` forbids both: "A new input, mapping, formula, population, interpretation, correction, or serialized shape creates a new recorded version and stable identity."
+
+**The gate is therefore introduced whole in `V-mapping`, the first slice to move a version** (`CAL1-03g`). It is an **explicit table of admitted version pairs**, not a comparison: a consumer publishes only when the pairing it is handed appears in the table, and refuses otherwise.
+
+*A "newer than" predicate would be wrong, and stating why prevents it being reintroduced.* These identifiers are independent namespaces — `rra003.mapping.v3`, `rra004.formula.v2` and `rra008.basket.v2` share a numbering convention and nothing else — so their suffixes define no ordering to compare. A one-sided rule also guards one direction only: once a family reached `v2`, "refuse when the formula is newer" would happily stamp a successor family identity onto a package still carrying `rra004.formula.v1`. And it leaves an unrecognised version's handling undefined, where a table refuses it by construction. `RRA-008` frames the contract the same way — its `v2` families consume "the exact `rra003.mapping.v3`, `rra004.package.v3`, and `rra004.formula.v2` changes" — so every pairing outside the table refuses.
+
+Each later slice adds its own admitted pairs, with governed reason codes and complete accepted Arabic and English wording. The consequence is deliberate and recorded rather than hidden: **each family refuses from the moment a version it consumes moves until its own successor lands**, so the refusing set is largest right after `V-formula` and shrinks with each family slice — after `V-comparison`, three families still refuse; after `V-basket`, one. `V-concentration` empties it. A reasoned refusal is what this product offers in place of a plausible number under a stale identity. An implementer who finds the window unacceptable must not remove the gate; co-landing the dependent successors is the alternative, and it needs owner approval because it changes the reviewable unit.
+
+**`V-growth` merges after `V-comparison`.** `RRA-008` states that growth "consumes the exact PoP window selected by period comparison and may not select another", over "the structural coverage compatibility already accepted by comparison" and "comparison's accepted aligned daily measure bases". A `V-growth` landing first would have to consume comparison `v1`'s window or reselect one itself, and the specification forbids both.
+
 **`rra004.package.v3` publishes once, when `V-package` is complete, and `V-package` is larger than one task.** `RRA-004` defines that version to authorize readable population provenance, canonical transaction keys, retained reconciliation bases, coverage-manifest identity, **coverage signatures, aligned daily bases**, currency, and **growth rounding-residual evidence**. `CAL1-04` alone does not produce all of it: coverage signatures and aligned daily bases are `CAL1-06`, and the residual-evidence field is the package-shape half of `CAL1-08`. Merging `CAL1-04` as an independently mergeable predecessor would either publish an incomplete `v3` and later mutate it without a new version, or change the `v2` shape — both forbidden by the rules below. So `CAL1-04`, `CAL1-06`, and `CAL1-08`'s residual-evidence field are **one slice**, and `CAL1-08`'s growth formula work follows as `V-growth` over the published package.
 
 The release rules are therefore:
@@ -495,7 +507,7 @@ The release rules are therefore:
 |---|---|---|---|
 | CAL1-01 | Create an execution ledger against current `main`; map every RRA-003/004/008 requirement to implementation and test work | active successor specifications | Reviewed ledger; exact allowed/forbidden files per slice; the C0-first slice sequence and its version-publication order |
 | CAL1-02 | Add independent RED golden and adversarial fixtures before production changes | CAL1-01 | Expected values derived outside production helpers; tests fail against current defects for the intended reasons |
-| CAL1-03 | Implement **every** `V-mapping` semantic admission change `rra003.mapping.v3` governs, taking `CAL1-05a` with it: normalized event kind/status, source-contract declarations, currency, event and canonical transaction identity, coverage-manifest confirmation, **and the normalized measures — revenue and returns, additive discounts, extended-cost inputs, and units** | CAL1-02 | `rra003.mapping.v3` behavior, complete in one slice; ambiguous source semantics refuse affected populations |
+| CAL1-03 | Implement **every** `V-mapping` semantic admission change `rra003.mapping.v3` governs, taking `CAL1-05a` and `CAL1-03g` with it: normalized event kind/status, source-contract declarations, currency, event and canonical transaction identity, coverage-manifest confirmation, **and the normalized measures — revenue and returns, additive discounts, extended-cost inputs, and units** | CAL1-02 | `rra003.mapping.v3` behavior, complete in one slice; ambiguous source semantics refuse affected populations |
 | CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases. **Ships as one `V-package` slice with `CAL1-06` and `CAL1-08`'s residual-evidence field**; it is not independently mergeable | `V-mapping` merged | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
 | CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns. **Split across two slices — see the contribution table below** | per part | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
 | CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows. **Same `V-package` slice as `CAL1-04`** — `RRA-004` puts coverage signatures and aligned daily bases inside `rra004.package.v3` | `V-mapping` merged | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
@@ -516,17 +528,18 @@ Five tasks contribute to a slice they also build on. Stated at task level that r
 | Part | Work | Slice | Depends on |
 |---|---|---|---|
 | CAL1-05a | Normalized-measure admission for revenue, returns, discounts, extended cost, and units | `V-mapping` | CAL1-02 |
+| CAL1-03g | The version compatibility gate, whole: an explicit table of admitted version pairings — package and formula against mapping, each `RRA-008` family against the formula — publishing only on a listed pair and refusing every other, with governed bilingual wording | `V-mapping` | CAL1-02 |
 | CAL1-05b | The `RRA-004` core-metric formula and refusal rows | `V-formula` | `V-package` merged |
 | CAL1-07a | Absolute and percentage delta formula and refusal rows | `V-formula` | `V-package` merged |
 | CAL1-07b | Comparison facts and bilingual incomplete-window behavior | `V-comparison` | `V-formula` merged |
 | CAL1-08a | Growth rounding-residual evidence field in the package shape | `V-package` | `V-mapping` merged |
-| CAL1-08b | Growth decomposition populations, return exclusion, and the growth formula | `V-growth` | `V-formula` merged |
+| CAL1-08b | Growth decomposition populations, return exclusion, and the growth formula | `V-growth` | `V-comparison` merged |
 | CAL1-09a | Items-per-transaction and attach-rate formula and refusal rows | `V-formula` | `V-package` merged |
 | CAL1-09b | Basket populations and dimension eligibility | `V-basket` | `V-formula` merged |
 | CAL1-10a | Concentration curve-point and top decile/quartile formula and refusal rows | `V-formula` | `V-package` merged |
 | CAL1-10b | Concentration eligibility and full-set behavior | `V-concentration` | `V-formula` merged |
 
-`CAL1-03` takes `CAL1-05a` with it; `CAL1-04` and `CAL1-06` take `CAL1-08a` with them. Every `a` part is a prerequisite of the slice it sits in, never a consumer of it. `CAL1-01` validates this graph before the first slice opens: a part that both contributes to a slice and depends on it is a ledger defect, not a sequencing judgement.
+`CAL1-03` takes `CAL1-05a` **and `CAL1-03g`** with it; `CAL1-04` and `CAL1-06` take `CAL1-08a` with them. Every `a` part is a prerequisite of the slice it sits in, never a consumer of it. `CAL1-01` validates this graph before the first slice opens: a part that both contributes to a slice and depends on it is a ledger defect, not a sequencing judgement.
 
 ## Stop conditions
 
@@ -1539,10 +1552,10 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 ### Critical path
 
 1. **CAL1-01/02:** create the execution ledger from `f865079`, fix the slice sequence, add independent RED fixtures.
-2. **CAL1-03 + CAL1-05a:** implement and merge `V-mapping` complete. It merges before every later slice.
+2. **CAL1-03 + CAL1-05a + CAL1-03g:** implement and merge `V-mapping` complete, gate included. It merges before every later slice, and `V-mapping` is the slice that moves the first version — merging it without `CAL1-03g` opens the very window the gate exists to close.
 3. **CAL1-04 + CAL1-06 + CAL1-08a:** merge the complete `V-package` slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone.
 4. **CAL1-05b + CAL1-07a + CAL1-09a + CAL1-10a:** merge `V-formula`, publishing `rra004.formula.v2` once and complete. It merges before the derived families, which consume it.
-5. **CAL1-07b, CAL1-08b, CAL1-09b, CAL1-10b:** merge `V-comparison`, `V-growth`, `V-basket`, and `V-concentration` as ordered slices, each publishing one `rra008.*` version over the landed package and formula versions. Every slice carries its own refusals, bilingual wording, and surfaces.
+5. **CAL1-07b, then CAL1-08b, then CAL1-09b, then CAL1-10b:** merge `V-comparison`, `V-growth`, `V-basket`, and `V-concentration` in that order — `V-growth` after `V-comparison` because `RRA-008` makes growth consume comparison's window — each publishing one `rra008.*` version over the landed package and formula versions. Every slice carries its own refusals, bilingual wording, and surfaces.
 6. **CAL1-11/12:** run the final compatibility sweep; add mutation and pharmacy golden evidence.
 7. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
 8. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
