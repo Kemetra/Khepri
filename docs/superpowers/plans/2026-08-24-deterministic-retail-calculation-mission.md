@@ -79,9 +79,9 @@ a task that contributes to two versions contributes a part to each.
 | `V-comparison` | `rra008.comparison.v2` | Task 4's comparison facts and refusals | `V-formula` |
 | `V-growth` | `rra008.growth.v2` | Task 5's growth family | `V-comparison` |
 | `V-basket` | `rra008.basket.v2` | Task 6's basket family | `V-formula` |
-| `V-concentration` | `rra008.concentration.v2` | Task 7's concentration family, **plus Task 9's presentation sampling and its bilingual caveat** (`RRA-008` puts both in the concentration contract) | `V-formula` |
+| `V-concentration` | `rra008.concentration.v2` | Task 7's concentration family, **plus Task 9's presentation sampling and its bilingual caveat** (`RRA-008` puts both in the concentration contract) | `V-comparison`, `V-growth`, **and** `V-basket` — it merges **last** |
 
-Four consequences the task order alone does not give:
+Five consequences the task order alone does not give:
 
 - **`rra004.package.v3` spans three tasks.** `RRA-004` defines that one version to
   authorize readable population provenance, canonical transaction keys, retained
@@ -97,6 +97,13 @@ Four consequences the task order alone does not give:
 - **`V-mapping` carries every admission change `rra003.mapping.v3` governs**, including
   the normalized measures — revenue and returns, discounts, cost inputs, units — not
   only identity, currency and coverage confirmation.
+- **`V-concentration` merges last, and that is a dependency rather than a habit.** `RRA-008`
+  requires only growth after comparison, so basket and concentration have no inter-family order of
+  their own — which left `V-concentration` free to merge straight after `V-formula`, before the
+  other three. In that ordering the three unmerged families still stamp `v1`, so the refusing set
+  is not empty and Task 7's claim to close the window and restore the browser report would be
+  false. One family has to be designated last for either claim to be determinate; concentration is
+  it, and it now depends on the other three.
 - **`V-concentration` carries presentation sampling, which Task 9 held.** `RRA-008` puts
   it inside the concentration contract — "The full curve remains authoritative.
   Presentation-only sampling keeps no more than 100 points, including the final 100%
@@ -176,7 +183,10 @@ A family slice that leaves its own gate closed has not landed.
 Each slice runs its own RED, verified failure, minimal GREEN, focused regression,
 independent oracle, bilingual refusal wording, reconciliation, and the three required
 gates before it is proposed. The validation gate in Task 10 runs against the assembled
-contract once the last slice is merged, and no slice reaches a design partner before it
+contract once **every earlier slice has merged and the final slice is proposed** — its PR
+head is `main` plus that slice, which is the complete contract, assembled and not yet
+governing. Validating after the final merge would certify already-governing code and put
+the gate on the wrong side of owner approval. No slice reaches a design partner before it
 passes.
 
 `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md` §CAL1 carries the same slice map under
