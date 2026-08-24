@@ -1,1602 +1,1616 @@
-# Khepri Master Product Roadmap
+# Khepri Master Product Roadmap — Integrated Completion Plan v2
 
-**Status:** Proposed planning artifact. It is not a governing specification and grants no implementation authority.
+**Status:** Proposed planning artifact. This document grants no implementation authority and does not replace `governance/registry.yaml`, an active specification, or an active decision.
 
-**Recommended repository path after owner review:** `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
-**Baseline:** `Kemetra/Khepri` `main` at `cfca25490639b69d9db26b4ba0904977cfadad15` on 2026-08-13.
+**Repository:** `Kemetra/Khepri`
 
-**Audience:** Ahmed Shaaban (owner and merge authority), Claude Code (planner and adversarial reviewer), and Codex (bounded-slice implementer).
+**Verified baseline:** `main` at `f86507920155077fd3c87eb8878d29fb1624db69` on 2026-08-24.
 
-**Supersedes for planning purposes:** `docs/khepri-commercial-roadmap.md`, the earlier advisory
-plan. That document remains as a historical snapshot and should not be used to sequence work; its
-gating claim about `KHEPRI-DEC-008` is stale, because that decision is now `active`.
+**Audience:** Ahmed Shaaban (owner and merge authority), Claude Code (planning and adversarial review), Codex (bounded implementation), design reviewers, and future operators.
+
+**Purpose:** Provide one complete, dependency-ordered roadmap from the current calculation-correction program through a calculation-validated design-partner alpha, durable workspaces, an evidence-backed decision workspace, self-serve monetization, platform distribution, governed intelligence, and enterprise GA.
 
 ## Verification record
 
-This document was reviewed against `main` at `cfca25490639b69d9db26b4ba0904977cfadad15` before it
-was added. Confirmed at that commit:
+Checked against `main` at `f86507920155077fd3c87eb8878d29fb1624db69` before this document replaced its predecessor. Confirmed at that commit:
 
-- the baseline SHA matches `origin/main`, and `migrations/versions/` has exactly one head
-  (`20260813_0012`);
-- `#150`, `#152`, and `#155` are open and match their descriptions here;
-- `RCA-001` is `active` in `governance/registry.yaml`, and excludes persistent workspaces, report
-  history, retention changes, multi-dataset storage, and billing;
-- `KHEPRI-DEC-008` is `active`; it requires a target-selection artifact and deliberately selects no
-  provider, region, or residency;
-- the `#155` race is real: `LifecycleService` reads accounts, counts owners, and writes through
-  three stores that each open their own session;
+- the baseline SHA and date match `origin/main`, and `migrations/versions/` has exactly one head (`20260822_0020`);
+- `RRA-003`, `RRA-004`, and `RRA-008` are `active` in `governance/registry.yaml` and carry the successor semantics merged by `#264`; `RCA-001`, `RCA-002`, and `RRA-009` are `active`;
+- `rra003.mapping.v3` and `rra004.package.v3` are named in those specifications while `src/khepri/rra/mapping.py:21` still pins `rra003.mapping.v2`, so `CAL1` has not started;
+- `docs/superpowers/plans/` contains no `CAL1` plan and no execution ledger exists, which is why `CAL1` is `READY_FOR_PLAN` and not `READY_FOR_IMPLEMENTATION`;
+- `#152`, `#211`, and `#231` are the only open issues, and all three are carried in section 0.2;
+- the merged local staging stack matches the `OPS1` baseline described below — one built image running web, worker, and migrations against TLS PostgreSQL and MinIO;
+- `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` still carries `visibility_timeout_seconds` and `max_receive_count`, the retired broker keys `KHEPRI-DEC-008` says must leave the file, so `OPS1-09` is real outstanding work;
+- `KHEPRI-DEC-027` is `active` and blocks `OPS1-02` by name; `KHEPRI-DEC-013` is retired with no successor, so `STAT1`'s reciprocal-authority precondition is stated correctly;
 - the handoff gates and the CodeScene requirement match `AGENTS.md`.
 
-Corrections applied as a result of that review are marked in place: the R1 predicate correction and
-divergence note, the R4/R5 routing in the dependency graph, the migration-serialization note, the M1
-scope note, the status convention in section 15, and the R2, R5, and OPS1 status rows.
+Three corrections applied to the draft as a result of that review, marked in place. Successive rounds of adversarial review on `#266` found further defects of the same three kinds — an exception no artifact grants, a governed version published incomplete across slices, and a cross-reference into active governance broken by renumbering. Each was verified against the active artifact before it was applied, and each is recorded at the section it touches rather than listed here:
 
-Known drift **not** fixed here, because this program is docs-only:
-
-- the `count_owners` docstring in `src/khepri/rca/persistence.py` describes only the enabled and
-  not-purged conditions and omits the `credential_digest` clause the query actually applies. Code
-  is correct; the docstring is incomplete. Record as an issue, fix alongside R1.
-- `specs/001-rca-001-commercial-identity/` is still stale and still instructs agents not to execute.
-  It also cites `governance/registries/decisions.yaml`, a path that no longer exists. That is the
-  subject of `R0-02` and `R0-03` and is not addressed by this file alone.
-
-**Update, 2026-08-13 (`R0-02`/`R0-03`/`R0-05`).** The second item is now addressed. Each stale
-document carries a supersession banner, and three new files sit beside them: `SUPERSEDED.md` (the
-delta), `STATUS.md` (per-requirement implementation status), and `NEXT-SLICES.md` (the issue-to-task
-map). The originals were **not** rewritten, for the reason this document already gives about dated
-advisories — and because they reason from a Constitution and an approval framework that commit
-`2fc6c70` deleted, so a line-by-line patch would cite artifacts that no longer exist.
-
-That reconciliation also corrected an assumption in this roadmap. Section 3 lists
-`LifecycleService.assert_account_active` as the FR-008 chokepoint shipping unused, which is
-accurate — but `src/khepri/rca/isolation.py:30-40` independently enforces account liveness,
-membership, and uniform refusal at scope resolution. So FR-022, FR-023, FR-024, FR-025, and FR-028
-are **partially implemented**, not absent, and `R6` extends an existing guard rather than
-introducing the first one. `STATUS.md` records the evidence, and counts the gap: of the 30
-requirements not fully implemented, 18 trace to three structural absences (no sessions, no
-membership writes, no authorization layer — `R3`, `R2`, `R6`), 6 more to invitations and recovery
-not existing (`R4`, `R5`), and the remaining 6 to narrower causes, four of which are the same one —
-`IsolationService` is instantiated nowhere outside tests.
-
-The first item stands, and `NEXT-SLICES.md` carries it forward as an `R1` follow-up.
-
-**Update, 2026-08-13 (`R1` complete, `#155` closed at `c8c6edb`).** Four things this program
-established that later programs inherit, recorded here because each was decided during R1 rather
-than planned in this document:
-
-1. **`OrganizationStore.apply_owner_reducing_change` is the seam `R2-06` reuses.** It opens one
-   transaction, locks the account's owner-role memberships with `SELECT … FOR UPDATE`, counts
-   effective owners on the locked rows, and either writes or refuses. `R2`'s revoke and demote
-   must route through it rather than adding a second guard.
-2. **CI now runs PostgreSQL, and a skipped concurrency test fails the build.** This resolves the
-   open decision in `R1-01` §8 and `R1-02` §9 — option (a) was taken, as its own change
-   (`8ed6e24`). `.github/scripts/require_concurrency_tests.py` refuses both a skip and a marker
-   that matches nothing.
-3. **A two-thread test is not a reliable proof here.** The two-owner concurrency test passed
-   against the *broken* code; only the three-owner case failed. Under `READ COMMITTED` two
-   contenders usually do not interleave badly enough. Any later concurrency proof — `R2-06`
-   included — needs at least three contenders, or it can report green against a live defect.
-4. **The effective-owner rule now has one SQL expression** (`_effective_owner_conditions`), and a
-   parametrized test asserts it agrees with `Account.can_authenticate` across the four states
-   that matter. The divergence `R1-01` was asked to resolve is now enforced rather than reviewed.
-
-**North star:** Move Khepri from a secure bilingual single-assessment private-beta journey into a sellable enterprise retail analytics platform with durable organization workspaces, analysis history, period comparison, evidence-backed dashboards and reports, team administration, onboarding, billing, agency tenancy, recurring delivery, and a governed evidence-backed AI assistant.
+1. **`CAL1` claimed an exception to the small-slice rule that no artifact grants it.** `governance/CONSTITUTION.md` Article IV admits product code only in small, independently verifiable slices, and the merged design at `18019b5` states that `C0` must merge before `C1`-`C4` as separately versioned slices. The draft's justification — that the successor families share package and formula identities — does not hold, because the governed successor versions are per family. See the `CAL1` release strategy.
+2. **Task identifiers were being renumbered across the replacement**, which would have retargeted `KHEPRI-DEC-027`'s blocking clause from CI-only provisioning to a sizing reissue, and left `RCA-002`'s `R8-01` and `R5-02`/`R5-04` citations, plus `KHEPRI-DEC-025`'s `R5-02`…`R5-06`, resolving to nothing at this path. See section 0.1, the `OPS1` table, and the `R5` program.
+3. **The status vocabulary was used without being defined, and open issues had no home.** Section 15 restores the convention and the next-actionable-task rule, at the section number `KHEPRI-DEC-025` cites; section 0.2 carries `#152`, `#211`, and `#231` forward.
 
 ---
 
-## 1. Authority and operating rules
+## 0. Merge strategy and source-of-truth rule
+
+This document is the single current planning source at:
+
+`docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`
+
+Its predecessor is archived, unedited, at `docs/product/history/KHEPRI_MASTER_PRODUCT_ROADMAP_2026-08-24.md`.
+
+Merge procedure, as executed:
+
+1. The previous roadmap moved to `docs/product/history/KHEPRI_MASTER_PRODUCT_ROADMAP_2026-08-24.md` with its historical dispositions unedited.
+2. This document was placed at `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`.
+3. **Task identifiers and the two cited section numbers are stable across the replacement.** The repository cites this file mostly by task ID — four active governed artifacts do — and two of them additionally cite section numbers: `KHEPRI-DEC-025` cites `§15` and `KHEPRI-DEC-023` cites `§16`. Both keep their contents. Section 0.1 records what may not be renumbered, and says where each program's task table now lives.
+4. Historical status prose is not copied forward; the archived roadmap and the merged pull requests preserve it. Tracked open defects are the deliberate exception and carry forward in section 0.2, because an issue with no planning home is an issue nobody sequences.
+5. Update this roadmap only after a merge to `main`, except for clearly marked proposals.
+
+The roadmap is not authority. If this roadmap conflicts with an active specification or decision, governance wins and the roadmap must be reconciled before implementation continues.
+
+### 0.1 Identifier continuity
+
+`R0`-`R8`, `OPS1`, and `S1` began in the archived roadmap. Their identifiers keep the meanings they held there. A program may gain a new identifier; renumbering an existing one silently retargets every citation below, including the blocking clause of an active decision.
+
+Citations in **active** governed artifacts:
+
+| Artifact | Cites | What the identifier must keep meaning |
+|---|---|---|
+| `governance/decisions/KHEPRI-DEC-027-digitalocean-fra1-target-direction.md` | `OPS1-02` | "`OPS1-02` remains blocked until the final target-selection/environment descriptor is complete and approved." `OPS1-02` is CI-only provisioning of the non-production environment, and nothing else. |
+| `governance/specifications/RCA-002.md` | `R5-02`, `R5-04`, `R8-01` | `R8-01`'s surface map and its open browser-security-policy question; the two deferred `R5` credential tasks. |
+| `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` | `R3-11`, `R5-02`…`R5-06` | The Clerk credential-ownership dispositions. |
+| `governance/decisions/KHEPRI-DEC-023-commercial-consent-route-authorization.md` | `R6-01`, `R6-08`, `R7-04`, `R7-05`, `R7-06` | The merged commercial-bridge slice boundaries. |
+
+Citations by **section number**, which the replacement renumbers:
+
+| Artifact | Cites | Resolves to |
+|---|---|---|
+| `governance/decisions/KHEPRI-DEC-025-...` (active) | "§15's rule that `MERGED` requires a `main` SHA" | **§15**, unchanged — the status convention keeps that number. |
+| `governance/decisions/KHEPRI-DEC-023-...` (active) | `R7-06`'s definition of done includes "flipping §16's `R7` row" | **§16**, unchanged — the status table keeps that number. |
+
+**`§15` and `§16` are therefore fixed points, and the rest of the document is numbered around them.** Both are honoured by keeping each section where its decision expects it, not by a redirect note: this roadmap does not govern, so it cannot retarget a decision's reference. An earlier revision of this replacement moved the convention to `§16.1` and added a note; that was wrong for exactly this reason. A future reorganization must either preserve both numbers or amend the citing decisions through the governed process first.
+
+These two were found by searching every `active` artifact in `governance/registry.yaml` for a section citation next to roadmap vocabulary — a row, a status, the `MERGED` rule. A search for task identifiers alone misses them.
+
+Merged design, plan, and reconciliation documents add citations to `R0-02`, `R0-03`, `R0-05`, `R1-01`, `R1-02`, `R3-09`, `R4-01`, `R5-01`, `R6-01`, `R7-01`, `R7-02`, `R7-05`, `R7-06`, `R8-01`, `R8-02`, `OPS1-01`, `OPS1-02`, and `OPS1-05` across `specs/001-rca-001-commercial-identity/`, `docs/superpowers/`, and `docs/platform/proposed-governance/`.
+
+Where each task table now lives:
+
+| Program | Task table |
+|---|---|
+| `R0`-`R4`, `R6`, `R7` | Archived roadmap only. These are `MERGED`; their tasks are closed and are not re-planned here. |
+| `R5` | Identifiers and dispositions preserved below; the full `R5-01` design record stays in the archive. |
+| `R8` | `R8-01`…`R8-07` in the archive, including the `R8-03` closure record. `R8-08`…`R8-11` below. |
+| `OPS1`, `S1` | Below, with archived identifiers preserved and new work appended. |
+| Everything else | Below. First defined in this document. |
+
+### 0.2 Open tracked debt carried forward
+
+| Issue | Subject | Owner | Disposition |
+|---|---|---|---|
+| `#152` | Apply the RCA construction-boundary stance to `khepri.rra` records | `S1` | `S1-05` closes it only after every classified high-risk record is addressed or explicitly accepted |
+| `#231` | `R7-03` ships live-authorization evidence with no mutation proof that its guards can fail | `S1` triage, then one bounded slice | A green evidence suite is not proof a guard can fail. Rank it in `S1-02`, ahead of comparison work that inherits those guards |
+| `#211` | Deferred minor review findings, batched | Whichever program next touches the named code | Includes consolidating the two boundary scanners `R7-07` left behind. Drain opportunistically; do not let it grow unread |
+
+None of the three blocks `CAL1`.
+
+---
+
+## 1. Product north star
+
+Khepri is a governed retail decision platform that converts imperfect operational exports into reproducible bilingual analysis, evidence-backed reports, and decision workflows, while clearly refusing any result whose business meaning, population, identity, coverage, or formula cannot be proven.
+
+Khepri is not positioned as:
+
+- another generic BI dashboard;
+- a customer-authored formula engine;
+- a general-purpose semantic-model editor;
+- a chat-with-CSV product;
+- a forecasting platform;
+- a replacement for a customer data warehouse;
+- a copy of AtScale, Cube, or ThoughtSpot.
+
+Khepri combines four product strengths:
+
+1. **Semantic admission:** prove what source data means before calculation.
+2. **Deterministic retail truth:** publish only versioned facts over compatible populations.
+3. **Evidence and refusal:** every material claim is traceable; unsupported claims are refused with a reason.
+4. **Decision experience:** workspaces, comparison, dashboards, guided exploration, watchlists, APIs, and AI all consume the same governed facts.
+
+The external product pattern is informed by three reference categories:
+
+- AtScale-style semantic rigor, validation, lineage, and operations;
+- Cube-style curated semantic views, catalog, APIs, and embedding;
+- ThoughtSpot-style question-first UX, narrative dashboards, guided exploration, and watchlists.
+
+Khepri's differentiator remains its upload-first admission, refusal system, retail specialization, bilingual parity, and evidence contract.
+
+---
+
+## 2. Non-negotiable operating rules
 
 Before any agent changes code or governed artifacts, it must read:
 
 1. `AGENTS.md`
 2. `governance/CONSTITUTION.md`
 3. `governance/registry.yaml`
-4. The active governed specification for the requested slice
-5. The relevant design, plan, issue, and prior merged PRs
+4. the active specification and decisions for the requested slice;
+5. this roadmap;
+6. the relevant issue, design, plan, tests, and prior merged PRs.
 
-Repository rules that control this roadmap:
+Repository rules:
 
-- `governance/registry.yaml` is the source of truth for artifact identity, state, dependencies, and supersession.
-- A branch or pull request is only a proposal. Ahmed Shaaban merging to `main` is the approval event.
-- Product code must be linked to an active specification and delivered as a small, independently verifiable slice.
-- Ambiguous identity, scope, privacy, data, runtime, and authorization boundaries fail closed.
-- The required local handoff gates are:
-  - `uv run khepri-gov validate`
-  - `uv run ruff check .`
-  - `uv run pytest`
-- CodeScene is a required server-side PR gate. Every new file must score 10.00 and no tracked hotspot may decline.
-- Parallel Alembic branches must not leave multiple heads. The later branch to merge must re-point its `down_revision`.
-- Do not introduce a separate SPA or Node.js runtime under the current private-beta architecture. FastAPI, Jinja2, bundled CSS, and minimal bundled JavaScript remain the default until an active architecture decision says otherwise.
-- RCA may orchestrate commercial identity and workspace behavior, but authoritative retail calculations must continue to originate in RRA fact contracts.
-- Do not copy application code, catalogs, specifications, or governance records from Seshat-Platform.
-
----
-
-## 2. Agent responsibility model
-
-### Ahmed Shaaban
-
-- Chooses product direction and unresolved owner decisions.
-- Approves scope before implementation.
-- Approves commit, push, PR, and merge actions.
-- Is the only merge authority for governing changes.
-
-### Claude Code
-
-Primary role: planner and adversarial reviewer.
-
-Claude Code should:
-
-- inspect current repository truth before planning;
-- reconcile the requested slice against active governance and merged code;
-- identify missing decisions, unsafe assumptions, stale tests, race conditions, and scope creep;
-- produce or review `spec.md`, `clarify.md`, `plan.md`, `tasks.md`, and test matrices;
-- review Codex diffs and PRs adversarially;
-- propose mutation tests or deliberate breakage checks for load-bearing guards;
-- stop before implementation unless Ahmed explicitly assigns implementation.
-
-### Codex
-
-Primary role: bounded implementation.
-
-Codex should:
-
-- implement exactly one approved task or tightly coupled task group;
-- start with repository state checks;
-- write the expected failing test before implementation where practical;
-- avoid unrelated refactors and framework changes;
-- run all required validation;
-- report changed files, task completion, tests, risks, and forbidden-scope confirmation;
-- stop before commit, push, PR, or merge unless Ahmed explicitly authorizes those actions.
-
-### Standard slice loop
-
-1. Claude Code performs pre-flight and produces an implementation-ready plan.
-2. Ahmed approves the bounded slice.
-3. Codex implements and validates only that slice.
-4. Claude Code reviews the diff, tests, scope, and security assumptions.
-5. Codex addresses only approved review findings.
-6. Ahmed decides whether to commit, push, open a PR, and merge.
-7. The roadmap and task status are updated only after merge to `main`.
+- Ahmed Shaaban is the only merge authority.
+- A branch or PR is a proposal until merged to `main`.
+- Product code requires active authority.
+- **Product code is admitted only in small, independently verifiable slices linked to an active specification** (`governance/CONSTITUTION.md` Article IV, repeated in `AGENTS.md`). A slice does not widen its specification, privacy boundary, runtime boundary, or data use. **This roadmap grants no exception to that rule, to any program, including `CAL1`.**
+- Ambiguity in identity, scope, semantics, population, privacy, retention, or runtime fails closed.
+- Authoritative retail arithmetic stays in RRA facts and derived fact families.
+- RCA owns commercial identity, organization/workspace workflow, authorization, and product orchestration.
+- Templates, controllers, dashboards, APIs, semantic views, and AI may select and present facts; they may not recalculate them.
+- PostgreSQL remains canonical durable operational state.
+- Object storage remains provider-portable and application-encrypted.
+- The current private-beta UI remains server-rendered FastAPI/Jinja2 with bundled CSS and minimal bundled JavaScript until an active architecture decision changes it.
+- No external fonts, CDNs, analytics scripts, or runtime assets.
+- Arabic and English state, action, fact, caveat, refusal, and evidence coverage must remain equal.
+- Operational and product telemetry must remain content-free.
+- No customer raw rows, source column values, unapproved personal data, filenames, secrets, **opaque owner or session identifiers**, or storage paths may be sent to an AI provider. The qualifier is load-bearing: `RRA-005` requires `NarrativeAdapter` to send approved aggregate facts, safe labels, caveats, language instructions, and **citation identifiers**, and to validate the response against those supplied fact IDs. A blanket ban on identifiers would make grounded, cited provider output impossible.
+- One Alembic head must be preserved.
+- Required handoff gates are `uv run khepri-gov validate`, `uv run ruff check .`, `uv run pytest`, relevant integration tests, and the required server-side CodeScene gate.
 
 ---
 
-## 3. Current product baseline
+## 3. Canonical architecture
 
-Khepri already has:
+### 3.1 Runtime shape
 
-- the governed RRA analysis engine;
-- deterministic mapping, facts, narrative, and bilingual report contracts;
-- encrypted report artifact publication;
-- English and Arabic HTML, PDF, and Excel delivery;
-- a responsive, accessible private-beta browser journey:
-  - Upload
-  - Review
-  - Processing
-  - Report
-- durable RCA accounts, organizations, owner memberships, and opaque isolation scopes;
-- sealed RCA record construction boundaries;
-- account disablement, re-enablement, retention, purge, and sequential final-owner protection;
-- `LifecycleService.assert_account_active`, which ships unused as the chokepoint `FR-008` requires.
+The default architecture remains one deployable Khepri image with separate process roles:
 
-Because that chokepoint already exists, `R3-05` wires an existing guard into session resolution
-rather than designing a new one, and R3 is correspondingly cheaper than its task count suggests.
+```text
+Browser / API consumer
+        |
+        v
+Khepri Web role
+        |
+        +--------------------+
+        |                    |
+        v                    v
+PostgreSQL             Encrypted object storage
+        ^                    ^
+        |                    |
+Khepri Worker role ----------+
+```
 
-The baseline is not yet a complete enterprise product because it does not yet provide:
+No Kubernetes, Kafka, Redis, RabbitMQ, or separate frontend runtime is introduced without a measured requirement and active authority.
 
-- complete RCA authentication sessions and recovery;
-- complete membership role changes, revocation, and expiring audit events;
-- organization invitations;
-- the canonical commercial authorization checkpoint and active-organization context;
-- a commercial application shell around the beta journey;
-- durable customer workspaces or report history;
-- multi-dataset comparison;
-- an executive dashboard;
-- public onboarding, billing, agency tenancy, recurring delivery, or an AI assistant.
+### 3.2 Analytical layers
 
-Open repository issues at this baseline:
+```text
+Source upload / future connector
+        |
+        v
+Semantic admission
+- source contract
+- event kind/status
+- identity/grain
+- currency/measure basis
+- coverage manifest
+        |
+        v
+Governed fact and evidence graph
+- population-certified bases
+- facts and series
+- refusals and caveats
+- versions and citations
+- reconciliation
+        |
+        +-------------------------+
+        |                         |
+        v                         v
+Curated semantic views       Trust/catalog surfaces
+        |                         |
+        +------------+------------+
+                     v
+Customer decision experience
+- report
+- workspace/history
+- compare
+- executive overview
+- guided exploration
+- watchlists
+- Ask Khepri
+                     |
+                     v
+Read APIs / embeds / optional statistical evidence
+```
 
-- `#150` - membership roles, revocation, final-owner protection, and 12-month membership audit events;
-- `#155` - the final-owner guard and its write are not in one transaction;
-- `#152` - selective RRA construction-boundary hardening.
+### 3.3 Canonical product object graph
+
+```text
+Organization
+  |
+  +-- Workspace
+        |
+        +-- DatasetVersion
+        |     - input digest
+        |     - source contract
+        |     - mapping version
+        |     - coverage manifest
+        |
+        +-- AnalysisRun
+        |     - admitted semantic state
+        |     - fact package
+        |     - report bundle
+        |     - evidence/refusals/caveats
+        |
+        +-- ComparisonRun
+        +-- SavedView / SavedAnswer
+        +-- Watchlist
+        +-- Activity / deletion evidence
+
+Global governed registries
+  +-- MetricDefinition
+  +-- PopulationDefinition
+  +-- SemanticViewDefinition
+  +-- Reason/Caveat vocabulary
+  +-- Formula and contract versions
+```
+
+No duplicate writable representation of a metric, membership, authorization rule, or calculation is permitted.
 
 ---
 
-## 4. Product end state
+## 4. Product surfaces and personas
 
-Khepri is considered enterprise-complete when an authorized customer can:
+Khepri evolves as one product with role-scoped surfaces, not three separate applications.
 
-1. create or access a durable account;
-2. enter one organization at a time under live authorization;
-3. invite and administer team members safely;
-4. create a durable workspace owned by the organization;
-5. upload multiple governed datasets over time;
-6. review mapping and provenance before analysis;
-7. generate and retain complete bilingual reports under an approved retention policy;
-8. compare periods, branches, categories, and other governed dimensions;
-9. view an executive dashboard whose values originate only from governed RRA facts;
-10. open evidence for every material claim;
-11. manage plan, quota, subscription, and invoices;
-12. optionally operate an agency portfolio with strict client isolation;
-13. schedule recurring delivery through approved channels;
-14. ask an AI assistant questions that can answer only from governed facts and must cite evidence;
-15. use the service in a production environment with tested backup, restore, observability, incident response, security, and release controls.
+### 4.1 Customer Decision UI
+
+Primary users: pharmacy owner, branch manager, commercial manager, finance manager.
+
+Target navigation by M4:
+
+```text
+Overview
+Workspaces
+Datasets
+Analyses
+Compare
+Branches
+Products & Categories
+Basket & Concentration
+Reports
+Metrics
+Watchlists
+Team
+Settings
+```
+
+### 4.2 Analyst / Operator Studio
+
+Primary users: Khepri operator, implementation analyst, support engineer.
+
+```text
+Semantic admission
+Mapping review
+Coverage and identity checks
+Metric availability
+Golden-fixture verification
+Analysis and report verification
+Dataset/analysis version diff
+```
+
+### 4.3 Governance / Operations Console
+
+Primary users: maintainers and operational reviewers.
+
+```text
+Semantic catalog
+Lineage
+Validation findings
+Jobs and retries
+Runtime health
+Metric/refusal usage
+Model and formula versions
+Artifact publication
+Performance and cost
+```
+
+These are permissions and route groups inside the current architecture. A separate SPA or service is not implied.
 
 ---
 
-## 5. Milestones and release gates
+## 5. Milestones and exit gates
 
-| Milestone | Product state | Exit gate |
-| --- | --- | --- |
-| M0 | Current private-beta baseline | Already on `main` |
-| M1 | RCA-001 complete and concurrency-safe | All RCA-001 scenarios pass; `#150` and `#155` closed; canonical authorization exists |
-| M2 | Commercial design-partner alpha | Account/org sign-in shell embeds the current analysis journey; team and org switching work |
-| M3 | Durable workspace beta | Approved retention decision and workspace specification; history and deletion lifecycle work |
-| M4 | Sellable analytics core | Multi-dataset comparison, executive dashboard, and evidence-backed report workspace work |
-| M5 | Paid self-serve candidate | Public onboarding, entitlements, billing, quotas, and supportable operations work |
-| M6 | Multi-tenant growth product | Agency portfolios and recurring delivery work without weakening isolation |
-| M7 | Evidence-backed intelligence | Governed AI assistant passes grounding, privacy, refusal, and bilingual evaluation gates |
-| M8 | Enterprise GA | Security review, restore exercises, capacity evidence, release controls, support procedures, and enterprise identity options are complete |
+| Milestone | Product state | Required exit gate |
+|---|---|---|
+| **M0** | Secure private-beta baseline | Existing analysis journey, governed RRA reports, and runtime baseline on `main` |
+| **M1** | Commercial identity and authorization spine | Membership, sessions, invitations, canonical authorization, and commercial RRA bridge merged and concurrency-safe |
+| **M2** | Calculation-validated design-partner alpha | CAL1 complete; shell and approved browser/assisted auth work; analysis quality and evidence are visible; activation telemetry exists; full journey passes in production-like local staging and an owner-approved non-production hosted environment before external use |
+| **M3** | Durable trust workspace beta | Active retention/workspace authority; multiple dataset versions and analyses retained; history, report reopen, deletion, evidence, and metric catalog work |
+| **M4** | Sellable decision workspace | Governed multi-period comparison, curated semantic views, executive overview, branch/product/basket/concentration modules, evidence drawer, and deterministic guided drill-down work |
+| **M5** | Paid self-serve candidate | Successor commercial identity authority replacing the provisional Clerk admission; public or assisted onboarding under active authority; plans, billing, entitlements, quotas, usage, invoices, and supportable operations work |
+| **M6** | Multi-tenant and distribution growth | Agency portfolios, deterministic watchlists, recurring delivery, selected governed connectors, and optional read-only embedding/API distribution work |
+| **M7** | Evidence-backed intelligence | Ask Khepri passes grounding, refusal, privacy, bilingual, and evidence evaluations; optional Seshat statistical evidence may ship only under its own successor authority |
+| **M8** | Enterprise GA | Independent security review, restore/deletion exercises, capacity evidence, SSO/SCIM roadmap, release controls, incident/support procedures, semantic operations, and accurate customer documentation are complete |
 
-M1 is a milestone, not a slice. Its exit gate spans R1 through R6 — effectively the whole of
-`RCA-001` — so the immediate actions in section 12 are the first steps of M1, not all of it. Do not
-read "M1" as a single bounded piece of work.
-
-The first genuinely sellable milestone is M4. M2 can support design partners, but it is still a single-assessment experience. M3 creates repeat use. M4 creates decision value.
+M4 remains the first broadly sellable analytics milestone. M2 supports controlled design partners; M3 creates repeat use; M4 creates recurring decision value.
 
 ---
 
 ## 6. Master dependency graph
 
 ```text
-M0 CURRENT BASELINE
- |
- +--> R0 Roadmap and Spec Kit truth reconciliation
- |
- +--> R1 Transaction boundary and concurrent final-owner safety (#155)
-       |
-       +--> R2 Membership lifecycle and audit retention (#150)
-       |     |
-       |     +--> R4 Organization invitations    [side branch; not a gate on R6]
-       |
-       +--> R3 Authentication sessions
-             |
-             +--> R5 Account recovery            [side branch; not a gate on R6]
+MERGED COMMERCIAL SPINE
+R0 -> R1 -> R2/R3 -> R6 -> R7 -> R8 shell base
 
-R2 and R3 together gate the authorization chain:
-
-R6 Canonical authorization and active organization
- |
- +--> R7 RCA-to-RRA commercial bridge
-       |
-       +--> R8 Commercial application shell
-             |
-             M2 DESIGN-PARTNER ALPHA
-
-Parallel after M1 safety:
-  O1 Target selection and production operations track
-  S1 Selective RRA construction-boundary triage (#152)
-  U1 Design system and bilingual accessibility track
+CURRENT CRITICAL PROGRAM
+CAL1 Deterministic calculation correction
+  |
+  +--> T1 Trust foundation and metric catalog minimum
+  |
+  +--> R8-08 Activation telemetry scope and implementation
+  |
+  +--> approved browser/assisted identity handoff if required
+  |
+  +--> OPS1 hosted non-production readiness
+  |
+  M2 CALCULATION-VALIDATED DESIGN-PARTNER ALPHA
 
 M2
- |
- +--> G2 New retention decision for durable retail content
- +--> G3 Active workspace/history specification
-       |
-       +--> W1 Workspace and durable analysis history
-             |
-             M3 DURABLE WORKSPACE BETA
-             |
-             +--> G4 Comparison specification split between RCA and RRA
-                   |
-                   +--> C1 Multi-dataset comparison facts and delivery
-                         |
-                         +--> D1 Executive dashboard and evidence workspace
-                               |
-                               M4 SELLABLE ANALYTICS CORE
-                               |
-                               +--> G5 Public onboarding and abuse-control specification
-                               +--> G6 Billing and entitlement specification
-                                     |
-                                     +--> B1 Self-serve onboarding and billing
-                                           |
-                                           M5 PAID SELF-SERVE CANDIDATE
-                                           |
-                                           +--> G7 Agency tenancy specification
-                                           +--> G8 Recurring delivery specification/runtime decision
-                                                 |
-                                                 +--> A1 Agency and scheduled delivery
-                                                       |
-                                                       M6 MULTI-TENANT GROWTH PRODUCT
-                                                       |
-                                                       +--> G9 AI assistant specification and provider/privacy decision
-                                                             |
-                                                             +--> AI1 Evidence-backed assistant
-                                                                   |
-                                                                   M7 EVIDENCE-BACKED INTELLIGENCE
-                                                                   |
-                                                                   +--> E1 Enterprise GA hardening
-                                                                         |
-                                                                         M8 ENTERPRISE GA
+  |
+  +--> G2 Retention decision
+  +--> G3 Workspace/history specification
+           |
+           v
+          W1 Durable workspace and history
+           |
+           +--> T1 full catalog/lineage
+           |
+           M3 DURABLE TRUST WORKSPACE BETA
+           |
+           +--> G4 RCA/RRA comparison authority
+                 |
+                 v
+                C1 Multi-dataset comparison
+                 |
+                 v
+                SV1 Curated semantic views
+                 |
+                 v
+                D1 Executive decision workspace
+                 |
+                 +--> X1 deterministic guided exploration MVP
+                 |
+                 M4 SELLABLE DECISION WORKSPACE
+
+After M4, parallel growth tracks:
+
+  G5/ON1 Public onboarding
+  G6/B1 Billing/entitlements
+  API1 Read APIs and embedding
+  ING1 Governed ingestion connectors
+  G8/MON1/S2 Watchlists, alerts, and recurring delivery
+  G7/A1 Agency tenancy
+  OPS2 Semantic operations and performance
+  STAT1 Optional Seshat statistical evidence
+
+G5/ON1 + G6/B1 -> M5 PAID SELF-SERVE
+G7/A1 + MON1/S2 + selected API1/ING1 -> M6 DISTRIBUTION GROWTH
+T1 + SV1 + D1 + G9 + AI1 -> M7 EVIDENCE-BACKED INTELLIGENCE
+All product programs + OPS1/OPS2 + E1 -> M8 ENTERPRISE GA
 ```
 
 ---
 
-# PROGRAM R0 - Roadmap and truth reconciliation
+## 7. Program inventory and ownership
 
-## Goal
-
-Make the repository's working plans accurately describe current `main` before another agent implements from them.
-
-The existing Spec Kit working directory for RCA-001 predates the current active registry and merged slices. It must not remain an instruction source that says implementation is blocked or asks agents to rebuild code already on `main`.
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R0-01 | Snapshot current `main`, open issues, merged PRs, active governance, and implemented RCA-001 requirements | none | R0-02 | Current-state matrix |
-| R0-02 | Reconcile `specs/001-rca-001-commercial-identity/` with current registry and merged code | none | R0-01 | Updated pointer, plan, tasks, analyze, checklist |
-| R0-03 | Mark completed, partially complete, and unimplemented RCA-001 requirements without restating governed requirements | R0-01 | no | Requirement-to-code status matrix |
-| R0-04 | Add this master roadmap as a non-governing planning artifact | R0-01 | R0-02 | Roadmap file with baseline SHA |
-| R0-05 | Create issue/task mapping for the next three bounded slices only | R0-02, R0-03 | no | `#155`, `#150`, sessions plan mapped to task IDs |
-
-## Required acceptance criteria
-
-- `governance/specifications/RCA-001.md` remains the only authoritative RCA-001 requirement source.
-- Working docs do not claim RCA-001 is draft or implementation-blocked when the registry says active.
-- Merged work is not recreated under old task instructions.
-- No product code, migration, or runtime behavior changes in this program.
-- Governance validation, Ruff, and the relevant documentation checks pass.
-
-## Parallelism
-
-R0-01 and R0-02 may start in parallel, but R0-03 and R0-05 must use the same baseline commit and should merge as one docs-only proposal to avoid two competing task maps.
+| Program | Primary owner | Purpose |
+|---|---|---|
+| R0-R8 | Existing RCA/RRA/runtime authorities | Commercial identity, authorization, bridge, and shell |
+| **CAL1** | RRA-003/004/008 | Correct deterministic semantics, populations, windows, and publication |
+| **T1** | New/extended RRA + RCA presentation authority | Metric definitions, analysis quality, evidence, lineage, bilingual vocabulary |
+| **U1** | RCA-002 and presentation authority | Cross-cutting design system and visual QA |
+| **OPS1** | Runtime/deployment decisions | Non-production and production-readiness foundation |
+| **G2/G3/W1** | New retention and RCA workspace authority | Durable datasets, analyses, reports, history, deletion |
+| **G4/C1** | Split RCA/RRA authority | Governed multi-dataset comparison |
+| **SV1** | RRA definition + RCA orchestration | Curated no-calculation semantic views |
+| **D1** | RCA product surface over RRA facts | Executive dashboard and report workspace |
+| **X1** | RCA orchestration over SV1 | Deterministic guided exploration and saved answers |
+| **G5/ON1** | New onboarding authority | Public/assisted onboarding and abuse controls |
+| **G6/B1** | Billing/entitlement authority | Plans, payments, quotas, usage, invoices |
+| **API1** | New API/embed authority | Read-only semantic API and embedded components |
+| **ING1** | New ingestion/runtime authority | Selected governed connectors beyond manual upload |
+| **G7/A1** | Agency tenancy authority | Agency/client portfolios and delegated access |
+| **G8/MON1/S2** | Scheduling/notification authority | Watchlists, deterministic alerts, recurring delivery |
+| **STAT1** | Successor cross-repository authority | Optional Seshat-derived statistical evidence |
+| **G9/AI1** | AI provider/privacy/product authority | Evidence-backed Ask Khepri |
+| **OPS2** | Operations authority | Semantic/query observability, caching, cost and capacity |
+| **S1** | RRA hardening | Selective construction-boundary hardening |
+| **E1** | Enterprise decisions and operating model | Security, identity, resilience, support, release readiness |
 
 ---
 
-# PROGRAM R1 - Concurrent final-owner safety (#155)
+# PROGRAM CAL1 — Deterministic calculation correction and validation
 
 ## Goal
 
-Make the FR-013 guard and the owner-reducing write one atomic decision before membership revocation and role demotion are implemented.
+Implement the active RRA-003/004/008 successor contracts so Khepri publishes a fact only when source semantics, event identity, transaction identity, currency, population, and calendar coverage are proven.
 
-## Why it is first
+## Release strategy
 
-The current sequential path is protected, but two concurrent calls can both pass the guard before either write commits. Membership revocation and role demotion will inherit the same race. Building membership behavior first would duplicate a known defect.
+CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.md` Article IV admits product code "only in small, independently verifiable slices linked to an active specification", `AGENTS.md` repeats it, and this roadmap grants no authority to suspend either. An earlier draft of this program proposed one atomic implementation PR on the grounds that the successor families share package and formula identities. That reasoning does not hold, and the merged design already answers it.
+
+**The governed successor versions are per family**, so a family-shaped slice publishes exactly one successor and creates no transitional version:
+
+| Slice | Publishes | Governed by | Tasks that must be inside it |
+|---|---|---|---|
+| `V-mapping` semantic admission | `rra003.mapping.v3` | `RRA-003` | CAL1-03 and CAL1-05a |
+| `V-package` package, bases, and window alignment | `rra004.package.v3` | `RRA-004` | CAL1-04, CAL1-06, and CAL1-08a |
+| `V-formula` core formulas and refusal rules | `rra004.formula.v2` | `RRA-004` | CAL1-05b, CAL1-07a, CAL1-09a, CAL1-10a |
+| `V-comparison` comparison facts | `rra008.comparison.v2` | `RRA-008` | CAL1-07b |
+| `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08b |
+| `V-basket` basket | `rra008.basket.v2` | `RRA-008` | CAL1-09b |
+| `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10b |
+
+**These labels are deliberately not the design's `C0`-`C4`.** `CAL1-01` must read both this table and the merged design, and reusing `C1`-`C4` for different scopes would make the same label mean two things. `C1` is also this roadmap's comparison program, whose tasks are `C1-01` through `C1-08` — a third meaning the `V-` prefix avoids. The design's phase list and this slice map reconcile as follows:
+
+| Merged design | This roadmap |
+|---|---|
+| `C0` semantic admission | `V-mapping`, widened to every normalized measure `rra003.mapping.v3` governs |
+| `C1` package coverage signatures and period alignment | inside `V-package` |
+| `C2` retained reconciliation bases and growth residual assignment | its package fields are inside `V-package`; its growth decomposition is `V-growth` |
+| `C3` sale-only complete-coverage basket inputs | `V-basket` |
+| `C4` non-null full-set concentration eligibility | `V-concentration` |
+| Phase 4 policy-dependent formula corrections | `V-formula`, which lands before the `RRA-008` families rather than after them |
+
+**Where they differ, the specification governs and this table records why.** The design splits `rra004.package.v3` across its `C1` and `C2` — coverage signatures and period alignment in one, retained reconciliation bases and residual assignment in the other — but `RRA-004` defines that single version to authorize all of them. Following the design's split literally would publish one governed version from two slices. The design carries `Authority: none` and proposes; `RRA-004` is active and governs, so `V-package` takes both halves. `CAL1-01` records this reconciliation in the ledger rather than rediscovering it.
+
+What the shared `rra004.package.v3` dependency requires is **ordering, not atomicity**, which is exactly what the merged design states: *"C0 must merge before C1-C4. Each correction is a separate mapping- or formula-versioned slice with its own RED/GREEN/reconciliation gate."*
+
+**Two of these versions span more than one task, and the fourth column is the binding part of this table.** A slice is not a task; it is the smallest set of tasks that can publish one governed version complete.
+
+**`V-mapping` covers admission, not only identity.** `RRA-003` states that the version governs "the semantic declarations, event and canonical transaction identities, **normalized measures**, currency, and coverage-manifest confirmation in this specification", and that specification's governed-measures sections define revenue and returns, discounts, cost and gross-profit inputs, and units. Those admission rules are `V-mapping`. What `CAL1-05` contributes beyond them is the `RRA-004` formula rows, which are `V-formula`. Splitting a measure's admission out of `V-mapping` would publish `mapping.v3` incomplete.
+
+**`rra004.formula.v2` is one version over one table.** `RRA-004` §"Core formulas and refusal rules" defines Revenue through Returns, absolute and percentage delta, items per transaction, attach rate for value, the concentration curve point, and top decile and quartile share in a single governed table, and `rra004.formula.v2` "governs the formulas, compatible populations, signs, zero/null/negative behavior, precision, and refusal rules **in this specification**". Those rows are spread across `CAL1-05`, `CAL1-07`, `CAL1-09`, and `CAL1-10`. Publishing `formula.v2` with `CAL1-05` alone would leave it incomplete and mutate it later without a new version; deferring it past the `RRA-008` slices would make those families consume a version that has not landed, which `RRA-008`'s exclusions forbid. **So `V-formula` lands every `RRA-004` formula change as one slice, and it merges before the four `RRA-008` family slices**, which consume it and publish only their own `rra008.*` versions.
+
+**`rra004.package.v3` publishes once, when `V-package` is complete, and `V-package` is larger than one task.** `RRA-004` defines that version to authorize readable population provenance, canonical transaction keys, retained reconciliation bases, coverage-manifest identity, **coverage signatures, aligned daily bases**, currency, and **growth rounding-residual evidence**. `CAL1-04` alone does not produce all of it: coverage signatures and aligned daily bases are `CAL1-06`, and the residual-evidence field is the package-shape half of `CAL1-08`. Merging `CAL1-04` as an independently mergeable predecessor would either publish an incomplete `v3` and later mutate it without a new version, or change the `v2` shape — both forbidden by the rules below. So `CAL1-04`, `CAL1-06`, and `CAL1-08`'s residual-evidence field are **one slice**, and `CAL1-08`'s growth formula work follows as `V-growth` over the published package.
+
+The release rules are therefore:
+
+- Governance has already merged separately, at `f865079`.
+- **`V-mapping` merges before every other slice.** Each correction is one independently verifiable slice carrying its own RED, GREEN, and reconciliation evidence.
+- Each family publishes its single governed successor version once. **No intermediate or transitional package, mapping, or formula version is published on `main`**, and no extra version is invented to accommodate a partial implementation.
+- A refusal reason or caveat, its governed code, accepted Arabic and English customer prose, audit representation, **bundle, narrative, chart, and HTML/PDF/Excel propagation**, parity checks, and reconciliation tests ship in **the same slice that introduces it**. `RRA-008` states it directly: "Every later code slice that adds a refusal or caveat must add its complete customer wording in both languages in the same slice under `RRA-009`." No slice reaches GREEN while a result it can publish or refuse lacks that wording or surface representation. **`CAL1-11` is therefore a final sweep, not the task where surfaces catch up** — a slice that leaves its refusal unsurfaced for `CAL1-11` has already broken this rule.
+- A slice does not reach GREEN by weakening a semantic guard to preserve an existing fixture. Fixture migration stages after the RED proofs.
+- Current versions stay authoritative for each family until that family's successor slice merges. Historical serialized packages remain valid under their recorded versions and are not rewritten in place.
+- The validation gate in `CAL1-13` runs against the assembled successor contract, not against any single slice. No slice is released to a design partner before that gate passes.
+- **`CAL1-01` owns the exact slice boundaries.** The table above fixes which version each slice publishes and which tasks must be inside it; the ledger fixes the file-level split and proves that no task contributing to a governed version sits outside that version's slice. A boundary that would publish a version twice, publish it incomplete, or make a later family consume an unlanded version is a stop condition, not a judgement call.
 
 ## Tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R1-01 | Design probe: compare a shared transaction/unit-of-work, row locking, and database-enforced alternatives; state where the effective-owner predicate lives afterwards | R0 | S1 triage, U1 design audit | Approved design note; no code |
-| R1-02 | Define the transaction-scoped service/store contract and fake semantics | R1-01 | test design | Interface and invariants |
-| R1-03 | Add deterministic concurrent final-owner tests against PostgreSQL behavior | R1-02 | implementation skeleton | RED concurrency test |
-| R1-04 | Implement one atomic guard-and-write boundary for account disablement | R1-03 | no | SQL and memory implementations agree |
-| R1-05 | Prove non-owner-reducing operations do not acquire unnecessary locks | R1-04 | no | Focused regression/performance tests |
-| R1-06 | Update lifecycle documentation and close `#155` after merge | R1-04, R1-05 | no | Issue closeout evidence |
+| ID | Task | Depends on | Output / acceptance evidence |
+|---|---|---|---|
+| CAL1-01 | Create an execution ledger against current `main`; map every RRA-003/004/008 requirement to implementation and test work | active successor specifications | Reviewed ledger; exact allowed/forbidden files per slice; the C0-first slice sequence and its version-publication order |
+| CAL1-02 | Add independent RED golden and adversarial fixtures before production changes | CAL1-01 | Expected values derived outside production helpers; tests fail against current defects for the intended reasons |
+| CAL1-03 | Implement **every** `V-mapping` semantic admission change `rra003.mapping.v3` governs, taking `CAL1-05a` with it: normalized event kind/status, source-contract declarations, currency, event and canonical transaction identity, coverage-manifest confirmation, **and the normalized measures — revenue and returns, additive discounts, extended-cost inputs, and units** | CAL1-02 | `rra003.mapping.v3` behavior, complete in one slice; ambiguous source semantics refuse affected populations |
+| CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases. **Ships as one `V-package` slice with `CAL1-06` and `CAL1-08`'s residual-evidence field**; it is not independently mergeable | `V-mapping` merged | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
+| CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns. **Split across two slices — see the contribution table below** | per part | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
+| CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows. **Same `V-package` slice as `CAL1-04`** — `RRA-004` puts coverage signatures and aligned daily bases inside `rra004.package.v3` | `V-mapping` merged | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
+| CAL1-07 | Correct comparison facts and bilingual incomplete-window behavior. **Split across two slices — see the contribution table below** | per part | Absolute/percentage deltas use the same aligned population; zero/negative base rules preserved |
+| CAL1-08 | Correct growth decomposition populations and return exclusion. **Split across two slices — see the contribution table below** | per part | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
+| CAL1-09 | Correct basket populations and dimension eligibility. **Split across two slices — see the contribution table below** | per part | Items/transaction and attach rate use complete sale populations and canonical transaction keys; repeated lines do not inflate attach |
+| CAL1-10 | Correct concentration eligibility and full-set behavior. **Split across two slices — see the contribution table below** | per part | Null/unlabelled dimensions do not become products; full-set curve remains independent of display truncation; ceiling convention is pinned |
+| CAL1-11 | **Final compatibility sweep only.** Prove no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and close version compatibility across the assembled contract | CAL1-05 through CAL1-10 | A catalogue-wide proof that every governed refusal and caveat already shipped with its wording and surfaces; no surface recalculates; the successor facts reconcile in both languages |
+| CAL1-12 | Add mutation evidence and pharmacy-focused golden fixtures | CAL1-11 | Named mutants for row-vs-transaction, unequal windows, unmatched populations, full-set concentration, sign/currency rules, and publication gating are killed |
+| CAL1-13 | Run the calculation validation gate | CAL1-12 | Governance, Ruff, full tests, independent fixtures, report reconciliation, deterministic reruns, version checks, and no skipped required behavior |
+| CAL1-14 | Run PostgreSQL/MinIO production-like local staging end to end | CAL1-13 | Upload -> admission -> facts -> worker -> HTML/PDF/Excel -> evidence; restart/retry/recovery and bilingual artifacts verified |
+| CAL1-15 | Complete external review and merge the remaining correction slices | CAL1-14 | No unresolved P0/P1 finding; CodeScene passes; every family sits on its single governed successor version, and no transitional version was published on the way |
 
-## Design requirements
+## Slice contributions of the split tasks
 
-The selected mechanism must:
+Five tasks contribute to a slice they also build on. Stated at task level that reads as a cycle — `CAL1-08` cannot both ship inside `V-package` and wait for `V-package` to merge. It is not a cycle, because the two halves are different work. They carry separate identifiers so the ledger graph is executable without interpretation.
 
-- keep the final-owner check and write in one database transaction;
-- serialize competing owner-reducing operations for the same organization;
-- leave unrelated organizations independent;
-- preserve testability without allowing memory fakes to model weaker semantics than SQL;
-- support account disablement, membership revocation, and owner-to-member demotion through one invariant;
-- reconcile the two effective-owner definitions that already exist on `main` rather than adding a third;
-- keep `Account.can_authenticate` as the FR-013 owner-counting predicate and `Account.can_act` as the
-  liveness predicate for the lifecycle chokepoint and scope resolution, without collapsing the two;
-- fail closed when the transaction or lock cannot establish the required state.
+| Part | Work | Slice | Depends on |
+|---|---|---|---|
+| CAL1-05a | Normalized-measure admission for revenue, returns, discounts, extended cost, and units | `V-mapping` | CAL1-02 |
+| CAL1-05b | The `RRA-004` core-metric formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-07a | Absolute and percentage delta formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-07b | Comparison facts and bilingual incomplete-window behavior | `V-comparison` | `V-formula` merged |
+| CAL1-08a | Growth rounding-residual evidence field in the package shape | `V-package` | `V-mapping` merged |
+| CAL1-08b | Growth decomposition populations, return exclusion, and the growth formula | `V-growth` | `V-formula` merged |
+| CAL1-09a | Items-per-transaction and attach-rate formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-09b | Basket populations and dimension eligibility | `V-basket` | `V-formula` merged |
+| CAL1-10a | Concentration curve-point and top decile/quartile formula and refusal rows | `V-formula` | `V-package` merged |
+| CAL1-10b | Concentration eligibility and full-set behavior | `V-concentration` | `V-formula` merged |
 
-### Predicate correction (verified against `cfca254`)
-
-An earlier draft of this roadmap told the implementer to use `Account.can_act` as the single
-definition of a live account. That is the wrong predicate for FR-013 and following it would
-reintroduce a defect already found and fixed:
-
-- `src/khepri/rca/accounts.py` defines `can_act` as enabled-and-not-purged, and `can_authenticate`
-  as `can_act and has_verifier`. Its docstring states that `can_act` "is deliberately weaker and
-  stays that way" and that "only ownership needs the stronger question".
-- `SqlOrganizationStore.count_owners` in `src/khepri/rca/persistence.py` filters on
-  `credential_digest IS NOT NULL` for exactly that reason. Re-enablement leaves the verifier
-  destroyed under `KHEPRI-DEC-015` §5, so disabling owner A, re-enabling A, then disabling owner B
-  once left an organization whose only remaining owner could not authenticate.
-
-R1 must preserve that distinction. Swapping the owner count onto `can_act` is a regression, not a
-simplification.
-
-### The divergence R1-01 must resolve
-
-The effective-owner rule is already expressed twice on `main`: once as Python properties in
-`accounts.py`, and once as a replicated SQL predicate in `count_owners`. A `SELECT ... FOR UPDATE`
-design keeps it in SQL; a shared-session design may move it. R1-01 is therefore a reconciliation of
-an existing divergence, not the preservation of a clean single definition. Plan the probe
-accordingly.
+`CAL1-03` takes `CAL1-05a` with it; `CAL1-04` and `CAL1-06` take `CAL1-08a` with them. Every `a` part is a prerequisite of the slice it sits in, never a consumer of it. `CAL1-01` validates this graph before the first slice opens: a part that both contributes to a slice and depends on it is a ledger defect, not a sequencing judgement.
 
 ## Stop conditions
 
-Stop and return to design if implementation requires:
+Stop and return to governance if implementation requires:
 
-- broad changes across unrelated RRA stores;
-- two independent final-owner guards;
-- a check committed separately from the write;
-- a SQLite-only proof for a PostgreSQL concurrency contract;
-- weakening the exact owner/member role model.
+- a new business meaning not present in active RRA-003/004/008;
+- a new intermediate package/formula version;
+- a customer-defined formula;
+- currency conversion;
+- fractional quantity support;
+- forecasting;
+- a generic normalization engine;
+- a direct Seshat dependency.
 
----
+## Exit gate
 
-# PROGRAM R2 - Membership lifecycle and expiring audit events (#150)
-
-## Goal
-
-Complete the two-role membership model, revocation, role changes, final-owner protection, attributable events, and 12-month audit retention.
-
-## Required design decisions before code
-
-1. The membership state row should not retain event attribution beyond the approved horizon.
-2. Decide how existing `changed_by` and `changed_at` data is migrated into event history.
-3. Decide whether organization creation emits an explicit membership-created event.
-4. Use the sweeper pattern for bounded retention; lazy purge is not sufficient.
-5. Keep initial organization creation atomic with its owner membership and required event.
-6. Reuse R1's transaction boundary for revoke and demote operations.
-
-## Recommended slice sequence
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R2-01 | Finalize membership event model, migration semantics, and retention behavior | R1 design | R3 session design | Design and plan |
-| R2-02 | Add `rca_membership_events` schema and migration; preserve one Alembic head | R2-01, R1 merged | no other migration branch | Schema only or schema plus safe backfill |
-| R2-03 | Remove durable event attribution from `rca_memberships` after safe migration | R2-02 | no | State row contains only live membership state |
-| R2-04 | Implement exact `owner` and `member` transitions through explicit operations | R2-03 | R3 domain-only work | Role-change service and tests |
-| R2-05 | Implement membership revocation with non-interference tests | R2-04 | no | One membership changes; all others remain intact |
-| R2-06 | Apply the shared final-owner transaction invariant to revoke and demote | R2-04, R1 | no | Concurrent protection tests |
-| R2-07 | Emit content-free append-only events for create, role change, and revoke | R2-04, R2-05 | no | FR-014 event coverage |
-| R2-08 | Implement 12-month membership-event sweeper and local/runtime wiring | R2-07 | U1 UI design | Retention enforcement |
-| R2-09 | Add mutation/adversarial tests for role forgery, stale fakes, and event omission | R2-08 | no | Guard evidence |
-| R2-10 | Close `#150` after merge and update RCA-001 status matrix | R2-09 | no | Closeout |
-
-## Acceptance criteria
-
-- Exactly two roles exist: `owner` and `member`.
-- An organization cannot be created with a non-owner initial membership.
-- A role change is an operation, never a field replacement.
-- Revoking one membership changes no other membership.
-- Revoke, demote, and disable all use the same effective-owner invariant.
-- Every change records actor, target, prior role, next role, and timestamp in a content-free event.
-- Event data is purged at the approved 12-month horizon without corrupting live membership state.
-- Concurrent final-owner attempts leave at least one effective owner.
+CAL1 is complete only when ordinary imperfect pharmacy exports either produce correct population-certified facts or refuse the affected metric with a precise bilingual reason. A clean-data pass alone is insufficient.
 
 ---
 
-# PROGRAM R3 - Authentication sessions
+# PROGRAM T1 — Trust foundation, semantic catalog, and evidence UX
 
 ## Goal
 
-Create opaque, server-side commercial authentication sessions that resolve one actor, support revocation, and do not cache authorization facts that must remain live.
+Expose the meaning, availability, population, version, provenance, caveats, and evidence of every customer-visible metric without creating a second calculation source.
+
+## Governance prerequisite
+
+Before T1 product code, activate a bounded contract allocating:
+
+- `MetricDefinition` ownership;
+- the analysis-quality summary vocabulary;
+- evidence and lineage surfaces;
+- Arabic/English labels, descriptions, synonyms, and unsupported interpretations;
+- content-free trust telemetry;
+- the rule that definitions are generated from or validated against active governed contracts.
 
 ## Tasks
 
 | ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R3-01 | Specify session identity, expiry, revocation, cookie boundary, and relation to existing RRA beta sessions | R0, active RCA-001 | R2 design | Session design |
-| R3-02 | Add session domain types and exact state vocabulary | R3-01 | R4 invitation design | Domain tests |
-| R3-03 | Add persistence and migration | R3-02, R3-09, R2 migration merged or coordinated Alembic re-point | no other migration merge | Session table/store |
-| R3-04 | Implement create, resolve, expire, and revoke | R3-03 | R4 domain work | Session service |
-| R3-05 | Enforce account activity on every actor resolution | R3-04 | no | Disabled accounts stop authorizing immediately |
-| R3-06 | Add secure HttpOnly cookie handling and uniform invalid-session denial | R3-04 | U1 shell design | HTTP boundary |
-| R3-07 | Add session cleanup and retention behavior under active decisions | R3-04 | no | Sweeper or lifecycle cleanup |
-| R3-08 | Add tests proving no retail content, role, or stale membership authority is stored in session identity | R3-05 | no | Security evidence |
-| R3-09 | Specify how external identity composes with R3's session model, resolving the FR-027 seam below | R3-01, KHEPRI-DEC-018 merged | R3-02 | Design addendum |
-| R3-10 | Add the `IdentityProvider` seam and its verified-identity type | R3-09, R3-02 | no adapter work | Port + domain tests |
-| R3-11 | Add the admitted-provider adapter behind the seam | R3-10, a provider admitted under the governing successor to KHEPRI-DEC-018 | no | Provider adapter |
+|---|---|---|---|---|
+| T1-01 | Define `MetricDefinition`, `PopulationDefinition`, and reason/caveat registry contracts | CAL1 contract stable | U1 design | Versioned read-only definitions; no formula implementation |
+| T1-02 | Generate or validate the registry from governed RRA sources | T1-01, CAL1 merged | no | No hand-maintained parallel metric truth |
+| T1-03 | Add bilingual vocabulary and safe synonyms | T1-01 | U1 | Arabic/English names, descriptions, supported and explicitly unsupported interpretations |
+| T1-04 | Build `AnalysisQualitySummary` | T1-02 | T1-03 | Counts and lists of verified, caveated, refused, unavailable, and unsupported results |
+| T1-05 | Build metric detail and evidence routes | T1-02 | U1 evidence drawer | Definition, formula version, population, inputs, coverage, filters, citations, reconciliation, caveats, and refusal alternatives |
+| T1-06 | Build source-to-surface lineage, **with its own parity and fail-closed tests in the same slice** | T1-02, CAL1 evidence bases | T1-05 | Source semantic -> basis -> fact -> claim/chart/report lineage |
+| T1-07 | Add content-free trust telemetry, **with its own content-free and fail-closed tests in the same slice** | approved scope, T1-04/T1-05 | R8-08 | Evidence opens, refusal views, mapping review, quality-summary use; never customer content |
+| T1-08 | Add parity, fail-closed, and no-duplicate-truth tests over the customer-visible metric, definition, quality, and evidence surfaces | T1-01 through T1-05 | no | Unknown metric/reason/version refuses; every displayed figure has one definition and evidence path |
 
-### Task disposition — external identity (recorded 2026-08-14)
+## M2 minimum
 
-`KHEPRI-DEC-018` merged at `dcb63da`, **after** `R3-01` was designed and merged. `R3-01` therefore
-describes Khepri authenticating its own credentials and minting its own session, and contains no
-`IdentityProvider` concept. Three tasks are appended rather than existing ones being renumbered or
-rewritten, because `R3-01` is merged and referenced from `NEXT-SLICES.md`, `STATUS.md`,
-`docs/superpowers/specs/2026-08-14-r3-provider-evaluation-clerk.md`, and `KHEPRI-DEC-018`'s own
-Consequences.
+M2 requires T1-01 through T1-05 and T1-08. Full lineage and trust telemetry may finish during early M3 if they do not weaken the design-partner evidence surface.
 
-**No `R3` task is `SUPERSEDED`, and this is not an `R3` rewrite.** `KHEPRI-DEC-018` §11 admits no
-provider and supersedes nothing; until a provider is admitted under §5, `FR-002` remains the only
-authentication path, so `R3-01` … `R3-08` are exactly what Khepri needs. `R3-09` … `R3-11` are
-additive and become relevant only on admission. `R3-11` cannot start before a provider is admitted;
-`R3-09` and `R3-10` are provider-neutral and can.
-
-**The seam `R3-10` builds** is fixed by `KHEPRI-DEC-018` §6: it exposes only whether a request
-carries a verified identity, and the stable provider subject with its issuing provider. Vendor SDK
-types stay behind the adapter and no module outside it imports them. Per the merged Clerk evaluation,
-the authenticated subject is the verified token's `sub`, resolved locally through
-`(provider, provider_subject) -> account_id`; a provider's `external_id`-equivalent is a portability
-anchor, never the per-request subject.
-
-**The open seam `R3-09` must resolve, stated rather than deferred silently.** `KHEPRI-DEC-018` §2
-lets an admitted provider own "session or token issuance, refresh, and expiry" and says "Khepri
-implements none of these for accounts authenticated through an admitted provider." But `FR-027`
-requires "an authenticated session MUST carry at most one active organization", `FR-029` requires a
-switch to "take effect for every subsequent authorization decision in that session", and
-`KHEPRI-DEC-018` §3 makes the active organization (`FR-027`) Khepri-authoritative — a provider
-assertion may not substitute for it.
-
-Those hold together only if Khepri keeps **its own server-side state keyed to the verified provider
-identity**, carrying the active organization and nothing a provider owns. What that state is called,
-whether it reuses `R3-03`'s table, and how its lifetime relates to a provider token's are exactly
-what `R3-09` settles. It is a design question, not a contradiction in either artifact: §2 assigns
-*authentication mechanics* to the provider, and an active-organization pointer is not an
-authentication mechanic. Recording it here prevents `R3-03` from writing schema that assumes one
-answer, and `R3-03`'s `Depends on` cell now names `R3-09` so that ordering is encoded in the table
-rather than only in this prose.
-
-**Shape-affected if `R3-09` concludes Khepri holds no session row of its own:** `R3-02`, `R3-03`,
-`R3-04`, and `R3-06` — `R3-06` most, since the cookie boundary is a different artifact when a
-provider issues the token. None is blocked today, and `R3-02`'s domain types are needed under either
-answer.
-
-## Key constraints
-
-- A session may identify one account and at most one active organization.
-- Role and membership validity are resolved live at authorization time.
-- Account disablement and membership revocation take effect without waiting for session expiry.
-- Session error responses do not reveal whether a token once existed.
-- RCA authentication sessions and RRA private-beta sessions must not be silently conflated.
-- Where an admitted external identity provider authenticates the actor, the same constraints hold
-  unchanged, and no provider organization, role, permission, or membership claim participates in any
-  authorization decision (`KHEPRI-DEC-024` §4, carried forward unchanged by `KHEPRI-DEC-025` §1).
-  Provider identity replaces credential verification, never authority.
-
-### Task disposition — staged Clerk admission (recorded 2026-08-21)
-
-`KHEPRI-DEC-024` superseded `KHEPRI-DEC-018` without rewriting the historical `R3-09` design, and
-**`KHEPRI-DEC-025` now supersedes `-024`** — carrying every one of its sections forward unchanged and
-additionally authorizing the implementation that `#240` merged. Clerk is admitted provisionally only
-for an invite-only, non-paying private beta, and all sixteen evidence gates stand as a hard
-commercial stop. The identity seam and session composition remain as merged: Clerk proves the
-subject, the local link resolves a Khepri `account_id`, and Khepri holds the revocable
-active-organization session used by the live authorization chain.
-
-The admission did **not** make `R3-11` the next safe code change by itself. The Clerk private-beta
-milestone, **merged at `15a8175` (`#240`)**, first resolved that prerequisite provider-neutrally:
-account and link pre-provisioning share one transaction, and final-owner capability is a local
-verifier or an external identity link. The persistence probe found the existing nullable verifier
-columns and external-identity table sufficient, so that capability needs no schema change —
-`KHEPRI-DEC-025` §2.4 adopts that finding as a decision, since `-024` §14 forbade concluding it.
-**`-024` authorized none of that code**, which `-025` records rather than glosses: a
-risk-acceptance record admitting a vendor is not a mandate to implement, and the two instruments
-were conflated until the `#240` post-merge audit separated them. The companion
-`docs/superpowers/specs/2026-08-21-clerk-first-identity-and-r5-disposition.md` defines its readiness
-boundary. It assigns no task ID and settles neither whether a migration is required nor the
-persistence schema. Private-beta provisioning is operator-controlled and creates the Khepri account
-and external identity link before authentication; an unknown or unlinked provider subject fails
-closed and no public self-service bootstrap is authorized.
+**That is why `T1-08` depends on `T1-01` through `T1-05`, not on "all above".** A gate that required every task in the program could not be reached while the same paragraph declares two of those tasks deferrable — M2 would either admit a design partner without its parity and fail-closed evidence, or stall on work it just called optional. `T1-08` therefore covers the surfaces M2 actually ships, and `T1-06` and `T1-07` carry their own tests in their own slices, per the same-slice rule `CAL1` follows.
 
 ---
 
-# PROGRAM R4 - Organization invitations
+# CROSS-CUTTING TRACK U1 — Design system and bilingual data experience
 
 ## Goal
 
-Issue, revoke, and redeem organization invitations with one role, one organization, one expiry, one-use semantics, and uniform failure behavior.
+Build a coherent, accessible, server-rendered decision experience without introducing a second frontend architecture.
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| U1-01 | Preserve and document the merged primitive tokens and shell component layer | current R8 assets | Current visual foundation remains the source of truth |
+| U1-02 | Add governed data-display primitives | T1 contracts | KPI card, status badge, quality summary, refusal panel, evidence link, version label, coverage indicator |
+| U1-03 | Define a no-calculation chart grammar | CAL1/T1 | Approved chart types, axes, units, missing/refused states, print/export behavior |
+| U1-04 | Build the evidence drawer and metric-detail layout | T1-05 | Reusable desktop/mobile component with RTL/LTR parity |
+| U1-05 | Build global navigation and filter-bar patterns by milestone | stable route contracts | Organization, workspace, period, language, and visible applied filters |
+| U1-06 | Add responsive, keyboard, focus, screen-reader, bidi, and minimum-target evidence | every new surface | Accessibility and RTL/LTR parity gates |
+| U1-07 | Add visual-regression and surface-inventory guards | U1-02 through U1-06 | New surface cannot ship unmeasured or without refusal/loading/empty states |
+
+## Design rules
+
+- A page has one primary decision purpose.
+- Executive pages target four to six headline KPIs and roughly five to eight meaningful visuals, not a dense wall of widgets.
+- Every chart/KPI exposes evidence and applied filters.
+- No fake dashboard, fake history, or inactive enterprise controls.
+- Mobile prioritizes narrative, KPI status, and evidence over dense model-building controls.
+
+---
+
+# PROGRAM R5 — Account recovery, deferred under Clerk credential ownership
+
+`R5` is the one pre-`CAL1` program that is neither merged nor closed, and its identifiers are cited by two active artifacts — `KHEPRI-DEC-025` (`R3-11`, `R5-02`…`R5-06`) and `RCA-002` (`R5-02`, `R5-04`). They are preserved here so those citations resolve at this path. The full `R5-01` design record stays in the archived roadmap.
+
+| ID | Task | Disposition under Clerk credential ownership |
+|---|---|---|
+| R5-01 | Specify recovery lifecycle, delivery abstraction, expiry, and uniform initiation response | MERGED |
+| R5-02 | Add recovery secret domain and persistence | DEFER — no Khepri recovery-secret domain, table, or migration while Clerk owns the credential |
+| R5-03 | Implement uniform recovery initiation for existing and unknown accounts | DEFER — Clerk owns initiation, delivery, and anti-enumeration behavior |
+| R5-04 | Implement one-use credential replacement | DEFER — Clerk owns one-use credential replacement |
+| R5-05 | Revoke every existing session in the same successful recovery transaction | REFRAME, **MERGED and composed** — Khepri revalidates account state, revokes every Khepri session, and records content-free security evidence after provider recovery. Merged at `15a8175` (`#240`); the composition gap that audit found was closed at `1e3b63c` (`#242`) under `KHEPRI-DEC-025` §4 — `build_recovery_security_service` in `runtime/wiring.py` constructs the service over the real store, and the sweeper is the fifth `RetentionPasses` entry at the governed twelve-month horizon |
+| R5-06 | Add replay, expiry, concurrent use, and logging tests | REFRAME, **MERGED** — proves those local consequences, idempotency, disabled/purged refusal, and identity-link integrity rather than reproducing Clerk recovery internals |
+
+The Clerk credential change and the Khepri consequence cannot share the transaction `R5-01` designed for local credentials. `KHEPRI-DEC-025` §1 accepts that cross-system residual for non-paying private beta only and keeps it open for commercial admission — so **`R5` reopens at M5 with `G6-00`, not before**, and reopening requires a credential-ownership decision rather than an engineering one.
+
+**Nothing in `R5` is outstanding implementation work, and none of it may be planned yet.** Every implementable task is merged or deferred, so the program reads `BLOCKED`: `R5-02`/`R5-03`/`R5-04` have no `main` SHA by design and cannot acquire one before `G6-00`'s credential-ownership decision at M5. It is not `MERGED`, because three tasks have no SHA; it is not `READY_FOR_PLAN`, because no design may start. Do not plan a composition slice for `R5-05` either; that work is merged.
+
+---
+
+# PROGRAM R8 COMPLETION — Commercial shell and alpha activation
+
+The merged R8 shell remains the base. The remaining work is:
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| R8-08 | Govern and implement content-free product activation telemetry | approved scope | Invite/auth -> org selected -> analysis started -> admission reviewed -> report ready -> evidence opened -> report downloaded |
+| R8-09 | If a real design partner requires browser sign-in, approve and implement one browser-shaped invite-only provider handoff. **This is `R8-03` reopened**, not new work | amending or successor identity authority over `KHEPRI-DEC-025` §2 | No public signup; identity only; organization and authority remain Khepri-owned |
+| R8-10 | Add analysis quality and evidence entry points to the journey and shell | T1 minimum | User understands what was computed, caveated, and refused before downloading |
+| R8-11 | Run design-partner browser and mobile acceptance | CAL1, T1, OPS1 staging | Complete bilingual journey under live authorization |
+
+**`R8-09` inherits `R8-03`'s closure, and the closure was an authority boundary rather than a difficulty.** The archived roadmap records `R8-03` CLOSED at 2026-08-22 with no code written, for three separate reasons: recovery is out of scope while Clerk owns credentials (`KHEPRI-DEC-025` §3, `RCA-002` A-5); the invalid-session surface already shipped inside `R8-02`'s shared `unavailable` surface; and the existing handoff takes a Bearer credential in an `Authorization` header plus a JSON body naming an organization, which an HTML form cannot send and which presumes an organization the user has not yet chosen.
+
+So `R8-09` does not begin with engineering. `KHEPRI-DEC-025` §2 authorizes **"One external-authentication route"**, and its prohibitions include **"No public or post-authentication self-service bootstrap"**. A browser-shaped sign-in is a *second* external-authentication route, so it needs the owner to merge amending or successor authority first. Read the `R8-03` disposition in the archive before planning this task.
+
+`R8-09` is conditional only in timing, not in the M2 outcome: an external design partner must have a supported authentication handoff. Manual developer session creation is not an external-user product flow.
+
+---
+
+# CROSS-CUTTING TRACK OPS1 — Hosted target and operational readiness
+
+## Current baseline
+
+The production-like local staging stack is merged: one built Khepri image runs web, worker, and migrations against TLS-enabled PostgreSQL and MinIO. It is valuable evidence but is not cloud provisioning, managed backup, hosted ingress, or capacity evidence.
+
+## Tasks
+
+`OPS1-01` through `OPS1-07` keep the meanings they carry in the archived roadmap, because `KHEPRI-DEC-027` is active and blocks on `OPS1-02` by name. New work is appended as `OPS1-08` through `OPS1-10`. The table is ordered by dependency, not by identifier.
+
+| ID | Task | Depends on | Parallel | Output |
+|---|---|---|---|---|
+| OPS1-08 | Maintain the merged production-like local stack and its contract tests | merged | CAL1 | Local staging foundation |
+| OPS1-01 | Complete the DigitalOcean FRA1 environment descriptor and settle provider, region, residency, and products | owner decisions, `KHEPRI-DEC-027` | CAL1 | Concrete services, initial sizing, RTO/RPO, secret source, network/egress, backup/PITR, registry, OTLP/log destinations |
+| OPS1-09 | Reissue `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` against the selected target, without the retired broker fields | OPS1-01 | CAL1 | Current target sizing contract; `visibility_timeout_seconds`, `message_retention_seconds`, `receive_wait_seconds`, and `max_receive_count` leave the file per `KHEPRI-DEC-008` |
+| OPS1-02 | Provision a non-production environment through CI only | OPS1-01, OPS1-09 | late CAL1/T1 | Hosted staging. `KHEPRI-DEC-027` holds this blocked until the environment descriptor is complete and approved |
+| OPS1-03 | Configure managed PostgreSQL, private object storage, secrets, TLS ingress, image registry, and operational telemetry | OPS1-02 | T1/R8 | Environment contract evidence |
+| OPS1-04 | Run migrations, backup/restore, deletion-after-restore, encryption read-back, worker crash/recovery, retry, and dead-letter exercises | OPS1-03 | no | Recovery evidence |
+| OPS1-05 | Run the governed benchmark, capacity, and soak tests | OPS1-03, CAL1 | no | Web/worker/DB sizing and concurrency evidence |
+| OPS1-06 | Add content-free alerts, dashboards, runbooks, and break-glass evidence | OPS1-03 | R8-08 | Operability |
+| OPS1-07 | Define release, rollback, database migration, and incident procedures | OPS1-04 | no | Alpha/pilot runbook |
+| OPS1-10 | Authorize external private-beta traffic only after M2 gates pass | all M2 dependencies; `KHEPRI-DEC-008` pre-beta demonstrations | no | **An owner-merged beta-authorization artifact defining the client count and the observation period**, which `KHEPRI-DEC-008` requires and which no other task produces, plus the explicit go/no-go record |
+
+## M2 operational gate
+
+No external design partner uses Khepri until hosted non-production, recovery evidence, calculation validation, authentication handoff, and the pilot runbook are complete.
+
+**A go/no-go record is not sufficient to open external traffic.** `KHEPRI-DEC-008` is active and states that "the later beta-authorization artifact must still define the client count and observation period", and it lists what implementation must demonstrate before beta launch: cross-session isolation and consent enforcement; deterministic reconciliation and reruns; raw-row exclusion from narrative requests; Arabic/English fact and caveat parity; accessible RTL web and PDF output; safe Excel output; immediate deletion and seven-day expiry; restart, retry, dead-letter, and orphan recovery; content-free telemetry; and at least 95% complete report bundles within ten minutes for the approved benchmark workload. `OPS1-10` produces that artifact for the owner to merge; it does not substitute for it.
+
+---
+
+# PROGRAM G2/G3 — Durable workspace and retention authority
+
+## Goal
+
+Authorize repeat use without silently changing the retention of uploads, facts, reports, evidence, or backups.
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| G2-01 | Inventory retained data classes and purposes | M2 learnings | Upload, normalized events, mappings, manifests, facts, reports, evidence, telemetry, deletion evidence |
+| G2-02 | Decide retention defaults, deletion, organization closure, backup behavior, export, and legal/operational ownership | G2-01 | Owner decisions |
+| G2-03 | Activate the durable retail-content retention decision | G2-02 | Active authority |
+| G3-01 | Draft the workspace/history specification | G2-01 | RCA proposal |
+| G3-02 | Clarify workspace, dataset version, analysis run, comparison run, immutability, visibility, and deletion semantics | G3-01 | Clarification record |
+| G3-03 | Define authorization, audit, and evidence rules for every workspace action | G3-02 | Security contract |
+| G3-04 | Produce plan, tasks, checklist, migration strategy, and registry proposal | G2-03, G3-03 | Implementation-ready active spec |
+
+---
+
+# PROGRAM W1 — Durable workspace, datasets, analyses, and history
+
+## Goal
+
+Turn a one-time report into a repeat-use organization workspace while preserving isolation, versioning, provenance, and deletion evidence.
 
 ## Tasks
 
 | ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R4-01 | Specify invitation state, expiry, revocation, intended role, and authenticated redemption | R2 design | R3 implementation | Invitation design |
-| R4-02 | Add invitation domain and hashed secret handling | R4-01 | R3 domain work | Domain tests |
-| R4-03 | Add persistence and migration after the current migration head is known | R4-02 | no parallel migration merge | Store and schema |
-| R4-04 | Implement owner-authorized issuance and revocation | R4-03, R6-01 authorization matrix draft | R5 recovery design | Service tests |
-| R4-05 | Implement one-time authenticated redemption into exactly one membership | R4-03, R2 merged, R3 actor resolution, R4-06 | no | Membership creation |
-| R4-06 | Invalidate relevant unredeemed invitations when a membership is revoked, and on identity purge | R4-04 | no | FR-020 behavior |
-| R4-07 | Add uniform expired, replayed, revoked, malformed, and foreign-scope tests | R4-05 | no | Security matrix |
-
----
-
-# PROGRAM R5 - Account recovery
-
-## Goal
-
-Provide single-use, expiring, hash-only recovery that is externally uniform and revokes every pre-existing authentication session after success.
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R5-01 | Specify recovery lifecycle, delivery abstraction, expiry, and uniform initiation response | R3 design | R4 implementation | Recovery design |
-| R5-02 | Add recovery secret domain and persistence | R5-01, migration head known | no migration conflict | Store and schema |
-| R5-03 | Implement uniform recovery initiation for existing and unknown accounts | R5-02 | no | Anti-enumeration tests |
-| R5-04 | Implement one-use credential replacement | R5-02 | no | Recovery completion |
-| R5-05 | Revoke every existing session in the same successful recovery transaction | R5-04, R3 | no | Session invalidation tests |
-| R5-06 | Add replay, expiry, concurrent use, and logging tests | R5-05 | no | Security evidence |
-
-### Task disposition — Clerk-owned credentials (recorded 2026-08-21)
-
-The table above records the Khepri-credential sequence designed by merged `R5-01`; it remains useful
-if credential ownership returns to Khepri. Under provisional Clerk admission, recovery follows the
-credential owner:
-
-- **`R5-02` DEFER** — no Khepri recovery-secret domain, table, or migration while Clerk owns the
-  credential;
-- **`R5-03` DEFER** — Clerk owns initiation, delivery, and its anti-enumeration behavior;
-- **`R5-04` DEFER** — Clerk owns one-use credential replacement;
-- **`R5-05` REFRAME** — Khepri revalidates account state, revokes every Khepri session, and records
-  content-free security evidence after provider recovery; and
-- **`R5-06` REFRAME** — prove those local consequences, idempotency, disabled/purged refusal, and
-  identity-link integrity rather than reproducing Clerk recovery internals.
-
-The Clerk credential change and Khepri consequence cannot share the transaction `R5-01` designed
-for local credentials. `KHEPRI-DEC-024` §7 accepts that cross-system residual only for non-paying
-private beta and keeps it open for commercial admission; `KHEPRI-DEC-025` §1 carries that acceptance
-forward unchanged. Details and the evidence boundary are in
-`docs/superpowers/specs/2026-08-21-clerk-first-identity-and-r5-disposition.md`. **The reframed
-consequence is merged but not composed** — see the `R5` row in §16 and `KHEPRI-DEC-025` §4.
-
----
-
-# PROGRAM R6 - Canonical authorization and active organization
-
-## Goal
-
-Make one canonical authorization checkpoint resolve the actor, active organization, live membership, live role, requested object scope, and permitted action.
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R6-01 | Define the protected-action catalog and authorization matrix | R2 role model, R3 session design | R4/R5 work | Matrix and contract |
-| R6-02 | Define an authorization context that cannot be constructed by handlers | R6-01 | static test design | Context boundary |
-| R6-03 | Implement active-organization selection and switching | R3, R2 | U1 shell implementation contract | Session/context behavior |
-| R6-04 | Implement live membership and role resolution at every protected action | R6-02, R6-03 | no | Canonical resolver |
-| R6-05 | Add owner/member/non-member/unauthenticated exhaustive action matrix | R6-04 | no | Matrix tests |
-| R6-06 | Add cross-organization read and mutation indistinguishability tests | R6-04 | no | Isolation evidence |
-| R6-07 | Add stale-session tests for revocation, demotion, and disablement | R6-04 | no | Immediate authorization change |
-| R6-08 | Add static or architectural tests making bypassing the resolver unreachable | R6-04 | no | Chokepoint evidence |
-
-## Critical rule
-
-Object identifiers never grant authority. Every object lookup must be scoped from the authorization result, not trusted from a route parameter.
-
----
-
-# PROGRAM R7 - Commercial bridge to the existing RRA journey
-
-## Goal
-
-Map an authenticated RCA actor and active organization to the existing opaque RRA isolation scope without moving authoritative retail behavior into RCA.
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R7-01 | Define how a commercial authorization context opens or resumes an RRA analysis session | R6, current RRA contracts | U1 UI work | Bridge contract |
-| R7-02 | Resolve organization to its stable opaque owner scope | R6 | no | Bridge service |
-| R7-03 | Ensure disabled/revoked actors cannot use an existing analysis session | R3, R6 | no | Live auth tests |
-| R7-04 | Preserve RRA independence and existing beta mode | R7-01 | no | Regression tests |
-| R7-05 | Add commercial API endpoints only through the canonical resolver | R7-02, R6 | U1 templates | HTTP integration |
-| R7-06 | Add end-to-end cross-org and nonexistence-indistinguishability tests | R7-05 | no | Security E2E |
-| R7-07 | Implement the RRA scoped-session entry point and the RCA bridge that calls it | R7-02 merged, KHEPRI-DEC-020 §3 lifted or a successor authorizing product code | no | Bridge service |
-
-### Task disposition — the schema conflict and its migration (recorded 2026-08-17)
-
-`R7-02`'s row above describes the slice as it was designed: one task producing a "Bridge service".
-It shipped as **two**, and the row is left as written rather than edited, because `R7-02` is merged
-and cited from `STATUS.md`, `KHEPRI-DEC-019`, `KHEPRI-DEC-020`, and
-`docs/superpowers/specs/2026-08-17-r7-02-schema-cardinality-finding.md`.
-
-What actually happened:
-
-1. `R7-02` probed before implementing and found that `KHEPRI-DEC-019` contradicted itself — its §2
-   admitted an entry point taking a caller-supplied `owner_id`, while its §5 forbade any schema
-   change, and `rra_beta_sessions.UNIQUE (owner_id)` made those incompatible. It recorded the
-   finding (`9bfae82`) instead of shipping an entry point whose second call raises `IntegrityError`.
-2. `KHEPRI-DEC-020` (`2c9e0c1`) superseded `KHEPRI-DEC-019` and authorized **the migration and its
-   ORM change, explicitly and only** — its §3 reads "No product code beyond the migration and its
-   ORM change. No bridge service and no entry-point implementation are authorized here."
-3. `R7-02` therefore delivers the migration (`20260817_0017`) and stops there.
-
-**`R7-07` is appended for the bridge itself.** It was blocked on governance rather than on code —
-`KHEPRI-DEC-020` §1 re-enacted the *admitted shape*, so the design was settled, but §3 withheld
-authorization for the code. **`KHEPRI-DEC-021` lifts exactly that bullet** and is the governing
-record for the slice.
-
-`KHEPRI-DEC-021` settles three things this disposition previously left open, and they change what
-`R7-07` builds:
-
-1. **The bridge lives in `khepri.runtime`**, per its §3 — rejecting *both* options the merged
-   documents offered. `R7-01` §3 recommended `khepri.local`; `pyproject.toml:66` excludes that
-   package from the wheel the OCI image installs, its own `__init__` says "none of it is deployed",
-   and `Dockerfile:72` validates `khepri.runtime` instead — so a bridge there is unreachable from the
-   role that will serve `R7-05`. `khepri.runtime` is the packaged composition root. It is the first
-   `khepri.rca` import into that package, admitted deliberately: a composition root exists to know
-   both sides. The RCA-side option `R7-01` §3 warned about stays rejected.
-2. **The scope is four parts, not one.** `rra/sessions.py` has no invitation-free session insert —
-   `BetaSessionRow` is written only inside `redeem_invitation` — so the entry point admitted by
-   `KHEPRI-DEC-019` §2 had nowhere to persist. `KHEPRI-DEC-021` §2 authorizes the entry point, an
-   additive `SessionStore` Protocol method with its `SqlSessionStore` implementation, a resume
-   lookup scoped by **`(owner_id, session_id)`** — never `owner_id` alone, which is non-unique after
-   `20260817_0017` and would select an arbitrary or stale analysis — and the bridge.
-3. **The boundary assertion is a flat prohibition, not an allowlist**, which follows from (1).
-
-The note this paragraph replaces said the bridge's discipline was "no `rra_` import inside
-`src/khepri/rca/`". That framing is superseded by `KHEPRI-DEC-021` §3: with the bridge in
-`khepri.runtime`, `khepri.rca` imports **no** `khepri.rra` module at all, mirroring the existing
-prohibition rather than carving an exception from it. What remains correct is the *gap* it named:
-`test_rca001_boundary.py` asserts the **RRA→RCA** direction only
-(`test_no_rra_module_imports_rca`), `STATUS.md`'s `FR-036` row records that no test asserts
-RCA→RRA, and adding the missing direction belongs in `R7-07`.
-
-**Closed by `R7-07` at `d93b844`, with one departure.** Both directions are now asserted and
-mutation-verified, but in `test_r707_commercial_bridge.py` with an independent AST scan rather than
-as the mirror of `find_rca_import_offenses` that `KHEPRI-DEC-021` §3's consequences ask for. The
-prohibition holds either way; what it costs is a second boundary scanner where the record expected
-one parameterised helper reused, which is a consolidation candidate rather than a gap in coverage.
-`find_rca_import_offenses(source, package)` is already parameterised on `package`, so the mirror is
-small. `isolation.py:3-8`'s `TYPE_CHECKING` pattern remains the idiom for needing a type without a
-runtime import, though a `khepri.runtime` bridge should not need it.
-
-## Non-goals
-
-- No durable report history.
-- No changed retail-content retention.
-- No new authoritative calculation in RCA.
-- No public signup.
-- No billing.
-
----
-
-# PROGRAM R8 - Commercial application shell v1
-
-## Goal
-
-Wrap the existing production journey in an authenticated, organization-aware product shell without pretending that history, billing, or dashboard data exists yet.
-
-## Product surfaces
-
-- Sign in
-- Recovery
-- Organization selection/switching
-- Team and invitation management
-- Account settings
-- Organization settings within RCA-001 scope
-- New analysis entry
-- Existing Upload -> Review -> Processing -> Report journey
-- Current-session unavailable, expired, deleted, and unauthorized states
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| R8-01 | Produce shell information architecture and design tokens | R3/R6 contracts drafted | R2-R7 backend work | UI design only |
-| R8-02 | Build shared authenticated layout, navigation, RTL/LTR behavior, and language parity | R8-01, R3 HTTP | R7 API | Templates/assets |
-| R8-03 | ~~Build sign-in, recovery, and invalid-session surfaces~~ **CLOSED, not skipped** — see the note below | R3, R5 | R8-04 | Auth UI |
-| R8-04 | Build organization switcher and no-membership state | R6 | R8-03 | Org context UI |
-| R8-05 | Build team/invitation management surfaces | R2, R4, R6 | R8-03 | Team UI |
-| R8-06 | Embed or route into the existing journey from New Analysis | R7 | R8-05 | Integrated flow |
-| R8-07 | Add responsive, accessibility, keyboard, bilingual, and visual regression tests | R8-02 through R8-06 | no | UI quality evidence |
-| R8-08 | Add content-free product activation telemetry | approved telemetry scope | R8-07 | Funnel metrics without customer content |
-
-**`R8-03` under Clerk.** It must not recreate Khepri password or recovery forms for Clerk-backed
-accounts. Its provider-stage responsibility is the authentication handoff, uniform unavailable
-state, and return to the Khepri shell only after the local session or recovery consequence succeeds.
-Organization selection and every authorized product surface continue to read Khepri state.
-
-**`R8-03` is CLOSED as of 2026-08-22, with no code written, and the reason is a boundary rather
-than a difficulty.** Its three parts have three different dispositions:
-
-- **Recovery is out of scope by decision.** `KHEPRI-DEC-025` §3: "Khepri implements no credential
-  replacement and no password recovery for a Clerk-backed account", holding `R5-02`…`R5-04`
-  deferred while Clerk owns credentials. `RCA-002` A-5 carries the same boundary to the shell.
-- **The invalid-session surface already shipped.** `R8-02` delivered it as the shared `unavailable`
-  surface (`99d2710` lineage), collapsing expired, deleted, deletion-requested,
-  session-unavailable, and actor-not-a-member into one indistinguishable response per `FR-050`.
-- **The handoff exists, but not in a shape a server-rendered shell can drive.** `POST` at
-  `EXTERNAL_SESSION_PATH` takes a Bearer credential in an `Authorization` header and a JSON body
-  naming `organization_id`, then switches to that organization immediately. An HTML form cannot set
-  that header, and the shell's content security policy admits no inline script to do it. The route
-  also presumes the caller already chose an organization, which a fresh sign-in has not — that
-  choice is `R8-04`'s switcher, and it runs *after* authentication.
-
-**What would reopen it.** A browser-shaped sign-in route is a **second** external-authentication
-route, and `KHEPRI-DEC-025` §2 authorizes exactly one ("One external-authentication route"), while
-its prohibitions include "No public or post-authentication self-service bootstrap". So reopening
-`R8-03` requires new or amending authority, not an engineering decision. The trigger is a real
-design partner needing to sign in through a browser — which is itself gated behind beta
-authorization, and therefore behind `OPS1`.
-
-Recorded as closed rather than skipped so a later reader does not mistake an authority boundary for
-an oversight.
-
-## UI guardrails
-
-- Preserve the current server-rendered architecture.
-- Do not build empty dashboard widgets, fake history, fake charts, or inactive enterprise controls.
-- Reuse the current four-step journey as a workflow, not as the full product shell.
-- Keep Arabic and English state/action coverage equal.
-- No external fonts, analytics scripts, CDNs, or runtime assets.
-
-## M2 exit gate
-
-A design partner can sign in, select an organization, manage basic membership/invitations, start one assessment, complete the current journey, and access the complete report under live authorization.
-
----
-
-# CROSS-CUTTING TRACK OPS1 - Production target and operations
-
-This track begins after R1 closes concurrent final-owner risk and continues through every milestone.
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| OPS1-01 | Re-price and select provider, region, residency, and products in the required target-selection artifact | owner decision (`KHEPRI-DEC-008` is active and requires this artifact; it deliberately selects no provider, region, or residency) | R2-R8 | Approved environment descriptor |
-| OPS1-02 | Provision a non-production environment through CI only | OPS1-01 | late R7/R8 | Staging environment |
-| OPS1-03 | Configure PostgreSQL, private object storage, secret store, TLS ingress, image registry, and OTLP/log destinations | OPS1-02 | R8 | Environment contract evidence |
-| OPS1-04 | Run migration, backup, restore, deletion, and envelope-encryption read-back exercises | OPS1-03 | no | Recovery evidence |
-| OPS1-05 | Run the governed benchmark and capacity tests | OPS1-03 | no | Target performance evidence |
-| OPS1-06 | Add content-free alerts, dashboards, runbooks, and break-glass evidence | OPS1-03 | R8 | Operability |
-| OPS1-07 | Define release, rollback, database migration, and incident procedures | OPS1-04 | R8 | Pilot runbook |
-
-## Deployment stop gate
-
-Do not serve concurrent external users before R1 is merged and its concurrency tests pass.
-
----
-
-# CROSS-CUTTING TRACK S1 - Selective RRA construction hardening (#152)
-
-## Goal
-
-Harden only RRA records that carry security or integrity invariants a direct store caller could violate.
-
-## Sequence
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| S1-01 | Inventory RRA records and classify security-invariant records vs plain data carriers | none | R0/R1 | Triage report only |
-| S1-02 | Identify store seams that accept caller-controlled opaque identifiers or derived security material | S1-01 | R2/R3 | Risk-ranked list |
-| S1-03 | Select the smallest independently verifiable hardening slice | S1-02 | no | Approved plan |
-| S1-04 | Implement one record family at a time with accidental-bypass tests | S1-03 | avoid active RRA feature branches | Bounded PRs |
-| S1-05 | Close `#152` only after every classified high-risk record is addressed or explicitly accepted | S1-04 | no | Closeout |
-
-## Non-goal
-
-Do not seal every dataclass. Ceremony without a protected invariant is not value.
-
----
-
-# PROGRAM G2/G3 - Governance for durable workspaces and history
-
-No workspace/history implementation may begin under RCA-001 because that specification explicitly excludes persistent customer workspaces, report history, retention changes, and multi-dataset storage.
-
-## Governance tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| G2-01 | Define the product purpose and data classes for durable retail inputs, derived facts, reports, metadata, and deletion evidence | M2 learnings | workspace UX research | Data inventory |
-| G2-02 | Decide retention defaults, customer deletion, organization closure, backup behavior, export, and legal/operational ownership | G2-01 | no | Owner decisions |
-| G2-03 | Draft and activate a retention decision for durable commercial retail content | G2-02 | workspace spec drafting | Active decision |
-| G3-01 | Draft the next RCA workspace/history specification | G2-01 | G2-03 | Governed spec proposal |
-| G3-02 | Clarify workspace ownership, analysis identity, dataset versions, immutability, history visibility, and deletion semantics | G3-01 | UI IA | Clarification record |
-| G3-03 | Produce plan, tasks, analysis, checklist, and approval-ready registry change | G3-02, G2-03 | no | Implementation-ready active spec |
-
-## Required product decisions
-
-- Is retention fixed, plan-based, or organization-configurable?
-- What is deleted when a user deletes an analysis, a workspace, or an organization?
-- Are original uploads retained, or only governed derived artifacts?
-- What is the customer export contract?
-- How are historical analyses made immutable and reproducible?
-- What is the relationship between a workspace, dataset period, analysis run, fact package, and report bundle?
-- What happens when mapping semantics change between periods?
-
----
-
-# PROGRAM W1 - Durable workspaces and analysis history
-
-## Goal
-
-Turn a one-time assessment into a repeat-use organization workspace while preserving isolation, provenance, reconciliation, and approved retention.
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| W1-01 | Define workspace, dataset version, analysis run, and retained artifact domain contracts | active G3 spec | UI contract design | Domain model |
-| W1-02 | Add persistence and one-head migrations | W1-01 | no parallel schema merge | Database model |
-| W1-03 | Extend encrypted object namespaces and metadata under the approved retention decision | W1-01, G2 active | W1-02 tests | Storage lifecycle |
-| W1-04 | Implement organization-scoped create, read, list, delete, and resume operations through R6 authorization | W1-02, R6 | W1-05 UI skeleton | Workspace service/API |
-| W1-05 | Build Overview, Workspaces, Analysis History, and New Analysis product pages | stable W1 API contract | W1-04 | UI |
-| W1-06 | Preserve immutable provenance and fact/report bindings across history | W1-03, W1-04 | no | Reproducibility evidence |
+|---|---|---|---|---|
+| W1-01 | Define workspace, dataset version, analysis run, comparison run, and retained artifact domain contracts | active G3 | U1 IA | Domain model |
+| W1-02 | Add persistence and one-head migrations | W1-01 | no migration branch | Schema |
+| W1-03 | Extend encrypted object namespaces and metadata under G2 | W1-01, G2 | W1-02 tests | Storage lifecycle |
+| W1-04 | Implement authorized create/read/list/delete/resume operations | W1-02, R6 | W1-05 skeleton | Service/API |
+| W1-05 | Build Workspace Overview, Datasets, Analyses, Reports, Metrics, and Activity surfaces | stable W1 API, U1 | W1-04 | Customer workspace UI |
+| W1-06 | Preserve immutable provenance and fact/report bindings | W1-03/04 | no | Reproducibility evidence |
 | W1-07 | Implement immediate deletion, retention sweep, backup-aware lifecycle, and deletion evidence | W1-03, G2 | no | Lifecycle enforcement |
-| W1-08 | Add cross-org, expired, deleted, partial, corrupt, and restore-path tests | W1-04 through W1-07 | no | Security/recovery evidence |
-| W1-09 | Add history-specific content-free metrics | W1-05 | no | Repeat-use measurement |
+| W1-08 | Add version and availability diff between analyses | W1-04, T1 | W1-05 | What changed in inputs, mappings, metrics, refusals, and versions |
+| W1-09 | Add favorites/pins and recent activity without creating a new calculation | W1-05 | no | Navigation convenience |
+| W1-10 | Add cross-org, expired, deleted, partial, corrupt, restore, and concurrent lifecycle tests | W1-04 through W1-09 | no | Security/recovery evidence |
+| W1-11 | Add content-free repeat-use telemetry | W1-05, approved scope | no | Second analysis, report reopen, workspace return, deletion completion |
 
 ## M3 exit gate
 
-An organization can retain multiple completed analyses under an active retention decision, view history, reopen a complete report, and delete content with correct evidence. No comparison is required yet.
+An organization can retain multiple dataset versions and completed analyses, understand each analysis's metric availability and versions, reopen reports, and delete content with correct evidence.
 
 ---
 
-# PROGRAM G4/C1 - Multi-dataset comparison
+# PROGRAM G4/C1 — Governed multi-dataset comparison
 
-## Governance split
+## Ownership split
 
-Comparison crosses family responsibilities:
-
-- RCA owns workspace accumulation, period selection, and commercial user flow.
-- RRA must own authoritative comparison facts, calculations, cited narrative, and report surfaces.
-
-Do not put comparison arithmetic into RCA controllers, UI code, SQL read models, or client JavaScript.
+- RCA owns workspace selection, period/dataset selection, authorization, and user flow.
+- RRA owns compatibility, comparison facts, calculations, caveats, refusals, and report surfaces.
+- UI, SQL read models, and JavaScript never compute comparison values.
 
 ## Governance tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| G4-01 | Specify comparison actors, compatible period semantics, user scenarios, and success criteria | M3 | UI research | Product scope |
-| G4-02 | Draft/activate the required RRA comparison fact specification or approved extension | G4-01 | RCA orchestration spec | RRA authority |
-| G4-03 | Draft/activate the RCA comparison orchestration specification | G4-01 | G4-02 | RCA authority |
-| G4-04 | Freeze versioned comparison input/output contracts before parallel implementation | G4-02, G4-03 | no | Contract baseline |
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| G4-01 | Define comparison use cases and supported period/dataset semantics | M3 | Product scope |
+| G4-02 | Activate RRA comparison-fact authority | G4-01 | RRA specification |
+| G4-03 | Activate RCA comparison orchestration authority | G4-01 | RCA specification |
+| G4-04 | Freeze versioned input/output, compatibility, filter, and evidence contracts | G4-02/03 | Contract baseline |
 
 ## Implementation tasks
 
 | ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| C1-01 | Add period and dataset-version semantics in the workspace domain | G4-04, W1 | RRA test fixture design | Period model |
-| C1-02 | Detect compatibility, missing dimensions, mapping drift, and incomparable inputs | C1-01 | no | Fail-closed compatibility contract |
-| C1-03 | Build versioned immutable RRA comparison fact package | G4-04, C1-02 | RCA API work after contract freeze | Comparison facts |
-| C1-04 | Build deterministic bilingual comparison narrative with citations/refusals | C1-03 | report renderer work | Narrative |
+|---|---|---|---|---|
+| C1-01 | Add governed dataset-period semantics | G4-04, W1 | RRA fixtures | Period model |
+| C1-02 | Detect incompatible semantics, currency, population, coverage, mapping drift, and versions | C1-01 | no | Fail-closed compatibility contract |
+| C1-03 | Build immutable RRA comparison fact package | C1-02 | RCA API after freeze | Comparison facts |
+| C1-04 | Build deterministic bilingual comparison narrative with evidence/refusals | C1-03 | renderer | Narrative |
 | C1-05 | Add comparison HTML/PDF/Excel surfaces and reconciliation | C1-03 | C1-04 | Deliverables |
-| C1-06 | Add authorized comparison orchestration API in RCA | C1-01, stable C1-03 contract | C1-04/C1-05 | API |
-| C1-07 | Build Compare flow and results UI | C1-06, stable surface contracts | accessibility tests | UI |
-| C1-08 | Add exactness, provenance, cross-org, mixed-version, and unsupported-comparison tests | all above | no | Evidence |
-
-## M4 prerequisite
-
-No executive dashboard work should begin until the comparison fact contract is stable and versioned.
+| C1-06 | Add authorized comparison orchestration API | C1-01, stable C1-03 | C1-04/05 | API |
+| C1-07 | Build Compare flow and results UI | C1-06, U1 | accessibility | Customer flow |
+| C1-08 | Add exactness, provenance, cross-org, mixed-version, unsupported-filter, deletion, and rerun tests | all above | no | Evidence |
 
 ---
 
-# PROGRAM D1 - Executive dashboard and evidence-backed report workspace
+# PROGRAM SV1 — Curated semantic views and governed read models
 
 ## Goal
 
-Expose repeatable decision value without duplicating calculations outside governed RRA facts.
+Provide reusable, versioned, no-calculation views over governed facts for dashboards, guided exploration, APIs, and AI.
+
+## Governance principles
+
+- A semantic view selects existing metrics, dimensions, filters, and evidence requirements.
+- It cannot define a new formula.
+- It cannot accept arbitrary SQL, customer-calculated fields, or hidden filters.
+- It propagates refusals and caveats rather than dropping unavailable metrics.
+- Every request is organization-scoped through canonical authorization.
+
+## Initial views
+
+```text
+ExecutiveOverviewView
+PeriodComparisonView
+BranchPerformanceView
+ProductCategoryView
+BasketView
+ConcentrationView
+ReportEvidenceView
+MetricAvailabilityView
+```
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| SV1-01 | Activate semantic-view and governed-query authority | C1 contract stable, T1 | Active contract |
+| SV1-02 | Define versioned `SemanticViewDefinition` registry | SV1-01 | Metric/dimension/filter/evidence allowlists |
+| SV1-03 | Implement filter and dimension compatibility validation | SV1-02 | Unsupported combinations refuse before query |
+| SV1-04 | Build organization-scoped read-model/query service | SV1-02/03 | No-calculation read path |
+| SV1-05 | Propagate evidence, caveats, refusals, and population metadata | SV1-04 | Trust-preserving response contract |
+| SV1-06 | Add published view versions and rollback-safe compatibility | SV1-04 | Stable dashboard/API baseline |
+| SV1-07 | Add cross-org, hidden-filter, arithmetic, unsupported-dimension, version, and emptiness tests | all above | Boundary evidence |
+| SV1-08 | Establish latency and query-shape baseline | SV1-04 | Evidence before caching/pre-aggregation |
+
+---
+
+# PROGRAM D1 — Executive decision workspace and evidence-backed reports
+
+## Goal
+
+Expose recurring decision value without duplicating calculations outside RRA facts and SV1 views.
 
 ## Product surfaces
 
-- Executive overview
-- Period-over-period change summary
-- Branch performance
-- Category/product performance where governed
-- Exceptions and limitations
-- Recent analyses and comparisons
-- Interactive report navigation
-- Evidence panel for each material claim
-- Download and expiry/retention status
+- Executive Overview
+- Period Comparison
+- Branch Performance
+- Product/Category Performance
+- Basket and Concentration
+- Exceptions, Caveats, and Refusals
+- Recent Analyses and Comparisons
+- Navigable Report Workspace
+- Metric Detail and Evidence Drawer
 
 ## Tasks
 
 | ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| D1-01 | Define dashboard information architecture and exact fact-source map | C1 stable | design system work | No-calculation UI contract |
-| D1-02 | Add versioned dashboard read model assembled only from governed fact packages | D1-01 | evidence API | Read model |
-| D1-03 | Build Executive Overview and change summary | D1-02 | D1-04 | UI module |
-| D1-04 | Build Branch, Category, and Exception modules only where governed facts exist | D1-02 | D1-03 | UI modules |
-| D1-05 | Build evidence API and evidence drawer linking claims to facts, citations, provenance, and caveats | C1 facts | D1-03/D1-04 | Evidence experience |
-| D1-06 | Refactor the report page into a navigable report workspace without changing fact authority | D1-05 | no | Report UX |
-| D1-07 | Add cache and performance behavior scoped by organization and fact-package version | D1-02 | no | Performance |
-| D1-08 | Add Arabic/English parity, RTL, accessibility, visual regression, and narrow-layout tests | D1-03 through D1-06 | no | Quality evidence |
-| D1-09 | Add dashboard activation and repeat-use telemetry without content | D1-03 | no | Product measurement |
+|---|---|---|---|---|
+| D1-01 | Define information architecture, narrative order, and exact fact/view source map | C1/SV1 stable | U1 | No-calculation UI contract |
+| D1-02 | Build executive overview read model from SV1 only | D1-01 | evidence API | Read model |
+| D1-03 | Build headline KPIs and change summary | D1-02 | D1-04 | Overview |
+| D1-04 | Build branch, product/category, basket, concentration, and exception modules only where governed facts exist | D1-02 | D1-03 | Decision modules |
+| D1-05 | Integrate T1 metric detail, evidence, quality, and refusal surfaces | T1, D1-03/04 | no | Evidence experience |
+| D1-06 | Refactor the report page into a navigable report workspace | D1-05 | no | Interactive report UX |
+| D1-07 | Add visible global period/workspace/dimension filters with no hidden state | SV1, U1 | D1 modules | Filter UX |
+| D1-08 | Add print/export/snapshot behavior without recalculation | D1-03 through D1-07 | no | Stable presentation |
+| D1-09 | Add performance behavior after SV1 baseline | SV1-08 | OPS2 planning | Targeted cache/read-model behavior only |
+| D1-10 | Add Arabic/English parity, RTL, accessibility, mobile, visual regression, and refusal-state tests | all above | no | Quality evidence |
+| D1-11 | Add content-free decision-use telemetry | approved scope | no | Evidence opens, compare use, module use, report navigation, return visits |
 
 ## M4 exit gate
 
-A paying design partner can return to a workspace, compare periods, view an executive dashboard, inspect evidence for material claims, and download reconciled reports.
+A design partner can return to a workspace, compare governed periods, view an executive decision page, drill through supported breakdowns, inspect evidence and limitations for every material claim, and download reconciled bilingual reports.
+
+**M4 is explicitly non-paying, and that is a governance boundary rather than a product preference.** `KHEPRI-DEC-025` §5 carries forward `KHEPRI-DEC-024` §9's hard stop unchanged: the provisional Clerk admission "becomes inoperative immediately before accepting consideration from any customer, opening a commercial production service, or losing the current educational access". Clerk is the only authorized identity path, and no successor commercial identity authority is scheduled before M4. So M4 proves the workspace is worth paying for; **taking the money is M5**, and it cannot happen until the successor authority named under `G6` is merged.
 
 ---
 
-# PROGRAM G5/ON1 - Public onboarding and team administration
+# PROGRAM X1 — Deterministic guided exploration and saved answers
 
-Public signup is excluded from RCA-001 and needs its own active specification.
+## Goal
+
+Deliver a question-first experience without arbitrary formulas, SQL, or AI-generated calculations.
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| X1-01 | Define a supported business-question catalog and metric/dimension combinations | M4 facts/views | Curated question contract |
+| X1-02 | Add `Explore` actions to KPIs and charts | SV1/D1 | Metric, period, and filter context carried visibly |
+| X1-03 | Implement deterministic branch/product/category/period breakdowns | X1-01/02 | Governed answers with evidence |
+| X1-04 | Add suggested next questions based on supported contracts, not content inference | X1-01 | Safe guided flow |
+| X1-05 | Add Saved Answers and versioned filters | W1, X1-03 | Reopenable decision artifacts |
+| X1-06 | Allow approved Saved Answers to be pinned to a workspace overview | X1-05 | Curated personalization, no new formula |
+| X1-07 | Add unsupported-combination, hidden-filter, stale-version, deletion, cross-org, and evidence tests | all above | Safety evidence |
+
+X1-01 through X1-03 may be included in the M4 release. Saved Answers and pinning may follow immediately after M4.
+
+---
+
+# PROGRAM G5/ON1 — Public or assisted onboarding
+
+## Goal
+
+Move beyond operator-provisioned design partners only after M4 proves repeat decision value.
 
 ## Governance tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| G5-01 | Define self-serve vs assisted onboarding, verification, organization bootstrap, abuse controls, and support boundaries | M4 product evidence | billing research | Product decisions |
-| G5-02 | Specify public signup, account verification, organization creation, invitation acceptance, and failure behavior | G5-01 | G6 pricing spec | Active specification |
-| G5-03 | Decide email delivery, anti-abuse, rate-limit, domain, and operational provider boundaries | G5-01 | no | Architecture/operations decision if needed |
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| G5-01 | Decide self-serve versus assisted onboarding, verification, organization bootstrap, and support boundaries | M4 evidence | Product decisions |
+| G5-02 | Define signup, verification, first organization, invitation acceptance, and failure behavior | G5-01 | Active specification |
+| G5-03 | Decide email, rate limit, anti-abuse, domain, and provider boundaries | G5-01 | Operations decision |
 
 ## Implementation tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| ON1-01 | Build public account verification and signup | active G5, R3/R5 | organization bootstrap | Auth flow |
-| ON1-02 | Build first-organization bootstrap and first-owner guarantee | ON1-01, R1/R2 | team UI polish | Org onboarding |
-| ON1-03 | Build guided first-analysis onboarding | ON1-02, R8/W1 | billing integration later | Activation flow |
-| ON1-04 | Complete team, invitation, role, and membership administration UI | R2/R4/R6 | ON1-03 | Admin UX |
-| ON1-05 | Add account and organization audit views using approved content-free events | active retention authority | no | Audit UX |
-| ON1-06 | Add abuse, throttling, enumeration, replay, and accessibility tests | ON1-01 through ON1-05 | no | Security evidence |
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| ON1-01 | Build approved account verification and signup | active G5 | Auth flow |
+| ON1-02 | Build first-organization bootstrap and first-owner guarantee | ON1-01 | Organization creation |
+| ON1-03 | Build guided first-analysis onboarding with trust summary | ON1-02, T1 | Activation flow |
+| ON1-04 | Complete team, invitation, role, and membership administration UX | R2/R4/R6 | Admin UX |
+| ON1-05 | Add account/organization audit views using approved content-free events | retention authority | Audit UX |
+| ON1-06 | Add abuse, throttling, enumeration, replay, accessibility, and recovery-consequence tests | all above | Security evidence |
 
 ---
 
-# PROGRAM G6/B1 - Billing, entitlements, quotas, and invoicing
+# PROGRAM G6/B1 — Billing, entitlements, quotas, and invoicing
 
-Billing begins only after M4 proves repeat value. Do not monetize a product whose core repeat-use loop is incomplete.
+## Goal
 
-## Governance and product decisions
+Monetize only after M4 demonstrates repeat value.
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| G6-01 | Define plans, entitlement vocabulary, billable units, free/trial behavior, and overage policy | M4 evidence | G5 onboarding | Product catalog |
-| G6-02 | Define cancellation, downgrade, payment failure, refunds, invoices, tax responsibility, and data-retention consequences | G6-01 | provider evaluation | Lifecycle rules |
-| G6-03 | Select billing provider behind an adapter and approve required data flow | G6-01, G6-02 | no | Architecture/provider decision |
-| G6-04 | Activate billing/entitlement specification | G6-01 through G6-03 | no | Implementation authority |
+## Identity precondition
+
+**Billing cannot ship over the provisional Clerk admission.** `KHEPRI-DEC-025` §5 makes that admission inoperative "immediately before accepting consideration from any customer", and it records that every `KHEPRI-DEC-024` §8 commercial gate remains unrecorded, with §7's accepted gaps — including provider-session revocation and the recovery window — accepted **only** for private-beta scope and lifetime. Elapsed time, a successful beta, and the absence of an incident satisfy none of them. `G6-00` is therefore the first task in this program, and `R5`'s deferred credential tasks reopen with it.
+
+## Governance tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| G6-00 | Activate successor commercial identity authority: credential ownership, the `KHEPRI-DEC-024` §8 commercial gates, provider-session revocation, and the recovery window | M4 evidence | Authority to accept consideration; `R5-02`…`R5-06` re-dispositioned |
+| G6-01 | Define plans, entitlement vocabulary, billable units, trial/free behavior, and overage policy | M4 evidence | Product catalog |
+| G6-02 | Define cancellation, downgrade, payment failure, refunds, invoices, tax responsibility, and retention consequences | G6-01 | Lifecycle rules |
+| G6-03 | Select a billing provider behind an adapter and approve data flow | G6-01/02 | Provider decision |
+| G6-04 | Activate billing/entitlement specification | G6-00 through G6-03 | Authority |
 
 ## Implementation tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| B1-01 | Implement plan catalog and versioned entitlement model | active G6 | usage meter design | Domain |
-| B1-02 | Implement content-free usage metering with idempotent events | B1-01 | billing adapter | Metering |
-| B1-03 | Implement canonical entitlement checkpoint separate from authorization but required by protected paid actions | B1-01, R6 | billing adapter | Entitlement service |
-| B1-04 | Implement billing-provider adapter and idempotent webhook ingestion | B1-01, G6 provider decision | B1-02/B1-03 | Billing integration |
-| B1-05 | Implement quota enforcement at job creation and retained-resource boundaries | B1-02, B1-03 | UI | Enforcement |
-| B1-06 | Build plan, usage, checkout, payment status, invoice, and cancellation UI | B1-04, B1-05 | no | Billing UX |
-| B1-07 | Add replay, out-of-order webhook, downgrade, payment-failure, quota-race, and cross-org billing tests | all above | no | Reliability evidence |
-
-## M5 exit gate
-
-A new customer can sign up, create an organization, complete a first analysis, select a plan, pay, see usage, receive invoices, and be constrained by correct entitlements and quotas.
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| B1-01 | Implement versioned plan and entitlement model | active G6 | Domain |
+| B1-02 | Implement content-free idempotent usage metering | B1-01 | Usage ledger |
+| B1-03 | Implement canonical entitlement checkpoint separate from authorization | B1-01 | Enforcement |
+| B1-04 | Implement billing adapter and idempotent webhook ingestion | B1-01/02/03 | Billing integration |
+| B1-05 | Enforce quotas at job, retained-resource, API, and delivery boundaries | B1-02/03 | Quotas |
+| B1-06 | Build plan, usage, checkout, payment, invoice, and cancellation UX | B1-04/05 | Billing UI |
+| B1-07 | Add replay, out-of-order, downgrade, payment-failure, quota-race, refund, and cross-org tests | all above | Reliability evidence |
 
 ---
 
-# PROGRAM G7/A1 - Agency tenancy
+# PROGRAM API1 — Read-only semantic API and embedded analytics
+
+## Goal
+
+Allow approved partners and products to consume Khepri decisions without bypassing authorization, evidence, or metric governance.
+
+## Preconditions
+
+- M4 and SV1 are stable.
+- A new API/embed authority is active.
+- Demand is demonstrated; this is not a prerequisite for first sellable value.
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| API1-01 | Define API versioning, tenancy, scopes, rate limits, embed identity, allowed views, and deprecation policy | M4/SV1 | Active contract |
+| API1-02 | Add read-only metric, fact, evidence, report, and semantic-view endpoints | API1-01 | Versioned API |
+| API1-03 | Add short-lived signed organization-scoped embed sessions | API1-01, R6 | Embed boundary |
+| API1-04 | Add KPI, chart, report, evidence, and Ask Khepri embed components as separately authorized | API1-02/03 | Embedding |
+| API1-05 | Add request idempotency where applicable, rate limits, content-free telemetry, and audit | API1-02 | Operations |
+| API1-06 | Add cross-org, scope, replay, expiry, unsupported-view, version, and hidden-action tests | all above | Security evidence |
+
+## Explicit non-goals for first API release
+
+- no SQL endpoint;
+- no DAX/XMLA endpoint;
+- no customer formulas;
+- no write API;
+- no generic dashboard builder;
+- no hidden provider-hosted state.
+
+---
+
+# PROGRAM ING1 — Governed ingestion connectors
+
+## Goal
+
+Add a small number of reliable ingestion paths after the upload-first product works, without turning Khepri into a general ETL platform.
+
+## First candidate paths
+
+1. authenticated object-storage drop;
+2. SFTP pull with pinned host identity;
+3. versioned upload API;
+4. later, one demand-backed pharmacy/ERP connector.
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| ING1-01 | Define connector credentials, source identity, snapshot, freshness, replay, deletion, and incident boundaries | M4 demand | Active contract |
+| ING1-02 | Build provider-neutral connector port and snapshot manifest | ING1-01 | Domain/adapter seam |
+| ING1-03 | Implement one low-risk connector | ING1-02 | First connector |
+| ING1-04 | Route every snapshot through the same RRA-003 admission path as manual upload | ING1-03 | No second semantics path |
+| ING1-05 | Add scheduling or webhooks only under G8 authority | G8, ING1-03 | Automated ingestion |
+| ING1-06 | Add replay, duplicate snapshot, partial transfer, rotation, revocation, cross-org, and deletion tests | all above | Reliability evidence |
+
+---
+
+# PROGRAM G7/A1 — Agency tenancy and delegated portfolios
 
 ## Goal
 
 Let an agency serve multiple client organizations without creating a second path around organization isolation.
 
-## Governance decisions
+## Required decisions
 
-- Is an agency itself an organization, a portfolio over client organizations, or a distinct tenant type?
-- Which actor can create, attach, detach, and delegate a client?
-- What can a client owner see about the agency?
-- Which branding elements may be customized without weakening provenance or disclosures?
-- How does billing allocate between agency and client?
-
-## Tasks
-
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| G7-01 | Activate agency tenancy and delegated-access specification | M5, owner decisions | recurring-delivery spec | Authority |
-| A1-01 | Implement portfolio and client-association domain | active G7 | UI design | Domain |
-| A1-02 | Extend canonical authorization with explicit delegated-access rules | A1-01, R6 | no other auth refactor | Authorization |
-| A1-03 | Build client switcher and portfolio overview | A1-02 | billing allocation | UI |
-| A1-04 | Implement bounded white-label configuration that cannot remove governed disclosures/evidence | G7 | A1-03 | Branding |
-| A1-05 | Add exhaustive cross-client read/mutation/nonexistence tests | A1-02 through A1-04 | no | Isolation evidence |
-
----
-
-# PROGRAM G8/S2 - Recurring scheduled delivery
-
-## Goal
-
-Schedule and deliver reports through approved channels without weakening job reliability, authorization, retention, or evidence.
+- agency as organization, portfolio, or distinct tenant type;
+- creation/attach/detach/delegation rights;
+- client visibility and consent;
+- billing allocation;
+- branding limits that cannot remove provenance, evidence, or disclosures.
 
 ## Tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| G8-01 | Define schedule ownership, trigger inputs, time zones, pause/cancel, recipient authorization, and delivery channels | M5 | G7 agency spec | Product rules |
-| G8-02 | Activate scheduling specification and any required runtime/provider decision | G8-01 | no | Authority |
-| S2-01 | Add schedule domain, persistence, and one-head migration | active G8 | delivery adapter design | Schedule store |
-| S2-02 | Add scheduler/claim worker using durable state and bounded retries | S2-01 | UI | Runtime |
-| S2-03 | Add secure delivery-channel adapters and recipient checks | S2-01, G8 | S2-02 | Delivery |
-| S2-04 | Add schedule management UI | S2-01 | S2-02/S2-03 | UX |
-| S2-05 | Add DST, time-zone, duplicate-trigger, revoked-recipient, retry, deletion, and audit tests | all above | no | Reliability evidence |
-
-## Parallelism with agency
-
-Agency and recurring-delivery specifications may be drafted in parallel. Code may proceed in parallel only if one branch does not modify the same authorization, migration, or job-state hotspot. Otherwise serialize the implementations.
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| G7-01 | Activate agency/delegated-access specification | M5, owner decisions | Authority |
+| A1-01 | Implement portfolio and client-association domain | active G7 | Domain |
+| A1-02 | Extend canonical authorization with explicit delegated access | A1-01, R6 | Authorization |
+| A1-03 | Build portfolio overview and client switcher | A1-02 | UI |
+| A1-04 | Implement bounded branding | G7 | Branding |
+| A1-05 | Add exhaustive cross-client, detach, revocation, billing, and nonexistence tests | all above | Isolation evidence |
 
 ---
 
-# PROGRAM G9/AI1 - Evidence-backed AI assistant
+# PROGRAM G8/MON1/S2 — Watchlists, deterministic alerts, and recurring delivery
 
 ## Goal
 
-Allow a user to ask business questions while ensuring every answer is grounded in governed facts, cites evidence, and refuses unsupported claims.
-
-## Preconditions
-
-- M4 evidence graph and comparison contracts are stable.
-- The AI product scope is governed.
-- Provider, data handling, retention, and model allowlist decisions are active.
-- No raw rows, filenames, secrets, opaque owner/session identifiers, or storage locations leave approved boundaries.
+Monitor governed metrics and deliver approved reports without weakening metric versions, authorization, retention, or evidence.
 
 ## Governance tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| G9-01 | Define supported question classes, excluded actions, answer contract, citations, and refusal behavior | M4/M6 evidence | provider evaluation | Product spec |
-| G9-02 | Decide provider/model/data-processing/ZDR/retention and adapter constraints | G9-01 | evaluation design | Active architecture decision |
-| G9-03 | Activate AI assistant specification | G9-01, G9-02 | no | Implementation authority |
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| G8-01 | Define watchlist ownership, metric/version binding, thresholds, comparison windows, time zones, pause/cancel, recipients, and channels | M4/M5 | Product rules |
+| G8-02 | Define deterministic alert classes and excluded statistical claims | G8-01 | Alert vocabulary |
+| G8-03 | Activate scheduling/delivery/runtime authority | G8-01/02 | Authority |
 
 ## Implementation tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| AI1-01 | Build a read-only query context from governed facts, safe labels, caveats, and citation identifiers only | active G9 | evaluation fixtures | Context contract |
-| AI1-02 | Build provider-neutral adapter and pinned request/response schema | G9-02, AI1-01 | validator | Adapter |
-| AI1-03 | Validate every numeric, categorical, temporal, and causal claim against supplied facts | AI1-01 | AI1-02 | Claim validator |
-| AI1-04 | Require citations/evidence for every material claim and refuse unsupported questions | AI1-03 | UI | Grounding |
-| AI1-05 | Add English/Arabic answer parity and direction-safe rendering | AI1-04 | evals | Bilingual assistant |
-| AI1-06 | Build adversarial evaluation suite for unsupported numbers, prompt injection, cross-org leakage, unsafe labels, missing evidence, and refusal quality | AI1-01 through AI1-05 | no | Evaluation gate |
-| AI1-07 | Build Ask Khepri UI with evidence navigation and explicit limitations | AI1-04, AI1-05 | no | Product UX |
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| MON1-01 | Add watchlist domain and persistence | active G8 | Watchlists |
+| MON1-02 | Implement threshold, percentage-change, missing-data, refused-result, and failed-analysis alerts | MON1-01 | Deterministic monitoring |
+| MON1-03 | Build watchlist and alert-history UI | MON1-02 | UX |
+| S2-01 | Add schedule domain, persistence, and one-head migration | active G8 | Schedules |
+| S2-02 | Add durable scheduler/claim worker with bounded retries | S2-01 | Runtime |
+| S2-03 | Add secure delivery adapters and recipient reauthorization | S2-01/02 | Delivery |
+| S2-04 | Build schedule and delivery UI | S2-01/03 | UX |
+| S2-05 | Add DST, duplicate trigger, stale metric version, revoked recipient, deletion, retry, and audit tests | all above | Reliability evidence |
 
-## Non-goals for the first AI slice
-
-- No autonomous actions.
-- No write access.
-- No customer-authored formulas.
-- No forecasting.
-- No provider-hosted files, vector stores, threads, or hidden state.
-- No answer that cannot be reconstructed from cited governed facts.
+Anomaly detection, predictive alerts, and causal diagnosis are not included. They require STAT1 or a separately governed RRA family.
 
 ---
 
-# PROGRAM E1 - Enterprise GA hardening
+# PROGRAM STAT1 — Optional Seshat statistical evidence integration
 
 ## Goal
 
-Make the product supportable, recoverable, secure, and reviewable for enterprise customers.
+Consume statistical evidence Khepri does not calculate, without moving deterministic retail authority or importing Seshat runtime/governance into Khepri.
+
+## Preconditions
+
+- M4 deterministic facts and evidence graph are stable.
+- A successor to the retired Khepri/Seshat boundary is active in both repositories.
+- Seshat has a reviewed headless facade that does not require a repository checkout/root.
+- Contract schemas and fixtures have one canonical owner and version/digest controls.
 
 ## Tasks
 
-| ID | Task | Depends on | Parallel | Output |
-| --- | --- | --- | --- | --- |
-| E1-01 | Decide enterprise identity roadmap: MFA baseline, SSO/SAML, SCIM, domain controls, and provider abstraction | M5 product needs | agency/scheduling | Identity decision |
-| E1-02 | Implement approved enterprise identity slice behind existing authentication/authorization boundaries | E1-01 | ops | Identity controls |
-| E1-03 | Complete account/org export, closure, retention, and deletion workflows under active decisions | workspace/billing/agency specs | no | Lifecycle completeness |
-| E1-04 | Run external or independent security review and resolve approved findings | feature complete | capacity work | Security evidence |
-| E1-05 | Run load, soak, concurrency, failover, restore, and deletion-under-failure exercises | production target | security review | Capacity/recovery evidence |
-| E1-06 | Define SLA/SLO, on-call, incident severity, support escalation, and customer communication | observability stable | E1-04/E1-05 | Operating model |
-| E1-07 | Finalize release channels, migration rehearsal, rollback, feature flags, and emergency disablement | E1-05 | documentation | Release safety |
-| E1-08 | Produce enterprise security, privacy, data-flow, retention, and operational documentation | all above | no | Customer readiness |
+| ID | Owner | Task | Output |
+|---|---|---|---|
+| STAT1-01 | both repos | Activate reciprocal boundary decisions with pinned SHAs and rollback | Authority |
+| STAT1-02 | Seshat canonical | Publish/commit versioned request/evidence schemas and fixtures | Contract baseline |
+| STAT1-03 | Seshat | Build headless facade with policy inputs as evidence, never caller-supplied approval | Engine API |
+| STAT1-04 | Khepri | Build pure FactPackage/SemanticView -> AnalysisRequest adapter | Request adapter |
+| STAT1-05 | Khepri | Build EvidenceBundle -> governed finding consumer with no arithmetic | Evidence consumer |
+| STAT1-06 | both repos | Run one low-risk statistical method end to end | First capability |
+| STAT1-07 | Khepri | Add version mismatch, unavailable provider, refusal, and deterministic-report fallback | Fail-closed behavior |
+| STAT1-08 | both repos | Add parity fixtures, privacy review, rollback rehearsal, and independent review | Release evidence |
 
-## M8 exit gate
+## Prohibitions
 
-Enterprise GA requires proof, not only code:
+- no Khepri import of Seshat CLI, checkout, readiness state, dbt, Dagster, or Power BI runtime;
+- no Seshat import of Khepri;
+- no duplicate deterministic retail calculation;
+- no forecasting consumption until the RRA family exclusion is amended first;
+- no customer-visible claim without Khepri evidence/presentation mapping.
 
-- current security review;
-- successful backup and restore exercises;
-- verified deletion after restore;
-- capacity and concurrency evidence;
-- runbooks and incident procedures;
-- release/rollback rehearsal;
-- support ownership;
-- accurate security and privacy documentation;
-- no unresolved critical or high-risk authorization, isolation, retention, or recovery finding.
+STAT1 is not on the critical path to M4 or M5.
 
 ---
 
-## 7. Parallel work policy
+# PROGRAM G9/AI1 — Ask Khepri, evidence-backed intelligence
+
+## Goal
+
+Allow business questions only through governed facts and semantic views, with evidence for every material claim and refusal for unsupported questions.
+
+## Preconditions
+
+- M4 is stable.
+- T1 definitions and SV1 views are versioned.
+- G9 provider/model/data-processing/ZDR/retention authority is active.
+- No raw customer rows or hidden provider state are required.
+
+## Governance tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| G9-01 | Define supported question classes, answer schema, citations, follow-ups, refusal, and coaching behavior | M4/T1/SV1 | Product spec |
+| G9-02 | Select provider/model/data-processing/ZDR/retention and adapter constraints | G9-01 | Provider decision |
+| G9-03 | Activate AI assistant specification | G9-01/02 | Authority |
+
+## Implementation tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| AI1-01 | Build read-only question context from SV1 views, T1 definitions, facts, caveats, and citations | active G9 | Context contract |
+| AI1-02 | Build provider-neutral adapter and pinned request/response schemas | AI1-01, G9-02 | Adapter |
+| AI1-03 | Validate every numeric, categorical, temporal, comparison, and causal claim | AI1-01/02 | Claim validator |
+| AI1-04 | Require evidence for every material claim and refuse unsupported questions | AI1-03 | Grounding |
+| AI1-05 | Add English/Arabic parity, synonyms, follow-ups, and direction-safe rendering | AI1-04, T1 | Bilingual assistant |
+| AI1-06 | Turn user corrections into review proposals, never automatic semantic changes | AI1-05 | Human-in-the-loop coaching |
+| AI1-07 | Add adversarial evaluation for unsupported numbers, prompt injection, cross-org leakage, missing evidence, stale versions, causal overclaim, and refusal quality | all above | Evaluation gate |
+| AI1-08 | Build Ask Khepri UI with evidence navigation and explicit limitations | AI1-04/05 | Product UX |
+
+## Non-goals for first AI release
+
+- no autonomous actions;
+- no writes;
+- no customer formulas;
+- no forecasting;
+- no raw-row retrieval;
+- no provider-hosted files/vector stores/threads;
+- no answer that cannot be reconstructed from cited governed facts.
+
+---
+
+# CROSS-CUTTING TRACK OPS2 — Semantic operations, performance, and cost
+
+## Goal
+
+Operate the decision platform using measured evidence rather than premature caching or pre-aggregation.
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| OPS2-01 | Define operational metrics for jobs, semantic views, dashboards, APIs, alerts, and AI | M4 | Content-free observability contract |
+| OPS2-02 | Build operator pages for job/query status, retries, latency, refusal rates, artifact publication, and version usage | OPS2-01 | Operations console |
+| OPS2-03 | Establish per-view/page/API performance budgets | SV1/D1/API1 as applicable | Budgets |
+| OPS2-04 | Identify repeated query/read-model patterns from evidence | OPS2-02/03 | Optimization candidates |
+| OPS2-05 | Add only targeted persisted read models or cache entries with organization/version keys | OPS2-04 | Measured optimization |
+| OPS2-06 | Evaluate a pre-aggregation engine only if targeted approaches fail measured budgets | OPS2-05 | Explicit go/no-go decision |
+| OPS2-07 | Add cost, capacity, cache-invalidation, and stale-version alerts and runbooks | OPS2-02 through OPS2-06 | Operability |
+
+A general AtScale/Cube-style aggregate subsystem is not authorized merely because competitors have one.
+
+---
+
+# CROSS-CUTTING TRACK S1 — Selective RRA construction hardening
+
+## Goal
+
+Harden only records that carry a security or integrity invariant a direct store caller could violate.
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| S1-01 | Inventory and classify RRA records | none | Risk inventory |
+| S1-02 | Identify caller-controlled identifiers and security material at store seams; rank `#231`'s missing mutation evidence for the `R7-03` live-authorization guards alongside them | S1-01 | Ranked list |
+| S1-03 | Select one bounded family | S1-02 | Approved slice |
+| S1-04 | Implement one family with accidental-bypass tests | S1-03 | Bounded PRs |
+| S1-05 | Close `#152` only after every classified high-risk record is addressed or explicitly accepted | S1-04 | Closeout |
+
+S1 may run in parallel only when it does not touch active CAL1/C1 hotspots.
+
+---
+
+# PROGRAM E1 — Enterprise GA hardening
+
+## Goal
+
+Make Khepri supportable, recoverable, secure, auditable, and commercially reviewable.
+
+## Tasks
+
+| ID | Task | Depends on | Output |
+|---|---|---|---|
+| E1-01 | Decide enterprise identity roadmap: MFA baseline, SSO/SAML, SCIM, domain controls, and portability | M5 needs | Identity decision |
+| E1-02 | Implement approved enterprise identity controls behind existing auth/authorization | E1-01 | Identity |
+| E1-03 | Complete account/org/workspace export, closure, retention, legal hold if required, and deletion workflows | workspace/billing/agency authority | Lifecycle completeness |
+| E1-04 | Run independent security/privacy review and close approved findings | feature complete | Security evidence |
+| E1-05 | Run load, soak, concurrency, failover, backup/restore, deletion-after-restore, and provider-outage exercises | OPS1/OPS2 | Resilience evidence |
+| E1-06 | Define SLA/SLO, on-call, severity, escalation, support, and customer communication | observability stable | Operating model |
+| E1-07 | Finalize release channels, migration rehearsal, rollback, feature gates, emergency disablement, and dependency response | E1-05 | Release safety |
+| E1-08 | Produce customer-facing security, privacy, architecture, data-flow, retention, subprocessors, and operational documentation | all above | Enterprise documentation |
+| E1-09 | Rehearse one enterprise onboarding and one incident end to end | E1-02 through E1-08 | GA readiness |
+
+---
+
+## 8. UI evolution by milestone
+
+### M2 UI
+
+```text
+Organization switcher
+Team / invitations
+New Analysis
+Upload -> Review -> Processing -> Report
+Analysis Quality Summary
+Metric/evidence detail
+Artifacts/downloads
+Shared unavailable states
+```
+
+No dashboard or history is faked.
+
+### M3 UI
+
+```text
+Workspace Overview
+Datasets
+Analyses
+Reports
+Metrics
+Activity
+Version/availability diff
+Deletion/retention state
+```
+
+### M4 UI
+
+```text
+Executive Overview
+Compare
+Branches
+Products/Categories
+Basket
+Concentration
+Exceptions/Limitations
+Evidence drawer
+Navigable report workspace
+Deterministic Explore actions
+```
+
+### M5-M6 UI
+
+```text
+Onboarding
+Plans/usage/billing
+Watchlists/alerts
+Schedules/delivery
+Agency portfolio
+Integrations
+API/embed management
+```
+
+### M7 UI
+
+```text
+Ask Khepri
+Answer evidence
+Supported follow-ups
+Refusal/limitations
+Review-proposed vocabulary coaching
+```
+
+---
+
+## 9. Metric card and evidence contract
+
+Every customer-visible KPI card should expose, directly or through one action:
+
+```text
+Metric label
+Value and unit/currency
+Comparison only when compatible
+Status: verified / caveated / refused / unavailable
+Population
+Formula/contract version
+Visible filters and period
+Evidence action
+Caveat/refusal count
+```
+
+The evidence surface must expose:
+
+- definition and bilingual labels;
+- formula and formula version;
+- population code and basis identity;
+- event and transaction counts where applicable;
+- source semantic roles and source-contract identity;
+- currency, precision, and rounding;
+- coverage manifest and comparison window;
+- applied filters/dimensions;
+- reconciliation result;
+- caveats/refusals;
+- citations and surfaces using the figure.
+
+No UI component may recompute the value it explains.
+
+---
+
+## 10. Product measurement framework
+
+All telemetry is content-free and requires approved scope.
+
+### Activation
+
+- identity handoff succeeded;
+- organization selected;
+- analysis started;
+- upload accepted;
+- semantic review completed;
+- facts produced;
+- report completed;
+- evidence opened;
+- report downloaded.
+
+### Trust
+
+- quality summary viewed;
+- refused result inspected;
+- evidence opened;
+- mapping correction requested;
+- report and displayed facts reconciled.
+
+### Repeat use
+
+- workspace returned to;
+- second dataset version created;
+- second analysis completed;
+- old report reopened;
+- comparison run;
+- saved answer/watchlist used.
+
+### Decision value
+
+- executive module viewed;
+- supported drill-down used;
+- evidence followed from a claim;
+- report shared/downloaded;
+- scheduled digest opened, when governed.
+
+### Operations
+
+- job success/retry/dead-letter/recovery;
+- stage and renderer latency;
+- view/API latency;
+- storage/DB errors;
+- refusal categories by code, never by customer content;
+- deployed formula/view versions.
+
+Targets are owner/product decisions and should be recorded only after baseline evidence exists.
+
+---
+
+## 11. Parallel work and serialization policy
+
+### Maximum active work
+
+For one owner, keep at most:
+
+- one high-risk calculation/persistence/authorization implementation branch;
+- one independent UI/domain implementation branch;
+- one docs/governance/planning branch.
 
 ### Work that may run in parallel
 
-1. Governance/specification work for the next milestone may run while the current milestone's implementation is stabilizing. Implementation must wait until the required artifact is active.
-2. UI information architecture and visual design may run while backend contracts are being implemented, but UI code should wait until API and state vocabularies are stable.
-3. RRA comparison facts and RCA comparison orchestration may be implemented in parallel after one versioned contract is frozen.
-4. Production operations may run in parallel with product work after R1 closes the deployment-blocking concurrency risk.
-5. Selective RRA hardening triage may run at any time; implementation should avoid overlapping active RRA feature hotspots.
-6. Test fixture design, adversarial cases, and accessibility plans may run in parallel with implementation.
+- late CAL1 implementation and T1/U1 design, but not T1 production code before CAL1 contracts merge;
+- OPS1 environment decisions and CAL1 implementation;
+- G2/G3 drafting during M2 stabilization;
+- W1 UI design and W1 backend contract design;
+- C1 RRA facts and RCA orchestration after a frozen contract;
+- D1 modules after SV1 read contracts freeze;
+- API1/ING1/MON1 design after M4 while billing/onboarding proceeds;
+- AI evaluation design after M4 while G9 provider evaluation proceeds.
 
 ### Work that must be serialized
 
-1. Two branches that both change the RCA transaction/store seam.
-2. `#155` and membership owner-reducing behavior as independent implementations.
-3. Two migrations that both assume they are the current Alembic head without a re-point plan.
-4. Two branches that both modify `src/khepri/rca/records.py`, `persistence.py`, the same central template/CSS file, or `authorization.py` once R6 creates it (it does not exist at this baseline).
-5. Comparison calculation code and the fact contract it depends on.
-6. Billing enforcement and an unsettled entitlement vocabulary.
-7. Agency authorization and another broad authorization refactor.
-8. AI answer generation and an unsettled evidence/citation contract.
-9. Public signup code before anti-abuse and recovery behavior are governed.
-10. Durable content code before the retention decision is active.
-
-### Migrations are strictly serial
-
-`R2-02`, `R3-03`, and `R4-03` add migrations; the original Khepri-credential shape of `R5-02`
-would add one too, but that task is deferred while Clerk owns credentials. Any future R5 recovery
-migration remains subject to the same serial rule. Combined with the one-persistence-branch limit
-below, schema work is strictly sequential regardless of what the per-program "Parallel" columns
-suggest. Those columns describe design, domain, and test work that may overlap — not schema merges.
-The later branch to merge re-points its `down_revision`. No migration need or absence is inferred
-for the future external-identity account slice; its persistence probe must decide that separately.
-
-### Recommended concurrency limit
-
-For this repository and one owner, keep at most:
-
-- one high-risk persistence/authorization implementation branch;
-- one independent UI or domain branch;
-- one docs/governance planning branch.
-
-More parallel branches create migration, spec, and review collisions faster than they create throughput.
+- CAL1 successor calculations and another RRA facts/comparison branch;
+- two schema/migration branches without a reviewed re-point plan;
+- two broad authorization changes;
+- W1 retention implementation before G2 authority;
+- C1 calculation before G4 contract freeze;
+- D1 calculation-like read logic before SV1;
+- API/AI implementation before stable T1/SV1 contracts;
+- Seshat integration before reciprocal authority and a headless facade;
+- billing enforcement before entitlement vocabulary;
+- agency access alongside another broad authorization refactor.
 
 ---
 
-## 8. Critical path
+## 12. Pull-request and release packaging
 
-The minimum critical path to a sellable Khepri product is:
+### Normal rule
 
-```text
-R0 truth reconciliation
--> R1 concurrent final-owner safety
--> R2 membership lifecycle
--> R3 sessions
--> R6 canonical authorization
--> R7 commercial RRA bridge
--> R8 commercial shell
--> G2/G3 retention and workspace authority
--> W1 history
--> G4 comparison authority
--> C1 comparison facts
--> D1 dashboard and evidence workspace
--> M4 sellable analytics core
-```
+One bounded customer or safety outcome per PR, with:
 
-Invitations and recovery are required for a complete RCA-001 experience but may run on side branches after their dependencies stabilize:
+- active authority and exact requirement IDs;
+- explicit non-goals;
+- RED/negative evidence;
+- mutation/adversarial evidence for load-bearing guards;
+- migration-head state where relevant;
+- focused and full validation;
+- CodeScene;
+- roadmap/status update only after merge.
 
-```text
-R2 -> R4 invitations
-R3 -> R5 recovery
-```
+### CAL1 has no exception
 
-Billing, agency, recurring delivery, and AI are not on the shortest path to first sellable value.
+CAL1 follows the normal rule. Its slices are family-shaped rather than function-shaped, because a family is the smallest unit that can publish one governed successor version and reconcile against an independent oracle. `V-mapping` merges before every other slice; each later slice states which earlier successor version it consumes. That ordering is a dependency, not a licence to review the program as one pull request.
 
----
-
-## 9. Pull request packaging rules
-
-Every implementation PR should contain:
-
-1. One bounded product outcome.
-2. The active specification and exact requirements/scenarios it implements.
-3. Explicit non-goals.
-4. The design decision or plan it follows.
-5. Test-first evidence and mutation/adversarial evidence for load-bearing guards.
-6. Migration chain status when applicable.
-7. Parallel-branch collision notes.
-8. Validation results:
-   - governance validation;
-   - Ruff;
-   - full pytest;
-   - focused tests;
-   - server-side CodeScene after PR creation.
-9. Review focus naming the highest-risk code, not only a generic test plan.
-10. Known limitations recorded as issues rather than hidden in prose.
+### Prohibited combinations
 
 Do not combine:
 
 - governance authority and unrelated product implementation;
-- membership, sessions, invitations, and authorization in one PR;
-- a new frontend framework with a product feature;
-- a broad RRA refactor with a new comparison engine;
-- billing provider integration with unrelated workspace changes;
-- AI integration with dashboard refactoring.
+- a new frontend architecture with a product feature;
+- arbitrary formulas/SQL with semantic views;
+- Seshat integration with deterministic correction;
+- billing with workspace calculation changes;
+- AI integration with dashboard refactoring;
+- broad RRA hardening with an active analytical family change.
 
 ---
 
-## 10. Definition of Ready for one implementation slice
+## 13. Definitions of Ready and Done
 
-A task is ready for Codex only when all are true:
+### Ready for planning
 
-- the repository baseline and branch are known;
-- the governing specification is active;
-- every required owner decision for the slice is settled;
-- the scope and non-goals are explicit;
-- dependencies have merged or a reviewed stacking strategy exists;
-- expected failing tests are named;
-- allowed and forbidden files are named;
-- migration-head strategy is named if relevant;
-- validation commands are named;
-- the stop point is explicit;
-- Ahmed has approved implementation of that task ID.
+- current `main` and relevant open work are verified;
+- authority and missing owner decisions are identified;
+- dependencies and collision risks are named.
 
----
+### Ready for implementation
 
-## 11. Definition of Done for one implementation slice
+- active authority exists;
+- owner decisions are settled;
+- exact outcome, scope, files, RED tests, non-goals, validation, and stop point are approved;
+- dependencies are merged or a reviewed stacking strategy exists;
+- migration strategy is explicit where relevant.
 
-A task is done only when:
+### Done
 
-- the requested behavior and negative cases pass;
+- behavior and negative cases pass;
 - no unrelated behavior is added;
-- content-free logging and privacy boundaries are preserved;
-- cross-org and nonexistence behavior is tested where relevant;
-- fakes and production stores enforce the same invariant;
-- migration upgrade/downgrade and single-head checks pass where relevant;
-- focused tests, full pytest, Ruff, and governance validation pass;
-- CodeScene PR gate passes;
-- Claude Code review has no unresolved approved finding;
-- the owner merges the proposal to `main`;
-- issue and roadmap status are updated against the merged SHA.
-
-A green local test suite is necessary but not sufficient.
+- facts, populations, evidence, privacy, and bilingual parity are preserved;
+- production and test fakes enforce equivalent invariants;
+- integration behavior executes rather than skips;
+- governance, Ruff, tests, migration gates, CodeScene, and required external review pass;
+- owner merges to `main`;
+- issue and roadmap status are reconciled to the merged SHA.
 
 ---
 
-## 12. Immediate execution order
+## 14. Explicit non-goals until separately governed
 
-Do not start with the full roadmap. Start with these bounded actions:
-
-### Immediate Slice A - Docs-only truth reconciliation
-
-Task IDs: `R0-01` through `R0-05`.
-
-Purpose: prevent Claude Code or Codex from following stale RCA-001 Spec Kit instructions.
-
-### Immediate Slice B - Transaction-boundary design
-
-Task ID: `R1-01` only.
-
-Purpose: settle the design for `#155` before implementation.
-
-### Immediate Slice C - Concurrent final-owner implementation
-
-Task IDs: `R1-02` through `R1-05` after Slice B review and owner approval.
-
-### Immediate Slice D - Membership design and migration plan
-
-Task ID: `R2-01` only after R1's contract is settled.
-
-The first membership implementation PR begins only after the R1 transaction boundary is merged.
-
----
-
-# 13. Claude Code master planning/review prompt
-
-```text
-You are working in Kemetra/Khepri as the planning and adversarial review agent.
-
-Operating role:
-- Do not implement code unless the owner explicitly assigns implementation.
-- Treat Ahmed Shaaban as the only merge authority.
-- Treat branches and PRs as proposals until merged to main.
-
-Start with repository truth:
-1. git status --short
-2. git branch --show-current
-3. git fetch origin
-4. git checkout main
-5. git pull --ff-only origin main
-6. git log -1 --oneline
-7. inspect open PRs and issues relevant to the requested task
-
-Read first:
-- AGENTS.md
-- governance/CONSTITUTION.md
-- governance/registry.yaml
-- governance/families/RCA.md
-- the active governed specification for the task
-- KHEPRI_MASTER_PRODUCT_ROADMAP.md
-- the relevant issue, design, plan, prior merged PR, and current tests
-
-Requested roadmap task:
-[TASK_ID AND TITLE]
-
-Your job:
-- verify that the task is still correct against current main;
-- identify completed, stale, conflicting, or missing assumptions;
-- list only blocking owner decisions;
-- produce or review a small implementation-ready plan;
-- name exact requirements, scenarios, expected RED tests, files, dependencies, non-goals, migration strategy, validation, and stop conditions;
-- identify what may run in parallel and what must be serialized;
-- test for scope creep, duplicate sources of truth, authorization bypass, data-retention drift, race conditions, weak fakes, and tests that could pass for the wrong reason;
-- recommend deliberate mutation or adversarial probes for load-bearing guards.
-
-Do not:
-- widen the requested task;
-- implement another roadmap phase;
-- invent authority not present in governance/registry.yaml;
-- propose a new framework or broad refactor without an explicit requirement;
-- commit, push, open a PR, or merge.
-
-Final response:
-1. Repo state and baseline SHA
-2. Readiness verdict: READY / NOT READY
-3. Governing requirements and dependencies
-4. Blocking decisions, if any
-5. Implementation plan and task order
-6. Parallelism and collision analysis
-7. Test and mutation plan
-8. Allowed and forbidden scope
-9. Risks and follow-ups
-10. Exact stop point
-
-Stop after planning/review and wait for owner approval.
-```
-
----
-
-# 14. Codex master implementation prompt
-
-```text
-You are working in Kemetra/Khepri as the bounded implementation agent.
-
-Start with repository truth:
-1. git status --short
-2. git branch --show-current
-3. git fetch origin
-4. git checkout main
-5. git pull --ff-only origin main
-6. git log -1 --oneline
-
-Read first:
-- AGENTS.md
-- governance/CONSTITUTION.md
-- governance/registry.yaml
-- the active governed specification for this slice
-- KHEPRI_MASTER_PRODUCT_ROADMAP.md
-- the approved Claude Code plan for this task
-- the relevant issue, design, tests, and prior merged PRs
-
-Implement only:
-[TASK_ID OR TIGHTLY COUPLED TASK IDS]
-
-Target outcome:
-[ONE BOUNDED OUTCOME]
-
-Governing requirements/scenarios:
-[EXACT IDS]
-
-Dependencies that must already be on main:
-[MERGED SHAS OR PRS]
-
-Allowed files:
-[EXACT FILES OR DIRECTORIES]
-
-Forbidden scope:
-- any later roadmap phase;
-- unrelated refactors;
-- package-manager, lockfile, framework, runtime, CI, or deployment changes unless explicitly listed;
-- new governance authority;
-- broad RRA changes;
-- commit, push, PR creation, or merge.
-
-Implementation rules:
-- confirm the expected RED test fails for the intended reason;
-- implement the smallest production change that turns it green;
-- preserve fail-closed behavior;
-- keep production stores and memory fakes semantically aligned;
-- preserve one Alembic head;
-- do not trust route/object identifiers as authorization;
-- keep retail calculations in governed RRA facts;
-- keep logs and telemetry content-free;
-- add adversarial or mutation-style tests for every load-bearing guard.
-
-Required validation:
-- focused tests for the slice;
-- uv run khepri-gov validate
-- uv run ruff check .
-- uv run pytest
-- migration upgrade/downgrade and single-head checks when relevant
-
-Final report:
-1. Branch and baseline SHA
-2. Task IDs completed
-3. Files changed
-4. Behavior implemented
-5. Tests added and why they fail against the broken behavior
-6. Validation commands and results
-7. Migration-head status
-8. Risks or follow-up issues
-9. Confirmation that forbidden scope was untouched
-10. git status --short
-
-Stop after implementation and validation. Do not commit.
-```
+1. Customer-facing semantic-model editor.
+2. Customer-authored formulas or calculated fields.
+3. Arbitrary SQL or raw-row query workbench.
+4. Drag-and-drop general dashboard builder.
+5. Generic chat with uploaded data.
+6. Forecasting or trend extrapolation.
+7. Automated causal/root-cause claims.
+8. Unsupervised anomaly alerts.
+9. Universal Power BI/Tableau/DAX/XMLA endpoint.
+10. General multi-warehouse modeling.
+11. Dynamic per-customer code generation.
+12. General pre-aggregation platform before measured need.
+13. Separate SPA/Node frontend without an active architecture decision.
+14. Kubernetes, Kafka, Redis, or a new broker without measured requirement.
+15. Direct Khepri-to-Seshat runtime import or repository checkout dependency.
 
 ---
 
 ## 15. Roadmap status convention
 
-Use the following statuses only:
+*This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-025` makes `R3-11` satisfiable "subject to §15's rule that `MERGED` requires a `main` SHA". Moving the rule elsewhere would leave that governed reference pointing at unrelated content, and a note in a non-governing roadmap cannot retarget a decision. The later sections are numbered around it.*
 
-- `PROPOSED` - roadmap or spec work exists but is not approved/active.
-- `READY_FOR_PLAN` - governing authority exists; design questions remain.
-- `READY_FOR_IMPLEMENTATION` - approved bounded plan and tests exist.
-- `IN_IMPLEMENTATION` - one approved branch is implementing the task.
-- `IN_REVIEW` - implementation is complete and under adversarial review.
-- `MERGED` - owner merged to `main`.
-- `BLOCKED` - a named dependency or owner decision prevents progress.
-- `SUPERSEDED` - a later roadmap or artifact replaces this task.
+Use these statuses only. Inventing one is a review finding — it happened on `#214`, where `MERGED_EXCEPT_R3-11` and `PARTIAL` appeared because the next-actionable-task rule below had not been applied.
 
-A program's status is the status of its **next actionable task**. Where design may proceed but
-implementation cannot, the program is `READY_FOR_PLAN` and the blocking implementation dependency is
-named in the reason. `BLOCKED` is reserved for programs whose next task — design included — cannot
-start.
+- `PROPOSED` — roadmap or specification work exists but is not approved or active.
+- `READY_FOR_PLAN` — governing authority exists; design questions remain.
+- `READY_FOR_IMPLEMENTATION` — an approved bounded plan and its RED tests exist.
+- `IN_IMPLEMENTATION` — one approved branch is implementing the task.
+- `IN_REVIEW` — implementation is complete and under adversarial review.
+- `MERGED` — the owner merged to `main`.
+- `BLOCKED` — a named dependency or owner decision prevents progress.
+- `SUPERSEDED` — a later roadmap or artifact replaces this task.
 
-Never mark a task complete because it exists on a branch. Use `MERGED` only with a `main` SHA.
+A program's status is the status of its **next actionable task**. Where design may proceed but implementation cannot, the program is `READY_FOR_PLAN` and the blocking implementation dependency is named in the reason. `BLOCKED` is reserved for programs whose next task — design included — cannot start.
 
----
+Never mark a task complete because it exists on a branch. Use `MERGED` only with a `main` SHA. A green CI run and a merged pull-request title prove a slice landed, never that its requirements closed.
 
-## 16. Recommended current status
-
-### How this table drifted, recorded 2026-08-19 (`R0-03` follow-up)
-
-Four rows — `R0`, `R3`, `R6`, `R7` — described a repository state that twenty-one merged commits had
-already left behind. `R6` read `BLOCKED` while all eight of `R6-01`…`R6-08` were merged, and `R7`
-still cited R6 as its blocker after that dependency was met.
-
-**The cause is structural, not clerical.** A slice's Definition of Done requires its own artifacts and
-tests; nothing in it requires updating this table, so the table is the one document a merged slice
-never touches. Programs whose slices land in a burst — R3 shipped nine, R6 eight — drift furthest.
-
-**What a reader should trust.** This table and `STATUS.md` are maintained; verify a status claim
-against the merged commits and the files a slice was supposed to produce before building on it, exactly
-as `R1`'s cleared-then-reopened stop gate teaches. A green CI run and a merged PR title prove a slice
-landed, never that its requirements closed — the `R6` row above lists three of its own gaps for that
-reason.
-
-**A correction this reconciliation itself needed, recorded because it is the same class of error.**
-The first version of these rows called `R7-03` unblocked, reading its `Depends on: R3, R6` cell and
-observing that both had merged. That is wrong: `KHEPRI-DEC-020`'s Consequences state that "`R7-03`,
-`R7-05`, and `R7-06` remain blocked on `R7-02`" and that the table's dependency cell **understates**
-it, because `R7-03` tests the resume path and needs persistence that `R7-02` did not ship. An active
-governance decision governs over a roadmap dependency cell, and the first pass read the cell. It also
-invented two statuses — `MERGED_EXCEPT_R3-11` and `PARTIAL` — where §15 says to use its eight only,
-and where §15's own next-actionable-task rule already answered the question. Both found in review on
-`#214`. **Fixing a stale row means reading what governs the dependency, not only what the table says
-about it.**
-
-**What to do at the end of a slice.** If a slice completes the last open task in its program, update
-that program's row in the same PR. This is cheaper than a reconciliation pass and keeps the drift
-bounded to programs still in flight.
-
-| Program | Status | Reason |
-| --- | --- | --- |
-| R0 Roadmap/spec reconciliation | MERGED | `R0-04` merged at `ebfbe77`. `R0-01`/`R0-02`/`R0-03`/`R0-05` merged as one docs-only slice — `specs/001-rca-001-commercial-identity/{SUPERSEDED,STATUS,NEXT-SLICES}.md` — last reconciled by `R0-03` at `2b271a3` (`#202`). `R0-01` has no separate artifact by design; its current-state matrix is the shared baseline block at the top of those three files. **`NEXT-SLICES.md` is pinned to `95760a4` and is stale for R3/R4/R6/R7** — it stops at Slice 3 (`R3`) and predates every R4/R6/R7 merge. Read this table and `STATUS.md` for current state, not that file's "Recommended order" |
-| R1 Concurrent final-owner safety | MERGED | `R1-01`…`R1-06` complete at `c8c6edb`; `#155` closed. **The stop gate was re-cleared by `ac7143b` (#175), not by `R1`** — `R1`'s lock covered one row per organization, so three callers disabling three different owners of one organization locked disjoint sets and `FOR UPDATE` serialized nothing. Measured at 4 failures in 12 against real PostgreSQL; it had read as a flake. See the note under `R2` |
-| R2 Membership lifecycle | MERGED | `R2-01`…`R2-10` complete at `95760a4` (`#150`); PRs `#165`…`#178`. Roles CHECK-constrained, promotion/demotion/revocation through explicit operations, one shared FR-013 guard for remove/downgrade/disable, append-only FR-014 events on a 12-month horizon with a wired sweeper. Two latent gaps recorded rather than closed — see `specs/001-rca-001-commercial-identity/STATUS.md` |
-| R3 Authentication sessions | MERGED | `R3-01`…`R3-10` merged earlier; **`R3-11` merged at `15a8175` (`#240`)**, so the program is complete. `KHEPRI-DEC-024` provisionally admitted Clerk for non-paying private beta and `KHEPRI-DEC-025` authorizes the implementation that closed it. Delivered: atomic provider-neutral external account/link pre-provisioning (`persistence.py:621`, one transaction, `IntegrityError → False`), external-capable final-owner protection (`_effective_owner_conditions`, `persistence.py:797`, `or_(credential_digest IS NOT NULL, external_identity_exists)` defined once and used at all three owner-counting sites), the contained Clerk adapter returning only two `str` fields across the seam, production session handoff, hard-stop revocation, and signed-token RCA→RRA evidence through the real `build_stack`/`build_web_app` graph. The persistence probe found no external-account migration necessary; the existing nullable verifier columns and `rca_external_identities` express the model, and `KHEPRI-DEC-025` §2.4 adopts that finding as a decision rather than leaving it an assumption `-024` §14 forbade. **The two gaps the `#240` post-merge audit recorded are closed** under `KHEPRI-DEC-025` §4: the recovery consequence is constructed by `build_recovery_security_service` and its sweeper is the fifth `RetentionPasses` entry, and `khepri-clerk-hard-stop` is registered in `[project.scripts]` pointing at `khepri.runtime.clerk_hard_stop:main` — `khepri.runtime` and not `khepri.local`, because the wheel excludes `src/khepri/local` and a command declared there would be absent from the image that has to run it. **CodeScene failed on `#240`** and the merge proceeded: `_verified_subject` and `_bearer` each scored 9.69 against `AGENTS.md`'s 10.00 requirement. Both are restructured into named predicates with the decision unchanged, and the behaviour was locked first — four cases pinning the `bool`-is-an-`int` exclusion and the strict lower bound on token lifetime, and eighteen pinning bearer parsing, which had **no** coverage before. CodeScene must re-evaluate both files server-side |
-| R4 Invitations | MERGED | `R4-01` design merged (#209, #210, #212, #213, #220), **`R4-02` merged at `d50ffe6` (#215)**, **`R4-03` merged at `fc74f8e` (#217)** **`R4-04` merged at `d19e4f4` (#221)**, **`R4-06` merged at `b76579b` (#222)**, **`R4-05` merged at `f6e06c0` (#223)** and **`R4-07` merged at `4e56a74` (#224)** — the program's last task, so `R4` is complete — `invitations.py` carries the sealed record, `persistence.py` the `InvitationRow` with four `CHECK`s, `invitation_persistence.py` the store and its destroy-on-touch read, `invitation_retention.py` the sweeper, and migration `20260818_0018` the table. **`R4-07` closes the program** — `invitation_service.py` carries `issue` and `revoke`, `delete_open_invitation` the composite conditional statement §4.1 requires, and `R6-01` §3.1 the two invitation rows §6.3 assigns to this slice. `R4-04` widened `InvitationStore` rather than composing revocation from `get_invitation` and `save_invitation`: those two are a read-then-write, which is the stale-snapshot defect §4.1 forbids, and the read is keyed by identifier alone, which is `FR-023`. **The reads were deliberately left unscoped** — `find_for_redemption` must stay identifier-only because a redeemer holds no membership and cannot supply a scope. **`R4-06` adds the three cascades** — `FR-020`'s recipient predicate and `KHEPRI-DEC-015` §2's issuer trigger in `revoke_membership`'s `write` callback, and §7.1's unscoped purge cascade inside `purge_if_still_eligible`. The callback rather than the shared `_apply_membership_change` body is load-bearing: `demote_membership` delegates to the same helper, and a valid helper-body placement passes 10 of the slice's 11 tests. **It also lands the §8.2 advisory lock §4/§4.1 never asked for**, so `R4-04` shipped without it; the issuance-first ordering is now closed and the purge-first residual is carried as `xfail(strict=True)`. Two spec contradictions were corrected in `R4-01` rather than decided in code: §7 said to mark `revoked_at` where §4.1 says the cascades delete, and §4.1's claim that §7's cascades inherit its `expires_at > :now` clause is too broad for the purge trigger. The two owner decisions it also waited on were answered 2026-08-18 — `R4-01` §8.2 accepts the issuance-versus-purge residual, and §8.5 reads `FR-019` as the last check. **One gap `R4-03` records rather than closes**: no scheduler exists, so `RetentionPasses` runs only from the manual `sweep` command and every governed horizon — accounts, events, sessions, invitations — is unenforced without one. `R4-01` §8.1 assigns that elsewhere |
-| R5 Recovery | READY_FOR_PLAN | `R5-01` remains the design for a future Khepri-credential path. Under `KHEPRI-DEC-025`, carrying `-024`'s disposition forward, `R5-02`, `R5-03`, and `R5-04` stay **deferred** while Clerk owns credentials. The reframed `R5-05`/`R5-06` consequence **merged at `15a8175` (`#240`)**: verified-link resolution, live account revalidation, all-Khepri-session revocation with a re-check after it, idempotent content-free evidence keyed by digest with cross-account fail-closed, disabled/purged refusal, identity-link integrity, and twelve-month evidence retention. Migration `20260821_0019` adds only that evidence table. **The composition gap the `#240` audit found is closed** under `KHEPRI-DEC-025` §4: `build_recovery_security_service` in `runtime/wiring.py` constructs the service over the real `SqlRecoverySecurityEventStore`, sharing the one `SessionService` lifetime and `LifecycleService` the authentication route uses so revocation and account state keep a single definition, and returning `None` with no provider configured because the consequence follows provider-owned recovery. The sweeper is the fifth `RetentionPasses` entry at the governed twelve-month horizon with no override, so the evidence no longer accumulates indefinitely. That work also found `#240`'s migration `20260821_0019` was never registered in `RCA_REVISIONS`, so the schema-drift guard had stopped one revision short of head and could not see the new table — registered, and the guard covers head again. The accepted cross-system recovery window between Clerk credential replacement and Khepri revocation remains a non-paying private-beta residual and a commercial hard stop (`-024` §7, carried forward). **`READY_FOR_PLAN` rather than `MERGED` or `READY_FOR_IMPLEMENTATION`:** every implementable task in the program is now either merged or deferred, so no bounded plan is outstanding — `R5-02`/`-03`/`-04` are the Khepri-credential path, and the event that reopens them is a decision returning credential ownership to Khepri (`-024` §13's fourth exit path), not an engineering dependency. `MERGED` is unavailable because §15 permits it only with a `main` SHA for every task, and three have none by design |
-| R6 Canonical authorization | MERGED | All eight tasks `R6-01`…`R6-08` are merged: PRs `#192`…`#200`. Delivers `authorization.py` (the single door), `switching.py` (`R6-03`), `authorization_resolution.py` (the canonical resolver), and four evidence suites — `test_rca001_authorization_matrix.py`, `test_rca001_cross_organization.py`, `test_rca001_stale_session_authorization.py`, `test_rca001_resolver_chokepoint.py`. **This is what unblocks R7.** Read `STATUS.md` before building on it: `R6-01` §3.2 is uncovered and needs an `R6-02` change (self-versus-another-account has no target in `AuthorizationContext`); the three owner-only verbs check no authority of their own, so the gate is the authorized route but not a proven-exclusive one; and `R6-08`'s tripwire guards an empty room until a production consumer exists |
-| R7 Commercial RRA bridge | MERGED | **`R7-07` merged at `d93b844` (`#226`), and `KHEPRI-DEC-021` is `active`** — the header device this row previously carried ("written for the state this row holds once `KHEPRI-DEC-021` merges") has served its purpose and is removed rather than left to read as a pending condition. `R7-01` (`#201`), `R7-02` (`#203` finding + `#205` migration `20260817_0017`), `R7-04` (`#207`) and `R7-07` are merged; **`R7-02` shipped as the migration only**, because `KHEPRI-DEC-020` §3 withheld the bridge service, and `KHEPRI-DEC-021` lifted exactly that bullet. **`R7-07` delivered §2's four parts and no more**: `open_commercial_session` in `khepri.rra` (accepting an opaque `owner_id` rather than minting one — `allocate_owner_id` stays the single definition, and a second minting site is how `FR-035`'s stability breaks), `open_commercial_session_row` closing the gap that `BetaSessionRow` had exactly one write site behind the invitation guard, `get_session_for_owner` keyed `(owner_id, session_id)` = `uq_session_owner_scope` and failing closed so a foreign session is indistinguishable from an absent one (`FR-023`, `FR-025`), and `CommercialBridge` in **`khepri.runtime`** — §3's location, chosen over `R7-01` §3's `khepri.local` recommendation for a packaging reason: the wheel excludes `src/khepri/local`, so a bridge there is unreachable from the deployed web role. **No migration was needed**, as §4 had already verified. Two mutants confirm the guards can fail: dropping `owner_id` from the resume `WHERE` clause is killed by 4 tests, a bridge skipping `resolve_scope` by 8. **`R7-03` merged at `4999cc1` (`#229`)** — `tests/test_r703_live_authorization_on_resume.py`, evidence only: no production code and no migration. It is **the join the two adjacent suites could not make**, and that is why it exists rather than more cases being added to either: `R6-07`'s `test_rca001_stale_session_authorization.py` proves revocation, demotion and disablement take effect immediately but stops at `resolve_scope` with **no RRA analysis anywhere in it**, while `R7-07`'s `test_r707_commercial_bridge.py` proves re-resolution on resume but passes `account_id` directly and **mints no session at all** — and a test that never mints a session cannot show a *session-bearing* actor losing access, which is the whole of the claim. Five journeys carry it: a revoked member and a disabled account are both refused, a **demoted owner still resumes** and reads live as `member` (the negative case that keeps the guard from being a blanket refusal), a revoked authentication session is refused and **re-authenticating restores access**, and each refusal asserts **the analysis still exists** so the outcome is authorization rather than absence, with `test_no_time_passed` and `test_it_does_not_wait_for_session_expiry` pinning `FR-008`'s “no dependence on session expiry” and `FR-030`'s “without requiring the affected session to end”. Because the composition puts **two** gates in the path — `ActorResolver`'s `assert_account_active` at step 3 (`R3-05`) before the bridge is reached, and `resolve_scope` inside it — `TestBothLayersRefuseIndependently` isolates each, so neither passes on the strength of the other. **Its `Depends on: R3, R6` cell understated the real dependency**: it needed the persistence `R7-07` added, because it resumes an analysis that already exists; `R7-01` §4 with `KHEPRI-DEC-021` governs instead of the table, and the same understatement stands for `R7-05` and `R7-06`. **No mutation evidence is recorded in the file**, unlike `R7-07`'s two mutants — stated rather than assumed, since a green evidence suite is not proof its guards can fail. **`R7-05` merged at `9802586` (`#234`)** — `khepri/runtime/commercial_api.py` adds `POST /api/v1/commercial/analyses` and `GET /api/v1/commercial/analyses/{session_id}`, wired in `wiring.py` via `build_commercial_services`, which constructs the RCA half of the graph in the production composition root **for the first time** (`build_stack` had built only RRA and S3). It honors `KHEPRI-DEC-022` §2's four bounds: `for_request` and never `resolve`, the cookie as the only token source, `R6-08`'s tripwire replaced rather than relaxed, and **no new `R6-01` §3.1 row** — opening an analysis *is* `resolve_scope` plus a mint that authorizes nothing, and “Resolve an isolation scope” is already `PERMIT`/`PERMIT` there. **No organization is accepted in any request**: `for_request` is called with `organization_id=None`, so the comparison the record requires cannot be skipped because there is no parameter to skip it on. **Every refusal is one empty-body `404`** — both exception types derive from `PermissionError`, so one handler covers them, and refusals return a bare `Response` rather than raising `HTTPException`, whose `{"detail": …}` body is exactly what must not vary between causes. **Three mutants verified**: `for_request`→`resolve` killed by `test_the_resolver_is_called_with_no_organization` (failing on the recorded call name, not `AttributeError` — the stub defines both methods so the mutant cannot die for the wrong reason), `404`→`403` killed by all four matrix rows plus two live journeys, and dropping the null-services guard killed by the unwired-app test. `R6-08`'s `test_the_resolver_has_no_production_consumer_yet` is **deleted**, replaced by one naming both legitimate consumers with an emptiness assertion — verified by stubbing the scan to return `[]` and confirming the failure lands on that assertion. `R6-05`'s matrix tripwire needed **no change**, confirming §2's fourth bullet. `R7-04`'s ten beta regressions pass **unmodified**, which is how §3's no-beta-change requirement is evidenced; the null-services guard means an unwired deployment has no commercial surface at all. **Of the twelve `RCA-001` requirements `KHEPRI-DEC-022` moves with this slice, four carry evidence here** — `FR-008` (`test_a_disabled_account_cannot_resume_through_the_route`, no time passes), `FR-022` and `FR-025` (the uniform matrix and the response-to-response comparison), `FR-023` (`session_id` stays an identifier) — plus `FR-030`, which is not on that list but is what the revoked-member journey proves. **The remaining eight — `FR-009`, `FR-021`, `FR-024`, `FR-026`, `FR-028`, `FR-031`, `FR-034`, `FR-038` — are reached but not closed here**, and are `R7-06`'s to evidence end-to-end; stating that rather than claiming twelve is the difference between a slice reaching a requirement and proving it. **`R7-06` merged at `2747670` (`#237`), and `R7` is complete.** It was scoped as a test-only slice and is not one: probing the seam found `FR-038` **false**, because consent is enforced at the service layer (`IntakeService.begin` → `require_upload_consent`) so it already bound a commercial actor, while the only route recording consent read the beta cookie a commercial actor never holds — so every commercial upload failed closed forever. `KHEPRI-DEC-023` (`43fcd72`) authorized the fix; `POST /api/v1/commercial/analyses/{session_id}/consent` reuses `record_consent` and adds no consent logic, with **`bridge.resume` before the write as the scope check** so one organization cannot write consent onto another's analysis. **Eleven tests close seven requirements** — `FR-009`, `FR-021`, `FR-026`, `FR-028`, `FR-031`, `FR-034` and `FR-038` — while `FR-008`, `FR-022`, `FR-023` and `FR-025` closed in `R7-05`, not here. **`FR-024` is satisfied by absence, not by test**: no commercial route accepts an organization, so an actor/named-scope disagreement cannot be constructed, and the suite asserts that absence rather than a comparison it never made. `FR-038`'s four clauses are evidenced separately — consent by both halves (refused before, accepted after, because the refusal alone would pass against the very defect just fixed), and disclosure, provenance and Arabic/English parity by a structural scan proving no module on the named report path distinguishes a commercial actor. **Four mutants verified, and one initially survived**: a `409`-on-already-consented mutant lived because every case consented once on a fresh journey, so §2's "consenting twice is not an error" was unverified — the missing case was added and the mutant now dies. Both structural scans carry emptiness assertions, and the report-path scan also asserts every named module exists, so a renamed pipeline module fails loudly rather than being skipped. `R7-04`'s beta regressions pass unmodified throughout. **Three things `R7-07` deliberately did not fire**, recorded so a green run is not mistaken for coverage: `R6-08`'s `test_the_resolver_has_no_production_consumer_yet` and `R6-05`'s matrix tripwire both wait on `R7-05`'s endpoint, not on a bridge no handler reaches, and twelve `RCA-001` requirements (`FR-008`, `FR-009`, `FR-021`…`FR-026`, `FR-028`, `FR-031`, `FR-034`, `FR-038`) still move with `R7-05`. **One departure from `KHEPRI-DEC-021`, recorded rather than glossed:** §3's consequences ask for the boundary assertion as a mirror of `find_rca_import_offenses` inside `test_rca001_boundary.py` (whose `_TARGET` is hard-coded to `khepri.rca`); `R7-07` asserted the same flat prohibition in both directions with an independent scan in `test_r707_commercial_bridge.py` instead, carrying its own emptiness assertion. The property holds and is mutation-verified, but there are now two boundary scanners where the record expected one reused helper — consolidating them is a candidate for `#211`'s deferred ledger |
-| R8 Commercial shell | READY_FOR_PLAN | **Six tasks merged on 2026-08-22.** `R8-02` shell base and shared `unavailable` surface (`219cee5`, `#247`); `R8-04` organization switcher and no-membership state (`d3b57fa`, `#248`); `R8-05` team surface (`d240527`, `#249`); `R8-05b` invitation issue and revoke (`72a5305`, `#250`), which closes the "invitation management" half `R8-05`'s row names; `R8-06` journey entry (`99d2710`, `#252`); `R8-07` shell quality evidence and the component layer (`c87518d`, `#254`). **`R8-03` is CLOSED without code** — see its note in §Tasks: recovery is excluded by `KHEPRI-DEC-025` §3, the invalid-session surface shipped in `R8-02`, and a browser-shaped sign-in route would be a *second* external-authentication route where §2 authorizes one. **`R8-07` merged at `c87518d` (`#254`), so `R8-08` is the only task left open in this program** — and it is blocked on two absences, neither of them engineering effort: no approved telemetry scope exists, and there is no OTLP implementation in `src/` at all (re-verified 2026-08-23: zero hits for `otel`/`opentelemetry`; the `src/khepri/rra/telemetry*.py` modules are RRA *stage* telemetry and are a different concept), as `#243`'s OPS1 report records. **`R8-07` was scoped as a test slice and is not one**: measuring the four shell surfaces found every interactive target rendering at 17px against `FR-056`'s 44px minimum, because `shell.css` carries tokens and `test_r801_shell_tokens.py` holds it to declaring no rules, so `R8-02`…`R8-06` linked tokens that sized nothing. `shell-components.css` is the missing layer; the minimum is applied to the interactive element rather than a wrapper, since a padded parent around a 17px anchor still leaves a 17px anchor. `FR-055` is the obligation the journey never carried — the shell is the first surface to show email addresses, and a Latin run inside Arabic prose reorders visually without an explicit direction. Coverage is asserted rather than assumed: `test_every_shell_template_is_measured` fails when a surface is added without a case, with `invitation_issued` an explicit POST-only exemption carrying an emptiness assertion. Two mutants verified. **Because `R8-08` needs authority rather than code, `R8` cannot close by implementation**, and the next actionable move on the critical path is `OPS1` — see that row. **The status moves from `READY_FOR_IMPLEMENTATION` to `READY_FOR_PLAN` by §15's rule, not by judgement**: a program's status is that of its next actionable task, `READY_FOR_IMPLEMENTATION` asserts "an approved bounded plan and tests exist" and no approved telemetry scope does, while `BLOCKED` is reserved for programs whose next task *including design* cannot start — and defining that scope is design work that can start today. `READY_FOR_PLAN` is the case §15 describes as design proceeding while implementation cannot, with the blocking dependency named in the reason. Three things the merged slices settled that a later reader should not re-derive: the commercial session cookie widened from `/api/v1/commercial` to `/` because a cookie the shell never receives cannot authenticate a page render (`R3-01` scopes it to "the commercial surface", a role rather than a literal, and the distinct *name* is what keeps it safe); `expired.html.j2` is modelled rather than reused because its `?deletion=requested` branch is a disclosure `FR-050` forbids; and the beta cookie's `path=/api/v1/beta` is correct rather than a defect, because the journey pages read no cookie — only their XHR does. **`RCA-002` is `active` (2026-08-22), and it is what makes `R8-02` admissible at all.** Constitution IV admits product code only in slices linked to an active specification, and until `RCA-002` there was none covering a shell — the registry held 13 specifications, none naming a shell, a surface, or `/app/{language}/…`. `R8-01` is a design note under `docs/superpowers/specs/`, which is not a governed specification, so it could not carry `R8-02`. Three things `RCA-002` settles that change what `R8-02` may do: **`FR-041` forbids a second actor, membership, or scope resolution path**, so the shell wires to the merged `resolve_scope`/`for_request` checkpoint rather than declaring a reader of its own — and because a route needs both `AuthorizationResolver` (RCA) and `CommercialBridge`, `R7-07`'s two-way import ban means shell routes belong in `khepri.runtime` beside `commercial_api.py`, never in `khepri.rra.journey`; **`FR-045` closes `R8-01`'s open CSP question** — the shipped `SECURITY_HEADERS` is already `default-src 'none'` with no inline source and `Cache-Control: private, no-store`, so identical is correct and divergence would be a weakening, making it a requirement rather than a decision; and **`FR-042` reverses `R8-01`'s nesting of `account` under the organization path**, since an organization named in a path is a value to compare against the session's active organization, which `R8-01` explicitly invited `R8-02` to revisit. Sign-in and recovery are **out of `RCA-002`'s scope** (A-5): `KHEPRI-DEC-025` §2 authorizes one external-authentication route and §3 states Khepri implements no credential replacement or password recovery for a Clerk-backed account. Precondition 3 requires the first slice to name which surfaces it delivers and **assert the absence of the others**. **`R8-01` merged at `d95d34b` (`#219`)** — `docs/superpowers/specs/2026-08-19-r8-01-shell-ia-and-tokens.md` carries the shell information architecture, and `src/khepri/rra/journey/assets/shell.css` the token set, with `tests/test_r801_shell_tokens.py` holding four consistency claims the note makes. Design output only: no template links the stylesheet and it is deliberately **not** in `routes.py`'s asset allowlist. **This row read `READY_FOR_PLAN` and "`R8-01` proposed" for three status passes after `d95d34b` merged** — the §16 drift this section documents about itself, caught in the `#240` post-merge audit. `R8-02` is the next task and nothing gates it: its `R8-01` and R3-HTTP dependencies are merged, and the R7 API it consumes closed at `2747670`. Three things the note settles rather than defers: the shell takes `/app/{language}/…` because `/beta/{language}/{step}` is a catch-all; expired, deleted, and session-unavailable stay collapsed into one surface because distinguishing them is the disclosure **`FR-025`** forbids — "denials MUST NOT disclose existence, ownership, or the identity of another organization", which is the invariant a UI breaks most easily since naming the organization is the natural thing for an error page to do — while *no membership* gets its own because it is the only one with a next step; and `docs/ui/design_handoff_khepri/` is reusable as IA reference but **not** as an asset plan — it specifies Google Fonts and a unpkg CDN, which the UI guardrails forbid. Two questions are left to `R8-02`: how the shell attaches its response headers -- **not** whether it shares `endpoints.security`, which carries none: that middleware only enforces same-origin mutations, while CSP and `Cache-Control: private, no-store` are `SECURITY_HEADERS` attached per response, and the middleware is registered app-globally either way (corrected in review on `#219`; the open part is whether the commercial session wants the same policy as the beta one, which is `R3-06`), and whether `account` stays nested under the organization path. `R8-02` is then the next task; implementation of the surfaces still depends on R3/R4/R6/R7 |
-| OPS1 Production operations | READY_FOR_PLAN | `KHEPRI-DEC-008` is active and leaves target selection open by design; spend is an owner decision. **The `OPS1-01` analysis merged at `ba87875` (`#243`)** as `docs/platform/proposed-governance/ops1-provider-portability-and-target-selection.md` — a documentation report, **not** an approved target selection: no provider, region, or residency is governed until a decision artifact carrying that authority is merged. It recommends DigitalOcean / FRA1, with AWS `eu-central-1` second and Hetzner as a later cost optimisation (no managed PostgreSQL, no registry). **That report's central finding has since been discharged, and this row's citations for it were stale for two status passes — the §16 drift this section documents about itself.** It read that `main` hard-pins AWS `me-central-1` in `rra/storage.py:63-64` and `runtime/config.py:125-129`, that `encryption_algorithm = 'aws:kms'` is a database CHECK constraint, and that envelope encryption is designed but unwritten. **All four are false on `main` as of 2026-08-23**: obligations 3 and 4 landed at `196041e` (`#251`), so those `rra/storage.py` lines are now an `S3Client` `Protocol` carrying no region, `runtime/config.py` holds no region, account identifier, or key ARN and documents "Any HTTPS S3-compatible endpoint. No provider is recognised by name.", and the live constraint on both tables is `CHECK (encryption_algorithm = 'AES-256-GCM')` — read from a database at head, not inferred from the migration, because `20260822_0020`'s own downgrade path still contains the `aws:kms` literal and grepping alone cannot distinguish the two. Envelope encryption is implemented and exercised. The remaining `me-central-1` and SQS references are confined to `khepri.infra`, which encodes AWS platform limits and is not on the runtime path. **Obligations 1 and 5 remain open and are what still gates `OPS1-02`**: no target-selection artifact exists, and `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` is un-reissued — still `database_instance_class: db.m7g.large` and still carrying `visibility_timeout_seconds`, `message_retention_seconds`, and `max_receive_count` for the broker `KHEPRI-DEC-008` removed. Both are owner decisions rather than engineering work, which is why the status stays `READY_FOR_PLAN` under §15 rather than moving. R1's stop gate is cleared (`ac7143b`), so it no longer gates this track. Five implementation defects are recorded in that report's §22.1 for the deferred ledger. **Its most serious — the job recovery sweep having no production caller, so an expired lease is never reclaimed on the deployment path — is fixed**: `runtime/worker.py` now calls `recover(now=...)` before every claim rather than only when the queue is idle (`48fe85a`, `#257`; single-claim behaviour corrected at `2abd673`, `#258`). **That same commit also discharged the retired-queue defect**, so two of the five are fixed rather than one: `_required` no longer demands `KHEPRI_QUEUE_URL` or `KHEPRI_DLQ_URL` and neither is a `RuntimeSettings` field, so a runtime still carrying them boots and ignores them. The two constants remain in `runtime/config.py` only because the frozen `khepri.infra` task definition writes them, which is reference material rather than the deployment path. The other three are unverified here |
-| S1 RRA hardening | READY_FOR_PLAN | Triage only may begin in parallel |
-| G2/G3 Workspace authority | PROPOSED | Needs product decisions, retention decision, and active spec |
-| W1 Workspace/history | BLOCKED | No active authority yet |
-| G4/C1 Comparison | BLOCKED | Depends on durable history and new RCA/RRA authority |
-| D1 Dashboard/evidence workspace | BLOCKED | Depends on stable comparison facts |
-| G5/ON1 Public onboarding | PROPOSED | Separate spec required; not on first critical path |
-| G6/B1 Billing | PROPOSED | Begin after M4 proves repeat value |
-| G7/A1 Agency | PROPOSED | Begin after billing and stable authorization |
-| G8/S2 Recurring delivery | PROPOSED | Separate spec/runtime decision required |
-| G9/AI1 AI assistant | PROPOSED | Requires stable evidence contracts; `KHEPRI-DEC-026` settles the narrative model-provider boundary but selects no provider and authorizes no adapter, so `G9-02` still owes the provider evaluation and the ZDR gates remain unsatisfied |
-| E1 Enterprise GA | PROPOSED | Final hardening program built on all prior milestones |
+**The status table in §16 is the one document a merged slice never has to touch, so it is the one that drifts.** Four rows described a stale repository in the archived roadmap because a slice's Definition of Done requires its own artifacts and tests and nothing more. Verify a status claim against the merged commits and the files the slice was supposed to produce before building on it. Fixing a stale row means reading what governs the dependency, not only what the table says about it.
 
 ---
 
-## 17. Final sequencing rule
+## 16. Recommended current status at `f865079`
 
-Khepri should not be developed as one long feature branch or one giant specification.
+*This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-023` makes `R7-06`'s definition of done include "flipping §16's `R7` row". Like `§15`, it may not be renumbered without amending the decision that cites it.*
 
-The correct sequence is:
+### 16.1 Status table
 
-1. close known invariants and races;
-2. finish one active specification;
-3. expose it through a truthful product shell;
-4. create the next retention and product authority;
-5. add persistent repeat value;
-6. add comparison and evidence-backed decision value;
-7. monetize only after repeat value exists;
-8. add complex tenancy and scheduling only after authorization and billing are stable;
-9. add AI only after facts and evidence are mature;
-10. prove operations, security, recovery, and support before enterprise GA.
+| Program | Status | Reason / next action |
+|---|---|---|
+| R0 Roadmap/spec reconciliation | MERGED | Historical program complete |
+| R1 Concurrent final-owner safety | MERGED | Concurrency gate cleared by merged fixes |
+| R2 Membership lifecycle | MERGED | Program complete |
+| R3 Authentication sessions/provider seam | MERGED | Invite-only Clerk path and local session composition merged |
+| R4 Invitations | MERGED | Program complete |
+| R5 Recovery | BLOCKED | **`BLOCKED`, not `READY_FOR_PLAN`, because §15 reserves `READY_FOR_PLAN` for programs whose design work may start now, and `R5`'s cannot.** `KHEPRI-DEC-025` defers `R5-02`/`R5-03`/`R5-04` while Clerk owns credentials, and the named dependency that reopens them is `G6-00`'s successor credential-ownership decision at M5. The local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
+| R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
+| R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
+| R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
+| **CAL1 Calculation correction** | **READY_FOR_PLAN** | RRA-003/004/008 successor semantics are active at `f865079` and the design merged at `18019b5`, but `READY_FOR_IMPLEMENTATION` requires an approved bounded plan and RED tests, and neither exists: `docs/superpowers/plans/` holds no CAL1 plan and there is no execution ledger. `CAL1-01`/`CAL1-02` produce both, and the program becomes `READY_FOR_IMPLEMENTATION` when they are approved |
+| **T1 Trust/catalog** | PROPOSED | Needs bounded authority; design can proceed during late CAL1 |
+| **U1 Design system** | READY_FOR_PLAN | Shell primitives exist; data/evidence component work depends on T1 contracts |
+| **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain |
+| S1 RRA hardening | READY_FOR_PLAN | Triage only; avoid CAL1 hotspots. Owns `#152` through `S1-05`, and ranks `#231` in `S1-02` |
+| G2/G3 Workspace authority | PROPOSED | Needs M2 learnings and retention decisions |
+| W1 Workspace/history | BLOCKED | No active G2/G3 authority |
+| G4/C1 Comparison | BLOCKED | Depends on W1/M3 and new split authority |
+| SV1 Semantic views | BLOCKED | Depends on T1 and stable C1 contracts |
+| D1 Decision workspace | BLOCKED | Depends on SV1/C1 |
+| X1 Guided exploration | BLOCKED | Depends on M4 semantic views and dashboard |
+| G5/ON1 Onboarding | PROPOSED | Begins after M4 proves value |
+| G6/B1 Billing | PROPOSED | Begins after M4 and owner pricing decisions |
+| API1 Embedding/API | PROPOSED | Demand-backed post-M4 track |
+| ING1 Connectors | PROPOSED | Demand-backed post-M4 track |
+| G7/A1 Agency | PROPOSED | Depends on M5, billing, and stable authorization |
+| G8/MON1/S2 Alerts/delivery | PROPOSED | Depends on history, stable metrics, and scheduling authority |
+| STAT1 Seshat evidence | PROPOSED | Optional post-M4; needs reciprocal successor authority |
+| G9/AI1 Ask Khepri | PROPOSED | Depends on M4, T1, SV1, and provider/privacy authority |
+| OPS2 Semantic operations | PROPOSED | Begins after M4 query/view evidence exists |
+| E1 Enterprise GA | PROPOSED | Final hardening over all preceding capabilities |
 
-That sequence preserves Khepri's strongest differentiator: every customer-visible result is reproducible, scoped, governed, cited, and safe under failure.
+---
+
+## 17. Immediate execution order from current `main`
+
+This is the no-hesitation queue. Do not begin a later item merely because it is interesting.
+
+### Critical path
+
+1. **CAL1-01/02:** create the execution ledger from `f865079`, fix the slice sequence, add independent RED fixtures.
+2. **CAL1-03 + CAL1-05a:** implement and merge `V-mapping` complete. It merges before every later slice.
+3. **CAL1-04 + CAL1-06 + CAL1-08a:** merge the complete `V-package` slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone.
+4. **CAL1-05b + CAL1-07a + CAL1-09a + CAL1-10a:** merge `V-formula`, publishing `rra004.formula.v2` once and complete. It merges before the derived families, which consume it.
+5. **CAL1-07b, CAL1-08b, CAL1-09b, CAL1-10b:** merge `V-comparison`, `V-growth`, `V-basket`, and `V-concentration` as ordered slices, each publishing one `rra008.*` version over the landed package and formula versions. Every slice carries its own refusals, bilingual wording, and surfaces.
+6. **CAL1-11/12:** run the final compatibility sweep; add mutation and pharmacy golden evidence.
+7. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
+8. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
+9. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
+10. **OPS1-01/09:** complete the environment descriptor and reissue the sizing authority.
+11. **OPS1-02 through OPS1-07:** hosted non-production, recovery and capacity evidence, and the pilot runbook.
+12. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
+13. **G2/G3:** activate retention and workspace authority.
+14. **W1-01 onward:** begin durable workspace/history implementation.
+
+### Parallel-safe work now
+
+- OPS1-01 environment decisions may proceed during CAL1.
+- T1/U1 design may proceed during late CAL1 review, but no T1 production code before the successor calculation contract merges.
+- G2 data-inventory research may start near CAL1 completion, but retention decisions should use M2 learnings.
+- S1 triage only may proceed if it does not overlap CAL1 files.
+
+### Do not start now
+
+- W1 persistence;
+- C1 comparison;
+- D1 dashboard;
+- billing;
+- agency;
+- connectors;
+- embedding;
+- watchlists;
+- Seshat integration;
+- Ask Khepri.
+
+---
+
+## 18. Decision rules that prevent hesitation
+
+When choosing the next task, apply these rules in order:
+
+1. **Governance first:** no product code without active authority.
+2. **Correctness before convenience:** unresolved calculation or isolation risk beats new UI.
+3. **One critical path:** execute the first incomplete item in section 17 unless a named blocker exists.
+4. **Design may lead code, not outrun contracts:** UI/UX design can proceed against a frozen interface; implementation waits.
+5. **No duplicate truth:** a new surface consumes existing definitions/facts/views or stops.
+6. **No speculative platform work:** connectors, embedding, caching, pre-aggregation, AI, and Seshat require demand and prerequisites.
+7. **Refuse rather than guess:** unsupported semantics, filters, dimensions, versions, and questions produce explicit refusal.
+8. **Measure before optimize:** latency and usage evidence precede cache/pre-aggregation work.
+9. **Merge evidence, not intention:** status changes only after owner merge to `main`.
+10. **Keep only three active lanes:** one high-risk implementation, one independent UI/domain lane, one governance/docs lane.
+
+If two tasks appear equally valid, choose the one that closes an exit gate for the nearest milestone without creating a second source of truth.
+
+---
+
+## 19. Final sequencing statement
+
+Khepri's complete sequence is:
+
+```text
+Correct deterministic meaning and populations
+-> expose trust and evidence
+-> prove the full alpha journey in hosted non-production
+-> retain workspaces and history
+-> compare governed periods
+-> serve curated semantic views
+-> build the executive decision workspace
+-> enable deterministic exploration
+-> monetize repeat value
+-> add selected distribution, connectors, alerts, and agency workflows
+-> add grounded AI and optional statistical evidence
+-> prove enterprise security, resilience, operations, and support
+```
+
+This order preserves Khepri's strongest product claim: every customer-visible result is reproducible, organization-scoped, population-correct, versioned, bilingual, cited, and safe under failure.
