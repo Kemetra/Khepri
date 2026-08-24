@@ -551,9 +551,23 @@ def _allowed_chart_series(bundle: ReportBundle) -> set[str]:
 
 
 def _chart_number_text(figure: CitedFigure) -> str:
-    """One chart series value as the workbook reader reports it."""
+    """One chart series value as the workbook reader reports it.
+
+    **Formatted the way `xlsxwriter` serializes a double, not the way Python
+    reprs one.** It writes `%.16g`, so the plotted `67.15` reaches the sheet as
+    `67.15000000000001` -- the same number, spelled to the last bit the double
+    actually holds. `str()` would say `67.15` and this guard would fail on a
+    provenance question it is not asking.
+
+    That artifact is visible in the chart-data sheet and is the cost of plotting
+    the percentage rather than the ratio: `0.6715` happened to round-trip
+    cleanly, `67.15` does not. The trade was taken deliberately -- the ratio
+    could only be recovered by dividing in the renderer, which `RRA-009` forbids
+    -- and the authoritative figure the reader is shown remains the presented
+    string on the section sheet, which is unaffected.
+    """
     number = excel._chart_number(figure)
-    return str(int(number)) if number == int(number) else str(number)
+    return str(int(number)) if number == int(number) else f"{number:.16g}"
 
 
 def _allowed_text(bundle: ReportBundle) -> set[str]:

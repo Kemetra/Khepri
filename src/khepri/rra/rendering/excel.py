@@ -77,7 +77,6 @@ identifier written above each block, not their absence from the tab bar.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -930,12 +929,27 @@ def _write_chart_value(
 
 
 def _chart_number(figure: CitedFigure) -> float:
-    """The authoritative string as a double, with grouping and percent undone."""
+    """The authoritative string as a double, with its presentation removed.
+
+    **Nothing is recomputed here, and that is a governed requirement rather than
+    a preference.** `RRA-009`'s preservation rules say: "Recompute no figure in a
+    renderer, and hold no decimal value there." An earlier revision divided a
+    percentage by a hundred to recover the stored ratio, which is arithmetic on a
+    `Decimal` inside a renderer -- exactly what that rule forbids, and a second
+    place where the value could drift from the one the reader is shown.
+
+    So the separators and the sign are stripped and nothing else happens: a
+    figure shown as `86.65%` plots `86.65`. The series is then in the same units
+    as the business cell beside it, which is the consistency the workbook was
+    missing while the sheet said `86.65%` and the chart plotted `0.8665`.
+
+    Supplying the chart value from the bundle would be better still, and is not
+    available here: `CitedFigure.as_document` feeds the bundle digest, so adding
+    a field is a governed serialized-shape change under `RRA-004` and needs its
+    own authority rather than a presentation slice.
+    """
     shown = figure.renderings[_CHART_NUMBER_LANGUAGE]
-    bare = shown.replace(",", "")
-    if bare.endswith("%"):
-        return float(Decimal(bare.rstrip("%")) / 100)
-    return float(Decimal(bare))
+    return float(shown.replace(",", "").rstrip("%"))
 
 
 def _chart_for(workbook: Workbook, block: _ChartBlock, language: str) -> Chart:
