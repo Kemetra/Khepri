@@ -443,6 +443,13 @@ _DISCLOSURE: dict[str, dict[str, str]] = {
 _ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
 _ARABIC_DECIMAL = "٫"
 _ARABIC_GROUP = "٬"
+#: `U+066A ARABIC PERCENT SIGN`, the counterpart of the separators above. The
+#: ratio scaling appends an ASCII `%`, and leaving it there produced a
+#: mixed-script `٨٦٫٦٥%` -- Arabic-Indic digits with an Arabic decimal separator
+#: and an Arabic group separator, then a Latin sign. Having committed to the
+#: Arabic numeric conventions for the rest of the string, the percent sign is
+#: not the place to stop.
+_ARABIC_PERCENT = "٪"
 _ASCII_DIGITS = "0123456789"
 
 
@@ -1956,6 +1963,8 @@ def _arabic_character(character: str) -> str:
         return _ARABIC_DECIMAL
     if character == ",":
         return _ARABIC_GROUP
+    if character == "%":
+        return _ARABIC_PERCENT
     return character
 
 

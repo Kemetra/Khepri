@@ -221,6 +221,18 @@ class TestRatioFigures:
         )
         assert bundle_module._percentage(enormous).endswith("%")
 
+    def test_the_arabic_rendering_uses_the_arabic_percent_sign(self) -> None:
+        # The rest of the Arabic string already leaves ASCII behind -- Arabic-Indic
+        # digits, `٫` for the decimal point, `٬` for the group separator. An ASCII
+        # `%` on the end produced a mixed-script figure, and the percent sign is
+        # not the place to stop having committed to the rest.
+        arabic = bundle_module._renderings(
+            "0.8665", unit_kind=UNIT_RATIO, kind=KIND_VALUE, metric="gross_margin"
+        )[LANGUAGE_ARABIC]
+
+        assert arabic == "٨٦٫٦٥٪"
+        assert "%" not in arabic
+
     def test_the_scaling_itself_runs_at_the_governed_precision(self) -> None:
         # The other half, and the subtler one. Passing `context=` to `quantize`
         # governs the quantize only: `parsed * 100` would still run under the
