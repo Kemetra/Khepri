@@ -520,14 +520,21 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Prove every renderer uses bundle strings and performs no business arithmetic.
 - [ ] Run focused mutation/golden/surface suites and the three required gates. Commit and review.
 
-### Task 10: Pass the calculation gate across the merged slices
+### Task 10: Pass the calculation gate across the assembled contract
+
+**Where this runs, because the slice sequence answers it.** Slices merge one at a time, each
+after its own gate and its own owner merge, so by the time the *last* slice is proposed its PR
+head is `main` plus that slice — which is the complete successor contract, assembled and not yet
+governing. Tasks 10 and 11 run there. Nothing in them waits on a merge that Task 12 has not yet
+performed, and nothing treats a proposal as approved.
 
 **Files:** No additional behavior unless a RED test exposes a defect; any fix repeats TDD and task
 review before this gate.
 
 **Interfaces:**
-- Consumes: every slice merged, each having passed its own RED/GREEN/reconciliation gate.
-- Produces: the assembled successor contract, validated as one analytical system.
+- Consumes: the final slice's PR head — every earlier slice merged, the last one proposed — with
+  each having passed its own RED/GREEN/reconciliation gate.
+- Produces: the assembled successor contract, validated as one analytical system before approval.
 
 - [ ] Run `uv run khepri-gov validate`, `uv run ruff check .`, and `uv run pytest` at exact head.
 - [ ] Verify every metric has clean, messy, and adversarial independent-oracle evidence.
@@ -552,7 +559,7 @@ review before this gate.
 task's RED/GREEN loop.
 
 **Interfaces:**
-- Consumes: merged `main` with every slice landed and the calculation gate green.
+- Consumes: the same final-slice head Task 10 validated, with the calculation gate green.
 - Produces: design-partner-equivalent end-to-end staging evidence.
 
 - [ ] Start `docker compose -f docker-compose.local.yml up -d`; use current PostgreSQL and MinIO,
@@ -573,11 +580,11 @@ task's RED/GREEN loop.
 **Files:** No tracked change.
 
 **Interfaces:**
-- Consumes: every slice merged, server-side gates, staging evidence, and owner approval.
+- Consumes: the validated final-slice head, server-side gates, and staging evidence.
 - Produces: validated successor calculation contract on `main`.
 
-- [ ] Owner merges each slice in the order above; automation never merges or treats checks as
-  approval.
+- [ ] Owner merges the final slice, completing the sequence; automation never merges or treats
+  checks as approval. Earlier slices were merged as they landed, each after its own gate.
 - [ ] Fetch fresh `origin/main`, verify the merge SHA, and update the calculations worktree without
   destructive reset.
 - [ ] Rerun governance validation, Ruff, and full pytest on merged `main`.
