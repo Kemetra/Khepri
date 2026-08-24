@@ -227,9 +227,16 @@ active specification governs both and the disagreement is a defect in one of the
 - Slices: coverage signatures, daily bases and projections are `V-package`; the absolute and
   percentage delta formula rows are `V-formula`; the comparison family is `V-comparison`.
 
-- [ ] Add the coverage-manifest document: version/evidence identity, input digest, timezone,
-  aggregate scope or full store roster, covered scope/date pairs, included event kinds/statuses,
-  closures, extraction gaps, and partial terminal boundary.
+- [ ] Add the coverage-manifest document: version/evidence identity, input digest, **the
+  source-contract or attestation identity and its evidence**, timezone, aggregate scope or full
+  store roster, covered scope/date pairs, included event kinds/statuses, closures, extraction gaps,
+  and partial terminal boundary. `RRA-003` names the source-contract binding separately from the
+  input digest, and the reason is reuse: identical bytes re-uploaded under a corrected semantic
+  contract would otherwise match an old manifest whose event-kind and status coverage was attested
+  against different semantics, admitting comparison and growth without authoritative proof.
+- [ ] Validate that binding on use, not only on write: a manifest whose source-contract identity
+  differs from the contract the events were admitted under refuses the completeness-dependent
+  results rather than being reused.
 - [ ] Retain structural coverage signatures containing only manifest/input binding, scope/store
   set, filters, completeness mode, and relative covered ordinals. Exclude absolute dates and all
   measure values.
