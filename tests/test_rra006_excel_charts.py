@@ -241,8 +241,13 @@ def test_every_numeric_chart_cell_is_the_double_nearest_its_authoritative_string
     """
     bundle, workbook = rendered()
 
+    # Through the renderer's own helper rather than `float(rendering)`. The
+    # rendering now carries grouping separators and a percent sign, which
+    # `float` cannot parse -- and restating the un-formatting here would let this
+    # expectation drift from the write it is checking. What the test still owns
+    # is the *order*.
     expected = [
-        float(figure.renderings[LANGUAGE_ENGLISH])
+        excel._chart_number(figure)
         for section in charted(bundle)
         for figure in plotted(bundle, section)
     ]
