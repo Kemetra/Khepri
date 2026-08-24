@@ -313,10 +313,16 @@ active specification governs both and the disagreement is a defect in one of the
   to propagate into. The roadmap's §CAL1 rule scopes its bundle/narrative/chart/HTML/PDF/Excel
   clause to `RefusedResult`, which refuses one metric inside a package that was produced and does
   reach every surface; `PackageRefused` owes the rest of the rule in full instead — governed code,
-  accepted Arabic and English prose in the response body, and audit representation. Four
-  `PackageRefused` raises in `packages.py` already behave this way on `main`, so this is the
-  existing tier boundary rather than a new exemption. Ship the gate's refusal against that
-  obligation and prove all three parts.
+  accepted Arabic and English prose in the response body, audit representation, and **rendering on
+  the review page**, which `docs/superpowers/specs/2026-08-13-client-journey-ui-design.md` requires
+  of a fact-package refusal: "Remain on review with governed reason."
+
+  **Build that path; do not assume it exists.** No current `PackageRefused` meets the obligation:
+  it is a bare `ValueError` subclass with no code and no audit hook, the four raises in
+  `packages.py` pass plain English strings, `common.js`'s `ApiError` keeps only the HTTP status and
+  discards the body, and `review.js` prints one fixed sentence. That is pre-existing debt against
+  the same obligation, not a precedent to copy. This slice already carries client work for the
+  source-contract surface, so the refusal rendering belongs beside it. Prove all four parts.
 - [ ] Add the mutation evidence that the gate can fail: removing a seam's comparison kills a named
   mutant, so a green suite is not mistaken for a guard.
 - [ ] **Add the coverage-manifest document, its binding, and its production ingestion path here,
