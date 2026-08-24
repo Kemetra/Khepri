@@ -122,18 +122,30 @@ correction, or serialized shape creates a new recorded version and stable identi
 Ordering does not fix it, because the defect is in the window rather than the order.
 
 **The gate is therefore introduced whole in `V-mapping`, the first slice to move a
-version.** It is one fail-closed rule applied at each seam: a consumer refuses when the
-version it is handed is newer than the version it is certified against — package and
-formula against mapping, and each `RRA-008` family against the formula. Every refusal
-carries a governed reason code and complete accepted Arabic and English wording, like every
-other refusal in this mission.
+version.** It is an **explicit table of admitted version pairs**, not a comparison: a
+consumer publishes only when the pairing it is handed appears in the table, and refuses
+otherwise.
 
-The consequence is deliberate and must not be worked around: **between `V-mapping` and
-`V-concentration`, the affected results refuse on `main`**, each slice reopening its own
-seam as it lands. That is a visible, reasoned refusal rather than a plausible number under
-a stale identity, which is the trade this product exists to make. It also gives every slice
-a precise definition of done — the gate opens for exactly what that slice publishes, and
-`V-concentration`, the last, closes the window.
+A "newer than" predicate would be wrong, and the reason is worth recording so it is not
+reintroduced. These identifiers are independent namespaces — `rra003.mapping.v3`,
+`rra004.formula.v2` and `rra008.basket.v2` share a numbering convention and nothing else —
+so their suffixes define no ordering to compare. A one-sided rule also guards one direction
+only: once a family reached `v2`, "refuse when the formula is newer" would stamp a
+successor family identity onto a package still carrying `rra004.formula.v1`. And an
+unrecognised version's handling would be undefined, where a table refuses it by
+construction. `RRA-008` frames the contract the same way: its `v2` families consume "the
+exact `rra003.mapping.v3`, `rra004.package.v3`, and `rra004.formula.v2` changes".
+
+Every refusal carries a governed reason code and complete accepted Arabic and English
+wording, like every other refusal in this mission.
+
+The consequence is deliberate and must not be worked around: **each consumer refuses from
+the moment a version it consumes moves until its own successor lands**, each slice adding
+its admitted pairs as it goes. The refusing set is largest right after `V-formula` and
+shrinks with each family slice — after `V-comparison` three families still refuse, after
+`V-basket` one, and `V-concentration` empties it. That is a visible, reasoned refusal
+rather than a plausible number under a stale identity, which is the trade this product
+exists to make, and it gives every slice a precise definition of done.
 
 An implementer who finds the window unacceptable must not remove the gate. The alternative
 is to co-land the dependent successors as one larger slice, which needs owner approval
@@ -249,13 +261,16 @@ active specification governs both and the disagreement is a defect in one of the
   object required without touching that client returns 422 on every web upload and strands the
   user on the upload page. `V-mapping` therefore includes the collection surface, the client
   change, and journey regression coverage that a normal browser upload still reaches a report.
-- [ ] Add the fail-closed version compatibility gate, whole, in this slice: a consumer refuses when
-  the version it is handed is newer than the version it is certified against — package and formula
-  against mapping, and each `RRA-008` family against the formula. `packages.py` currently combines
-  `PACKAGE_VERSION`, `FORMULA_VERSION` and `MAPPING_VERSION` with no compatibility refusal, and
-  `bundle._FAMILIES` dispatches all four families without consulting `formula_version`, so nothing
-  catches the skew today. Governed reason codes and complete accepted Arabic and English wording
-  ship here.
+- [ ] Add the fail-closed version compatibility gate, whole, in this slice: an explicit table of
+  admitted version pairings — package and formula against mapping, and each `RRA-008` family
+  against the formula — publishing only on a listed pair and refusing every other, including any
+  version the table does not name. Do not implement it as a "newer than" comparison: the
+  identifiers are independent namespaces whose suffixes define no ordering, and a one-sided rule
+  would stamp a successor family identity onto a predecessor formula. `packages.py` currently
+  combines `PACKAGE_VERSION`, `FORMULA_VERSION` and `MAPPING_VERSION` with no compatibility
+  refusal, and `bundle._FAMILIES` dispatches all four families without consulting
+  `formula_version`, so nothing catches the skew today. Governed reason codes and complete
+  accepted Arabic and English wording ship here.
 - [ ] Add the RED proof that the gate fires at each seam: with one version moved and its consumer
   unmoved, the consumer refuses and states why, and no fact is published under the predecessor
   identity.
@@ -441,8 +456,9 @@ active specification governs both and the disagreement is a defect in one of the
   and 7. It merges after `V-package` and before the four `RRA-008` family slices, which consume it,
   and opens the formula seam of the compatibility gate introduced in `V-mapping`.
 
-- [ ] Open the formula seam of the compatibility gate: each `RRA-008` family now refuses while the
-  `rra004.formula.v2` identity it is handed is newer than the family version it stamps.
+- [ ] Add this slice's admitted pairs to the compatibility table, and no others: the four `RRA-008`
+  families still stamp `v1` here, so every pairing of them with `rra004.formula.v2` refuses until
+  that family's own successor lands.
 - [ ] Revenue: sum complete signed net VAT-exclusive posted sale/return revenue.
 - [ ] Units: sum complete signed integral posted physical movement.
 - [ ] Transactions: distinct canonical posted-sale transaction keys only.
