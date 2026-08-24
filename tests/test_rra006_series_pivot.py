@@ -38,7 +38,12 @@ from khepri.rra.facts import build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
-from khepri.rra.rendering.html import HtmlReportRenderer, build_cells
+from khepri.rra.rendering.html import (
+    FigureCell,
+    HtmlReportRenderer,
+    _series_tables,
+    build_cells,
+)
 
 
 def _content() -> bytes:
@@ -210,3 +215,64 @@ class TestNothingIsLost:
             for cell in business_cells(language):
                 if cell.label:
                     assert cell.label in html, (cell.metric, cell.label, language)
+
+
+def _cell(metric: str, kind: str, label: str, text: str) -> FigureCell:
+    """One business cell, built directly so a sparse series can be constructed."""
+    return FigureCell(
+        figure_id=f"fig_{metric}_{kind}_{label}",
+        citation_id=f"cit_{metric}_{label}",
+        metric=metric,
+        metric_name="Revenue" if metric.startswith("revenue") else "Units sold",
+        kind=kind,
+        unit_kind="monetary" if metric.startswith("revenue") else "count",
+        section="overview",
+        label=label,
+        text=text,
+    )
+
+
+class TestASparseLabelStaysInItsSeries:
+    """A label missing one figure is an empty cell, not a table of its own.
+
+    Grouping families by the *exact* set of columns present split a series on
+    missingness: a period whose revenue inputs were all null had a different
+    column set from its neighbours and rendered as a one-row table beside them.
+    It also made `_SeriesTable`'s empty cell unreachable -- every label in a
+    family had every column by construction -- so the `None` the template renders
+    as a blank could not occur, and the docstring promised behaviour the grouping
+    had ruled out.
+    """
+
+    def _sparse(self) -> tuple[FigureCell, ...]:
+        # Three periods carrying revenue and units; the middle one has no revenue.
+        cells = []
+        for period, revenue in (("2026-01", "10.00"), ("2026-02", None), ("2026-03", "30.00")):
+            if revenue is not None:
+                cells.append(_cell("revenue_by_period", "value", period, revenue))
+            cells.append(_cell("units_by_period", "value", period, "5"))
+        return tuple(cells)
+
+    def test_the_sparse_label_is_not_split_into_its_own_table(self) -> None:
+        tables = _series_tables(self._sparse())
+
+        assert len(tables) == 1, [t.headings for t in tables]
+        assert [row.label for row in tables[0].rows] == ["2026-01", "2026-02", "2026-03"]
+
+    def test_the_missing_figure_renders_as_an_empty_cell(self) -> None:
+        # The `None` that the template turns into a blank `<td>`, reachable at
+        # last. Deliberately not a zero, which would be a number invented here.
+        rows = {row.label: row.texts for row in _series_tables(self._sparse())[0].rows}
+
+        assert None in rows["2026-02"], rows["2026-02"]
+        assert all(text is not None for text in rows["2026-01"])
+
+    def test_the_distinct_series_still_separate(self) -> None:
+        # The separation the exact-set grouping got right, kept: a by-period and a
+        # by-category series share no column, so they remain two tables.
+        mixed = self._sparse() + (
+            _cell("revenue_by_category", "value", "Antibiotics", "7.00"),
+            _cell("units_by_category", "value", "Antibiotics", "2"),
+        )
+
+        assert len(_series_tables(mixed)) == 2

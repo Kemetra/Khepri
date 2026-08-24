@@ -871,18 +871,43 @@ def _series_families(
     names: dict[tuple[str, str], str],
     values: dict[str, dict[tuple[str, str], str]],
 ) -> dict[tuple[tuple[str, str], ...], list[str]]:
-    """Labels grouped by the set of columns present at them.
+    """Labels grouped into series, each carrying the union of its columns.
 
-    Grouped by the column set rather than by section, so a section carrying both a
-    by-period and a by-branch series renders two tables instead of one table with
-    empty halves. Column order follows `names`, which is the bundle's order, so a
-    bucket's count sits beside the value it explains.
+    A section carrying both a by-period and a by-branch series renders two tables
+    instead of one with empty halves, and that separation is what this does. What
+    it must *not* do is separate on missingness.
+
+    **Grouping by the exact set of columns present did both, and the second was a
+    defect.** A label whose bucket lacks one figure -- a period where every
+    revenue input is null -- has a different exact set from its neighbours, so it
+    formed a family of its own and rendered as a one-row table beside the series
+    it belongs to. Worse, the split made `_SeriesTable`'s empty cell unreachable:
+    every label in a family had every column by construction, so the `None` that
+    `_series_tables` looks up and the template renders as a blank could not occur.
+    The docstring promised a behaviour the grouping had ruled out.
+
+    So labels are joined when they **share any column**, and the family carries
+    the union. `revenue_by_period` never appears at a branch label, so the
+    by-period and by-branch series still separate; a sparse period still shares
+    `units_by_period` with its neighbours and stays with them, its missing figure
+    now an empty cell rather than a table.
+
+    Column order follows `names`, which is the bundle's order, so a bucket's count
+    sits beside the value it explains.
     """
-    families: dict[tuple[tuple[str, str], ...], list[str]] = {}
+    series: list[tuple[set[tuple[str, str]], list[str]]] = []
     for label, present in values.items():
-        family = tuple(column for column in names if column in present)
-        families.setdefault(family, []).append(label)
-    return families
+        columns = set(present)
+        joined = [entry for entry in series if entry[0] & columns]
+        merged_columns = columns.union(*(entry[0] for entry in joined))
+        merged_labels = [label for entry in joined for label in entry[1]]
+        merged_labels.append(label)
+        series = [entry for entry in series if entry not in joined]
+        series.append((merged_columns, merged_labels))
+    return {
+        tuple(column for column in names if column in columns): labels
+        for columns, labels in series
+    }
 
 
 def _stated_once(bundle: ReportBundle, section_id: str, language: str) -> tuple[str, ...]:
