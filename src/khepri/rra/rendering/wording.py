@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from khepri.rra import facts
+from khepri.rra import facts, versions
 from khepri.rra.analysis import basket, comparison, growth
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
@@ -138,6 +138,7 @@ _RESULT_REASON_CODES = {
     facts.REASON_AMBIGUOUS_MAPPING,
     basket.REASON_DIMENSION_ABSENT,
     comparison.REASON_NEGATIVE_BASE,
+    versions.REASON_FAMILY_VERSION_UNADMITTED,
 }
 _GOVERNED_CAVEAT_CODES = {
     facts.CAVEAT_CURRENCY_NOT_DECLARED,
@@ -424,6 +425,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "Attach rate is not shown — the file has no product or category "
                 "column to measure attachment against. Items per sale is unaffected."
             ),
+            "family_version_pairing_unadmitted": (
+                "{metric} is not shown — this analysis is being released in "
+                "stages, and the part that produces it has not yet been "
+                "released alongside the part that reads your file. The rest of "
+                "this report is unaffected and its figures are complete. "
+                "Nothing is missing from your export and no column needs to "
+                "change. This figure appears once the remaining release lands; "
+                "no action is needed from you."
+            ),
             "negative_base": (
                 "{metric} is not shown — calculating a percentage change from a "
                 "negative starting value would reverse the apparent direction of "
@@ -457,6 +467,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا "
                 "يحتوي الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد "
                 "الأصناف لكل عملية بيع غير متأثر."
+            ),
+            "family_version_pairing_unadmitted": (
+                "{metric} غير معروض — يصدر هذا التحليل على مراحل، والجزء الذي "
+                "ينتجه لم يصدر بعد مع الجزء الذي يقرأ ملفك. بقية هذا التقرير "
+                "غير متأثرة وأرقامها كاملة. لا ينقص ملفك شيء ولا يحتاج أي عمود "
+                "إلى تعديل. سيظهر هذا الرقم عند صدور الإصدار المتبقي، ولا "
+                "يلزمك أي إجراء."
             ),
             "negative_base": (
                 "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
