@@ -11,8 +11,11 @@
 # product selections, sizing, RTO/RPO, and the envelope-master-key secret source as
 # unresolved stop-gates before provisioning. MinIO below substitutes for Spaces
 # locally without choosing it; the CPU and memory limits are local comfort values
-# and not the sizing `KHEPRI-DEC-007` governs; nothing here is benchmark, residency,
-# recovery, or approval evidence, and none of it authorizes spend.
+# and not governed sizing -- the sizing rules are `KHEPRI-DEC-008`'s, and
+# `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` still carries the values
+# `KHEPRI-DEC-007` fixed and is to be reissued against the selected target; nothing
+# here is benchmark, residency, recovery, or approval evidence, and none of it
+# authorizes spend.
 #
 # **TLS is not optional here, it is what makes the stack work.**
 # `khepri.runtime.config` builds every database URL with `sslmode=require` and
@@ -24,8 +27,8 @@
 # `wiring.py` is modified to accommodate the local stack.
 #
 # **No broker, no KMS, no separate browser.** `KHEPRI-DEC-008` replaced the message
-# broker with a PostgreSQL claim query and moved encryption into the application, and
-# `KHEPRI-DEC-007` bakes Chromium into the image so the pin is transitive. Redis,
+# broker with a PostgreSQL claim query, moved encryption into the application, and
+# pins Chromium inside the image through Playwright so the pin is transitive. Redis,
 # Kafka, RabbitMQ, SQS, LocalStack, KMS, and a Chromium container would all be
 # machinery for capabilities that no longer exist.
 #

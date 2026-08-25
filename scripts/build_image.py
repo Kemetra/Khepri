@@ -1,9 +1,13 @@
 """Build the RRA image and read back the facts the environment descriptor must record.
 
-`KHEPRI-DEC-007` requires the descriptor to carry the OCI image digest, the `uv.lock` digest, the
-exact Python patch version, and the SHA-256 of the reviewed synthesized template. This script
-produces the first three. The fourth comes from synthesis, which needs a real image digest and so
-follows this step.
+The descriptor carries the OCI image digest, the `uv.lock` digest, the exact Python patch version,
+and the SHA-256 of the reviewed synthesized template. This script produces the first three. The
+fourth comes from synthesis, which needs a real image digest and so follows this step.
+
+The live requirement is `KHEPRI-DEC-008`, which fixes the content of the target-selection artifact
+and requires the OCI image to be published to a registry the descriptor records. `KHEPRI-DEC-007`
+established this discipline and is where these four facts were first required, but the registry
+records it as `retired`, `superseded_by: KHEPRI-DEC-008`; cite the successor.
 
 **Every fact is read out of the built image, never accepted as an argument.** A digest or version
 supplied by hand is a claim about an image rather than evidence about it, and the whole point of
@@ -90,7 +94,8 @@ def image_digest(tag: str) -> str:
 
     These are different things and the descriptor must not confuse them: a repo digest names bytes
     in a registry, an image ID names a local config blob. Both are reported, labelled, so whoever
-    writes the descriptor records the one `KHEPRI-DEC-007` means -- the pushed digest.
+    writes the descriptor records the one `KHEPRI-DEC-008` means -- the pushed digest, from the
+    registry it requires the image to be published to.
     """
     entry = _inspect(tag)
     repo_digests = entry.get("RepoDigests") or []
