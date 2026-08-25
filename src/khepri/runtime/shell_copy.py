@@ -53,9 +53,13 @@ _EN = {
     ),
     "back_to_team": "Back to the team",
     "new_analysis": "Start a new analysis",
-    # The persistent frame. `frame_home_label` is the brand's accessible name: a wordmark is a
-    # picture of a name, not a name, so a screen reader needs the words.
-    "frame_home_label": "Khepri home",
+    # The persistent frame. `frame_home_label` is the brand's *purpose*, composed after the visible
+    # wordmark rather than replacing it. An `aria-label` would have replaced it, and on the Arabic
+    # shell that left an accessible name with no `KHEPRI` in it while `KHEPRI` was what the reader
+    # could see -- so a speech-input reader saying what is on the control could not operate it
+    # (WCAG 2.5.3, "Label in Name"). The wordmark is still a picture of a name, so the words are
+    # still needed; they are added to it now instead of standing in for it.
+    "frame_home_label": "home page",
     "frame_organization_label": "Change organization",
     # The control names the language it goes to, in that language, so a reader who cannot read the
     # current one can still find it. `lang` is set on the element for pronunciation.
@@ -103,7 +107,7 @@ _AR = {
     ),
     "back_to_team": "العودة إلى الفريق",
     "new_analysis": "ابدأ تحليلًا جديدًا",
-    "frame_home_label": "الصفحة الرئيسية لخِبري",
+    "frame_home_label": "الصفحة الرئيسية",
     "frame_organization_label": "تغيير المؤسسة",
     "frame_language": "English",
     "frame_language_code": "en",

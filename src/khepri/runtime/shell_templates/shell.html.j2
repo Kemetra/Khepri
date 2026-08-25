@@ -24,8 +24,18 @@
     implementation, and the dispatcher answers exactly two.
   #}
   <header class="shell-identity">
-    <a class="brand" href="{{ prefix }}/{{ language }}" aria-label="{{ copy.frame_home_label }}">
-      <span>KHEPRI</span>
+    {#
+      Named by both spans in source order, the way the organization control is, so the accessible
+      name is "KHEPRI home page" and begins with the text a reader can see. An `aria-label` here
+      *replaced* that text: on the Arabic shell the accessible name held no `KHEPRI` at all, so a
+      speech-input reader who said the one word on the control could not operate it. The wordmark
+      still needs the words -- a picture of a name is not a name -- so they follow it.
+    #}
+    <a class="brand"
+       href="{{ prefix }}/{{ language }}"
+       aria-labelledby="frame-brand-name frame-brand-purpose">
+      <span id="frame-brand-name">KHEPRI</span>
+      <span id="frame-brand-purpose" class="visually-hidden">{{ copy.frame_home_label }}</span>
     </a>
     {% if organization_name is defined and organization_name %}
     {#
