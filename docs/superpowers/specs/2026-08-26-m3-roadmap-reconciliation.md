@@ -4,7 +4,9 @@
 **Artifacts reconciled:** `docs/product/KHEPRI_MASTER_PRODUCT_ROADMAP.md`,
 `docs/product/KHEPRI_PRODUCT_UX_BLUEPRINT.md`, `governance/registry.yaml`.
 **Grants no implementation authority.** This record changes no LOCKED decision, resolves no
-CONFLICT-BLOCKED item, and introduces no decision ID.
+CONFLICT-BLOCKED item, and introduces no decision ID. D4 observes that `CONFLICT-BLOCKED` is itself
+undefined in the blueprint and recommends defining it — that is a documentation fix, and it resolves
+no item marked with it.
 
 ## What this is, and what it deliberately is not
 
@@ -83,11 +85,14 @@ Low severity and conservative in the safe direction: it never overstates readine
 because it reads as a governance state and invites a planner to look for a `T1` entry.
 
 **Fix, when a slice next touches these sections:** cite the label's source in prose rather than
-restating it as state — "`T1` is a roadmap program and has no registry entry". Deliberately *not* a
-bracketed token: §1's status vocabulary is a **closed set of six** (LOCKED, PROVISIONAL /
-CONTRACT-BLOCKED, AUTHORITY-BLOCKED, IMPLEMENTATION-BLOCKED, SHIPPED), and adding a seventh
-status word to fix a mislabelling would plant the next drift. The row's own status stays
-CONTRACT-BLOCKED. No registry change, no decision ID.
+restating it as state — "`T1` is a roadmap program and has no registry entry". The row's own status
+stays CONTRACT-BLOCKED. No registry change, no decision ID.
+
+Deliberately *not* a new bracketed token, but **not because the vocabulary is closed** — D4 shows it
+is not. The reason is narrower and survives that: a token is a claim about *status*, and "`T1` is
+unregistered" is a claim about the **registry**, which §1's vocabulary does not describe. Prose
+keeps the two kinds of statement apart; a token would fuse them, which is the confusion D1 is
+correcting in the first place.
 
 ### D2 — DRIFT, fixable: both baselines are stale
 
@@ -125,6 +130,34 @@ authority exists, so it is not blocking any admissible slice today.
 `W1-05`, or keep `W1-05` and unlock the four blueprint rows. Recording a third option here would
 widen a settled question; this record does not.
 
+### D4 — DRIFT, fixable: `CONFLICT-BLOCKED` is used as a status but defined nowhere
+
+**Where:** blueprint `:271`, `:279`, `:662`, `:663`, `:665`, `:680`, `:681`, `:712` — eight
+occurrences. §1's status vocabulary table (`:33`–`:39`) does not contain it.
+
+It is a real status in use, not prose. At `:712` it sits in the **status column** of §21's register,
+in the same position as PROVISIONAL, CONTRACT-BLOCKED, and AUTHORITY-BLOCKED. At `:279` the document
+writes "**CONFLICT-BLOCKED**, not LOCKED", contrasting it directly with a defined token — which is
+only meaningful if both are the same kind of thing.
+
+For precision, §1's table has **five rows** defining **six tokens**: row two, `PROVISIONAL /
+CONTRACT-BLOCKED`, pairs two that are each used standalone (PROVISIONAL at `:312`, `:703`, `:718`,
+`:719`; CONTRACT-BLOCKED throughout). `CONFLICT-BLOCKED` is a **seventh**, and the only one with no
+definition.
+
+**Severity:** higher than D1, because §8's precedence reasoning and five of §20's locked decisions
+all rest on it. A reader cannot check whether "CONFLICT-BLOCKED" means "blocked until an owner
+chooses" or "blocked until the roadmap is amended" — §8 implies the latter, but nothing states it.
+
+**Fix:** add a row to §1's table defining it. That is a documentation edit to the blueprint, not a
+governance change — the token already carries its meaning consistently in all eight uses, so
+defining it records existing practice rather than deciding anything. No decision ID.
+
+**Found by adversarial review of this record**, which is worth recording: this document's first
+draft asserted the vocabulary was "a closed set of six" and used that as the reason for a fix in D1.
+The premise was false and the reasoning rested on it. D1 now rests on the distinction between a
+status claim and a registry claim, which holds regardless.
+
 ## Summary
 
 Dispositions are named rather than counted. A count stated here and derived from a table above is
@@ -135,7 +168,7 @@ document, so it states each disposition once.
 | Disposition | Items | Action |
 |---|---|---|
 | Correct as recorded | every row of the table above, each named there | none |
-| Fixable drift | **D1** (`T1` labelled as registry state), **D2** (both baselines stale) | fold into the next slice touching those sections |
+| Fixable drift | **D1** (`T1` labelled as registry state), **D2** (both baselines stale), **D4** (`CONFLICT-BLOCKED` undefined) | fold into the next slice touching those sections |
 | Owner decision required | **D3** (navigation scope) | already registered in blueprint §21; not blocking |
 
 **No M3 divergence requires action before implementation can proceed**, because no M3 slice is
