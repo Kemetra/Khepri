@@ -127,13 +127,18 @@
 #}
 {% for table in section.series %}
 {#
-  A section may carry several series tables, so the caption id carries `loop.index` as well
-  as the section: without it every breakdown in every section shares one landmark name.
+  A section may carry several series tables, and what separates them is their columns:
+  `_series_tables` keeps a by-period and a by-category breakdown apart precisely because
+  they share no heading. So the caption names those headings. A unique *id* per table is
+  not enough -- an accessible name is the text the ids resolve to, and two captions
+  reading "the figures by breakdown" name both tables identically however distinct their
+  ids are. `loop.index` stays in the id because two breakdowns could still carry the same
+  headings, and a duplicate id names neither.
 #}
 <div class="scroller" role="region" tabindex="0"
      aria-labelledby="{{ section.section_id }}-heading {{ section.section_id }}-series-caption-{{ loop.index }}">
 <table class="figures figures--series">
-<caption id="{{ section.section_id }}-series-caption-{{ loop.index }}">{{ chrome.series_caption }}</caption>
+<caption id="{{ section.section_id }}-series-caption-{{ loop.index }}">{{ chrome.series_caption }}{% if table.headings %} — {{ table.headings | join(", ") }}{% endif %}</caption>
 <thead>
 <tr>
 <th scope="col">{{ chrome.series_label }}</th>

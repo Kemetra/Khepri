@@ -188,29 +188,46 @@ def test_each_language_is_its_own_document_declaring_how_it_reads() -> None:
 
 
 def test_every_scrolling_table_region_carries_its_own_accessible_name() -> None:
-    # A `region` with an accessible name is a landmark a reader navigates by, and the
-    # scrollers sit inside the section loop -- so naming them all from one caption
-    # produced several landmarks reading "The figures in this section", which is worse
-    # than no landmark because the reader has to guess. Asserted as a set comparison
-    # rather than a substring: a duplicate name is exactly what a substring check
-    # cannot see, and it is the defect. Both languages, because a name composed from
-    # copy is a name that can be composed correctly in one language only.
+    # A `region` with a name is a landmark a reader navigates by, and the scrollers sit
+    # inside the section loop -- so one shared caption produced several landmarks all
+    # reading "the figures in this section", which is worse than no landmark because the
+    # reader has to guess.
+    #
+    # Asserted on the *resolved text*, not on the `aria-labelledby` attribute. An
+    # accessible name is the words the ids resolve to: two attributes pointing at two
+    # distinct ids whose captions read the same still name both regions identically, so a
+    # test comparing attributes passes over the defect it exists to catch. This is the
+    # form that fails.
     import re
 
     surface = HtmlReportRenderer().render_html(ReportBundle.of(package()))
 
     for language in REQUIRED_LANGUAGES:
         document = surface.documents[language]
-        regions = re.findall(r'<div class="scroller"[^>]*aria-labelledby="([^"]+)"', document)
-        assert regions, f"{language}: no named scrolling region was rendered"
-        assert len(regions) == len(set(regions)), (
-            f"{language}: two table regions share an accessible name: {regions}"
+        text_of = {
+            element_id: re.sub(r"<[^>]+>", "", body).strip()
+            for element_id, body in re.findall(
+                r'id="([^"]+)"[^>]*>(.*?)</(?:h2|caption)>', document, re.S
+            )
+        }
+        regions = re.findall(
+            r'<div class="scroller"[^>]*aria-labelledby="([^"]+)"', document
         )
-        # Every referenced id has to exist, or the name resolves to nothing at all.
-        ids = set(re.findall(r'id="([^"]+)"', document))
-        for name in regions:
-            for token in name.split():
-                assert token in ids, f"{language}: aria-labelledby names absent id {token!r}"
+        assert regions, f"{language}: no named scrolling region was rendered"
+
+        names = []
+        for reference in regions:
+            for token in reference.split():
+                # An `aria-labelledby` naming an absent id resolves to no name at all,
+                # which reads as a populated attribute and a nameless landmark.
+                assert token in text_of, (
+                    f"{language}: aria-labelledby names absent id {token!r}"
+                )
+            names.append(" ".join(text_of[token] for token in reference.split()))
+
+        assert len(names) == len(set(names)), (
+            f"{language}: two table regions resolve to one accessible name: {names}"
+        )
 
 
 def test_the_web_surface_reports_the_size_of_the_documents_it_rendered() -> None:
