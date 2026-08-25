@@ -255,6 +255,73 @@ class TestTheSwitcher:
 
         assert "Initech" not in response.text
 
+    def test_each_organization_carries_its_own_new_analysis_action(self) -> None:
+        """The defect this replaces: one action whose target was `organizations[0]`.
+
+        Asserted on the form's `action` rather than on the organization id appearing somewhere in
+        the page, because the id already appears in that row's team link -- an id-in-the-text
+        assertion passes on the positional template and so proves nothing. The second
+        organization's `analyses` action is the thing that did not exist before.
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-acme"),
+            organizations=[_organization("org-acme", "Acme"), _organization("org-gx", "Globex")],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        assert f'action="{SHELL_PREFIX}/en/org-acme/analyses"' in response.text
+        assert f'action="{SHELL_PREFIX}/en/org-gx/analyses"' in response.text
+
+    def test_the_action_count_matches_the_organization_count(self) -> None:
+        """No organization is left without an entry point, and none gains a second one.
+
+        The `[0]` template rendered one action for any number of organizations, so counting is what
+        separates "an action per row" from "an action".
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-acme"),
+            organizations=[
+                _organization("org-acme", "Acme"),
+                _organization("org-gx", "Globex"),
+                _organization("org-ini", "Initech"),
+            ],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        assert response.text.count("/analyses\"") == 3
+
+    def test_the_entry_point_stays_a_post(self) -> None:
+        """A GET that mutates is a GET a browser may prefetch, so the verb is load-bearing.
+
+        Nothing else in this suite would fail if the form became a link, and the reason the form is
+        a form is recorded only in a template comment until it is asserted.
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-acme"),
+            organizations=[_organization("org-acme", "Acme"), _organization("org-gx", "Globex")],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        assert response.text.count('method="post"') == 2
+        assert f'href="{SHELL_PREFIX}/en/org-acme/analyses"' not in response.text
+
+    def test_every_action_has_an_accessible_name_naming_its_organization(self) -> None:
+        """`FR-056`-adjacent: N buttons all reading "Start a new analysis" is one name repeated.
+
+        A screen reader announces the accessible name, so the distinguishing part must be in it and
+        not merely adjacent to it on screen. Each button is labelled by its own label span and its
+        own organization's name, and the referenced ids must exist or the name resolves to nothing.
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-acme"),
+            organizations=[_organization("org-acme", "Acme"), _organization("org-gx", "Globex")],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        for index in (1, 2):
+            assert (
+                f'aria-labelledby="new-analysis-{index} organization-name-{index}"'
+                in response.text
+            )
+            assert f'id="new-analysis-{index}"' in response.text
+            assert f'id="organization-name-{index}"' in response.text
+
     def test_the_reader_is_asked_only_about_the_resolved_actor(self) -> None:
         """`FR-042`: the account comes from the resolved context, never from the address."""
         reader = _StubOrganizations([_organization("org-acme", "Acme")])

@@ -16,21 +16,39 @@
   <ul class="organization-list">
     {% for organization in organizations %}
     <li class="organization-item">
-      <a href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/team">
+      <a id="organization-name-{{ loop.index }}"
+         href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/team">
         {{ organization.name }}
       </a>
+      {#
+        The entry point into the journey, once per organization rather than once per page. A single
+        action had to name a target, and it named `organizations[0]` -- so a member of several
+        organizations opened an analysis in whichever one the query returned first, with nothing on
+        screen saying which. The choice is the reader's here because the action sits on the row
+        whose organization it acts on.
+
+        This discloses nothing the list above does not: the actions are exactly as many as the
+        links, so the reticence about counts holds unchanged.
+
+        A POST rather than a link because it opens an analysis, and a GET that mutates is a GET a
+        browser may prefetch.
+      #}
+      <form method="post"
+            action="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/analyses">
+        {#
+          Named by both spans in source order, so the accessible name is "Start a new analysis
+          Acme" and not the bare label repeated once per row. `aria-labelledby` rather than an
+          `aria-label` string because it composes the two from copy the translators already own --
+          an `aria-label` would need a separator and a word order invented here, in a template
+          that also renders Arabic.
+        #}
+        <button type="submit"
+                aria-labelledby="new-analysis-{{ loop.index }} organization-name-{{ loop.index }}">
+          <span id="new-analysis-{{ loop.index }}">{{ copy.new_analysis }}</span>
+        </button>
+      </form>
     </li>
     {% endfor %}
   </ul>
-</section>
-
-{#
-  The entry point into the journey. A POST rather than a link because it opens an analysis, and a
-  GET that mutates is a GET a browser may prefetch.
-#}
-<section class="document-card">
-  <form method="post" action="{{ prefix }}/{{ language }}/{{ organizations[0].organization_id }}/analyses">
-    <button type="submit">{{ copy.new_analysis }}</button>
-  </form>
 </section>
 {% endblock %}
