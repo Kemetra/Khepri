@@ -1,6 +1,6 @@
-"""The M2 persistent frame: identity strip, journey exit, and recovery exits.
+"""The M2 persistent frame: the shell's identity strip and its recovery exit.
 
-Three properties are asserted here that no other suite covers, and each of them is a defect the
+Four properties are asserted here that no other suite covers, and each of them is a defect the
 shipped surfaces carried:
 
 **The frame degrades by surface rather than rendering one fixed row.** `_unavailable` and
@@ -10,10 +10,13 @@ surfaces that absorb failure into 500s under `StrictUndefined`. The cases below 
 in both languages, which is the only check that distinguishes a frame that degrades from one that
 happens not to have been rendered on the hard path yet.
 
-**The recovery exit is identical wherever `FR-050` applies.** That requirement forbids
-distinguishing the collapsed causes "by copy, status code, page identity, or navigation state", and
-an exit is navigation state. Asserting the shell's and the journey's exits against each other is
-what makes that a property rather than a coincidence of two templates written on the same day.
+**The recovery exit carries no cause.** `FR-050` forbids distinguishing the collapsed causes "by
+copy, status code, page identity, or navigation state", and an exit is navigation state -- so the
+shell's exit is one string, one target, present whichever cause brought the reader there. The
+journey's `expired` needs the same exit and does not get one here: `RCA-002` excludes "any change
+to the `RRA` beta journey, its routes, its templates, or its assets" and no `RRA` specification
+governs that frame, so the beta half is untouched and the two-sided assertion belongs to whichever
+slice carries that authority.
 
 **No organization identity reaches `/beta`.** `open_commercial_session` takes an opaque `owner_id`
 so that "no `account_id`, `organization_id`, name, slug, or email reaches this function" and
@@ -21,10 +24,17 @@ so that "no `account_id`, `organization_id`, name, slug, or email reaches this f
 organization in the journey is made; the authority is not. A test that only checked the current
 templates would pass again the moment somebody wired the name through, so the case here asserts the
 absence against a rendered page carrying a distinctive name.
+
+**Every surface that resolves an organization frames it the same way.** `invitation_issued` is
+rendered by `issue_invitation` rather than by the dispatcher, so it is the one surface a frame
+written in the dispatcher can silently miss -- and it did, taking `_render`'s defaults and sending
+a language switch to the organization chooser. The cases below assert its frame against the team
+surface's rather than against a literal, so the two cannot drift apart again.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -83,6 +93,18 @@ class _StubOrganizations:
         return []
 
 
+class _StubInvitations:
+    """Enough gateway to reach `invitation_issued`, which has no address to `GET`."""
+
+    def invitations_for_organization(
+        self, organization_id: str, *, now: object = None
+    ) -> tuple[object, ...]:
+        return ()
+
+    def issue(self, offer: object, *, expires_at: object, now: object) -> str:
+        return "inv_a-one-time-token"
+
+
 def _organization(organization_id: str, name: str) -> Organization:
     return Organization._from_storage(
         organization_id=organization_id, name=name, created_at=NOW
@@ -93,6 +115,7 @@ def _shell(
     *,
     context: _Context | None = None,
     organizations: list[Organization] | None = None,
+    invitations: _StubInvitations | None = None,
 ) -> TestClient:
     app = FastAPI()
     add_shell_routes(
@@ -104,6 +127,7 @@ def _shell(
                 if organizations is not None
                 else [_organization("org-acme", ORGANIZATION_NAME)]
             ),
+            invitations=invitations,
         ),
         clock=lambda: NOW,
     )
@@ -253,11 +277,6 @@ class TestTheRecoveryExitIsIndistinguishable:
         assert SHELL_COPY["en"]["recovery_exit"] in response.text
         assert f'href="{SHELL_PREFIX}/en"' in response.text
 
-    @pytest.mark.parametrize("language", ["en", "ar"])
-    def test_the_shell_and_the_journey_use_one_wording(self, language: str) -> None:
-        """Two templates, one string: a different exit would be a distinguishing state."""
-        assert SHELL_COPY[language]["recovery_exit"] == JOURNEY_COPY[language]["recovery_exit"]
-
     def test_the_exit_names_no_cause(self) -> None:
         exit_copy = SHELL_COPY["en"]["recovery_exit"].lower()
 
@@ -319,71 +338,114 @@ class TestNoOrganizationIdentityReachesTheJourney:
             assert forbidden not in source, forbidden
 
 
-class TestTheJourneyOffersOneExit:
-    """`Leave analysis` on every normal step, and nothing that cancels or deletes."""
+#: The language control, read out of the frame rather than guessed at. `frame-language` is the only
+#: class on it, and the href is the next attribute -- so a control that stopped preserving the
+#: surface changes this capture rather than merely adding an anchor somewhere else on the page.
+_LANGUAGE_CONTROL = re.compile(r'class="frame-language"\s+href="([^"]+)"')
+
+
+def _language_control(html: str) -> str:
+    match = _LANGUAGE_CONTROL.search(html)
+    assert match is not None, "the frame renders no language control"
+    return match.group(1)
+
+
+class TestTheBetaJourneyIsUntouched:
+    """`RCA-002`'s exclusion, asserted rather than remembered.
+
+    The specification this slice is authorized by excludes "any change to the `RRA` beta journey,
+    its routes, its templates, or its assets", and the registry holds no successor `RRA`
+    specification governing the journey's frame. An earlier revision of this slice gave the journey
+    a brand pointing at `/app` and a `Leave analysis` exit -- markup that would also have reached a
+    generic 404 in a beta-only deployment, where `add_shell_routes(services=None)` declares no
+    `/app` routes at all.
+
+    So the boundary is a case rather than a note: a journey page that grows a link into the
+    commercial prefix fails here, whichever half wrote it, until a specification says it may.
+    """
 
     @pytest.mark.parametrize("language", ["en", "ar"])
-    @pytest.mark.parametrize("step", ["upload", "review", "processing", "report"])
-    def test_every_normal_step_offers_the_exit(self, language: str, step: str) -> None:
+    @pytest.mark.parametrize("step", ["upload", "review", "processing", "report", "expired"])
+    def test_no_journey_page_links_into_the_commercial_shell(
+        self, step: str, language: str
+    ) -> None:
+        """A beta-only deployment declares no `/app` route, so such a link is also a 404."""
         from tests.test_rra_journey_api import client
 
         html = client().get(f"/beta/{language}/{step}").text
 
-        assert JOURNEY_COPY[language]["leave_analysis"] in html
-        assert 'href="/app/' + language + '"' in html
+        assert f'href="{SHELL_PREFIX}' not in html, f"{step}/{language}"
 
-    @pytest.mark.parametrize("language", ["en", "ar"])
-    def test_the_brand_leaves_for_the_shell(self, language: str) -> None:
-        """It pointed at `/beta/{language}`, which `common.js` reconciles straight back."""
-        from tests.test_rra_journey_api import client
+    def test_the_shell_stylesheet_does_not_reach_the_journey(self) -> None:
+        """`shell-components.css` sits in the journey's asset directory and is the shell's.
 
-        html = client().get(f"/beta/{language}/upload").text
-
-        assert f'class="brand" href="/app/{language}"' in html
-
-    @pytest.mark.parametrize("step", ["upload", "review", "processing", "report"])
-    def test_the_exit_is_navigation_and_not_a_form(self, step: str) -> None:
-        """Leaving deletes nothing and cancels nothing, so it carries no method and no dialog.
-
-        A POST here would imply a state change, and a `confirm` would claim a risk that does not
-        exist. The one destructive control on these steps is `delete-content`, which stays separate.
+        It is the one file under `khepri.rra.journey` this slice changes, and it is a journey asset
+        by path only: `shell.html.j2` is the sole template that links it, and the exclusion is about
+        the beta surface rather than about a directory. Asserted so that stays true.
         """
-        from importlib.resources import files
-
         from tests.test_rra_journey_api import client
 
-        html = client().get(f"/beta/en/{step}").text
-        exit_markup = html[html.index("leave-analysis") - 60 :][:400]
+        for step in ("upload", "review", "processing", "report", "expired"):
+            assert "shell-components.css" not in client().get(f"/beta/en/{step}").text, step
 
-        assert "method=" not in exit_markup
-        # No interstitial: the exit is an anchor, so there is no handler to attach one to. Asserted
-        # against the scripts rather than the markup, because a dialog would live in JS. `confirm`
-        # as a word is shipped copy on these steps -- `#confirm-mapping`, "Confirmed facts" -- so
-        # the needle is the call, not the string.
-        for asset in ("common.js", "review.js", "processing.js", "report.js", "upload.js"):
-            source = (
-                files("khepri.rra.journey").joinpath("assets", asset).read_text(encoding="utf-8")
-            )
-            assert "window.confirm" not in source, asset
-            assert "confirm(" not in source.replace("#confirm-mapping", ""), asset
 
-    @pytest.mark.parametrize("language", ["en", "ar"])
-    def test_the_language_control_keeps_the_step(self, language: str) -> None:
-        from tests.test_rra_journey_api import client
+class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
+    """The one surface reached only by `POST`, and the one the frame forgot.
 
-        other = "ar" if language == "en" else "en"
-        html = client().get(f"/beta/{language}/review").text
+    `invitation_issued` is rendered by `issue_invitation` rather than by the dispatcher, so it
+    received `organization_id` and nothing else. The frame took `_render`'s defaults: no
+    `organization_name`, therefore no organization and no `Team`; and an empty `surface_path`,
+    therefore a language control pointing at `{prefix}/{alternate}` -- the organization chooser.
 
-        assert f'href="/beta/{other}/review"' in html
+    An owner who switched language on this page lost the surface *and* the scope, on the one page
+    in the product whose secret is shown once and cannot be shown again. Nothing raised: the empty
+    tail is a valid address that renders a real page, which is why this needs a case rather than a
+    type.
+    """
 
-    @pytest.mark.parametrize("language", ["en", "ar"])
-    def test_the_expired_surface_offers_the_shared_exit(self, language: str) -> None:
-        """Outside the deletion branch: `FR-050` forbids an exit that differs by cause."""
-        from tests.test_rra_journey_api import client
+    def _issued(self, language: str) -> str:
+        client = _shell(invitations=_StubInvitations())
+        response = client.post(
+            f"{SHELL_PREFIX}/{language}/org-acme/team/invitations",
+            data={"email": "invitee@example.test", "role": "member"},
+        )
 
-        plain = client().get(f"/beta/{language}/expired").text
-        deleted = client().get(f"/beta/{language}/expired?deletion=requested").text
+        assert response.status_code == 200
+        assert "inv_a-one-time-token" in response.text
+        return response.text
 
-        for html in (plain, deleted):
-            assert JOURNEY_COPY[language]["recovery_exit"] in html
-            assert f'href="/app/{language}"' in html
+    @pytest.mark.parametrize("language,alternate", [("en", "ar"), ("ar", "en")])
+    def test_the_language_control_keeps_the_team_surface(
+        self, language: str, alternate: str
+    ) -> None:
+        """The assertion the defect fails: it captured `{prefix}/{alternate}`, the chooser."""
+        assert (
+            _language_control(self._issued(language))
+            == f"{SHELL_PREFIX}/{alternate}/org-acme/team"
+        )
+
+    def test_the_frame_names_the_organization_it_acted_in(self) -> None:
+        """It vanished on the way through, and returned when the reader went back."""
+        assert ORGANIZATION_NAME in self._issued("en")
+
+    def test_the_frame_offers_team_here_too(self) -> None:
+        """Asserted inside `frame-surfaces`, not anywhere on the page.
+
+        The surface has carried a "back to the team" link with this exact href since `R8-05b`, so a
+        bare search for it passes with no frame at all -- which is what makes the enclosing element
+        the needle rather than the address.
+        """
+        issued = self._issued("en")
+        nav = issued[issued.index('class="frame-surfaces"') :][:300]
+
+        assert f'href="{SHELL_PREFIX}/en/org-acme/team"' in nav
+
+    def test_the_team_surface_and_this_one_agree(self) -> None:
+        """One helper resolves both, so the header cannot differ between them.
+
+        Asserted against the team surface rather than against a literal: a frame that changed on
+        both surfaces together is a change, and a frame that changed on one is the defect.
+        """
+        team = _shell().get(f"{SHELL_PREFIX}/en/org-acme/team").text
+
+        assert _language_control(self._issued("en")) == _language_control(team)

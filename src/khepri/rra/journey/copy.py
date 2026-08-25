@@ -97,21 +97,6 @@ _EN = {
         "The file was uploaded but could not be profiled. Delete this session and "
         "request a new invitation."
     ),
-    # The persistent frame. The brand leaves the journey for the commercial shell, so its accessible
-    # name says where it goes rather than repeating the wordmark.
-    "frame_home_label": "Khepri home",
-    # Names the action, not a direction: "Back" would be ambiguous beside a four-step nav whose
-    # steps are themselves links, and "Cancel" would promise a cancellation that does not happen.
-    "leave_analysis": "Leave analysis",
-    # Shown at narrow widths. The accessible name stays the full string.
-    "leave_analysis_short": "Leave",
-    # Leaving is navigation, not deletion -- the job keeps running and the content keeps its own
-    # expiry. Saying so is what makes the absence of a confirmation dialog honest rather than
-    # careless, and it is the sentence that stops a reader treating the exit as destructive.
-    "leave_analysis_hint": "Your analysis is kept until it expires.",
-    # `FR-050` collapses every cause into one surface, so this wording is shared with the shell's
-    # `unavailable` and says nothing about why the reader arrived.
-    "recovery_exit": "Go to your organizations",
 }
 
 _AR = {
@@ -203,11 +188,6 @@ _AR = {
     "profile_rejected": (
         "تم رفع الملف لكن تعذر تحليله الأولي. احذف هذه الجلسة واطلب دعوة جديدة."
     ),
-    "frame_home_label": "الصفحة الرئيسية لخِبري",
-    "leave_analysis": "مغادرة التحليل",
-    "leave_analysis_short": "مغادرة",
-    "leave_analysis_hint": "يبقى تحليلك محفوظًا حتى انتهاء صلاحيته.",
-    "recovery_exit": "الانتقال إلى مؤسساتك",
 }
 
 if _EN.keys() != _AR.keys():
