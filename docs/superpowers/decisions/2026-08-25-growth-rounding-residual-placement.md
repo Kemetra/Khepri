@@ -1,8 +1,11 @@
 # Growth rounding-residual placement
 
-**Status:** Proposed reading, pending owner confirmation. If confirmed it unblocks
-`V-package` and `V-growth`; if the owner reads `RRA-004` the other way, the residual needs an
-amendment relocating the clause and this note becomes the record of why.
+**Status:** **Confirmed by the owner on 2026-08-25.** The reading below is adopted: the residual
+is growth-family evidence under `rra008.growth.v2`, `rra004.package.v3` is not widened, and no
+`RRA-004` amendment is required. This unblocks `V-package` and `V-growth`. The dissenting reading
+recorded under "Decision" — that the clause authorizes residual evidence inside
+`rra004.package.v3` and therefore needs an amendment — was put to the owner with its cost and was
+not adopted.
 **Mission:** `docs/superpowers/plans/2026-08-24-deterministic-retail-calculation-mission.md`, Task 1.
 **Governing text:** `RRA-004` "Fact-package provenance" and "Stable contract and versions";
 `RRA-008` "Growth decomposition".
