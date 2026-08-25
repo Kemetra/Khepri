@@ -332,12 +332,21 @@ class TestTheLanguageControlPreservesPosition:
         Asserted in **both** languages because that is the whole difference between `auto` and the
         `ltr` this control could plausibly have been given: a fixed `ltr` is right on the Arabic
         shell and wrong on the English one, and a single-language case cannot tell them apart.
+
+        The direction is asserted on the **text**, and its absence on the anchor with it.
+        `.frame-language` is a flex item holding the inline end with `margin-inline-start: auto`,
+        and a logical property resolves against the element's own direction -- so a `dir` on the
+        anchor, whose label is always the opposite script, resolved that margin to the wrong
+        physical side on both shells. Isolating the run and directing the layout are two jobs, and
+        this is the case that keeps them on two elements.
         """
         html = _shell().get(f"{SHELL_PREFIX}/{language}/org-acme/team").text
-        control = html[html.index('class="frame-language"') :][:220]
+        start = html.index('class="frame-language"')
+        anchor = html[start : html.index(">", start) + 1]
+        control = html[start:][:260]
 
-        assert 'dir="auto"' in control
-        assert SHELL_COPY[language]["frame_language"] in control
+        assert f'<span dir="auto">{SHELL_COPY[language]["frame_language"]}</span>' in control
+        assert "dir=" not in anchor, "the anchor must inherit the page direction for its margin"
 
 
 class TestEverySurfaceCarriesTheFrame:

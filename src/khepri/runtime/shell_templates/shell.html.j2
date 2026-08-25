@@ -88,10 +88,17 @@
       switch to preserve position, which is a constraint on a switch that exists.
     #}
     {% if language_switch %}
+    {#
+      `dir` goes on the text and not on the anchor. `.frame-language` is a flex item carrying
+      `margin-inline-start: auto` to hold the inline end, and a logical property resolves against
+      the *element's own* direction -- so `dir` here, on a label whose script is always the
+      opposite of the page's, resolved that margin to the wrong physical side on both shells and
+      the control stopped sitting at the end. The isolation `FR-055` asks for belongs to the run;
+      the layout belongs to the page. Splitting them gives each the direction it needs.
+    #}
     <a class="frame-language"
        href="{{ prefix }}/{{ alternate }}{{ surface_path }}"
-       dir="auto"
-       lang="{{ copy.frame_language_code }}">{{ copy.frame_language }}</a>
+       lang="{{ copy.frame_language_code }}"><span dir="auto">{{ copy.frame_language }}</span></a>
     {% endif %}
   </header>
   <main id="main-content" class="shell-main" tabindex="-1">
