@@ -1,9 +1,17 @@
 # DRAFT — KHEPRI-DEC-NNN: RRA private-beta runtime target and DigitalOcean FRA1 environment descriptor
 
-**Status: draft on a branch. Not a governed artifact.** Per `governance/CONSTITUTION.md` II, this
-becomes approved and governing only when the owner merges it to `main`. `NNN` is a placeholder; the
-owner allocates the identifier. Nothing here authorizes provisioning, deployment, spend, or
-external traffic.
+**Status: planning-only draft. Not a governed artifact — including after this commit is merged.**
+
+Merging this commit does **not** make this document governing. `governance/registry.yaml` is
+unchanged by it, contains no `KHEPRI-DEC-NNN`, and is authoritative for artifact identity, state,
+and document under Constitution III; the validator therefore ignores this file, which lives under
+`docs/platform/proposed-governance/`. This file remains planning-only until it is finalized under an
+owner-allocated identifier, moved into `governance/decisions/`, and added through the atomic
+registry transition described below.
+
+`NNN` is a placeholder; only the owner allocates the identifier. Nothing here authorizes
+provisioning, deployment, spend, or external traffic, and merging this commit closes no `OPS1` gate
+and resolves no `KHEPRI-DEC-027` stop-gate.
 
 > Proposed to supersede `KHEPRI-DEC-008`, which superseded `KHEPRI-DEC-005` and `KHEPRI-DEC-007`.
 > Restates `KHEPRI-DEC-008` in full, revising one capability row and supplying the target-selection
@@ -47,11 +55,19 @@ matched." The protected property is **digest-bound evidence integrity**, not the
 upgrades. That property is preserved by recording the exact minor version and treating a change to
 it as an event that re-issues the digest and re-evidences affected runs.
 
-Self-hosting PostgreSQL would satisfy the original wording literally, but `KHEPRI-DEC-008` already
-rejected an equivalent trade in "Alternatives not selected": a self-hosted store was declined
-because "the durability, backup, and recovery evidence `RRA-007` requires would become entirely
-self-produced for a beta that does not need that trade." No backup, restore, or PITR capability
-exists in the repository today, which makes that objection stronger now, not weaker.
+**The constraint is DigitalOcean's, not managed PostgreSQL's in general.** Some managed products do
+expose the control: this repository's own frozen AWS reference sets
+`auto_minor_version_upgrade=False` on the RDS instance (`src/khepri/infra/database.py:114`). The
+original wording is therefore satisfiable — but only by a provider `KHEPRI-DEC-027` has already
+demoted to a fallback candidate, or by self-hosting. Keeping the wording unchanged would not force
+self-hosting outright; it would reopen the provider selection `KHEPRI-DEC-027` settled, which is a
+larger change than this decision proposes and is not this decision's to make.
+
+Self-hosting PostgreSQL on a Droplet would also satisfy the original wording literally, but
+`KHEPRI-DEC-008` already rejected an equivalent trade in "Alternatives not selected": a self-hosted
+store was declined because "the durability, backup, and recovery evidence `RRA-007` requires would
+become entirely self-produced for a beta that does not need that trade." No backup, restore, or PITR
+capability exists in the repository today, which makes that objection stronger now, not weaker.
 
 ## Decision
 
@@ -142,9 +158,22 @@ descriptor to record the value, which is the discipline `KHEPRI-DEC-007` establi
 **The relational-store row is the one substantive change from `KHEPRI-DEC-008`.** Its predecessor
 required "automatic minor upgrade disabled" to protect a specific property: an upgrade that changed
 the engine underneath an approved `environment_digest` "would silently invalidate every prior run's
-evidence while the digest still matched." No managed PostgreSQL product permits disabling updates,
+evidence while the digest still matched." The selected provider does not permit disabling updates,
 so the control is restated as the property it protects. The minor version is recorded; a change to
 it invalidates the digest explicitly and visibly, rather than silently.
+
+**A declaration alone does not achieve this, and this decision does not pretend otherwise.**
+`resolve_approved_benchmark` reads `KHEPRI_BENCHMARK_ENVIRONMENT_DIGEST` as a static value
+(`src/khepri/rra/benchmark_authorization.py`), and nothing in the runtime queries the live
+PostgreSQL minor version before accepting it. Without an automated check, a run would continue
+against a new engine while the old digest still matched — the exact silent invalidation this row
+exists to prevent, merely relocated from the upgrade to the digest.
+
+The revised row is therefore satisfied only in combination with a **runtime minor-version check**,
+listed as an implementation prerequisite below: the benchmark gate reads the live server version,
+compares it against the minor version the descriptor records, and **refuses to certify a run** when
+they differ, until the descriptor and digest are reissued. Until that check exists, no benchmark run
+against this target may be treated as governed evidence.
 
 The cost is stated rather than hidden. Under `KHEPRI-DEC-008` a minor-version change could not
 occur; under this decision it can, and each occurrence obliges digest re-issuance and re-evidencing
@@ -399,11 +428,14 @@ violation inside the deletion path `RRA-002` mandates rather than as a degraded 
 auto-deletes incomplete multipart uploads after 30 days, which exceeds the governed seven-day
 horizon and therefore does not satisfy the requirement on its own.
 
-This decision records no confirmation it does not have. The empirical check against an FRA1 Space is
-an implementation prerequisite below and must close before external traffic. If it fails, the
-remedies are a bounded `storage.py` change treating `NotImplemented` as a distinct
-provider-capability error together with a lifecycle abort rule of seven days or fewer, or a
-different S3-compatible store; either is a governed change, not a silent workaround.
+This decision records no confirmation it does not have. Because `KHEPRI-DEC-008` makes that
+confirmation a **precondition of selecting the store** rather than a follow-up, the gap is not
+merely deferred work: it leaves this decision's own prerequisite unsatisfied, and it is circular
+under `KHEPRI-DEC-027`. Both are recorded under "Unresolved" below, with the two orderings the owner
+may choose between. If the check fails, the remedies are a bounded `storage.py` change treating
+`NotImplemented` as a distinct provider-capability error together with a lifecycle abort rule of
+seven days or fewer, or a different S3-compatible store; either is a governed change, not a silent
+workaround.
 
 **Recorded RTO and RPO.** RPO 15 minutes; RTO 4 hours. DigitalOcean documents daily backups with
 write-ahead logs backed up every five minutes and point-in-time recovery limited to the last seven
@@ -453,6 +485,65 @@ Re-pointing both at this decision in the same commit clears them.
 Constitution V fails closed, so splitting these across commits leaves `main` failing its own
 validator.
 
+### Unresolved: `KHEPRI-DEC-006` pins the benchmark environment to AWS
+
+`KHEPRI-DEC-008` recorded that `KHEPRI-DEC-006`'s workload — 40 synthetic datasets, the
+integer-exact 95% threshold, and the ten-minute objective — "is provider-neutral and is unaffected"
+by the change of host. That is true of the **workload**. It is not true of the **environment**.
+
+`KHEPRI-DEC-006` (`active`) additionally fixes the environment the run must use, under a heading
+that reads "Environment: pinned by `KHEPRI-DEC-005`": AWS `me-central-1`; ECS on Fargate from an
+image in ECR behind an Application Load Balancer; RDS for PostgreSQL 17, Multi-AZ; SQS Standard with
+a dead-letter queue; Secrets Manager, CloudTrail, and KMS; and infrastructure defined by AWS CDK v2,
+with `environment_digest` covering "the SHA-256 digest of the reviewed synthesized CDK template."
+
+Two consequences follow, and neither is cosmetic:
+
+1. A DigitalOcean/FRA1 benchmark run cannot satisfy `KHEPRI-DEC-006` as written, so `OPS1-09` and
+   `OPS1-05` would produce evidence that fails an active decision. `environment_digest` cannot even
+   be computed as specified, because no CDK template exists for this target and SQS is removed.
+2. `KHEPRI-DEC-006`'s environment clause derives its authority from `KHEPRI-DEC-005`, which is
+   `retired` and superseded by `KHEPRI-DEC-008`. An active decision is therefore pinned to a
+   retired one in prose. `governance/registry.yaml` records `KHEPRI-DEC-006` with
+   `depends_on: []`, so the validator's active-depends-on-retired rule never fires and the
+   staleness is invisible to automation.
+
+**This decision does not resolve it, and must not.** Restating the benchmark environment here would
+widen this decision from a runtime-target selection into a rewrite of the benchmark contract, and
+`KHEPRI-DEC-006` governs the evidence rule — the integer-exact threshold, the digest definitions,
+and the approval identity — not merely a list of products. That is a separate artifact with its own
+reasoning.
+
+The owner therefore has a sequencing choice, and this decision records it rather than pre-empting
+it: `KHEPRI-DEC-006` must be superseded or restated against the selected target **before** any
+benchmark run is treated as governed evidence. Until then `OPS1-09` may reissue sizing values, but
+no run against this target satisfies `KHEPRI-DEC-006`.
+
+### Unresolved: the object-store confirmation is circular under `KHEPRI-DEC-027`
+
+`KHEPRI-DEC-008` requires the target-selection artifact to confirm the object store's
+multipart-abort semantics; this decision records that confirmation as UNVERIFIED. That is honest,
+but it leaves this decision's own selection prerequisite unsatisfied, and the deferral is circular:
+`KHEPRI-DEC-027` §4 blocks provisioning until the complete artifact is approved, while the
+verification requires an FRA1 Space that provisioning would create.
+
+The circularity is breakable, and the break is narrow: a single throwaway bucket used only to
+observe `ListMultipartUploads` behaviour is not the non-production environment `OPS1-02` provisions,
+carries no customer content, and costs cents. But it is still spend and still creation of a provider
+resource, so it requires the owner's separate authorization rather than this decision's.
+
+Two orderings are available, and the owner chooses:
+
+- **Verify first.** Separately authorize the bounded check, record the result here, and finalize
+  this decision with a confirmation rather than a gap. Preferred: it satisfies
+  `KHEPRI-DEC-008`'s precondition literally.
+- **Finalize with Spaces unselected.** Keep the object-storage stop-gate open, select every other
+  product, and close storage in a follow-on once evidence exists.
+
+Finalizing this decision with Spaces *selected* and the confirmation absent is not offered as an
+option, because it would record a selection its own governing artifact forbids making without
+evidence.
+
 ## Alternatives not selected
 
 `KHEPRI-DEC-008`'s alternatives are carried forward unchanged. Added here:
@@ -474,7 +565,9 @@ validator.
 
 - `KHEPRI-DEC-008` moves to `retired`, retaining its approval evidence unchanged.
 - `KHEPRI-DEC-005` and `KHEPRI-DEC-007` remain `retired` and now name this decision as successor.
-- `KHEPRI-DEC-027`, `KHEPRI-DEC-006`, `KHEPRI-DEC-025`, and `RRA-002` remain `active` and unchanged.
+- `KHEPRI-DEC-027`, `KHEPRI-DEC-025`, and `RRA-002` remain `active` and unchanged.
+- **`KHEPRI-DEC-006` cannot remain unchanged, and this decision does not resolve it.** See the
+  unresolved conflict recorded below.
 - The stop-gates `KHEPRI-DEC-027` §3 reserved are resolved, except the object-store multipart-abort
   confirmation recorded as UNVERIFIED above.
 - A managed minor-version change becomes a governed, visible event rather than a prohibited one,
@@ -486,6 +579,10 @@ validator.
 
 ### Implementation prerequisites — not authorized by this decision
 
+- **runtime PostgreSQL minor-version check**, without which the revised relational-store row is a
+  declaration only: the benchmark gate must read the live server version, compare it against the
+  minor version the descriptor records, and refuse to certify a run when they differ. Until it
+  exists, no run against this target is governed evidence;
 - application readiness/health endpoint; none exists today, and a load balancer health gate,
   rolling deploy, and post-deploy verification all depend on it;
 - OpenTelemetry OTLP emission and content-free structured logging; both are governed requirements
