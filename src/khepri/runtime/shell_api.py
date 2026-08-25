@@ -195,7 +195,12 @@ def _language(requested: str) -> str:
 _UNAVAILABLE_TAIL = "/-/unavailable"
 
 
-def _unavailable(environment: Environment, *, language: str) -> Response:
+def _unavailable(
+    environment: Environment,
+    *,
+    language: str,
+    language_switch: bool = True,
+) -> Response:
     """The one surface every refusal reaches. Takes no cause, so it can disclose none.
 
     **Its language control keeps the refusal, and cannot keep the address.** With no tail it took
@@ -211,6 +216,14 @@ def _unavailable(environment: Environment, *, language: str) -> Response:
     the language they cannot read too -- and `FR-054` puts that reader in scope. The constant
     discloses nothing and does not vary with the cause, so `FR-050` and `FR-052` hold by
     construction rather than by care.
+
+    `language_switch=False` is for the one refusal rendered without resolving the actor: an
+    unlisted asset name. The tail is a refusal only for a reader the dispatcher would refuse, and
+    an authenticated account in no organization is not one -- `FR-048` puts it on the next-step
+    surface at `200` before any surface name is read, which is what `FR-048` is for. That reader
+    would have followed the control off a `404` and onto a next step. An asset name is not a
+    surface a reader is on, so it offers no control, rather than the dispatcher learning an
+    exception that would have to outrank `FR-048`.
     """
     return _render(
         environment,
@@ -218,6 +231,7 @@ def _unavailable(environment: Environment, *, language: str) -> Response:
         language=language,
         status_code=404,
         surface_path=_UNAVAILABLE_TAIL,
+        language_switch=language_switch,
     )
 
 
@@ -383,7 +397,12 @@ def add_shell_routes(
         """
         media_type = _ASSETS.get(name)
         if media_type is None:
-            return _unavailable(environment, language=_DEFAULT_LANGUAGE)
+            # No language control: the one refusal rendered without resolving the actor, so the
+            # canonical tail is not a refusal for every reader who could reach it. See
+            # `_unavailable`.
+            return _unavailable(
+                environment, language=_DEFAULT_LANGUAGE, language_switch=False
+            )
         content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
         return Response(
             content=content,

@@ -56,6 +56,7 @@ from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rra.journey.copy import JOURNEY_COPY
 from khepri.runtime.shell_api import (
     _UNAVAILABLE_TAIL,
+    SHELL_ASSETS,
     SHELL_PREFIX,
     ShellServices,
     add_shell_routes,
@@ -443,6 +444,46 @@ class TestTheRefusalKeepsItsSurfaceAcrossLanguages:
         }
 
         assert len(bodies) == 1, "the collapsed causes are distinguishable"
+
+
+class TestTheAssetRefusalOffersNoSwitch:
+    """The one refusal rendered without resolving the actor, and the hole that left.
+
+    `shell_asset` answers an unlisted name with `unavailable` before any session is read, so the
+    canonical tail is not a refusal for every reader who could reach it. An authenticated account
+    in no organization is the case: `FR-048` puts it on the next-step surface at `200` before the
+    dispatcher reads a surface name at all, so that reader followed the control off a `404` and
+    onto a next step -- the same "different surface" the control was fixed to stop doing.
+
+    The dispatcher is right and is not what changed. `FR-048` requires that account to reach the
+    next step and be denied every organization-scoped surface, so a canonical tail that outranked
+    it would be the defect. An asset name is not a surface a reader is on, so that refusal offers
+    no control instead.
+    """
+
+    def test_an_unlisted_asset_renders_no_control(self) -> None:
+        response = _shell(organizations=[]).get(f"{SHELL_ASSETS}/not-allowed.css")
+
+        assert response.status_code == 404
+        assert not _renders_a_language_control(response.text)
+
+    def test_the_dispatcher_still_answers_the_next_step_first(self) -> None:
+        """The behaviour the asset refusal defers to, asserted so it is a decision not an accident.
+
+        If this ever answered `404`, the asset refusal could carry the control again -- and the
+        reason it cannot would have gone away silently.
+        """
+        response = _shell(organizations=[]).get(f"{SHELL_PREFIX}/en{_UNAVAILABLE_TAIL}")
+
+        assert response.status_code == 200
+        assert SHELL_COPY["en"]["recovery_exit"] not in response.text
+
+    def test_a_member_following_the_tail_still_reaches_the_refusal(self) -> None:
+        """The fix must not have cost the readers the control was restored for."""
+        response = _shell().get(f"{SHELL_PREFIX}/ar{_UNAVAILABLE_TAIL}")
+
+        assert response.status_code == 404
+        assert SHELL_COPY["ar"]["recovery_exit"] in response.text
 
 
 class TestTheBrandIsOperableByItsVisibleName:
