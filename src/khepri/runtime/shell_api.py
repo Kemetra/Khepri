@@ -215,7 +215,17 @@ def _render(
         # alternate is derived here so no surface can forget it and no template has to know how
         # many languages there are. `surface_path` defaults to the organization chooser's empty
         # tail and each surface that has a deeper address overrides it through `context`.
-        **{"alternate": _ALTERNATE[language], "surface_path": "", **context},
+        #
+        # `language_switch` defaults to rendering the control, because every surface with an
+        # address can honour it. `invitation_issued` has no address and one unrepeatable secret,
+        # so it is the one surface that opts out -- and it opts out here rather than in the
+        # template, where a surface added later would have had to know to.
+        **{
+            "alternate": _ALTERNATE[language],
+            "surface_path": "",
+            "language_switch": True,
+            **context,
+        },
     )
     return Response(
         content=body,
