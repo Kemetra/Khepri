@@ -123,7 +123,7 @@ from khepri.rra.rendering.wording import (
     category_of,
     caveat_prose,
     kind_qualifier,
-    refusal_message,
+    section_refusal_message,
     worded,
 )
 from khepri.rra.report_artifacts import (
@@ -663,7 +663,13 @@ def _write_limitations(workbook: Workbook, bundle: ReportBundle, language: str) 
         row = _write_row(
             sheet,
             row + 1,
-            (refusal_message(section.reason, context="section", language=language),),
+            (
+                section_refusal_message(
+                    section.section_id,
+                    section.reason,
+                    language,
+                ),
+            ),
         )
     for caveat in bundle.caveats:
         row = _write_row(sheet, row + 1, (caveat_prose(caveat.code, language),))

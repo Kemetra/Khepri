@@ -24,6 +24,7 @@ from khepri.rra.aggregates import (
     reconciles,
 )
 from khepri.rra.mapping import (
+    MAPPING_VERSION,
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
     SEMANTIC_COST,
@@ -47,6 +48,10 @@ from khepri.rra.profiling import (
     materialize,
     parse_date,
     safe_value_label,
+)
+from khepri.rra.versions import (
+    REASON_PACKAGE_VERSION_UNADMITTED,
+    admits_package,
 )
 
 # v2 carries the five items APP-014 added to RRA-004: the retained concentration
@@ -323,6 +328,38 @@ def build_fact_package(
         )
 
 
+def assert_versions_admitted(
+    *,
+    mapping_version: str,
+    package_version: str,
+    formula_version: str,
+) -> None:
+    """Refuse a package whose three versions were never authorized together.
+
+    `RRA-004` requires a new mapping, formula or serialized shape to create a new
+    recorded identity. Enforcing that on production alone is half the rule: it
+    stops a changed shape reusing an old identity, and does nothing about a
+    changed *input* published under an unmoved one. Between two slices of a
+    version-moving mission that is the live defect, so the package builder asks
+    the table before it builds anything.
+
+    Refused here rather than in the route, because a package is the thing whose
+    identity is at stake and every caller reaches it through this module.
+    `RRA-009` classifies the reason as Internal: when this fires no report is
+    published, so no customer can encounter it.
+    """
+    if not admits_package(
+        mapping_version=mapping_version,
+        package_version=package_version,
+        formula_version=formula_version,
+    ):
+        raise FactsRefused(
+            f"{REASON_PACKAGE_VERSION_UNADMITTED}: "
+            f"{mapping_version}, {package_version} and {formula_version} "
+            "were not authorized to be combined."
+        )
+
+
 def _build(
     *,
     content: bytes,
@@ -334,6 +371,11 @@ def _build(
 ) -> FactPackage:
     if formula_version != FORMULA_VERSION:
         raise FactsRefused("Formula version is not implemented by this package builder.")
+    assert_versions_admitted(
+        mapping_version=MAPPING_VERSION,
+        package_version=PACKAGE_VERSION,
+        formula_version=formula_version,
+    )
     _assert_derived_from_profile(content, media_type, profile, mapping, decision)
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
