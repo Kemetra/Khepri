@@ -246,7 +246,9 @@ def test_result_refusal_universe_is_eight_current_codes() -> None:
     Seven until the version compatibility gate landed. It added one result-tier
     refusal, the unadmitted family pairing, so the universe is eight. Its sibling
     -- an unadmitted package pairing -- is Internal under `RRA-009`, because no
-    report is published when it fires and no customer can encounter it. The number is asserted rather than derived so that
+    report is published when it fires and no customer can encounter it.
+
+    The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
