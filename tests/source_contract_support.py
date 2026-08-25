@@ -59,6 +59,6 @@ def golden_contract_digest() -> str:
     a change to the contract's canonical shape moves this with it instead of
     leaving a stale constant that silently stops matching.
     """
-    from khepri.rra.api import SourceContractBody
+    from khepri.rra.source_contract import SourceContractBody
 
     return SourceContractBody(**GOLDEN_SOURCE_CONTRACT).to_contract().digest
