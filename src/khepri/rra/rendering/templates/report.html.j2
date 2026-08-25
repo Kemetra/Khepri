@@ -65,9 +65,16 @@
 <p class="refused">{{ chrome.refusal_prose[section.section_id][section.reason] }}</p>
 {% else %}
 {% if section.chart %}{{ chart(section.chart, section.section_id, chrome) }}{% endif %}
-<div class="scroller">
+{#
+  Named by the section's own heading and this table's caption, in that order, so a landmark
+  list reads "Growth -- The figures in this section" rather than one generic name repeated
+  once per section. `aria-labelledby` rather than an `aria-label` string because it composes
+  names the translators already own, in both languages, with no separator invented here.
+#}
+<div class="scroller" role="region" tabindex="0"
+     aria-labelledby="{{ section.section_id }}-heading {{ section.section_id }}-figures-caption">
 <table class="figures">
-<caption>{{ chrome.business_caption }}</caption>
+<caption id="{{ section.section_id }}-figures-caption">{{ chrome.business_caption }}</caption>
 <thead>
 <tr>
 <th scope="col">{{ chrome.business_figure }}</th>
@@ -119,7 +126,19 @@
   label; it is deliberately not a zero, which would be a number nobody computed.
 #}
 {% for table in section.series %}
-<div class="scroller">
+{#
+  Focusable so the columns past the fold are reachable, but deliberately *not* a named
+  `region`. A section may carry several breakdowns, and nothing a reader can see tells
+  them apart: `TestADisplayLabelIsNotASeriesIdentity._colliding` builds a by-period and a
+  by-product table whose headings are both `Revenue`/`Units sold` and whose first label is
+  `2026-01` in both, because a product may be named like a period. Several landmarks
+  sharing one name are worse than none, since a landmark list then asks the reader to
+  guess -- and the one value that would separate them is the dimension, which
+  `html.py:131-134` deliberately keeps out of customer copy so this module does not decide
+  what a customer's own labels mean. So these carry no landmark. The table keeps its
+  `<caption>`, which names it in document order where a reader meets it.
+#}
+<div class="scroller" tabindex="0">
 <table class="figures figures--series">
 <caption>{{ chrome.series_caption }}</caption>
 <thead>
