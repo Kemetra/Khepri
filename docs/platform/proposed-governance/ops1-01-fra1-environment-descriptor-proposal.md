@@ -121,8 +121,8 @@ tier, or instance count below is proposed as a value.
 
 | Capability | Candidate | Alternative | Notes |
 |---|---|---|---|
-| Web compute | App Platform service | Droplet behind a Load Balancer | App Platform supplies TLS and rolling deploys but assumes an HTTP readiness probe (P1) |
-| Worker compute | Droplet, or App Platform worker component | — | Memory-led: Chromium renders the report surfaces. No public ingress |
+| Web compute | App Platform service | Droplet behind a Load Balancer | App Platform supplies TLS and rolling deploys but assumes an HTTP readiness probe (P1). Any Droplet option inherits the no-interactive-access requirement below |
+| Worker compute | Droplet, or App Platform worker component | — | Memory-led: Chromium renders the report surfaces. No public ingress. Holds the envelope master key, so the no-interactive-access requirement below is binding |
 | Migration execution | pre-deploy job / one-shot container | manual gated step | Must block the release, not run beside it |
 | PostgreSQL | DO Managed Database for PostgreSQL 17 | self-hosted PostgreSQL 17 on a Droplet | **The conflict in §6 decides this** |
 | Object storage | DO Spaces (S3-compatible) | — | Must be verified against `RRA-002` before selection |
@@ -132,6 +132,21 @@ tier, or instance count below is proposed as a value.
 **OWNER DECISION REQUIRED (D3) — sizing.** No CPU, memory, storage, node count, or
 database tier is proposed. The available sizing material is AWS-shaped and must be
 reissued by `OPS1-09` (§11).
+
+**Not a candidate criterion — a binding constraint on every option above.**
+`KHEPRI-DEC-008` (`active`) requires the container runtime to run the pinned image "without
+interactive access," and fixes the control: "Interactive host access is disabled by
+default, and is re-enabled only as a logged, time-boxed break-glass action recorded as an
+operational event under the content-free telemetry rules." The stated reason is exactly the
+worker's situation — a human reaching the process handling customer content with the
+envelope master key in its memory.
+
+This constrains the Droplet alternatives in particular, because a Droplet is
+SSH-accessible by default and an App Platform component is not. Selecting a Droplet does
+not relax the requirement; it means the requirement must be implemented (key-based access
+disabled by default, break-glass logged and time-boxed) as part of that selection.
+`OPS1-02` must therefore not provision an ordinarily SSH-accessible host, and `OPS1-06`
+gathers evidence for a control that is already mandatory rather than establishing it.
 
 ## 5. Web / worker / migration topology
 
@@ -226,9 +241,17 @@ Fixed by the application and not renegotiable per target:
 store's **expiry, deletion, and multipart-abort** semantics satisfy `RRA-002`.
 
 **OWNER DECISION REQUIRED (D2)** — product selection, once that confirmation exists.
-**OWNER DECISION REQUIRED (D10)** — object lifecycle and retention beyond the seven-day
-expiry the product already requires, and the credential scope for the bucket (a
-per-environment key limited to one bucket is recommended; not yet authorized).
+**OWNER DECISION REQUIRED (D10)** — the **enforcement mechanism** for the governed
+seven-day expiry (a bucket lifecycle rule, the application's own expiry pass, or both, and
+which one is authoritative), the multipart-abort configuration `RRA-002` requires, and the
+credential scope for the bucket (a per-environment key limited to one bucket is
+recommended; not yet authorized).
+
+**Retention length is not part of D10.** `RRA-002` fixes automatic seven-day expiry as a
+requirement and excludes "retention beyond the beta session" in its own Exclusions. An
+environment descriptor cannot widen that privacy boundary, so no retention horizon longer
+than seven days is offered here as a selectable option. Extending it would require an
+amendment to the governing specification, not an environment decision.
 
 ## 8. Secrets
 
@@ -262,9 +285,21 @@ commitment; FRA1 with no residency constraint at this stage; an unversioned obje
 so recovery is restore-based; and a report pipeline whose objective is already ten minutes
 per `KHEPRI-DEC-006`.
 
-**OWNER DECISION REQUIRED (D9) — backup retention and PITR window.** Contingent on D1: a
-managed product supplies both as configuration, a self-hosted one requires Khepri to build
-them.
+**OWNER DECISION REQUIRED (D9) — how backup and PITR are implemented within the governed
+retention horizon.** Contingent on D1: a managed product supplies both as configuration, a
+self-hosted one requires Khepri to build them. What remains selectable is the mechanism —
+base-backup cadence, WAL archiving destination, and where restore artifacts live — under
+the same envelope-encryption and residency constraints as the rest of the environment.
+
+**The retention length is not selectable.** `KHEPRI-DEC-008` (`active`) already fixes it:
+"Backup retention matches the seven-day object expiry so that no retention horizon is
+quietly longer than another." A PITR window longer than seven days is itself a longer
+retention horizon and would leave deleted content recoverable through the database after
+`RRA-002` required its removal, so no such value is offered here. Changing it requires
+amending the governing decision, not an environment decision.
+
+*(This rule is `KHEPRI-DEC-008`'s. `KHEPRI-DEC-007` states the same seven-day figure but is
+`retired`; it is not the authority for it.)*
 
 Recovery exercises `OPS1-04` must perform before external traffic, all currently
 unevidenced: database restore to a known point; object read-back through the encryption
@@ -414,7 +449,19 @@ This document does not create, satisfy, or close `OPS1-09` or `OPS1-02`.
 
 ## 14. Owner decisions, consolidated
 
-Every item is **OWNER DECISION REQUIRED**. None is decided in this document.
+Every item in the table is **OWNER DECISION REQUIRED**. None is decided in this document.
+
+### Already fixed by active governance — not open for decision
+
+These are recorded here so the table below is not misread as reopening them. An environment
+descriptor cannot widen a boundary an active governing artifact has already set; each of
+these would require amending its source artifact instead.
+
+| Constraint | Fixed by | Consequence for the table |
+|---|---|---|
+| Automatic seven-day expiry of session content, and no retention beyond the beta session | `RRA-002` (`active`) — Requirements and Exclusions | D10 covers the enforcement mechanism and credential scope only; not the retention length |
+| Backup retention matches the seven-day object expiry, so no horizon is quietly longer | `KHEPRI-DEC-008` (`active`) | D9 covers backup/PITR implementation only; not the window length |
+| Interactive host access disabled by default; re-enabled only as a logged, time-boxed break-glass event | `KHEPRI-DEC-008` (`active`) | Binds every compute candidate in §4, Droplet options included. Not a decision point |
 
 | ID | Decision | Recommendation | Classification |
 |---|---|---|---|
@@ -426,8 +473,8 @@ Every item is **OWNER DECISION REQUIRED**. None is decided in this document.
 | D6 | Envelope-master-key secret source | none | stop-gate 3, explicitly reserved |
 | D7 | RTO and RPO | none | stop-gate 5; owner-approved values required |
 | D8 | OTLP endpoint and log destination | none | governed requirement, no implementation exists |
-| D9 | Backup retention and PITR window | none | contingent on D1 |
-| D10 | Object lifecycle, retention beyond the required expiry, and credential scope | per-environment key scoped to one bucket | recommendation requiring approval |
+| D9 | Backup and PITR **implementation** within the fixed seven-day horizon | none | contingent on D1; retention length fixed by `KHEPRI-DEC-008` |
+| D10 | Expiry **enforcement mechanism**, multipart-abort configuration, and credential scope | per-environment key scoped to one bucket | recommendation requiring approval; retention length fixed by `RRA-002` |
 | D11 | Egress identity / VPC posture and IP allowlisting | none | stop-gate 4, explicitly reserved |
 | D12 | Decision identifier for the descriptor artifact | none | owner allocates; not chosen here |
 
