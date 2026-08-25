@@ -24,7 +24,6 @@ from khepri.rra.aggregates import (
     reconciles,
 )
 from khepri.rra.mapping import (
-    MAPPING_VERSION,
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
     SEMANTIC_COST,
@@ -49,6 +48,7 @@ from khepri.rra.profiling import (
     parse_date,
     safe_value_label,
 )
+from khepri.rra.source_contract import SourceContract
 from khepri.rra.versions import (
     REASON_PACKAGE_VERSION_UNADMITTED,
     admits_package,
@@ -315,8 +315,17 @@ def build_fact_package(
     profile: DatasetProfile,
     mapping: RetailMapping,
     decision: AdmissibilityDecision,
+    contract: SourceContract,
     formula_version: str = FORMULA_VERSION,
 ) -> FactPackage:
+    """One package, or a refusal.
+
+    The contract is required because the mapping is re-derived below to prove it
+    came from this profile, and under `rra003.mapping.v3` that derivation is a
+    function of profile *and* declaration. Re-deriving without it would compare
+    the caller's mapping against a differently-declared one and refuse every
+    package.
+    """
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):
         return _build(
             content=content,
@@ -324,6 +333,7 @@ def build_fact_package(
             profile=profile,
             mapping=mapping,
             decision=decision,
+            contract=contract,
             formula_version=formula_version,
         )
 
@@ -367,16 +377,27 @@ def _build(
     profile: DatasetProfile,
     mapping: RetailMapping,
     decision: AdmissibilityDecision,
+    contract: SourceContract,
     formula_version: str,
 ) -> FactPackage:
     if formula_version != FORMULA_VERSION:
         raise FactsRefused("Formula version is not implemented by this package builder.")
     assert_versions_admitted(
-        mapping_version=MAPPING_VERSION,
+        # The mapping this package actually combines, read from the mapping
+        # itself rather than from `MAPPING_VERSION`. The module constant is
+        # what `build_mapping` *stamps*; it is not necessarily what the caller
+        # handed over, and the gate asks whether the versions a result combines
+        # were authorized together. Reading the global answers a different
+        # question -- one where a package built from a v2 mapping is checked as
+        # though it were v3 -- and `_assert_derived_from_profile` below already
+        # proves the mapping belongs to this input.
+        mapping_version=mapping.mapping_version,
         package_version=PACKAGE_VERSION,
         formula_version=formula_version,
     )
-    _assert_derived_from_profile(content, media_type, profile, mapping, decision)
+    _assert_derived_from_profile(
+        content, media_type, profile, mapping, decision, contract
+    )
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
 
@@ -636,6 +657,7 @@ def _assert_derived_from_profile(
     profile: DatasetProfile,
     mapping: RetailMapping,
     decision: AdmissibilityDecision,
+    contract: SourceContract,
 ) -> None:
     """Refuse artifacts that were not derived from this exact input.
 
@@ -653,7 +675,7 @@ def _assert_derived_from_profile(
         source_sha256_hex=digest,
     ) != profile:
         raise FactsRefused("Profile does not describe the supplied content.")
-    if build_mapping(profile) != mapping:
+    if build_mapping(profile, contract=contract) != mapping:
         raise FactsRefused("Mapping was not derived from the supplied profile.")
     positions = [
         entry.column.position for entry in mapping.mappings if entry.column is not None

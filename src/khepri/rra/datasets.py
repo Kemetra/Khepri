@@ -25,6 +25,7 @@ from khepri.rra.sessions import (
     assert_same_scope,
     require_upload_consent,
 )
+from khepri.rra.source_contract import SourceContract
 from khepri.rra.storage import StoredEnvelope
 
 
@@ -128,6 +129,7 @@ class ProfilingService:
         self,
         *,
         session_id: str,
+        contract: SourceContract,
         now: datetime,
         request: ReportRequest = DEFAULT_REPORT_REQUEST,
     ) -> tuple[DatasetProfileRecord, bool]:
@@ -163,7 +165,7 @@ class ProfilingService:
             media_type=upload.media_type,
             source_sha256_hex=upload.sha256_hex,
         )
-        document = build_document(profile, request=request)
+        document = build_document(profile, request=request, contract=contract)
         candidate = DatasetProfileRecord(
             profile_id=self._new_profile_id(),
             owner_id=upload.owner_id,
@@ -198,14 +200,27 @@ class ProfilingService:
 def build_document(
     profile: DatasetProfile,
     *,
+    contract: SourceContract,
     request: ReportRequest = DEFAULT_REPORT_REQUEST,
 ) -> dict[str, Any]:
-    mapping = build_mapping(profile)
+    """The stored profile document, including the reading it was admitted under.
+
+    The contract is recorded beside the profile rather than alongside it,
+    because the digest is what later binds a coverage manifest to *this*
+    admission. `khepri.rra.coverage` refuses a manifest whose
+    `source_contract_digest` names a different reading of the same bytes, and
+    that refusal is only possible if the digest is written here.
+    """
+    mapping = build_mapping(profile, contract=contract)
     decision = assess_admissibility(profile, mapping, request=request)
     return {
         "profile": profile.as_document(),
         "mapping": mapping.as_document(),
         "admissibility": decision.as_document(),
+        "source_contract": {
+            **contract.as_document(),
+            "digest": contract.digest,
+        },
     }
 
 

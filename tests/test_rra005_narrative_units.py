@@ -42,6 +42,7 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import NarrativeRequest, validate
 from khepri.rra.profiling import build_profile
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 #: Carries `cogs`, so the package produces the `gross_margin` ratio the bare
 #: fixtures elsewhere have no way to reach.
@@ -60,13 +61,14 @@ def package() -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(CONTENT).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
         content=CONTENT,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
 
 

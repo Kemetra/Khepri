@@ -47,6 +47,7 @@ from khepri.rra.rendering.html import (
     _stated,
     build_cells,
 )
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 
 def _content() -> bytes:
@@ -77,7 +78,7 @@ def bundle() -> ReportBundle:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(CONTENT).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return ReportBundle.of(
         build_fact_package(
             content=CONTENT,
@@ -85,6 +86,7 @@ def bundle() -> ReportBundle:
             profile=profile,
             mapping=mapping,
             decision=assess_admissibility(profile, mapping),
+            contract=TEST_CONTRACT,
         )
     )
 

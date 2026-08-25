@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -160,6 +161,11 @@ def build_source_contract(
     """One contract, or a refusal naming the semantic left unproven."""
     contract_id = attribution.contract_id
     evidence = attribution.evidence
+    if not contract_id.strip():
+        # The identifier a coverage manifest binds against. Left blank, every
+        # unsigned contract shares one identity, and `coverage`'s refusal of a
+        # manifest declared against a different reading stops discriminating.
+        raise ContractRefused("A source contract must record its identifier.")
     if not evidence.strip():
         raise ContractRefused("A source contract must record its evidence.")
     _assert_events_declared(events)
@@ -254,6 +260,67 @@ def _assert_transaction_key(identity: IdentityDeclaration) -> None:
         raise ContractRefused(
             "A composite transaction key must contain the source identifier."
         )
+
+
+def contract_from_document(document: dict[str, object]) -> SourceContract:
+    """The contract a stored profile was admitted under, read back verbatim.
+
+    **Rebuilt rather than re-declared.** `packages.py` re-derives the profile
+    document and compares its digest to the stored one, refusing a package whose
+    profile the current bytes and rules no longer produce. The contract is
+    inside that document, so the rebuild has to reproduce *the same reading* --
+    constructing a fresh one from defaults would change the digest and refuse
+    every package, and re-validating the declaration here would refuse a stored
+    contract whose rules have since tightened rather than reporting the
+    mismatch the digest is there to report.
+
+    So this is a faithful read of what was recorded, not a second admission.
+    The declaration was validated when it was accepted; what is checked at
+    rebuild time is the digest.
+    """
+    events = _mapping_at(document, "events")
+    identity = _mapping_at(document, "identity")
+    basis = _mapping_at(document, "basis")
+    return SourceContract(
+        contract_version=str(document["contract_version"]),
+        contract_id=str(document["contract_id"]),
+        evidence=str(document["evidence"]),
+        events=EventDeclaration(
+            event_kind_column=_optional_str(events["event_kind_column"]),
+            sale_only=bool(events["sale_only"]),
+            status_column=_optional_str(events["status_column"]),
+            posted_only=bool(events["posted_only"]),
+            currency_column=_optional_str(events["currency_column"]),
+            currency_code=_optional_str(events["currency_code"]),
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=tuple(identity["event_key_columns"]),
+            unique_line_grain_attested=bool(identity["unique_line_grain_attested"]),
+            transaction_id_column=_optional_str(identity["transaction_id_column"]),
+            transaction_key_components=tuple(identity["transaction_key_components"]),
+            transaction_id_unique_package_wide=bool(
+                identity["transaction_id_unique_package_wide"]
+            ),
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=bool(basis["revenue_vat_exclusive"]),
+            revenue_is_net_of_returns=bool(basis["revenue_is_net_of_returns"]),
+            units_are_integral=bool(basis["units_are_integral"]),
+            cost_is_extended=bool(basis["cost_is_extended"]),
+            discount_is_additive=bool(basis["discount_is_additive"]),
+        ),
+    )
+
+
+def _mapping_at(document: dict[str, object], key: str) -> dict[str, Any]:
+    section = document[key]
+    if not isinstance(section, dict):
+        raise ContractRefused(f"A stored source contract is missing its {key}.")
+    return section
+
+
+def _optional_str(value: object) -> str | None:
+    return None if value is None else str(value)
 
 
 class SourceContractBody(BaseModel):

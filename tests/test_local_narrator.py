@@ -33,6 +33,7 @@ from khepri.rra.narrative import (
     validate,
 )
 from khepri.rra.profiling import build_profile
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -49,13 +50,14 @@ def package(content: bytes = GOLDEN) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
 
 

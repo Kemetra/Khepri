@@ -44,6 +44,7 @@ from khepri.rra.mapping import (
     build_mapping,
 )
 from khepri.rra.profiling import build_profile
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 HEADER = b"date,revenue,units,invoice_no,category,branch\n"
 
@@ -60,13 +61,14 @@ def package_for(rows: list[tuple[date | None, str]]) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
 
 

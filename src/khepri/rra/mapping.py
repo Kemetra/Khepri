@@ -14,6 +14,7 @@ from khepri.rra.profiling import (
     DatasetProfile,
     label_tokens,
 )
+from khepri.rra.source_contract import SourceContract
 
 # v2 publishes the measure-kind disqualifiers and the shared-column refusal. The
 # same profiled input can map differently under v1, so a recorded mapping
@@ -565,7 +566,25 @@ class RetailMapping:
         }
 
 
-def build_mapping(profile: DatasetProfile) -> RetailMapping:
+def build_mapping(
+    profile: DatasetProfile,
+    *,
+    contract: SourceContract,
+) -> RetailMapping:
+    """The admitted reading of one file: its profile, plus what was declared.
+
+    **Deterministic from profile plus contract, and from nothing else.** Under
+    `rra003.mapping.v2` this function read headers alone, which made the mapping
+    a function of the file's spelling. `RRA-003` refuses that for the governed
+    semantics -- event kind, status, currency, basis, identity -- because none
+    of them is visible in a header or a value. Those now come from the contract,
+    which is recorded, attributable, and digested; header resolution continues
+    to place the *measure* columns it can legitimately infer.
+
+    The contract is a required keyword rather than an optional one so that no
+    call site can quietly fall back to the v2 behaviour: a mapping built without
+    a declaration is exactly what this version exists to stop.
+    """
     excluded = tuple(
         column.position for column in profile.columns if column.personal_data_risk
     )
@@ -577,9 +596,65 @@ def build_mapping(profile: DatasetProfile) -> RetailMapping:
     mappings = _refuse_shared_columns(_award_shared_columns(admissible_columns))
     return RetailMapping(
         mapping_version=MAPPING_VERSION,
-        mappings=mappings,
+        mappings=_declared_over_inferred(mappings, contract),
         excluded_positions=excluded,
     )
+
+
+def _declared_over_inferred(
+    mappings: tuple[SemanticMapping, ...],
+    contract: SourceContract,
+) -> tuple[SemanticMapping, ...]:
+    """Let an explicit declaration settle a semantic header resolution guessed.
+
+    `RRA-003`: a declaration is evidence and a header is not, so where the
+    operator named the column the contract wins outright -- including over a
+    confident inference, and including where inference found nothing.
+
+    Only the identity semantics are re-pointed here. `transaction_id` is the one
+    the contract names directly and the one canonical transaction keys are built
+    from, so a wrong column there mis-counts every transaction-denominated
+    figure. The measure semantics keep their inferred resolution: `RRA-003` does
+    not ask the operator to name the revenue column, and re-pointing one on no
+    declaration would be inference wearing a contract's clothes.
+    """
+    declared = contract.identity.transaction_id_column
+    if declared is None:
+        return mappings
+    return tuple(
+        _pointed_at(mapping, declared)
+        if mapping.semantic == SEMANTIC_TRANSACTION_ID
+        else mapping
+        for mapping in mappings
+    )
+
+
+def _pointed_at(mapping: SemanticMapping, label: str) -> SemanticMapping:
+    """The same semantic, resolved to the declared column.
+
+    A declared column the file does not carry is left as the inference found it
+    rather than fabricated here. That is not a silent pass: `RRA-003` requires
+    the declaration to be checked against the profile, and this slice's
+    admission tests assert the refusal. Inventing a candidate for an absent
+    column would make that refusal unreachable.
+    """
+    for candidate in mapping.candidates:
+        if candidate.safe_label == label:
+            return SemanticMapping(
+                semantic=mapping.semantic,
+                requirement=mapping.requirement,
+                state=STATE_MAPPED,
+                candidates=(
+                    MappingCandidate(
+                        position=candidate.position,
+                        safe_label=candidate.safe_label,
+                        confidence=candidate.confidence,
+                        evidence=(*candidate.evidence, "declared_in_source_contract"),
+                        type_compatible=candidate.type_compatible,
+                    ),
+                ),
+            )
+    return mapping
 
 
 def _award_shared_columns(columns: list[ColumnProfile]) -> tuple[SemanticMapping, ...]:

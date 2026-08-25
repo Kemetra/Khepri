@@ -37,10 +37,11 @@ from khepri.rra.mapping import (
     build_mapping,
 )
 from khepri.rra.profiling import build_profile
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 
 def mapped(content: bytes) -> RetailMapping:
-    return build_mapping(_profile(content))
+    return build_mapping(_profile(content), contract=TEST_CONTRACT)
 
 
 def _profile(content: bytes):
@@ -87,7 +88,8 @@ def test_a_contested_column_goes_to_its_strongest_claimant() -> None:
     assert mapping.state_of(SEMANTIC_PRODUCT) == STATE_UNAVAILABLE
 
     profile = _profile(content)
-    assert assess_admissibility(profile, build_mapping(profile)).admissible is True
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    assert assess_admissibility(profile, mapping).admissible is True
 
 
 def test_a_displaced_semantic_re_resolves_to_its_next_best_column() -> None:
@@ -167,7 +169,7 @@ def test_an_unresolved_optional_semantic_leaves_the_dataset_admissible() -> None
     content = b"date,revenue,discount\n2026-01-05,100.00,10\n2026-01-06,200.00,20\n"
     profile = _profile(content)
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is True
 
@@ -280,7 +282,7 @@ def test_admissible_dataset_has_a_time_field_and_a_core_measure() -> None:
     content = b"date,revenue\n2026-01-05,125.50\n2026-01-06,90.00\n"
     profile = _profile(content)
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is True
     assert decision.reasons == ()
@@ -290,14 +292,15 @@ def test_units_alone_answers_the_core_measure() -> None:
     content = b"date,units\n2026-01-05,3\n2026-01-06,2\n"
     profile = _profile(content)
 
-    assert assess_admissibility(profile, build_mapping(profile)).admissible is True
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    assert assess_admissibility(profile, mapping).admissible is True
 
 
 def test_missing_time_field_is_inadmissible() -> None:
     content = b"store,revenue\nCairo,125.50\nGiza,90.00\n"
     profile = _profile(content)
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is False
     assert REASON_NO_TIME_FIELD in decision.reasons
@@ -307,7 +310,7 @@ def test_missing_core_measure_is_inadmissible() -> None:
     content = b"date,store\n2026-01-05,Cairo\n2026-01-06,Giza\n"
     profile = _profile(content)
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is False
     assert REASON_NO_CORE_MEASURE in decision.reasons
@@ -317,7 +320,7 @@ def test_ambiguous_core_measure_is_inadmissible() -> None:
     content = b"date,revenue,sales\n2026-01-05,125.50,120.00\n"
     profile = _profile(content)
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is False
     assert REASON_NO_CORE_MEASURE in decision.reasons
@@ -328,7 +331,7 @@ def test_conflicting_core_measure_types_are_inadmissible() -> None:
     content = b"date,revenue\n2026-01-05,one hundred\n2026-01-06,ninety\n"
     profile = _profile(content)
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is False
     assert REASON_IRRECONCILABLE_TYPES in decision.reasons
@@ -340,7 +343,7 @@ def test_requested_semantic_that_is_unavailable_is_inadmissible() -> None:
 
     decision = assess_admissibility(
         profile,
-        build_mapping(profile),
+        build_mapping(profile, contract=TEST_CONTRACT),
         request=ReportRequest(requested_semantics=frozenset({SEMANTIC_CATEGORY})),
     )
 
@@ -356,7 +359,7 @@ def test_ambiguity_only_blocks_semantics_the_report_needs() -> None:
         b"2026-01-06,2,Giza,Mall\n"
     )
     profile = _profile(content)
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
 
     assert mapping.state_of(SEMANTIC_STORE) == STATE_AMBIGUOUS
     assert assess_admissibility(profile, mapping).admissible is True
@@ -373,7 +376,7 @@ def test_ambiguity_only_blocks_semantics_the_report_needs() -> None:
 def test_header_only_dataset_is_inadmissible() -> None:
     profile = _profile(b"date,revenue\n")
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is False
     assert REASON_NO_DATA_ROWS in decision.reasons
@@ -382,7 +385,7 @@ def test_header_only_dataset_is_inadmissible() -> None:
 def test_optional_semantics_do_not_block_admissibility() -> None:
     content = b"date,revenue,cogs\n2026-01-05,125.50,eighty\n"
     profile = _profile(content)
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
 
     assert mapping.state_of(SEMANTIC_COST) == STATE_CONFLICTING
     assert mapping.state_of(SEMANTIC_DISCOUNT) == STATE_UNAVAILABLE
@@ -480,7 +483,7 @@ def test_a_shared_column_makes_the_dataset_inadmissible() -> None:
     content = b"date,sales quantity\n2026-01-05,10\n2026-01-06,20\n"
     profile = _profile(content)
 
-    decision = assess_admissibility(profile, build_mapping(profile))
+    decision = assess_admissibility(profile, build_mapping(profile, contract=TEST_CONTRACT))
 
     assert decision.admissible is False
     assert REASON_NO_CORE_MEASURE in decision.reasons

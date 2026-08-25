@@ -37,6 +37,7 @@ from khepri.rra.facts import build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 5)
@@ -48,13 +49,14 @@ def package_for(content: bytes) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
 
 

@@ -39,6 +39,7 @@ from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LAN
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering import html as html_module
 from khepri.rra.rendering.html import HtmlReportRenderer
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 from tests.test_rra006_pdf_surface import chromium_available
 
 PRINT_STYLESHEET = "report.print.css"
@@ -65,13 +66,14 @@ def package() -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
 
 

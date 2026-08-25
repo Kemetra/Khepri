@@ -50,6 +50,7 @@ from khepri.rra.rendering.pdf import (
     PdfSurface,
 )
 from khepri.rra.rendering.wording import caveat_prose
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 ADAPTER_VERSION = "test.adapter.v1"
 
@@ -68,13 +69,14 @@ def package(content: bytes = GOLDEN) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
 
 

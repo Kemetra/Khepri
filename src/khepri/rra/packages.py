@@ -58,6 +58,7 @@ from khepri.rra.sessions import (
     assert_same_scope,
     require_upload_consent,
 )
+from khepri.rra.source_contract import contract_from_document
 from khepri.rra.storage import StoredEnvelope
 from khepri.rra.versions import REASON_PACKAGE_VERSION_UNADMITTED
 
@@ -349,14 +350,21 @@ class FactPackageService:
         # The persisted profile is what the caller was shown and what governs
         # admissibility, so the package is refused rather than published against
         # a profile the current bytes and rules no longer produce.
-        if document_digest(build_document(profile, request=request)) != (
-            profile_record.profile_digest
-        ):
+        # Rebuilt under the contract the profile was admitted with, read back
+        # from the stored document. A freshly declared contract would digest
+        # differently and refuse every package, and the digest is exactly the
+        # check that would then be reporting its own construction.
+        stored_contract = contract_from_document(
+            profile_record.document["source_contract"]
+        )
+        if document_digest(
+            build_document(profile, request=request, contract=stored_contract)
+        ) != (profile_record.profile_digest):
             raise PackageRefused(
                 "Stored profile does not describe the current governed input."
             )
 
-        mapping = build_mapping(profile)
+        mapping = build_mapping(profile, contract=stored_contract)
         decision = assess_admissibility(profile, mapping, request=request)
         try:
             package = build_fact_package(
@@ -365,6 +373,7 @@ class FactPackageService:
                 profile=profile,
                 mapping=mapping,
                 decision=decision,
+                contract=stored_contract,
             )
         except FactsRefused as error:
             raise PackageRefused(str(error)) from error

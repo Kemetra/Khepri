@@ -33,24 +33,27 @@ from khepri.rra.versions import (
     REASON_FAMILY_VERSION_UNADMITTED,
     REASON_PACKAGE_VERSION_UNADMITTED,
 )
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 
-def test_building_a_package_refuses_an_unadmitted_triple(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_building_a_package_refuses_an_unadmitted_triple() -> None:
     """A moved mapping against an unmoved package refuses the package.
 
     Driven through `build_fact_package` rather than through the gate function,
     because calling the gate directly proves only that the gate works. It cannot
     fail when the builder stops consulting it -- and a first draft of this test
     did exactly that: deleting the call from `_build` left it green.
+
+    **The mapping is moved on the mapping, not on the module.** An earlier form
+    of this test patched `facts.MAPPING_VERSION`, which was the only way to
+    simulate a moved mapping while `_build` read that global instead of the
+    version on the object it was handed. It now reads the object, so the moved
+    version travels the real data path and no patching is required.
     """
     from khepri.rra import facts
 
-    monkeypatch.setattr(facts, "MAPPING_VERSION", "rra003.mapping.v3")
-
     with pytest.raises(facts.FactsRefused) as refused:
-        _package_with_two_settled_periods()
+        _package_with_two_settled_periods(mapping_version="rra003.mapping.v3")
 
     assert REASON_PACKAGE_VERSION_UNADMITTED in str(refused.value)
 
@@ -140,13 +143,19 @@ def test_the_concentration_curve_publishes_on_the_shipped_pairing() -> None:
     ]
 
 
-def _package_from(header: str, rows: list[tuple[str, ...]]) -> object:
+def _package_from(
+    header: str,
+    rows: list[tuple[str, ...]],
+    *,
+    mapping_version: str | None = None,
+) -> object:
     """One governed package over four consecutive days of the given columns.
 
     Both fixtures below want the same thing with one column's difference, and
     writing the pipeline out twice is how a later reader ends up fixing one copy.
     """
     import hashlib
+    from dataclasses import replace
     from datetime import date, timedelta
 
     from khepri.rra.admissibility import assess_admissibility
@@ -166,13 +175,16 @@ def _package_from(header: str, rows: list[tuple[str, ...]]) -> object:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    if mapping_version is not None:
+        mapping = replace(mapping, mapping_version=mapping_version)
     return build_fact_package(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
 
 
@@ -189,11 +201,20 @@ def _package_with_a_concentration_curve() -> object:
     )
 
 
-def _package_with_two_settled_periods() -> object:
-    """Four consecutive days, which leaves two settled periods to compare."""
+def _package_with_two_settled_periods(
+    *,
+    mapping_version: str | None = None,
+) -> object:
+    """Four consecutive days, which leaves two settled periods to compare.
+
+    `mapping_version` restamps the mapping before the package is built, which is
+    how a caller moves one version ahead of its consumers without patching a
+    module global.
+    """
     return _package_from(
         "date,revenue,units,invoice_no",
         [("50.00", "5"), ("100.00", "10"), ("180.00", "12"), ("60.00", "6")],
+        mapping_version=mapping_version,
     )
 
 
@@ -329,10 +350,14 @@ class TestTheInternalPackageRefusalStaysInternal:
         what matters is what escapes, and freezing the replacement wording would make this case
         fail on a rewording that leaks nothing.
         """
-        from khepri.rra import facts
+        from khepri.rra import mapping
         from tests.test_rra004_packages import prepared
 
-        monkeypatch.setattr(facts, "MAPPING_VERSION", "rra003.mapping.v3")
+        # Patched where `build_mapping` *stamps* the version, because the route
+        # builds its own mapping internally and there is no object to restamp.
+        # `facts` no longer reads a module global -- it reads the version on the
+        # mapping it is handed -- so moving the stamp is what moves the mapping.
+        monkeypatch.setattr(mapping, "MAPPING_VERSION", "rra003.mapping.v3")
         response = prepared().client.post("/api/v1/beta/facts")
         detail = response.json()["detail"]
 
