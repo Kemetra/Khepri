@@ -13,6 +13,6 @@
   <p class="invitation-recipient" dir="ltr">{{ email }}</p>
   <p class="invitation-token" dir="ltr"><code>{{ token }}</code></p>
   <p class="invitation-warning">{{ copy.invitation_token_once }}</p>
-  <p><a href="{{ prefix }}/{{ language }}/team">{{ copy.back_to_team }}</a></p>
+  <p><a href="{{ prefix }}/{{ language }}/{{ organization_id }}/team">{{ copy.back_to_team }}</a></p>
 </section>
 {% endblock %}

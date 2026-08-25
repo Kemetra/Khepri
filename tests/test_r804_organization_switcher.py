@@ -255,6 +255,74 @@ class TestTheSwitcher:
 
         assert "Initech" not in response.text
 
+    def test_only_the_active_organization_carries_a_new_analysis_action(self) -> None:
+        """`FR-027`: the resolver refuses any organization that is not the session's active one.
+
+        An action on another row would post an organization `for_request` rejects, and the reader
+        would get the uniform unavailable surface -- indistinguishable from a fault. So the row the
+        session is in gets the action and the others keep only their link, which is the control
+        that actually switches.
+
+        Asserted on the form's `action` rather than on the id appearing anywhere in the page: the
+        id is already in that row's team link, so an id-in-the-text assertion passes either way.
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-acme"),
+            organizations=[_organization("org-acme", "Acme"), _organization("org-gx", "Globex")],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        assert f'action="{SHELL_PREFIX}/en/org-acme/analyses"' in response.text
+        assert f'action="{SHELL_PREFIX}/en/org-gx/analyses"' not in response.text
+
+    def test_the_action_appears_once_regardless_of_membership_count(self) -> None:
+        """One action, on one row, however many organizations the reader belongs to.
+
+        Counting is what separates "the active row's action" from both defects it sits between: the
+        `[0]` template's single misdirected action, and the per-row fan-out that offered two dead
+        ends for every live one.
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-gx"),
+            organizations=[
+                _organization("org-acme", "Acme"),
+                _organization("org-gx", "Globex"),
+                _organization("org-ini", "Initech"),
+            ],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        assert response.text.count('/analyses"') == 1
+        assert f'action="{SHELL_PREFIX}/en/org-gx/analyses"' in response.text
+
+    def test_the_entry_point_stays_a_post(self) -> None:
+        """A GET that mutates is a GET a browser may prefetch, so the verb is load-bearing.
+
+        Nothing else in this suite would fail if the form became a link, and the reason the form is
+        a form is recorded only in a template comment until it is asserted.
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-acme"),
+            organizations=[_organization("org-acme", "Acme"), _organization("org-gx", "Globex")],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        assert response.text.count('method="post"') == 1
+        assert f'href="{SHELL_PREFIX}/en/org-acme/analyses"' not in response.text
+
+    def test_the_action_has_an_accessible_name_naming_its_organization(self) -> None:
+        """`FR-056`-adjacent: "Start a new analysis" alone does not say which organization.
+
+        A screen reader announces the accessible name, so the distinguishing part must be inside it
+        rather than merely beside it on screen. The button is labelled by its own label span and its
+        row's organization name, and both referenced ids must exist or the name resolves to nothing.
+        """
+        response = _shell(
+            context=_Context("acct-1", "org-gx"),
+            organizations=[_organization("org-acme", "Acme"), _organization("org-gx", "Globex")],
+        ).get(f"{SHELL_PREFIX}/en/")
+
+        assert 'aria-labelledby="new-analysis-2 organization-name-2"' in response.text
+        assert 'id="new-analysis-2"' in response.text
+        assert 'id="organization-name-2"' in response.text
+
     def test_the_reader_is_asked_only_about_the_resolved_actor(self) -> None:
         """`FR-042`: the account comes from the resolved context, never from the address."""
         reader = _StubOrganizations([_organization("org-acme", "Acme")])

@@ -58,6 +58,13 @@
   z-index: 1;
 }
 
+/*
+ * A real card: bordered, padded, and stacked several to a page -- `team.html.j2`
+ * renders two. That is why `margin-block-end` is here and why this side keeps
+ * the name. The journey's page body once shared it while setting `border: 0;
+ * padding: 0`, so the same class meant a card in one half of the product and the
+ * absence of one in the other; it is `.journey-document` now.
+ */
 .document-card {
   max-inline-size: 60rem;
   margin-block-end: var(--space-4, 1rem);
@@ -150,6 +157,45 @@
 
 .invitation-warning {
   color: var(--danger);
+}
+
+/*
+ * The text and role controls on the invite form. The stylesheet styled `button` and left inputs at
+ * their browser default, which put the only two typed controls in the shell below the 44px target
+ * `FR-056` holds every other control to -- and at the platform's own font size, which on iOS Safari
+ * means a focused input force-zooms the page.
+ *
+ * `font: inherit` is the fix for both: it takes the 16px body size, so there is nothing to zoom to,
+ * and it stops the controls rendering in the platform UI face beside prose set in the shell's own.
+ * `inline-size: 100%` with `max-inline-size` lets a long address use the column it has without
+ * stretching the field across a wide viewport, and `--measure-*` is not the right token here
+ * because this is a control width, not a reading measure.
+ *
+ * The border is `--muted`, not `--line`. A control's edge is what tells a sighted reader where the
+ * field is, so WCAG 1.4.11 asks 3:1 of it, and the hairline token reaches 1.43:1 on this surface --
+ * right for a decorative rule between paragraphs, not for the boundary of something you type into.
+ * `--muted` measures 6.23:1 and is the palette's own neutral; the palette has no step between the
+ * two, and `shell.css` is explicit that it gains steps rather than colours. Held to 1px so the
+ * stronger value reads as a defined edge rather than a heavy box.
+ */
+.shell-main input,
+.shell-main select {
+  min-height: 44px;
+  inline-size: 100%;
+  max-inline-size: 24rem;
+  padding-inline: var(--space-3, 0.75rem);
+  border: 1px solid var(--muted);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* The label sits above its control rather than beside it: Arabic and English name these fields at
+ * different lengths, and a side-by-side pair would set the column width from the longer language. */
+.shell-main label {
+  display: block;
+  margin-block-end: var(--space-1, 0.25rem);
+  color: var(--muted);
 }
 
 /* Matches the journey's ring exactly. `journey.css` ships `outline-offset: 3px`, and a ring that

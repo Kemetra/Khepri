@@ -16,21 +16,47 @@
   <ul class="organization-list">
     {% for organization in organizations %}
     <li class="organization-item">
-      <a href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/team">
+      <a id="organization-name-{{ loop.index }}"
+         href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/team">
         {{ organization.name }}
       </a>
+      {#
+        The entry point into the journey, on the active organization's row and no other. It named
+        `organizations[0]` before, so a member of several opened an analysis in whichever one the
+        query returned first with nothing on screen saying which; putting it on the row names the
+        target instead of guessing it.
+
+        **Offered only where it can succeed.** `for_request` refuses any organization that is not
+        this session's active one -- `FR-027` allows exactly one, and honoring a named one would
+        make the active organization advisory -- so an action on any other row would post a value
+        the resolver rejects and land the reader on the uniform unavailable surface. That reads as
+        a fault rather than as a step they have not taken. Every row keeps its link, which is the
+        control that does switch, and the analysis action follows the session once it moves.
+
+        This discloses nothing the list above does not: one action on a row the reader is already
+        in, so the reticence about counts holds unchanged.
+
+        A POST rather than a link because it opens an analysis, and a GET that mutates is a GET a
+        browser may prefetch.
+      #}
+      {% if organization.organization_id == active_organization_id %}
+      <form method="post"
+            action="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/analyses">
+        {#
+          Named by both spans in source order, so the accessible name is "Start a new analysis
+          Acme" and not the bare label repeated once per row. `aria-labelledby` rather than an
+          `aria-label` string because it composes the two from copy the translators already own --
+          an `aria-label` would need a separator and a word order invented here, in a template
+          that also renders Arabic.
+        #}
+        <button type="submit"
+                aria-labelledby="new-analysis-{{ loop.index }} organization-name-{{ loop.index }}">
+          <span id="new-analysis-{{ loop.index }}">{{ copy.new_analysis }}</span>
+        </button>
+      </form>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>
-</section>
-
-{#
-  The entry point into the journey. A POST rather than a link because it opens an analysis, and a
-  GET that mutates is a GET a browser may prefetch.
-#}
-<section class="document-card">
-  <form method="post" action="{{ prefix }}/{{ language }}/{{ organizations[0].organization_id }}/analyses">
-    <button type="submit">{{ copy.new_analysis }}</button>
-  </form>
 </section>
 {% endblock %}

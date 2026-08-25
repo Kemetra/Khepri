@@ -39,6 +39,13 @@ _EN = {
     "invitations_title": "Pending invitations",
     "invitations_empty": "There are no pending invitations.",
     "invitation_revoke": "Withdraw",
+    "invite_title": "Invite someone",
+    "invite_intro": (
+        "They receive a link that stays usable for seven days. Only owners can invite."
+    ),
+    "invite_email_label": "Email address",
+    "invite_role_label": "Role in this organization",
+    "invite_submit": "Create invitation",
     "invitation_issued_title": "Invitation created",
     "invitation_issued_intro": "Send this link to the person you invited.",
     "invitation_token_once": (
@@ -69,6 +76,13 @@ _AR = {
     "invitations_title": "الدعوات المعلَّقة",
     "invitations_empty": "لا توجد دعوات معلَّقة.",
     "invitation_revoke": "سحب",
+    "invite_title": "ادعُ شخصًا",
+    "invite_intro": (
+        "سيصل إليه رابط يظل صالحًا للاستخدام مدة سبعة أيام. المالكون وحدهم يمكنهم الدعوة."
+    ),
+    "invite_email_label": "عنوان البريد الإلكتروني",
+    "invite_role_label": "الدور في هذه المؤسسة",
+    "invite_submit": "إنشاء الدعوة",
     "invitation_issued_title": "تم إنشاء الدعوة",
     "invitation_issued_intro": "أرسل هذا الرابط إلى الشخص الذي دعوته.",
     "invitation_token_once": (

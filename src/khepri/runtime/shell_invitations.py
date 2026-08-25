@@ -161,6 +161,11 @@ def add_invitation_routes(
             status_code=200,
             token=token,
             email=email,
+            # The surface's "back to the team" link needs the organization segment. Without it the
+            # href is two segments, `shell_surface` reads `segments[2]` as an empty surface name,
+            # and an owner who just issued an invitation lands on the organization chooser instead
+            # of the team they were looking at.
+            organization_id=context.organization_id,
         )
 
     @app.post(

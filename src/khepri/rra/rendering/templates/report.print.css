@@ -135,6 +135,24 @@
   }
 
   /*
+   * The refusal follows the disclosure onto paper for the same reason: the tint
+   * is a screen nicety and the rule is what survives. It keeps the italic, so a
+   * monochrome print still separates a refused section from the prose of an
+   * answered one, and it must not break across pages -- half a refusal at a page
+   * foot reads as a sentence that was cut off rather than a result withheld.
+   */
+  .refused {
+    background: transparent;
+    border-inline-start: 3pt solid var(--report-muted);
+    break-inside: avoid;
+  }
+
+  .caveats--section {
+    border-inline-start: 1.5pt solid var(--report-rule);
+    break-inside: avoid;
+  }
+
+  /*
    * Links keep their underline -- it survives being printed, a colour may not
    * -- and take the body ink so a monochrome print does not turn every citation
    * into pale grey.
