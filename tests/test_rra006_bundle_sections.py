@@ -363,11 +363,20 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
     # and therefore fails the same two ways as well as its own: a dataset short
     # of two settled periods has no change to split, and an absent revenue trend
     # has nothing to split at all. Neither is "units absent".
+    #
+    # Every family also carries `family_version_pairing_unadmitted`, which RRA-008
+    # does not assign to any one of them because it is not about their inputs. It
+    # is the version compatibility gate's family seam: any of the four may be the
+    # one whose successor has not landed while the core formula has moved, and
+    # RRA-008 requires that failure to refuse "only dependent results, leaving
+    # independently answerable facts and the rest of the report intact". A reason
+    # only one family could state would make that promise false for the other
+    # three.
     assert SECTION_REASONS[SECTION_COMPARISON] == frozenset(
-        {"prior_window_absent", "required_input_unavailable"}
+        {"prior_window_absent", "required_input_unavailable", "family_version_pairing_unadmitted"}
     )
     assert SECTION_REASONS[SECTION_CONCENTRATION] == frozenset(
-        {"distinct_set_uncomputable", "aggregate_unavailable"}
+        {"distinct_set_uncomputable", "aggregate_unavailable", "family_version_pairing_unadmitted"}
     )
     assert SECTION_REASONS[SECTION_GROWTH] == frozenset(
         {
@@ -375,6 +384,7 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
             "decomposition_not_additive",
             "prior_window_absent",
             "required_input_unavailable",
+            "family_version_pairing_unadmitted",
         }
     )
     # Basket carries three. RRA-008 requires a transaction identifier for both its
@@ -387,6 +397,7 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
             "transaction_identifier_absent",
             "incomplete_transaction_identifiers",
             "required_input_unavailable",
+            "family_version_pairing_unadmitted",
         }
     )
 
@@ -475,6 +486,12 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
             # already refuses its transaction count with this rather than with
             # "absent". Relabelling it would name a cause that did not occur.
             "incomplete_transaction_identifiers",
+            # Added by the version compatibility gate's family seam, and the one
+            # code here that belongs to every family rather than to one. Any of
+            # the four may be the family whose successor has not landed while the
+            # core formula has moved, and RRA-008 requires that failure to refuse
+            # only its own section.
+            "family_version_pairing_unadmitted",
         }
     ) == GOVERNED_SECTION_REASONS
 

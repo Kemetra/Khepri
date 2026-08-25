@@ -324,6 +324,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "correct. This usually means quantities and revenue in the "
                 "file are measured over different sets of rows."
             ),
+            "family_version_pairing_unadmitted": (
+                "This analysis is not shown — it is being released in stages, "
+                "and the part that produces it has not yet been released "
+                "alongside the part that reads your file. The rest of this "
+                "report is unaffected and its figures are complete. Nothing is "
+                "missing from your export and no column needs to change. This "
+                "section appears once the remaining release lands; no action is "
+                "needed from you."
+            ),
             "transaction_identifier_absent": (
                 "Basket size — not available. Your file has no receipt or "
                 "invoice number, so there is no way to tell which rows belong "
@@ -378,6 +387,12 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "حُجب. أرقام الإيرادات غير متأثرة وتبقى صحيحة. وغالباً ما يعني "
                 "ذلك أن الكميات والإيرادات في الملف مقيسة على مجموعتين مختلفتين "
                 "من الصفوف."
+            ),
+            "family_version_pairing_unadmitted": (
+                "هذا التحليل غير معروض — يصدر على مراحل، والجزء الذي ينتجه لم "
+                "يصدر بعد مع الجزء الذي يقرأ ملفك. بقية هذا التقرير غير متأثرة "
+                "وأرقامها كاملة. لا ينقص ملفك شيء ولا يحتاج أي عمود إلى تعديل. "
+                "سيظهر هذا القسم عند صدور الإصدار المتبقي، ولا يلزمك أي إجراء."
             ),
             "transaction_identifier_absent": (
                 "حجم سلة الشراء — غير متاح. لا يحتوي ملفك على رقم فاتورة أو "

@@ -73,6 +73,10 @@ from khepri.rra.narrative import (
     NarrativeDraft,
 )
 from khepri.rra.profiling import canonical_json
+from khepri.rra.versions import (
+    REASON_FAMILY_VERSION_UNADMITTED as _VERSIONS_FAMILY_UNADMITTED,
+)
+from khepri.rra.versions import admits_family
 
 # The bundle document is hashed to name a bundle, so any change to its shape
 # moves every bundle id. Two bundles built from identical inputs on either side
@@ -254,22 +258,32 @@ SECTION_REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
 # opposite of what happened. A section that cannot state its family's refusal
 # reason does not fail closed, it fails misleadingly.
 
+# Every family can refuse this one, because every family consumes the core
+# formula and any of them may be the one whose successor has not landed yet.
+# Named here rather than imported bare so this module's governed-reason scan
+# sees it as a reason the section vocabulary defines.
+SECTION_REASON_FAMILY_VERSION_UNADMITTED = _VERSIONS_FAMILY_UNADMITTED
+
+
 SECTION_REASONS: dict[str, frozenset[str]] = {
     SECTION_OVERVIEW: frozenset(),
     SECTION_COMPARISON: frozenset(
         {
+            SECTION_REASON_FAMILY_VERSION_UNADMITTED,
             SECTION_REASON_PRIOR_WINDOW_ABSENT,
             SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
         }
     ),
     SECTION_CONCENTRATION: frozenset(
         {
+            SECTION_REASON_FAMILY_VERSION_UNADMITTED,
             SECTION_REASON_DISTINCT_SET_UNCOMPUTABLE,
             SECTION_REASON_AGGREGATE_UNAVAILABLE,
         }
     ),
     SECTION_GROWTH: frozenset(
         {
+            SECTION_REASON_FAMILY_VERSION_UNADMITTED,
             SECTION_REASON_UNITS_ABSENT,
             SECTION_REASON_DECOMPOSITION_NOT_ADDITIVE,
             # Two rows whose authority is reachability, as for the comparison
@@ -285,6 +299,7 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
     ),
     SECTION_BASKET: frozenset(
         {
+            SECTION_REASON_FAMILY_VERSION_UNADMITTED,
             SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT,
             # One more, and only one. `RRA-008` requires a transaction identifier
             # for both basket metrics, so its absence is the single failure that
@@ -1481,11 +1496,16 @@ class _Family:
     refusals: object
     names: object
     plots: frozenset[str]
+    # Read through a callable rather than captured as a value, because a family's
+    # version is a module constant and capturing it here would freeze the
+    # pairing at import time -- exactly what the gate exists to detect.
+    version: object
 
 
 _FAMILIES = {
     SECTION_COMPARISON: _Family(
         derive=comparison.derive,
+        version=lambda: comparison.COMPARISON_FORMULA_VERSION,
         refusals=comparison.refusals,
         names=lambda fact, package: comparison.mode_of(fact),
         # The absolute deltas, one bar per mode. The percentage deltas are the same
@@ -1495,6 +1515,7 @@ _FAMILIES = {
     ),
     SECTION_CONCENTRATION: _Family(
         derive=concentration.derive,
+        version=lambda: concentration.CONCENTRATION_FORMULA_VERSION,
         refusals=lambda package: (),
         # No label. Every concentration fact shares one dimension, so naming it per
         # row distinguishes nothing, and the curve's own points are labelled by rank.
@@ -1506,6 +1527,7 @@ _FAMILIES = {
     ),
     SECTION_GROWTH: _Family(
         derive=growth.derive,
+        version=lambda: growth.GROWTH_FORMULA_VERSION,
         refusals=lambda package: (),
         # No label, for the same reason: all three effects share one mode. The
         # metric is what says which effect a row or a bar is, and a chart resolves it
@@ -1517,6 +1539,7 @@ _FAMILIES = {
     ),
     SECTION_BASKET: _Family(
         derive=basket.derive,
+        version=lambda: basket.BASKET_FORMULA_VERSION,
         refusals=basket.refusals,
         names=basket.attached_value_of,
         # The attach rates, one bar per value. Items per transaction is a different
@@ -1538,6 +1561,15 @@ def _analysed(package: FactPackage) -> _Analysed:
     refusals: dict[str, str] = {}
     caveats: list[StatedCaveat] = []
     for section_id, family in _FAMILIES.items():
+        if not admits_family(
+            formula_version=package.formula_version,
+            family_version=family.version(),
+        ):
+            # `RRA-008` refuses the affected analysis and not the report, so a
+            # family whose pairing was never authorized refuses its own section
+            # and leaves every independently answerable result standing.
+            refusals[section_id] = SECTION_REASON_FAMILY_VERSION_UNADMITTED
+            continue
         stated = family.derive(package)
         refused = family.refusals(package)
         if isinstance(stated, RefusedResult):
