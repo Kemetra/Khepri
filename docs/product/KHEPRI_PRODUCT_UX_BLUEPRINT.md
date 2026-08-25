@@ -228,7 +228,7 @@ later justify one. **No Compare in M3.**
 
 Per state: a completed analysis opens; a processing analysis **shows its state without promising a
 durable progress page** unless a future contract provides one; a deleted analysis is a minimal
-tombstone with no content action.
+tombstone with no content action, where the retention decision permits a record to remain at all.
 
 ### 7.4 Analysis detail and artifacts
 
@@ -370,7 +370,8 @@ relevant. Low-level formula and version strings must not dominate primary custom
 ### Clock cardinality — AUTHORITY-BLOCKED
 
 **Owner product direction: one session/content retention clock for M3**, with report, evidence, and
-related retained analysis content sharing one lifecycle, and no per-artifact clocks.
+related retained analysis content sharing one lifecycle. That preference includes not splitting
+clocks per artifact — but it is a preference `G2` may overrule, not a rule this document imposes.
 
 **This is direction, not a settled decision.** Clock cardinality for M3 belongs to `G2`: `G2-01`
 inventories the retained data classes — uploads, normalized events, mappings, manifests, facts,
@@ -405,9 +406,13 @@ may remain.
 | | Content exists | History exists |
 |---|---|---|
 | Active, expiring | yes | yes |
-| Expired | **no** | yes |
+| Expired | **no** | **conditional** — only if `G2`/`G3` permits a record to survive |
 | Deletion requested | until it completes | yes |
-| Deleted | **no** | yes — tombstone only |
+| Deleted | **no** | **conditional** — only if `G2`/`G3` permits a tombstone |
+
+The two conditional cells are **not** a guarantee. Whether any record survives expiry or deletion is
+the retention decision itself (see the tombstone subsection below), so an implementer must read them
+as "permitted only if the future decision allows it", never as "retain this".
 
 Retention is stated in **absolute time including hour, minute, and timezone**, never as a relative
 policy sentence alone. A date without a time cannot distinguish eleven hours from eleven minutes, and
@@ -476,13 +481,19 @@ not the plumbing.
 
 Existing roles only: **owner** and **member**. No new permission-management UI.
 
-| Capability | owner | member |
-|---|---|---|
-| See Overview, Data, Analyses, Team | visible | visible |
-| Start a new analysis | visible | visible |
-| Open report, evidence, PDF, Excel | visible | visible |
-| Team administration | visible where authorized | hidden |
-| Deletion / request deletion | **AUTHORITY-BLOCKED** (§11) | hidden by product direction |
+**Every new durable-workspace cell below is product direction, not a settled permission.**
+`G3-03` reserves authorization, audit, and evidence rules for **every** workspace action to the
+future `G3` specification (`roadmap:727`). The existing `R6-01` permission to resolve an isolation
+scope does not authorize the new `W1` list, read, or artifact-reopen actions, so those cells are
+AUTHORITY-BLOCKED in exactly the way deletion is.
+
+| Capability | owner | member | Authority |
+|---|---|---|---|
+| Team administration | visible where authorized | hidden | **SHIPPED** under `RCA-001`/`R6-01` |
+| Start a new analysis | visible | visible | **SHIPPED** |
+| See Overview, Data, Analyses | visible | visible | direction — **AUTHORITY-BLOCKED** (`G3-03`) |
+| Open report, evidence, PDF, Excel | visible | visible | direction — **AUTHORITY-BLOCKED** (`G3-03`) |
+| Deletion / request deletion | visible | hidden | direction — **AUTHORITY-BLOCKED** (§11) |
 
 **LOCKED — hide actions that cannot validly complete.** Do not teach permissions with disabled
 destructive buttons, and never render a control whose only outcome is an opaque authorization
@@ -502,7 +513,7 @@ surfaces already carry this pattern for an empty team and an empty invitation li
 | No data submitted | what this area is + **New analysis** |
 | Data present, no completed analysis | the entry, its admission outcome, and the analysis in progress or the action to run one |
 | Analysis processing | its state; position in the run only where a contract supplies it |
-| Only expired content | history with honest tombstones + **New analysis** |
+| Only expired content | whatever history the retention decision permits, plus **New analysis** |
 | Data not admitted | the admission and coverage outcome, and no raw values |
 | No available report | named per analysis, with the reason: unsupported, expired, or deleted |
 | No membership | the existing dedicated surface |
@@ -636,7 +647,7 @@ production code may not.
 | **M3-U3** | Analysis history and detail | `W1-04`, M3-U2 | list, detail, artifact access | Compare; filters; report redesign | CONTRACT-BLOCKED |
 | **M3-U4** | Data history and detail | `W1-01`/`W1-04`, M3-U2 | list, detail, lineage | file preview; raw rows; version graph | CONTRACT-BLOCKED |
 | **M3-U5** | Overview | M3-U3, M3-U4 | latest work, data state, attention | KPI cards; charts; business metrics | CONTRACT-BLOCKED |
-| **M3-U6** | Retention and tombstones | `W1-07`, active `G2` | retention display, tombstone rows | per-artifact clocks; inventing tombstone fields | AUTHORITY-BLOCKED |
+| **M3-U6** | Retention and tombstones | `W1-07`, active `G2` (which decides clock cardinality) | retention display, tombstone rows | inventing tombstone fields; asserting any lifecycle relationship `G2` has not decided | AUTHORITY-BLOCKED |
 | **M3-U7** | Deletion UX | a registered authorizing artifact (future active `G3`); `W1-07` | owner-only control | member-visible destructive controls; disabled-button education | AUTHORITY-BLOCKED |
 | **M3-U8** | Responsive, RTL, state hardening | M3-U1…U7 | narrow widths, bidi, keyboard, empty and loading | new surfaces | CONTRACT-BLOCKED |
 
@@ -661,7 +672,7 @@ Durable product decisions, safe to carry forward. None grants implementation aut
 11. **A failure state carries a next action** where one validly exists.
 12. **Machine vocabulary never reaches a customer.**
 13. **One content retention clock** for M3 is product *direction*; clock cardinality is a `G2` retention decision. **AUTHORITY-BLOCKED** — see §11.
-14. **Content existence and history existence are separate facts**, shown separately.
+14. **Content existence and history existence are separate facts**, shown separately. Whether a history record survives expiry or deletion is a `G2`/`G3` decision — **AUTHORITY-BLOCKED**.
 15. Retention is expressed in **absolute time with timezone**.
 16. **History is not hidden** is a product *preference*, not a locked property: whether any record survives deletion is a retention decision. **AUTHORITY-BLOCKED** — see §11.
 17. **Deletion is owner-only** as product direction, and is not rendered until a registered artifact authorizes it. **AUTHORITY-BLOCKED** — see §11.
@@ -694,6 +705,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Quality-summary aggregation contract, and the customer trust labels | CONTRACT-BLOCKED | `T1` (**PROPOSED**) |
 | Exact tombstone fields | CONTRACT-BLOCKED | `G2`/`G3`, `W1-07` |
 | Deletion authority | AUTHORITY-BLOCKED | a **registered** artifact (future active `G3`); the `R6-01` note is evidence, not authority |
+| Workspace role cells (list, read, reopen artifacts) | AUTHORITY-BLOCKED | `G3-03` reserves authorization for every workspace action (`roadmap:727`) |
 | Clock cardinality (one clock vs per-artifact) | AUTHORITY-BLOCKED | `G2-01`/`G2-02`, activated by `G2-03`; today's evidence covers one beta session only |
 | Slice ordering of navigation links | LOCKED as a constraint | each link ships with its own surface (`FR-049`); see §19 |
 | Whether a tombstone exists at all | AUTHORITY-BLOCKED | `G2`/`G3` retention decision; `RCA-001:161` excludes report history |
