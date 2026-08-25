@@ -22,7 +22,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from tests.rra_calculation_oracle import (
+    ALLOCATED_DISCOUNT_EXPECTED,
+    ALLOCATED_DISCOUNT_ROWS,
     CLEAN_ATTACH,
+    CLEAN_COMPARISON,
     CLEAN_CONCENTRATION,
     CLEAN_HEADLINE,
     CLEAN_PERIOD_TOTALS,
@@ -30,14 +33,26 @@ from tests.rra_calculation_oracle import (
     CLEAN_SALE_ONLY,
     CSV_COLUMNS,
     DISPLAY_TRUNCATION_EXPECTED,
+    DISPLAY_TRUNCATION_ROWS,
     GROWTH_RESIDUAL_CASES,
     GROWTH_RESIDUAL_NEGATIVE,
     GROWTH_RESIDUAL_POSITIVE,
     GROWTH_RESIDUAL_ZERO,
+    HIGH_PRECISION_EXPECTED,
+    HIGH_PRECISION_ROWS,
     MESSY_RETURNS_EXPECTED,
+    MESSY_RETURNS_ROWS,
+    MISSING_PRODUCT_ZERO_REVENUE_EXPECTED,
+    MISSING_PRODUCT_ZERO_REVENUE_ROWS,
     MONETARY_PRECISION,
+    PARTIAL_NULL_EXPECTED,
+    PARTIAL_NULL_ROWS,
+    RATIO_PRECISION,
     REPEATED_INVOICE_EXPECTED,
     REPEATED_INVOICE_ROWS,
+    YEAR_OVER_YEAR_COMPARISON,
+    YEAR_OVER_YEAR_PERIOD_TOTALS,
+    YEAR_OVER_YEAR_ROWS,
     ZERO_REVENUE_PRODUCT_EXPECTED,
     curve_is_monotone,
     growth_case_reconciles,
@@ -319,6 +334,343 @@ def test_natural_month_lengths_cover_all_four_calendar_cases() -> None:
 
     assert set(NATURAL_MONTH_LENGTH_EXPECTED["day_counts"]) == {28, 29, 30, 31}
     assert NATURAL_MONTH_LENGTH_EXPECTED["leap_day_yoy_admitted"] is False
+
+
+# ---------------------------------------------------------------------------
+# Row-derived guards.
+#
+# Every assertion below recomputes a literal from the dataset rows that literal
+# describes, so corrupting the literal fails. That is the difference between a
+# test that consumes a number and a test that discriminates it: an earlier
+# revision of this file asserted `rate * 8` was integral and in range, which a
+# transposed attach rate satisfies just as well as the correct one.
+#
+# The recomputation is arithmetic over `OracleRow` fields -- summing a column,
+# counting a set -- and never a call into `src/`. Reading the oracle's own rows
+# is not consulting production.
+# ---------------------------------------------------------------------------
+
+SCALE = Decimal(1).scaleb(-MONETARY_PRECISION)
+RATIO_SCALE = Decimal(1).scaleb(-RATIO_PRECISION)
+
+
+def _revenue_of(rows) -> Decimal:
+    return sum((row.revenue for row in rows if row.revenue is not None), Decimal(0))
+
+
+def _units_of(rows) -> Decimal:
+    return sum((Decimal(row.units) for row in rows if row.units is not None), Decimal(0))
+
+
+def _revenue_by_product(rows) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
+    for row in rows:
+        if row.product is None or row.revenue is None:
+            continue
+        totals[row.product] = totals.get(row.product, Decimal(0)) + row.revenue
+    return totals
+
+
+def _cumulative_curve(totals: dict[str, Decimal]) -> tuple[Decimal, ...]:
+    """The ranked cumulative share curve over one dimension's revenue totals."""
+    ranked = sorted(totals, key=lambda key: (-totals[key], key))
+    grand = sum(totals.values(), Decimal(0))
+    running = Decimal(0)
+    shares: list[Decimal] = []
+    for key in ranked:
+        running += totals[key]
+        shares.append((running / grand).quantize(RATIO_SCALE))
+    return tuple(shares)
+
+
+def test_high_precision_aov_is_the_half_even_quotient_of_its_own_rows() -> None:
+    """The half-even tie, recomputed rather than trusted.
+
+    The module's docstring calls this "the property most easily lost", and until
+    this assertion existed the literal could be edited from 15.388888 to
+    15.388889 with the whole suite still green -- a headline property with no
+    discriminating guard, which is the failure mode this project has hit before.
+
+    30.777777 / 2 = 15.3888885 exactly. The digit past the retained place is 5
+    with nothing after it, and the retained digit 8 is already even, so half-even
+    keeps it. Round-half-up and binary floating point both give ...889.
+    """
+    revenue = _revenue_of(HIGH_PRECISION_ROWS)
+    keys = {row.canonical_transaction_key for row in HIGH_PRECISION_ROWS}
+    scale = Decimal(1).scaleb(-int(HIGH_PRECISION_EXPECTED["monetary_precision"]))
+    assert revenue == HIGH_PRECISION_EXPECTED["revenue"]
+    assert len(keys) == 2
+    assert revenue / Decimal(len(keys)) == Decimal("15.3888885")
+    assert (revenue / Decimal(len(keys))).quantize(scale) == HIGH_PRECISION_EXPECTED[
+        "average_order_value"
+    ]
+
+
+def test_high_precision_asp_and_margin_come_from_the_same_rows() -> None:
+    """ASP and gross margin recomputed from the row columns they summarize."""
+    revenue = _revenue_of(HIGH_PRECISION_ROWS)
+    units = _units_of(HIGH_PRECISION_ROWS)
+    cost = sum(
+        (row.cost for row in HIGH_PRECISION_ROWS if row.cost is not None), Decimal(0)
+    )
+    scale = Decimal(1).scaleb(-int(HIGH_PRECISION_EXPECTED["monetary_precision"]))
+    assert cost == HIGH_PRECISION_EXPECTED["cost"]
+    assert revenue - cost == HIGH_PRECISION_EXPECTED["gross_profit"]
+    assert (revenue / units).quantize(scale) == HIGH_PRECISION_EXPECTED[
+        "average_selling_price"
+    ]
+    assert ((revenue - cost) / revenue).quantize(RATIO_SCALE) == HIGH_PRECISION_EXPECTED[
+        "gross_margin"
+    ]
+
+
+def test_high_precision_scale_is_the_largest_input_scale() -> None:
+    """`RRA-004`: the published scale is the largest admitted monetary input scale."""
+    scales = [
+        -int(row.revenue.as_tuple().exponent)
+        for row in HIGH_PRECISION_ROWS
+        if row.revenue is not None
+    ]
+    assert max(scales) == HIGH_PRECISION_EXPECTED["monetary_precision"] == 6
+
+
+def test_clean_concentration_curve_is_recomputed_from_the_rows() -> None:
+    """Every curve point, including the interior ones, derived from row revenue.
+
+    `curve_is_monotone` checks ordering and the endpoint only, and both cutoff
+    assertions read `curve[0]`, so the interior point 0.8696 was unguarded --
+    0.8697 and even 0.5000 both passed. This pins all three.
+    """
+    totals = _revenue_by_product(CLEAN_ROWS)
+    assert sorted(totals, key=lambda key: (-totals[key], key)) == ["P3", "P1", "P2"]
+    assert sum(totals.values(), Decimal(0)) == CLEAN_HEADLINE["revenue"]
+    assert _cumulative_curve(totals) == CLEAN_CONCENTRATION["curve"]
+    assert Decimal(len(totals)) == CLEAN_CONCENTRATION["distinct_values"]
+    assert Decimal(len(totals)) == CLEAN_CONCENTRATION["ranked_values"]
+
+
+def test_clean_top_shares_are_recomputed_at_the_governed_cutoffs() -> None:
+    """The two shares read off the recomputed curve, not off the stated one."""
+    curve = _cumulative_curve(_revenue_by_product(CLEAN_ROWS))
+    distinct = len(_revenue_by_product(CLEAN_ROWS))
+    assert curve[leading_count(distinct, 10) - 1] == CLEAN_CONCENTRATION[
+        "top_decile_share"
+    ]
+    assert curve[leading_count(distinct, 4) - 1] == CLEAN_CONCENTRATION[
+        "top_quartile_share"
+    ]
+
+
+def test_clean_attach_rates_are_recomputed_from_transaction_membership() -> None:
+    """Each rate is its own value's distinct containing keys over the whole set.
+
+    The previous assertion only checked `rate * 8` was integral and within range,
+    which a transposed P1/P2 pair satisfies. Recomputing memberships catches both
+    a transposition and a wrong denominator, and proves the `RRA-003` rule that
+    P1's two lines inside INV-1001 count once.
+    """
+    keys = {row.canonical_transaction_key for row in CLEAN_ROWS}
+    assert Decimal(len(keys)) == CLEAN_ATTACH["denominator"]
+    for value in ("P1", "P2", "P3"):
+        containing = {
+            row.canonical_transaction_key for row in CLEAN_ROWS if row.product == value
+        }
+        expected = (Decimal(len(containing)) / Decimal(len(keys))).quantize(RATIO_SCALE)
+        assert expected == CLEAN_ATTACH[value], value
+
+
+def test_clean_period_totals_are_recomputed_per_period() -> None:
+    """Revenue, units, transaction count and distinct dates, per month bucket."""
+    for label, stated in CLEAN_PERIOD_TOTALS.items():
+        rows = [
+            row
+            for row in CLEAN_ROWS
+            if f"{row.day.year:04d}-{row.day.month:02d}" == label
+        ]
+        assert _revenue_of(rows) == stated["revenue"], label
+        assert _units_of(rows) == stated["units"], label
+        keys = {row.canonical_transaction_key for row in rows}
+        assert Decimal(len(keys)) == stated["transactions"], label
+        assert Decimal(len({row.day for row in rows})) == stated["distinct_dates"], label
+
+
+def test_clean_comparison_deltas_follow_from_the_period_totals() -> None:
+    """`RRA-008`: absolute delta is current - prior; percentage divides by prior."""
+    current = CLEAN_PERIOD_TOTALS["2026-05"]["revenue"]
+    prior = CLEAN_PERIOD_TOTALS["2026-01"]["revenue"]
+    assert current - prior == CLEAN_COMPARISON["revenue_delta_absolute"]
+    assert ((current - prior) / prior).quantize(RATIO_SCALE) == CLEAN_COMPARISON[
+        "revenue_delta_percent"
+    ]
+    units_change = (
+        CLEAN_PERIOD_TOTALS["2026-05"]["units"] - CLEAN_PERIOD_TOTALS["2026-01"]["units"]
+    )
+    assert units_change == CLEAN_COMPARISON["units_delta_absolute"]
+
+
+def test_clean_headline_and_ratios_are_recomputed_from_the_rows() -> None:
+    """The whole clean headline block, derived from the twelve rows."""
+    revenue = _revenue_of(CLEAN_ROWS)
+    units = _units_of(CLEAN_ROWS)
+    cost = sum((row.cost for row in CLEAN_ROWS if row.cost is not None), Decimal(0))
+    keys = Decimal(len({row.canonical_transaction_key for row in CLEAN_ROWS}))
+    assert revenue == CLEAN_HEADLINE["revenue"]
+    assert units == CLEAN_HEADLINE["units"]
+    assert cost == CLEAN_HEADLINE["cost"]
+    assert keys == CLEAN_HEADLINE["transactions"]
+    assert revenue - cost == CLEAN_HEADLINE["gross_profit"]
+    assert ((revenue - cost) / revenue).quantize(RATIO_SCALE) == CLEAN_HEADLINE[
+        "gross_margin"
+    ]
+    assert (revenue / keys).quantize(SCALE) == CLEAN_SALE_ONLY["average_order_value"]
+    assert (revenue / units).quantize(SCALE) == CLEAN_SALE_ONLY["average_selling_price"]
+    assert (units / keys).quantize(RATIO_SCALE) == CLEAN_SALE_ONLY[
+        "basket_items_per_transaction"
+    ]
+
+
+def test_display_truncation_literals_are_recomputed_from_its_rows() -> None:
+    """Distinct count and both shares derived from the 25 generated rows.
+
+    `distinct_values` was consumed by the cutoff test but not discriminated by
+    it: ceil(26/10) = 3 and ceil(26/4) = 7 exactly as for 25, so a corrupted 26
+    passed. Counting the rows' own products fixes that.
+    """
+    totals = _revenue_by_product(DISPLAY_TRUNCATION_ROWS)
+    assert Decimal(len(totals)) == DISPLAY_TRUNCATION_EXPECTED["distinct_values"]
+    assert Decimal(len(totals)) == DISPLAY_TRUNCATION_EXPECTED["ranked_values"]
+    ranked = sorted(totals, key=lambda key: (-totals[key], key))
+    grand = sum(totals.values(), Decimal(0))
+    assert grand == Decimal("32500.00")
+    for fraction, metric in ((10, "top_decile_share"), (4, "top_quartile_share")):
+        cutoff = leading_count(len(totals), fraction)
+        cumulative = sum((totals[key] for key in ranked[:cutoff]), Decimal(0))
+        assert (cumulative / grand).quantize(RATIO_SCALE) == DISPLAY_TRUNCATION_EXPECTED[
+            metric
+        ], metric
+
+
+def test_display_truncation_presentation_stays_under_the_sampling_bound() -> None:
+    """`RRA-008` caps presentation sampling at 100 points; 25 is under it."""
+    assert DISPLAY_TRUNCATION_EXPECTED["presentation_points"] == Decimal(
+        len(DISPLAY_TRUNCATION_ROWS)
+    )
+    assert DISPLAY_TRUNCATION_EXPECTED["sampling_applied"] is False
+
+
+def test_messy_returns_literals_are_recomputed_from_its_rows() -> None:
+    """Return-inclusive headlines and the sale-only ratios, from the three rows."""
+    sales = [row for row in MESSY_RETURNS_ROWS if row.event_kind == "sale"]
+    returned = [row for row in MESSY_RETURNS_ROWS if row.event_kind == "return"]
+    assert _revenue_of(MESSY_RETURNS_ROWS) == MESSY_RETURNS_EXPECTED["revenue"]
+    assert _units_of(MESSY_RETURNS_ROWS) == MESSY_RETURNS_EXPECTED["units"]
+    assert -_revenue_of(returned) == MESSY_RETURNS_EXPECTED["returns"]
+    sale_keys = Decimal(len({row.canonical_transaction_key for row in sales}))
+    assert sale_keys == MESSY_RETURNS_EXPECTED["transactions"]
+    sale_revenue = _revenue_of(sales)
+    sale_units = _units_of(sales)
+    assert (sale_revenue / sale_keys).quantize(SCALE) == MESSY_RETURNS_EXPECTED[
+        "average_order_value"
+    ]
+    assert (sale_revenue / sale_units).quantize(SCALE) == MESSY_RETURNS_EXPECTED[
+        "average_selling_price"
+    ]
+    assert (sale_units / sale_keys).quantize(RATIO_SCALE) == MESSY_RETURNS_EXPECTED[
+        "basket_items_per_transaction"
+    ]
+
+
+def test_surviving_literals_on_refusing_datasets_come_from_their_rows() -> None:
+    """Where a case refuses one metric, the survivors are still recomputed.
+
+    `PARTIAL_NULL` and `MISSING_PRODUCT_ZERO_REVENUE` both state a refusal beside
+    a surviving revenue, and the surviving number was unguarded.
+    """
+    assert _revenue_of(PARTIAL_NULL_ROWS) == PARTIAL_NULL_EXPECTED["revenue"]
+    assert _units_of(PARTIAL_NULL_ROWS) == PARTIAL_NULL_EXPECTED["units"]
+    assert PARTIAL_NULL_EXPECTED["cost"] is None
+    assert (
+        _revenue_of(MISSING_PRODUCT_ZERO_REVENUE_ROWS)
+        == MISSING_PRODUCT_ZERO_REVENUE_EXPECTED["revenue"]
+    )
+    assert (
+        _units_of(MISSING_PRODUCT_ZERO_REVENUE_ROWS)
+        == MISSING_PRODUCT_ZERO_REVENUE_EXPECTED["units"]
+    )
+    keys = {row.canonical_transaction_key for row in MISSING_PRODUCT_ZERO_REVENUE_ROWS}
+    assert Decimal(len(keys)) == MISSING_PRODUCT_ZERO_REVENUE_EXPECTED["transactions"]
+
+
+def test_zero_revenue_curve_is_recomputed_including_its_flat_tail() -> None:
+    """The tail points are curve values, not padding, so they are derived too."""
+    from tests.rra_calculation_oracle import ZERO_REVENUE_PRODUCT_ROWS
+
+    totals = _revenue_by_product(ZERO_REVENUE_PRODUCT_ROWS)
+    assert _cumulative_curve(totals) == ZERO_REVENUE_PRODUCT_EXPECTED["curve"]
+    assert Decimal(len(totals)) == ZERO_REVENUE_PRODUCT_EXPECTED["distinct_values"]
+    zeroes = sum(1 for value in totals.values() if value == 0)
+    assert Decimal(zeroes) == ZERO_REVENUE_PRODUCT_EXPECTED["zero_revenue_values"]
+
+
+def test_allocated_discount_total_is_recomputed_from_its_rows() -> None:
+    """The discount total and the untouched revenue, from the three lines."""
+    discount = sum(
+        (row.discount for row in ALLOCATED_DISCOUNT_ROWS if row.discount is not None),
+        Decimal(0),
+    )
+    assert discount == ALLOCATED_DISCOUNT_EXPECTED["discount"]
+    assert _revenue_of(ALLOCATED_DISCOUNT_ROWS) == ALLOCATED_DISCOUNT_EXPECTED["revenue"]
+
+
+def test_year_over_year_period_totals_are_recomputed_per_period() -> None:
+    """Both compared months derived from the rows that fall in them."""
+    for label, stated in YEAR_OVER_YEAR_PERIOD_TOTALS.items():
+        rows = [
+            row
+            for row in YEAR_OVER_YEAR_ROWS
+            if f"{row.day.year:04d}-{row.day.month:02d}" == label
+        ]
+        assert _revenue_of(rows) == stated["revenue"], label
+        assert _units_of(rows) == stated["units"], label
+        keys = {row.canonical_transaction_key for row in rows}
+        assert Decimal(len(keys)) == stated["transactions"], label
+
+
+def test_year_over_year_deltas_follow_from_the_period_totals() -> None:
+    """`RRA-008`: YoY compares the exact same calendar period one year earlier.
+
+    170.00 / 560.00 = 0.30357142857..., which rounds to 0.3036 at four places.
+    The ratio is deliberately non-terminating: a round 0.5000 would pass under
+    every rounding mode and discriminate nothing.
+    """
+    current = YEAR_OVER_YEAR_PERIOD_TOTALS[YEAR_OVER_YEAR_COMPARISON["current_label"]]
+    prior = YEAR_OVER_YEAR_PERIOD_TOTALS[YEAR_OVER_YEAR_COMPARISON["prior_label"]]
+    change = current["revenue"] - prior["revenue"]
+    assert change == YEAR_OVER_YEAR_COMPARISON["revenue_delta_absolute"]
+    assert (change / prior["revenue"]).quantize(RATIO_SCALE) == (
+        YEAR_OVER_YEAR_COMPARISON["revenue_delta_percent"]
+    )
+    assert current["units"] - prior["units"] == (
+        YEAR_OVER_YEAR_COMPARISON["units_delta_absolute"]
+    )
+
+
+def test_year_over_year_labels_are_exactly_one_year_apart() -> None:
+    """The counterpart is the same calendar month, not the nearest observed one.
+
+    The dataset carries 2025-04 and 2026-06 precisely so a positional or
+    nearest-neighbour selection would pick a different pair and fail here.
+    """
+    current = YEAR_OVER_YEAR_COMPARISON["current_label"]
+    prior = YEAR_OVER_YEAR_COMPARISON["prior_label"]
+    current_year, current_month = (int(part) for part in current.split("-"))
+    prior_year, prior_month = (int(part) for part in prior.split("-"))
+    assert current_month == prior_month
+    assert current_year - prior_year == 1
+    observed = {f"{row.day.year:04d}-{row.day.month:02d}" for row in YEAR_OVER_YEAR_ROWS}
+    assert {current, prior} <= observed
+    # Both neighbours exist and are NOT the counterpart.
+    assert {"2025-04", "2026-06"} <= observed
 
 
 def test_to_csv_renders_one_header_and_one_line_per_row() -> None:

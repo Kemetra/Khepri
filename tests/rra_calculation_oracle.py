@@ -334,6 +334,101 @@ complete full calendar months with the same store set and filters are compatible
 by specification, and current code cannot state their delta at all.
 """
 
+YEAR_OVER_YEAR_ROWS: tuple[OracleRow, ...] = (
+    # **A separate dataset, deliberately, and not extra rows on `CLEAN_ROWS`.**
+    # `CLEAN_ROWS` spans 2026-01..2026-05, so no exact year-earlier counterpart
+    # exists inside it. Adding prior-year rows would change `CLEAN_HEADLINE`'s
+    # revenue, units, cost, transaction count and every ratio derived from them --
+    # literals an external reviewer has already independently reproduced. A new
+    # dataset keeps that verification intact, which is worth more than reusing
+    # one fixture.
+    #
+    # Four month buckets spanning 2025-04-10 to 2026-06-10 (426 days, so
+    # `granularity_for` yields months). `windows.settled` drops the first and last,
+    # leaving 2025-05 and 2026-05 settled -- an exact year-apart pair, which is
+    # what `RRA-008` requires YoY to compare: "the exact same calendar period one
+    # year earlier".
+    OracleRow(date(2025, 4, 10), EVENT_SALE, STATUS_POSTED, Decimal("100.00"), 4,
+              "INV-Y001", "S1", "P1", "C1", Decimal("55.00"), Decimal("0.00"), "T1"),
+    # 2025-05, the prior-year counterpart: 320.00 + 240.00 = 560.00 over 8 + 6 = 14.
+    OracleRow(date(2025, 5, 12), EVENT_SALE, STATUS_POSTED, Decimal("320.00"), 8,
+              "INV-Y002", "S1", "P1", "C1", Decimal("176.00"), Decimal("0.00"), "T1"),
+    OracleRow(date(2025, 5, 19), EVENT_SALE, STATUS_POSTED, Decimal("240.00"), 6,
+              "INV-Y003", "S1", "P2", "C1", Decimal("132.00"), Decimal("0.00"), "T1"),
+    # 2026-05, the current period: 430.00 + 300.00 = 730.00 over 10 + 7 = 17.
+    OracleRow(date(2026, 5, 12), EVENT_SALE, STATUS_POSTED, Decimal("430.00"), 10,
+              "INV-Y004", "S1", "P1", "C1", Decimal("236.50"), Decimal("0.00"), "T1"),
+    OracleRow(date(2026, 5, 19), EVENT_SALE, STATUS_POSTED, Decimal("300.00"), 7,
+              "INV-Y005", "S1", "P2", "C1", Decimal("165.00"), Decimal("0.00"), "T1"),
+    OracleRow(date(2026, 6, 10), EVENT_SALE, STATUS_POSTED, Decimal("120.00"), 5,
+              "INV-Y006", "S1", "P1", "C1", Decimal("66.00"), Decimal("0.00"), "T1"),
+)
+
+YEAR_OVER_YEAR_PERIOD_TOTALS = {
+    # 2025-05: 320.00 + 240.00 = 560.00 over 8 + 6 = 14 units, 2 transactions.
+    "2025-05": {"revenue": Decimal("560.00"), "units": Decimal("14"),
+                "transactions": Decimal("2")},
+    # 2026-05: 430.00 + 300.00 = 730.00 over 10 + 7 = 17 units, 2 transactions.
+    "2026-05": {"revenue": Decimal("730.00"), "units": Decimal("17"),
+                "transactions": Decimal("2")},
+}
+
+YEAR_OVER_YEAR_COMPARISON = {
+    # `RRA-008`: "Year-over-year uses the exact same calendar period one year
+    # earlier." The compared pair is 2026-05 against 2025-05 -- not the adjacent
+    # 2026-06 or 2025-04, both of which exist in this dataset precisely so a
+    # positional or nearest-neighbour selection would pick the wrong one.
+    "current_label": "2026-05",
+    "prior_label": "2025-05",
+    # absolute delta = current - prior = 730.00 - 560.00 = 170.00
+    "revenue_delta_absolute": Decimal("170.00"),
+    # percentage delta = (current - prior) / prior = 170.00 / 560.00
+    #                  = 0.30357142857142857142857... -> half-even at 4 dp.
+    #   The 5th decimal is 1, below the tie, so it rounds down... no: the digits
+    #   are 0.3035|714..., and 7 > 5, so it rounds UP to 0.3036. Chosen to be
+    #   non-terminating on purpose -- a ratio like 0.5000 would pass under any
+    #   rounding mode and discriminate nothing.
+    "revenue_delta_percent": Decimal("0.3036"),
+    # units delta = 17 - 14 = 3
+    "units_delta_absolute": Decimal("3"),
+}
+"""Year-over-year deltas -- brief bullet 2's "PoP/YoY deltas", YoY half.
+
+The module previously carried only the YoY *refusal* case
+(`NATURAL_MONTH_LENGTH_EXPECTED["leap_day_yoy_admitted"] = False`, from `RRA-008`'s
+leap-day clause). That is one of two obligations. `RRA-008`'s verification clause
+requires "exact PoP and YoY counterparts", which is the arithmetic case, and it
+was missing.
+
+_RED: production returns `revenue_delta_absolute.year_over_year` = "170.00" and
+`revenue_delta_percent.year_over_year` = "0.3036", agreeing with both literals.
+`comparison.mode_of` confirms the facts carry the year-over-year mode, and the
+buckets are ('2025-04', '2025-05', '2026-05', '2026-06') at month granularity.
+
+Empirically confirmed, and the agreement is narrower than it looks. The four
+buckets leave 2025-05 and 2026-05 settled; `_year_earlier_label` decrements the
+year field to reach 2025-05 from 2026-05, finds it settled, and the pair
+resolves. So the YoY *arithmetic* and the counterpart *selection* are both correct
+on current code, and `V-comparison` must not lose either.
+
+What is absent is the precondition. Nothing proves either May complete -- no
+manifest reaches this calculation at all -- and `RRA-008` makes completeness a
+requirement of the comparison rather than an optional extra. So this pair is an
+agreement on the numbers standing beside the same missing-manifest gap every other
+comparison case in this module carries.
+
+Note the contrast with `CLEAN_COMPARISON`, which refuses `prior_window_absent`:
+there the two months are adjacent-in-data but the only two buckets, so neither is
+settled. Here PoP refuses for that reason (2026-04 does not exist) while YoY
+succeeds. The two cases together show the settled-window rule is orthogonal to
+which mode is asked for.
+
+The percentage is deliberately non-terminating. 170/560 = 0.3035714..., which
+rounds to 0.3036 under half-even and under half-up alike, but would differ from a
+truncating implementation -- and a round 0.5000 would have discriminated nothing.
+"""
+
+
 CLEAN_CONCENTRATION = {
     # Ranked product revenue over the full non-null distinct set, before display
     # truncation. `RRA-008`: concentration ranks the full admissible set.
@@ -927,9 +1022,12 @@ The violated rule is `RRA-004`'s partial-coverage prohibition, the same one
 published as the dataset's revenue when the other row's revenue is simply unknown,
 and units 10 likewise. ASP's refusal is correct and must survive the correction.
 
-Production also publishes concentration over this dataset with distinct_values 3
+Production also publishes concentration over this dataset with distinct_values 2
 and ranked_values 1 -- ranking the single product that has revenue and reporting
-both shares as 1.0000. `RRA-008` requires "complete sale revenue" over the ranked
+its share as 1.0000. Two products exist in these two rows, P1 and P2, and only
+P1 carries revenue; `_curve` ranks the accumulators whose measure is `present`,
+so one of the two distinct values is ranked. `RRA-008` requires "complete sale
+revenue" over the ranked
 set, so the whole curve should refuse; a single product holding 100% of a revenue
 total that is itself incomplete is the most misleading number in the oracle. That
 gap belongs to `V-concentration` and is recorded here rather than given its own
@@ -1426,31 +1524,59 @@ GROWTH_RESIDUAL_BOUND_NOTE = """The residual can never exceed one unit of the pu
 
 `RRA-008` requires refusal when it does, and the decision doc repeats the bound. No
 oracle case exhibits a violation, and the reason is algebraic rather than a gap in
-the search:
+the search.
 
-  Let s be the published scale and `ulp = 10**-s`. `RRA-004` sets s to the largest
-  admitted monetary input scale, so every admitted revenue is an exact multiple of
-  `ulp`. Therefore `D = R_c - R_p` is an exact multiple of `ulp` and
-  `round(D) = D` with no error at all.
+**One correction first, because an earlier version of this note got it wrong.** It
+claimed `v + p == D` exactly, "before any rounding", as an algebraic invariant.
+That is true in real arithmetic and *false* in the `prec=60` decimal context
+`growth.py` actually runs in: `ASP = R / U` generally does not terminate, so `v`
+and `p` each carry a context-rounding error. Measured over 200,000 random admitted
+pairs, `(v + p) - D` was nonzero in 55.7% of them. The conclusion below survives
+that correction, but it does not follow from the invariant, so the derivation is
+restated to carry the error term explicitly.
 
-  Write `v` and `p` for the unrounded effects. Their exact sum is `D` -- that is
-  the algebraic invariant, and it holds before any rounding. Then:
+  Let `s` be the published scale and `ulp = 10**-s`.
+
+  **Step 1 -- `round(D) = D`, and this is a property of the code, not of algebra.**
+  `facts.py:834` sets the package's monetary scale to `max(MIN_MONETARY_PRECISION,
+  observed input scale)`, and `facts.py:385` refuses a package whose scale exceeds
+  `MAX_MONETARY_PRECISION`. So the published scale is at least as fine as every
+  admitted monetary input, every admitted revenue is an exact multiple of `ulp`,
+  and `D = R_c - R_p` -- one subtraction of two such multiples, exact at `prec=60`
+  for any realistic magnitude -- is itself an exact multiple of `ulp`. Hence
+  `round(D) = D` with no error. Verified: 0 counterexamples in 50,000 trials.
+
+  **Step 2 -- carry the context error.** Write `eps = (v + p) - D`, the quantity
+  the earlier note assumed away. Then:
 
       residual = published_price - round(p)
                = (round(D) - round(v)) - round(p)
-               = D - round(v) - round(p)
-               = (v - round(v)) + (p - round(p))
+               = D - round(v) - round(p)                     [step 1]
+               = (v + p - eps) - round(v) - round(p)
+               = (v - round(v)) + (p - round(p)) - eps
 
-  Each bracket is a rounding error bounded by `ulp / 2` in magnitude, so
-  `|residual| <= ulp`. The bound holds identically.
+  **Step 3 -- the bound.** Each rounding bracket is bounded by `ulp / 2`, so
+  `|residual| <= ulp + |eps|`. That alone would not quite give the bound, but
+  `residual` is by construction a difference of `ulp`-quantized quantities --
+  `published_price` is `round(D) - round(v)` and `round(p)` is quantized -- so it
+  is always an exact integer multiple of `ulp`. An integer multiple of `ulp` whose
+  magnitude is below `ulp + |eps|` is at most `ulp`, for any `|eps| < ulp`.
+
+  **Step 4 -- how much room that leaves.** Measured `|eps| / ulp <= 3e-49` over
+  200,000 random pairs with revenues to 1e6 and units to 1e4; the reviewer measured
+  `<= 3e-42` on revenues to 1e12. Either way `|eps|` is some forty orders of
+  magnitude below the `ulp` the argument needs, and the margin is only exhausted
+  near 57 significant digits, where `prec=60` itself runs out -- far beyond
+  `MAX_MEASURE_DIGITS = 18`. Verified directly: over 200,000 trials the residual
+  was an integer multiple of `ulp` every time, and `max |residual| = 1 ulp`.
 
 So the refusal branch `RRA-008` mandates is unreachable on admitted inputs, and
 this module states no literal for it. `V-growth` must still implement the refusal
 -- a governed bound whose guard is absent is a bound nobody can rely on, and the
-proof above depends on the precision rule, which a later correction could move.
-But no test can drive it with governed data, and a case fabricated by feeding the
-formula a scale it would never receive would assert something about the guard
-rather than about the decomposition.
+proof above rests on the `facts.py` scale rule, which a later correction could
+move. But no test can drive it with governed data, and a case fabricated by
+feeding the formula a scale it would never receive would assert something about
+the guard rather than about the decomposition.
 """
 
 
