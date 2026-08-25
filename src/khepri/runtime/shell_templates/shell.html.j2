@@ -37,7 +37,7 @@
       <span id="frame-brand-name">KHEPRI</span>
       <span id="frame-brand-purpose" class="visually-hidden">{{ copy.frame_home_label }}</span>
     </a>
-    {% if organization_name is defined and organization_name %}
+    {% if organization_id is defined and organization_id %}
     {#
       Named by both spans in source order, so the accessible name is "Acme Trading Change
       organization" rather than a bare organization name whose purpose a screen reader cannot infer.
@@ -49,12 +49,25 @@
       reordered around its own punctuation and digits. Either way the run is isolated, which is
       what the requirement asks for; the fixed value only happened to be right for half the inputs.
     #}
+    {% if organization_name %}
     <a class="frame-organization"
        href="{{ prefix }}/{{ language }}"
        aria-labelledby="frame-organization-name frame-organization-action">
       <span id="frame-organization-name" dir="auto">{{ organization_name }}</span>
       <span id="frame-organization-action" class="visually-hidden">{{ copy.frame_organization_label }}</span>
     </a>
+    {% else %}
+    {#
+      A resolved organization with no display name still has surfaces. The control above is *named*
+      by its name span, so with nothing to put there it would be a link whose accessible name is the
+      purpose alone -- "Change organization" attached to no organization. The chooser it leads to is
+      reachable from the wordmark, so the frame drops the control and keeps the navigation: an empty
+      name is a missing label, not a missing organization, and `_active_organization_name` returns
+      the same empty string for both a blank name and a listing that carries none.
+    #}
+    <a class="frame-organization-fallback"
+       href="{{ prefix }}/{{ language }}">{{ copy.frame_organization_label }}</a>
+    {% endif %}
     <nav class="frame-surfaces" aria-label="{{ copy.team_title }}">
       <a href="{{ prefix }}/{{ language }}/{{ organization_id }}/team">{{ copy.team_title }}</a>
     </nav>
@@ -77,6 +90,7 @@
     {% if language_switch %}
     <a class="frame-language"
        href="{{ prefix }}/{{ alternate }}{{ surface_path }}"
+       dir="auto"
        lang="{{ copy.frame_language_code }}">{{ copy.frame_language }}</a>
     {% endif %}
   </header>

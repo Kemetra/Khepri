@@ -385,6 +385,26 @@ class TestTheRefusalKeepsItsSurfaceAcrossLanguages:
         assert response.status_code == 404
         assert SHELL_COPY["en"]["recovery_exit"] in response.text
 
+    @pytest.mark.parametrize(
+        "tail",
+        ["/no-such-surface", "/org-acme/no-such-surface", "/a/b/c/d"],
+    )
+    def test_an_unknown_address_of_any_shape_reaches_the_refusal(self, tail: str) -> None:
+        """`FR-046` is about the address being unknown, not about how many segments it has.
+
+        The two-segment case is the one that escaped: `shell_surface` reads the surface name at
+        index 2, so `/en/no-such-surface` left it `""` -- the same value the bare `/en` produces --
+        and the dispatcher answered with the chooser at `200`. An unknown path rendering an entry
+        surface is the one outcome `FR-046` forbids, and testing the extracted surface name could
+        not see it because the defect was in which segment got read. So these enumerate address
+        *shapes* rather than surface names, and the parametrisation is the point: restore the
+        `surface == ""` test alone and the first case fails.
+        """
+        response = _shell().get(f"{SHELL_PREFIX}/en{tail}")
+
+        assert response.status_code == 404
+        assert SHELL_COPY["en"]["recovery_exit"] in response.text
+
     @pytest.mark.parametrize("language,alternate", [("en", "ar"), ("ar", "en")])
     def test_the_switch_stays_on_a_refusal(self, language: str, alternate: str) -> None:
         """Followed rather than asserted as a string.
@@ -781,3 +801,4 @@ class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
         team = _shell().get(f"{SHELL_PREFIX}/en/org-acme/team").text
 
         assert _organization_frame(self._issued("en")) == _organization_frame(team)
+

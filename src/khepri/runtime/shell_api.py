@@ -454,7 +454,12 @@ def add_shell_routes(
             return _team_response(
                 services, environment, language=language, context=context
             )
-        if surface == "":
+        # The chooser answers the language address and nothing else. `surface` is read at index 2,
+        # so it is also `""` for `/{language}/{anything}` -- and testing that name alone made an
+        # unknown two-segment path render the chooser at `200`, the one answer `FR-046` says an
+        # unknown path may not get. What separates them is whether anything past the language
+        # carries a name: `/en` and `/en/` are the same address, and `/en/no-such-surface` is not.
+        if surface == "" and not any(segment for segment in segments[1:]):
             return _switcher(
                 environment,
                 language=language,
