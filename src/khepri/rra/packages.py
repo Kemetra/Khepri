@@ -59,6 +59,7 @@ from khepri.rra.sessions import (
     require_upload_consent,
 )
 from khepri.rra.storage import StoredEnvelope
+from khepri.rra.versions import REASON_PACKAGE_VERSION_UNADMITTED
 
 
 class ProfileNotFound(LookupError):
@@ -67,6 +68,46 @@ class ProfileNotFound(LookupError):
 
 class PackageRefused(ValueError):
     """The dataset cannot answer a governed fact package."""
+
+
+#: What a caller is told when a package refusal's own text is not for them.
+#:
+#: Beside `PackageRefused` rather than in `api`, following `SESSION_UNAVAILABLE`: the seam that
+#: raises a refusal owns the wording that replaces it, so a second surface cannot invent a
+#: different one for the same cause.
+PACKAGE_UNAVAILABLE = "Fact package is unavailable."
+
+
+def package_refused_detail(error: PackageRefused) -> str:
+    """The customer-facing text for a package refusal.
+
+    **Selective rather than blanket, deliberately.** Most `PackageRefused` text is written *for*
+    the caller -- a stored profile that no longer describes the input, a package published under a
+    superseded version -- and replacing all of it would remove the only account of what to fix.
+    One refusal is not: `assert_versions_admitted` names a governed reason code and all three
+    internal version identifiers, and `build_session_package` forwards that text verbatim.
+
+    **`RRA-009` tiers that reason Internal, and a tier is a claim about every path the text can
+    travel.** The original justification -- "it fires while a package is being built, so no report
+    is published and no customer can encounter it" -- was true of the report and silently assumed
+    the report was the only surface. The `409` body is another. A later surface -- a CLI, a
+    webhook, a support export -- inherits the same obligation rather than rediscovering it.
+
+    Matched on the governed reason code rather than on prose, so rewording the message cannot
+    start the leak again. The three other `raise PackageRefused` sites carry fixed customer-safe
+    prose with no wrapping, so the prefix cannot be defeated by a message built around it.
+
+    **Both `409` handlers route through this, and only one of them can reach the reason.**
+    `read_retail_facts` reads an already-stored package and never calls `build_fact_package`, so
+    its guard is defensive rather than exercised -- reverting that call site alone leaves the
+    tests green, and no case is manufactured for an unreachable path. It is guarded anyway so a
+    later read path that does construct cannot reintroduce the leak by inheriting the older
+    `str(error)` form.
+    """
+    detail = str(error)
+    if detail.startswith(f"{REASON_PACKAGE_VERSION_UNADMITTED}:"):
+        return PACKAGE_UNAVAILABLE
+    return detail
 
 
 class PackageCorrupted(ValueError):
@@ -441,8 +482,10 @@ __all__ = [
     "FactPackageRecord",
     "FactPackageRepository",
     "FactPackageService",
+    "PACKAGE_UNAVAILABLE",
     "PackageCorrupted",
     "PackageRefused",
     "PackageVersions",
     "ProfileNotFound",
+    "package_refused_detail",
 ]
