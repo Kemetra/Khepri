@@ -1585,7 +1585,13 @@ def _analysed(package: FactPackage) -> _Analysed:
             for fact in stated
         )
         caveats.extend(_scoped(section_id, stated, refused))
-    figures.extend(_curve_figures(package))
+    # Gated with the family it belongs to. The curve is retained on the package
+    # rather than derived by `concentration.derive`, so it is appended out here
+    # -- which meant the family's `continue` refused the section while the curve
+    # published anyway, under the very pairing the gate refused. `_section` then
+    # read those figures as a present section and discarded the refusal.
+    if SECTION_CONCENTRATION not in refusals:
+        figures.extend(_curve_figures(package))
     return _Analysed(
         figures=tuple(figures),
         refusals=refusals,

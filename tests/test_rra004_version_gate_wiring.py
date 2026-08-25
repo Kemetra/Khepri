@@ -91,6 +91,93 @@ def test_a_family_on_an_unadmitted_formula_refuses_only_itself(
     ), "comparison did not move, so it must still publish"
 
 
+def test_the_concentration_curve_does_not_escape_its_family_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The curve is appended outside the family loop, so `continue` misses it.
+
+    `_analysed` extends its figures with `_curve_figures(package)` after the
+    loop, and `curve_series` stamps the family's own version. Skipping
+    `concentration.derive` therefore refused the section while the curve was
+    still published under the unadmitted pairing -- and `_section` reads present
+    figures as a present section, discarding the recorded refusal.
+
+    Asserting on the figures rather than on the refusal is what makes this test
+    able to fail: the refusal was already being recorded correctly while the
+    output escaped anyway.
+    """
+    from khepri.rra import bundle
+    from khepri.rra.analysis import concentration
+
+    monkeypatch.setattr(
+        concentration,
+        "CONCENTRATION_FORMULA_VERSION",
+        "rra008.concentration.v2",
+    )
+
+    analysed = bundle._analysed(_package_with_a_concentration_curve())
+
+    assert not [
+        figure
+        for figure in analysed.figures
+        if figure.section == bundle.SECTION_CONCENTRATION
+    ], "no concentration figure may publish under an unadmitted pairing"
+    assert analysed.refusals.get(bundle.SECTION_CONCENTRATION) == (
+        REASON_FAMILY_VERSION_UNADMITTED
+    )
+
+
+def test_the_concentration_curve_publishes_on_the_shipped_pairing() -> None:
+    """Keeps the previous test honest: the curve is normally there to lose."""
+    from khepri.rra import bundle
+
+    analysed = bundle._analysed(_package_with_a_concentration_curve())
+
+    assert [
+        figure
+        for figure in analysed.figures
+        if figure.section == bundle.SECTION_CONCENTRATION
+    ]
+
+
+def _package_with_a_concentration_curve() -> object:
+    """Rows over a product dimension, so concentration has a set to rank."""
+    import hashlib
+    from datetime import date, timedelta
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.facts import build_fact_package
+    from khepri.rra.intake import CSV_MEDIA_TYPE
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+
+    start = date(2026, 1, 5)
+    rows = [
+        ("50.00", 5, "Aspirin"),
+        ("100.00", 10, "Bandage"),
+        ("180.00", 12, "Cough Syrup"),
+        ("60.00", 6, "Dressing"),
+    ]
+    body = b"".join(
+        f"{(start + timedelta(days=i)).isoformat()},{amount},{units},INV-{i},{product}\n".encode()
+        for i, (amount, units, product) in enumerate(rows)
+    )
+    content = b"date,revenue,units,invoice_no,product\n" + body
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile)
+    return build_fact_package(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        profile=profile,
+        mapping=mapping,
+        decision=assess_admissibility(profile, mapping),
+    )
+
+
 def _package_with_two_settled_periods() -> object:
     """Four consecutive days, which leaves two settled periods to compare."""
     import hashlib
@@ -122,3 +209,70 @@ def _package_with_two_settled_periods() -> object:
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
     )
+
+
+def test_the_version_refusal_names_which_analysis_is_unavailable() -> None:
+    """`RRA-009` requires a refusal to name the unavailable capability.
+
+    Every other section reason belongs to one family and so names itself. This
+    one is shared by all four, and the Excel limitations sheet writes the
+    message with no heading beside it -- so "this analysis" left a reader unable
+    to tell which of comparison, concentration, growth or basket was missing,
+    and two mismatches produced two identical lines.
+    """
+    from khepri.rra.bundle import (
+        SECTION_BASKET,
+        SECTION_COMPARISON,
+        SECTION_CONCENTRATION,
+        SECTION_GROWTH,
+    )
+    from khepri.rra.rendering.wording import (
+        LANGUAGE_ARABIC,
+        LANGUAGE_ENGLISH,
+        SECTION_HEADINGS,
+        refusal_message,
+    )
+
+    sections = (
+        SECTION_COMPARISON,
+        SECTION_CONCENTRATION,
+        SECTION_GROWTH,
+        SECTION_BASKET,
+    )
+    for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH):
+        template = refusal_message(
+            REASON_FAMILY_VERSION_UNADMITTED,
+            context="section",
+            language=language,
+        )
+        rendered = {
+            template.format(section=SECTION_HEADINGS[language][section])
+            for section in sections
+        }
+        assert len(rendered) == len(sections), (
+            "each family's refusal must read differently from the others"
+        )
+        for section in sections:
+            assert SECTION_HEADINGS[language][section] in template.format(
+                section=SECTION_HEADINGS[language][section]
+            )
+
+
+def test_no_surface_renders_the_section_placeholder_literally() -> None:
+    """A placeholder nobody fills is an internal token on a customer page.
+
+    `caveat_prose` carries a section-tier refusal travelling as a scoped
+    disclosure, and its section branch returned the template unfilled. The
+    HTML surface renders exactly that string, so `{section}` would have reached
+    a reader.
+    """
+    from khepri.rra.bundle import SECTION_GROWTH
+    from khepri.rra.rendering.wording import (
+        LANGUAGE_ARABIC,
+        LANGUAGE_ENGLISH,
+        caveat_prose,
+    )
+
+    code = f"{SECTION_GROWTH}:{REASON_FAMILY_VERSION_UNADMITTED}"
+    for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH):
+        assert "{" not in caveat_prose(code, language)

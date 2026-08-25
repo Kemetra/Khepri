@@ -325,8 +325,9 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "file are measured over different sets of rows."
             ),
             "family_version_pairing_unadmitted": (
-                "This analysis is not shown — it is being released in stages, "
-                "and the part that produces it has not yet been released "
+                "{section} is not shown — this analysis is being released in "
+                "stages, and "
+                "the part that produces it has not yet been released "
                 "alongside the part that reads your file. The rest of this "
                 "report is unaffected and its figures are complete. Nothing is "
                 "missing from your export and no column needs to change. This "
@@ -389,7 +390,7 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "من الصفوف."
             ),
             "family_version_pairing_unadmitted": (
-                "هذا التحليل غير معروض — يصدر على مراحل، والجزء الذي ينتجه لم "
+                "{section} غير معروض — يصدر هذا التحليل على مراحل، والجزء الذي ينتجه لم "
                 "يصدر بعد مع الجزء الذي يقرأ ملفك. بقية هذا التقرير غير متأثرة "
                 "وأرقامها كاملة. لا ينقص ملفك شيء ولا يحتاج أي عمود إلى تعديل. "
                 "سيظهر هذا القسم عند صدور الإصدار المتبقي، ولا يلزمك أي إجراء."
@@ -682,6 +683,31 @@ def caveat_message(code: str, language: str) -> str:
 
 RESULT_CAVEAT_SEPARATOR = ":"
 
+# What a section is called when the caller cannot name it. A scoped disclosure
+# travels attached to its own section, so the reader already knows which one --
+# but the sentence still has to read as English rather than as a bare token.
+_UNNAMED_SECTION = {
+    LANGUAGE_ENGLISH: "This analysis",
+    LANGUAGE_ARABIC: "هذا التحليل",
+}
+
+
+def section_refusal_message(section_id: str, reason: str, language: str) -> str:
+    """A section's refusal, naming the analysis a reader has lost.
+
+    Most section reasons belong to one family and name it implicitly. The
+    version pairing reason is shared by all four, so without the heading a
+    limitations sheet reads "this analysis is not shown" four identical times
+    and `RRA-009`'s requirement to name the unavailable capability is unmet.
+
+    Filled for every reason rather than only the shared one, so a message that
+    later wants the section does not need a second rendering path -- `format`
+    leaves prose without the placeholder untouched.
+    """
+    return refusal_message(reason, context="section", language=language).format(
+        section=SECTION_HEADINGS[language][section_id],
+    )
+
 
 def caveat_prose(code: str, language: str) -> str:
     """Return prose for a caveat or a result-tier refusal travelling as one."""
@@ -689,7 +715,15 @@ def caveat_prose(code: str, language: str) -> str:
         return caveat_message(code, language)
     result, reason = code.rsplit(RESULT_CAVEAT_SEPARATOR, 1)
     if reason in GOVERNED_SECTION_REASONS:
-        return refusal_message(reason, context="section", language=language)
+        # The left half is a metric scope such as
+        # `revenue_delta_percent.year_over_year`, not a section id, so the
+        # section heading is not recoverable here. A scoped disclosure is
+        # already attached to the section a reader is looking at, which is what
+        # makes that acceptable -- but the placeholder must not survive, so it
+        # renders as the generic phrase rather than as a raw token.
+        return refusal_message(reason, context="section", language=language).format(
+            section=_UNNAMED_SECTION[language],
+        )
     metric = _result_business_name(result, language)
     return refusal_message(reason, context="result", language=language).format(
         metric=metric,
