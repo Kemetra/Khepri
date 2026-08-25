@@ -41,6 +41,8 @@ from khepri.rra.bundle import (
     GOVERNED_FIGURE_LABELS,
     KIND_VALUE,
     LANGUAGE_DIRECTION,
+    ORDERED_SECTIONS,
+    SECTION_REASONS,
     SECTION_REFUSED,
     SURFACE_WEB,
     CitedFigure,
@@ -60,11 +62,11 @@ from khepri.rra.rendering.charts import ChartView, build_chart
 from khepri.rra.rendering.wording import (
     CHART_DESCRIPTIONS,
     LABEL_WORDING,
-    REFUSAL_WORDING,
     SECTION_HEADINGS,
     business_metric_name,
     caveat_prose,
     kind_qualifier,
+    section_refusal_message,
 )
 from khepri.rra.report_artifacts import (
     HTML_MEDIA_TYPE,
@@ -94,6 +96,28 @@ REPORT_REFERENCE_WIDTH = 8
 # are held here rather than in the template so that the two languages are one
 # table with one key set, and a heading added to one cannot silently be missing
 # from the other.
+def _section_refusal_prose(language: str) -> dict[str, dict[str, str]]:
+    """Refusal prose per section, already filled.
+
+    The template used to index `REFUSAL_WORDING["section"]` by reason and print
+    the value, which was fine while every section reason named its own family.
+    The version pairing reason is shared by all four and carries a `{section}`
+    placeholder, so the raw mapping put a literal brace on the page and in the
+    PDF that extends the same template.
+
+    Nested by section then reason rather than filled once, because the same
+    reason renders differently per section -- which is the whole point of naming
+    the analysis a reader has lost.
+    """
+    return {
+        section: {
+            reason: section_refusal_message(section, reason, language)
+            for reason in SECTION_REASONS[section]
+        }
+        for section in ORDERED_SECTIONS
+    }
+
+
 _CHROME: dict[str, dict[str, str]] = {
     LANGUAGE_ENGLISH: {
         "title": "Retail report",
@@ -143,7 +167,7 @@ _CHROME: dict[str, dict[str, str]] = {
         "state_column": "State",
         "reason_column": "Reason",
         "commentary_citations": "Commentary citations",
-        "refusal_prose": REFUSAL_WORDING["section"][LANGUAGE_ENGLISH],
+        "refusal_prose": _section_refusal_prose(LANGUAGE_ENGLISH),
         # Shared customer wording is read from `wording` rather than copied here.
         # Every duplicate would be a place for surfaces or languages to drift into
         # naming the same section, chart, label, or refusal differently.
@@ -189,7 +213,7 @@ _CHROME: dict[str, dict[str, str]] = {
         "state_column": "الحالة",
         "reason_column": "السبب",
         "commentary_citations": "إسنادات التعليق",
-        "refusal_prose": REFUSAL_WORDING["section"][LANGUAGE_ARABIC],
+        "refusal_prose": _section_refusal_prose(LANGUAGE_ARABIC),
         "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
         "labels": LABEL_WORDING[LANGUAGE_ARABIC],

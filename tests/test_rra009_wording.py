@@ -210,8 +210,8 @@ def test_metric_business_name_refuses_an_unknown_code() -> None:
         wording.metric_business_name("not_a_governed_metric", LANGUAGE_ENGLISH)
 
 
-def test_section_refusal_universe_is_eight_codes() -> None:
-    assert len(_SECTION_REFUSAL_CODES) == 8
+def test_section_refusal_universe_is_nine_codes() -> None:
+    assert len(_SECTION_REFUSAL_CODES) == 9
 
 
 def test_refusal_wording_section_tier_covers_every_code_in_every_language() -> None:

@@ -32,6 +32,7 @@ from khepri.rra.packages import (
     PackageCorrupted,
     PackageRefused,
     ProfileNotFound,
+    package_refused_detail,
 )
 from khepri.rra.profiling import ProfileRejected
 from khepri.rra.report_api import add_report_routes
@@ -351,7 +352,9 @@ def create_app(
             except ProfileNotFound as error:
                 raise HTTPException(status_code=404, detail=str(error)) from error
             except PackageRefused as error:
-                raise HTTPException(status_code=409, detail=str(error)) from error
+                raise HTTPException(
+                    status_code=409, detail=package_refused_detail(error)
+                ) from error
             except (PackageCorrupted, ProfileCorrupted) as error:
                 raise HTTPException(
                     status_code=503,
@@ -385,7 +388,9 @@ def create_app(
             except ConsentRequired as error:
                 raise HTTPException(status_code=403, detail=str(error)) from error
             except PackageRefused as error:
-                raise HTTPException(status_code=409, detail=str(error)) from error
+                raise HTTPException(
+                    status_code=409, detail=package_refused_detail(error)
+                ) from error
             except (PackageCorrupted, ProfileCorrupted) as error:
                 raise HTTPException(
                     status_code=503,
