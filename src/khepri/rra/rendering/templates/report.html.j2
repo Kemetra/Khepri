@@ -65,9 +65,16 @@
 <p class="refused">{{ chrome.refusal_prose[section.section_id][section.reason] }}</p>
 {% else %}
 {% if section.chart %}{{ chart(section.chart, section.section_id, chrome) }}{% endif %}
-<div class="scroller" role="region" tabindex="0" aria-label="{{ chrome.business_caption }}">
+{#
+  Named by the section's own heading and this table's caption, in that order, so a landmark
+  list reads "Growth -- The figures in this section" rather than one generic name repeated
+  once per section. `aria-labelledby` rather than an `aria-label` string because it composes
+  names the translators already own, in both languages, with no separator invented here.
+#}
+<div class="scroller" role="region" tabindex="0"
+     aria-labelledby="{{ section.section_id }}-heading {{ section.section_id }}-figures-caption">
 <table class="figures">
-<caption>{{ chrome.business_caption }}</caption>
+<caption id="{{ section.section_id }}-figures-caption">{{ chrome.business_caption }}</caption>
 <thead>
 <tr>
 <th scope="col">{{ chrome.business_figure }}</th>
@@ -119,9 +126,14 @@
   label; it is deliberately not a zero, which would be a number nobody computed.
 #}
 {% for table in section.series %}
-<div class="scroller" role="region" tabindex="0" aria-label="{{ chrome.series_caption }}">
+{#
+  A section may carry several series tables, so the caption id carries `loop.index` as well
+  as the section: without it every breakdown in every section shares one landmark name.
+#}
+<div class="scroller" role="region" tabindex="0"
+     aria-labelledby="{{ section.section_id }}-heading {{ section.section_id }}-series-caption-{{ loop.index }}">
 <table class="figures figures--series">
-<caption>{{ chrome.series_caption }}</caption>
+<caption id="{{ section.section_id }}-series-caption-{{ loop.index }}">{{ chrome.series_caption }}</caption>
 <thead>
 <tr>
 <th scope="col">{{ chrome.series_label }}</th>
