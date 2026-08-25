@@ -4,7 +4,13 @@ const table = document.querySelector("#mapping-table tbody");
 const confirm = document.querySelector("#confirm-mapping");
 const error = document.querySelector("#error-summary");
 const findings = document.querySelector("#profile-findings");
+const vocabulary = document.querySelector("#value-vocabulary");
 const cell = (value) => { const item = document.createElement("td"); item.textContent = value ?? "—"; return item; };
+// A governed code is never printed at a customer: the server owns both languages of
+// its wording and hands them over as data attributes. An unknown code falls back to
+// itself rather than to invented text, so a semantic added without wording is visible
+// as a machine identifier instead of being silently renamed or rendered "undefined".
+const wordFor = (kind, code) => (code == null ? null : vocabulary?.getAttribute(`data-${kind}-${code.replaceAll("_", "-")}`) ?? code);
 
 const load = async () => {
   const state = await resume();
@@ -13,7 +19,7 @@ const load = async () => {
   for (const mapping of profile.mappings) {
     const row = document.createElement("tr");
     const candidate = mapping.candidates[0];
-    row.append(cell(candidate?.safe_label), cell(mapping.semantic), cell(mapping.state), cell(candidate?.evidence?.join(" · ")));
+    row.append(cell(candidate?.safe_label), cell(wordFor("semantic", mapping.semantic)), cell(wordFor("state", mapping.state)), cell(candidate?.evidence?.join(" · ")));
     table.append(row);
   }
   if (!profile.admissible) {
