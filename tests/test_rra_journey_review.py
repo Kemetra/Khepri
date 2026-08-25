@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from importlib.resources import files
 
+import pytest
+from playwright.sync_api import Error, sync_playwright
+
 from khepri.rra.journey.copy import JOURNEY_COPY
 from khepri.rra.mapping import (
     KNOWN_SEMANTICS,
@@ -96,3 +99,42 @@ def test_review_script_renders_governed_wording_and_never_invents_a_meaning() ->
             assert JOURNEY_COPY[language][key] not in script
     # An unknown code falls back to itself, not to invented text.
     assert "?? code" in script
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_browser_resolves_every_governed_code_to_its_wording(language: str) -> None:
+    """Execute the lookup rather than assert its source text.
+
+    The string assertions above cannot tell a working lookup from one whose key
+    derivation is subtly wrong -- `transaction_date` has to reach
+    `data-semantic-transaction-date`, and an off-by-one in that transform reads
+    identically in source. So the real page is loaded into a real DOM and the
+    lookup is run against every governed code, plus one that does not exist.
+    """
+    html = client().get(f"/beta/{language}/review").text
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page()
+            page.set_content(html, wait_until="domcontentloaded")
+            resolved = page.evaluate(
+                """(codes) => {
+                    const node = document.querySelector("#value-vocabulary");
+                    const word = (kind, code) =>
+                        node?.getAttribute(`data-${kind}-${code.replaceAll("_", "-")}`) ?? code;
+                    return codes.map(([kind, code]) => word(kind, code));
+                }""",
+                [["semantic", name] for name in sorted(KNOWN_SEMANTICS)]
+                + [["state", name] for name in _GOVERNED_STATES]
+                + [["semantic", "not_a_governed_semantic"]],
+            )
+        finally:
+            browser.close()
+    expected = [JOURNEY_COPY[language][key] for key in _VALUE_KEYS]
+    # An unknown code is shown as itself: no wording is invented for it.
+    assert resolved == [*expected, "not_a_governed_semantic"]
+    assert not any(word.startswith("data-") or word == "undefined" for word in resolved)
