@@ -187,6 +187,32 @@ def test_each_language_is_its_own_document_declaring_how_it_reads() -> None:
         assert f'dir="{direction}"' in document
 
 
+def test_every_scrolling_table_region_carries_its_own_accessible_name() -> None:
+    # A `region` with an accessible name is a landmark a reader navigates by, and the
+    # scrollers sit inside the section loop -- so naming them all from one caption
+    # produced several landmarks reading "The figures in this section", which is worse
+    # than no landmark because the reader has to guess. Asserted as a set comparison
+    # rather than a substring: a duplicate name is exactly what a substring check
+    # cannot see, and it is the defect. Both languages, because a name composed from
+    # copy is a name that can be composed correctly in one language only.
+    import re
+
+    surface = HtmlReportRenderer().render_html(ReportBundle.of(package()))
+
+    for language in REQUIRED_LANGUAGES:
+        document = surface.documents[language]
+        regions = re.findall(r'<div class="scroller"[^>]*aria-labelledby="([^"]+)"', document)
+        assert regions, f"{language}: no named scrolling region was rendered"
+        assert len(regions) == len(set(regions)), (
+            f"{language}: two table regions share an accessible name: {regions}"
+        )
+        # Every referenced id has to exist, or the name resolves to nothing at all.
+        ids = set(re.findall(r'id="([^"]+)"', document))
+        for name in regions:
+            for token in name.split():
+                assert token in ids, f"{language}: aria-labelledby names absent id {token!r}"
+
+
 def test_the_web_surface_reports_the_size_of_the_documents_it_rendered() -> None:
     # RRA-007 records output size per stage, and the size is only knowable here,
     # where the payload is. Checked against the documents themselves: a surface
