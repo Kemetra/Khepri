@@ -384,10 +384,10 @@ YEAR_OVER_YEAR_COMPARISON = {
     "revenue_delta_absolute": Decimal("170.00"),
     # percentage delta = (current - prior) / prior = 170.00 / 560.00
     #                  = 0.30357142857142857142857... -> half-even at 4 dp.
-    #   The 5th decimal is 1, below the tie, so it rounds down... no: the digits
-    #   are 0.3035|714..., and 7 > 5, so it rounds UP to 0.3036. Chosen to be
-    #   non-terminating on purpose -- a ratio like 0.5000 would pass under any
-    #   rounding mode and discriminate nothing.
+    #   Split at the retained place: 0.3035|714... The first discarded digit is
+    #   7, above the tie, so it rounds UP to 0.3036 -- no half-even tie arises
+    #   here. Chosen to be non-terminating on purpose: a ratio like 0.5000 would
+    #   pass under any rounding mode and discriminate nothing.
     "revenue_delta_percent": Decimal("0.3036"),
     # units delta = 17 - 14 = 3
     "units_delta_absolute": Decimal("3"),
