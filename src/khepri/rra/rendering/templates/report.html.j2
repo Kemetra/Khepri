@@ -65,7 +65,7 @@
 <p class="refused">{{ chrome.refusal_prose[section.section_id][section.reason] }}</p>
 {% else %}
 {% if section.chart %}{{ chart(section.chart, section.section_id, chrome) }}{% endif %}
-<div class="scroller">
+<div class="scroller" role="region" tabindex="0" aria-label="{{ chrome.business_caption }}">
 <table class="figures">
 <caption>{{ chrome.business_caption }}</caption>
 <thead>
@@ -119,7 +119,7 @@
   label; it is deliberately not a zero, which would be a number nobody computed.
 #}
 {% for table in section.series %}
-<div class="scroller">
+<div class="scroller" role="region" tabindex="0" aria-label="{{ chrome.series_caption }}">
 <table class="figures figures--series">
 <caption>{{ chrome.series_caption }}</caption>
 <thead>
