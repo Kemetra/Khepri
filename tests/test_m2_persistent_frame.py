@@ -320,6 +320,25 @@ class TestTheLanguageControlPreservesPosition:
         assert copy["frame_language"] in html
         assert f'lang="{copy["frame_language_code"]}"' in html
 
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_the_control_carries_a_direction_and_not_only_a_language(self, language: str) -> None:
+        """`FR-055`, on the one run whose script is always the opposite of the page's.
+
+        `lang` identifies a language and settles no direction, so it was doing none of this work.
+        The Arabic shell renders `English` inside `dir="rtl"`; the English shell renders the
+        Arabic label inside `dir="ltr"`. `FR-055` names the first -- a Latin run inside Arabic
+        prose -- and the second is its mirror, reordered against neutral characters the same way.
+
+        Asserted in **both** languages because that is the whole difference between `auto` and the
+        `ltr` this control could plausibly have been given: a fixed `ltr` is right on the Arabic
+        shell and wrong on the English one, and a single-language case cannot tell them apart.
+        """
+        html = _shell().get(f"{SHELL_PREFIX}/{language}/org-acme/team").text
+        control = html[html.index('class="frame-language"') :][:220]
+
+        assert 'dir="auto"' in control
+        assert SHELL_COPY[language]["frame_language"] in control
+
 
 class TestEverySurfaceCarriesTheFrame:
     """The two surfaces that absorb failure receive only a language, by design."""
