@@ -34,38 +34,77 @@ import pytest
 
 from khepri.rra.coverage import (
     COVERAGE_MANIFEST_VERSION,
+    CompletenessQuery,
     CoverageManifest,
+    ManifestBinding,
+    ManifestExceptions,
     ManifestRefused,
+    ManifestWindow,
     admits_completeness,
     build_coverage_manifest,
 )
+
+_INPUT = "a" * 64
+_CONTRACT = "b" * 64
+_SCOPE = "all-stores"
+_START = date(2026, 1, 1)
+_MIDDLE = date(2026, 1, 2)
+_END = date(2026, 1, 3)
 
 
 def _pairs(scope: str, days: list[date]) -> tuple[tuple[str, date], ...]:
     return tuple((scope, day) for day in days)
 
 
-def _manifest(**overrides: object) -> CoverageManifest:
-    defaults: dict[str, object] = {
-        "input_digest": "a" * 64,
-        "source_contract_digest": "b" * 64,
-        "timezone": "Africa/Cairo",
-        "covered_start": date(2026, 1, 1),
-        "covered_end": date(2026, 1, 3),
-        "aggregate_scope": "all-stores",
-        "store_roster": (),
-        "covered_pairs": _pairs(
-            "all-stores",
-            [date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3)],
+def _manifest(
+    *,
+    window: ManifestWindow | None = None,
+    exceptions: ManifestExceptions | None = None,
+) -> CoverageManifest:
+    """A manifest covering three whole days of one aggregate scope."""
+    return build_coverage_manifest(
+        binding=ManifestBinding(
+            input_digest=_INPUT,
+            source_contract_digest=_CONTRACT,
+            timezone="Africa/Cairo",
         ),
-        "event_kinds": ("sale", "return"),
-        "statuses": ("posted",),
-        "closures": (),
-        "extraction_gaps": (),
-        "partial_terminal_boundary": False,
-    }
-    defaults.update(overrides)
-    return build_coverage_manifest(**defaults)  # type: ignore[arg-type]
+        window=window
+        or ManifestWindow(
+            covered_start=_START,
+            covered_end=_END,
+            aggregate_scope=_SCOPE,
+            store_roster=(),
+            covered_pairs=_pairs(_SCOPE, [_START, _MIDDLE, _END]),
+        ),
+        exceptions=exceptions
+        or ManifestExceptions(event_kinds=("sale", "return"), statuses=("posted",)),
+    )
+
+
+def _admits(
+    manifest: CoverageManifest,
+    *,
+    input_digest: str = _INPUT,
+    source_contract_digest: str = _CONTRACT,
+    scope: str = _SCOPE,
+    start: date = _START,
+    end: date = _END,
+) -> bool:
+    """Ask the default question, varying only what a test is about.
+
+    One call site rather than one per test, so a test reads as the single
+    condition it changes instead of six repeated lines that hide it.
+    """
+    return admits_completeness(
+        manifest,
+        CompletenessQuery(
+            input_digest=input_digest,
+            source_contract_digest=source_contract_digest,
+            scope=scope,
+            start=start,
+            end=end,
+        ),
+    )
 
 
 def test_a_manifest_records_its_governed_version() -> None:
@@ -73,28 +112,12 @@ def test_a_manifest_records_its_governed_version() -> None:
 
 
 def test_a_manifest_admits_the_window_it_covers() -> None:
-    manifest = _manifest()
-
-    assert admits_completeness(
-        manifest,
-        input_digest="a" * 64,
-        source_contract_digest="b" * 64,
-        scope="all-stores",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 3),
-    )
+    assert _admits(_manifest())
 
 
 def test_a_manifest_bound_to_other_bytes_is_refused() -> None:
     """A manifest describes one file and cannot be carried to another."""
-    assert not admits_completeness(
-        _manifest(),
-        input_digest="c" * 64,
-        source_contract_digest="b" * 64,
-        scope="all-stores",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 3),
-    )
+    assert not _admits(_manifest(), input_digest="c" * 64)
 
 
 def test_the_same_bytes_under_a_corrected_contract_are_refused() -> None:
@@ -104,82 +127,60 @@ def test_the_same_bytes_under_a_corrected_contract_are_refused() -> None:
     status coverage against semantics that no longer apply, so it proves
     nothing about this admission.
     """
-    assert not admits_completeness(
-        _manifest(),
-        input_digest="a" * 64,
-        source_contract_digest="d" * 64,
-        scope="all-stores",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 3),
-    )
+    assert not _admits(_manifest(), source_contract_digest="d" * 64)
 
 
 def test_a_day_the_manifest_does_not_cover_is_refused() -> None:
     """Asking about a window wider than what was attested."""
-    assert not admits_completeness(
-        _manifest(),
-        input_digest="a" * 64,
-        source_contract_digest="b" * 64,
-        scope="all-stores",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 4),
-    )
+    assert not _admits(_manifest(), end=date(2026, 1, 4))
 
 
 def test_an_extraction_gap_refuses_the_window_it_falls_in() -> None:
     """A gap is missing data of unknown size, so completeness is not proven."""
-    manifest = _manifest(extraction_gaps=(("all-stores", date(2026, 1, 2)),))
-
-    assert not admits_completeness(
-        manifest,
-        input_digest="a" * 64,
-        source_contract_digest="b" * 64,
-        scope="all-stores",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 3),
+    manifest = _manifest(
+        exceptions=ManifestExceptions(
+            event_kinds=("sale",),
+            statuses=("posted",),
+            extraction_gaps=((_SCOPE, _MIDDLE),),
+        )
     )
+
+    assert not _admits(manifest)
 
 
 def test_an_attested_closure_still_admits_the_window() -> None:
     """A closure proves complete zero activity; zero is the true answer.
 
     This is the assertion that keeps the previous one honest. If closures and
-    gaps were treated alike, a test suite could pass while the product refused
+    gaps were treated alike, the suite would pass while the product refused
     every legitimately shut day.
     """
-    manifest = _manifest(closures=(("all-stores", date(2026, 1, 2)),))
-
-    assert admits_completeness(
-        manifest,
-        input_digest="a" * 64,
-        source_contract_digest="b" * 64,
-        scope="all-stores",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 3),
+    manifest = _manifest(
+        exceptions=ManifestExceptions(
+            event_kinds=("sale",),
+            statuses=("posted",),
+            closures=((_SCOPE, _MIDDLE),),
+        )
     )
+
+    assert _admits(manifest)
 
 
 def test_a_partial_terminal_boundary_refuses_completeness() -> None:
     """The last day is known to be cut off mid-stream."""
-    assert not admits_completeness(
-        _manifest(partial_terminal_boundary=True),
-        input_digest="a" * 64,
-        source_contract_digest="b" * 64,
-        scope="all-stores",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 3),
+    manifest = _manifest(
+        exceptions=ManifestExceptions(
+            event_kinds=("sale",),
+            statuses=("posted",),
+            partial_terminal_boundary=True,
+        )
     )
+
+    assert not _admits(manifest)
 
 
 def test_a_scope_the_manifest_never_attested_is_refused() -> None:
-    assert not admits_completeness(
-        _manifest(),
-        input_digest="a" * 64,
-        source_contract_digest="b" * 64,
-        scope="branch-7",
-        start=date(2026, 1, 1),
-        end=date(2026, 1, 3),
-    )
+    assert not _admits(_manifest(), scope="branch-7")
 
 
 def test_a_manifest_without_scope_or_roster_is_refused_at_construction() -> None:
@@ -189,16 +190,27 @@ def test_a_manifest_without_scope_or_roster_is_refused_at_construction() -> None
     persisted and then discovered at comparison time.
     """
     with pytest.raises(ManifestRefused):
-        _manifest(aggregate_scope=None, store_roster=())
+        _manifest(
+            window=ManifestWindow(
+                covered_start=_START,
+                covered_end=_END,
+                aggregate_scope=None,
+                store_roster=(),
+                covered_pairs=_pairs(_SCOPE, [_START, _MIDDLE, _END]),
+            )
+        )
 
 
 def test_a_manifest_missing_a_day_inside_its_own_window_is_refused() -> None:
     """Covered pairs must actually cover the range the manifest claims."""
     with pytest.raises(ManifestRefused):
         _manifest(
-            covered_pairs=_pairs(
-                "all-stores",
-                [date(2026, 1, 1), date(2026, 1, 3)],
+            window=ManifestWindow(
+                covered_start=_START,
+                covered_end=_END,
+                aggregate_scope=_SCOPE,
+                store_roster=(),
+                covered_pairs=_pairs(_SCOPE, [_START, _END]),
             )
         )
 
@@ -207,6 +219,10 @@ def test_a_day_can_not_be_both_closed_and_a_gap() -> None:
     """They are contradictory attestations about the same day."""
     with pytest.raises(ManifestRefused):
         _manifest(
-            closures=(("all-stores", date(2026, 1, 2)),),
-            extraction_gaps=(("all-stores", date(2026, 1, 2)),),
+            exceptions=ManifestExceptions(
+                event_kinds=("sale",),
+                statuses=("posted",),
+                closures=((_SCOPE, _MIDDLE),),
+                extraction_gaps=((_SCOPE, _MIDDLE),),
+            )
         )

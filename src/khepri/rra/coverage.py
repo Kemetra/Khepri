@@ -78,38 +78,70 @@ class CoverageManifest:
         return frozenset(self.store_roster)
 
 
+@dataclass(frozen=True, slots=True)
+class ManifestBinding:
+    """What a manifest is bound to: one file, read one way, in one timezone.
+
+    Grouped rather than passed flat because these travel together by necessity.
+    A digest without the contract it was attested under is exactly the reuse
+    `RRA-003` names the source contract to prevent, so a signature that let a
+    caller supply one and forget the other would invite the defect back.
+    """
+
+    input_digest: str
+    source_contract_digest: str
+    timezone: str
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestWindow:
+    """What a manifest attests: a span, over scopes, day by day."""
+
+    covered_start: date
+    covered_end: date
+    aggregate_scope: str | None
+    store_roster: tuple[str, ...]
+    covered_pairs: tuple[ScopeDay, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestExceptions:
+    """The days that are not ordinary, and what kind of not-ordinary they are.
+
+    Closures and gaps are opposite claims about a day with no events, so they
+    are grouped where the contrast is visible rather than separated by unrelated
+    parameters.
+    """
+
+    event_kinds: tuple[str, ...]
+    statuses: tuple[str, ...]
+    closures: tuple[ScopeDay, ...] = ()
+    extraction_gaps: tuple[ScopeDay, ...] = ()
+    partial_terminal_boundary: bool = False
+
+
 def build_coverage_manifest(
     *,
-    input_digest: str,
-    source_contract_digest: str,
-    timezone: str,
-    covered_start: date,
-    covered_end: date,
-    aggregate_scope: str | None,
-    store_roster: tuple[str, ...],
-    covered_pairs: tuple[ScopeDay, ...],
-    event_kinds: tuple[str, ...],
-    statuses: tuple[str, ...],
-    closures: tuple[ScopeDay, ...],
-    extraction_gaps: tuple[ScopeDay, ...],
-    partial_terminal_boundary: bool,
+    binding: ManifestBinding,
+    window: ManifestWindow,
+    exceptions: ManifestExceptions,
 ) -> CoverageManifest:
     """One manifest, or a refusal naming what makes it unusable."""
     manifest = CoverageManifest(
         manifest_version=COVERAGE_MANIFEST_VERSION,
-        input_digest=input_digest,
-        source_contract_digest=source_contract_digest,
-        timezone=timezone,
-        covered_start=covered_start,
-        covered_end=covered_end,
-        aggregate_scope=aggregate_scope,
-        store_roster=store_roster,
-        covered_pairs=frozenset(covered_pairs),
-        event_kinds=event_kinds,
-        statuses=statuses,
-        closures=frozenset(closures),
-        extraction_gaps=frozenset(extraction_gaps),
-        partial_terminal_boundary=partial_terminal_boundary,
+        input_digest=binding.input_digest,
+        source_contract_digest=binding.source_contract_digest,
+        timezone=binding.timezone,
+        covered_start=window.covered_start,
+        covered_end=window.covered_end,
+        aggregate_scope=window.aggregate_scope,
+        store_roster=window.store_roster,
+        covered_pairs=frozenset(window.covered_pairs),
+        event_kinds=exceptions.event_kinds,
+        statuses=exceptions.statuses,
+        closures=frozenset(exceptions.closures),
+        extraction_gaps=frozenset(exceptions.extraction_gaps),
+        partial_terminal_boundary=exceptions.partial_terminal_boundary,
     )
     _assert_usable(manifest)
     return manifest
@@ -145,46 +177,46 @@ def _days(start: date, end: date) -> list[date]:
     return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
 
 
+@dataclass(frozen=True, slots=True)
+class CompletenessQuery:
+    """One window, asked about under one binding."""
+
+    input_digest: str
+    source_contract_digest: str
+    scope: str
+    start: date
+    end: date
+
+
 def admits_completeness(
     manifest: CoverageManifest,
-    *,
-    input_digest: str,
-    source_contract_digest: str,
-    scope: str,
-    start: date,
-    end: date,
+    query: CompletenessQuery,
 ) -> bool:
     """Whether this manifest proves this window completely covered.
 
     Fail-closed: every condition must hold, and an unrecognised scope or an
     unattested day is a refusal rather than an absence of evidence.
     """
-    if manifest.input_digest != input_digest:
+    if manifest.input_digest != query.input_digest:
         return False
-    if manifest.source_contract_digest != source_contract_digest:
+    if manifest.source_contract_digest != query.source_contract_digest:
         return False
     if manifest.partial_terminal_boundary:
         return False
-    if scope not in manifest.scopes:
+    if query.scope not in manifest.scopes:
         return False
-    return _every_day_proven(manifest, scope=scope, start=start, end=end)
+    return _every_day_proven(manifest, query)
 
 
-def _every_day_proven(
-    manifest: CoverageManifest,
-    *,
-    scope: str,
-    start: date,
-    end: date,
-) -> bool:
+def _every_day_proven(manifest: CoverageManifest, query: CompletenessQuery) -> bool:
     """Each day attested and none of them a gap.
 
     A closure is deliberately not consulted here: it is already a covered pair,
     and it proves zero activity rather than missing activity.
     """
-    for day in _days(start, end):
-        if (scope, day) not in manifest.covered_pairs:
+    for day in _days(query.start, query.end):
+        if (query.scope, day) not in manifest.covered_pairs:
             return False
-        if (scope, day) in manifest.extraction_gaps:
+        if (query.scope, day) in manifest.extraction_gaps:
             return False
     return True
