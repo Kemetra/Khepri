@@ -41,7 +41,6 @@ from khepri.rca.lifecycle import (
 )
 from khepri.rra.bundle import REQUIRED_SURFACES
 from tests.local_stack_support import requires_local_stack
-from tests.source_contract_support import profile_body
 
 RETAIL_CSV = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -124,7 +123,7 @@ class TestTheWholeJourney:
         assert uploaded.json()["media_type"] == "text/csv"
         assert uploaded.json()["size_bytes"] == len(RETAIL_CSV)
 
-        profiled = client.post("/api/v1/beta/profile", json=profile_body())
+        profiled = client.post("/api/v1/beta/profile", json={"requested_semantics": []})
         assert profiled.status_code == 201, profiled.text
         assert profiled.json()["admissible"] is True
         assert profiled.json()["row_count"] == 4
@@ -191,7 +190,7 @@ class TestIsolationHolds:
             content=RETAIL_CSV,
             headers={"content-type": "text/csv"},
         )
-        client.post("/api/v1/beta/profile", json=profile_body())
+        client.post("/api/v1/beta/profile", json={"requested_semantics": []})
         client.post("/api/v1/beta/facts")
         job_id = client.post("/api/v1/beta/reports", json={}).json()["job_id"]
 

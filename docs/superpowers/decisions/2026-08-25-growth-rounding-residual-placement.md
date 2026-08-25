@@ -1,6 +1,8 @@
 # Growth rounding-residual placement
 
-**Status:** Resolved. Unblocks `V-package` and `V-growth`.
+**Status:** Proposed reading, pending owner confirmation. If confirmed it unblocks
+`V-package` and `V-growth`; if the owner reads `RRA-004` the other way, the residual needs an
+amendment relocating the clause and this note becomes the record of why.
 **Mission:** `docs/superpowers/plans/2026-08-24-deterministic-retail-calculation-mission.md`, Task 1.
 **Governing text:** `RRA-004` "Fact-package provenance" and "Stable contract and versions";
 `RRA-008` "Growth decomposition".
@@ -63,8 +65,11 @@ field would require every package to carry a field that is undefined for most of
 contradict `RRA-004`'s own rule that a new serialized shape creates a new identity — since the
 shape would change for packages whose numbers did not.
 
-This is therefore **not** a governance amendment and does not need an owner merge gate ahead of
-the code slices. It is the reading that makes both specifications simultaneously true.
+On this reading it is **not** a governance amendment. That conclusion is a judgement about what
+`RRA-004` means, not a fact the code settles: an automated review of this branch read the same
+clause as authorizing residual evidence *inside* `rra004.package.v3` and therefore as requiring
+an amendment. The code evidence above is what it is, and the disagreement is about the prose, so
+the owner decides. Recorded rather than resolved.
 
 ## Consequences for the slice map
 

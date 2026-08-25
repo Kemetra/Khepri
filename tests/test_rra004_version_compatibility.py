@@ -137,18 +137,43 @@ def test_the_tables_are_not_empty() -> None:
     assert ADMITTED_FAMILY_PAIRS
 
 
-def test_both_reasons_carry_bilingual_customer_wording() -> None:
-    """A refusal a reader cannot understand is not a governed refusal."""
+def test_the_family_refusal_carries_bilingual_customer_wording() -> None:
+    """A refusal a reader cannot understand is not a governed refusal.
+
+    This one reaches a reader: `RRA-008` requires a family mismatch to refuse
+    only its own section, so the report is still published with the rest of it
+    intact and a customer sees the gap.
+    """
     from khepri.rra.rendering.wording import (
         LANGUAGE_ARABIC,
         LANGUAGE_ENGLISH,
         refusal_message,
     )
 
-    for reason in (
-        REASON_PACKAGE_VERSION_UNADMITTED,
-        REASON_FAMILY_VERSION_UNADMITTED,
-    ):
-        for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH):
-            message = refusal_message(reason, context="result", language=language)
-            assert message.strip()
+    for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH):
+        message = refusal_message(
+            REASON_FAMILY_VERSION_UNADMITTED,
+            context="result",
+            language=language,
+        )
+        assert message.strip()
+
+
+def test_the_package_refusal_is_internal_and_carries_no_customer_wording() -> None:
+    """Its sibling is a different tier, and the difference is not cosmetic.
+
+    `RRA-009` classifies a reason as Internal when "no report is published, so a
+    customer cannot encounter one in a delivered report and no customer-facing
+    catalogue lists them". A package pairing mismatch is caught while the package
+    is built, so the request is refused outright and no report exists. Giving it
+    customer prose would place it in a catalogue whose completeness checks then
+    demand it be rendered somewhere no customer can reach.
+    """
+    from khepri.rra.rendering.wording import LANGUAGE_ENGLISH, refusal_message
+
+    with pytest.raises(KeyError):
+        refusal_message(
+            REASON_PACKAGE_VERSION_UNADMITTED,
+            context="result",
+            language=LANGUAGE_ENGLISH,
+        )

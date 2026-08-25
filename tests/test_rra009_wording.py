@@ -44,10 +44,7 @@ from khepri.rra.facts import (
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.rendering import wording
-from khepri.rra.versions import (
-    REASON_FAMILY_VERSION_UNADMITTED,
-    REASON_PACKAGE_VERSION_UNADMITTED,
-)
+from khepri.rra.versions import REASON_FAMILY_VERSION_UNADMITTED
 
 _FACT_METRICS = (
     METRIC_REVENUE,
@@ -72,7 +69,6 @@ _RESULT_REFUSAL_CODES = frozenset(
         REASON_AMBIGUOUS_MAPPING,
         REASON_DIMENSION_ABSENT,
         REASON_NEGATIVE_BASE,
-        REASON_PACKAGE_VERSION_UNADMITTED,
         REASON_FAMILY_VERSION_UNADMITTED,
     }
 )
@@ -94,16 +90,12 @@ _GOVERNED_CAVEAT_CODES = frozenset(
 )
 
 _ACCEPTED_ARABIC_RESULT_MESSAGES = {
-    REASON_PACKAGE_VERSION_UNADMITTED: (
-        "هذا التقرير غير متاح — الأجزاء التي تقرأ ملفك والأجزاء التي "
-        "تنتج الأرقام على إصدارات محوكمة مختلفة، وجمعها سينشر أرقاماً "
-        "تحت إصدار لم ينتجها. لا يوجد خطأ في ملفك. سيُحل هذا عند إصدار "
-        "النسخ المتبقية معاً."
-    ),
     REASON_FAMILY_VERSION_UNADMITTED: (
-        "{metric} غير معروض — هذا القسم على إصدار محوكم يختلف عن "
-        "الحساب الذي يقرأه، وجمعهما سينشر رقماً تحت إصدار لم ينتجه. "
-        "أقسام التقرير الأخرى غير متأثرة."
+        "{metric} غير معروض — يصدر هذا التحليل على مراحل، والجزء الذي "
+        "ينتجه لم يصدر بعد مع الجزء الذي يقرأ ملفك. بقية هذا التقرير "
+        "غير متأثرة وأرقامها كاملة. لا ينقص ملفك شيء ولا يحتاج أي عمود "
+        "إلى تعديل. سيظهر هذا الرقم عند صدور الإصدار المتبقي، ولا "
+        "يلزمك أي إجراء."
     ),
     REASON_INPUT_UNAVAILABLE: (
         "{metric} غير معروض — لا يحتوي الملف على {column}. الأرقام الأخرى في "
@@ -248,16 +240,17 @@ def test_refusal_message_raises_on_unknown_code() -> None:
         )
 
 
-def test_result_refusal_universe_is_nine_current_codes() -> None:
+def test_result_refusal_universe_is_eight_current_codes() -> None:
     """A deliberate count, moved deliberately.
 
-    Seven until the version compatibility gate landed. It added two result-tier
-    refusals -- an unadmitted package pairing and an unadmitted family pairing --
-    so the universe is nine. The number is asserted rather than derived so that
+    Seven until the version compatibility gate landed. It added one result-tier
+    refusal, the unadmitted family pairing, so the universe is eight. Its sibling
+    -- an unadmitted package pairing -- is Internal under `RRA-009`, because no
+    report is published when it fires and no customer can encounter it. The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
-    assert len(_RESULT_REFUSAL_CODES) == 9
+    assert len(_RESULT_REFUSAL_CODES) == 8
 
 
 def test_refusal_wording_result_tier_covers_every_code_in_every_language() -> None:

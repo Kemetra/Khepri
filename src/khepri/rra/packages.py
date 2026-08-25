@@ -308,19 +308,9 @@ class FactPackageService:
         # The persisted profile is what the caller was shown and what governs
         # admissibility, so the package is refused rather than published against
         # a profile the current bytes and rules no longer produce.
-        #
-        # The source-contract digest is read back from the stored document
-        # rather than recomputed. It records what the operator declared, which
-        # the bytes cannot reproduce -- recomputing it would compare the stored
-        # profile against a blank declaration and refuse every package.
-        rebuilt = build_document(
-            profile,
-            request=request,
-            source_contract_digest=str(
-                profile_record.document.get("source_contract_digest", "")
-            ),
-        )
-        if document_digest(rebuilt) != profile_record.profile_digest:
+        if document_digest(build_document(profile, request=request)) != (
+            profile_record.profile_digest
+        ):
             raise PackageRefused(
                 "Stored profile does not describe the current governed input."
             )

@@ -7,9 +7,13 @@ from typing import Annotated
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from khepri.rra.admissibility import ReportRequest
 from khepri.rra.datasets import (
+    DatasetProfileRecord,
     ProfileCorrupted,
+    ProfileRequestConflict,
     ProfilingService,
+    UploadNotFound,
 )
 from khepri.rra.deletion import DeletionRetryRequired, DeletionService
 from khepri.rra.intake import (
@@ -21,6 +25,7 @@ from khepri.rra.intake import (
     UploadTooLarge,
 )
 from khepri.rra.journey.routes import JourneyServices, add_journey_routes
+from khepri.rra.mapping import KNOWN_SEMANTICS
 from khepri.rra.packages import (
     FactPackageRecord,
     FactPackageService,
@@ -28,7 +33,7 @@ from khepri.rra.packages import (
     PackageRefused,
     ProfileNotFound,
 )
-from khepri.rra.profile_api import add_profile_routes
+from khepri.rra.profiling import ProfileRejected
 from khepri.rra.report_api import add_report_routes
 from khepri.rra.reports import ReportServices
 from khepri.rra.session_cookie import SESSION_COOKIE, SESSION_UNAVAILABLE
@@ -69,6 +74,56 @@ class UploadResponse(BaseModel):
     sha256_hex: str
     media_type: str
     expires_at: datetime
+
+
+class ProfileRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requested_semantics: list[str] = []
+
+
+class ProfileColumnResponse(BaseModel):
+    position: int
+    safe_label: str
+    inferred_type: str
+    non_null_count: int
+    null_count: int
+    null_rate: str
+    distinct_count: int
+    minimum: str | None
+    maximum: str | None
+    date_format: str | None
+    personal_data_risk: bool
+    personal_data_signals: list[str]
+    findings: list[str]
+
+
+class ProfileMappingCandidateResponse(BaseModel):
+    safe_label: str
+    confidence: str
+    evidence: list[str]
+
+
+class ProfileMappingResponse(BaseModel):
+    semantic: str
+    requirement: str
+    state: str
+    candidates: list[ProfileMappingCandidateResponse]
+
+
+class ProfileResponse(BaseModel):
+    profile_id: str
+    profile_version: str
+    mapping_version: str
+    profile_digest: str
+    row_count: int
+    column_count: int
+    admissible: bool
+    reasons: list[str]
+    findings: list[str]
+    excluded_columns: list[str]
+    columns: list[ProfileColumnResponse]
+    mappings: list[ProfileMappingResponse]
 
 
 class FactPackageResponse(BaseModel):
@@ -184,6 +239,88 @@ def create_app(
                 ) from error
             return _upload_response(metadata)
 
+    if profiling_service is not None:
+
+        @app.post(
+            "/api/v1/beta/profile",
+            response_model=ProfileResponse,
+            status_code=status.HTTP_201_CREATED,
+        )
+        def profile_retail_input(
+            payload: ProfileRequestBody,
+            response: Response,
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> ProfileResponse:
+            if session_id is None:
+                raise _session_unavailable()
+            requested = set(payload.requested_semantics)
+            if not requested <= KNOWN_SEMANTICS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Requested retail semantics are not governed.",
+                )
+            try:
+                record, created = profiling_service.profile_session_upload(
+                    session_id=session_id,
+                    now=clock(),
+                    request=ReportRequest(requested_semantics=frozenset(requested)),
+                )
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except ConsentRequired as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except CrossSessionAccessDenied as error:
+                raise _session_unavailable() from error
+            except UploadNotFound as error:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            except ProfileRequestConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            except ProfileRejected as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            except ProfileCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored dataset profile is unavailable.",
+                ) from error
+            except StoragePolicyViolation as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Upload storage is unavailable.",
+                ) from error
+            if not created:
+                response.status_code = status.HTTP_200_OK
+            return _profile_response(record)
+
+        @app.get(
+            "/api/v1/beta/profile",
+            response_model=ProfileResponse,
+        )
+        def read_retail_profile(
+            session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
+        ) -> ProfileResponse:
+            if session_id is None:
+                raise _session_unavailable()
+            try:
+                record = profiling_service.get_session_profile(
+                    session_id=session_id,
+                    now=clock(),
+                )
+            except SessionExpired as error:
+                raise _session_unavailable() from error
+            except ConsentRequired as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except ProfileCorrupted as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Stored dataset profile is unavailable.",
+                ) from error
+            if record is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No dataset profile is available for this session.",
+                )
+            return _profile_response(record)
+
     if package_service is not None:
 
         @app.post(
@@ -264,7 +401,6 @@ def create_app(
     # Declared by their own module, which registers them only when the
     # collaborators were supplied. Same conditional contract as every group
     # above, one function deeper -- see `report_api.add_report_routes`.
-    add_profile_routes(app, service=profiling_service, clock=clock)
     add_report_routes(app, services=report_services, clock=clock)
     add_journey_routes(app, services=journey_services, clock=clock)
 
@@ -322,6 +458,59 @@ def _declared_size(request: Request) -> int | None:
     return size
 
 
+def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:
+    profile = record.document["profile"]
+    mapping = record.document["mapping"]
+    admissibility = record.document["admissibility"]
+    labels = {column["position"]: column["safe_label"] for column in profile["columns"]}
+    return ProfileResponse(
+        profile_id=record.profile_id,
+        profile_version=record.profile_version,
+        mapping_version=record.mapping_version,
+        profile_digest=record.profile_digest,
+        row_count=record.row_count,
+        column_count=record.column_count,
+        admissible=record.admissible,
+        reasons=list(admissibility["reasons"]),
+        findings=list(profile["findings"]),
+        excluded_columns=[
+            labels[position] for position in mapping["excluded_positions"]
+        ],
+        columns=[
+            ProfileColumnResponse(
+                position=column["position"],
+                safe_label=column["safe_label"],
+                inferred_type=column["inferred_type"],
+                non_null_count=column["non_null_count"],
+                null_count=column["null_count"],
+                null_rate=column["null_rate"],
+                distinct_count=column["distinct_count"],
+                minimum=column["minimum"],
+                maximum=column["maximum"],
+                date_format=column["date_format"],
+                personal_data_risk=column["personal_data_risk"],
+                personal_data_signals=list(column["personal_data_signals"]),
+                findings=list(column["findings"]),
+            )
+            for column in profile["columns"]
+        ],
+        mappings=[
+            ProfileMappingResponse(
+                semantic=entry["semantic"],
+                requirement=entry["requirement"],
+                state=entry["state"],
+                candidates=[
+                    ProfileMappingCandidateResponse(
+                        safe_label=candidate["safe_label"],
+                        confidence=candidate["confidence"],
+                        evidence=list(candidate["evidence"]),
+                    )
+                    for candidate in entry["candidates"]
+                ],
+            )
+            for entry in mapping["mappings"]
+        ],
+    )
 
 
 def _package_response(record: FactPackageRecord) -> FactPackageResponse:

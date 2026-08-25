@@ -22,7 +22,6 @@ from khepri.rra.persistence import (
 )
 from khepri.rra.profiling import PROFILE_VERSION
 from khepri.rra.sessions import InvitationService
-from tests.source_contract_support import profile_body
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
 GOLDEN_CSV = (
@@ -149,7 +148,7 @@ def upload(test: Harness, content: bytes = GOLDEN_CSV) -> None:
 def test_profile_requires_a_beta_session() -> None:
     test = harness()
 
-    response = test.client.post("/api/v1/beta/profile", json=profile_body())
+    response = test.client.post("/api/v1/beta/profile", json={})
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Session is unavailable."}
@@ -160,7 +159,7 @@ def test_profile_requires_consent() -> None:
     token = test.invitations.issue_invitation(expires_at=NOW + timedelta(hours=1))
     test.client.post("/api/v1/beta/sessions/redeem", json={"token": token})
 
-    response = test.client.post("/api/v1/beta/profile", json=profile_body())
+    response = test.client.post("/api/v1/beta/profile", json={})
 
     assert response.status_code == 403
 
@@ -169,7 +168,7 @@ def test_profile_requires_a_governed_upload() -> None:
     test = harness()
     redeem_and_consent(test)
 
-    response = test.client.post("/api/v1/beta/profile", json=profile_body())
+    response = test.client.post("/api/v1/beta/profile", json={})
 
     assert response.status_code == 404
 
@@ -179,7 +178,7 @@ def test_profile_admits_a_golden_retail_dataset() -> None:
     redeem_and_consent(test)
     upload(test)
 
-    response = test.client.post("/api/v1/beta/profile", json=profile_body())
+    response = test.client.post("/api/v1/beta/profile", json={})
 
     assert response.status_code == 201
     body = response.json()
@@ -204,7 +203,7 @@ def test_profile_response_excludes_personal_data_from_reporting_inputs() -> None
     redeem_and_consent(test)
     upload(test)
 
-    body = test.client.post("/api/v1/beta/profile", json=profile_body()).json()
+    body = test.client.post("/api/v1/beta/profile", json={}).json()
 
     assert body["excluded_columns"] == ["buyer_email"]
     email = next(
@@ -226,9 +225,9 @@ def test_profile_reports_ranges_only_for_numeric_and_date_columns() -> None:
     redeem_and_consent(test)
     upload(test)
 
-    profiled = test.client.post("/api/v1/beta/profile", json=profile_body())
     columns = {
-        column["safe_label"]: column for column in profiled.json()["columns"]
+        column["safe_label"]: column
+        for column in test.client.post("/api/v1/beta/profile", json={}).json()["columns"]
     }
 
     assert columns["date"]["minimum"] == "2026-01-05"
@@ -243,9 +242,9 @@ def test_rerunning_the_profile_returns_the_preserved_provenance() -> None:
     test = harness()
     redeem_and_consent(test)
     upload(test)
-    first = test.client.post("/api/v1/beta/profile", json=profile_body())
+    first = test.client.post("/api/v1/beta/profile", json={})
 
-    second = test.client.post("/api/v1/beta/profile", json=profile_body())
+    second = test.client.post("/api/v1/beta/profile", json={})
 
     assert first.status_code == 201
     assert second.status_code == 200
@@ -258,7 +257,7 @@ def test_inadmissible_dataset_is_reported_with_fail_closed_reasons() -> None:
     redeem_and_consent(test)
     upload(test, NO_MEASURE_CSV)
 
-    body = test.client.post("/api/v1/beta/profile", json=profile_body()).json()
+    body = test.client.post("/api/v1/beta/profile", json={}).json()
 
     assert body["admissible"] is False
     assert body["reasons"] == ["no_answerable_core_measure"]
@@ -271,7 +270,7 @@ def test_requested_semantics_tighten_admissibility() -> None:
 
     body = test.client.post(
         "/api/v1/beta/profile",
-        json=profile_body(requested_semantics=["category"]),
+        json={"requested_semantics": ["category"]},
     ).json()
 
     assert body["admissible"] is False
@@ -285,7 +284,7 @@ def test_ungoverned_requested_semantics_are_refused() -> None:
 
     response = test.client.post(
         "/api/v1/beta/profile",
-        json=profile_body(requested_semantics=["forecast"]),
+        json={"requested_semantics": ["forecast"]},
     )
 
     assert response.status_code == 400
@@ -301,7 +300,7 @@ def test_unknown_request_fields_are_refused() -> None:
 
     response = test.client.post(
         "/api/v1/beta/profile",
-        json={**profile_body(), "formula": "revenue * 2"},
+        json={"requested_semantics": [], "formula": "revenue * 2"},
     )
 
     assert response.status_code == 422
@@ -313,7 +312,7 @@ def test_stored_content_that_lost_its_digest_is_never_profiled() -> None:
     upload(test)
     test.objects.corrupt = True
 
-    response = test.client.post("/api/v1/beta/profile", json=profile_body())
+    response = test.client.post("/api/v1/beta/profile", json={})
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Upload storage is unavailable."}
@@ -323,7 +322,7 @@ def test_profile_can_be_read_back_for_the_session() -> None:
     test = harness()
     redeem_and_consent(test)
     upload(test)
-    created = test.client.post("/api/v1/beta/profile", json=profile_body())
+    created = test.client.post("/api/v1/beta/profile", json={})
 
     response = test.client.get("/api/v1/beta/profile")
 
@@ -345,7 +344,7 @@ def test_a_second_session_cannot_read_another_profile() -> None:
     test = harness()
     redeem_and_consent(test)
     upload(test)
-    test.client.post("/api/v1/beta/profile", json=profile_body())
+    test.client.post("/api/v1/beta/profile", json={})
     first_session = test.client.cookies["khepri_beta_session"]
 
     test.client.cookies.clear()
@@ -361,7 +360,7 @@ def test_content_deletion_removes_the_session_profile() -> None:
     test = harness()
     session_id = redeem_and_consent(test)
     upload(test)
-    assert test.client.post("/api/v1/beta/profile", json=profile_body()).status_code == 201
+    assert test.client.post("/api/v1/beta/profile", json={}).status_code == 201
 
     deleted = test.client.delete("/api/v1/beta/content")
 

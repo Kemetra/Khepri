@@ -40,7 +40,6 @@ from khepri.rra.persistence import (
 )
 from khepri.rra.profiling import canonical_json
 from khepri.rra.sessions import InvitationService, SessionScope
-from tests.source_contract_support import golden_contract_digest, profile_body
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 GOLDEN_CSV = (
@@ -177,7 +176,7 @@ def prepared(content: bytes = GOLDEN_CSV) -> Harness:
     test = harness()
     redeem_and_consent(test)
     assert test.client.post("/api/v1/beta/uploads", content=content).status_code == 201
-    assert test.client.post("/api/v1/beta/profile", json=profile_body()).status_code == 201
+    assert test.client.post("/api/v1/beta/profile", json={}).status_code == 201
     return test
 
 
@@ -384,7 +383,7 @@ def test_the_package_inherits_the_semantics_the_profile_was_decided_under() -> N
     test.client.post("/api/v1/beta/uploads", content=NO_MEASURE_CSV)
     profiled = test.client.post(
         "/api/v1/beta/profile",
-        json=profile_body(requested_semantics=["store"]),
+        json={"requested_semantics": ["store"]},
     )
     assert profiled.status_code == 201
     assert profiled.json()["admissible"] is False
@@ -641,12 +640,12 @@ def test_reprofiling_under_different_semantics_is_refused() -> None:
         "/api/v1/beta/uploads",
         content=b"date,revenue\n2026-01-05,100.00\n2026-01-06,50.00\n",
     )
-    first = test.client.post("/api/v1/beta/profile", json=profile_body())
+    first = test.client.post("/api/v1/beta/profile", json={})
     assert first.status_code == 201
 
     second = test.client.post(
         "/api/v1/beta/profile",
-        json=profile_body(requested_semantics=["store"]),
+        json={"requested_semantics": ["store"]},
     )
 
     assert second.status_code == 409
@@ -657,7 +656,7 @@ def test_reprofiling_under_the_same_semantics_is_still_idempotent() -> None:
     test = harness()
     redeem_and_consent(test)
     test.client.post("/api/v1/beta/uploads", content=GOLDEN_CSV)
-    body = profile_body(requested_semantics=["store"])
+    body = {"requested_semantics": ["store"]}
 
     first = test.client.post("/api/v1/beta/profile", json=body)
     second = test.client.post("/api/v1/beta/profile", json=body)
@@ -702,7 +701,7 @@ def test_a_profile_race_lost_on_the_uniqueness_conflict_is_still_rechecked() -> 
         "/api/v1/beta/uploads",
         content=b"date,revenue\n2026-01-05,100.00\n2026-01-06,50.00\n",
     )
-    assert test.client.post("/api/v1/beta/profile", json=profile_body()).status_code == 201
+    assert test.client.post("/api/v1/beta/profile", json={}).status_code == 201
     service = ProfilingService(
         sessions=SqlSessionStore(test.factory),
         uploads=SqlUploadRepository(test.factory),
@@ -723,7 +722,7 @@ def test_a_profile_race_won_on_the_same_question_still_returns_the_stored_one() 
     test = harness()
     redeem_and_consent(test)
     test.client.post("/api/v1/beta/uploads", content=GOLDEN_CSV)
-    first = test.client.post("/api/v1/beta/profile", json=profile_body())
+    first = test.client.post("/api/v1/beta/profile", json={})
     assert first.status_code == 201
     service = ProfilingService(
         sessions=SqlSessionStore(test.factory),
@@ -733,11 +732,7 @@ def test_a_profile_race_won_on_the_same_question_still_returns_the_stored_one() 
         new_profile_id=lambda: "prf_racer",
     )
 
-    stored, created = service.profile_session_upload(
-        session_id=_session(test),
-        now=NOW,
-        source_contract_digest=golden_contract_digest(),
-    )
+    stored, created = service.profile_session_upload(session_id=_session(test), now=NOW)
 
     assert created is False
     assert stored.profile_id == first.json()["profile_id"]
