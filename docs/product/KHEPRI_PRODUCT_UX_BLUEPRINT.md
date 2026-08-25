@@ -46,8 +46,10 @@ never of design completeness.
 `AGENTS.md`; `governance/CONSTITUTION.md`; `governance/registry.yaml`; the Master Product Roadmap;
 active `RCA`/`RRA` specifications governing customer surfaces; the merged M2 UX critique
 (`docs/superpowers/specs/2026-08-25-m2-ux-design-critique.md`); the `R6-01` authorization matrix
-design note (`docs/superpowers/specs/2026-08-15-r6-01-authorization-matrix-design.md`); and the M3
-Workspace UX Shape report, read as **design input, not repository authority**.
+design note (`docs/superpowers/specs/2026-08-15-r6-01-authorization-matrix-design.md`), read as
+**implementation evidence only** — `governance/registry.yaml` admits `family`, `specification`, and
+`decision`, so a design note carries no authority; and the M3 Workspace UX Shape report, read as
+**design input, not repository authority**.
 
 `docs/ui/design_handoff_khepri/` (the dark "Nocturne" handoff) is **not** visual or UX authority
 where it conflicts with the shipped product.
@@ -266,6 +268,25 @@ Inside Data, more specific language may be used: *data files* / ملفات ال�
 | **Metrics** | Contextual in M3. A dedicated destination requires a later contract and a demonstrated customer need. |
 | **Workspace** | Not a customer noun (§3). |
 
+### ⚠ CONFLICT-BLOCKED against `W1-05` — not lockable as written
+
+The Master Product Roadmap **outranks this blueprint** (§1), and `W1-05` requires *"Workspace
+Overview, Datasets, Analyses, **Reports**, **Metrics**, and **Activity** surfaces"*
+(`KHEPRI_MASTER_PRODUCT_ROADMAP.md:746`). Four rows above — Reports, Activity, Metrics, and the
+Workspace label — contradict that scope directly.
+
+**Under this document's own precedence chain, the roadmap governs.** These four rows are therefore
+**CONFLICT-BLOCKED**, not LOCKED: they are the recommended product direction, and they cannot be
+implemented against `W1-05` until one of the two artifacts is reconciled.
+
+**The reconciliation the roadmap needs**, if this direction is accepted: `W1-05` narrows to
+*"Overview, Data, Analyses, and Team surfaces"*, with Reports folded into analysis detail, Metrics
+and Activity noted as contextual, and "Workspace" retained only as the internal domain term. That is
+a roadmap amendment, and it is owner work — this blueprint cannot perform it.
+
+Until then a slice planner reading both documents must treat `W1-05` as governing and raise the
+conflict, rather than picking whichever scope is more convenient.
+
 Each destination enters the navigation **in the slice that implements it**, never ahead of it
 (`FR-049`). The navigation also needs a parity-paired label key of its own; it currently borrows the
 Team title, which is already imprecise for one item and wrong for four.
@@ -395,31 +416,44 @@ source values, or anything future retention authority requires deletion to remov
 Where data is deleted, an analysis may retain a safe relationship such as "source data deleted"
 **only if the future contract authorizes that metadata.**
 
-**The exact persisted fields are PROVISIONAL / CONTRACT-BLOCKED.** "Keep a tombstone" is product
-direction; the schema is not invented here.
+**AUTHORITY-BLOCKED — both the existence of a tombstone and its fields.** Whether *any*
+customer-visible historical record survives deletion is itself a retention decision, not merely a
+question of which fields it carries. Active `RCA-001` excludes persistent report history and
+retention changes (`RCA-001:161`), so no current authority permits retaining a record past deletion.
+If the eventual `G2`/`G3` retention decision requires all such metadata to be erased, **that decision
+governs and this direction yields.**
 
-History is not hidden. A disappearing history is worse than an honest tombstone, because a reader who
-cannot find last month's analysis cannot tell deletion from a defect.
+The product *preference* is that a disappearing history is worse than an honest tombstone, because a
+reader who cannot find last month's analysis cannot tell deletion from a defect. That is a preference
+to argue for when the retention decision is made — not a property to implement before it.
 
 ### Deletion UX — LOCKED direction, AUTHORITY-BLOCKED
 
 **M3 deletion is owner-only.** This is product direction and is **not currently an authorized
 commercial action.**
 
-The authoritative commercial authorization contract is the `R6-01` matrix, whose organization-scoped
-action table (§3.1 of `docs/superpowers/specs/2026-08-15-r6-01-authorization-matrix-design.md`)
-currently governs seven actions: promote to owner, demote to member, revoke a membership, resolve an
-isolation scope, switch active organization, issue an invitation, revoke an invitation. **No deletion
-action appears in it.** That table is parsed by the matrix test rather than restated, and a companion
-test asserts every action in it has a matrix class — so a new capability must arrive as its own row
-plus its own coverage entry in the same slice.
+**Where the authority must come from.** `governance/registry.yaml` admits three artifact types —
+`family`, `specification`, and `decision` — and holds **no design notes**. The `R6-01` matrix design
+note (`docs/superpowers/specs/2026-08-15-r6-01-authorization-matrix-design.md`) is therefore
+**implementation evidence, not authority**: adding a row to it cannot grant an authorization cell.
 
-The matrix's own footnote states the governing principle: a new capability is *"a distinct action
-with its own row, not a widening of this cell."*
+Active `RCA-001` is the registered authorization specification, and it **excludes** persistent
+customer workspaces, report history, and retention changes (`RCA-001:161`). A commercial deletion
+action for durable analysis history sits outside what it governs, so it is not the artifact to amend
+either.
 
-**Requirement:** deletion must be added to the authoritative commercial authorization contract, with
-its owner/member/non-member/unauthenticated cells specified, before the UI control ships. Until then
-**do not render the control.**
+**Requirement.** The new action and its owner/member/non-member/unauthenticated cells must be carried
+by the future **active `G3` specification**, or another registered successor artifact, with the
+`R6-01` §3.1 table treated only as the implementation evidence that must then be extended to match.
+Until that authority exists, **do not render the control.**
+
+Implementation evidence for whoever writes that slice: §3.1 currently enumerates seven actions —
+promote to owner, demote to member, revoke a membership, resolve an isolation scope, switch active
+organization, issue an invitation, revoke an invitation — and **no deletion action appears in it**.
+The matrix test *parses* that table rather than restating it, and a companion assertion requires every
+action in it to have a matrix class, so the row and its coverage entry land in one slice. The note's
+own footnote carries the shape: a new capability is *"a distinct action with its own row, not a
+widening of this cell."*
 
 What is already in place: the authorization context carries the actor's role and exposes whether the
 owner column applies, so the mechanism needs no new resolver work. The gap is the governed action,
@@ -567,7 +601,7 @@ anti-reference for these surfaces. No high-fidelity mockups are produced here.
 | Quality summary | trust state, no fixed counts | `T1` metric/quality contracts | `T1` (**PROPOSED**) | **CONTRACT-BLOCKED** |
 | Retention display | one clock, absolute time | `W1-07` lifecycle + deletion evidence | `G2` | **AUTHORITY-BLOCKED** |
 | Tombstones | history survives content | `W1-07`; fields undefined | `G2` / `G3` | **AUTHORITY-BLOCKED** |
-| Deletion action | owner-only | `W1-07` | **`R6-01` §3.1 row + coverage entry** | **AUTHORITY-BLOCKED** |
+| Deletion action | owner-only | `W1-07` | a **registered** artifact (future active `G3`) | **AUTHORITY-BLOCKED** |
 | Activity context | contextual only | `W1-09` | `G3` | **CONTRACT-BLOCKED** |
 | Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **partly SHIPPED**; metric detail **CONTRACT-BLOCKED** |
 | Journey organization identity | make scope legible in `/beta` | — | authority permitting identity to cross the boundary | **AUTHORITY-BLOCKED** |
@@ -589,7 +623,7 @@ gate** for M3. Design may proceed; production code may not.
 | **M3-U4** | Data history and detail | `W1-01`/`W1-04`, M3-U2 | list, detail, lineage | file preview; raw rows; version graph | CONTRACT-BLOCKED |
 | **M3-U5** | Overview | M3-U3, M3-U4 | latest work, data state, attention | KPI cards; charts; business metrics | CONTRACT-BLOCKED |
 | **M3-U6** | Retention and tombstones | `W1-07`, active `G2` | retention display, tombstone rows | per-artifact clocks; inventing tombstone fields | AUTHORITY-BLOCKED |
-| **M3-U7** | Deletion UX | `R6-01` §3.1 row + coverage entry; `W1-07` | owner-only control | member-visible destructive controls; disabled-button education | AUTHORITY-BLOCKED |
+| **M3-U7** | Deletion UX | a registered authorizing artifact (future active `G3`); `W1-07` | owner-only control | member-visible destructive controls; disabled-button education | AUTHORITY-BLOCKED |
 | **M3-U8** | Responsive, RTL, state hardening | M3-U1…U7 | narrow widths, bidi, keyboard, empty and loading | new surfaces | CONTRACT-BLOCKED |
 
 ---
@@ -598,10 +632,10 @@ gate** for M3. Design may proceed; production code may not.
 
 Durable product decisions, safe to carry forward. None grants implementation authority.
 
-1. The customer-visible scope is the **Organization**; "Workspace" stays internal.
-2. Four primary M3 destinations: **Overview, Data, Analyses, Team**.
+1. The customer-visible scope is the **Organization**. *(The "Workspace" label is CONFLICT-BLOCKED against `W1-05` — see §8.)*
+2. Four primary M3 destinations: **Overview, Data, Analyses, Team**. *(CONFLICT-BLOCKED against `W1-05`'s six-surface scope — see §8.)*
 3. Arabic navigation: **الرئيسية · البيانات · التحليلات · الفريق**.
-4. **No separate Reports page**; artifacts are discovered from the analysis that produced them.
+4. **No separate Reports page**; artifacts are discovered from the analysis that produced them. *(CONFLICT-BLOCKED against `W1-05` — see §8.)*
 5. **Analyses is the single durable history spine**, newest first.
 6. **Evidence is contextual** — reached from the claim it supports; no generic Evidence destination.
 7. **Operational state and trust state are separate** and are never fused into one badge.
@@ -613,11 +647,11 @@ Durable product decisions, safe to carry forward. None grants implementation aut
 13. **One content retention clock** for M3; no per-artifact clocks.
 14. **Content existence and history existence are separate facts**, shown separately.
 15. Retention is expressed in **absolute time with timezone**.
-16. **History is never hidden**: expired and deleted work remains as a non-content tombstone.
-17. **Deletion is owner-only** as product direction, and is not rendered until authorized.
+16. **History is not hidden** is a product *preference*, not a locked property: whether any record survives deletion is a retention decision. **AUTHORITY-BLOCKED** — see §11.
+17. **Deletion is owner-only** as product direction, and is not rendered until a registered artifact authorizes it. **AUTHORITY-BLOCKED** — see §11.
 18. **Hide controls that cannot validly complete**; never use a disabled destructive control as permission education.
-19. **Activity is contextual**; M3 navigation does not depend on it shipping.
-20. **Metrics is contextual** in M3.
+19. **Activity is contextual**; M3 navigation does not depend on it shipping. *(CONFLICT-BLOCKED against `W1-05` — see §8.)*
+20. **Metrics is contextual** in M3. *(CONFLICT-BLOCKED against `W1-05` — see §8.)*
 21. **No dead navigation** — a destination appears only when its surface ships; no "Coming Soon".
 22. **Overview is operational, never analytics** — no revenue, sales, branch, category, basket, or concentration content.
 23. **Audit and version identifiers sit behind disclosure**, never leading a primary customer row.
@@ -643,7 +677,9 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Exact `W1` read models | CONTRACT-BLOCKED | `W1-01`, `W1-04` |
 | Quality-summary aggregation contract, and the customer trust labels | CONTRACT-BLOCKED | `T1` (**PROPOSED**) |
 | Exact tombstone fields | CONTRACT-BLOCKED | `G2`/`G3`, `W1-07` |
-| Deletion authority — the owning artifact and its matrix cells | AUTHORITY-BLOCKED | `R6-01` §3.1 row + `ACTION_COVERAGE` entry |
+| Deletion authority | AUTHORITY-BLOCKED | a **registered** artifact (future active `G3`); the `R6-01` note is evidence, not authority |
+| Whether a tombstone exists at all | AUTHORITY-BLOCKED | `G2`/`G3` retention decision; `RCA-001:161` excludes report history |
+| Navigation scope: Reports / Activity / Metrics / "Workspace" | **CONFLICT-BLOCKED** | reconciling this blueprint with `W1-05` (roadmap:746); roadmap governs |
 | Durable progress / resume capability for a running analysis | IMPLEMENTATION-BLOCKED | `W1`; nothing persists commercial progress across a page load today |
 | Exact Activity payload | CONTRACT-BLOCKED | `W1-09` |
 | Journey organization identity | AUTHORITY-BLOCKED | authority permitting identity across the commercial→beta boundary |
