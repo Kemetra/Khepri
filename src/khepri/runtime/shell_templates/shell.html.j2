@@ -9,8 +9,90 @@
 </head>
 <body data-language="{{ language }}">
   <a class="skip-link" href="#main-content">{{ copy.skip }}</a>
+  {#
+    The persistent frame. It degrades by surface rather than rendering one fixed row, because
+    `_unavailable` and `_no_membership` are handed nothing but a language -- "takes no cause, so it
+    can disclose none" -- and `StrictUndefined` would turn an unconditional `organization_name` into
+    a 500 on the two surfaces that exist to absorb failure.
+
+    So the brand and the language control, which need only `language`, are on every surface, and the
+    organization and `Team` appear where a resolved organization was passed. That is `FR-050` holding
+    by construction rather than by care: `unavailable` never receives the context, so its frame is
+    the same whichever cause brought the reader there.
+
+    `Team` is the only destination. `FR-049` forbids rendering an entry for a surface with no
+    implementation, and the dispatcher answers exactly two.
+  #}
   <header class="shell-identity">
-    <span class="brand">KHEPRI</span>
+    {#
+      Named by both spans in source order, the way the organization control is, so the accessible
+      name is "KHEPRI home page" and begins with the text a reader can see. An `aria-label` here
+      *replaced* that text: on the Arabic shell the accessible name held no `KHEPRI` at all, so a
+      speech-input reader who said the one word on the control could not operate it. The wordmark
+      still needs the words -- a picture of a name is not a name -- so they follow it.
+    #}
+    <a class="brand"
+       href="{{ prefix }}/{{ language }}"
+       aria-labelledby="frame-brand-name frame-brand-purpose">
+      <span id="frame-brand-name">KHEPRI</span>
+      <span id="frame-brand-purpose" class="visually-hidden">{{ copy.frame_home_label }}</span>
+    </a>
+    {% if organization_id is defined and organization_id %}
+    {#
+      Named by both spans in source order, so the accessible name is "Acme Trading Change
+      organization" rather than a bare organization name whose purpose a screen reader cannot infer.
+      `dir="auto"` on the name itself: `FR-055` requires a Latin run inside Arabic prose to carry
+      its direction, and an organization name is the most likely Latin run on this surface -- but
+      `Organization.create` restricts the name to no script, so it is just as likely to be Arabic.
+      `auto` derives the direction from the value's first strong character, which is `ltr` for the
+      Latin run `FR-055` is about and `rtl` for an Arabic name that a fixed `ltr` would have
+      reordered around its own punctuation and digits. Either way the run is isolated, which is
+      what the requirement asks for; the fixed value only happened to be right for half the inputs.
+    #}
+    {% if organization_name %}
+    <a class="frame-organization"
+       href="{{ prefix }}/{{ language }}"
+       aria-labelledby="frame-organization-name frame-organization-action">
+      <span id="frame-organization-name" dir="auto">{{ organization_name }}</span>
+      <span id="frame-organization-action" class="visually-hidden">{{ copy.frame_organization_label }}</span>
+    </a>
+    {% else %}
+    {#
+      A resolved organization with no display name still has surfaces. The control above is *named*
+      by its name span, so with nothing to put there it would be a link whose accessible name is the
+      purpose alone -- "Change organization" attached to no organization. The chooser it leads to is
+      reachable from the wordmark, so the frame drops the control and keeps the navigation: an empty
+      name is a missing label, not a missing organization, and `_active_organization_name` returns
+      the same empty string for both a blank name and a listing that carries none.
+    #}
+    <a class="frame-organization-fallback"
+       href="{{ prefix }}/{{ language }}">{{ copy.frame_organization_label }}</a>
+    {% endif %}
+    <nav class="frame-surfaces" aria-label="{{ copy.team_title }}">
+      <a href="{{ prefix }}/{{ language }}/{{ organization_id }}/team">{{ copy.team_title }}</a>
+    </nav>
+    {% endif %}
+    {#
+      `FR-047` makes the language a property of the address, so this swaps the segment and keeps the
+      surface -- scenario 11's "language switch mid-surface, position preserved". `lang` is set so a
+      screen reader pronounces the target language in that language rather than in the page's.
+
+      `language_switch` is the one surface-shaped exception, and it exists because the control
+      cannot keep its promise on `invitation_issued`. That surface is a `POST` result with no
+      address of its own, so there is no address to re-request in the other language: every
+      destination the control could name is a *different* surface, and reaching it destroys the
+      only plaintext copy of the invitation token, which `issue` returns once and never again.
+      A control that says "switch language" and means "discard the secret you were told to copy"
+      is worse than no control, so that surface renders none. `FR-054`'s parity is unharmed --
+      the surface renders in both languages with the same actions in each -- and `FR-055` asks a
+      switch to preserve position, which is a constraint on a switch that exists.
+    #}
+    {% if language_switch %}
+    <a class="frame-language"
+       href="{{ prefix }}/{{ alternate }}{{ surface_path }}"
+       dir="auto"
+       lang="{{ copy.frame_language_code }}">{{ copy.frame_language }}</a>
+    {% endif %}
   </header>
   <main id="main-content" class="shell-main" tabindex="-1">
     {% block content %}{% endblock %}

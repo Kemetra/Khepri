@@ -198,6 +198,65 @@
   color: var(--muted);
 }
 
+/*
+ * The persistent frame. One row: identity at the inline start, the language control at the inline
+ * end, and whatever destinations the surface actually has between them. `flex-wrap` rather than a
+ * media query, because the row has at most four items and wrapping at 320px is the correct
+ * behaviour for all of them -- a breakpoint would encode a guess about which one should go first.
+ */
+.shell-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+}
+
+/* Pushes the language control to the inline end whatever sits before it, so the row reads the same
+ * on a surface with two items as on one with four -- and mirrors in RTL without a second rule. */
+.frame-language {
+  margin-inline-start: auto;
+}
+
+.shell-identity a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+}
+
+/*
+ * The organization name. `max-inline-size` in `ch` rather than `px` so the cap follows the text
+ * rather than the viewport, and the truncation is visual only: the full name stays in the DOM and
+ * therefore in the accessible name the `aria-labelledby` pair composes.
+ */
+.frame-organization > span:first-child {
+  display: inline-block;
+  overflow: hidden;
+  max-inline-size: 24ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/*
+ * Available to the shell for the first time. `journey.css` has carried this since the upload form's
+ * file input; the frame needs it for the organization control's purpose text, and the shell does not
+ * load that stylesheet. Clipped rather than `display: none` so the text reaches a screen reader:
+ * a display-hidden element is removed from the accessibility tree, and the organization control's
+ * accessible name is composed from this span. `clip-path` rather than the `clip` the journey copy
+ * still uses -- `clip` is deprecated in CSS Masking, and `inset(50%)` is its replacement. The
+ * journey's own copy is `RRA`'s file and `RCA-002` excludes changing it, so the two read
+ * differently on purpose until a slice with that authority brings the older one forward.
+ */
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Matches the journey's ring exactly. `journey.css` ships `outline-offset: 3px`, and a ring that
  * shifted between the journey and the shell wrapping it would read as a defect. */
 :focus-visible {

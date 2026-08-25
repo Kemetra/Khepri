@@ -51,6 +51,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
+from khepri.runtime.shell_frame import organization_frame
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
 
@@ -166,6 +167,15 @@ def shell_environment() -> Environment:
     )
 
 
+#: The language the frame's control switches to, derived from `SHELL_COPY` rather than written out,
+#: so adding a third language is a copy change and not also a mapping this module forgot to extend.
+#: With exactly two, "the other one" is well defined; a third makes this a list and the control a
+#: different component, which is the point at which it should stop being a toggle.
+_ALTERNATE = {
+    language: next(other for other in SHELL_COPY if other != language) for language in SHELL_COPY
+}
+
+
 def _language(requested: str) -> str:
     """An unknown language code renders in English rather than failing.
 
@@ -175,9 +185,54 @@ def _language(requested: str) -> str:
     return requested if requested in SHELL_COPY else _DEFAULT_LANGUAGE
 
 
-def _unavailable(environment: Environment, *, language: str) -> Response:
-    """The one surface every refusal reaches. Takes no cause, so it can disclose none."""
-    return _render(environment, "unavailable.html.j2", language=language, status_code=404)
+#: The tail the refusal's language control keeps. Three segments, so `shell_surface` reads a
+#: surface name that is present and unimplemented and answers `unavailable` -- which is `FR-046`
+#: ("an unknown path MUST resolve to the shared unavailable surface") used as written rather than
+#: worked around. It is a constant, so it names no organization and no object, and it is identical
+#: whichever cause produced the refusal. `test_the_canonical_refusal_tail_reaches_the_refusal`
+#: fails the day a surface is implemented under this name, which is what keeps a link that resolves
+#: correctly *because* nothing is there from becoming a link that quietly resolves somewhere else.
+_UNAVAILABLE_TAIL = "/-/unavailable"
+
+
+def _unavailable(
+    environment: Environment,
+    *,
+    language: str,
+    language_switch: bool = True,
+) -> Response:
+    """The one surface every refusal reaches. Takes no cause, so it can disclose none.
+
+    **Its language control keeps the refusal, and cannot keep the address.** With no tail it took
+    `_render`'s empty default and pointed at `{prefix}/{alternate}` -- the organization chooser,
+    answering `200`. That is the "returning them to an entry surface" `FR-055` names outright.
+
+    Echoing the reader's own address would preserve the position exactly, and this surface may not:
+    merged cases assert a refusal carries neither the organization it was asked about nor the
+    object identifier, with no exception for a value the reader supplied, and an `href` is body.
+
+    So the control keeps the *surface* rather than the address. A reader who reaches a refusal in a
+    language they cannot read has one discoverable way into the other -- the recovery exit is in
+    the language they cannot read too -- and `FR-054` puts that reader in scope. The constant
+    discloses nothing and does not vary with the cause, so `FR-050` and `FR-052` hold by
+    construction rather than by care.
+
+    `language_switch=False` is for the one refusal rendered without resolving the actor: an
+    unlisted asset name. The tail is a refusal only for a reader the dispatcher would refuse, and
+    an authenticated account in no organization is not one -- `FR-048` puts it on the next-step
+    surface at `200` before any surface name is read, which is what `FR-048` is for. That reader
+    would have followed the control off a `404` and onto a next step. An asset name is not a
+    surface a reader is on, so it offers no control, rather than the dispatcher learning an
+    exception that would have to outrank `FR-048`.
+    """
+    return _render(
+        environment,
+        "unavailable.html.j2",
+        language=language,
+        status_code=404,
+        surface_path=_UNAVAILABLE_TAIL,
+        language_switch=language_switch,
+    )
 
 
 def _render(
@@ -200,7 +255,22 @@ def _render(
         copy=SHELL_COPY[language],
         assets=SHELL_ASSETS,
         prefix=SHELL_PREFIX,
-        **context,
+        # The frame's language control needs the other language. `FR-047` makes the language a
+        # property of the address, so switching rewrites one segment and keeps the rest; the
+        # alternate is derived here so no surface can forget it and no template has to know how
+        # many languages there are. `surface_path` defaults to the organization chooser's empty
+        # tail and each surface that has a deeper address overrides it through `context`.
+        #
+        # `language_switch` defaults to rendering the control, because every surface with a
+        # destination the frame may name can honour it. `invitation_issued` is the one that cannot:
+        # no address of its own and one unrepeatable secret. It opts out here rather than in the
+        # template, where a surface added later would have had to know to.
+        **{
+            "alternate": _ALTERNATE[language],
+            "surface_path": "",
+            "language_switch": True,
+            **context,
+        },
     )
     return Response(
         content=body,
@@ -245,6 +315,8 @@ def _switcher(
         status_code=200,
         organizations=organizations,
         active_organization_id=active_organization_id,
+        # The chooser is where the frame's organization control leads, so the control is not
+        # rendered here: a link to the surface you are on is a control that does nothing.
     )
 
 
@@ -255,8 +327,19 @@ def _team_response(
     language: str,
     context: Any,
 ) -> Response:
-    """The team surface, rendered from the session's organization."""
+    """The team surface, rendered from the session's organization.
+
+    Resolves the organization's display name for the frame itself rather than taking it as an
+    argument. This function has two callers -- the dispatcher, and the invitation routes through
+    `ShellRendering.team` after an issue or a revoke -- and only one of them holds the organization
+    list. A required parameter would have made the frame's name the caller's problem and left the
+    revoke path rendering a team surface whose frame was missing an element it had a moment before.
+    """
     members = services.organizations.memberships_for_organization(context.organization_id)
+    frame = organization_frame(
+        services.organizations.organizations_for_account(context.account_id),
+        context.organization_id,
+    )
     invitations: tuple[Any, ...] = ()
     if services.invitations is not None:
         invitations = tuple(
@@ -273,6 +356,11 @@ def _team_response(
         invitations=invitations,
         is_owner=getattr(context, "is_owner", False),
         organization_id=context.organization_id,
+        # The organization name the frame shows and the tail its language control keeps. Resolved
+        # through the shared helper rather than spelled here, so the invitation-issued surface --
+        # which this function does not render -- cannot drift out of step with the team surface an
+        # owner reaches it from.
+        **frame,
         # The invitation gateway is optional, and a shell wired without one still renders this
         # surface. An owner would otherwise see an enabled creation form whose every submission
         # `owner_or_none` refuses, which reaches them as the uniform unavailable surface -- a
@@ -309,7 +397,12 @@ def add_shell_routes(
         """
         media_type = _ASSETS.get(name)
         if media_type is None:
-            return _unavailable(environment, language=_DEFAULT_LANGUAGE)
+            # No language control: the one refusal rendered without resolving the actor, so the
+            # canonical tail is not a refusal for every reader who could reach it. See
+            # `_unavailable`.
+            return _unavailable(
+                environment, language=_DEFAULT_LANGUAGE, language_switch=False
+            )
         content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
         return Response(
             content=content,
@@ -361,7 +454,12 @@ def add_shell_routes(
             return _team_response(
                 services, environment, language=language, context=context
             )
-        if surface == "":
+        # The chooser answers the language address and nothing else. `surface` is read at index 2,
+        # so it is also `""` for `/{language}/{anything}` -- and testing that name alone made an
+        # unknown two-segment path render the chooser at `200`, the one answer `FR-046` says an
+        # unknown path may not get. What separates them is whether anything past the language
+        # carries a name: `/en` and `/en/` are the same address, and `/en/no-such-surface` is not.
+        if surface == "" and not any(segment for segment in segments[1:]):
             return _switcher(
                 environment,
                 language=language,
