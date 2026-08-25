@@ -9,12 +9,5 @@
   <h1 id="page-title">{{ copy.expired_title }}</h1>
   <p class="lede">{{ copy.expired_intro }}</p>
   {% endif %}
-  {#
-    Outside the branch, deliberately. This surface may say two different things about what happened,
-    but the way out must not depend on which -- `FR-050` forbids distinguishing the collapsed causes
-    "by copy, status code, page identity, or navigation state", and an exit that differed by branch
-    would be exactly that. Same string, same target, same presence as the shell's `unavailable`.
-  #}
-  <p><a href="/app/{{ language }}">{{ copy.recovery_exit }}</a></p>
 </section>
 {% endblock %}

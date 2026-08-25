@@ -51,6 +51,7 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
+from khepri.runtime.shell_frame import organization_frame
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
 
@@ -175,23 +176,6 @@ _ALTERNATE = {
 }
 
 
-def _active_organization_name(organizations: list[Any], organization_id: str) -> str:
-    """The display name of the session's active organization, from the list already read.
-
-    Matched on the session's organization, never on the address, which `FR-042` gives no authority.
-    An organization the reader holds no membership in is not in this list and so cannot be named,
-    which is `FR-051` holding for the same reason the switcher's enumeration does.
-
-    Falls back to the empty string rather than raising. The name is frame decoration: a listing
-    whose shape does not carry one should render a frame without it, not turn the team surface into
-    a 500. `StrictUndefined` still catches a template referencing a name nobody passed.
-    """
-    for organization in organizations:
-        if getattr(organization, "organization_id", None) == organization_id:
-            return str(getattr(organization, "name", ""))
-    return ""
-
-
 def _language(requested: str) -> str:
     """An unknown language code renders in English rather than failing.
 
@@ -297,7 +281,7 @@ def _team_response(
     revoke path rendering a team surface whose frame was missing an element it had a moment before.
     """
     members = services.organizations.memberships_for_organization(context.organization_id)
-    organization_name = _active_organization_name(
+    frame = organization_frame(
         services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
     )
@@ -317,10 +301,11 @@ def _team_response(
         invitations=invitations,
         is_owner=getattr(context, "is_owner", False),
         organization_id=context.organization_id,
-        organization_name=organization_name,
-        # The tail the language control returns to, so switching language keeps the surface rather
-        # than dropping the reader on the chooser (`FR-054` scenario 11).
-        surface_path=f"/{context.organization_id}/team",
+        # The organization name the frame shows and the tail its language control keeps. Resolved
+        # through the shared helper rather than spelled here, so the invitation-issued surface --
+        # which this function does not render -- cannot drift out of step with the team surface an
+        # owner reaches it from.
+        **frame,
         # The invitation gateway is optional, and a shell wired without one still renders this
         # surface. An owner would otherwise see an enabled creation form whose every submission
         # `owner_or_none` refuses, which reaches them as the uniform unavailable surface -- a

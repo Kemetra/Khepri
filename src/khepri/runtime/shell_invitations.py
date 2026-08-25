@@ -25,6 +25,7 @@ from jinja2 import Environment
 
 from khepri.rca.invitations import InvitationOffer
 from khepri.rca.session_cookie import CommercialSessionCookie
+from khepri.runtime.shell_frame import organization_frame
 
 #: How long an issued invitation stays redeemable.
 #:
@@ -143,6 +144,24 @@ def add_invitation_routes(
         if role not in ROLES or not email:
             return unavailable(environment, language=rendered)
 
+        # **Every fallible read happens before the write, deliberately.** `issue` commits the
+        # invitation and returns the only plaintext copy of its token, which is shown once and
+        # cannot be recovered -- so a listing read that raised after it would 500 an owner whose
+        # invitation exists and whose token is gone, and a retry would issue a second one. Read
+        # the frame first and the failure costs nothing: no invitation, no orphaned token, and the
+        # owner sees the same uniform refusal every other cause produces.
+        #
+        # The frame itself is resolved the way the team surface resolves it. This surface is a
+        # `POST` result with no address of its own, so without a `surface_path` the language
+        # control took `_render`'s empty tail and sent an owner to the chooser -- losing the
+        # surface and the scope on the one page whose secret is shown once. The team surface is
+        # where it goes now, which is where "back to the team" goes and where the reader came
+        # from, and the organization and `Team` controls stop vanishing on the way through.
+        frame = organization_frame(
+            services.organizations.organizations_for_account(context.account_id),
+            context.organization_id,
+        )
+
         now = clock()
         token = services.invitations.issue(
             InvitationOffer(
@@ -166,6 +185,7 @@ def add_invitation_routes(
             # and an owner who just issued an invitation lands on the organization chooser instead
             # of the team they were looking at.
             organization_id=context.organization_id,
+            **frame,
         )
 
     @app.post(

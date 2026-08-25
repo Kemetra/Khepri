@@ -41,16 +41,6 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
 .site-header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border: 1px solid var(--line); background: var(--surface); }
 .brand { display: inline-flex; align-items: center; gap: .75rem; font: 700 .84rem/1 ui-monospace, monospace; letter-spacing: .28em; text-decoration: none; }
 .language-link { min-block-size: 44px; display: inline-flex; align-items: center; padding-inline: .8rem; }
-/* The exit. `margin-inline-start: auto` puts it after the brand and before the language control at
- * every width, and mirrors in RTL without a second rule -- the header is `space-between` with three
- * children now, which would otherwise spread them evenly and read as three peers. */
-.leave-analysis { min-block-size: 44px; display: inline-flex; align-items: center; margin-inline-start: auto; padding-inline: .8rem; color: var(--accent); font-size: .82rem; text-decoration: none; }
-.leave-analysis:hover { color: var(--accent-dark); }
-/* One label is shown and the other is not, at every width. The hidden one is `aria-hidden` in the
- * template and the visible one is never the accessible name, so the full string is announced
- * whichever is painted. */
-.leave-analysis-short { display: none; }
-.leave-analysis-hint { color: var(--muted); font-size: .82rem; }
 .step-nav { min-height: 44px; padding-inline: clamp(1rem, 4.8vw, 3.6rem); border-block-end: 1px solid #e4e8ed; background: var(--surface); }
 .step-nav ol { display: flex; gap: 1.7rem; margin: 0; padding: 0; list-style: none; }
 .step-nav a { display: block; min-block-size: 44px; padding-block: .75rem .6rem; color: #667381; font-size: .75rem; text-decoration: none; }
@@ -118,10 +108,6 @@ th { color: var(--muted); font-size: .78rem; }
   h1 { font-size: clamp(1.75rem, 8vw, 2.15rem); }
   .step-nav ol { justify-content: space-between; gap: .35rem; }
   .step-nav a { font-size: .68rem; }
-  /* Three controls and a wordmark do not fit 320px at full length. Only the visible text shortens;
-   * the accessible name is the full label either way. */
-  .leave-analysis-full { display: none; }
-  .leave-analysis-short { display: inline; }
   .intake-facts { grid-template-columns: 1fr 1fr; gap: 1rem; }
   .intake-facts div:last-child { grid-column: 1 / -1; }
   .drop-zone { min-block-size: 170px; padding: 1.25rem; }

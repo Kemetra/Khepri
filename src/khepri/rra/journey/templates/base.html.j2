@@ -8,37 +8,12 @@
 </head>
 <body data-step="{{ step }}" data-language="{{ language }}">
   <a class="skip-link" href="#main-content">{{ copy.skip }}</a>
-  {#
-    The persistent frame, deliberately thinner than the shell's: a task mode has one exit, not a
-    menu. The brand leaves for `/app` because `/beta/{language}` is the journey's own entry and
-    `common.js` reconciles it straight back to whichever step the session is on -- a link that
-    returned the reader to where they already were.
-
-    **No organization identity here, and that is a boundary rather than an omission.**
-    `open_commercial_session` takes an opaque `owner_id` and nothing else, so that "no `account_id`,
-    `organization_id`, name, slug, or email reaches this function" and `FR-032`/`FR-033` hold *by
-    absence rather than by inspection*. Routing a display name into this template would convert a
-    guarantee held by absence into one held by inspection. The product decision to show it is made;
-    the authority is not, and `RCA-002` disclaims the journey surface while no `RRA` specification
-    governs its chrome. Reserve nothing and render nothing until that gap closes.
-  #}
   <header class="site-header">
-    <a class="brand" href="/app/{{ language }}" aria-label="{{ copy.frame_home_label }}">
+    <a class="brand" href="/beta/{{ language }}" aria-label="{{ copy.product }}">
       <span>KHEPRI</span>
     </a>
-    {#
-      Navigation, not a form: leaving deletes nothing, cancels nothing, and stops no job, so it
-      carries no method and asks for no confirmation. The hint is what makes that legible instead of
-      merely true -- a reader who thinks an exit discards their upload will not use it. The full
-      label stays the accessible name at every width; only the visible text shortens.
-    #}
-    <a class="leave-analysis" href="/app/{{ language }}" aria-label="{{ copy.leave_analysis }}">
-      <span class="leave-analysis-full">{{ copy.leave_analysis }}</span>
-      <span class="leave-analysis-short" aria-hidden="true">{{ copy.leave_analysis_short }}</span>
-    </a>
     <nav aria-label="{{ copy.language_navigation }}">
-      <a class="language-link" href="/beta/{{ alternate }}/{{ step }}"
-         lang="{{ alternate }}">{{ copy.language }}</a>
+      <a class="language-link" href="/beta/{{ alternate }}/{{ step }}">{{ copy.language }}</a>
     </nav>
   </header>
   <nav class="step-nav" aria-label="{{ copy.journey_progress }}">
