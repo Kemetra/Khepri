@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from khepri.rra import facts
+from khepri.rra import facts, versions
 from khepri.rra.analysis import basket, comparison, growth
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
@@ -138,6 +138,8 @@ _RESULT_REASON_CODES = {
     facts.REASON_AMBIGUOUS_MAPPING,
     basket.REASON_DIMENSION_ABSENT,
     comparison.REASON_NEGATIVE_BASE,
+    versions.REASON_PACKAGE_VERSION_UNADMITTED,
+    versions.REASON_FAMILY_VERSION_UNADMITTED,
 }
 _GOVERNED_CAVEAT_CODES = {
     facts.CAVEAT_CURRENCY_NOT_DECLARED,
@@ -424,6 +426,20 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "Attach rate is not shown — the file has no product or category "
                 "column to measure attachment against. Items per sale is unaffected."
             ),
+            "package_version_pairing_unadmitted": (
+                "This report is not available — the parts of the calculation "
+                "that read your file and the parts that produce the figures "
+                "are on different governed versions, and pairing them would "
+                "publish numbers under a version that did not produce them. "
+                "Nothing is wrong with your file. This resolves when the "
+                "remaining versions are released together."
+            ),
+            "family_version_pairing_unadmitted": (
+                "{metric} is not shown — this section is on a different "
+                "governed version from the calculation it reads, and pairing "
+                "them would publish a figure under a version that did not "
+                "produce it. The other sections of this report are unaffected."
+            ),
             "negative_base": (
                 "{metric} is not shown — calculating a percentage change from a "
                 "negative starting value would reverse the apparent direction of "
@@ -457,6 +473,17 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا "
                 "يحتوي الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد "
                 "الأصناف لكل عملية بيع غير متأثر."
+            ),
+            "package_version_pairing_unadmitted": (
+                "هذا التقرير غير متاح — الأجزاء التي تقرأ ملفك والأجزاء التي "
+                "تنتج الأرقام على إصدارات محوكمة مختلفة، وجمعها سينشر أرقاماً "
+                "تحت إصدار لم ينتجها. لا يوجد خطأ في ملفك. سيُحل هذا عند إصدار "
+                "النسخ المتبقية معاً."
+            ),
+            "family_version_pairing_unadmitted": (
+                "{metric} غير معروض — هذا القسم على إصدار محوكم يختلف عن "
+                "الحساب الذي يقرأه، وجمعهما سينشر رقماً تحت إصدار لم ينتجه. "
+                "أقسام التقرير الأخرى غير متأثرة."
             ),
             "negative_base": (
                 "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
