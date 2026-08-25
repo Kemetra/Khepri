@@ -48,8 +48,15 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
 .step-nav .current a { border-block-end: 2px solid var(--accent); color: var(--ink); font-weight: 600; }
 .step-nav span { font-family: ui-monospace, monospace; }
 .journey-shell { width: min(100% - 2rem, 1068px); margin: clamp(2.8rem, 5vw, 4rem) auto; }
-.document-card { max-width: 860px; background: var(--surface); border: 0; padding: 0; box-shadow: none; }
-.document-card.wide { max-width: 100%; }
+/* The journey's page body is a document measure, not a card: one document per
+ * page, hierarchy from type alone, nothing drawn around it. It was called
+ * `.document-card` and the shell's genuine card -- bordered, padded, stacked
+ * several to a page -- carried the same name, so one class meant "no card" here
+ * and "a card" three URLs away. The sheets never co-load, so nothing broke and
+ * no test could see it; a reader crossing /app to /beta saw the content box
+ * change shape. The shell keeps the name it earns and this takes its own. */
+.journey-document { max-width: 860px; background: var(--surface); border: 0; padding: 0; box-shadow: none; }
+.journey-document--wide { max-width: 100%; }
 h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: clamp(1.9rem, 3vw, 2.25rem); font-weight: 650; line-height: 1.15; letter-spacing: -.018em; }
 [dir="rtl"] h1 { letter-spacing: 0; }
 .lede { max-width: 62ch; color: var(--muted); font-size: clamp(1rem, 2vw, 1.16rem); }
@@ -98,7 +105,6 @@ th { color: var(--muted); font-size: .78rem; }
   .site-header { min-height: 60px; }
   .brand span:last-child { max-width: 18ch; font-size: .86rem; }
   .journey-shell { width: min(100% - 1rem, 1050px); margin-block: 1rem 2rem; }
-  .document-card { padding: 0; box-shadow: none; }
   h1 { font-size: clamp(1.75rem, 8vw, 2.15rem); }
   .step-nav ol { justify-content: space-between; gap: .35rem; }
   .step-nav a { font-size: .68rem; }

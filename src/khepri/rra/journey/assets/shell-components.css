@@ -58,6 +58,13 @@
   z-index: 1;
 }
 
+/*
+ * A real card: bordered, padded, and stacked several to a page -- `team.html.j2`
+ * renders two. That is why `margin-block-end` is here and why this side keeps
+ * the name. The journey's page body once shared it while setting `border: 0;
+ * padding: 0`, so the same class meant a card in one half of the product and the
+ * absence of one in the other; it is `.journey-document` now.
+ */
 .document-card {
   max-inline-size: 60rem;
   margin-block-end: var(--space-4, 1rem);
