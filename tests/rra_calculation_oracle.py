@@ -164,9 +164,25 @@ def to_csv(rows: tuple[OracleRow, ...]) -> bytes:
     expectation: it writes each field exactly as the row states it.
 
     `event_kind` and `status` are deliberately not emitted. There is no mapping
-    rule that would resolve them, so a column carrying them would be an unmapped
-    extra rather than a semantic -- and inventing a spelling would change what the
-    RED records measure.
+    rule that would resolve them today, so a column carrying them would be an
+    unmapped extra rather than a semantic -- and inventing a spelling would change
+    what the RED records measure.
+
+    **This is a forward dependency, not a permanent omission, and `V-mapping`
+    discharges it.** A review of this PR observed that a later slice feeding
+    `MESSY_RETURNS_ROWS` through this bridge cannot distinguish its two sales from
+    its return, because `RRA-003` forbids establishing event kind from observed
+    values or signs -- so such a slice would have to refuse the input or infer the
+    kind illegally, and could prove none of the sale-only AOV/ASP literals. That
+    is correct about the destination. The slice it names, however, is the same one
+    that resolves it: `V-mapping` extends the profile request with a source
+    contract carrying an "event-kind column or sale-only declaration", which is
+    the governed spelling this bridge is waiting on.
+
+    So when `V-mapping` lands that contract, this bridge gains the `event_kind`
+    column **and** the matching explicit contract declaration in the same slice.
+    Emitting a column now, ahead of the governed spelling, is what the paragraph
+    above refuses -- not the column itself.
     """
     header = ",".join(CSV_COLUMNS).encode() + b"\n"
 
@@ -309,9 +325,26 @@ CLEAN_PERIOD_TOTALS = {
 }
 
 CLEAN_COMPARISON = {
-    # `RRA-008`, month granularity. These two months are not adjacent, so this is
-    # not the PoP pair; it is the pair the coverage manifest proves complete and
-    # compatible, which is what the specification makes the test of comparability.
+    # `RRA-008`, month granularity. **These two months are 2026-01 and 2026-05,
+    # so this is NOT a governed comparison pair at all**, and the arithmetic below
+    # is what a *correct* refusal must decline to publish -- not a result any
+    # slice may produce.
+    #
+    # An earlier revision of this comment claimed the coverage manifest made the
+    # pair comparable. That was wrong and is corrected here, because a later
+    # slice reading it would have built the defect into `V-comparison`.
+    # `RRA-008` L12-15 is exhaustive on window selection: "Period-over-period
+    # uses the immediately preceding calendar period. Year-over-year uses the
+    # exact same calendar period one year earlier. Nearest observed buckets never
+    # substitute for missing exact counterparts." A manifest proves completeness;
+    # it never licenses comparing arbitrary complete months. 2026-01 is neither
+    # the period preceding 2026-05 nor 2025-05.
+    #
+    # The literals stay because they are the arithmetic of the pair a defective
+    # implementation would report if it fell back to nearest observed buckets,
+    # and `V-comparison` must prove it refuses rather than producing them. The
+    # governed PoP and YoY arithmetic lives in `YEAR_OVER_YEAR_COMPARISON`, whose
+    # pair `RRA-008` does admit.
     #
     # absolute delta = current - prior = 750.00 - 630.00 = 120.00
     "revenue_delta_absolute": Decimal("120.00"),
