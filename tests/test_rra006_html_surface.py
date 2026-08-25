@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from decimal import Decimal
 from importlib import resources
 
@@ -187,61 +188,101 @@ def test_each_language_is_its_own_document_declaring_how_it_reads() -> None:
         assert f'dir="{direction}"' in document
 
 
-def test_every_scrolling_table_is_reachable_and_no_landmark_is_ambiguous() -> None:
-    # Two requirements, because they pull against each other. Every scroller is
-    # focusable, or the columns past the fold need a pointer to reach. And every
-    # scroller that is a *named* `region` carries its own name: a landmark list of
-    # identical labels asks the reader to guess, which is worse than no landmark.
-    #
-    # A section carries one business table, so that one is named. It may carry
-    # several breakdowns whose headings and first label can both collide -- see
-    # `TestADisplayLabelIsNotASeriesIdentity._colliding` -- so those are focusable
-    # and unnamed rather than several landmarks reading alike.
-    #
-    # Names are compared as resolved *text*, not as the `aria-labelledby` value: two
-    # attributes naming two distinct ids whose captions read the same still name both
-    # regions identically, and that is the defect this case exists to catch.
-    import re
+def _scroller_attributes(document: str) -> list[str]:
+    return re.findall(r'<div class="scroller"([^>]*)>', document)
 
+
+def _named_text(document: str) -> dict[str, str]:
+    """Every `h2`/`caption` id and the text it carries.
+
+    Anchored on the tag itself. Starting from any `id="..."` matches the enclosing
+    `<section id=...>` and runs through the `</h2>` inside it, so the heading's own id
+    is never collected and every reference to it looks absent.
+    """
+    # Two passes rather than one pattern spanning tag and content: the single-regex
+    # form depends on the tag and its text sitting in one match, and a rendered
+    # document is free to break a tag across lines or nest another element inside the
+    # heading. Finding the tags first and reading each one's text separately does not.
+    named: dict[str, str] = {}
+    for _tag, attributes, body in re.findall(
+        r"<(h2|caption)([^>]*)>(.*?)</\1>", document, re.S
+    ):
+        identifier = re.search(r'id="([^"]+)"', attributes)
+        if identifier is None:
+            continue
+        named[identifier.group(1)] = re.sub(r"<[^>]+>", "", body).strip()
+    return named
+
+
+def _landmark_names(document: str) -> list[str]:
+    """The accessible name each named scroller resolves to, as text.
+
+    Text rather than the `aria-labelledby` value: two attributes naming two distinct
+    ids whose captions read the same still name both regions identically, and that is
+    the defect these cases exist to catch. An id that names nothing is dropped here and
+    caught by `test_no_scrolling_table_names_an_absent_id`.
+    """
+    text_of = _named_text(document)
+    references = [
+        match.group(1)
+        for match in (
+            re.search(r'aria-labelledby="([^"]+)"', attributes)
+            for attributes in _scroller_attributes(document)
+        )
+        if match is not None
+    ]
+    return [
+        " ".join(text_of[token] for token in reference.split())
+        for reference in references
+        if all(token in text_of for token in reference.split())
+    ]
+
+
+def test_every_scrolling_table_is_reachable_by_keyboard() -> None:
+    # A wide table scrolls inside its own box, so the columns past the fold need a
+    # pointer unless the box is in the tab order.
+    surface = HtmlReportRenderer().render_html(ReportBundle.of(package()))
+
+    for language in REQUIRED_LANGUAGES:
+        scrollers = _scroller_attributes(surface.documents[language])
+        assert scrollers, f"{language}: no scrolling table was rendered"
+        unreachable = [a for a in scrollers if 'tabindex="0"' not in a]
+        assert not unreachable, f"{language}: not keyboard reachable: {unreachable}"
+
+
+def test_no_two_table_landmarks_resolve_to_one_name() -> None:
+    # A named `region` is a landmark a reader navigates by, so repeated regions
+    # sharing a name ask them to guess -- worse than no landmark. A section carries
+    # one business table, which is named; its breakdowns can collide on every visible
+    # value (`TestADisplayLabelIsNotASeriesIdentity._colliding`) and so are focusable
+    # and unnamed instead.
+    surface = HtmlReportRenderer().render_html(ReportBundle.of(package()))
+
+    for language in REQUIRED_LANGUAGES:
+        names = _landmark_names(surface.documents[language])
+        assert names, f"{language}: no scrolling table was named"
+        assert len(names) == len(set(names)), (
+            f"{language}: two landmarks resolve to one accessible name: {names}"
+        )
+
+
+def test_no_scrolling_table_names_an_absent_id() -> None:
+    # An `aria-labelledby` naming an id the document does not carry resolves to no
+    # name at all -- a populated attribute and a nameless landmark.
     surface = HtmlReportRenderer().render_html(ReportBundle.of(package()))
 
     for language in REQUIRED_LANGUAGES:
         document = surface.documents[language]
-        scrollers = re.findall(r'<div class="scroller"([^>]*)>', document)
-        assert scrollers, f"{language}: no scrolling table was rendered"
-        for attributes in scrollers:
-            assert 'tabindex="0"' in attributes, (
-                f"{language}: a scrolling table is not keyboard reachable: {attributes!r}"
-            )
-
-        # Anchored on the `h2`/`caption` tag itself: starting from any `id="..."`
-        # matches the enclosing `<section id=...>` and runs through the `</h2>` inside
-        # it, so the heading's own id is never collected and every reference to it
-        # looks absent.
-        text_of = {
-            element_id: re.sub(r"<[^>]+>", "", body).strip()
-            for element_id, body in re.findall(
-                r'<(?:h2|caption)[^>]*id="([^"]+)"[^>]*>(.*?)</(?:h2|caption)>',
-                document,
-                re.S,
-            )
+        present = _named_text(document)
+        referenced = {
+            token
+            for attributes in _scroller_attributes(document)
+            for match in [re.search(r'aria-labelledby="([^"]+)"', attributes)]
+            if match is not None
+            for token in match.group(1).split()
         }
-        names = []
-        for attributes in scrollers:
-            reference = re.search(r'aria-labelledby="([^"]+)"', attributes)
-            if reference is None:
-                continue
-            for token in reference.group(1).split():
-                # An `aria-labelledby` naming an absent id resolves to no name at all,
-                # which reads as a populated attribute and a nameless landmark.
-                assert token in text_of, (
-                    f"{language}: aria-labelledby names absent id {token!r}"
-                )
-            names.append(" ".join(text_of[t] for t in reference.group(1).split()))
-
-        assert names, f"{language}: no scrolling table was named"
-        assert len(names) == len(set(names)), (
-            f"{language}: two landmarks resolve to one accessible name: {names}"
+        assert referenced <= set(present), (
+            f"{language}: aria-labelledby names absent ids: {referenced - set(present)}"
         )
 
 
