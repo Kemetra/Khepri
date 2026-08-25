@@ -337,19 +337,8 @@ def create_app(
         ) -> ProfileResponse:
             if session_id is None:
                 raise _session_unavailable()
-            requested = set(payload.requested_semantics)
-            if not requested <= KNOWN_SEMANTICS:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Requested retail semantics are not governed.",
-                )
-            # Built before the upload is read, so a declaration that proves
-            # nothing is refused with its own reason rather than surfacing
-            # later as an unexplained admissibility failure.
-            try:
-                contract = payload.source_contract.to_contract()
-            except ContractRefused as error:
-                raise HTTPException(status_code=400, detail=str(error)) from error
+            requested = _governed_semantics(payload)
+            contract = _admitted_contract(payload)
             try:
                 record, created = profiling_service.profile_session_upload(
                     session_id=session_id,
@@ -548,6 +537,30 @@ def _declared_size(request: Request) -> int | None:
     if size < 0:
         raise HTTPException(status_code=400, detail="Content-Length is invalid.")
     return size
+
+
+def _governed_semantics(payload: ProfileRequestBody) -> set[str]:
+    """The requested semantics, or a refusal naming them as ungoverned."""
+    requested = set(payload.requested_semantics)
+    if not requested <= KNOWN_SEMANTICS:
+        raise HTTPException(
+            status_code=400,
+            detail="Requested retail semantics are not governed.",
+        )
+    return requested
+
+
+def _admitted_contract(payload: ProfileRequestBody) -> SourceContract:
+    """The declared reading of this file, refused if it proves nothing.
+
+    Built before the upload is read, so a declaration that leaves a semantic
+    unproven is refused with its own reason rather than surfacing later as an
+    unexplained admissibility failure.
+    """
+    try:
+        return payload.source_contract.to_contract()
+    except ContractRefused as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:

@@ -81,30 +81,26 @@ def _manifest(
     )
 
 
-def _admits(
-    manifest: CoverageManifest,
-    *,
-    input_digest: str = _INPUT,
-    source_contract_digest: str = _CONTRACT,
-    scope: str = _SCOPE,
-    start: date = _START,
-    end: date = _END,
-) -> bool:
+def _query(**overrides: object) -> CompletenessQuery:
+    """The default question, with any one field replaced."""
+    fields: dict[str, object] = {
+        "input_digest": _INPUT,
+        "source_contract_digest": _CONTRACT,
+        "scope": _SCOPE,
+        "start": _START,
+        "end": _END,
+    }
+    fields.update(overrides)
+    return CompletenessQuery(**fields)  # type: ignore[arg-type]
+
+
+def _admits(manifest: CoverageManifest, **overrides: object) -> bool:
     """Ask the default question, varying only what a test is about.
 
     One call site rather than one per test, so a test reads as the single
     condition it changes instead of six repeated lines that hide it.
     """
-    return admits_completeness(
-        manifest,
-        CompletenessQuery(
-            input_digest=input_digest,
-            source_contract_digest=source_contract_digest,
-            scope=scope,
-            start=start,
-            end=end,
-        ),
-    )
+    return admits_completeness(manifest, _query(**overrides))
 
 
 def test_a_manifest_records_its_governed_version() -> None:

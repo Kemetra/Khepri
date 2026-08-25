@@ -205,9 +205,22 @@ def _assert_exactly_one(mapped: bool, declared: bool, semantic: str) -> None:
         )
 
 
+def _is_iso_currency(code: str) -> bool:
+    """Three uppercase letters, which is the whole of ISO 4217's shape.
+
+    Split from its refusal so the three conditions read as one named question
+    rather than a compound conditional at the raise site.
+    """
+    if len(code) != _ISO_CURRENCY_LENGTH:
+        return False
+    if not code.isalpha():
+        return False
+    return code.isupper()
+
+
 def _assert_iso_currency(code: str) -> None:
     """Exactly one normalized uppercase ISO 4217 code, per `RRA-003`."""
-    if len(code) != _ISO_CURRENCY_LENGTH or not code.isalpha() or not code.isupper():
+    if not _is_iso_currency(code):
         raise ContractRefused(
             "A declared currency must be one uppercase ISO 4217 code."
         )
