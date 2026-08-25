@@ -53,6 +53,19 @@ _EN = {
     ),
     "back_to_team": "Back to the team",
     "new_analysis": "Start a new analysis",
+    # The persistent frame. `frame_home_label` is the brand's accessible name: a wordmark is a
+    # picture of a name, not a name, so a screen reader needs the words.
+    "frame_home_label": "Khepri home",
+    "frame_organization_label": "Change organization",
+    # The control names the language it goes to, in that language, so a reader who cannot read the
+    # current one can still find it. `lang` is set on the element for pronunciation.
+    "frame_language": "العربية",
+    "frame_language_code": "ar",
+    # One wording for every collapsed refusal. `FR-050` forbids distinguishing the causes "by copy,
+    # status code, page identity, or navigation state", and an exit is navigation state -- so this
+    # string, its target, and its presence are identical on `unavailable` and on the journey's
+    # `expired`, whichever cause brought the reader there.
+    "recovery_exit": "Go to your organizations",
 }
 
 _AR = {
@@ -90,6 +103,11 @@ _AR = {
     ),
     "back_to_team": "العودة إلى الفريق",
     "new_analysis": "ابدأ تحليلًا جديدًا",
+    "frame_home_label": "الصفحة الرئيسية لخِبري",
+    "frame_organization_label": "تغيير المؤسسة",
+    "frame_language": "English",
+    "frame_language_code": "en",
+    "recovery_exit": "الانتقال إلى مؤسساتك",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

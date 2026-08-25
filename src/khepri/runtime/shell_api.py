@@ -166,6 +166,32 @@ def shell_environment() -> Environment:
     )
 
 
+#: The language the frame's control switches to, derived from `SHELL_COPY` rather than written out,
+#: so adding a third language is a copy change and not also a mapping this module forgot to extend.
+#: With exactly two, "the other one" is well defined; a third makes this a list and the control a
+#: different component, which is the point at which it should stop being a toggle.
+_ALTERNATE = {
+    language: next(other for other in SHELL_COPY if other != language) for language in SHELL_COPY
+}
+
+
+def _active_organization_name(organizations: list[Any], organization_id: str) -> str:
+    """The display name of the session's active organization, from the list already read.
+
+    Matched on the session's organization, never on the address, which `FR-042` gives no authority.
+    An organization the reader holds no membership in is not in this list and so cannot be named,
+    which is `FR-051` holding for the same reason the switcher's enumeration does.
+
+    Falls back to the empty string rather than raising. The name is frame decoration: a listing
+    whose shape does not carry one should render a frame without it, not turn the team surface into
+    a 500. `StrictUndefined` still catches a template referencing a name nobody passed.
+    """
+    for organization in organizations:
+        if getattr(organization, "organization_id", None) == organization_id:
+            return str(getattr(organization, "name", ""))
+    return ""
+
+
 def _language(requested: str) -> str:
     """An unknown language code renders in English rather than failing.
 
@@ -200,7 +226,12 @@ def _render(
         copy=SHELL_COPY[language],
         assets=SHELL_ASSETS,
         prefix=SHELL_PREFIX,
-        **context,
+        # The frame's language control needs the other language. `FR-047` makes the language a
+        # property of the address, so switching rewrites one segment and keeps the rest; the
+        # alternate is derived here so no surface can forget it and no template has to know how
+        # many languages there are. `surface_path` defaults to the organization chooser's empty
+        # tail and each surface that has a deeper address overrides it through `context`.
+        **{"alternate": _ALTERNATE[language], "surface_path": "", **context},
     )
     return Response(
         content=body,
@@ -245,6 +276,8 @@ def _switcher(
         status_code=200,
         organizations=organizations,
         active_organization_id=active_organization_id,
+        # The chooser is where the frame's organization control leads, so the control is not
+        # rendered here: a link to the surface you are on is a control that does nothing.
     )
 
 
@@ -255,8 +288,19 @@ def _team_response(
     language: str,
     context: Any,
 ) -> Response:
-    """The team surface, rendered from the session's organization."""
+    """The team surface, rendered from the session's organization.
+
+    Resolves the organization's display name for the frame itself rather than taking it as an
+    argument. This function has two callers -- the dispatcher, and the invitation routes through
+    `ShellRendering.team` after an issue or a revoke -- and only one of them holds the organization
+    list. A required parameter would have made the frame's name the caller's problem and left the
+    revoke path rendering a team surface whose frame was missing an element it had a moment before.
+    """
     members = services.organizations.memberships_for_organization(context.organization_id)
+    organization_name = _active_organization_name(
+        services.organizations.organizations_for_account(context.account_id),
+        context.organization_id,
+    )
     invitations: tuple[Any, ...] = ()
     if services.invitations is not None:
         invitations = tuple(
@@ -273,6 +317,10 @@ def _team_response(
         invitations=invitations,
         is_owner=getattr(context, "is_owner", False),
         organization_id=context.organization_id,
+        organization_name=organization_name,
+        # The tail the language control returns to, so switching language keeps the surface rather
+        # than dropping the reader on the chooser (`FR-054` scenario 11).
+        surface_path=f"/{context.organization_id}/team",
         # The invitation gateway is optional, and a shell wired without one still renders this
         # surface. An owner would otherwise see an enabled creation form whose every submission
         # `owner_or_none` refuses, which reaches them as the uniform unavailable surface -- a

@@ -9,8 +9,49 @@
 </head>
 <body data-language="{{ language }}">
   <a class="skip-link" href="#main-content">{{ copy.skip }}</a>
+  {#
+    The persistent frame. It degrades by surface rather than rendering one fixed row, because
+    `_unavailable` and `_no_membership` are handed nothing but a language -- "takes no cause, so it
+    can disclose none" -- and `StrictUndefined` would turn an unconditional `organization_name` into
+    a 500 on the two surfaces that exist to absorb failure.
+
+    So the brand and the language control, which need only `language`, are on every surface, and the
+    organization and `Team` appear where a resolved organization was passed. That is `FR-050` holding
+    by construction rather than by care: `unavailable` never receives the context, so its frame is
+    the same whichever cause brought the reader there.
+
+    `Team` is the only destination. `FR-049` forbids rendering an entry for a surface with no
+    implementation, and the dispatcher answers exactly two.
+  #}
   <header class="shell-identity">
-    <span class="brand">KHEPRI</span>
+    <a class="brand" href="{{ prefix }}/{{ language }}" aria-label="{{ copy.frame_home_label }}">
+      <span>KHEPRI</span>
+    </a>
+    {% if organization_name is defined and organization_name %}
+    {#
+      Named by both spans in source order, so the accessible name is "Acme Trading Change
+      organization" rather than a bare organization name whose purpose a screen reader cannot infer.
+      `dir="ltr"` on the name itself: `FR-055` requires a Latin run inside Arabic prose to carry its
+      direction, and an organization name is the most likely Latin run on this surface.
+    #}
+    <a class="frame-organization"
+       href="{{ prefix }}/{{ language }}"
+       aria-labelledby="frame-organization-name frame-organization-action">
+      <span id="frame-organization-name" dir="ltr">{{ organization_name }}</span>
+      <span id="frame-organization-action" class="visually-hidden">{{ copy.frame_organization_label }}</span>
+    </a>
+    <nav class="frame-surfaces" aria-label="{{ copy.team_title }}">
+      <a href="{{ prefix }}/{{ language }}/{{ organization_id }}/team">{{ copy.team_title }}</a>
+    </nav>
+    {% endif %}
+    {#
+      `FR-047` makes the language a property of the address, so this swaps the segment and keeps the
+      surface -- scenario 11's "language switch mid-surface, position preserved". `lang` is set so a
+      screen reader pronounces the target language in that language rather than in the page's.
+    #}
+    <a class="frame-language"
+       href="{{ prefix }}/{{ alternate }}{{ surface_path }}"
+       lang="{{ copy.frame_language_code }}">{{ copy.frame_language }}</a>
   </header>
   <main id="main-content" class="shell-main" tabindex="-1">
     {% block content %}{% endblock %}

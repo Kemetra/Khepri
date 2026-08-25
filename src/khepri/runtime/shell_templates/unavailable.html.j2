@@ -11,5 +11,16 @@
 <section class="document-card" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.unavailable_title }}</h1>
   <p class="lede">{{ copy.unavailable_intro }}</p>
+  {#
+    The way out, and the same one the journey's `expired` offers: identical string, identical target,
+    always present. `FR-050` collapses five causes into this surface and forbids telling them apart
+    by navigation state, so an exit that varied -- in wording, in destination, or in whether it
+    appears at all -- would reintroduce the disclosure the surface exists to prevent. It names no
+    cause, which is `FR-052` holding too.
+
+    `/app/{language}` rather than an organization-scoped address: this surface is reached with no
+    resolved organization, and the chooser re-resolves scope from the session.
+  #}
+  <p><a href="{{ prefix }}/{{ language }}">{{ copy.recovery_exit }}</a></p>
 </section>
 {% endblock %}
