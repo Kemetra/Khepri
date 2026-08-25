@@ -275,13 +275,96 @@ def test_no_chrome_hands_a_template_an_unfilled_placeholder() -> None:
 
     Asserted over the chrome mapping rather than a rendered page because that
     mapping is what the template is handed: any entry still carrying a brace is
-    a token one section's refusal will print verbatim.
+    a token one section's refusal will print verbatim. A page assertion would
+    only cover whichever section the fixture happened to refuse.
+
+    **Descends to the messages, and that is the whole point of the case.** The
+    first version stopped one level short. Once the mapping gained its section
+    level, `prose` was a `dict`, so `"{" not in prose` was no longer a substring
+    search -- it was a key lookup for a key named `{`, which no mapping has. The
+    test written to catch the placeholder leak could not catch it: replacing
+    every message with a literal `LEAK {section} LEAK` left it green.
     """
     from khepri.rra.rendering.html import _CHROME
 
+    checked = 0
     for language, chrome in _CHROME.items():
-        assert language
-        for reason, prose in chrome["refusal_prose"].items():
-            assert "{" not in prose, (
-                f"{reason} reaches the template with an unfilled placeholder"
+        for section, by_reason in chrome["refusal_prose"].items():
+            for reason, prose in by_reason.items():
+                assert "{" not in prose, (
+                    f"{language}/{section}/{reason} reaches the template with an "
+                    "unfilled placeholder"
+                )
+                checked += 1
+
+    # The mapping is built by comprehension over `ORDERED_SECTIONS`, so an empty or renamed
+    # source would make every loop body above unreachable and pass this case a second, different
+    # vacuous way.
+    assert checked, "the chrome mapping handed the template no refusal prose at all"
+
+
+class TestTheInternalPackageRefusalStaysInternal:
+    """`RRA-009` tiers `package_version_pairing_unadmitted` Internal, and that is a claim.
+
+    The justification it shipped with -- "it fires while a package is being built, so no report is
+    published and no customer can encounter it" -- is true of the report, and silently assumed the
+    report was the only surface. It is not. `build_session_package` catches `FactsRefused` and
+    re-raises it as `PackageRefused(str(error))`, and both `409` handlers in `api` answered with
+    `str(error)`, so `POST /api/v1/beta/facts` returned the governed reason code and all three
+    internal version identifiers to the caller:
+
+        package_version_pairing_unadmitted: rra003.mapping.v3, rra004.package.v2 and
+        rra004.formula.v1 were not authorized to be combined.
+
+    A tier is a claim about every path the text can travel. These cases assert the claim on the
+    path that falsified it.
+    """
+
+    def test_the_reason_does_not_reach_the_caller(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Driven through the route, because the route is where the text escaped.
+
+        Asserts the *absence* of the code and the three identifiers rather than an exact phrase:
+        what matters is what escapes, and freezing the replacement wording would make this case
+        fail on a rewording that leaks nothing.
+        """
+        from khepri.rra import facts
+        from tests.test_rra004_packages import prepared
+
+        monkeypatch.setattr(facts, "MAPPING_VERSION", "rra003.mapping.v3")
+        response = prepared().client.post("/api/v1/beta/facts")
+        detail = response.json()["detail"]
+
+        assert response.status_code == 409
+        assert REASON_PACKAGE_VERSION_UNADMITTED not in detail
+        for identifier in ("rra003.mapping.v3", "rra004.package.v2", "rra004.formula.v1"):
+            assert identifier not in detail, identifier
+
+    def test_a_refusal_written_for_the_caller_still_reaches_them(self) -> None:
+        """The guard is selective, and a blanket one would be a different defect.
+
+        Most `PackageRefused` text is the only account a caller gets of what to fix -- a stored
+        profile that no longer describes the input, a package published under a superseded
+        version. Replacing all of it would trade a leak for a dead end. Without this case, a
+        mutant that always answers `PACKAGE_UNAVAILABLE` survives.
+        """
+        from khepri.rra.packages import (
+            PACKAGE_UNAVAILABLE,
+            PackageRefused,
+            package_refused_detail,
+        )
+
+        written_for_the_caller = "Stored profile does not describe the current governed input."
+
+        assert (
+            package_refused_detail(PackageRefused(written_for_the_caller))
+            == written_for_the_caller
+        )
+        assert (
+            package_refused_detail(
+                PackageRefused(f"{REASON_PACKAGE_VERSION_UNADMITTED}: a, b and c")
             )
+            == PACKAGE_UNAVAILABLE
+        )
+
