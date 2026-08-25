@@ -187,26 +187,37 @@ def test_each_language_is_its_own_document_declaring_how_it_reads() -> None:
         assert f'dir="{direction}"' in document
 
 
-def test_every_scrolling_table_region_carries_its_own_accessible_name() -> None:
-    # A `region` with a name is a landmark a reader navigates by, and the scrollers sit
-    # inside the section loop -- so one shared caption produced several landmarks all
-    # reading "the figures in this section", which is worse than no landmark because the
-    # reader has to guess.
+def test_every_scrolling_table_is_reachable_and_no_landmark_is_ambiguous() -> None:
+    # Two requirements, because they pull against each other. Every scroller is
+    # focusable, or the columns past the fold need a pointer to reach. And every
+    # scroller that is a *named* `region` carries its own name: a landmark list of
+    # identical labels asks the reader to guess, which is worse than no landmark.
     #
-    # Asserted on the *resolved text*, not on the `aria-labelledby` attribute. An
-    # accessible name is the words the ids resolve to: two attributes pointing at two
-    # distinct ids whose captions read the same still name both regions identically, so a
-    # test comparing attributes passes over the defect it exists to catch. This is the
-    # form that fails.
+    # A section carries one business table, so that one is named. It may carry
+    # several breakdowns whose headings and first label can both collide -- see
+    # `TestADisplayLabelIsNotASeriesIdentity._colliding` -- so those are focusable
+    # and unnamed rather than several landmarks reading alike.
+    #
+    # Names are compared as resolved *text*, not as the `aria-labelledby` value: two
+    # attributes naming two distinct ids whose captions read the same still name both
+    # regions identically, and that is the defect this case exists to catch.
     import re
 
     surface = HtmlReportRenderer().render_html(ReportBundle.of(package()))
 
     for language in REQUIRED_LANGUAGES:
         document = surface.documents[language]
-        # Anchored on the `h2`/`caption` tag itself. Starting from any `id="..."` matches
-        # the enclosing `<section id="basket">` and runs through the `</h2>` inside it, so
-        # the heading's own id is never collected and every reference to it looks absent.
+        scrollers = re.findall(r'<div class="scroller"([^>]*)>', document)
+        assert scrollers, f"{language}: no scrolling table was rendered"
+        for attributes in scrollers:
+            assert 'tabindex="0"' in attributes, (
+                f"{language}: a scrolling table is not keyboard reachable: {attributes!r}"
+            )
+
+        # Anchored on the `h2`/`caption` tag itself: starting from any `id="..."`
+        # matches the enclosing `<section id=...>` and runs through the `</h2>` inside
+        # it, so the heading's own id is never collected and every reference to it
+        # looks absent.
         text_of = {
             element_id: re.sub(r"<[^>]+>", "", body).strip()
             for element_id, body in re.findall(
@@ -215,23 +226,22 @@ def test_every_scrolling_table_region_carries_its_own_accessible_name() -> None:
                 re.S,
             )
         }
-        regions = re.findall(
-            r'<div class="scroller"[^>]*aria-labelledby="([^"]+)"', document
-        )
-        assert regions, f"{language}: no named scrolling region was rendered"
-
         names = []
-        for reference in regions:
-            for token in reference.split():
+        for attributes in scrollers:
+            reference = re.search(r'aria-labelledby="([^"]+)"', attributes)
+            if reference is None:
+                continue
+            for token in reference.group(1).split():
                 # An `aria-labelledby` naming an absent id resolves to no name at all,
                 # which reads as a populated attribute and a nameless landmark.
                 assert token in text_of, (
                     f"{language}: aria-labelledby names absent id {token!r}"
                 )
-            names.append(" ".join(text_of[token] for token in reference.split()))
+            names.append(" ".join(text_of[t] for t in reference.group(1).split()))
 
+        assert names, f"{language}: no scrolling table was named"
         assert len(names) == len(set(names)), (
-            f"{language}: two table regions resolve to one accessible name: {names}"
+            f"{language}: two landmarks resolve to one accessible name: {names}"
         )
 
 

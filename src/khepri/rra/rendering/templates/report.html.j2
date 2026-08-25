@@ -127,18 +127,20 @@
 #}
 {% for table in section.series %}
 {#
-  A section may carry several series tables, and what separates them is their columns:
-  `_series_tables` keeps a by-period and a by-category breakdown apart precisely because
-  they share no heading. So the caption names those headings. A unique *id* per table is
-  not enough -- an accessible name is the text the ids resolve to, and two captions
-  reading "the figures by breakdown" name both tables identically however distinct their
-  ids are. `loop.index` stays in the id because two breakdowns could still carry the same
-  headings, and a duplicate id names neither.
+  Focusable so the columns past the fold are reachable, but deliberately *not* a named
+  `region`. A section may carry several breakdowns, and nothing a reader can see tells
+  them apart: `TestADisplayLabelIsNotASeriesIdentity._colliding` builds a by-period and a
+  by-product table whose headings are both `Revenue`/`Units sold` and whose first label is
+  `2026-01` in both, because a product may be named like a period. Several landmarks
+  sharing one name are worse than none, since a landmark list then asks the reader to
+  guess -- and the one value that would separate them is the dimension, which
+  `html.py:131-134` deliberately keeps out of customer copy so this module does not decide
+  what a customer's own labels mean. So these carry no landmark. The table keeps its
+  `<caption>`, which names it in document order where a reader meets it.
 #}
-<div class="scroller" role="region" tabindex="0"
-     aria-labelledby="{{ section.section_id }}-heading {{ section.section_id }}-series-caption-{{ loop.index }}">
+<div class="scroller" tabindex="0">
 <table class="figures figures--series">
-<caption id="{{ section.section_id }}-series-caption-{{ loop.index }}">{{ chrome.series_caption }}{% if table.headings %} — {{ table.headings | join(", ") }}{% endif %}</caption>
+<caption>{{ chrome.series_caption }}</caption>
 <thead>
 <tr>
 <th scope="col">{{ chrome.series_label }}</th>
