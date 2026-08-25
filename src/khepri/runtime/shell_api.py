@@ -186,8 +186,33 @@ def _language(requested: str) -> str:
 
 
 def _unavailable(environment: Environment, *, language: str) -> Response:
-    """The one surface every refusal reaches. Takes no cause, so it can disclose none."""
-    return _render(environment, "unavailable.html.j2", language=language, status_code=404)
+    """The one surface every refusal reaches. Takes no cause, so it can disclose none.
+
+    **It renders no language control, and cannot.** The frame gave it one, and with no tail to
+    keep it took `_render`'s empty default and pointed at `{prefix}/{alternate}` -- the
+    organization chooser, answering `200`. That is the "returning them to an entry surface"
+    `FR-055` names outright, so the control as it stood was the defect.
+
+    The obvious repair is to echo the reader's own address back, and it is not available here.
+    `FR-051` and `FR-052` are asserted on this body by merged cases: a refusal carries neither the
+    organization it was asked about nor the object identifier, and it makes no exception for a
+    value the reader themselves supplied. An `href` is body. So the address that would preserve
+    the position is the one thing this surface may not name.
+
+    What is left is a control naming a surface the reader did not ask for, and that is worse than
+    none -- so there is none, for the reason `invitation_issued` has none. `FR-054`'s parity holds
+    the way it holds there: both languages render this surface, neither offers the control, and
+    the actions are equivalent because they are identical. `FR-055` constrains a switch that
+    exists. The way onward is the recovery exit, which is one string with one target and names no
+    cause, and the chooser it reaches carries the control.
+    """
+    return _render(
+        environment,
+        "unavailable.html.j2",
+        language=language,
+        status_code=404,
+        language_switch=False,
+    )
 
 
 def _render(
@@ -216,10 +241,11 @@ def _render(
         # many languages there are. `surface_path` defaults to the organization chooser's empty
         # tail and each surface that has a deeper address overrides it through `context`.
         #
-        # `language_switch` defaults to rendering the control, because every surface with an
-        # address can honour it. `invitation_issued` has no address and one unrepeatable secret,
-        # so it is the one surface that opts out -- and it opts out here rather than in the
-        # template, where a surface added later would have had to know to.
+        # `language_switch` defaults to rendering the control, because a surface the frame may
+        # name a destination for can honour it. Two cannot, and both opt out here rather than in
+        # the template, where a surface added later would have had to know to: `invitation_issued`
+        # has no address and one unrepeatable secret, and `unavailable` has an address it is
+        # forbidden to name.
         **{
             "alternate": _ALTERNATE[language],
             "surface_path": "",
