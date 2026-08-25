@@ -31,6 +31,43 @@
   {% endif %}
 </section>
 
+{% if is_owner and invitations_available %}
+<section class="document-card" aria-labelledby="invite-title">
+  {#
+    The route this posts to shipped in `R8-05b` with no form to reach it, so an owner could withdraw
+    an invitation and never create one. It is gated on `is_owner` for the same reason the withdraw
+    button is: `require_owner` refuses a member at the gate, and rendering the control anyway would
+    offer an action whose only outcome is the indistinguishable refusal `FR-052` forbids explaining.
+
+    Gated on the gateway as well as on the role. `ShellServices.invitations` is optional and a shell
+    configured without one still renders this surface, where every submission is refused -- so
+    ownership alone would put an enabled form in front of an owner who cannot use it, and it would
+    answer like a fault rather than like a capability nobody installed.
+
+    The field names are the two `issue_invitation` reads from the body, and the options are exactly
+    `ROLES`. `member` is preselected rather than left empty: an unselected role posts a value the
+    allowlist refuses, which reaches the reader as "this page is unavailable" with no cause it may
+    disclose -- a dead end built out of a placeholder.
+  #}
+  <h2 id="invite-title">{{ copy.invite_title }}</h2>
+  <p class="lede">{{ copy.invite_intro }}</p>
+  <form method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/team/invitations">
+    <p>
+      <label for="invite-email">{{ copy.invite_email_label }}</label>
+      <input id="invite-email" name="email" type="email" dir="ltr" autocomplete="email" required>
+    </p>
+    <p>
+      <label for="invite-role">{{ copy.invite_role_label }}</label>
+      <select id="invite-role" name="role">
+        <option value="member" selected>{{ copy.role_member }}</option>
+        <option value="owner">{{ copy.role_owner }}</option>
+      </select>
+    </p>
+    <button type="submit">{{ copy.invite_submit }}</button>
+  </form>
+</section>
+{% endif %}
+
 <section class="document-card" aria-labelledby="invitations-title">
   <h2 id="invitations-title">{{ copy.invitations_title }}</h2>
   {#

@@ -1,7 +1,7 @@
 {% extends "base.html.j2" %}
 {% block title %}{{ copy.report_title }} · {{ copy.product }}{% endblock %}
 {% block content %}
-<section class="document-card wide" aria-labelledby="page-title">
+<section class="journey-document journey-document--wide" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.report_title }}</h1><p class="lede">{{ copy.report_intro }}</p>
   <div id="error-summary" class="error-summary" role="alert" data-temporary="{{ copy.temporary_unavailable }}" hidden></div>
   <dl class="report-meta"><div><dt>{{ copy.dataset }}</dt><dd>{{ copy.uploaded_dataset }}</dd></div><div><dt>{{ copy.rows }}</dt><dd id="row-count" dir="ltr">—</dd></div><div><dt>{{ copy.generated }}</dt><dd id="generated-at" dir="ltr">—</dd></div><div><dt>{{ copy.available_until }}</dt><dd id="expires-at" dir="ltr">—</dd></div></dl>
