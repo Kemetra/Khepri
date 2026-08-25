@@ -117,6 +117,53 @@ def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:
     return profile_response(record)
 
 
+def _profiled(
+    service: ProfilingService,
+    clock: Callable[[], datetime],
+    payload: ProfileRequestBody,
+    session_id: str | None,
+) -> tuple[DatasetProfileRecord, bool]:
+    """The profile this request asks for, and whether it was created now.
+
+    Lifted out of the route closure so `add_profile_routes` declares routes and
+    nothing else. The route keeps only what FastAPI must see -- the signature
+    it binds and the response object it mutates.
+    """
+    if session_id is None:
+        raise _session_unavailable()
+    requested = _governed_semantics(payload)
+    contract = _admitted_contract(payload)
+    try:
+        return service.profile_session_upload(
+            session_id=session_id,
+            now=clock(),
+            request=ReportRequest(requested_semantics=frozenset(requested)),
+            source_contract_digest=contract.digest,
+        )
+    except _TRANSLATED as error:
+        raise _as_http(error) from error
+
+
+def _stored_profile(
+    service: ProfilingService,
+    clock: Callable[[], datetime],
+    session_id: str | None,
+) -> DatasetProfileRecord:
+    """The session's profile, or the refusal explaining why there is none."""
+    if session_id is None:
+        raise _session_unavailable()
+    try:
+        record = service.get_session_profile(session_id=session_id, now=clock())
+    except _TRANSLATED as error:
+        raise _as_http(error) from error
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No dataset profile is available for this session.",
+        )
+    return record
+
+
 def add_profile_routes(
     app: FastAPI,
     *,
@@ -126,7 +173,6 @@ def add_profile_routes(
     """Declare the profile route group, or declare nothing at all."""
     if service is None:
         return
-
 
     @app.post(
         "/api/v1/beta/profile",
@@ -138,19 +184,7 @@ def add_profile_routes(
         response: Response,
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
     ) -> ProfileResponse:
-        if session_id is None:
-            raise _session_unavailable()
-        requested = _governed_semantics(payload)
-        contract = _admitted_contract(payload)
-        try:
-            record, created = service.profile_session_upload(
-                session_id=session_id,
-                now=clock(),
-                request=ReportRequest(requested_semantics=frozenset(requested)),
-                source_contract_digest=contract.digest,
-            )
-        except _TRANSLATED as error:
-            raise _as_http(error) from error
+        record, created = _profiled(service, clock, payload, session_id)
         if not created:
             response.status_code = status.HTTP_200_OK
         return _profile_response(record)
@@ -162,18 +196,4 @@ def add_profile_routes(
     def read_retail_profile(
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
     ) -> ProfileResponse:
-        if session_id is None:
-            raise _session_unavailable()
-        try:
-            record = service.get_session_profile(
-                session_id=session_id,
-                now=clock(),
-            )
-        except _TRANSLATED as error:
-            raise _as_http(error) from error
-        if record is None:
-            raise HTTPException(
-                status_code=404,
-                detail="No dataset profile is available for this session.",
-            )
-        return _profile_response(record)
+        return _profile_response(_stored_profile(service, clock, session_id))
