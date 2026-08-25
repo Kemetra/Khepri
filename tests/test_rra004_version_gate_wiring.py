@@ -140,8 +140,12 @@ def test_the_concentration_curve_publishes_on_the_shipped_pairing() -> None:
     ]
 
 
-def _package_with_a_concentration_curve() -> object:
-    """Rows over a product dimension, so concentration has a set to rank."""
+def _package_from(header: str, rows: list[tuple[str, ...]]) -> object:
+    """One governed package over four consecutive days of the given columns.
+
+    Both fixtures below want the same thing with one column's difference, and
+    writing the pipeline out twice is how a later reader ends up fixing one copy.
+    """
     import hashlib
     from datetime import date, timedelta
 
@@ -152,17 +156,11 @@ def _package_with_a_concentration_curve() -> object:
     from khepri.rra.profiling import build_profile
 
     start = date(2026, 1, 5)
-    rows = [
-        ("50.00", 5, "Aspirin"),
-        ("100.00", 10, "Bandage"),
-        ("180.00", 12, "Cough Syrup"),
-        ("60.00", 6, "Dressing"),
+    lines = [
+        ",".join(((start + timedelta(days=index)).isoformat(), *row, f"INV-{index}"))
+        for index, row in enumerate(rows)
     ]
-    body = b"".join(
-        f"{(start + timedelta(days=i)).isoformat()},{amount},{units},INV-{i},{product}\n".encode()
-        for i, (amount, units, product) in enumerate(rows)
-    )
-    content = b"date,revenue,units,invoice_no,product\n" + body
+    content = "\n".join([header, *lines]).encode() + b"\n"
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -175,39 +173,27 @@ def _package_with_a_concentration_curve() -> object:
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+    )
+
+
+def _package_with_a_concentration_curve() -> object:
+    """Rows over a product dimension, so concentration has a set to rank."""
+    return _package_from(
+        "date,revenue,units,product,invoice_no",
+        [
+            ("50.00", "5", "Aspirin"),
+            ("100.00", "10", "Bandage"),
+            ("180.00", "12", "Cough Syrup"),
+            ("60.00", "6", "Dressing"),
+        ],
     )
 
 
 def _package_with_two_settled_periods() -> object:
     """Four consecutive days, which leaves two settled periods to compare."""
-    import hashlib
-    from datetime import date, timedelta
-
-    from khepri.rra.admissibility import assess_admissibility
-    from khepri.rra.facts import build_fact_package
-    from khepri.rra.intake import CSV_MEDIA_TYPE
-    from khepri.rra.mapping import build_mapping
-    from khepri.rra.profiling import build_profile
-
-    start = date(2026, 1, 5)
-    rows = [("50.00", 5), ("100.00", 10), ("180.00", 12), ("60.00", 6)]
-    body = b"".join(
-        f"{(start + timedelta(days=index)).isoformat()},{amount},{units},INV-{index}\n".encode()
-        for index, (amount, units) in enumerate(rows)
-    )
-    content = b"date,revenue,units,invoice_no\n" + body
-    profile = build_profile(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        source_sha256_hex=hashlib.sha256(content).hexdigest(),
-    )
-    mapping = build_mapping(profile)
-    return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
+    return _package_from(
+        "date,revenue,units,invoice_no",
+        [("50.00", "5"), ("100.00", "10"), ("180.00", "12"), ("60.00", "6")],
     )
 
 
