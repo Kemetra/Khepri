@@ -237,6 +237,90 @@ def test_canonical_key_is_absent_when_a_component_is() -> None:
     assert None in keys
 
 
+def test_allocated_discount_components_sum_to_the_discount_total() -> None:
+    """The invoice-level and line-level parts must reach the stated total.
+
+    `RRA-003` admits an allocated invoice discount only when the source
+    "allocates every invoice-level amount exactly once". The two component
+    literals are what a slice checks that against, so they must agree with the
+    total the same dataset states.
+    """
+    from tests.rra_calculation_oracle import ALLOCATED_DISCOUNT_EXPECTED
+
+    components = (
+        ALLOCATED_DISCOUNT_EXPECTED["allocated_invoice_component"]
+        + ALLOCATED_DISCOUNT_EXPECTED["line_component"]
+    )
+    assert components == ALLOCATED_DISCOUNT_EXPECTED["discount"]
+
+
+def test_allocated_discount_rows_carry_that_discount_and_leave_revenue_net() -> None:
+    """The rows themselves must add to the literals, and revenue stays unreduced.
+
+    `RRA-003`: discount "never changes governed revenue, which is already net".
+    Summing the rows here is reading the dataset, not calculating a metric -- no
+    production helper is involved.
+    """
+    from tests.rra_calculation_oracle import (
+        ALLOCATED_DISCOUNT_EXPECTED,
+        ALLOCATED_DISCOUNT_ROWS,
+    )
+
+    discount = sum(
+        (row.discount for row in ALLOCATED_DISCOUNT_ROWS if row.discount is not None),
+        Decimal(0),
+    )
+    revenue = sum(
+        (row.revenue for row in ALLOCATED_DISCOUNT_ROWS if row.revenue is not None),
+        Decimal(0),
+    )
+    assert discount == ALLOCATED_DISCOUNT_EXPECTED["discount"]
+    assert revenue == ALLOCATED_DISCOUNT_EXPECTED["revenue"]
+    assert revenue > discount
+
+
+def test_allocated_discount_rows_are_one_canonical_transaction() -> None:
+    """Three lines of one invoice in one store on one day are one transaction."""
+    from tests.rra_calculation_oracle import (
+        ALLOCATED_DISCOUNT_EXPECTED,
+        ALLOCATED_DISCOUNT_ROWS,
+    )
+
+    keys = {row.canonical_transaction_key for row in ALLOCATED_DISCOUNT_ROWS}
+    assert len(keys) == int(ALLOCATED_DISCOUNT_EXPECTED["transactions"]) == 1
+
+
+def test_store_mismatch_refuses_while_the_periods_themselves_survive() -> None:
+    """`RRA-008`: store-mismatched structures refuse the comparison, not the facts.
+
+    The two store sets must actually differ, or the case asserts nothing; and the
+    same-length-different-store refusal must not generalize into refusing
+    different-length same-store periods, which the specification admits.
+    """
+    from tests.rra_calculation_oracle import (
+        NATURAL_MONTH_LENGTH_EXPECTED,
+        STORE_MISMATCH_EXPECTED,
+    )
+
+    prior = set(STORE_MISMATCH_EXPECTED["prior_store_set"])
+    current = set(STORE_MISMATCH_EXPECTED["current_store_set"])
+    assert prior != current
+    assert STORE_MISMATCH_EXPECTED["comparison_admitted"] is False
+    assert STORE_MISMATCH_EXPECTED["growth_admitted"] is False
+    assert STORE_MISMATCH_EXPECTED["prior_revenue_survives"] is True
+    assert STORE_MISMATCH_EXPECTED["current_revenue_survives"] is True
+    assert STORE_MISMATCH_EXPECTED["same_store_set_different_lengths_admitted"] is True
+    assert NATURAL_MONTH_LENGTH_EXPECTED["all_pairs_compatible"] is True
+
+
+def test_natural_month_lengths_cover_all_four_calendar_cases() -> None:
+    """`RRA-008` names 28, 29, 30 and 31 explicitly; all four must be present."""
+    from tests.rra_calculation_oracle import NATURAL_MONTH_LENGTH_EXPECTED
+
+    assert set(NATURAL_MONTH_LENGTH_EXPECTED["day_counts"]) == {28, 29, 30, 31}
+    assert NATURAL_MONTH_LENGTH_EXPECTED["leap_day_yoy_admitted"] is False
+
+
 def test_to_csv_renders_one_header_and_one_line_per_row() -> None:
     """The serializer is a serializer: no filtering, no aggregation, no reordering."""
     rendered = to_csv(CLEAN_ROWS).decode().splitlines()

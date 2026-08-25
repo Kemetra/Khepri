@@ -552,6 +552,63 @@ reported as the healthiest margin in the dataset.
 """
 
 
+ALLOCATED_DISCOUNT_ROWS: tuple[OracleRow, ...] = (
+    # One invoice carrying a 30.00 invoice-level promotion allocated across its
+    # three lines exactly once -- 12.00 + 9.00 + 9.00 -- plus per-line discounts
+    # of 10.00 and 5.00. `RRA-003`: discount "includes line, allocated invoice,
+    # promotion, loyalty, and markdown discounts only when the source already
+    # prevents overlap and allocates every invoice-level amount exactly once".
+    #
+    # The `discount` column carries the per-row total the source already
+    # allocated. It is additive and non-negative, which is the whole admissibility
+    # test; an unallocated invoice-level amount repeated on every line would be
+    # the "repeated invoice total" `RRA-003` refuses, and is not what these rows
+    # carry.
+    OracleRow(date(2026, 3, 4), EVENT_SALE, STATUS_POSTED, Decimal("400.00"), 8,
+              "INV-F001", "S1", "P1", "C1", Decimal("220.00"),
+              Decimal("22.00"), "T1"),
+    OracleRow(date(2026, 3, 4), EVENT_SALE, STATUS_POSTED, Decimal("300.00"), 6,
+              "INV-F001", "S1", "P2", "C1", Decimal("165.00"),
+              Decimal("14.00"), "T1"),
+    OracleRow(date(2026, 3, 4), EVENT_SALE, STATUS_POSTED, Decimal("200.00"), 4,
+              "INV-F001", "S1", "P3", "C2", Decimal("110.00"),
+              Decimal("9.00"), "T1"),
+)
+ALLOCATED_DISCOUNT_EXPECTED = {
+    # discounts = sum(non-negative sale discount) = 22.00 + 14.00 + 9.00 = 45.00
+    #   of which the allocated invoice-level promotion is 12.00 + 9.00 + 9.00
+    #   = 30.00, allocated exactly once, and the per-line part is
+    #   10.00 + 5.00 + 0.00 = 15.00.
+    "discount": Decimal("45.00"),
+    "allocated_invoice_component": Decimal("30.00"),
+    "line_component": Decimal("15.00"),
+    # `RRA-003`: discount "never changes governed revenue, which is already net".
+    # revenue = 400.00 + 300.00 + 200.00 = 900.00, unreduced by the 45.00.
+    "revenue": Decimal("900.00"),
+    # Three lines, one canonical transaction key.
+    "transactions": Decimal("1"),
+}
+"""Allocated discounts -- brief bullet 3's remaining shape.
+
+_RED: production returns discount "45.00" and revenue "900.00" and agrees on both.
+
+Empirically confirmed. `_measures` maps `discount_amount` and `_sum_decimal` adds
+the column, and nothing anywhere subtracts discount from revenue -- which is
+correct, since `RRA-003` makes revenue already net.
+
+Recorded as an agreement with one gap beside it. The two component literals,
+`allocated_invoice_component` 30.00 and `line_component` 15.00, have no production
+counterpart: the package carries a single `discount` total and no evidence of how
+it decomposes, so nothing proves the invoice-level amount was allocated exactly
+once rather than repeated on each line. `RRA-003` makes that the admissibility
+test -- "a bare discount, rate, percentage, repeated invoice total, or overlapping
+component set is refused" -- and current code cannot distinguish an allocated
+30.00 from a 30.00 stamped on all three lines, which would sum to 90.00 and be
+accepted just as readily. The components are stated so a slice adding allocation
+evidence has the arithmetic to check.
+"""
+
+
 DUPLICATE_SIGNATURE_ROWS: tuple[OracleRow, ...] = (
     OracleRow(date(2026, 3, 4), EVENT_SALE, STATUS_POSTED, Decimal("250.00"), 5,
               "INV-7001", "S1", "P1", "C1", Decimal("140.00"), Decimal("0.00"), "T1"),
@@ -1101,6 +1158,48 @@ The literals state the arithmetic a slice must produce. They are derived from th
 stated prefix totals rather than from rows, because the rows that would carry them
 depend on a daily-basis structure that does not exist yet; a dataset invented to
 match an unbuilt shape would constrain the slice's design rather than its answers.
+"""
+
+STORE_MISMATCH_EXPECTED = {
+    # `RRA-008`: complete full calendar periods are structurally compatible only
+    # when they have "the same governed aggregate scope or complete admitted store
+    # set and the same event-kind and status filters", and "scope-mismatched,
+    # store-mismatched, or filter-mismatched structures refuse".
+    #
+    # Prior month attested over {S1, S2}; current month attested over {S1, S2, S3}
+    # after a third branch opened. Both months are individually complete. They are
+    # still incompatible, because the populations are not the same set of stores.
+    "prior_store_set": ("S1", "S2"),
+    "current_store_set": ("S1", "S2", "S3"),
+    "comparison_admitted": False,
+    "growth_admitted": False,
+    # The refusal is narrow: each month's own totals remain independently proven,
+    # and `RRA-004` requires "Every refusal leaves facts whose own semantics and
+    # population remain independently proven."
+    "prior_revenue_survives": True,
+    "current_revenue_survives": True,
+    # The mirror case that must NOT refuse: identical store sets, different day
+    # counts. That is `NATURAL_MONTH_LENGTH_EXPECTED` below.
+    "same_store_set_different_lengths_admitted": True,
+}
+"""Store mismatch -- brief bullet 4's remaining shape.
+
+_RED: no production counterpart, and the reason is the same wiring gap as the
+other manifest proofs. Nothing in `facts.py` or `analysis/` reads a store roster
+when deciding comparability. `windows.compared_labels` looks only at bucket labels
+on the revenue trend, so a month covering three stores compares against a month
+covering two without anything noticing, and the delta reports a new branch's
+entire revenue as growth.
+
+That number would be arithmetically correct and analytically false, which is why
+`RRA-008` puts the test on the *population* rather than on the arithmetic. There
+is no current value to record because no current code path asks the question, so
+this states which results must refuse and which must survive.
+
+The last literal is the one that keeps the refusal honest in the other direction:
+a slice implementing store-set equality must not reach for structural signature
+equality generally, because natural month-length differences are explicitly
+compatible. The two literals constrain each other.
 """
 
 NATURAL_MONTH_LENGTH_EXPECTED = {
