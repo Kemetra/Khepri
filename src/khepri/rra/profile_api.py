@@ -57,6 +57,43 @@ def _session_unavailable() -> HTTPException:
     return HTTPException(status_code=401, detail=SESSION_UNAVAILABLE)
 
 
+# How each governed failure reaches the caller. A table rather than a chain of
+# `except` clauses, because both routes translate the same errors the same way
+# and two chains drift: a status code corrected in one and missed in the other
+# is invisible until someone compares them.
+#
+# A `None` detail means the error's own message must not be sent. `RRA-001`
+# keeps storage and corruption failures opaque, so those carry fixed prose --
+# the operator can act on "unavailable" and cannot act on an internal reason.
+_STATUS_BY_ERROR: tuple[tuple[type[Exception], int, str | None], ...] = (
+    (SessionExpired, 401, SESSION_UNAVAILABLE),
+    (CrossSessionAccessDenied, 401, SESSION_UNAVAILABLE),
+    (ConsentRequired, 403, None),
+    (UploadNotFound, 404, None),
+    (ProfileRequestConflict, 409, None),
+    (ProfileRejected, 400, None),
+    (ProfileCorrupted, 503, "Stored dataset profile is unavailable."),
+    (StoragePolicyViolation, 503, "Upload storage is unavailable."),
+)
+
+_TRANSLATED = tuple(error for error, _, _ in _STATUS_BY_ERROR)
+
+
+def _as_http(error: Exception) -> HTTPException:
+    """The response one governed failure becomes.
+
+    Ordered lookup, because `_TRANSLATED` is matched by `except` in the same
+    order: the first entry whose type matches wins, exactly as the chain of
+    clauses it replaces did. Anything unlisted never reaches here -- `except`
+    only catches what the table names -- so an unrecognised failure keeps
+    propagating rather than being flattened into a plausible status code.
+    """
+    for kind, code, detail in _STATUS_BY_ERROR:
+        if isinstance(error, kind):
+            return HTTPException(status_code=code, detail=detail or str(error))
+    raise error
+
+
 def _governed_semantics(payload: ProfileRequestBody) -> set[str]:
     """The requested semantics, or a refusal naming them as ungoverned."""
     requested = set(payload.requested_semantics)
@@ -112,28 +149,8 @@ def add_profile_routes(
                 request=ReportRequest(requested_semantics=frozenset(requested)),
                 source_contract_digest=contract.digest,
             )
-        except SessionExpired as error:
-            raise _session_unavailable() from error
-        except ConsentRequired as error:
-            raise HTTPException(status_code=403, detail=str(error)) from error
-        except CrossSessionAccessDenied as error:
-            raise _session_unavailable() from error
-        except UploadNotFound as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        except ProfileRequestConflict as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
-        except ProfileRejected as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-        except ProfileCorrupted as error:
-            raise HTTPException(
-                status_code=503,
-                detail="Stored dataset profile is unavailable.",
-            ) from error
-        except StoragePolicyViolation as error:
-            raise HTTPException(
-                status_code=503,
-                detail="Upload storage is unavailable.",
-            ) from error
+        except _TRANSLATED as error:
+            raise _as_http(error) from error
         if not created:
             response.status_code = status.HTTP_200_OK
         return _profile_response(record)
@@ -152,15 +169,8 @@ def add_profile_routes(
                 session_id=session_id,
                 now=clock(),
             )
-        except SessionExpired as error:
-            raise _session_unavailable() from error
-        except ConsentRequired as error:
-            raise HTTPException(status_code=403, detail=str(error)) from error
-        except ProfileCorrupted as error:
-            raise HTTPException(
-                status_code=503,
-                detail="Stored dataset profile is unavailable.",
-            ) from error
+        except _TRANSLATED as error:
+            raise _as_http(error) from error
         if record is None:
             raise HTTPException(
                 status_code=404,
