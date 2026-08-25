@@ -94,7 +94,14 @@ class _StubOrganizations:
 
 
 class _StubInvitations:
-    """Enough gateway to reach `invitation_issued`, which has no address to `GET`."""
+    """Enough gateway to reach `invitation_issued`, which has no address to `GET`.
+
+    Records what it was asked to commit, because one case below is about a write that must not
+    happen rather than a page that must render.
+    """
+
+    def __init__(self) -> None:
+        self.issued: list[object] = []
 
     def invitations_for_organization(
         self, organization_id: str, *, now: object = None
@@ -102,7 +109,18 @@ class _StubInvitations:
         return ()
 
     def issue(self, offer: object, *, expires_at: object, now: object) -> str:
+        self.issued.append(offer)
         return "inv_a-one-time-token"
+
+
+class _UnreadableOrganizations(_StubOrganizations):
+    """A listing read that fails the way a transient database fault would."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+
+    def organizations_for_account(self, account_id: str) -> list[Organization]:
+        raise RuntimeError("the organization listing is unavailable")
 
 
 def _organization(organization_id: str, name: str) -> Organization:
@@ -439,6 +457,37 @@ class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
         nav = issued[issued.index('class="frame-surfaces"') :][:300]
 
         assert f'href="{SHELL_PREFIX}/en/org-acme/team"' in nav
+
+    def test_the_frame_is_resolved_before_the_token_is_issued(self) -> None:
+        """The frame read is fallible, and it must not be fallible *after* the write.
+
+        `issue` commits the invitation and returns the only plaintext copy of its token; the store
+        keeps a salted verifier and nothing else. A listing read that raised after it would answer
+        500 to an owner whose invitation exists and whose token is unrecoverable, and whose retry
+        would issue a second one. Ordering is the whole fix, so ordering is what this pins: with
+        the read failing, the gateway is never reached at all.
+        """
+        invitations = _StubInvitations()
+        app = FastAPI()
+        add_shell_routes(
+            app,
+            services=ShellServices(
+                resolver=_StubResolver(_Context("acct-1", "org-acme")),
+                organizations=_UnreadableOrganizations(),
+                invitations=invitations,
+            ),
+            clock=lambda: NOW,
+        )
+        client = TestClient(app)
+        client.cookies.set(SESSION_COOKIE, "a-session-token")
+
+        with pytest.raises(RuntimeError):
+            client.post(
+                f"{SHELL_PREFIX}/en/org-acme/team/invitations",
+                data={"email": "invitee@example.test", "role": "member"},
+            )
+
+        assert invitations.issued == [], "an invitation was committed for a response that failed"
 
     def test_the_team_surface_and_this_one_agree(self) -> None:
         """One helper resolves both, so the header cannot differ between them.
