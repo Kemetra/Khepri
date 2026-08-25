@@ -204,10 +204,15 @@ def test_every_scrolling_table_region_carries_its_own_accessible_name() -> None:
 
     for language in REQUIRED_LANGUAGES:
         document = surface.documents[language]
+        # Anchored on the `h2`/`caption` tag itself. Starting from any `id="..."` matches
+        # the enclosing `<section id="basket">` and runs through the `</h2>` inside it, so
+        # the heading's own id is never collected and every reference to it looks absent.
         text_of = {
             element_id: re.sub(r"<[^>]+>", "", body).strip()
             for element_id, body in re.findall(
-                r'id="([^"]+)"[^>]*>(.*?)</(?:h2|caption)>', document, re.S
+                r'<(?:h2|caption)[^>]*id="([^"]+)"[^>]*>(.*?)</(?:h2|caption)>',
+                document,
+                re.S,
             )
         }
         regions = re.findall(
