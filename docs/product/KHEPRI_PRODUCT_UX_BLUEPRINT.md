@@ -367,17 +367,28 @@ relevant. Low-level formula and version strings must not dominate primary custom
 
 ## 11. Retention, deletion, and tombstones
 
-### One content clock — LOCKED
+### Clock cardinality — AUTHORITY-BLOCKED
 
-**M3 uses one session/content retention clock.** Report, evidence, and related retained analysis
-content share the same content lifecycle unless future authority deliberately changes it.
+**Owner product direction: one session/content retention clock for M3**, with report, evidence, and
+related retained analysis content sharing one lifecycle, and no per-artifact clocks.
 
-Per-artifact retention clocks are **not designed**. This is confirmed by the implementation, which
-computes one expiry per publication and validates that every artifact in a session shares it — so the
-one-clock model removes work rather than adding it, and no schema change is proposed to support
-different clocks.
+**This is direction, not a settled decision.** Clock cardinality for M3 belongs to `G2`: `G2-01`
+inventories the retained data classes — uploads, normalized events, mappings, manifests, facts,
+reports, evidence, telemetry, deletion evidence (`roadmap:722`) — and `G2-02` decides retention
+defaults, deletion, organization closure, backup behavior, and export (`roadmap:723`). Until `G2-03`
+activates that decision, **the retention relationship among M3 data entries, facts, reports,
+evidence, and backups is undecided**, and this document must not foreclose it.
 
-The UI must never imply a data entry survives while its PDF disappears independently.
+What the current implementation actually proves is narrower than an earlier draft claimed: within one
+**temporary beta session**, one expiry is computed per publication and every artifact in that session
+is validated to share it. That is evidence about today's single-session journey. It is **not** a
+determination about durable M3 retention across dataset entries and their derived artifacts, and
+citing it as one would preempt the pending data-boundary decision.
+
+**Design consequence, safe either way.** Until `G2` decides, the UI must not promise a lifecycle it
+cannot honor in either direction: it must not imply a data entry survives while its PDF disappears
+independently, and it must not imply they are permanently coupled. Show each retention fact where it
+is known, and state no relationship the contract has not established.
 
 ### Content versus history — LOCKED
 
@@ -606,8 +617,11 @@ anti-reference for these surfaces. No high-fidelity mockups are produced here.
 | Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **partly SHIPPED**; metric detail **CONTRACT-BLOCKED** |
 | Journey organization identity | make scope legible in `/beta` | — | authority permitting identity to cross the boundary | **AUTHORITY-BLOCKED** |
 
-`W1` is blocked on active `G2`/`G3` authority; `T1` is `PROPOSED`. **`G2` retention is the single
-gate** for M3. Design may proceed; production code may not.
+`W1` is blocked on active `G2`/`G3` authority; `T1` is `PROPOSED`. **Both `G2` and `G3` gate M3** —
+`G2-03` activates the retention decision, and `W1-01` requires an **active `G3`** specification
+(`roadmap:742`) whose `G3-03` defines authorization, audit, and evidence rules for every workspace
+action (`roadmap:727`). M3 is not implementation-ready after `G2` alone. Design may proceed;
+production code may not.
 
 ---
 
@@ -617,7 +631,7 @@ gate** for M3. Design may proceed; production code may not.
 
 | Slice | Purpose | Prerequisite | Owns | Forbidden scope | Readiness |
 |---|---|---|---|---|---|
-| **M3-U1** | Organization frame and navigation | `W1-01` | the four destinations, route continuity | list content; any new visual world | CONTRACT-BLOCKED |
+| **M3-U1** | Organization frame; **no destination link ships until its own surface does** | `W1-01` | the frame, route continuity, the nav mechanism | rendering a link for a surface a later slice delivers; list content; any new visual world | CONTRACT-BLOCKED |
 | **M3-U2** | Operational and trust state presentation | `W1-01`; `T1` for aggregate labels | state rendering, EN/AR copy keys | fusing the axes; exposing machine words; fixed result counts | CONTRACT-BLOCKED (principle is LOCKED) |
 | **M3-U3** | Analysis history and detail | `W1-04`, M3-U2 | list, detail, artifact access | Compare; filters; report redesign | CONTRACT-BLOCKED |
 | **M3-U4** | Data history and detail | `W1-01`/`W1-04`, M3-U2 | list, detail, lineage | file preview; raw rows; version graph | CONTRACT-BLOCKED |
@@ -625,6 +639,8 @@ gate** for M3. Design may proceed; production code may not.
 | **M3-U6** | Retention and tombstones | `W1-07`, active `G2` | retention display, tombstone rows | per-artifact clocks; inventing tombstone fields | AUTHORITY-BLOCKED |
 | **M3-U7** | Deletion UX | a registered authorizing artifact (future active `G3`); `W1-07` | owner-only control | member-visible destructive controls; disabled-button education | AUTHORITY-BLOCKED |
 | **M3-U8** | Responsive, RTL, state hardening | M3-U1…U7 | narrow widths, bidi, keyboard, empty and loading | new surfaces | CONTRACT-BLOCKED |
+
+**Slice ordering is a `FR-049` constraint, not a preference.** M3-U1 delivers the frame and the navigation *mechanism*; each destination's link ships in the slice that implements its surface — Analyses with M3-U3, Data with M3-U4, Overview with M3-U5. Landing all four links in M3-U1 would render navigation with nothing behind it, which active `RCA-002` `FR-049` forbids and which §8 of this document already rules out.
 
 ---
 
@@ -644,7 +660,7 @@ Durable product decisions, safe to carry forward. None grants implementation aut
 10. **Copy is reason-driven and must not overclaim a cause**; default to neutral supportable wording and specialize only where the governed reason proves the cause.
 11. **A failure state carries a next action** where one validly exists.
 12. **Machine vocabulary never reaches a customer.**
-13. **One content retention clock** for M3; no per-artifact clocks.
+13. **One content retention clock** for M3 is product *direction*; clock cardinality is a `G2` retention decision. **AUTHORITY-BLOCKED** — see §11.
 14. **Content existence and history existence are separate facts**, shown separately.
 15. Retention is expressed in **absolute time with timezone**.
 16. **History is not hidden** is a product *preference*, not a locked property: whether any record survives deletion is a retention decision. **AUTHORITY-BLOCKED** — see §11.
@@ -678,6 +694,8 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Quality-summary aggregation contract, and the customer trust labels | CONTRACT-BLOCKED | `T1` (**PROPOSED**) |
 | Exact tombstone fields | CONTRACT-BLOCKED | `G2`/`G3`, `W1-07` |
 | Deletion authority | AUTHORITY-BLOCKED | a **registered** artifact (future active `G3`); the `R6-01` note is evidence, not authority |
+| Clock cardinality (one clock vs per-artifact) | AUTHORITY-BLOCKED | `G2-01`/`G2-02`, activated by `G2-03`; today's evidence covers one beta session only |
+| Slice ordering of navigation links | LOCKED as a constraint | each link ships with its own surface (`FR-049`); see §19 |
 | Whether a tombstone exists at all | AUTHORITY-BLOCKED | `G2`/`G3` retention decision; `RCA-001:161` excludes report history |
 | Navigation scope: Reports / Activity / Metrics / "Workspace" | **CONFLICT-BLOCKED** | reconciling this blueprint with `W1-05` (roadmap:746); roadmap governs |
 | Durable progress / resume capability for a running analysis | IMPLEMENTATION-BLOCKED | `W1`; nothing persists commercial progress across a page load today |
