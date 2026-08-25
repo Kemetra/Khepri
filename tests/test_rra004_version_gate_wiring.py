@@ -262,3 +262,26 @@ def test_no_surface_renders_the_section_placeholder_literally() -> None:
     code = f"{SECTION_GROWTH}:{REASON_FAMILY_VERSION_UNADMITTED}"
     for language in (LANGUAGE_ARABIC, LANGUAGE_ENGLISH):
         assert "{" not in caveat_prose(code, language)
+
+
+def test_no_chrome_hands_a_template_an_unfilled_placeholder() -> None:
+    """The web and print surfaces are a third rendering path, and it leaked.
+
+    `html` passes `REFUSAL_WORDING["section"]` into the template as
+    `chrome.refusal_prose`, and `report.html.j2` indexes it by reason and prints
+    the value. Filling the placeholder in `wording` and in the workbook left this
+    one untouched, so a refused family put a literal `{section}` on the page and
+    in the PDF that extends the same template.
+
+    Asserted over the chrome mapping rather than a rendered page because that
+    mapping is what the template is handed: any entry still carrying a brace is
+    a token one section's refusal will print verbatim.
+    """
+    from khepri.rra.rendering.html import _CHROME
+
+    for language, chrome in _CHROME.items():
+        assert language
+        for reason, prose in chrome["refusal_prose"].items():
+            assert "{" not in prose, (
+                f"{reason} reaches the template with an unfilled placeholder"
+            )
