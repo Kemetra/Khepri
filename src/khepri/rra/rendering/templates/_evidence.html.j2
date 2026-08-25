@@ -8,7 +8,7 @@
 {% macro evidence(audit, chrome, caveat_prose) %}
 <section id="evidence-figures" aria-labelledby="evidence-figures-heading">
 <h2 id="evidence-figures-heading">{{ chrome.figures }}</h2>
-<div class="scroller">
+<div class="scroller" role="region" tabindex="0" aria-label="{{ chrome.figures_caption }}">
 <table>
 <caption>{{ chrome.figures_caption }}</caption>
 <thead>

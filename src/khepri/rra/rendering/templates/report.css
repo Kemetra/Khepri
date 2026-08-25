@@ -166,8 +166,19 @@ section {
   margin-block-end: calc(var(--report-space) * 2);
 }
 
+/* A horizontally scrolling region needs to be reachable by keyboard, or the columns past the
+ * fold are unreachable without a pointer. `tabindex="0"` in the template puts it in the tab
+ * order and `role="region"` with the table's own caption as its label says what was reached --
+ * the pattern `review.html.j2` already uses for its mapping table. The focus ring is not
+ * optional once the element is focusable: a tab stop with no visible indicator is a keyboard
+ * trap that looks like nothing happened. */
 .scroller {
   overflow-x: auto;
+}
+
+.scroller:focus-visible {
+  outline: 3px solid var(--report-accent);
+  outline-offset: 2px;
 }
 
 table {
