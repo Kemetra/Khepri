@@ -97,9 +97,16 @@ a:focus-visible,
   margin-block-end: var(--report-space);
 }
 
+/*
+ * The sentence `RRA-006` requires the reader to see, marked `role="note"`. The rule is not
+ * decoration: `report.print.css` drops the tint because a printer may not honour background
+ * graphics, and the border is what carries the emphasis onto paper. A 1px hairline would leave a
+ * mandatory disclosure with no signal in the medium the report is most often read in.
+ */
 .disclosure {
   padding-block: 0.75rem;
   padding-inline: var(--report-space);
+  /* impeccable-disable-next-line side-tab: governed disclosure, load-bearing in print */
   border-inline-start: 4px solid var(--report-accent);
   background: #f2f6fa;
 }
