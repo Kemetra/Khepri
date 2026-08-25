@@ -7,11 +7,14 @@ imported: the frame has one definition, and no route group may grow a second.
 
 **Two surfaces, one frame.** The team surface and the invitation-issued surface are both rendered
 inside a resolved organization, and a reader who moves between them must not watch the header lose
-an element it had a moment before. `invitation_issued` is a `POST` result with no address of its
-own, so the language control cannot return to it; the team surface it was reached from is the
-honest destination, and it is what both surfaces name. Without this the control fell back to
-`_render`'s empty tail and dropped an owner on the organization chooser -- a language switch that
-silently discarded the surface *and* the scope.
+an element it had a moment before. Without this the issued surface took `_render`'s defaults: no
+organization, no `Team`, and an empty tail that dropped an owner on the chooser.
+
+The language control is the one thing this does *not* settle for both. `invitation_issued` is a
+`POST` result with no address of its own, so no destination re-requests it in the other language,
+and reaching any of them destroys the token `issue` returned once -- so that surface renders no
+control at all and says so at its own render call. What this helper answers is the organization
+half, which the two surfaces must agree on; the control is a property of having an address.
 
 `FR-042` gives the session's organization the scope and gives the address none, so the name is
 matched on the identifier the resolver returned rather than on any path segment. An organization
@@ -42,8 +45,8 @@ def organization_frame(organizations: Iterable[Any], organization_id: str) -> di
     """The frame context for a surface rendered inside one resolved organization.
 
     `organization_name` is what the frame shows and what its organization control is named by;
-    `surface_path` is the tail the language control keeps, so switching language holds the surface
-    rather than dropping the reader on the chooser (`FR-054` scenario 11).
+    `surface_path` is the tail the language control keeps where one renders, so switching language
+    holds the surface rather than dropping the reader on the chooser (`FR-054` scenario 11).
     """
     return {
         "organization_name": _active_organization_name(organizations, organization_id),

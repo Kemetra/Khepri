@@ -151,12 +151,9 @@ def add_invitation_routes(
         # the frame first and the failure costs nothing: no invitation, no orphaned token, and the
         # owner sees the same uniform refusal every other cause produces.
         #
-        # The frame itself is resolved the way the team surface resolves it. This surface is a
-        # `POST` result with no address of its own, so without a `surface_path` the language
-        # control took `_render`'s empty tail and sent an owner to the chooser -- losing the
-        # surface and the scope on the one page whose secret is shown once. The team surface is
-        # where it goes now, which is where "back to the team" goes and where the reader came
-        # from, and the organization and `Team` controls stop vanishing on the way through.
+        # The frame itself is resolved the way the team surface resolves it, so the organization
+        # and `Team` controls stop vanishing on the way through this surface and returning when
+        # the reader goes back.
         frame = organization_frame(
             services.organizations.organizations_for_account(context.account_id),
             context.organization_id,
@@ -186,6 +183,19 @@ def add_invitation_routes(
             # of the team they were looking at.
             organization_id=context.organization_id,
             **frame,
+            # The one surface that renders no language control. It is a `POST` result with no
+            # address of its own, so nothing re-requests *this page* in the other language: every
+            # destination the control could name is a different surface, and reaching it discards
+            # the token above, which `issue` returned once and the store keeps only a verifier of.
+            # A control labelled "switch language" that in fact means "throw away the secret you
+            # were just told to copy" is a worse answer than the control's absence, so it is
+            # absent. The surface still renders in both languages with the same actions in each,
+            # which is the parity `FR-054` asks for; `FR-055` constrains a switch that exists.
+            #
+            # The links that remain -- the brand, the organization, `Team`, "back to the team" --
+            # leave the token behind too, but each of them says where it goes. They are the
+            # reader's own decision to leave; a language control is not.
+            language_switch=False,
         )
 
     @app.post(

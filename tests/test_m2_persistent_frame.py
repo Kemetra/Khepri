@@ -28,8 +28,14 @@ absence against a rendered page carrying a distinctive name.
 **Every surface that resolves an organization frames it the same way.** `invitation_issued` is
 rendered by `issue_invitation` rather than by the dispatcher, so it is the one surface a frame
 written in the dispatcher can silently miss -- and it did, taking `_render`'s defaults and sending
-a language switch to the organization chooser. The cases below assert its frame against the team
-surface's rather than against a literal, so the two cannot drift apart again.
+a language switch to the organization chooser. The cases below assert its organization half against
+the team surface's rather than against a literal, so the two cannot drift apart again.
+
+**One element of the frame is absent on one surface, and that is the point.** `invitation_issued`
+has no address of its own and shows a token `issue` returns exactly once, so no language control
+can re-request the page and every destination one could name destroys the secret. That surface
+renders none, and the cases pin both halves of it: the control is absent there, and present on
+every surface that has an address to return to.
 """
 
 from __future__ import annotations
@@ -197,11 +203,34 @@ class TestTheOrganizationIsNamedWhereItIsResolved:
         assert ORGANIZATION_NAME in html
         assert "Someone Else Entirely" not in html
 
-    def test_a_latin_name_carries_its_direction_in_arabic(self) -> None:
-        """`FR-055`: a Latin run inside Arabic prose reorders visually without an explicit dir."""
-        html = _shell().get(f"{SHELL_PREFIX}/ar/org-acme/team").text
+    @pytest.mark.parametrize(
+        "name",
+        [
+            ORGANIZATION_NAME,
+            # `Organization.create` restricts the name to no script, so an Arabic organization
+            # naming itself in Arabic is an ordinary input rather than an edge case. A fixed
+            # `dir="ltr"` reordered exactly this: the digits and the parenthesis are neutral, so
+            # they take the paragraph direction the attribute forces rather than the name's.
+            "\u0645\u0624\u0633\u0633\u0629 \u0632\u0641\u064a\u0631 (\u0662\u0660\u0662\u0666)",
+        ],
+    )
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_the_name_carries_a_direction_derived_from_itself(
+        self, language: str, name: str
+    ) -> None:
+        """`FR-055`, for both scripts the name may be in rather than the one it usually is.
 
-        assert 'dir="ltr"' in html
+        The requirement is that the run carry an explicit direction and render in isolation, not
+        that the direction be `ltr`: a Latin name inside the Arabic shell needs `ltr`, and an
+        Arabic name needs `rtl`, and only the value derives that from the name itself. Asserted on
+        the name's own span, because the page carries other `dir` attributes -- a bare search for
+        `dir="ltr"` passed with the organization name unmarked entirely.
+        """
+        html = _shell(
+            organizations=[_organization("org-acme", name)]
+        ).get(f"{SHELL_PREFIX}/{language}/org-acme/team").text
+
+        assert f'<span id="frame-organization-name" dir="auto">{name}</span>' in html
 
     def test_the_chooser_does_not_offer_a_link_to_itself(self) -> None:
         """The chooser is where the organization control leads; a control to here does nothing."""
@@ -235,6 +264,21 @@ class TestTeamIsTheOnlyDestination:
 
 class TestTheLanguageControlPreservesPosition:
     """`FR-047` plus scenario 11: "Language switch mid-surface | Position preserved"."""
+
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    @pytest.mark.parametrize("path", ["/", "/org-acme/team", UNKNOWN_SURFACE])
+    def test_every_addressable_surface_offers_the_control(
+        self, path: str, language: str
+    ) -> None:
+        """`invitation_issued` opts out; nothing else may drift into opting out with it.
+
+        The opt-out is a render-time flag, so the failure mode it introduces is a surface that
+        quietly stops offering the switch. Every surface with an address is driven here, in both
+        languages, so that drift is a failure rather than a thing nobody looked at.
+        """
+        html = _shell().get(f"{SHELL_PREFIX}/{language}{path}").text
+
+        assert _renders_a_language_control(html), path
 
     def test_the_shell_keeps_the_surface(self) -> None:
         html = _shell().get(f"{SHELL_PREFIX}/en/org-acme/team").text
@@ -368,6 +412,25 @@ def _language_control(html: str) -> str:
     return match.group(1)
 
 
+def _renders_a_language_control(html: str) -> bool:
+    """Whether the control is on the page at all, for the one surface that must not carry it."""
+    return _LANGUAGE_CONTROL.search(html) is not None
+
+
+#: The organization half of the frame: the control that names it and the `Team` entry beside it.
+#: Captured whole so that two surfaces resolving it through one helper can be compared as markup
+#: rather than as a handful of substrings that could each pass for a different reason.
+_ORGANIZATION_FRAME = re.compile(
+    r'<a class="frame-organization".*?</nav>', re.DOTALL
+)
+
+
+def _organization_frame(html: str) -> str:
+    match = _ORGANIZATION_FRAME.search(html)
+    assert match is not None, "the frame names no organization"
+    return match.group(0)
+
+
 class TestTheBetaJourneyIsUntouched:
     """`RCA-002`'s exclusion, asserted rather than remembered.
 
@@ -432,15 +495,35 @@ class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
         assert "inv_a-one-time-token" in response.text
         return response.text
 
-    @pytest.mark.parametrize("language,alternate", [("en", "ar"), ("ar", "en")])
-    def test_the_language_control_keeps_the_team_surface(
-        self, language: str, alternate: str
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_this_surface_renders_no_language_control(self, language: str) -> None:
+        """The one surface where the control cannot keep its promise, so it is not offered.
+
+        `invitation_issued` is a `POST` result with no address of its own. No destination
+        re-requests *this page* in the other language, and every destination the control could
+        name discards the token above -- `issue` returns it once and the store keeps only a salted
+        verifier, so an owner who switched language could not recover what they were expected to
+        share. A revision of this slice pointed the control at the team surface, which fixed the
+        scope it lost and left the loss that matters intact.
+
+        `FR-054`'s parity survives: the surface renders in both languages, and this case runs in
+        both, so the actions are equivalent in each. `FR-055` constrains a switch that exists.
+        """
+        assert not _renders_a_language_control(self._issued(language))
+
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_the_token_and_its_warning_are_still_what_the_surface_offers(
+        self, language: str
     ) -> None:
-        """The assertion the defect fails: it captured `{prefix}/{alternate}`, the chooser."""
-        assert (
-            _language_control(self._issued(language))
-            == f"{SHELL_PREFIX}/{alternate}/org-acme/team"
-        )
+        """Absence is only correct if the reason for it is still on the page.
+
+        Removing the control would also "pass" if this surface had stopped rendering the secret it
+        exists to show, so the reason is asserted next to the absence.
+        """
+        issued = self._issued(language)
+
+        assert "inv_a-one-time-token" in issued
+        assert SHELL_COPY[language]["invitation_token_once"] in issued
 
     def test_the_frame_names_the_organization_it_acted_in(self) -> None:
         """It vanished on the way through, and returned when the reader went back."""
@@ -490,11 +573,13 @@ class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
         assert invitations.issued == [], "an invitation was committed for a response that failed"
 
     def test_the_team_surface_and_this_one_agree(self) -> None:
-        """One helper resolves both, so the header cannot differ between them.
+        """One helper resolves both, so the organization half cannot differ between them.
 
         Asserted against the team surface rather than against a literal: a frame that changed on
-        both surfaces together is a change, and a frame that changed on one is the defect.
+        both surfaces together is a change, and a frame that changed on one is the defect. The
+        language control is deliberately not compared -- it is the one element these two surfaces
+        differ on, and the case above is what pins that difference.
         """
         team = _shell().get(f"{SHELL_PREFIX}/en/org-acme/team").text
 
-        assert _language_control(self._issued("en")) == _language_control(team)
+        assert _organization_frame(self._issued("en")) == _organization_frame(team)

@@ -31,13 +31,18 @@
     {#
       Named by both spans in source order, so the accessible name is "Acme Trading Change
       organization" rather than a bare organization name whose purpose a screen reader cannot infer.
-      `dir="ltr"` on the name itself: `FR-055` requires a Latin run inside Arabic prose to carry its
-      direction, and an organization name is the most likely Latin run on this surface.
+      `dir="auto"` on the name itself: `FR-055` requires a Latin run inside Arabic prose to carry
+      its direction, and an organization name is the most likely Latin run on this surface -- but
+      `Organization.create` restricts the name to no script, so it is just as likely to be Arabic.
+      `auto` derives the direction from the value's first strong character, which is `ltr` for the
+      Latin run `FR-055` is about and `rtl` for an Arabic name that a fixed `ltr` would have
+      reordered around its own punctuation and digits. Either way the run is isolated, which is
+      what the requirement asks for; the fixed value only happened to be right for half the inputs.
     #}
     <a class="frame-organization"
        href="{{ prefix }}/{{ language }}"
        aria-labelledby="frame-organization-name frame-organization-action">
-      <span id="frame-organization-name" dir="ltr">{{ organization_name }}</span>
+      <span id="frame-organization-name" dir="auto">{{ organization_name }}</span>
       <span id="frame-organization-action" class="visually-hidden">{{ copy.frame_organization_label }}</span>
     </a>
     <nav class="frame-surfaces" aria-label="{{ copy.team_title }}">
@@ -48,10 +53,22 @@
       `FR-047` makes the language a property of the address, so this swaps the segment and keeps the
       surface -- scenario 11's "language switch mid-surface, position preserved". `lang` is set so a
       screen reader pronounces the target language in that language rather than in the page's.
+
+      `language_switch` is the one surface-shaped exception, and it exists because the control
+      cannot keep its promise on `invitation_issued`. That surface is a `POST` result with no
+      address of its own, so there is no address to re-request in the other language: every
+      destination the control could name is a *different* surface, and reaching it destroys the
+      only plaintext copy of the invitation token, which `issue` returns once and never again.
+      A control that says "switch language" and means "discard the secret you were told to copy"
+      is worse than no control, so that surface renders none. `FR-054`'s parity is unharmed --
+      the surface renders in both languages with the same actions in each -- and `FR-055` asks a
+      switch to preserve position, which is a constraint on a switch that exists.
     #}
+    {% if language_switch %}
     <a class="frame-language"
        href="{{ prefix }}/{{ alternate }}{{ surface_path }}"
        lang="{{ copy.frame_language_code }}">{{ copy.frame_language }}</a>
+    {% endif %}
   </header>
   <main id="main-content" class="shell-main" tabindex="-1">
     {% block content %}{% endblock %}
