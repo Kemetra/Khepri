@@ -126,6 +126,7 @@ a:focus-visible,
 .refused {
   padding-block: 0.75rem;
   padding-inline: var(--report-space);
+  /* impeccable-disable-next-line side-tab: semantic state rule, not a card tab */
   border-inline-start: 4px solid var(--report-muted);
   background: #f7f8fa;
   color: var(--report-muted);
