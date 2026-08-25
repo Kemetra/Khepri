@@ -1,17 +1,25 @@
-# DRAFT — KHEPRI-DEC-NNN: RRA private-beta runtime target and DigitalOcean FRA1 environment descriptor
+# DRAFT — KHEPRI-DEC-NNN-TARGET: RRA private-beta runtime target and DigitalOcean FRA1 environment descriptor
 
 **Status: planning-only draft. Not a governed artifact — including after this commit is merged.**
 
 Merging this commit does **not** make this document governing. `governance/registry.yaml` is
-unchanged by it, contains no `KHEPRI-DEC-NNN`, and is authoritative for artifact identity, state,
+unchanged by it, contains no `KHEPRI-DEC-NNN-TARGET`, and is authoritative for artifact identity, state,
 and document under Constitution III; the validator therefore ignores this file, which lives under
 `docs/platform/proposed-governance/`. This file remains planning-only until it is finalized under an
 owner-allocated identifier, moved into `governance/decisions/`, and added through the atomic
 registry transition described below.
 
-`NNN` is a placeholder; only the owner allocates the identifier. Nothing here authorizes
-provisioning, deployment, spend, or external traffic, and merging this commit closes no `OPS1` gate
-and resolves no `KHEPRI-DEC-027` stop-gate.
+`KHEPRI-DEC-NNN-TARGET` is a placeholder; only the owner allocates the identifier. Nothing here
+authorizes provisioning, deployment, spend, or external traffic, and merging this commit closes no
+`OPS1` gate and resolves no `KHEPRI-DEC-027` stop-gate.
+
+**A second, separate draft accompanies this one.**
+`dec-006-benchmark-environment-restatement-draft.md` proposes to supersede `KHEPRI-DEC-006` as
+`KHEPRI-DEC-NNN-BENCHMARK`, because that decision's environment sections are inherited from the
+retired `KHEPRI-DEC-005` and pin the benchmark to AWS. The two placeholders are kept visibly
+distinct because `AGENTS.md` fails closed on ambiguous identity. That decision's registry entry
+depends on this one, and the validator rejects an unknown dependency identifier, so this decision
+must enter the registry before or in the same commit as that one.
 
 > Proposed to supersede `KHEPRI-DEC-008`, which superseded `KHEPRI-DEC-005` and `KHEPRI-DEC-007`.
 > Restates `KHEPRI-DEC-008` in full, revising one capability row and supplying the target-selection
@@ -477,10 +485,10 @@ registry: KHEPRI-DEC-007: successor 'KHEPRI-DEC-008' must be active
 
 Re-pointing both at this decision in the same commit clears them.
 
-1. add `KHEPRI-DEC-NNN`, `state: active`;
-2. `KHEPRI-DEC-008` → `state: retired`, `superseded_by: KHEPRI-DEC-NNN`;
-3. `KHEPRI-DEC-005` → `superseded_by: KHEPRI-DEC-NNN`;
-4. `KHEPRI-DEC-007` → `superseded_by: KHEPRI-DEC-NNN`.
+1. add `KHEPRI-DEC-NNN-TARGET`, `state: active`;
+2. `KHEPRI-DEC-008` → `state: retired`, `superseded_by: KHEPRI-DEC-NNN-TARGET`;
+3. `KHEPRI-DEC-005` → `superseded_by: KHEPRI-DEC-NNN-TARGET`;
+4. `KHEPRI-DEC-007` → `superseded_by: KHEPRI-DEC-NNN-TARGET`.
 
 Constitution V fails closed, so splitting these across commits leaves `main` failing its own
 validator.
