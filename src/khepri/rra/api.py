@@ -44,6 +44,15 @@ from khepri.rra.sessions import (
     InvitationService,
     SessionExpired,
 )
+from khepri.rra.source_contract import (
+    BasisDeclaration,
+    ContractAttribution,
+    ContractRefused,
+    EventDeclaration,
+    IdentityDeclaration,
+    SourceContract,
+    build_source_contract,
+)
 
 ConsentVersion = Annotated[
     str,
@@ -76,10 +85,82 @@ class UploadResponse(BaseModel):
     expires_at: datetime
 
 
+class SourceContractBody(BaseModel):
+    """What the operator declares their file to mean, over the wire.
+
+    `extra="forbid"` earns its place here rather than being a habit. A
+    misspelled key in a permissive model is dropped silently, so an operator
+    writing `revenue_vat_inclusive` would receive the *default* basis and a
+    report computed on a declaration they never made. `RRA-003` refuses
+    inference, and a silently ignored field is inference by another name.
+
+    Flat over the wire and grouped in the domain: a JSON body is easier to post
+    flat, while `khepri.rra.source_contract` groups the same declarations by
+    what they mean. This model is the translation between the two.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: str
+    evidence: str
+    event_kind_column: str | None = None
+    sale_only: bool = False
+    status_column: str | None = None
+    posted_only: bool = False
+    currency_column: str | None = None
+    currency_code: str | None = None
+    event_key_columns: list[str] = []
+    unique_line_grain_attested: bool = False
+    transaction_id_column: str | None = None
+    transaction_key_components: list[str] = []
+    transaction_id_unique_package_wide: bool = False
+    revenue_vat_exclusive: bool = True
+    revenue_is_net_of_returns: bool = False
+    units_are_integral: bool = True
+    cost_is_extended: bool = True
+    discount_is_additive: bool = True
+
+    def to_contract(self) -> SourceContract:
+        """The governed contract, or `ContractRefused` naming what is unproven."""
+        return build_source_contract(
+            attribution=ContractAttribution(
+                contract_id=self.contract_id,
+                evidence=self.evidence,
+            ),
+            events=EventDeclaration(
+                event_kind_column=self.event_kind_column,
+                sale_only=self.sale_only,
+                status_column=self.status_column,
+                posted_only=self.posted_only,
+                currency_column=self.currency_column,
+                currency_code=self.currency_code,
+            ),
+            identity=IdentityDeclaration(
+                event_key_columns=tuple(self.event_key_columns),
+                unique_line_grain_attested=self.unique_line_grain_attested,
+                transaction_id_column=self.transaction_id_column,
+                transaction_key_components=tuple(self.transaction_key_components),
+                transaction_id_unique_package_wide=(
+                    self.transaction_id_unique_package_wide
+                ),
+            ),
+            basis=BasisDeclaration(
+                revenue_vat_exclusive=self.revenue_vat_exclusive,
+                revenue_is_net_of_returns=self.revenue_is_net_of_returns,
+                units_are_integral=self.units_are_integral,
+                cost_is_extended=self.cost_is_extended,
+                discount_is_additive=self.discount_is_additive,
+            ),
+        )
+
+
 class ProfileRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     requested_semantics: list[str] = []
+    # Required, because `RRA-003` will not let admission infer what a column
+    # means. A body without it is refused by validation rather than defaulted.
+    source_contract: SourceContractBody
 
 
 class ProfileColumnResponse(BaseModel):
@@ -116,6 +197,9 @@ class ProfileResponse(BaseModel):
     profile_version: str
     mapping_version: str
     profile_digest: str
+    # The reading this profile was admitted under. Carried so a later coverage
+    # manifest can be bound to it, and so a reader can ask what was declared.
+    source_contract_digest: str
     row_count: int
     column_count: int
     admissible: bool
@@ -259,11 +343,19 @@ def create_app(
                     status_code=400,
                     detail="Requested retail semantics are not governed.",
                 )
+            # Built before the upload is read, so a declaration that proves
+            # nothing is refused with its own reason rather than surfacing
+            # later as an unexplained admissibility failure.
+            try:
+                contract = payload.source_contract.to_contract()
+            except ContractRefused as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
             try:
                 record, created = profiling_service.profile_session_upload(
                     session_id=session_id,
                     now=clock(),
                     request=ReportRequest(requested_semantics=frozenset(requested)),
+                    source_contract_digest=contract.digest,
                 )
             except SessionExpired as error:
                 raise _session_unavailable() from error
@@ -468,6 +560,7 @@ def _profile_response(record: DatasetProfileRecord) -> ProfileResponse:
         profile_version=record.profile_version,
         mapping_version=record.mapping_version,
         profile_digest=record.profile_digest,
+        source_contract_digest=str(record.document.get("source_contract_digest", "")),
         row_count=record.row_count,
         column_count=record.column_count,
         admissible=record.admissible,

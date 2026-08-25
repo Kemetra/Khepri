@@ -130,6 +130,7 @@ class ProfilingService:
         session_id: str,
         now: datetime,
         request: ReportRequest = DEFAULT_REPORT_REQUEST,
+        source_contract_digest: str = "",
     ) -> tuple[DatasetProfileRecord, bool]:
         session = self._sessions.get_session(session_id)
         if session is None:
@@ -144,7 +145,7 @@ class ProfilingService:
 
         existing = self._profiles.get_profile_for_upload(upload.upload_id, scope)
         if existing is not None:
-            return _answering(existing, request), False
+            return _answering(existing, request, source_contract_digest), False
 
         content = self._objects.get(
             upload.object_key,
@@ -163,7 +164,11 @@ class ProfilingService:
             media_type=upload.media_type,
             source_sha256_hex=upload.sha256_hex,
         )
-        document = build_document(profile, request=request)
+        document = build_document(
+            profile,
+            request=request,
+            source_contract_digest=source_contract_digest,
+        )
         candidate = DatasetProfileRecord(
             profile_id=self._new_profile_id(),
             owner_id=upload.owner_id,
@@ -180,7 +185,10 @@ class ProfilingService:
             document=document,
         )
         stored = self._profiles.add_profile(candidate)
-        return _answering(stored, request), stored.profile_id == candidate.profile_id
+        return (
+            _answering(stored, request, source_contract_digest),
+            stored.profile_id == candidate.profile_id,
+        )
 
     def get_session_profile(
         self,
@@ -199,19 +207,30 @@ def build_document(
     profile: DatasetProfile,
     *,
     request: ReportRequest = DEFAULT_REPORT_REQUEST,
+    source_contract_digest: str = "",
 ) -> dict[str, Any]:
+    """The stored profile, including the reading it was admitted under.
+
+    The contract digest is persisted rather than recomputed on read. Recomputing
+    would make a stored profile agree with whatever the current code produces,
+    which is exactly the drift the binding exists to detect: `RRA-003` requires
+    a coverage manifest to be refused when the contract the events were admitted
+    under is not the one it was attested against.
+    """
     mapping = build_mapping(profile)
     decision = assess_admissibility(profile, mapping, request=request)
     return {
         "profile": profile.as_document(),
         "mapping": mapping.as_document(),
         "admissibility": decision.as_document(),
+        "source_contract_digest": source_contract_digest,
     }
 
 
 def _answering(
     record: DatasetProfileRecord,
     request: ReportRequest,
+    source_contract_digest: str = "",
 ) -> DatasetProfileRecord:
     """Return the stored profile only if it answers the question being asked.
 
@@ -230,6 +249,15 @@ def _answering(
     if _requested_semantics(record) != tuple(sorted(request.requested_semantics)):
         raise ProfileRequestConflict(
             "This upload was profiled under different requested semantics."
+        )
+    stored_contract = str(record.document.get("source_contract_digest", ""))
+    if stored_contract != source_contract_digest:
+        # The same bytes, re-declared. `RRA-003` treats a corrected contract as
+        # a different admission, so handing back the stored profile would answer
+        # under a declaration the caller has just replaced -- and would leave a
+        # coverage manifest bound to semantics nobody is asserting any more.
+        raise ProfileRequestConflict(
+            "This upload was profiled under a different source contract."
         )
     return record
 
