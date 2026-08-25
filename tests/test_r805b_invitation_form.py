@@ -208,3 +208,61 @@ class TestTheFieldsAreLabelledAndDirected:
         _, arabic = _create_form(client.get(f"{SHELL_PREFIX}/ar/org-acme/team").text)
 
         assert english != arabic
+
+
+class TestTheSuccessSurfaceReachesTheTeamItCameFrom:
+    """The link out of `invitation_issued`, followed rather than pattern-matched.
+
+    The href it shipped with -- `{prefix}/{language}/team` -- is a valid URL that renders a real
+    page, so nothing raised and no assertion on the markup would have caught it. `shell_surface`
+    reads the surface name from `segments[2]`, and with the organization segment missing that index
+    holds `""`, which resolves to the switcher. An owner who had just invited somebody was returned
+    to the organization chooser.
+
+    So these follow the link and assert on the surface that answers, which is the only check the
+    original defect fails.
+    """
+
+    def _issued_page(self, language: str) -> tuple[TestClient, str]:
+        client, _ = _shell()
+        action, body = _create_form(
+            client.get(f"{SHELL_PREFIX}/{language}/org-acme/team").text
+        )
+        names = re.findall(r'name="(\w+)"', body)
+        answers = {"email": "invitee@example.test", "role": "member"}
+        response = client.post(
+            action, data={name: answers[name] for name in names}
+        )
+        assert response.status_code == 200
+        return client, response.text
+
+    def test_following_the_link_lands_on_the_team_surface(self) -> None:
+        """The assertion the defect fails: the switcher answered instead."""
+        client, issued = self._issued_page("en")
+        href = re.search(r'<a href="([^"]+)"', issued)
+        assert href is not None, "the success surface offers no way back"
+
+        landed = client.get(href.group(1))
+
+        assert landed.status_code == 200
+        # The team surface names the pending list; the switcher never does.
+        assert "invitations-title" in landed.text
+
+    def test_the_link_carries_the_organization_it_acted_on(self) -> None:
+        """A back-link to the wrong organization is the same defect wearing a path."""
+        _, issued = self._issued_page("en")
+        href = re.search(r'<a href="([^"]+)"', issued)
+        assert href is not None
+        assert href.group(1) == f"{SHELL_PREFIX}/en/org-acme/team"
+
+    def test_the_link_holds_in_arabic(self) -> None:
+        """`FR-054`: the language segment travels with the organization segment."""
+        client, issued = self._issued_page("ar")
+        href = re.search(r'<a href="([^"]+)"', issued)
+        assert href is not None
+        assert href.group(1) == f"{SHELL_PREFIX}/ar/org-acme/team"
+
+        landed = client.get(href.group(1))
+
+        assert landed.status_code == 200
+        assert "invitations-title" in landed.text
