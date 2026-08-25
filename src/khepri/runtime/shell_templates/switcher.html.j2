@@ -21,18 +21,25 @@
         {{ organization.name }}
       </a>
       {#
-        The entry point into the journey, once per organization rather than once per page. A single
-        action had to name a target, and it named `organizations[0]` -- so a member of several
-        organizations opened an analysis in whichever one the query returned first, with nothing on
-        screen saying which. The choice is the reader's here because the action sits on the row
-        whose organization it acts on.
+        The entry point into the journey, on the active organization's row and no other. It named
+        `organizations[0]` before, so a member of several opened an analysis in whichever one the
+        query returned first with nothing on screen saying which; putting it on the row names the
+        target instead of guessing it.
 
-        This discloses nothing the list above does not: the actions are exactly as many as the
-        links, so the reticence about counts holds unchanged.
+        **Offered only where it can succeed.** `for_request` refuses any organization that is not
+        this session's active one -- `FR-027` allows exactly one, and honoring a named one would
+        make the active organization advisory -- so an action on any other row would post a value
+        the resolver rejects and land the reader on the uniform unavailable surface. That reads as
+        a fault rather than as a step they have not taken. Every row keeps its link, which is the
+        control that does switch, and the analysis action follows the session once it moves.
+
+        This discloses nothing the list above does not: one action on a row the reader is already
+        in, so the reticence about counts holds unchanged.
 
         A POST rather than a link because it opens an analysis, and a GET that mutates is a GET a
         browser may prefetch.
       #}
+      {% if organization.organization_id == active_organization_id %}
       <form method="post"
             action="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/analyses">
         {#
@@ -47,6 +54,7 @@
           <span id="new-analysis-{{ loop.index }}">{{ copy.new_analysis }}</span>
         </button>
       </form>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>

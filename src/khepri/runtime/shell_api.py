@@ -223,15 +223,28 @@ def _no_membership(environment: Environment, *, language: str) -> Response:
 
 
 def _switcher(
-    environment: Environment, *, language: str, organizations: list[Any]
+    environment: Environment,
+    *,
+    language: str,
+    organizations: list[Any],
+    active_organization_id: str | None,
 ) -> Response:
-    """`FR-051`: only what the reader returned, which is only current memberships."""
+    """`FR-051`: only what the reader returned, which is only current memberships.
+
+    Takes the active organization because the analysis action is only offered where it can
+    succeed. `for_request` refuses any organization that is not this session's active one --
+    `FR-027` allows exactly one, and honoring a named one would make the active organization
+    advisory -- so an action on any other row would post a value the resolver rejects and land the
+    reader on the uniform unavailable surface. A dead end reads as a fault; the row keeps its link
+    instead, which is the control that does switch.
+    """
     return _render(
         environment,
         "switcher.html.j2",
         language=language,
         status_code=200,
         organizations=organizations,
+        active_organization_id=active_organization_id,
     )
 
 
@@ -260,6 +273,11 @@ def _team_response(
         invitations=invitations,
         is_owner=getattr(context, "is_owner", False),
         organization_id=context.organization_id,
+        # The invitation gateway is optional, and a shell wired without one still renders this
+        # surface. An owner would otherwise see an enabled creation form whose every submission
+        # `owner_or_none` refuses, which reaches them as the uniform unavailable surface -- a
+        # control that looks available and answers like a fault.
+        invitations_available=services.invitations is not None,
     )
 
 
@@ -344,7 +362,12 @@ def add_shell_routes(
                 services, environment, language=language, context=context
             )
         if surface == "":
-            return _switcher(environment, language=language, organizations=organizations)
+            return _switcher(
+                environment,
+                language=language,
+                organizations=organizations,
+                active_organization_id=context.organization_id,
+            )
         return _unavailable(environment, language=language)
 
 

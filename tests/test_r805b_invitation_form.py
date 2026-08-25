@@ -266,3 +266,56 @@ class TestTheSuccessSurfaceReachesTheTeamItCameFrom:
 
         assert landed.status_code == 200
         assert "invitations-title" in landed.text
+
+
+class TestTheFormFollowsTheGateway:
+    """`ShellServices.invitations` is optional, and the surface renders without it.
+
+    An owner in a shell configured with no gateway satisfied `is_owner` and got a fully enabled
+    creation form, while `owner_or_none` refused every submission and answered with the uniform
+    unavailable surface. A control that looks available and replies like a fault is worse than an
+    absent one: the reader cannot tell a missing capability from a broken product.
+    """
+
+    def _shell_without_invitations(self) -> TestClient:
+        app = FastAPI()
+        add_shell_routes(
+            app,
+            services=ShellServices(
+                resolver=_StubResolver(_Context("acct-1", "org-acme", "owner")),
+                organizations=_StubOrganizations(),
+                invitations=None,
+            ),
+            clock=lambda: NOW,
+        )
+        client = TestClient(app)
+        client.cookies.set(SESSION_COOKIE, "a-session-token")
+        return client
+
+    def test_an_owner_is_not_shown_a_form_the_shell_cannot_serve(self) -> None:
+        """The assertion the defect fails: the form rendered with no gateway behind it."""
+        client = self._shell_without_invitations()
+
+        html = client.get(f"{SHELL_PREFIX}/en/org-acme/team").text
+
+        assert _CREATE_FORM.search(html) is None
+
+    def test_the_surface_still_renders(self) -> None:
+        """Withholding the form must not withhold the page.
+
+        The member list is still the reason to be on this surface.
+        """
+        client = self._shell_without_invitations()
+
+        response = client.get(f"{SHELL_PREFIX}/en/org-acme/team")
+
+        assert response.status_code == 200
+        assert "page-title" in response.text
+
+    def test_the_form_returns_when_the_gateway_does(self) -> None:
+        """Paired with the case above, so the gate is read as a condition and not as a removal."""
+        client, _ = _shell()
+
+        html = client.get(f"{SHELL_PREFIX}/en/org-acme/team").text
+
+        assert _CREATE_FORM.search(html) is not None
