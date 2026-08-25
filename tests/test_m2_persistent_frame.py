@@ -31,11 +31,14 @@ written in the dispatcher can silently miss -- and it did, taking `_render`'s de
 a language switch to the organization chooser. The cases below assert its organization half against
 the team surface's rather than against a literal, so the two cannot drift apart again.
 
-**One element of the frame is absent on one surface, and that is the point.** `invitation_issued`
-has no address of its own and shows a token `issue` returns exactly once, so no language control
-can re-request the page and every destination one could name destroys the secret. That surface
-renders none, and the cases pin both halves of it: the control is absent there, and present on
-every surface that has an address to return to.
+**One element of the frame is absent on one surface, and one surface keeps only half of what it
+would like to.** `invitation_issued` has no address of its own and shows a token `issue` returns
+exactly once, so every destination a language control could name destroys the secret; it renders
+none. `unavailable` has an address and may not name it -- `FR-051` and `FR-052` keep the
+organization and the object identifier out of a refusal's body, and an `href` is body -- so its
+control keeps the surface through a constant tail rather than keeping the address. Rendering
+nothing there was tried and gives up the reader `FR-054` is about: the one who reaches a refusal
+in a language they cannot read, whose recovery exit is in that language too.
 """
 
 from __future__ import annotations
@@ -51,7 +54,13 @@ from fastapi.testclient import TestClient
 from khepri.rca.organizations import Organization
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rra.journey.copy import JOURNEY_COPY
-from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
+from khepri.runtime.shell_api import (
+    _UNAVAILABLE_TAIL,
+    SHELL_ASSETS,
+    SHELL_PREFIX,
+    ShellServices,
+    add_shell_routes,
+)
 from khepri.runtime.shell_copy import SHELL_COPY
 
 NOW = datetime(2026, 8, 22, tzinfo=UTC)
@@ -86,6 +95,16 @@ class _StubResolver:
 
     def require_owner(self, token: str, *, organization_id: str, now: object) -> _Context:
         return self._context
+
+
+class _RefusingResolver:
+    """A resolver that refuses, which is one of the five causes `FR-050` collapses."""
+
+    def for_request(self, token: str, *, organization_id: str | None, now: object) -> _Context:
+        raise PermissionError("this session does not authorize the request")
+
+    def require_owner(self, token: str, *, organization_id: str, now: object) -> _Context:
+        raise PermissionError("this session does not authorize the request")
 
 
 class _StubOrganizations:
@@ -266,15 +285,17 @@ class TestTheLanguageControlPreservesPosition:
     """`FR-047` plus scenario 11: "Language switch mid-surface | Position preserved"."""
 
     @pytest.mark.parametrize("language", ["en", "ar"])
-    @pytest.mark.parametrize("path", ["/", "/org-acme/team", UNKNOWN_SURFACE])
-    def test_every_addressable_surface_offers_the_control(
+    @pytest.mark.parametrize("path", ["/", "/org-acme/team"])
+    def test_every_surface_the_frame_may_name_offers_the_control(
         self, path: str, language: str
     ) -> None:
-        """`invitation_issued` opts out; nothing else may drift into opting out with it.
+        """Two surfaces opt out; nothing else may drift into opting out with them.
 
         The opt-out is a render-time flag, so the failure mode it introduces is a surface that
-        quietly stops offering the switch. Every surface with an address is driven here, in both
-        languages, so that drift is a failure rather than a thing nobody looked at.
+        quietly stops offering the switch. Every surface the frame may name a destination for is
+        driven here, in both languages, so that drift is a failure rather than a thing nobody
+        looked at. `invitation_issued` and `unavailable` are the two that are absent by
+        construction, and each has its own case saying why.
         """
         html = _shell().get(f"{SHELL_PREFIX}/{language}{path}").text
 
@@ -327,6 +348,183 @@ class TestEverySurfaceCarriesTheFrame:
 
         assert response.status_code == 404
         assert ORGANIZATION_NAME not in response.text
+
+
+class TestTheRefusalKeepsItsSurfaceAcrossLanguages:
+    """`FR-055` on the surface that absorbs every failure, bounded by `FR-051` and `FR-052`.
+
+    The frame gave `unavailable` a language control and no tail to keep, so it took `_render`'s
+    empty default and pointed at `{prefix}/{alternate}`. For an authenticated reader that address
+    renders the organization chooser at `200` -- exactly the "returning them to an entry surface"
+    `FR-055` names.
+
+    Two repairs were written before this one. Echoing the reader's own address preserves the
+    position exactly and is the one thing this surface may not do: the merged cases in
+    `test_r802_shell_unavailable_surface.py` assert the body carries neither the organization it
+    was asked about nor the object identifier, with no exception for a value the reader supplied,
+    and an `href` is body. Rendering no control at all satisfies every rule and strands the reader
+    `FR-054` is about -- the one who reaches a refusal in a language they cannot read, on a page
+    whose recovery exit is in that language too.
+
+    So the control keeps the *surface* rather than the address, through one constant tail that
+    names nothing. Its correctness rests on nothing being implemented under that name, which is
+    why the case below is about the constant rather than about any surface that renders it.
+    """
+
+    def test_the_canonical_refusal_tail_reaches_the_refusal(self) -> None:
+        """The constant resolves to `unavailable` because nothing is implemented under it.
+
+        `FR-046` requires an unknown path to resolve to the shared unavailable surface, so this
+        uses that rule as written rather than working around it -- but a link that is correct
+        *because* nothing is there stops being correct the day something is. This is what makes
+        that day a failing case instead of a silent redirection: implement a surface named
+        `unavailable` and this fails, naming the constant that has to move.
+        """
+        response = _shell().get(f"{SHELL_PREFIX}/en{_UNAVAILABLE_TAIL}")
+
+        assert response.status_code == 404
+        assert SHELL_COPY["en"]["recovery_exit"] in response.text
+
+    @pytest.mark.parametrize("language,alternate", [("en", "ar"), ("ar", "en")])
+    def test_the_switch_stays_on_a_refusal(self, language: str, alternate: str) -> None:
+        """Followed rather than asserted as a string.
+
+        A link that merely *looks* preserved and lands on an entry surface is the whole defect, so
+        the case walks it: the reader must still be on a refusal, in the language they chose.
+        """
+        client = _shell()
+        control = _language_control(client.get(f"{SHELL_PREFIX}/{language}{UNKNOWN_SURFACE}").text)
+        switched = client.get(control)
+
+        assert switched.status_code == 404
+        assert SHELL_COPY[alternate]["recovery_exit"] in switched.text
+        assert ORGANIZATION_NAME not in switched.text
+
+    def test_no_refusal_names_the_address_that_produced_it(self) -> None:
+        """`FR-051` and `FR-052`, restated here as the reason the tail is a constant.
+
+        The merged suite asserts this against `ScopeAccessDenied`; this asserts it against the
+        frame, so a later revision that gives the control the reader's own tail fails in the suite
+        that introduced the control rather than only in the one that predates it.
+        """
+        response = _shell().get(f"{SHELL_PREFIX}/en/a-very-distinctive-org-slug/no-such-surface")
+
+        assert response.status_code == 404
+        assert "a-very-distinctive-org-slug" not in response.text
+
+    def test_every_collapsed_cause_answers_the_same_way(self) -> None:
+        """`FR-050`: the causes must not be told apart by navigation state, and a link is some.
+
+        Three causes reaching `unavailable` by different routes -- no session at all, a resolver
+        that refuses, and a surface the shell does not implement -- at one address. Byte-identical
+        bodies rather than identical links, so navigation state cannot drift from the rest.
+        """
+        address = f"{SHELL_PREFIX}/en{UNKNOWN_SURFACE}"
+
+        no_session = _shell()
+        no_session.cookies.clear()
+
+        refused = FastAPI()
+        add_shell_routes(
+            refused,
+            services=ShellServices(
+                resolver=_RefusingResolver(),
+                organizations=_StubOrganizations(
+                    [_organization("org-acme", ORGANIZATION_NAME)]
+                ),
+                invitations=None,
+            ),
+            clock=lambda: NOW,
+        )
+        refusing_client = TestClient(refused)
+        refusing_client.cookies.set(SESSION_COOKIE, "a-session-token")
+
+        bodies = {
+            client.get(address).text for client in (no_session, refusing_client, _shell())
+        }
+
+        assert len(bodies) == 1, "the collapsed causes are distinguishable"
+
+
+class TestTheAssetRefusalOffersNoSwitch:
+    """The one refusal rendered without resolving the actor, and the hole that left.
+
+    `shell_asset` answers an unlisted name with `unavailable` before any session is read, so the
+    canonical tail is not a refusal for every reader who could reach it. An authenticated account
+    in no organization is the case: `FR-048` puts it on the next-step surface at `200` before the
+    dispatcher reads a surface name at all, so that reader followed the control off a `404` and
+    onto a next step -- the same "different surface" the control was fixed to stop doing.
+
+    The dispatcher is right and is not what changed. `FR-048` requires that account to reach the
+    next step and be denied every organization-scoped surface, so a canonical tail that outranked
+    it would be the defect. An asset name is not a surface a reader is on, so that refusal offers
+    no control instead.
+    """
+
+    def test_an_unlisted_asset_renders_no_control(self) -> None:
+        response = _shell(organizations=[]).get(f"{SHELL_ASSETS}/not-allowed.css")
+
+        assert response.status_code == 404
+        assert not _renders_a_language_control(response.text)
+
+    def test_the_dispatcher_still_answers_the_next_step_first(self) -> None:
+        """The behaviour the asset refusal defers to, asserted so it is a decision not an accident.
+
+        If this ever answered `404`, the asset refusal could carry the control again -- and the
+        reason it cannot would have gone away silently.
+        """
+        response = _shell(organizations=[]).get(f"{SHELL_PREFIX}/en{_UNAVAILABLE_TAIL}")
+
+        assert response.status_code == 200
+        assert SHELL_COPY["en"]["recovery_exit"] not in response.text
+
+    def test_a_member_following_the_tail_still_reaches_the_refusal(self) -> None:
+        """The fix must not have cost the readers the control was restored for."""
+        response = _shell().get(f"{SHELL_PREFIX}/ar{_UNAVAILABLE_TAIL}")
+
+        assert response.status_code == 404
+        assert SHELL_COPY["ar"]["recovery_exit"] in response.text
+
+
+class TestTheBrandIsOperableByItsVisibleName:
+    """WCAG 2.5.3 "Label in Name", which an `aria-label` on a wordmark quietly breaks.
+
+    The brand read `aria-label="{{ copy.frame_home_label }}"` over a visible `KHEPRI`. An
+    `aria-label` *replaces* the descendant text rather than adding to it, so on the Arabic shell
+    the accessible name was `الصفحة الرئيسية لخِبري` while the only thing on the control was the
+    Latin wordmark: a speech-input reader who said what they could see could not operate it.
+
+    The wordmark still needs words -- a picture of a name is not a name -- so they follow it now
+    instead of standing in for it, through the pair the organization control already uses.
+    """
+
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_the_accessible_name_begins_with_the_visible_wordmark(self, language: str) -> None:
+        """Source order is the composition order, so the visible text comes first."""
+        html = _shell().get(f"{SHELL_PREFIX}/{language}/org-acme/team").text
+        brand = html[html.index('class="brand"') :][:400]
+
+        assert 'aria-labelledby="frame-brand-name frame-brand-purpose"' in brand
+        assert brand.index('id="frame-brand-name"') < brand.index('id="frame-brand-purpose"')
+        assert "KHEPRI" in brand
+
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_the_purpose_is_still_carried_and_still_localized(self, language: str) -> None:
+        """Fixing the name must not cost the words the wordmark cannot say."""
+        html = _shell().get(f"{SHELL_PREFIX}/{language}/org-acme/team").text
+
+        assert SHELL_COPY[language]["frame_home_label"] in html
+
+    def test_no_aria_label_stands_in_for_visible_text_in_the_frame(self) -> None:
+        """The pattern, not the instance: `aria-label` on an element with its own text is the bug.
+
+        `frame-surfaces` keeps its `aria-label` and is not this: the label names the landmark, not
+        a control, and a `nav` has no text of its own for it to replace.
+        """
+        html = _shell().get(f"{SHELL_PREFIX}/ar/org-acme/team").text
+
+        assert 'aria-label="KHEPRI"' not in html
+        assert f'aria-label="{SHELL_COPY["ar"]["frame_home_label"]}"' not in html
 
 
 class TestTheRecoveryExitIsIndistinguishable:
