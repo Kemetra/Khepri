@@ -104,6 +104,47 @@ a:focus-visible,
   background: #f2f6fa;
 }
 
+/*
+ * A refused section. The template emits this for every section whose state is
+ * `refused`, and until now it carried no rule at all -- so the one sentence
+ * saying we did not answer a question rendered identically to the prose of the
+ * sections we did answer.
+ *
+ * It borrows the disclosure's shape rather than the error palette. A refusal is
+ * a governed result, not a failure: the reader is being told what the analysis
+ * would not claim, which is the report doing its job. Painting it red would say
+ * something went wrong.
+ *
+ * The rule carries the meaning and the italic carries it again, so neither
+ * colour alone nor a printer that drops backgrounds can flatten this back into
+ * body prose. The rule takes `--report-muted` rather than `--report-rule`: a
+ * border that encodes state has to clear 3:1 under WCAG 1.4.11, and the
+ * hairline colour manages 1.32:1 against this tint -- invisible, which would
+ * leave the italic carrying the signal alone. `--report-muted` reaches 6.02:1
+ * here and 7.61:1 on paper, and reads as withheld rather than as important.
+ */
+.refused {
+  padding-block: 0.75rem;
+  padding-inline: var(--report-space);
+  border-inline-start: 4px solid var(--report-muted);
+  background: #f7f8fa;
+  color: var(--report-muted);
+  font-style: italic;
+}
+
+/*
+ * A section-scoped caveat list, as against the global one at the end of the
+ * report. Same content type, different scope, and previously the same paint --
+ * which left a caveat about one figure looking like a caveat about everything.
+ * The inline rule ties it to the section above it; the global list keeps the
+ * bare list it already had.
+ */
+.caveats--section {
+  padding-inline-start: 1.75rem;
+  border-inline-start: 2px solid var(--report-rule);
+  color: var(--report-muted);
+}
+
 nav {
   margin-block-end: calc(var(--report-space) * 1.5);
 }
@@ -270,6 +311,17 @@ article {
 
   .disclosure {
     background: #1c232c;
+  }
+
+  /*
+   * The refusal's light tint is a near-white; left alone it would glare against
+   * the dark paper. Dropping it entirely is the honest move rather than picking
+   * a dark grey: at these luminances a tint one step off the page reaches about
+   * 1.06:1 against it, which is a surface nobody can see. The rule and the
+   * italic already carry the distinction, exactly as they do in print.
+   */
+  .refused {
+    background: transparent;
   }
 }
 
