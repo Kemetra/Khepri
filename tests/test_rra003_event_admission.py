@@ -39,6 +39,12 @@ from khepri.rra.source_contract import (
     SourceContract,
     build_source_contract,
 )
+from tests.rra_calculation_oracle import (
+    ALLOCATED_DISCOUNT_EXPECTED,
+    ALLOCATED_DISCOUNT_ROWS,
+    REPEATED_INVOICE_EXPECTED,
+    REPEATED_INVOICE_ROWS,
+)
 
 MIXED_CURRENCY_CSV = (
     b"date,invoice,event_kind,status,amount,qty,currency\n"
@@ -562,13 +568,54 @@ def test_admission_reads_each_column_once_not_once_per_row() -> None:
 # M3 gap 1: canonical transaction key construction.
 # ---------------------------------------------------------------------------
 
-REPEATED_INVOICE_CSV = (
-    b"date,invoice,event_kind,status,amount,qty,currency,store\n"
-    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP,S1\n"
-    b"2026-03-04,INV-2,sale,posted,200.00,4,EGP,S1\n"
-    b"2026-03-04,INV-1,sale,posted,300.00,6,EGP,S2\n"
-    b"2026-03-04,INV-2,sale,posted,400.00,8,EGP,S2\n"
-)
+def _oracle_admission_csv(rows: tuple[object, ...]) -> bytes:
+    """The oracle's own rows, rendered with the columns admission requires.
+
+    `rra_calculation_oracle.to_csv` deliberately emits no `event_kind`,
+    `status`, `currency` or `terminal` column -- see its docstring -- so it
+    cannot feed `admit_events`, which requires every one of them. This renders
+    the same `OracleRow` fields into a header admission does resolve. It is a
+    serializer, not a calculation: every cell is read straight off the row, so
+    no expectation is computed here.
+    """
+    header = (
+        b"date,invoice,event_kind,status,amount,qty,currency,store,terminal,"
+        b"discount_amount,cost\n"
+    )
+
+    def cell(value: object) -> str:
+        return "" if value is None else str(value)
+
+    body = b"".join(
+        ",".join(
+            (
+                row.day.isoformat(),  # type: ignore[attr-defined]
+                cell(row.invoice),  # type: ignore[attr-defined]
+                row.event_kind,  # type: ignore[attr-defined]
+                row.status,  # type: ignore[attr-defined]
+                cell(row.revenue),  # type: ignore[attr-defined]
+                cell(row.units),  # type: ignore[attr-defined]
+                "EGP",
+                cell(row.store),  # type: ignore[attr-defined]
+                cell(row.terminal),  # type: ignore[attr-defined]
+                cell(row.discount),  # type: ignore[attr-defined]
+                cell(row.cost),  # type: ignore[attr-defined]
+            )
+        ).encode()
+        + b"\n"
+        for row in rows
+    )
+    return header + body
+
+
+#: The oracle's `REPEATED_INVOICE_ROWS` -- two stores each numbering receipts
+#: from 1 -- rendered for admission. Built from the oracle rather than retyped,
+#: so the four canonical keys this file asserts are the oracle's own.
+REPEATED_INVOICE_CSV = _oracle_admission_csv(REPEATED_INVOICE_ROWS)
+
+#: `RRA-003`'s canonical composite in the oracle's own words: source
+#: identifier, store, business date, and terminal.
+ORACLE_KEY_COMPONENTS = ("invoice", "store", "date", "terminal")
 
 
 def test_a_composite_transaction_key_distinguishes_repeated_bare_invoice_ids() -> None:
@@ -576,48 +623,172 @@ def test_a_composite_transaction_key_distinguishes_repeated_bare_invoice_ids() -
     unique. Two stores each numbering receipts from 1 must not collapse into
     one transaction just because the bare `invoice` values collide.
 
-    `tests/rra_calculation_oracle.py::REPEATED_INVOICE_EXPECTED` derives four
-    distinct canonical keys for this exact shape (source id + store + date):
-    `INV-1|S1|...`, `INV-2|S1|...`, `INV-1|S2|...`, `INV-2|S2|...`.
+    The count comes from the oracle's own
+    `REPEATED_INVOICE_EXPECTED["transactions"]`, over the oracle's own rows,
+    under the oracle's own four-component key.
     """
     admitted = admit(
         REPEATED_INVOICE_CSV,
         mapped_contract(
             transaction_id_unique_package_wide=False,
-            transaction_key_components=("invoice", "store"),
+            transaction_key_components=ORACLE_KEY_COMPONENTS,
         ),
     )
 
-    assert admitted.transaction_count == 4
+    assert admitted.transaction_count == int(
+        REPEATED_INVOICE_EXPECTED["transactions"]
+    )
 
 
-def test_a_composite_key_is_built_from_the_declared_components_in_order() -> None:
-    """The canonical key joins each declared component's own column value,
-    not just any values that happen to disambiguate the rows."""
-    single_row = (
+def test_the_composite_key_format_matches_the_oracles_canonical_key() -> None:
+    """Production's join format is bound to the oracle's, not merely to some
+    injective join.
+
+    `OracleRow.canonical_transaction_key` joins source identifier, store,
+    business date and terminal on `"|"`, and `REPEATED_INVOICE_EXPECTED`'s
+    docstring spells the four keys out. Asserting the count alone would pass
+    for any injective join; this fails if production changes the delimiter, the
+    component order, or the escaping.
+
+    Compared against the oracle's `canonical_transaction_key` property rather
+    than a literal retyped here, so the two cannot drift apart silently. This
+    claims agreement on the oracle's recorded datasets, whose terminals are all
+    populated -- not parity with the property's `terminal or ""` fallback for a
+    null terminal, which admission refuses as a missing component instead.
+    """
+    admitted = admit(
+        REPEATED_INVOICE_CSV,
+        mapped_contract(
+            transaction_id_unique_package_wide=False,
+            transaction_key_components=ORACLE_KEY_COMPONENTS,
+        ),
+    )
+
+    expected = [row.canonical_transaction_key for row in REPEATED_INVOICE_ROWS]
+    assert expected[0] == "INV-1|S1|2026-03-04|T1"  # the oracle's own literal
+    assert [event.transaction_key for event in admitted.events] == expected
+
+
+def test_a_bare_unique_identifier_still_supplies_the_transaction_key() -> None:
+    """Package-wide uniqueness proven means the bare identifier IS the key --
+    `mapped_contract()`'s default -- and `transaction_count` must keep counting
+    it, exactly as every already-passing test above depends on.
+
+    The `2` here is not an oracle figure and must not be read as one: it is the
+    count of distinct *bare* invoices in the oracle's rows, which is precisely
+    the wrong answer the oracle's `REPEATED_INVOICE_EXPECTED` records production
+    giving. It stands here only because this contract *declares* the bare
+    identifier unique package-wide, which the oracle's dataset has no contract
+    for. What is under test is that the declaration is honoured, not that 2 is
+    the right transaction count for this data.
+    """
+    admitted = admit(REPEATED_INVOICE_CSV, mapped_contract())
+
+    assert admitted.transaction_count == 2
+    assert admitted.events[0].transaction_key == "INV-1"
+
+
+def test_a_declared_component_column_absent_from_the_file_refuses() -> None:
+    """`RRA-003`: "Missing components or collisions refuse transactions."
+
+    A declaration naming a column the file does not carry proves nothing about
+    identity, and `transaction_count` returns `int` -- so yielding `None` here
+    would publish the *stated fact zero* for an unprovable identity, which is
+    exactly the collapse `monetary_refused` exists in this module to prevent.
+    `_column` already refuses a contract-named column the file lacks; the
+    composite path must not bypass that refusal.
+    """
+    without_store = (
+        b"date,invoice,event_kind,status,amount,qty,currency,terminal\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP,T1\n"
+        b"2026-03-04,INV-2,sale,posted,200.00,4,EGP,T1\n"
+    )
+
+    with pytest.raises(EventsRefused) as refused:
+        admit(
+            without_store,
+            mapped_contract(
+                transaction_id_unique_package_wide=False,
+                transaction_key_components=("invoice", "store"),
+            ),
+        )
+
+    assert "store" in str(refused.value)
+
+
+def test_a_blank_component_cell_refuses_rather_than_counting_short() -> None:
+    """A blank cell in a present component column refuses the population.
+
+    Same reasoning as the absent column, one layer in: a composite with a hole
+    is not a proven identity, and a `None` key would silently drop the row from
+    `transaction_count` -- reporting 1 transaction for 2 rows as a stated fact.
+    `RRA-003` refuses; it does not undercount.
+    """
+    blank_store = (
+        b"date,invoice,event_kind,status,amount,qty,currency,store,terminal\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP,S1,T1\n"
+        b"2026-03-04,INV-2,sale,posted,200.00,4,EGP,,T1\n"
+    )
+
+    with pytest.raises(EventsRefused) as refused:
+        admit(
+            blank_store,
+            mapped_contract(
+                transaction_id_unique_package_wide=False,
+                transaction_key_components=("invoice", "store"),
+            ),
+        )
+
+    assert "store" in str(refused.value)
+
+
+def test_the_composite_join_stays_injective_for_delimiter_bearing_values() -> None:
+    """Declared columns constrain column *names*, never the arbitrary source
+    *values* in them -- so a value carrying the delimiter must not forge a
+    collision with a different row.
+
+    Without escaping, `("INV-1", "S1|X")` and `("INV-1|S1", "X")` both join to
+    `INV-1|S1|X` and two genuinely distinct transactions count as one -- the
+    same magnitude of error as the repeated-invoice regression this composite
+    exists to fix, and `RRA-003`'s "collisions refuse transactions" makes an
+    encoding-induced collision governance-relevant rather than cosmetic.
+    """
+    colliding = (
         b"date,invoice,event_kind,status,amount,qty,currency,store\n"
-        b"2026-03-04,INV-9,sale,posted,10.00,1,EGP,S9\n"
+        b'2026-03-04,INV-1,sale,posted,100.00,2,EGP,"S1|X"\n'
+        b'2026-03-04,"INV-1|S1",sale,posted,200.00,4,EGP,X\n'
     )
     admitted = admit(
-        single_row,
+        colliding,
         mapped_contract(
             transaction_id_unique_package_wide=False,
             transaction_key_components=("invoice", "store"),
         ),
     )
 
-    assert len(admitted.events) == 1
-    assert admitted.events[0].transaction_key == "INV-9|S9"
-
-
-def test_a_bare_unique_identifier_still_supplies_the_transaction_key() -> None:
-    """Package-wide uniqueness proven means the bare identifier IS the key --
-    `mapped_contract()`'s default -- and `transaction_count` must keep counting
-    it, exactly as every already-passing test above depends on."""
-    admitted = admit(REPEATED_INVOICE_CSV, mapped_contract())
-
+    keys = [event.transaction_key for event in admitted.events]
+    assert len(admitted.events) == 2
+    assert keys[0] != keys[1], keys
     assert admitted.transaction_count == 2
-    assert admitted.events[0].transaction_key == "INV-1"
+
+
+def test_delimiter_free_components_join_exactly_as_the_oracle_states() -> None:
+    """Escaping must be transparent for values carrying neither the delimiter
+    nor the escape character.
+
+    Otherwise the injectivity fix in the case above would silently break the
+    format agreement with `OracleRow.canonical_transaction_key`, and no test
+    would say so.
+    """
+    admitted = admit(
+        REPEATED_INVOICE_CSV,
+        mapped_contract(
+            transaction_id_unique_package_wide=False,
+            transaction_key_components=ORACLE_KEY_COMPONENTS,
+        ),
+    )
+
+    assert admitted.events[0].transaction_key == "INV-1|S1|2026-03-04|T1"
 
 
 # ---------------------------------------------------------------------------
@@ -727,15 +898,28 @@ DISCOUNT_AND_COST_CSV = (
 )
 
 
+#: The oracle's own discount case -- one invoice's three lines carrying row
+#: discounts of 22.00 / 14.00 / 9.00 -- rendered for admission.
+ALLOCATED_DISCOUNT_CSV = _oracle_admission_csv(ALLOCATED_DISCOUNT_ROWS)
+
+
 def test_discount_is_admitted_as_a_normalized_measure_like_revenue() -> None:
     """`mapping.py` already resolves `SEMANTIC_DISCOUNT`; admission must read
-    it onto each event the same way it reads revenue."""
-    admitted = admit(DISCOUNT_AND_COST_CSV, mapped_contract())
+    it onto each event the same way it reads revenue.
+
+    Values come from the oracle's `ALLOCATED_DISCOUNT_ROWS` and their sum from
+    its own `ALLOCATED_DISCOUNT_EXPECTED["discount"]`, so nothing here is a
+    literal this file authored.
+    """
+    admitted = admit(ALLOCATED_DISCOUNT_CSV, mapped_contract())
 
     assert [event.discount for event in admitted.events] == [
-        Decimal("10.00"),
-        Decimal("5.00"),
+        row.discount for row in ALLOCATED_DISCOUNT_ROWS
     ]
+    assert sum(
+        (event.discount for event in admitted.events if event.discount is not None),
+        Decimal("0.00"),
+    ) == ALLOCATED_DISCOUNT_EXPECTED["discount"]
 
 
 def test_cost_is_admitted_as_a_normalized_measure_like_revenue() -> None:
@@ -895,4 +1079,67 @@ def test_discount_and_cost_columns_are_read_once_each_not_once_per_row() -> None
     assert calls <= 40, (
         f"admission materialized columns {calls} times for {rows} rows with "
         "discount and cost columns -- reads must stay hoisted out of the loop"
+    )
+
+
+def _composite_key_csv(rows: int) -> bytes:
+    """`rows` admissible rows carrying every declared composite component."""
+    header = (
+        b"date,invoice,event_kind,status,amount,qty,currency,store,terminal\n"
+    )
+    body = b"".join(
+        b"2026-03-%02d,INV-%d,sale,posted,100.00,2,EGP,S1,T1\n"
+        % ((index % 28) + 1, index)
+        for index in range(rows)
+    )
+    return header + body
+
+
+def _column_reads_for(content: bytes, contract: SourceContract) -> int:
+    """How many times admission materialized a column for this input."""
+    import polars as pl
+
+    calls = 0
+    original = pl.DataFrame.get_column
+
+    def counting_get_column(self: pl.DataFrame, name: str):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return original(self, name)
+
+    pl.DataFrame.get_column = counting_get_column  # type: ignore[method-assign]
+    try:
+        admit(content, contract)
+    finally:
+        pl.DataFrame.get_column = original  # type: ignore[method-assign]
+    return calls
+
+
+def test_the_composite_key_components_are_read_once_each_not_once_per_row() -> None:
+    """The composite key's own loop over N declared components must be hoisted.
+
+    The sibling test above runs on `mapped_contract()`'s default, where
+    `transaction_id_unique_package_wide` is `True` -- so `_transaction_key_column`
+    returns the already-read transaction ids immediately and reads *zero*
+    columns. It therefore measures discount and cost, which merely reuse the
+    already-proven `_measure_column`, and leaves the one genuinely new per-row
+    loop entirely unmeasured. This is the variant that measures it.
+
+    Asserted as flatness across two row counts rather than against a threshold:
+    a bound can be satisfied by a loop that is merely cheap, while an equal
+    count can only be satisfied by a read that does not depend on row count at
+    all.
+    """
+    contract = mapped_contract(
+        transaction_id_unique_package_wide=False,
+        transaction_key_components=("invoice", "store", "terminal"),
+    )
+
+    few = _column_reads_for(_composite_key_csv(50), contract)
+    many = _column_reads_for(_composite_key_csv(500), contract)
+
+    assert few == many, (
+        f"admission materialized columns {few} times for 50 rows and {many} "
+        "times for 500 -- the composite key's component reads are inside the "
+        "per-row loop"
     )

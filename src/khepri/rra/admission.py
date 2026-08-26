@@ -59,6 +59,13 @@ STATUS_EXCLUDED = frozenset({"void", "cancelled", "canceled"})
 
 _ISO_CURRENCY_LENGTH = 3
 
+#: How `RRA-003`'s canonical composite is spelled. `"|"` is the delimiter the
+#: calculation oracle's `canonical_transaction_key` records, so a component
+#: value carrying one is escaped rather than the delimiter being changed --
+#: changing it would break the recorded format agreement.
+KEY_DELIMITER = "|"
+KEY_ESCAPE = "\\"
+
 
 class EventsRefused(ValueError):
     """A population that cannot be proven from what the extract declared."""
@@ -88,10 +95,13 @@ class AdmittedEvent:
     #: `transaction_id` when the contract proves it unique package-wide;
     #: otherwise the declared composite, joined in `RRA-003`'s words as "an
     #: admitted composite of the source transaction identifier and every
-    #: field needed for uniqueness". `None` where no identity is provable --
-    #: a bare identifier not proven unique and no composite declared -- which
-    #: `source_contract` already refuses at declaration time, so this module
-    #: only has to read the outcome, not re-derive the proof.
+    #: field needed for uniqueness", with each component escaped so a value
+    #: carrying the delimiter cannot forge a collision. `None` only where no
+    #: identity is declared at all -- a bare identifier not proven unique and no
+    #: composite declared -- which `source_contract` already refuses at
+    #: declaration time, so this module only has to read the outcome, not
+    #: re-derive the proof. A *declared* composite that cannot be built refuses
+    #: the population instead of arriving here as `None`.
     transaction_key: str | None
 
 
@@ -447,35 +457,79 @@ def _transaction_key_column(
     declared columns, so two stores numbering receipts from 1 do not collapse
     into one transaction merely because the bare identifiers collide.
 
-    A row missing any declared component's value yields `None` rather than a
-    partial key: a composite with a hole is not a proven identity, and
-    `RRA-003` refuses exactly that -- "Missing components or collisions
-    refuse transactions" -- so this reports the gap rather than guessing past
-    it. Column reads are hoisted the same way `_measure_column` hoists them.
+    **A missing component refuses the population, and does not yield `None`.**
+    `RRA-003`: "Missing components or collisions refuse transactions." Two ways
+    a component can be missing, both refused here:
+
+    - *The column is absent from the file.* A declaration naming a column the
+      extract does not carry proves nothing about identity, and
+      `source_contract._assert_transaction_key` already establishes that these
+      components are load-bearing -- it refuses a composite omitting the source
+      identifier. A composite whose columns are absent is the same defect
+      discovered one layer later, so `_column`'s existing refusal is allowed to
+      fire rather than being bypassed.
+    - *A present column's cell is blank.* Refused rather than recorded as an
+      unprovable row. `transaction_count` returns `int`, so a `None` key makes
+      an unprovable identity indistinguishable from the *stated fact* that the
+      row contributed no transaction -- which is the collapse `monetary_refused`
+      was introduced into this module to prevent. Recording it instead would
+      need a distinguishable marker of its own, and inventing one here without
+      a consumer is deferred (`CAL1-01` ledger, `M1`).
+
+    Column reads are hoisted the same way `_measure_column` hoists them.
     """
     if contract.identity.transaction_id_unique_package_wide:
         return transaction_ids
     components = contract.identity.transaction_key_components
     if not components:
         return [None] * frame.height
-    columns = [
-        _column(frame, labels, component) if component in labels else None
-        for component in components
+    columns = [_column(frame, labels, component) for component in components]
+    return [
+        _joined_key(columns, components, index) for index in range(frame.height)
     ]
-    return [_joined_key(columns, index) for index in range(frame.height)]
 
 
-def _joined_key(columns: list[list[str | None] | None], index: int) -> str | None:
-    """One row's composite key, or `None` where any component is missing.
+def _joined_key(
+    columns: list[list[str | None]],
+    components: tuple[str, ...],
+    index: int,
+) -> str:
+    """One row's composite key, refusing the population where a component is blank.
 
     A composite with a hole is not a proven identity -- `RRA-003`: "Missing
-    components or collisions refuse transactions" -- so a gap here reports
-    the row rather than guessing past it with a shorter key.
+    components or collisions refuse transactions" -- so a gap refuses rather
+    than being joined into a shorter key or reported as a silent zero.
     """
-    values = [column[index] if column is not None else None for column in columns]
-    if any(value is None for value in values):
-        return None
-    return "|".join(values)  # type: ignore[arg-type]
+    values: list[str] = []
+    for column, component in zip(columns, components, strict=True):
+        value = column[index]
+        if value is None:
+            raise EventsRefused(
+                f"Row {index} states no {component!r}, so its canonical "
+                "transaction key has a missing component."
+            )
+        values.append(value)
+    return KEY_DELIMITER.join(_escaped(value) for value in values)
+
+
+def _escaped(value: str) -> str:
+    """One component, encoded so the join cannot forge a collision.
+
+    Declared columns constrain column *names*; the values in them are arbitrary
+    source data and may carry the delimiter. Unescaped, `("INV-1", "S1|X")` and
+    `("INV-1|S1", "X")` join to the same key and two distinct transactions count
+    as one -- the same magnitude of error as the repeated-invoice regression the
+    composite exists to fix, and `RRA-003` makes a collision a refusal rather
+    than a rounding difference.
+
+    The escape character is escaped *first*, so an `INV\\|1` in the source
+    cannot be read back as a delimiter. Transparent for values carrying neither
+    character, which is why the key still reads exactly as
+    `RRA-003` states it -- `INV-1|S1|2026-03-04|T1`.
+    """
+    return value.replace(KEY_ESCAPE, KEY_ESCAPE * 2).replace(
+        KEY_DELIMITER, KEY_ESCAPE + KEY_DELIMITER
+    )
 
 
 def _assert_identity_proven(contract: SourceContract) -> None:
