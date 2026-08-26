@@ -22,13 +22,21 @@ scopes, and the cross product is built here -- which also means a day attested
 for one store and forgotten for another is impossible to express rather than
 merely unlikely.
 
-**The binding is not the operator's to declare.** `input_digest` and
-`source_contract_digest` are absent from this model on purpose. They identify
-which bytes, read which way, the attestation is bound to, and both are already
-recorded at admission. Letting the body carry them would let an operator attest
-coverage against a reading they had not declared -- and, worse, would make the
-use-time refusal compare the manifest against a digest from the same payload,
-which is a check that cannot fail.
+**The two digests are not the operator's to declare.** `input_digest` and
+`source_contract_digest` are absent from this model on purpose, and `extra="forbid"`
+means sending either is refused rather than ignored. They identify which bytes,
+read which way, the attestation is bound to, and both are already recorded at
+admission. Letting the body carry them would let an operator attest coverage
+against a reading they had not declared -- and, worse, would make the use-time
+refusal compare the manifest against a digest from the same payload, which is a
+check that cannot fail.
+
+**The timezone is**, and the contrast is the point. A day boundary is the third
+part of the binding and the only part the admission cannot supply: `RRA-003`
+establishes coverage from an attestation and never from observed values, so there
+is nothing in the bytes to derive it from. Defaulting it would store a boundary
+the operator never stated, over a window whose every attested day means something
+different under another zone, in a document that is digested and immutable.
 """
 
 from __future__ import annotations
@@ -58,10 +66,10 @@ class CoverageManifestBody(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Present so a caller building this model directly is not surprised by a
-    #: required field, and ignored by `to_manifest`, which takes the binding
-    #: from the admission instead. See the module docstring.
-    source_contract_digest: str = ""
+    #: The retail day boundary every attested day is stated in. Required, and
+    #: taken from the operator rather than assumed, because `RRA-003` establishes
+    #: coverage from an attestation and never from observed values -- so there is
+    #: nothing in the bytes to derive a day boundary from.
     timezone: str
     covered_start: date
     covered_end: date

@@ -125,7 +125,6 @@ def manifest_body(**overrides: object) -> dict[str, object]:
     this module instead of as an indistinguishable 4xx at the route.
     """
     body = CoverageManifestBody(
-        source_contract_digest="unused-here",
         timezone="Africa/Cairo",
         covered_start=_START,
         covered_end=_END,
@@ -451,6 +450,7 @@ def test_a_manifest_is_bound_to_the_reading_it_was_attested_under() -> None:
 
     assert stored_manifest["source_contract_digest"] == recorded_contract["digest"]
     assert stored_manifest["input_digest"] == record.source_sha256_hex
+    assert stored_manifest["timezone"] == "Africa/Cairo"
 
 
 def test_a_scope_the_manifest_never_attested_is_refused() -> None:
@@ -508,6 +508,27 @@ def test_the_route_refuses_an_unknown_manifest_field() -> None:
     response = test.client.post(
         "/api/v1/beta/profile",
         json=profile_with(misspelled),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("binding_field", ["input_digest", "source_contract_digest"])
+def test_the_route_refuses_an_operator_declared_binding(binding_field: str) -> None:
+    """The two digests identify the admission, so the body may not carry them.
+
+    Refused outright by `extra="forbid"` rather than accepted and overwritten. An
+    ignored digest would let an operator believe they had attested coverage
+    against a reading they named, and would invite the use-time check to compare
+    the manifest against a value from its own payload -- which cannot fail.
+    """
+    test = ready()
+    overreaching = manifest_body()
+    overreaching[binding_field] = "a" * 64
+
+    response = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(overreaching),
     )
 
     assert response.status_code == 422

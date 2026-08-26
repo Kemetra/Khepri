@@ -78,32 +78,39 @@ def declared_attestation(payload: ProfileRequestBody) -> CoverageManifestBody | 
     day claimed both shut and missing, no scope at all -- and `RRA-003` gives
     that its own refusal naming what to fix.
 
-    The manifest is validated against a placeholder binding, because the real
-    binding is not known until the file has been read: `input_digest` comes from
-    the upload and `source_contract_digest` from the accepted declaration. Only
-    the structural rules are asked here, and they are independent of the binding.
-    The binding itself is applied in `datasets`, and checked at use time in
-    `session_completeness` -- which is the check that matters and the one a
+    The manifest is validated against a placeholder binding, because the real one
+    is not known until the file has been read: `input_digest` comes from the
+    upload and `source_contract_digest` from the accepted declaration. Only the
+    structural rules are asked here -- a named scope, a window that does not end
+    before it starts, days spanning the window claimed, no day both shut and
+    missing -- and every one of them is independent of the binding.
+
+    The real binding is applied in `datasets.manifest_binding` and checked at use
+    time in `session_completeness`, which is the check that matters and the one a
     write-time-only validation would leave unproven.
     """
     attestation = payload.coverage_manifest
     if attestation is None:
         return None
     try:
-        attestation.to_manifest(binding=_UNBOUND)
+        attestation.to_manifest(binding=_unbound(attestation.timezone))
     except ManifestRefused as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return attestation
 
 
-#: A placeholder binding, used only to ask the structural questions. Never
-#: stored: `datasets.manifest_binding` builds the real one from the admission,
-#: which is what makes the use-time identity check able to fail at all.
-_UNBOUND = ManifestBinding(
-    input_digest="",
-    source_contract_digest="",
-    timezone="UTC",
-)
+def _unbound(timezone: str) -> ManifestBinding:
+    """A binding for the structural questions only, never stored.
+
+    The two digests are empty because they are not known yet and no structural
+    rule reads them. The operator's timezone is carried through even here, so
+    this function cannot become the place a declared boundary is quietly lost.
+    """
+    return ManifestBinding(
+        input_digest="",
+        source_contract_digest="",
+        timezone=timezone,
+    )
 
 
 def declared_contract(payload: ProfileRequestBody) -> SourceContract:

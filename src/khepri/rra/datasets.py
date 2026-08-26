@@ -35,12 +35,6 @@ from khepri.rra.sessions import (
 from khepri.rra.source_contract import SourceContract
 from khepri.rra.storage import StoredEnvelope
 
-#: The timezone an attestation is recorded under. `RRA-003` binds a manifest to
-#: one timezone because a day boundary is not a property of the bytes, and every
-#: governed timestamp in this system is already UTC -- so this is the one the
-#: admission actually happened in rather than a preference the body may state.
-_UTC_TIMEZONE = "UTC"
-
 #: Governed reasons a completeness question is refused. Closed vocabulary: a
 #: caller distinguishing "nobody attested this" from "the attestation covers a
 #: different reading" from "it does not reach this window" needs three codes, and
@@ -147,9 +141,14 @@ class CoverageAttestation(Protocol):
     """An attestation that still needs the admission it is bound to.
 
     A Protocol rather than the request model itself, so this service depends on
-    the one thing it uses -- being bindable to an admission -- and not on the
-    HTTP layer. `khepri.rra.coverage_request.CoverageManifestBody` satisfies it.
+    the two things it uses and not on the HTTP layer.
+    `khepri.rra.coverage_request.CoverageManifestBody` satisfies it.
+
+    `timezone` is on the Protocol because the day boundary is the operator's to
+    declare -- nothing in the admission can supply it. See `manifest_binding`.
     """
+
+    timezone: str
 
     def to_manifest(self, *, binding: ManifestBinding) -> CoverageManifest: ...
 
@@ -309,7 +308,11 @@ def _bound_manifest(
     if attestation is None:
         return None
     return attestation.to_manifest(
-        binding=manifest_binding(profile=profile, contract=contract)
+        binding=manifest_binding(
+            profile=profile,
+            contract=contract,
+            timezone=attestation.timezone,
+        )
     )
 
 
@@ -317,19 +320,29 @@ def manifest_binding(
     *,
     profile: DatasetProfile,
     contract: SourceContract,
+    timezone: str,
 ) -> ManifestBinding:
     """What an attestation on this admission is bound to.
 
-    Assembled from the admission rather than from the operator's payload, which
-    is the whole of why the use-time check can fail. An attestation carrying its
+    **Two of the three come from the admission, and the third cannot.** The two
+    digests are assembled here rather than read off the operator's payload, which
+    is the whole of why the use-time check can fail: an attestation carrying its
     own idea of which bytes and which reading it covers would be compared against
     itself, and `RRA-003`'s separation of the input digest from the source
     contract would stop discriminating.
+
+    The timezone is the operator's, and taking it from them is not a weakening of
+    that rule but the same rule applied. A retail day boundary is not a property
+    of the bytes -- `RRA-003` is explicit that coverage is never established from
+    observed values -- so there is nothing here to derive it from. Substituting a
+    constant would store an attestation the operator did not make, over a window
+    whose every attested day means something different under another zone, in a
+    document that is digested and cannot be corrected in place.
     """
     return ManifestBinding(
         input_digest=profile.source_sha256_hex,
         source_contract_digest=contract.digest,
-        timezone=_UTC_TIMEZONE,
+        timezone=timezone,
     )
 
 
