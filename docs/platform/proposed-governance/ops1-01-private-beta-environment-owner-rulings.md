@@ -4,6 +4,18 @@
 
 Prepared against `main` at `ceace057ce1e180fa6fddc851208aa0fd9d1808d`.
 
+## 0. Planning precedence and reconciliation
+
+This record is the latest owner ruling for the OPS1-01 environment direction and **supersedes conflicting planning choices** in these earlier non-governing drafts:
+
+- `docs/platform/proposed-governance/ops1-01-fra1-environment-descriptor-proposal.md`;
+- `docs/platform/proposed-governance/ops1-01-superseding-decision-draft.md`;
+- PR #286's selected-target table and associated Droplet/Grafana/RTO/sizing choices.
+
+Those artifacts remain useful evidence for the portability analysis, governance mechanics, and defects they discovered, but they are **not activation-ready target definitions** after this ruling. A future governance activation must reconcile from this record rather than activating the stale target choices verbatim.
+
+Where this record conflicts with active governance, active governance still wins until an owner-merged registry transition supersedes it. This record therefore closes planning alternatives without pretending that prose in `docs/` has governing force.
+
 ## 1. Selected private-beta target
 
 The private-beta environment is to be designed around the following concrete target:
@@ -16,14 +28,14 @@ The private-beta environment is to be designed around the following concrete tar
 | Worker compute | DigitalOcean App Platform worker | Separate role from web; same pinned Khepri image. |
 | Migration execution | App Platform pre-deploy / one-shot job | Must complete before web and worker start. |
 | Relational store | DigitalOcean Managed PostgreSQL 17 | TLS required; PITR required; exact live minor version must be evidence-bound. |
-| Object storage | DigitalOcean Spaces, private, FRA1 | S3-compatible; application-side envelope encryption remains authoritative. |
+| Object storage | DigitalOcean Spaces, private, FRA1 — **conditional pending compatibility proof** | S3-compatible; application-side envelope encryption remains authoritative. |
 | Image registry | DigitalOcean Container Registry | Deploy immutable image digests; never deploy a floating `latest` tag. |
 | Runtime secrets | App Platform encrypted runtime secrets | Includes the envelope master key, database/object-store credentials, and Clerk secrets where applicable. |
 | Deployment credential | GitHub Actions secret | Deployment credential does not enter the application container. |
-| Network | DigitalOcean VPC with private managed-database connectivity | No dedicated static egress IP in the initial private beta unless a dependency proves it necessary. |
-| CI/CD | GitHub Actions is the normal deployment path | Console/manual deployment is not the normal release mechanism. |
+| Network | DigitalOcean VPC with private managed-database connectivity | No dedicated static egress IP unless an approved dependency proves source-IP allowlisting is required. |
+| CI/CD | GitHub Actions is the normal deployment execution path | Approval authority remains the owner merge/governance process; CI executes, it does not approve. |
 | Infrastructure definition | Terraform for long-lived infrastructure plus an App Platform specification for app roles | Exact file layout is implementation work; this ruling selects the split of responsibility. |
-| Observability | DigitalOcean native service health/metrics plus Better Stack for centralized logs and OTLP-compatible telemetry | Customer content must not be emitted into telemetry. |
+| Observability | DigitalOcean native service health/metrics plus Better Stack for centralized logs and OTLP-compatible telemetry | Customer content must not be emitted into telemetry; the runtime OTLP path is still an implementation prerequisite. |
 | Orchestration not selected | No Kubernetes, Kafka, Redis, RabbitMQ, or additional microservice boundary | Carries forward the portable-runtime direction. |
 
 ## 2. Web, worker, and migration topology
@@ -59,7 +71,7 @@ This is a **governance-impacting ruling** because active `KHEPRI-DEC-008` still 
 
 ## 4. Object storage
 
-**Selected direction:** DigitalOcean Spaces in FRA1, private and non-versioned.
+**Conditionally selected direction:** DigitalOcean Spaces in FRA1, private and non-versioned, subject to the mandatory compatibility proof below.
 
 The application remains responsible for encrypting customer objects before bytes leave the process. Provider-side encryption, when present, is additional and not evidence that replaces Khepri's envelope encryption.
 
@@ -69,10 +81,12 @@ The beta storage policy is:
 - object versioning disabled;
 - immediate application deletion when the governed lifecycle requires deletion;
 - seven-day automatic expiry as the backstop required by `RRA-002`;
-- incomplete multipart uploads cleaned up within one day where the selected service can enforce that rule;
+- incomplete multipart uploads cleaned up within the governed horizon where the selected service can enforce that rule;
 - per-environment credentials scoped as narrowly as the provider allows.
 
-**Verification gate:** the selection is not operationally complete until the exact Spaces API behavior used by `khepri.rra.storage` is exercised against a real FRA1 bucket, including conditional write behavior, read-after-write, deletion, list/abort multipart behavior, and lifecycle semantics. Any incompatibility fails closed and reopens the storage implementation choice; it does not justify a provider-specific branch inside application code.
+**Mandatory verification gate:** Spaces is not a final operational product selection until the exact API behavior used by `khepri.rra.storage` is exercised against a real FRA1 bucket, including conditional write behavior, read-after-write, deletion, list/abort multipart behavior, and lifecycle semantics. Any incompatibility fails closed and reopens the storage product choice; it does not justify a provider-specific branch inside application code.
+
+Until that proof is recorded, later planning may prepare around Spaces as the leading target but may not claim `KHEPRI-DEC-008`'s object-storage confirmation requirement is satisfied.
 
 ## 5. Secrets and interactive access
 
@@ -90,24 +104,34 @@ The CI deployment credential remains in GitHub Actions secrets and is not inject
 
 Interactive runtime access remains disabled by default. Any provider permission that allows console/shell access is withheld from the ordinary deploy/operator role. Break-glass access, if later enabled, must be time-bounded, logged, and handled as an operational event under the content-free telemetry rules.
 
-## 6. Networking
+## 6. Networking and egress
 
 The initial target uses a DigitalOcean VPC and private connectivity to Managed PostgreSQL. Public database connectivity is not the normal application path.
 
-A dedicated static egress IP is **not selected** for the initial private beta. It becomes a new decision only if an actual external dependency requires source-IP allowlisting. The environment should not buy or architect around an allowlisting requirement that does not yet exist.
+A dedicated static egress IP is **not selected** for the initial private beta. The owner chooses private VPC connectivity and managed application runtime over adding Droplets solely to manufacture a fixed outbound address when no approved dependency currently requires source-IP allowlisting.
+
+This creates a **second governance-impacting ruling** for the planned `KHEPRI-DEC-008` successor. Active `KHEPRI-DEC-008` currently requires:
+
+> Egress identity: stable and restricted; descriptor records an address or range.
+
+The successor must not carry that row forward unchanged. The intended replacement property is:
+
+> Outbound access is restricted to approved dependencies. A stable egress identity is required only when an approved dependency requires source-IP allowlisting. The environment descriptor records whether a stable egress identity exists, which dependency requires it when present, and the outbound-access control used when it is absent.
+
+This is not an implementation workaround around active governance. Until the successor is activated, App Platform + VPC does **not** satisfy the current unconditional egress row and therefore cannot be treated as an approved deployment target.
 
 Public ingress terminates TLS outside the Khepri application process. The worker has no public ingress.
 
 ## 7. CI/CD and infrastructure definition
 
-GitHub Actions is the normal authority-bearing execution path for build and deployment operations.
+GitHub Actions is the normal deployment **execution** path for build and deployment operations. It is not an approval authority. Under the Constitution, owner merge and the active governance registry remain the approval boundary.
 
 Target release flow:
 
 ```text
 pull request
   -> required CI
-  -> merge to main
+  -> owner-approved merge to main
   -> build pinned image
   -> test / security checks
   -> push immutable image to DOCR
@@ -118,7 +142,7 @@ pull request
   -> content-free smoke verification
 ```
 
-Automatic deployment merely because `main` changed is not selected. Deployment remains an explicit CI action with the exact image digest recorded.
+Automatic deployment merely because `main` changed is not selected. Deployment remains an explicit CI action with the exact image digest recorded and may execute only after the applicable governance and deployment authority are active.
 
 Long-lived infrastructure is defined with Terraform; App Platform role/process configuration is defined through an App Platform specification. Manual console edits are break-glass, not the desired steady-state source of truth.
 
@@ -142,20 +166,22 @@ These are targets, not claims of achieved capability and not provider guarantees
 
 The seven-day content/backup horizon imposed by existing beta governance remains binding; an RPO target does not widen retention.
 
-## 10. Initial sizing baseline
+## 10. Benchmark starting shape, not final sizing
 
-The following is an **initial hosted-staging baseline only**, chosen to give `OPS1-09` and `OPS1-05` something concrete to measure. These are not final beta capacity claims:
+No final web, worker, or database sizing is selected by this planning record. Final sizing belongs to `OPS1-09` and the governed benchmark evidence.
 
-| Role | Initial baseline |
+For the first hosted measurement only, use a **benchmark starting shape** that is at least as conservative as the production-like local stack already exercised:
+
+| Role | First hosted measurement shape |
 |---|---|
 | Web | 1 shared vCPU, 1 GiB RAM |
-| Worker | 1 shared vCPU, 2 GiB RAM |
-| PostgreSQL | smallest managed PostgreSQL 17 shape that satisfies the provider's selected PITR/private-network requirements and the governed benchmark run |
+| Worker | 2 vCPU, 4 GiB RAM |
+| PostgreSQL | a Managed PostgreSQL 17 shape capable of running the governed workload with PITR/private networking enabled; exact tier selected by OPS1-09 setup |
 | Worker replicas | 1 |
 
-The worker starts with more memory than the web role because report rendering launches pinned Chromium. `OPS1-09` must reissue the governed sizing record against the selected FRA1 target, and `OPS1-05` must run capacity/soak evidence before external private-beta traffic. Any measured failure overrides this baseline.
+The worker starts materially above the web role because report rendering launches pinned Chromium alongside the analytical workload. These values exist only to start measurement; they are neither a capacity claim nor a beta commitment. `OPS1-09` may move them up or down from evidence, and `OPS1-05` must run capacity/soak evidence before external private-beta traffic.
 
-High availability for PostgreSQL is an explicit **beta-authorization checkpoint**, not assumed by this staging baseline: the owner should enable the provider's HA/standby shape before external private-beta traffic unless recovery evidence demonstrates a simpler topology still meets the approved RTO/RPO and governing durability requirements.
+High availability for PostgreSQL is a **beta-authorization checkpoint**, not assumed by the first staging measurement. The final beta topology must either enable the provider's HA/standby capability or carry recovery evidence proving that a simpler topology still satisfies the approved RTO/RPO and governing durability requirements.
 
 ## 11. Observability
 
@@ -167,44 +193,52 @@ The selected direction is:
 
 No raw uploaded rows, customer report prose, decrypted object payloads, secret values, or unapproved customer-derived labels may enter telemetry.
 
+**Implementation gap:** selecting an OTLP-compatible destination does not create telemetry. The current runtime does not yet provide the governed OpenTelemetry emission/export path required by `KHEPRI-DEC-008`. That path must be implemented and verified before the observability capability can be claimed complete.
+
 A different observability vendor may later replace Better Stack without changing the application/domain architecture provided the content-free telemetry contract and OTLP boundary remain intact.
 
 ## 12. What is now closed for planning
 
-For OPS1 planning, the following choices are no longer open alternatives:
+For OPS1 planning, the following choices are no longer open alternatives unless new evidence invalidates them:
 
 - DigitalOcean / FRA1;
 - App Platform for both web and worker;
 - App Platform one-shot/pre-deploy migrations;
 - Managed PostgreSQL 17 rather than self-hosted PostgreSQL;
-- Spaces rather than an AWS S3/KMS-specific storage path;
-- DOCR rather than a floating external image source for the target deployment;
+- DOCR for the target deployment;
 - App Platform runtime secrets for the initial beta;
 - VPC/private database networking;
-- GitHub Actions deployment path;
+- no unconditional static-egress requirement in the intended DEC-008 successor;
+- GitHub Actions as the normal deployment execution path;
 - Terraform + App Platform spec split;
 - no Kubernetes/broker/cache tier;
-- initial RTO 2 hours and RPO 15 minutes;
-- initial web/worker sizing baseline above;
+- initial RTO 2 hours and RPO 15 minutes as objectives to prove;
 - DigitalOcean native monitoring plus Better Stack telemetry direction.
+
+The following are **not** closed by this section:
+
+- Spaces final product selection, which remains conditional on the mandatory FRA1 compatibility proof;
+- final web/worker/database sizing, which remains benchmark-driven;
+- PostgreSQL HA topology for external beta, which remains evidence-driven within the RTO/RPO target.
 
 ## 13. What remains a stop-gate
 
-These are verification/activation tasks, not architecture-choice questions:
+These are verification/activation tasks, not reasons to reopen the whole architecture:
 
-1. activate the required DEC-008 supersession/restatement so managed PostgreSQL minor upgrades are governed rather than merely proposed;
+1. activate the required DEC-008 supersession/restatement, revising **both** the managed-PostgreSQL minor-upgrade row and the unconditional stable-egress row;
 2. activate the DEC-006 benchmark-environment restatement required by the FRA1 target;
-3. empirically verify DigitalOcean Spaces against the exact Khepri storage/deletion/multipart contract;
+3. empirically verify DigitalOcean Spaces against the exact Khepri storage/deletion/multipart contract before final product selection;
 4. add the runtime live PostgreSQL minor-version certification check;
 5. add admitted liveness/readiness probes;
-6. run `OPS1-09` and reissue sizing against FRA1;
-7. provision non-production only after the governing descriptor is active;
-8. run backup/restore, deletion-after-restore, encryption read-back, worker crash/retry/redrive, and recovery drills;
-9. demonstrate the selected RTO/RPO and capacity requirements;
-10. create alerts, dashboards, runbooks, release/rollback procedures, and the eventual private-beta authorization artifact.
+6. implement and verify the governed content-free OpenTelemetry/OTLP emission path;
+7. run `OPS1-09` and reissue sizing against FRA1;
+8. provision non-production only after the governing descriptor is active;
+9. run backup/restore, deletion-after-restore, encryption read-back, worker crash/retry/redrive, and recovery drills;
+10. demonstrate the selected RTO/RPO and capacity requirements;
+11. create alerts, dashboards, runbooks, release/rollback procedures, and the eventual private-beta authorization artifact.
 
 ## 14. Merge interpretation
 
-Merging this planning file records that these are the owner's selected OPS1 implementation directions and prevents later planning work from re-opening the same alternatives without new evidence.
+Merging this planning file records that these are the owner's selected OPS1 implementation directions and gives later OPS1 planning a single precedence point instead of three contradictory target drafts.
 
 It does **not** make a contradictory runtime rule governing by prose. `governance/registry.yaml` remains authoritative. The next governance PR must translate the applicable rulings into the DEC-008/DEC-006 successor decisions and final environment descriptor atomically enough that the validator sees one unambiguous active authority.
