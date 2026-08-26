@@ -47,6 +47,7 @@ is why none exists.
 | `[FAM-COMMERCIAL]` / `<CODE>` | The commercial product family and its three-letter code |
 | `[PKG-GOV]` | The approval package carrying a governance set |
 | `[PKG-RRA-RENEWAL]` | The renewal package required to change `RRA.md` |
+| `[RRA-PRESENTATION]` | The narrow `RRA` specification governing beta journey presentation maintenance |
 
 `KHEPRI-DEC-012` is cited by its real identifier throughout, because it already exists. The
 amendment draft edits an existing artifact and allocates nothing.
@@ -59,6 +60,7 @@ amendment draft edits an existing artifact and allocates nothing.
 | [`KHEPRI-DEC-012-amendment.md`](KHEPRI-DEC-012-amendment.md) | `governance/decisions/KHEPRI-DEC-012-…md` (edit) | Adds the tooling-runtime vs analytical-contract distinction **before** DEC-012 is accepted |
 | [`decision-draft-seshat-boundary.md`](decision-draft-seshat-boundary.md) | `governance/decisions/<derived-id>-seshat-analytical-boundary.md` | `[DEC-BOUNDARY]` — dependency shape, analytical ownership, the no-package source of truth, and the metric-authority precondition |
 | [`family-charter-draft-commercial.md`](family-charter-draft-commercial.md) | `governance/families/<CODE>.md` | `[FAM-COMMERCIAL]` charter, plus the `RRA.md` re-scope it forces |
+| [`specification-draft-rra-beta-journey-presentation.md`](specification-draft-rra-beta-journey-presentation.md) | `governance/specifications/RRA-<assigned>.md` | `[RRA-PRESENTATION]` — the missing presentation authority for the surface `RCA-002:132-135` assigns to `RRA`. Added 2026-08-26 against `main` @ `7327695`. Owner rulings D-1 through D-4 applied; unpromoted, no identifier taken, dependency wiring deferred to activation |
 
 ## Sequencing constraint that shapes all of them
 
