@@ -58,13 +58,23 @@ const declaration = () => {
 // `build_coverage_manifest` with a stated reason. Completing it here -- adding
 // the missing days, inferring the timezone -- would be the client synthesizing
 // coverage proof, which is the one thing this attestation exists to prevent.
+// A ticked box counts as attesting, but an unticked one does not: `false` is
+// this field's default and every manifest carries it, so treating an untouched
+// checkbox as an attestation would send a scopeless manifest from a page the
+// operator never filled in -- the refusal this omission exists to avoid.
 const attestation = () => {
   const manifest = {};
   let attested = false;
   for (const control of manifestFields) {
+    const name = control.dataset.manifestField;
+    if (control.type === "checkbox") {
+      if (control.checked) attested = true;
+      manifest[name] = control.checked;
+      continue;
+    }
     const typed = control.value.trim();
     if (typed) attested = true;
-    manifest[control.dataset.manifestField] = control.dataset.manifestList === undefined
+    manifest[name] = control.dataset.manifestList === undefined
       ? typed
       : typed.split(",").map((item) => item.trim()).filter(Boolean);
   }

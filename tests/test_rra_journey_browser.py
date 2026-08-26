@@ -17,6 +17,8 @@ _ATTESTED = {
     "covered_days": "2026-01-01, 2026-01-02",
     "event_kinds": "sale",
     "statuses": "posted",
+    "closed_days": "2026-01-02",
+    "extraction_gap_days": "",
 }
 
 
@@ -68,7 +70,50 @@ def test_the_upload_page_sends_a_manifest_only_when_one_is_attested(
             assert sent["timezone"] == "Africa/Cairo"
             assert sent["covered_days"] == ["2026-01-01", "2026-01-02"]
             assert sent["event_kinds"] == ["sale"]
+            assert sent["closed_days"] == ["2026-01-02"]
+            assert sent["extraction_gap_days"] == []
+            # An untouched checkbox rides along as its own default, not as an
+            # attestation: the manifest was already attested by the text above.
+            assert sent["partial_terminal_boundary"] is False
             assert CoverageManifestBody(**sent)._scopes() == ("All stores",)
+        finally:
+            browser.close()
+
+
+@pytest.mark.browser
+def test_ticking_only_the_terminal_boundary_still_sends_an_attestation() -> None:
+    """The one control that attests without any text being typed.
+
+    An unticked box is not an attestation -- `false` is the field's default and
+    rides on every manifest -- but a ticked one is a claim the operator made,
+    and dropping it would silently discard the only thing they said.
+    """
+    module = client().get("/beta/assets/upload.js").text
+    body = client().get("/beta/en/upload").text
+    harness = (
+        module[module.index("const attestation") : module.index("// The stated reason")]
+        + "\nreturn profileRequest();"
+    )
+    evaluate = (
+        "() => { const manifestFields ="
+        " document.querySelectorAll('[data-manifest-field]');"
+        " const declaration = () => ({});"
+        f" {harness} }}"
+    )
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page()
+            page.set_content(body, wait_until="domcontentloaded")
+            assert "coverage_manifest" not in page.evaluate(evaluate)
+
+            page.check("[data-manifest-field='partial_terminal_boundary']")
+
+            sent = json.loads(page.evaluate(evaluate))["coverage_manifest"]
+            assert sent["partial_terminal_boundary"] is True
         finally:
             browser.close()
 

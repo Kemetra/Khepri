@@ -136,6 +136,31 @@
         <input id="manifest-statuses" data-manifest-field="statuses" data-manifest-list type="text" spellcheck="false" aria-describedby="manifest-statuses-hint">
         <span id="manifest-statuses-hint" class="meta">{{ copy.manifest_statuses_hint }}</span>
       </p>
+      {#
+        The exceptions, and why each hint states a consequence rather than a
+        definition. `RRA-003`: "An attested closure proves complete zero
+        activity; an extraction gap does not." The two are opposite claims --
+        `_every_day_proven` keeps a closed day covered and fails a window
+        holding a gap -- so an operator who cannot tell them apart from the
+        page attests the wrong one and gets a different answer. The terminal
+        boundary is blunter still: `admits_completeness` returns false for
+        every window when it is set, which is why its hint says so.
+      #}
+      <p class="contract-row">
+        <label for="manifest-closed-days">{{ copy.manifest_closed_days }}</label>
+        <input id="manifest-closed-days" data-manifest-field="closed_days" data-manifest-list type="text" dir="ltr" spellcheck="false" aria-describedby="manifest-closed-days-hint">
+        <span id="manifest-closed-days-hint" class="meta">{{ copy.manifest_closed_days_hint }}</span>
+      </p>
+      <p class="contract-row">
+        <label for="manifest-extraction-gap-days">{{ copy.manifest_extraction_gap_days }}</label>
+        <input id="manifest-extraction-gap-days" data-manifest-field="extraction_gap_days" data-manifest-list type="text" dir="ltr" spellcheck="false" aria-describedby="manifest-extraction-gap-days-hint">
+        <span id="manifest-extraction-gap-days-hint" class="meta">{{ copy.manifest_extraction_gap_days_hint }}</span>
+      </p>
+      <p class="contract-row contract-row--claim">
+        <input id="manifest-partial-terminal-boundary" data-manifest-field="partial_terminal_boundary" type="checkbox" aria-describedby="manifest-partial-terminal-boundary-hint">
+        <label for="manifest-partial-terminal-boundary">{{ copy.manifest_partial_terminal_boundary }}</label>
+        <span id="manifest-partial-terminal-boundary-hint" class="meta">{{ copy.manifest_partial_terminal_boundary_hint }}</span>
+      </p>
     </fieldset>
     <div id="selected-file" class="selected-file" aria-live="polite"></div>
     <div id="upload-progress" class="progress-wrap" hidden>

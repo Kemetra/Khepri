@@ -117,6 +117,26 @@ _EN = {
     "manifest_event_kinds_hint": "For example sale.",
     "manifest_statuses": "Statuses the file includes, separated by commas",
     "manifest_statuses_hint": "For example posted.",
+    "manifest_closed_days": "Days you were closed, separated by commas",
+    "manifest_closed_days_hint": (
+        "Days that traded nothing because you were shut. These still count as "
+        "covered — zero is the right answer for them."
+    ),
+    "manifest_extraction_gap_days": (
+        "Days the file may be missing rows, separated by commas"
+    ),
+    "manifest_extraction_gap_days_hint": (
+        "Days where the export may have dropped rows. We decline period "
+        "comparisons and growth over any range that includes one, because we "
+        "cannot tell how much is missing."
+    ),
+    "manifest_partial_terminal_boundary": (
+        "A till was still open when this file was taken"
+    ),
+    "manifest_partial_terminal_boundary_hint": (
+        "Tick this only if the export ran mid-shift. It sets aside period "
+        "comparisons and growth for the whole file, not just the last day."
+    ),
     "file_invalid": "Choose a CSV or XLSX file no larger than 50 MB.",
     "upload_failed": "The secure upload could not be completed. Try again.",
     "review_unavailable": "Review data is unavailable.",
@@ -259,6 +279,25 @@ _AR = {
     "manifest_event_kinds_hint": "مثال: sale.",
     "manifest_statuses": "الحالات التي يشملها الملف، مفصولة بفواصل",
     "manifest_statuses_hint": "مثال: posted.",
+    "manifest_closed_days": "أيام الإغلاق، مفصولة بفواصل",
+    "manifest_closed_days_hint": (
+        "أيام لم تحدث فيها مبيعات لأنك كنت مغلقاً. تظل هذه الأيام مشمولة "
+        "بالتغطية، فالصفر هو الإجابة الصحيحة عنها."
+    ),
+    "manifest_extraction_gap_days": (
+        "أيام قد تنقص من الملف صفوفها، مفصولة بفواصل"
+    ),
+    "manifest_extraction_gap_days_hint": (
+        "أيام ربما أسقط التصدير صفوفاً منها. نمتنع عن مقارنات الفترات والنمو "
+        "لأي مدى يشمل أحدها، لأننا لا نعرف حجم الناقص."
+    ),
+    "manifest_partial_terminal_boundary": (
+        "كانت إحدى نقاط البيع مفتوحة وقت أخذ هذا الملف"
+    ),
+    "manifest_partial_terminal_boundary_hint": (
+        "علّم هنا فقط إذا جرى التصدير في منتصف وردية. هذا يوقف مقارنات الفترات "
+        "والنمو للملف كله، لا لليوم الأخير وحده."
+    ),
     "file_invalid": "اختر ملف CSV أو XLSX لا يتجاوز 50 ميجابايت.",
     "upload_failed": "تعذر إكمال الرفع الآمن. حاول مرة أخرى.",
     "review_unavailable": "بيانات المراجعة غير متاحة.",

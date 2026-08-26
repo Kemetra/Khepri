@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from tests.test_rra_journey_api import client
 
@@ -94,8 +95,32 @@ def test_upload_page_collects_an_operator_coverage_attestation() -> None:
         "covered_days",
         "event_kinds",
         "statuses",
+        "closed_days",
+        "extraction_gap_days",
+        "partial_terminal_boundary",
     ):
         assert f'data-manifest-field="{field}"' in body
+
+
+def test_the_attestation_surface_separates_a_closure_from_a_gap() -> None:
+    """`RRA-003`: "An attested closure proves complete zero activity; an
+    extraction gap does not." The two have opposite consequences -- a closed day
+    stays covered, a gap fails completeness for any window holding it -- so an
+    operator who cannot tell them apart from the page will attest the wrong one.
+
+    Asserted as distinct rendered wording rather than as two field names,
+    because two controls sharing a description are two controls the operator
+    cannot choose between.
+    """
+    body = client().get("/beta/en/upload").text
+    closed = re.search(r'for="manifest-closed-days"[^>]*>([^<]+)<', body)
+    gap = re.search(r'for="manifest-extraction-gap-days"[^>]*>([^<]+)<', body)
+    assert closed is not None and gap is not None
+    assert closed.group(1).strip() != gap.group(1).strip()
+    # Each must say what it does to the answer, not merely name itself.
+    assert "manifest-closed-days-hint" in body
+    assert "manifest-extraction-gap-days-hint" in body
+    assert "manifest-partial-terminal-boundary-hint" in body
 
 
 def test_the_attestation_the_upload_page_emits_is_one_the_domain_admits() -> None:
@@ -110,7 +135,7 @@ def test_the_attestation_the_upload_page_emits_is_one_the_domain_admits() -> Non
 
     body = client().get("/beta/en/upload").text
     fields = re.findall(r'data-manifest-field="([^"]+)"', body)
-    lists = {"covered_days", "event_kinds", "statuses"}
+    lists = {"covered_days", "event_kinds", "statuses", "closed_days", "extraction_gap_days"}
     typed = {
         "timezone": "Africa/Cairo",
         "covered_start": "2026-01-01",
@@ -119,6 +144,9 @@ def test_the_attestation_the_upload_page_emits_is_one_the_domain_admits() -> Non
         "covered_days": ["2026-01-01", "2026-01-02"],
         "event_kinds": ["sale"],
         "statuses": ["posted"],
+        "closed_days": ["2026-01-02"],
+        "extraction_gap_days": [],
+        "partial_terminal_boundary": False,
     }
     assert set(fields) == set(typed)
     emitted = {name: typed[name] for name in fields}
@@ -129,6 +157,9 @@ def test_the_attestation_the_upload_page_emits_is_one_the_domain_admits() -> Non
     assert manifest.covered_start.isoformat() == "2026-01-01"
     assert manifest._scopes() == ("All stores",)
     assert len(manifest._pairs(manifest.covered_days)) == 2
+    # The closed day is still a covered day: a closure proves zero activity
+    # rather than missing activity, so it must not be subtracted from coverage.
+    assert manifest._pairs(manifest.closed_days) == (("All stores", date(2026, 1, 2)),)
 
 
 def test_upload_module_omits_the_manifest_when_nothing_is_attested() -> None:
