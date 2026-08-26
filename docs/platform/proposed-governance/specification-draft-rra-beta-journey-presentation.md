@@ -238,7 +238,11 @@ outside its specification within the meaning of Constitution IV:
 
 - A new workflow state, step, or journey phase.
 - A new route, address, or asset filename; a change to the asset allowlist.
-- Any new business capability, or any change to what a customer can do.
+- Any new business capability, and any new runtime or domain capability — a destination, action, or
+  outcome the runtime does not already serve. **Stated against the runtime, matching §4's
+  neutrality test rather than restating it more broadly.** Making an already-served destination
+  reachable is not a new capability; the `/beta`-local recovery affordance D-1 permits is the
+  worked case.
 - Any calculation, re-derivation, re-rounding, or re-formatting of an authoritative figure.
 - Any new data collection, field, telemetry event, or persistence.
 - **Organization identity, name, slug, or any `/app` context inside `/beta`, and any link or
