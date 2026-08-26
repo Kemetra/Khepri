@@ -258,17 +258,48 @@ See §8.1.
 
 ### 2.8 The consumption rule — the largest live seam
 
-**`var(--text-*)` appears 0 times in all of `src/`. Ten tokens, no consumers.** `var(--space-*)`
-has exactly one consumer file. `journey.css` re-inlines the three danger hexes that
+**`var(--text-*)` appears 0 times in all of `src/`.** The type scale is **nine `--text-*` tokens plus
+two `--leading-*`** — eleven in all. The M2 critique and `shell.css`'s own note both say "ten"; the
+declared count at `shell.css:109-129` is nine, and `tests/test_r801_shell_tokens.py:316` asserts
+`("--text-", 9)`. The test was reading the artifact while the prose repeated itself.
+`var(--space-*)` has exactly one consumer file. `journey.css` re-inlines the three danger hexes that
 `shell.css` already names.
 
 > **A token with no consumer is a design decision that did not ship.** The direction is not complete
 > when the tokens exist; it is complete when the surfaces read them.
 
 Consolidation runs **journey → shell**, never the reverse: the shell is the newer, more disciplined
-layer (logical properties, tokens, documented derivations). This is a token-consumption task, not a
-visual change — the *values* are already what ships. It is `U1-01`'s own scope, and it is where the
-12-distinct-font-size drift and the 17 off-scale spacing values resolve.
+layer (logical properties, tokens, documented derivations). It is where the font-size drift and the
+17 off-scale spacing values resolve.
+
+### 2.8.1 Why this seam cannot be closed by a design slice
+
+Investigated on `#287` and recorded so the next attempt does not rediscover it.
+
+**Consumption requires declaration in the same cascade.** `base.html.j2` links `journey.css` alone;
+`shell.html.j2` links `shell.css` and `shell-components.css`. Two allowlists, two routes, and **the
+sheets never co-load** — so a bare `var(--text-sm)` in `journey.css` resolves to nothing, and an
+invalid `font-size` is *dropped*, not ignored. The element falls back to its inherited size. **A
+find-and-replace here is a silent visual regression, not a no-op.**
+
+The workable shape is to mirror the consumed tiers into `journey.css`'s own `:root` at identical
+values, then consume them — symmetric with the palette, where `shell.css`'s note records sixteen
+colours coming from `journey.css:15-30` unchanged. But that **mirrors** the seam rather than closing
+it: one value, two files, with no test able to see them diverge. Closing it needs a shared token
+sheet linked by both templates — a routes and allowlist change — or a build step.
+
+**Nor is the substitution appearance-neutral throughout.** Four declarations map exactly
+(`--text-display`, `--text-lede`, `--leading-tight`, and `.82rem` → `--text-sm`); three sit inside the
+collapse `shell.css:107` documents and move 0.16–0.64px at a 16px root, measured. Because
+`line-height: 1.6` is unitless, a changed type size carries the leading with it.
+
+**⚠ And the change is not admissible on this document's authority.** `RCA-002:132-135` excludes *"Any
+change to the `RRA` beta journey, its routes, its templates, or its **assets**"*, `journey.css` is
+such an asset, and **no active specification in `governance/specifications/` mentions it**. The
+precedent is `df9f1d1`, which changed `report.css` and cited active `RRA-006`/`RRA-009` — a named spec
+whose surface scope covered the file. `U1-01` is a roadmap task with **no registry entry**, and this
+document grants no implementation authority. **The work is designed and verified; it requires an
+active RRA specification naming the journey assets before it can ship.**
 
 ---
 
@@ -796,12 +827,23 @@ Journey 46px / transparent / `--accent` versus shell 44px / `--accent-surface` /
 product needs one primary button. Recommended: the journey's transparent treatment (more restrained
 against a single surface colour) at the shell's tokenized 44px. Low-risk and inside `U1-01`.
 
-### 8.5 Token consumption — READY, and the largest live gap
+### 8.5 Token consumption — AUTHORITY-BLOCKED, and the largest live gap
 
-`var(--text-*)` has **0 consumers in `src/`**; 12 distinct raw font sizes across 17 declarations ship with
-`.82/.83/.84/.86rem` coexisting; 17 spacing values are off-scale; `journey.css` re-inlines three
-danger hexes `shell.css` already names. **`U1-01` owns this and it needs no new authority** — the
-values do not change, only where they are read from. Sequenced journey → shell.
+`var(--text-*)` has **0 consumers in `src/`**; 12 distinct raw font sizes across 17 declarations ship
+with `.82/.83/.84/.86rem` coexisting; 17 spacing values are off-scale; `journey.css` re-inlines three
+danger hexes `shell.css` already names.
+
+An earlier revision of this section claimed **"`U1-01` owns this and it needs no new authority — the
+values do not change, only where they are read from."** Both halves are wrong, and `#287` is where
+that was established:
+
+- **The values do change.** Three of seven substitutions move 0.16–0.64px, and the cascade makes a
+  naive substitution a silent regression rather than a no-op (§2.8.1).
+- **It does need authority.** `RCA-002:132-135` excludes any change to the RRA beta journey's assets,
+  no active specification names `journey.css`, and `U1-01` is a roadmap task with no registry entry.
+
+The work itself is designed, measured, and verified — it is blocked on an **active RRA specification
+naming the journey assets**, not on design. Sequenced journey → shell when that exists.
 
 ### 8.6 Report ↔ app relationship — needs a stated rule
 
