@@ -118,8 +118,8 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--text-display); 
    and `R8-02` is replacing those with tokens, so a new literal here would be a
    regression whatever the colour -- and a colour chosen outside the token set is
    a colour chosen outside the design. `--danger-border` would be the closer
-   semantic fit, but it is declared in `shell.css`, which the journey pages do not
-   load; `--danger` is the danger token actually in scope here.
+   semantic fit, but it is declared in a shell-owned asset the journey pages do
+   not load; `--danger` is the danger token actually in scope here.
 
    Colour is deliberately not the only signal. `:invalid` also thickens the border,
    so the state survives a monochrome display and any form of colour blindness, and
