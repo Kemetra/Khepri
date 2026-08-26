@@ -1,22 +1,22 @@
 # Growth rounding-residual placement
 
-**Status:** **Confirmed by the owner on 2026-08-25.** The reading below is adopted: the residual
-is growth-family evidence under `rra008.growth.v2`, `rra004.package.v3` is not widened, and no
-`RRA-004` amendment is required. This unblocks `V-package` and `V-growth`. The dissenting reading
-recorded under "Decision" — that the clause authorizes residual evidence inside
-`rra004.package.v3` and therefore needs an amendment — was put to the owner with its cost and was
-not adopted.
+**Status:** **Confirmed by the owner on 2026-08-25 and formalized in `RRA-004`.** The residual is
+growth-family evidence under `rra008.growth.v2`; `rra004.package.v3` is not widened and contains
+no residual field. This unblocks `V-package` and `V-growth`. The earlier interpretive ambiguity is
+preserved below as historical context; the current specification now states the placement
+directly.
 **Mission:** `docs/superpowers/plans/2026-08-24-deterministic-retail-calculation-mission.md`, Task 1.
 **Governing text:** `RRA-004` "Fact-package provenance" and "Stable contract and versions";
 `RRA-008` "Growth decomposition".
 **Base:** `main` at `b19f365`.
 
-## The question the plan left open
+## Historical question the plan left open
 
-The mission plan records the residual as "the one piece no task on this map can write", because
-`RRA-004` lists "growth rounding-residual evidence" among the things *the package* records, while
-the runtime derives growth in the bundle, after the package is persisted. Task 1 was required to
-settle the placement before `V-package` was drafted.
+Before the owner ruling was formalized, the mission plan recorded the residual as "the one piece
+no task on this map can write", because the then-current `RRA-004` prose listed growth
+rounding-residual evidence among package provenance while the runtime derives growth in the
+bundle, after the package is persisted. Task 1 required that historical ambiguity to be settled
+before `V-package` was drafted. It is now settled and does not block a CAL1 publication commit.
 
 ## What the code actually establishes
 
@@ -46,7 +46,8 @@ the number does not exist when the document is digested and persisted.
   three stay, and re-digests every package for a field most packages cannot populate. `RRA-004`
   names the successor's authorized scope and moving a family into the builder is not in it.
 - **(b) Carry the residual as growth-family audit evidence under `rra008.growth.v2`.** Chosen.
-- **(c) Amend `RRA-004` to relocate the clause.** Not required — see below.
+- **(c) Amend `RRA-004` to relocate the clause.** Not chosen in the original ruling; the later
+  governance reconciliation formalizes the ruling directly without changing its runtime outcome.
 
 ## Decision
 
@@ -54,31 +55,17 @@ the number does not exist when the document is digested and persisted.
 growth facts themselves, and surfaced through the bundle's audit representation. No field is
 added to the persisted package document, and `rra004.package.v3` is not widened to hold one.**
 
-`RRA-004`'s clause is satisfied as written, not by amendment. The sentence is:
-
-> The package also records dimensions, units, input digest, coverage-manifest identity, coverage
-> signatures, canonical transaction keys or their stable basis identity, aligned daily bases, and
-> growth rounding-residual evidence **when applicable**.
-
-"When applicable" is load-bearing and already discriminates. The residual is applicable exactly
-when a growth decomposition exists — which is a bundle-time condition, not a package-time one. A
-package with no comparable period pair has no residual to record, and `RRA-004` does not require
-it to invent an empty one. Reading the clause as mandating an always-present package-document
-field would require every package to carry a field that is undefined for most of them, and would
-contradict `RRA-004`'s own rule that a new serialized shape creates a new identity — since the
-shape would change for packages whose numbers did not.
-
-On this reading it is **not** a governance amendment. That conclusion is a judgement about what
-`RRA-004` means, not a fact the code settles: an automated review of this branch read the same
-clause as authorizing residual evidence *inside* `rra004.package.v3` and therefore as requiring
-an amendment. The code evidence above is what it is, and the disagreement is about the prose, so
-the owner decides. Recorded rather than resolved.
+`RRA-004` now formalizes the ruling directly: package v3 authorizes package population, basis,
+coverage, and currency evidence only; growth-family audit evidence is not a persisted
+`FactPackage` field and does not widen that document. The residual therefore belongs wholly to
+`rra008.growth.v2`. This specification reconciliation removes the former need to interpret "when
+applicable" as a package-shape rule.
 
 ## Consequences for the slice map
 
-- **`V-package` no longer spans three tasks.** The mission plan's first bullet under "Five
-  consequences" says `rra004.package.v3` spans Tasks 3, 4 and 5 because Task 5 contributes the
-  residual. It does not. `V-package` is Task 3's structural fields plus Task 4's coverage
+- **`V-package` does not include Task 5.** Historical mission text said `rra004.package.v3`
+  spanned Tasks 3, 4 and 5 because Task 5 contributed the residual. It does not. `V-package` is
+  Task 3's structural fields plus Task 4's coverage
   signatures, daily bases and projections. Task 5 contributes nothing to it.
 - **`V-growth` owns the residual whole**, alongside the rest of `rra008.growth.v2`, satisfying
   the same-slice rule for its reason code, audit representation, and bilingual wording.

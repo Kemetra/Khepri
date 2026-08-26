@@ -4,16 +4,20 @@
 > **Mission:** `docs/superpowers/plans/2026-08-24-deterministic-retail-calculation-mission.md`.
 > **Spec:** `docs/superpowers/specs/2026-08-23-deterministic-retail-calculation-correction-design.md`.
 > **Authorities:** `RRA-003`, `RRA-004`, `RRA-008`, `RRA-009`.
-> **Base SHA:** `739d474` (`origin/main`, PR #283).
-> **Branch:** `calc2`, worktree `.claude/worktrees/calc2`.
-> **Baseline:** `uv run pytest` → 3250 passed, 72 skipped, 1 xfailed.
+> **Current planning baseline:** `origin/main` at `0216287`.
+> **Original measurement baseline:** `739d474`. Readings and suite counts below attributed to that
+> SHA were measured there and are kept as recorded history; they are not re-asserted of current
+> `main`.
+> **Pre-publication CAL1 merge:** PR #292 at `1813682`.
+> **Publication state:** all seven successor constants remain unpublished.
 
-The roadmap gives this task one job: **own the exact slice boundaries.** The mission plan's
-slice table fixes which governed version each slice publishes and which tasks sit inside it;
-this ledger fixes the file-level split and proves that no task contributing to
-`rra003.mapping.v3` sits outside `V-mapping`. A boundary that would publish a version twice,
-publish it incomplete, or make a later family consume an unlanded version is a stop condition
-here, not a judgement call.
+The roadmap gives this task one job: **own the exact publication-commit boundaries.** The mission
+plan fixes which governed version each of the seven ordered commits publishes and which tasks sit
+inside it; this ledger proves that no task contributing to `rra003.mapping.v3` sits outside
+`V-mapping`. The commits live in one later implementation PR and remain non-governing proposal
+history until its complete final head merges. A boundary that would publish a version twice,
+publish it incomplete, or make a later family consume an earlier uncommitted dependency is a stop
+condition here, not a judgement call.
 
 ---
 
@@ -28,8 +32,8 @@ Both are discharged, and the evidence is recorded here rather than re-derived pe
 carries the owner's confirmation on `main`: the residual is growth-family evidence published
 under `rra008.growth.v2`, carried on the growth facts and surfaced through the bundle's audit
 representation. No field is added to the persisted package document and `rra004.package.v3` is
-not widened. `RRA-004` is satisfied as written through its "when applicable" clause; no
-amendment is required.
+not widened. `RRA-004` now formalizes the ruling directly: package v3 has package population,
+basis, and coverage fields only; all residual evidence belongs wholly to `V-growth`.
 
 **This ledger does not restate the reasoning and does not reopen the option space.** Option (a),
 moving growth derivation into `build_fact_package`, was rejected on four pieces of code
@@ -59,26 +63,30 @@ the green gate the handoff requires.
 
 ---
 
-## 2. What is already on `main`, and what it means for this slice
+## 2. What is on current `main`
 
-Read from `739d474`, not assumed. This is what stops `V-mapping` from re-doing landed work.
+`#292` (`1813682`) merged the admission, API ingestion, source-contract journey, bilingual
+refusal, audit, and gate proof work, and `#300` (`8acef78`) added the browser manifest attestation
+surface — neither moved `MAPPING_VERSION`. Current `main` still pins every successor constant to
+its predecessor. The remaining `V-mapping` publication commit removes the strict publication xfail
+and moves only `rra003.mapping.v3`.
 
 **This table is a snapshot at `739d474` and is deliberately not rewritten.** `#292` (`1813682`)
-has since executed against it, so several rows describe a state `main` has moved past — the
-coverage row's "no route, no storage, no ingestion" most of all. The line citations
-(`facts.py:351`, `mapping.py:21`) were accurate at `739d474` and have drifted by a few lines
-since. Read the rows as "what this slice was planned against", not as current fact; §7 records
-what actually landed. `MAPPING_VERSION` is the one row still true as written, and by design.
+and `#300` (`8acef78`) have since executed against it, so several rows describe a state `main` has
+moved past — the coverage row's "no route, no storage, no ingestion" most of all. The line
+citations (`facts.py:351`, `mapping.py:21`) were accurate at `739d474` and have drifted since.
+Read the rows as "what this commit was planned against", not as current fact; §7 records what
+actually landed. `MAPPING_VERSION` is the one row still true as written, and by design.
 
-| Artifact | State on `main` | Consequence for `V-mapping` |
+| Artifact | State at `739d474` | Consequence for `V-mapping` |
 |---|---|---|
-| `src/khepri/rra/versions.py` | The gate exists: `ADMITTED_PACKAGE_PAIRS`, `ADMITTED_FAMILY_PAIRS`, `admits_package`, `admits_family`, and both reason codes | The gate is **not** built in this slice, and this slice **adds no row** (§4.1). It proves the gate now refuses |
-| `facts.py:351` | Calls `admits_package`; refuses at package scope | Seam wired. This slice fixes *which* mapping version it reads -- see below |
+| `src/khepri/rra/versions.py` | The gate exists: `ADMITTED_PACKAGE_PAIRS`, `ADMITTED_FAMILY_PAIRS`, `admits_package`, `admits_family`, and both reason codes | This commit adds no row (§4.1); it proves the gate refuses after mapping moves |
+| `facts.py:364` | Calls `admits_package`; refuses at package scope | Seam wired. This slice fixes *which* mapping version it reads -- see below |
 | `bundle.py:1564` | Calls `admits_family`; refuses one family, leaving others standing | Seam wired at the correct scope per `RRA-008` |
-| `src/khepri/rra/source_contract.py` | The governed vocabulary and contract model exist | Not consumed anywhere. This slice **wires it into the profile route and `build_mapping`** |
-| `src/khepri/rra/coverage.py` | Manifest model, binding, and `source_contract_digest` validation exist | No route, no storage, no ingestion. This slice **builds the ingestion path** |
-| `mapping.py:21` | `MAPPING_VERSION = "rra003.mapping.v2"` | This slice moves it to `v3` |
-| `facts.py:60-61` | `rra004.package.v2`, `rra004.formula.v1` | **Unchanged by this slice.** They are `V-package` and `V-formula` |
+| `src/khepri/rra/source_contract.py` | The contract is consumed by profile ingestion and mapping | Landed in PR #292; preserve and prove it when mapping publishes |
+| `src/khepri/rra/coverage.py` and `coverage_api.py` | Manifest ingestion, storage, binding, and use-time validation exist | Add only the missing browser collection seam before publication |
+| `mapping.py:22` | `MAPPING_VERSION = "rra003.mapping.v2"` | This slice moves it to `v3` |
+| `facts.py:61-62` | `rra004.package.v2`, `rra004.formula.v1` | **Unchanged by this slice.** They are `V-package` and `V-formula` |
 | `analysis/*.py` | All four families at `rra008.*.v1` | **Unchanged by this slice** |
 
 **One defect fixed in the gate, and it is not a widening.** `facts._build` received a
@@ -136,11 +144,11 @@ version.
 
 ### Out of scope — and where each piece goes instead
 
-- Package-v3 structural fields → `V-package`. Task 3 produces them; they merge with `V-package`
-  so `rra004.package.v3` publishes once, complete.
+- Package-v3 structural fields → `V-package`. Task 3 produces them; they publish with the later
+  `V-package` commit so `rra004.package.v3` appears once, complete.
 - Core formula rows → `V-formula`. `rra004.formula.v2` is one version over `RRA-004`'s single
-  core-formula table and lands as one slice.
-- All four `RRA-008` families → their own slices, after `V-formula`.
+  core-formula table and publishes in one commit.
+- All four `RRA-008` families → their own ordered commits after `V-formula`.
 - The growth residual → `V-growth`, per §1.1.
 
 ### Where each admission rule actually lives
@@ -190,35 +198,37 @@ believing these are done:
   so the refusal belongs where those windows are selected rather than duplicated at admission.
   `AdmittedEvent` therefore carries no `day` field: one that always held `None` would read as
   done while lying to its first caller.
-- **The coverage-manifest ingestion path** — route, schema, storage — **landed in `#292`
-  (`1813682`)**: `coverage_api.py` serves `GET /api/v1/beta/coverage/completeness`,
+- **The base coverage-manifest path is landed, API and browser; its exception controls are not.**
+  `#292` (`1813682`) landed the ingestion: `coverage_api.py` serves
+  `GET /api/v1/beta/coverage/completeness`,
   `coverage_request.CoverageManifestBody` rides the profile request, and `datasets.py` persists
   the attestation into the digested profile document and reads it back through `stored_manifest`
-  and `session_completeness`. **What remains open is the browser surface**: `upload.js:49`
-  serializes `requested_semantics` and `source_contract` only, and `upload.html.j2` exposes no
-  manifest controls, so a completeness-dependent comparison from a real upload still refuses for
-  want of an attestation. `RRA-003` puts manifest confirmation inside `rra003.mapping.v3`, so that
-  surface cannot be deferred past this slice.
-- **The browser journey and the bilingual wording** for every refusal this slice introduces.
+  and `session_completeness`. `#300` (`8acef78`) then landed the browser surface: `upload.js`
+  collects `[data-manifest-field]` controls and sends `coverage_manifest` only when the customer
+  attests, and `upload.html.j2` carries the controls and bilingual wording. **The exception fields
+  remain uncollected**: `CoverageManifestBody` also carries `closed_days`, `extraction_gap_days`
+  and `partial_terminal_boundary`, none of which the journey can set, so each serializes as absent
+  and a known closure or extraction gap is recorded as no gap. `store_roster` is not among them —
+  `RRA-003` treats it and `aggregate_scope` as alternatives, and `_assert_one_scope_mode` refuses a
+  manifest naming both, so collecting the aggregate scope is already the complete choice.
+  `RRA-003` puts manifest confirmation inside `rra003.mapping.v3`, so completing those controls
+  is inside this commit, not after it.
+- **The publication step.** `MAPPING_VERSION` is still `rra003.mapping.v2`, and the strict xfail
+  stands until the publication commit moves it to `rra003.mapping.v3` and proves the resulting
+  refusal. It is not the last item on this list: the transaction-date refusal and the manifest
+  exception fields above are still outstanding, and the publication commit carries both, since
+  `rra003.mapping.v3` governs the contracts they belong to.
 
-### The slice is one publication, not one pull request
+### The slice is one publication commit inside one implementation PR
 
-**`V-mapping` lands as a sequence of PRs, of which only the last moves the version.** The
-one-version-per-slice rule constrains *publication*: `rra003.mapping.v3` must be published once,
-complete, by this slice. It says nothing about how many pull requests contribute the plumbing
-that precedes the publication, and `governance/CONSTITUTION.md` Article IV — product code admitted
-"only in small, independently verifiable slices" — actively favours the split over one PR
-carrying admission, ingestion, journey and wording together.
+`V-mapping` is commit 1 of the one later seven-commit CAL1 implementation PR. It publishes
+`rra003.mapping.v3` once and complete; the following commits publish package, formula, comparison,
+growth, basket, and concentration in that fixed order. Every commit is independently verifiable
+under Article IV, but intermediate commits are proposal history and never merge separately.
 
-What makes this safe is §4.2's ordering: **the version constant moves in the final PR.** Until it
-does, no intermediate PR publishes a governed version, so none can publish `mapping.v3` early,
-twice, or incomplete — the three failures the rule exists to prevent. Each PR is independently
-verifiable on its own terms: the suite stays green at its baseline, and the behaviour it adds is
-proven by its own tests.
-
-The stop condition is unchanged and worth restating: **no PR in this sequence may move
-`MAPPING_VERSION` before the slice is complete**, and the PR that does move it carries every
-admission rule the version governs.
+The stop condition is unchanged: `MAPPING_VERSION` moves only in the publication commit, whose
+prerequisites are now all merged. The commit carries the RED/GREEN/reconciliation proof for every
+admission rule the version governs. Only the complete seven-commit PR head may merge.
 
 ---
 
@@ -226,17 +236,17 @@ admission rule the version governs.
 
 ### 4.1 `V-mapping` adds **zero** rows to `ADMITTED_PACKAGE_PAIRS`
 
-The one-version-per-slice rule decides row ownership, and it is worth stating because "add the
-gate's `v3` rows" reads like this slice's job and is not.
+The one-version-per-commit rule decides row ownership, and it is worth stating because "add the
+gate's `v3` rows" reads like this commit's job and is not.
 
 A row in `ADMITTED_PACKAGE_PAIRS` is a `(mapping, package, formula)` **triple**, so the row that
 admits `rra003.mapping.v3` is `(mapping.v3, package.v3, formula.v1)` — a row naming a package
 version that does not exist until `V-package`. `V-mapping` cannot add it without publishing
 `package.v3`'s identity early, which is the defect the whole slice map exists to prevent.
 
-So each slice adds the row that its own published version makes expressible:
+So each commit adds only the row that its own published version makes expressible:
 
-| Slice | Row it adds |
+| Commit | Row it adds |
 |---|---|
 | `V-mapping` | **none** |
 | `V-package` | `(mapping.v3, package.v3, formula.v1)` |
@@ -248,11 +258,11 @@ pairing unlisted, that both seams refuse at the right scope, that no fact publis
 predecessor identity, and that the comparison can fail (mutation evidence). It also **does not
 touch** the existing `("rra003.mapping.v2", "rra004.package.v2", "rra004.formula.v1")` row —
 that row names a combination already published under a stable identity and is immutable, per
-`versions.py`'s own rule that a slice "never edits a row another slice put here".
+`versions.py`'s own rule that a publication commit never edits a row another commit owns.
 
 This is what makes the refusal window in §6.1 a *consequence of correctness* rather than an
-oversight: the window is open for exactly as long as it takes the consumer slices to land their
-own rows, and `V-concentration` closes it.
+oversight: it exists only across intermediate proposal commits while consumer commits add their
+owned rows, and `V-concentration` closes it before the PR may merge.
 
 ### 4.2 The refusal window's blast radius is the slice's dominant test effect
 
@@ -263,11 +273,16 @@ Measured on `739d474`, not estimated:
 - Only **5** name a version identifier at all; `test_rra004_version_compatibility.py` is the
   only one carrying the `rra003.mapping.v2` literal.
 
-`facts._build` calls `assert_versions_admitted(mapping_version=MAPPING_VERSION, ...)` reading the
-**module constant**. So moving that constant to `v3` does not require touching 68 files to
-propagate a value — every one of them picks it up automatically — but it does mean **every
-package build in the suite begins refusing** the moment the constant moves, until `V-package`
-lands its row.
+**These counts are historical, measured at `739d474`, and the seam they describe has since
+changed.** At that SHA `facts._build` called `assert_versions_admitted(mapping_version=
+MAPPING_VERSION, ...)`, reading the **module constant**, so moving the constant would have made
+*every* package build in the suite refuse at once. §1.2 records the fix: `_build` now reads
+`mapping.mapping_version`, the version the package actually combines. The blast radius is
+therefore narrower than these counts imply — only builds whose mapping object is newly stamped
+`rra003.mapping.v3` meet an unlisted pairing, while a build handed a `v2` mapping object keeps
+matching the immutable `v2` triple. The migration is still real, because `build_mapping` stamps
+the constant and most tests take their mapping from it, but it is a per-construction-path effect
+rather than a suite-wide one, and it lasts until the `V-package` commit adds its row.
 
 **That is the real cost of this slice, and it is a test-expectation migration, not a code
 migration.** Each affected test either asserts the governed refusal or pins its versions
@@ -275,8 +290,8 @@ explicitly to the immutable v2 triple to keep proving the behaviour it was writt
 demands a green full `pytest` against the 3250-passing baseline, so this work is inside
 `V-mapping` and is scheduled as its own step (M7a) rather than discovered during M2.
 
-**It does not split the slice.** `rra003.mapping.v3` still publishes exactly once, from one PR;
-the migration is that publication's blast radius, not a second governed version. A slice that
+**It does not split the publication commit.** `rra003.mapping.v3` still publishes exactly once;
+the migration is that publication's blast radius, not a second governed version. A commit that
 deferred it would hand `V-package` a red suite it did not cause.
 
 ## 5. Task order
@@ -373,4 +388,5 @@ excuse its own codes.
 - No governance lifecycle state changed in this PR; the registry is authoritative.
 - Local evidence claims nothing about the benchmark, image, or CodeScene gates — those are CI's.
 - Historical mapping-v2 and package-v2 artifacts remain immutable and are not reinterpreted.
-- One PR against fresh `origin/main`, publishing `rra003.mapping.v3` and no other version.
+- One later PR against fresh `origin/main`, containing seven ordered publication commits. The
+  first publishes `rra003.mapping.v3` and no other version; only the complete final head may merge.

@@ -4,20 +4,24 @@
 
 **Repository:** `Kemetra/Khepri`
 
-**Verified baseline:** `main` at `f86507920155077fd3c87eb8878d29fb1624db69` on 2026-08-24.
+**Verified baseline:** `origin/main` at `8acef78` on 2026-08-26; CAL1 state reconciled to `#292`
+(`1813682`) and `#300` (`8acef78`).
 
 **Audience:** Ahmed Shaaban (owner and merge authority), Claude Code (planning and adversarial review), Codex (bounded implementation), design reviewers, and future operators.
 
 **Purpose:** Provide one complete, dependency-ordered roadmap from the current calculation-correction program through a calculation-validated design-partner alpha, durable workspaces, an evidence-backed decision workspace, self-serve monetization, platform distribution, governed intelligence, and enterprise GA.
 
-## Verification record
+## Historical replacement verification record
 
 Checked against `main` at `f86507920155077fd3c87eb8878d29fb1624db69` before this document replaced its predecessor. Confirmed at that commit:
 
 - the baseline SHA and date match `origin/main`, and `migrations/versions/` has exactly one head (`20260822_0020`);
 - `RRA-003`, `RRA-004`, and `RRA-008` are `active` in `governance/registry.yaml` and carry the successor semantics merged by `#264`; `RCA-001`, `RCA-002`, and `RRA-009` are `active`;
-- `rra003.mapping.v3` and `rra004.package.v3` are named in those specifications while `src/khepri/rra/mapping.py:21` still pins `rra003.mapping.v2`, so `CAL1` has not started;
-- `docs/superpowers/plans/` contains no `CAL1` plan and no execution ledger exists, which is why `CAL1` is `READY_FOR_PLAN` and not `READY_FOR_IMPLEMENTATION`;
+- `rra003.mapping.v3` and `rra004.package.v3` are named in those specifications while
+  `src/khepri/rra/mapping.py:21` still pinned `rra003.mapping.v2`, so CAL1 had not started at that
+  historical baseline;
+- `docs/superpowers/plans/` then contained no CAL1 plan and no execution ledger, which is why CAL1
+  was historically `READY_FOR_PLAN` rather than `READY_FOR_IMPLEMENTATION`;
 - `#152`, `#211`, and `#231` are the only open issues, and all three are carried in section 0.2;
 - the merged local staging stack matches the `OPS1` baseline described below — one built image running web, worker, and migrations against TLS PostgreSQL and MinIO;
 - `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` still carries `visibility_timeout_seconds` and `max_receive_count`, the retired broker keys `KHEPRI-DEC-008` says must leave the file, so `OPS1-09` is real outstanding work;
@@ -29,6 +33,18 @@ Three corrections applied to the draft as a result of that review, marked in pla
 1. **`CAL1` claimed an exception to the small-slice rule that no artifact grants it.** `governance/CONSTITUTION.md` Article IV admits product code only in small, independently verifiable slices, and the merged design at `18019b5` states that `C0` must merge before `C1`-`C4` as separately versioned slices. The draft's justification — that the successor families share package and formula identities — does not hold, because the governed successor versions are per family. See the `CAL1` release strategy.
 2. **Task identifiers were being renumbered across the replacement**, which would have retargeted `KHEPRI-DEC-027`'s blocking clause from CI-only provisioning to a sizing reissue, and left `RCA-002`'s `R8-01` and `R5-02`/`R5-04` citations, plus `KHEPRI-DEC-025`'s `R5-02`…`R5-06`, resolving to nothing at this path. See section 0.1, the `OPS1` table, and the `R5` program.
 3. **The status vocabulary was used without being defined, and open issues had no home.** Section 15 restores the convention and the next-actionable-task rule, at the section number `KHEPRI-DEC-025` cites; section 0.2 carries `#152`, `#211`, and `#231` forward.
+
+## Current CAL1 reconciliation
+
+At `origin/main` `8acef78`, CAL1 has started. What the `V-mapping` publication commit still
+carries — the transaction-date refusal and the manifest exception fields — is listed in the
+`CAL1-01` ledger. `#292` (`1813682`) landed the independent oracle, owner
+residual ruling, execution ledger, manifest/source-contract API ingestion, compatibility-gate
+wiring, admission plumbing, and the source-contract journey seam; `#300` (`8acef78`) landed the
+browser coverage-manifest attestation surface. All seven successor constants remain at their
+predecessor values, so no CAL1 successor has yet published. The next action is the owner ruling on
+the delivery unit, then the final `V-mapping` publication as commit 1 of the proposed later
+seven-commit implementation PR.
 
 ---
 
@@ -441,19 +457,25 @@ Implement the active RRA-003/004/008 successor contracts so Khepri publishes a f
 
 ## Release strategy
 
-CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.md` Article IV admits product code "only in small, independently verifiable slices linked to an active specification", `AGENTS.md` repeats it, and this roadmap grants no authority to suspend either. An earlier draft of this program proposed one atomic implementation PR on the grounds that the successor families share package and formula identities. That reasoning does not hold, and the merged design already answers it.
+CAL1 is **not** an exception to the small-slice rule. The remaining implementation is one later
+pull request containing seven ordered, independently verifiable publication commits. Each commit
+has its own RED, GREEN, reconciliation, and compatibility evidence, publishes exactly one
+successor, and adds only the compatibility row owned by that successor. `V-mapping` adds no row
+because no successor package triple is expressible until `V-package`. Intermediate commits are
+non-governing proposal history; only the complete final head may merge.
 
-**The governed successor versions are per family**, so a family-shaped slice publishes exactly one successor and creates no transitional version:
+**The governed successor versions are per family**, so each publication commit creates exactly
+one successor and no transitional version:
 
-| Slice | Publishes | Governed by | Tasks that must be inside it |
+| Commit | Publishes | Governed by | Tasks that must be inside it |
 |---|---|---|---|
 | `V-mapping` semantic admission | `rra003.mapping.v3` | `RRA-003` | CAL1-03, CAL1-05a, and CAL1-03g |
-| `V-package` package, bases, and window alignment | `rra004.package.v3` | `RRA-004` | CAL1-04, CAL1-06, and CAL1-08a |
+| `V-package` package, bases, and window alignment | `rra004.package.v3` | `RRA-004` | CAL1-04 and CAL1-06; no residual field |
 | `V-formula` core formulas and refusal rules | `rra004.formula.v2` | `RRA-004` | CAL1-05b, CAL1-07a, CAL1-09a, CAL1-10a |
 | `V-comparison` comparison facts | `rra008.comparison.v2` | `RRA-008` | CAL1-07b |
-| `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08b. **Merges after `V-comparison`**, not merely after `V-formula` |
+| `V-growth` growth decomposition | `rra008.growth.v2` | `RRA-008` | CAL1-08a and CAL1-08b, including all residual evidence. **Follows `V-comparison`**, not merely `V-formula` |
 | `V-basket` basket | `rra008.basket.v2` | `RRA-008` | CAL1-09b |
-| `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10b, sampling included. **Merges last of the four families**, so the refusal window has a determinate end |
+| `V-concentration` concentration | `rra008.concentration.v2` | `RRA-008` | CAL1-10b, sampling included. **Last of the four families** |
 
 **These labels are deliberately not the design's `C0`-`C4`.** `CAL1-01` must read both this table and the merged design, and reusing `C1`-`C4` for different scopes would make the same label mean two things. `C1` is also this roadmap's comparison program, whose tasks are `C1-01` through `C1-08` — a third meaning the `V-` prefix avoids. The design's phase list and this slice map reconcile as follows:
 
@@ -461,58 +483,85 @@ CAL1 is **not** an exception to the small-slice rule. `governance/CONSTITUTION.m
 |---|---|
 | `C0` semantic admission | `V-mapping`, widened to every normalized measure `rra003.mapping.v3` governs |
 | `C1` package coverage signatures and period alignment | inside `V-package` |
-| `C2` retained reconciliation bases and growth residual assignment | its package fields are inside `V-package`; its growth decomposition is `V-growth` |
+| `C2` retained reconciliation bases and growth residual assignment | package bases are inside `V-package`; all residual evidence is inside `V-growth` |
 | `C3` sale-only complete-coverage basket inputs | `V-basket` |
 | `C4` non-null full-set concentration eligibility | `V-concentration` |
-| Phase 4 policy-dependent formula corrections | `V-formula`, which lands before the `RRA-008` families rather than after them |
+| Phase 4 policy-dependent formula corrections | `V-formula`, which precedes the `RRA-008` families |
 
-**Where they differ, the specification governs and this table records why.** The design splits `rra004.package.v3` across its `C1` and `C2` — coverage signatures and period alignment in one, retained reconciliation bases and residual assignment in the other — but `RRA-004` defines that single version to authorize all of them. Following the design's split literally would publish one governed version from two slices. The design carries `Authority: none` and proposes; `RRA-004` is active and governs, so `V-package` takes both halves. `CAL1-01` records this reconciliation in the ledger rather than rediscovering it.
+**Where they differ, the specification governs and this table records why.** The design split
+`rra004.package.v3` package work across `C1` and `C2`; `V-package` combines the coverage and
+retained-basis work so package v3 publishes complete. The owner ruling, now explicit in `RRA-004`,
+places all growth rounding-residual evidence in `V-growth`, not in the persisted package.
 
-What the shared `rra004.package.v3` dependency requires is **ordering, not atomicity**, which is exactly what the merged design states: *"C0 must merge before C1-C4. Each correction is a separate mapping- or formula-versioned slice with its own RED/GREEN/reconciliation gate."*
+The fixed dependency order is mapping -> package -> formula -> comparison -> growth -> basket ->
+concentration. It is commit order inside the one later PR, not a sequence of owner merges.
 
-**Two of these versions span more than one task, and the fourth column is the binding part of this table.** A slice is not a task; it is the smallest set of tasks that can publish one governed version complete.
+**Four of these versions span more than one task, and the fourth column is the binding part of this table.** A slice is not a task; it is the smallest set of tasks that can publish one governed version complete.
 
 **`V-mapping` covers admission, not only identity.** `RRA-003` states that the version governs "the semantic declarations, event and canonical transaction identities, **normalized measures**, currency, and coverage-manifest confirmation in this specification", and that specification's governed-measures sections define revenue and returns, discounts, cost and gross-profit inputs, and units. Those admission rules are `V-mapping`. What `CAL1-05` contributes beyond them is the `RRA-004` formula rows, which are `V-formula`. Splitting a measure's admission out of `V-mapping` would publish `mapping.v3` incomplete.
 
-**`rra004.formula.v2` is one version over one table.** `RRA-004` §"Core formulas and refusal rules" defines Revenue through Returns, absolute and percentage delta, items per transaction, attach rate for value, the concentration curve point, and top decile and quartile share in a single governed table, and `rra004.formula.v2` "governs the formulas, compatible populations, signs, zero/null/negative behavior, precision, and refusal rules **in this specification**". Those rows are spread across `CAL1-05`, `CAL1-07`, `CAL1-09`, and `CAL1-10`. Publishing `formula.v2` with `CAL1-05` alone would leave it incomplete and mutate it later without a new version; deferring it past the `RRA-008` slices would make those families consume a version that has not landed, which `RRA-008`'s exclusions forbid. **So `V-formula` lands every `RRA-004` formula change as one slice, and it merges before the four `RRA-008` family slices**, which consume it and publish only their own `rra008.*` versions.
+**`rra004.formula.v2` is one version over one table.** `RRA-004` §"Core formulas and refusal rules" defines Revenue through Returns, absolute and percentage delta, items per transaction, attach rate for value, the concentration curve point, and top decile and quartile share in a single governed table, and `rra004.formula.v2` "governs the formulas, compatible populations, signs, zero/null/negative behavior, precision, and refusal rules **in this specification**". Those rows are spread across `CAL1-05`, `CAL1-07`, `CAL1-09`, and `CAL1-10`. Publishing `formula.v2` with `CAL1-05` alone would leave it incomplete; deferring it past the `RRA-008` commits would make those families consume an unpublished version. **So `V-formula` contains every `RRA-004` formula change and precedes the four `RRA-008` family commits**, which publish only their own `rra008.*` versions.
 
-**Ordering alone is not sufficient, and `V-mapping` carries a fail-closed gate for every window the sequence opens.** Nothing in the runtime checks that the versions it combines agree. `packages.py` stamps `package_version=PACKAGE_VERSION`, `formula_version=FORMULA_VERSION` and `mapping_version=MAPPING_VERSION` from three independent constants with no compatibility refusal in that path; `bundle._FAMILIES` dispatches `comparison.derive`, `growth.derive`, `basket.derive` and `concentration.derive` unconditionally, each stamping its own `rra008.*.v1` constant without consulting `formula_version`.
+**Ordering alone is not sufficient.** PR #292 at `1813682` wired the fail-closed compatibility
+gate at both package and family scope before any successor constant moved. Every publication
+commit must prove that gate and may add only its owned compatibility row.
 
-So every slice opens a window, not only the formula one. `V-mapping` alone makes the normalized-measure admission changes live — void-row exclusion, return derivation — while `rra004.package.v2` and `rra004.formula.v1` remain current, publishing changed results under legacy identities. `V-formula` alone changes the delta, attach, items-per-transaction and concentration-share rows while all four families still stamp `v1`. `RRA-004` forbids both: "A new input, mapping, formula, population, interpretation, correction, or serialized shape creates a new recorded version and stable identity."
+Intermediate proposal commits deliberately expose fail-closed refusal states. After `V-mapping`,
+the successor mapping has no admitted successor package triple; after `V-formula`, successor
+families remain refused until their own commits follow. These review states never govern because
+only the complete final PR head may merge.
 
-**The gate is therefore introduced whole in `V-mapping`, the first slice to move a version** (`CAL1-03g`). It is an **explicit table of admitted version pairs**, not a comparison: a consumer publishes only when the pairing it is handed appears in the table, and refuses otherwise.
+The gate is an **explicit table of admitted version pairs**, not a comparison: a consumer
+publishes only when the pairing it is handed appears in the table and refuses otherwise.
 
 *A "newer than" predicate would be wrong, and stating why prevents it being reintroduced.* These identifiers are independent namespaces — `rra003.mapping.v3`, `rra004.formula.v2` and `rra008.basket.v2` share a numbering convention and nothing else — so their suffixes define no ordering to compare. A one-sided rule also guards one direction only: once a family reached `v2`, "refuse when the formula is newer" would happily stamp a successor family identity onto a package still carrying `rra004.formula.v1`. And it leaves an unrecognised version's handling undefined, where a table refuses it by construction. `RRA-008` frames the contract the same way — its `v2` families consume "the exact `rra003.mapping.v3`, `rra004.package.v3`, and `rra004.formula.v2` changes" — so every pairing outside the table refuses.
 
-Each later slice adds its own admitted pairs, with governed reason codes and complete accepted Arabic and English wording. The consequence is deliberate and recorded rather than hidden: **each family refuses from the moment a version it consumes moves until its own successor lands**, so the refusing set is largest right after `V-formula` and shrinks with each family slice — after `V-comparison`, three families still refuse; after `V-basket`, one. `V-concentration` empties it. A reasoned refusal is what this product offers in place of a plausible number under a stale identity. An implementer who finds the window unacceptable must not remove the gate; co-landing the dependent successors is the alternative, and it needs owner approval because it changes the reviewable unit.
+Each later commit adds only its owned admitted pair, with governed reason codes and complete
+accepted Arabic and English wording. The refusing set is largest after `V-formula` and shrinks
+through the family commits; `V-concentration` empties it. A reasoned refusal is required in every
+intermediate proposal state. An implementer must not remove or widen the gate to make one commit
+publish.
 
 **`V-mapping` needed two surfaces that did not exist, or the slice could not be exercised.** Neither was a mapping rule, so a ledger listing only admission changes would have left them unbuilt. **Both were built and merged in `#292` (`1813682`):**
 
 - **The coverage-manifest ingestion path exists.** The manifest is attested on `POST /api/v1/beta/profile` as an optional `coverage_manifest` field (`coverage_request.CoverageManifestBody`), baked into the content-addressed profile document, and read back at use time through `GET /api/v1/beta/coverage/completeness` (`src/khepri/rra/coverage_api.py`). It rides the profile request rather than its own POST because attaching a manifest to an existing profile would rewrite `profile_digest`, which every already-published package cites. Without this, `rra003.mapping.v3` would ship an identity that can confirm nothing, and every completeness-dependent comparison and growth result would refuse permanently for a reason about the software rather than about the data.
 - **The upload journey collects the source contract.** `journey/assets/upload.js`'s `declaration()` builds the contract from fields tagged `data-contract-field`/`data-contract-required`, and `profileRequest()` sends it as `source_contract` (`upload.js:49`). Before this, the page posted `{requested_semantics: []}` alone, so making the contract required would have returned 422 on every web upload and stranded the customer on the upload page.
 
-`CAL1-03` carried both, and its acceptance said so: a real upload can submit a manifest and a contract. **That acceptance is met for the contract and still open for the manifest.** The API accepts an optional `coverage_manifest` on `POST /api/v1/beta/profile`, but the browser journey cannot supply one — `upload.js:49` serializes `requested_semantics` and `source_contract` only, and `upload.html.j2` exposes no manifest controls. Until the journey gathers an attestation, a completeness-dependent comparison or growth request made from a browser upload refuses for want of a manifest, which is the same customer-facing outcome this prerequisite existed to prevent, reached one surface later.
+`CAL1-03` carried both, and its acceptance said so: a real upload can submit a manifest and a contract. **The contract half is met; the manifest half is met in shape but not in full.** The API accepts an optional `coverage_manifest` on `POST /api/v1/beta/profile` (`#292`, `1813682`), and `#300` (`8acef78`) added the browser surface: `upload.js` collects `[data-manifest-field]` controls and sends `coverage_manifest` only when the customer attests, with `upload.html.j2` carrying the controls and their bilingual wording. A real upload can now submit a manifest and a contract, so a completeness-dependent comparison or growth request from a browser upload no longer refuses merely for want of an attestation. **The exception fields are still uncollected.** `upload.html.j2` collects timezone, covered window, covered days, aggregate scope, event kinds and statuses, while `CoverageManifestBody` also carries `closed_days`, `extraction_gap_days` and `partial_terminal_boundary`, which the browser cannot set and which therefore serialize as absent. An operator who knows of a closure, an extraction gap or a partial terminal boundary cannot attest it from the journey, so a known gap can be recorded as no gap. (`store_roster` is **not** a gap: `RRA-003` treats it and `aggregate_scope` as alternatives and `coverage.py` refuses a manifest carrying both, so the journey collecting the aggregate scope is the complete choice.) Completing those controls stays inside `V-mapping`, since `rra003.mapping.v3` governs manifest confirmation.
+
+With that surface landed, the first ordered commit of the later implementation PR carries the
+remaining admission rules and moves `rra003.mapping.v3`.
 
 **`rra008.concentration.v2` publishes with presentation sampling, which this ledger did not name at all.** `RRA-008` puts it inside the concentration contract — "The full curve remains authoritative. Presentation-only sampling keeps no more than 100 points, including the final 100% point, and carries a bilingual sampling caveat" — and names sampling in that specification's own Verification list, so it is `RRA-008`'s to verify rather than a free presentation choice. No `CAL1` task mentioned it, so following this ledger publishes the concentration identity incomplete and leaves the sampling to change governed behaviour afterwards, under a version already on `main`. That is the defect the `V-package` rule above refuses, and the same-slice rule for caveats settles where it goes: `CAL1-11` is "a final sweep, not the task where surfaces catch up". `CAL1-10b` carries it. The merged mission plan reached this first; the roadmap was the outlier.
 
-**`V-concentration` merges last of the four, and the ordering statement above is not enough on its own.** `RRA-008` requires only growth after comparison, so basket and concentration have no inter-family order of their own — the dependency column, not the prose, is what an implementer executes, and it left `V-concentration` free to merge straight after `V-formula`. In that valid ordering three families still stamp `v1`, so "`V-concentration` empties it" above would be false and the refusal window would have no determinate end. One family has to be designated last for that sentence to mean anything; concentration is it, and its row now depends on the other three.
+**`V-concentration` is last of the four family commits.** `RRA-008` requires growth after
+comparison, while the publication sequence additionally places basket before concentration so the
+final commit closes every remaining compatibility refusal before the PR is eligible to merge.
 
-**The growth rounding residual has no slice that can write it, and `CAL1-01` settles that before `V-package` is drafted.** `RRA-004` puts it in the package — "The package also records … and growth rounding-residual evidence when applicable", and `rra004.package.v3` "authorizes … growth rounding-residual evidence". The runtime derives growth in the *bundle*: `packages.py:321-332` builds the `FactPackage` and persists its `as_document()`, and `bundle._FAMILIES` calls `growth.derive` afterwards over the finished package. No `residual` exists in `facts.py`, `packages.py`, or `analysis/growth.py` today. `CAL1-08a` holds the field and `CAL1-08b` the computation, and neither can populate it — `V-package` merges before `rra004.formula.v2` and before comparison selects the window the residual depends on, while `V-growth` runs after the package is immutable. Following the map publishes `package.v3` without evidence its own version authorizes, or mutates a published package after its slice. **Neither resolution is free**: moving growth derivation into the package build pulls comparison in with it, since growth consumes comparison's window, and redraws the sequence; reading "when applicable" as scoping the clause reinterprets what `package.v3` authorizes and needs an owner ruling. A slice may not choose between them on its own, and none opens while this is unresolved.
+**The growth rounding-residual placement is settled.** The owner-confirmed decision is now
+formalized in `RRA-004`: growth residuals are wholly `rra008.growth.v2` audit evidence.
+`rra004.package.v3` contains package population, basis, and coverage fields only and no residual
+field. `V-growth` carries the computation, evidence, refusal, and bilingual wording together.
 
-**`V-growth` merges after `V-comparison`.** `RRA-008` states that growth "consumes the exact PoP window selected by period comparison and may not select another", over "the structural coverage compatibility already accepted by comparison" and "comparison's accepted aligned daily measure bases". A `V-growth` landing first would have to consume comparison `v1`'s window or reselect one itself, and the specification forbids both.
+**`V-growth` follows `V-comparison`.** `RRA-008` states that growth "consumes the exact PoP window selected by period comparison and may not select another", over "the structural coverage compatibility already accepted by comparison" and "comparison's accepted aligned daily measure bases". A `V-growth` commit first would have to consume comparison `v1`'s window or reselect one itself, and the specification forbids both.
 
-**`rra004.package.v3` publishes once, when `V-package` is complete, and `V-package` is larger than one task.** `RRA-004` defines that version to authorize readable population provenance, canonical transaction keys, retained reconciliation bases, coverage-manifest identity, **coverage signatures, aligned daily bases**, currency, and **growth rounding-residual evidence**. `CAL1-04` alone does not produce all of it: coverage signatures and aligned daily bases are `CAL1-06`, and the residual-evidence field is the package-shape half of `CAL1-08`. Merging `CAL1-04` as an independently mergeable predecessor would either publish an incomplete `v3` and later mutate it without a new version, or change the `v2` shape — both forbidden by the rules below. So `CAL1-04`, `CAL1-06`, and `CAL1-08`'s residual-evidence field are **one slice**, and `CAL1-08`'s growth formula work follows as `V-growth` over the published package.
+**`rra004.package.v3` publishes once, when `V-package` is complete.** It combines `CAL1-04`'s
+population and retained-basis work with `CAL1-06`'s coverage signatures and aligned daily bases.
+It contains no residual field; `CAL1-08` belongs wholly to the later `V-growth` commit.
 
 The release rules are therefore:
 
 - Governance has already merged separately, at `f865079`.
-- **`V-mapping` merges before every other slice.** Each correction is one independently verifiable slice carrying its own RED, GREEN, and reconciliation evidence.
+- **`V-mapping` is the first publication commit.** Each of the seven commits is independently
+  verifiable and carries its own RED, GREEN, and reconciliation evidence.
 - Each family publishes its single governed successor version once. **No intermediate or transitional package, mapping, or formula version is published on `main`**, and no extra version is invented to accommodate a partial implementation.
 - A refusal reason or caveat, its governed code, accepted Arabic and English customer prose, audit representation, **bundle, narrative, chart, and HTML/PDF/Excel propagation**, parity checks, and reconciliation tests ship in **the same slice that introduces it**. `RRA-008` states it directly: "Every later code slice that adds a refusal or caveat must add its complete customer wording in both languages in the same slice under `RRA-009`." No slice reaches GREEN while a result it can publish or refuse lacks that wording or surface representation. **`CAL1-11` is therefore a final sweep, not the task where surfaces catch up** — a slice that leaves its refusal unsurfaced for `CAL1-11` has already broken this rule.
-- **The propagation half of that rule governs *result* refusals, and stating the boundary is what keeps the rule enforceable.** A `RefusedResult` refuses one metric inside a package that was produced, so it reaches `bundle.py`, the section-refusal vocabulary there, and every surface. That is the refusal the rule is about and nothing in it is relaxed. A `PackageRefused` refuses before any package exists: `api.py:353` turns it into a 409, and `journey/assets/review.js` posts `/api/v1/beta/facts` before `/api/v1/beta/reports`, so there is no bundle to propagate into and no report to carry it. Requiring bundle and surface propagation there is not a demanding bar but an unmeetable one, and a rule no slice can satisfy stops being read. What a package-level refusal owes is the rest of the rule in full — governed code, accepted Arabic and English prose in the response, **audit representation, and rendering on the review page**, which `docs/superpowers/specs/2026-08-13-client-journey-ui-design.md` requires of a fact-package refusal: "Remain on review with governed reason." **No existing `PackageRefused` meets that.** The four raises in `packages.py` pass plain English strings into a bare `ValueError` subclass with no code and no audit hook, `common.js`'s `ApiError` keeps only the HTTP status and discards the body, and `review.js` prints one fixed sentence. That is pre-existing debt against this obligation, recorded here rather than blessed — it is not a precedent, and a slice may not cite it as one. **`CAL1-03g` straddles the boundary, and which seam fired decides which obligation applies.** Its table pairs package and formula against mapping *and* each `RRA-008` family against the formula, and those two seams fire in different places. A mapping/package/formula incompatibility is caught while the package is being built, so it is a `PackageRefused` and owes the package-level path: a structured bilingual refusal in the response, an audit record, and a client that preserves and renders it. **A family-against-formula incompatibility must be a `RefusedResult` in `bundle.py`, and owes the propagation rule in full** — bundle, narrative, chart, HTML, PDF and Excel. `RRA-008` requires it: "A failure or missing optional input refuses only dependent results, leaving independently answerable facts and the rest of the report intact." So does the shrinking refusing set described above, which is only meaningful if families refuse one at a time; raising `PackageRefused` for a family pairing would suppress every independently answerable result until the last family merged, turning a shrinking set into a blackout. Narrowing the propagation clause removes the surfaces that cannot exist, not the work that can — and for most of this gate's refusals, they can.
+- **The propagation half of that rule governs *result* refusals, and stating the boundary is what keeps the rule enforceable.** A `RefusedResult` refuses one metric inside a produced package and therefore owes bundle, narrative, chart, HTML, PDF, and Excel propagation. A `PackageRefused` occurs before a package exists and instead owes a governed code, accepted Arabic and English response prose, audit representation, and rendering on the review page. PR #292 wired that package-level version-refusal path and the family-level fail-closed seam. Each later family commit still owes full result-refusal propagation so independently answerable facts remain standing.
 - A slice does not reach GREEN by weakening a semantic guard to preserve an existing fixture. Fixture migration stages after the RED proofs.
-- Current versions stay authoritative for each family until that family's successor slice merges. Historical serialized packages remain valid under their recorded versions and are not rewritten in place.
-- The validation gate in `CAL1-13` runs against the assembled successor contract, not against any single slice. No slice is released to a design partner before that gate passes.
+- Current versions stay authoritative until the complete successor PR merges. Historical serialized
+  packages remain valid under their recorded versions and are not rewritten in place.
+- The validation gate in `CAL1-13` runs against the assembled successor contract, not against any
+  single commit. No result is released to a design partner before that gate passes.
 - **`CAL1-01` owns the exact slice boundaries.** The table above fixes which version each slice publishes and which tasks must be inside it; the ledger fixes the file-level split and proves that no task contributing to a governed version sits outside that version's slice. A boundary that would publish a version twice, publish it incomplete, or make a later family consume an unlanded version is a stop condition, not a judgement call.
 
 ## Tasks
@@ -522,38 +571,44 @@ The release rules are therefore:
 | CAL1-01 | Create an execution ledger against current `main`; map every RRA-003/004/008 requirement to implementation and test work | active successor specifications | Reviewed ledger; exact allowed/forbidden files per slice; the C0-first slice sequence and its version-publication order |
 | CAL1-02 | Add independent RED golden and adversarial fixtures before production changes | CAL1-01 | Expected values derived outside production helpers; tests fail against current defects for the intended reasons |
 | CAL1-03 | Implement **every** `V-mapping` semantic admission change `rra003.mapping.v3` governs, taking `CAL1-05a` and `CAL1-03g` with it: normalized event kind/status, source-contract declarations, currency, event and canonical transaction identity, coverage-manifest confirmation, **and the normalized measures — revenue and returns, additive discounts, extended-cost inputs, and units**. **Also the two surfaces that make those admissible at all: the coverage-manifest ingestion path, and the client collection of the source contract** | CAL1-02 | `rra003.mapping.v3` behavior, complete in one slice; ambiguous source semantics refuse affected populations; a real upload can submit a manifest and a contract |
-| CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases. **Ships as one `V-package` slice with `CAL1-06` and `CAL1-08`'s residual-evidence field**; it is not independently mergeable | `V-mapping` merged | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
+| CAL1-04 | Implement `FactPackage` successor population codes and retained reconciliation bases. **Ships in the `V-package` commit with `CAL1-06`; no residual field exists** | preceding `V-mapping` commit | Package successor carries readable population provenance, basis identities, currency, event/transaction counts, and compatible source bases |
 | CAL1-05 | Correct core metrics under governed populations: revenue, units, transactions, AOV, ASP, cost, gross profit/margin, discount, returns. **Split across two slices — see the contribution table below** | per part | No cross-population headline or ratio; exact refusal and surviving-fact behavior |
-| CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows. **Same `V-package` slice as `CAL1-04`** — `RRA-004` puts coverage signatures and aligned daily bases inside `rra004.package.v3` | `V-mapping` merged | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
+| CAL1-06 | Implement coverage-aware daily bases and aligned PoP/YoY windows. **Same `V-package` commit as `CAL1-04`** — `RRA-004` puts coverage signatures and aligned daily bases inside `rra004.package.v3` | preceding `V-mapping` commit | No two-day versus twenty-eight-day comparison; missing coverage proof refuses completeness-dependent comparisons |
 | CAL1-07 | Correct comparison facts and bilingual incomplete-window behavior. **Split across two slices — see the contribution table below** | per part | Absolute/percentage deltas use the same aligned population; zero/negative base rules preserved |
-| CAL1-08 | Correct growth decomposition populations and return exclusion. **Split across two slices — see the contribution table below** | per part | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
+| CAL1-08 | Correct growth decomposition populations, return exclusion, rounding-residual computation, and audit evidence wholly in `V-growth`; no package residual field exists | preceding `V-comparison` commit | Disjoint revenue/units refuse; price + volume equals the governed revenue change exactly; refusal cause is accurate |
 | CAL1-09 | Correct basket populations and dimension eligibility. **Split across two slices — see the contribution table below** | per part | Items/transaction and attach rate use complete sale populations and canonical transaction keys; repeated lines do not inflate attach |
 | CAL1-10 | Correct concentration eligibility and full-set behavior. **Split across two slices — see the contribution table below** | per part | Null/unlabelled dimensions do not become products; full-set curve remains independent of display truncation; ceiling convention is pinned |
 | CAL1-11 | **Final compatibility sweep only.** Prove no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and close version compatibility across the assembled contract | CAL1-05 through CAL1-10 | A catalogue-wide proof that every governed refusal and caveat already shipped with its wording and surfaces; no surface recalculates; the successor facts reconcile in both languages |
 | CAL1-12 | Add mutation evidence and pharmacy-focused golden fixtures | CAL1-11 | Named mutants for row-vs-transaction, unequal windows, unmatched populations, full-set concentration, sign/currency rules, and publication gating are killed |
 | CAL1-13 | Run the calculation validation gate | CAL1-12 | Governance, Ruff, full tests, independent fixtures, report reconciliation, deterministic reruns, version checks, and no skipped required behavior |
 | CAL1-14 | Run PostgreSQL/MinIO production-like local staging end to end | CAL1-13 | Upload -> admission -> facts -> worker -> HTML/PDF/Excel -> evidence; restart/retry/recovery and bilingual artifacts verified |
-| CAL1-15 | Complete external review and merge the remaining correction slices | CAL1-14 | No unresolved P0/P1 finding; CodeScene passes; every family sits on its single governed successor version, and no transitional version was published on the way |
+| CAL1-15 | Complete external review and merge the one seven-commit implementation PR | CAL1-14 | No unresolved P0/P1 finding; CodeScene passes; every family sits on its single governed successor version, and no transitional version was published on `main` |
 
-## Slice contributions of the split tasks
+## Publication-commit contributions
 
-Five tasks contribute to a slice they also build on. Stated at task level that reads as a cycle — `CAL1-08` cannot both ship inside `V-package` and wait for `V-package` to merge. It is not a cycle, because the two halves are different work. They carry separate identifiers so the ledger graph is executable without interpretation.
+Several task identifiers contribute formula rows to `V-formula` and family behavior to a later
+family commit. The table keeps those contributions explicit without assigning any residual work
+to `V-package`.
 
 | Part | Work | Slice | Depends on |
 |---|---|---|---|
 | CAL1-05a | Normalized-measure admission for revenue, returns, discounts, extended cost, and units | `V-mapping` | CAL1-02 |
-| CAL1-03g | The version compatibility gate, whole: an explicit table of admitted version pairings — package and formula against mapping, each `RRA-008` family against the formula — publishing only on a listed pair and refusing every other, with governed bilingual wording | `V-mapping` | CAL1-02 |
-| CAL1-05b | The `RRA-004` core-metric formula and refusal rows | `V-formula` | `V-package` merged |
-| CAL1-07a | Absolute and percentage delta formula and refusal rows | `V-formula` | `V-package` merged |
-| CAL1-07b | Comparison facts and bilingual incomplete-window behavior | `V-comparison` | `V-formula` merged |
-| CAL1-08a | Growth rounding-residual evidence field in the package shape. **Its placement is unresolved — `CAL1-01` settles it before `V-package` is drafted** | `V-package` | `V-mapping` merged, and `CAL1-01`'s residual ruling |
-| CAL1-08b | Growth decomposition populations, return exclusion, and the growth formula | `V-growth` | `V-comparison` merged |
-| CAL1-09a | Items-per-transaction and attach-rate formula and refusal rows | `V-formula` | `V-package` merged |
-| CAL1-09b | Basket populations and dimension eligibility | `V-basket` | `V-formula` merged |
-| CAL1-10a | Concentration curve-point and top decile/quartile formula and refusal rows | `V-formula` | `V-package` merged |
-| CAL1-10b | Concentration eligibility and full-set behavior, **including presentation-only curve sampling and its bilingual caveat** | `V-concentration` | `V-comparison`, `V-growth`, and `V-basket` merged |
+| CAL1-03g | Prove the already-wired fail-closed compatibility gate when mapping publishes; `V-mapping` adds no row because no successor package triple exists yet | `V-mapping` | CAL1-02 |
+| CAL1-05b | The `RRA-004` core-metric formula and refusal rows | `V-formula` | preceding `V-package` commit |
+| CAL1-07a | Absolute and percentage delta formula and refusal rows | `V-formula` | preceding `V-package` commit |
+| CAL1-07b | Comparison facts and bilingual incomplete-window behavior | `V-comparison` | preceding `V-formula` commit |
+| CAL1-08a | Growth rounding-residual computation and audit evidence; no package field | `V-growth` | preceding `V-comparison` commit |
+| CAL1-08b | Growth decomposition populations, return exclusion, and the growth formula | `V-growth` | preceding `V-comparison` commit |
+| CAL1-09a | Items-per-transaction and attach-rate formula and refusal rows | `V-formula` | preceding `V-package` commit |
+| CAL1-09b | Basket populations and dimension eligibility | `V-basket` | preceding `V-growth` commit |
+| CAL1-10a | Concentration curve-point and top decile/quartile formula and refusal rows | `V-formula` | preceding `V-package` commit |
+| CAL1-10b | Concentration eligibility and full-set behavior, **including presentation-only curve sampling and its bilingual caveat** | `V-concentration` | preceding `V-basket` commit |
 
-`CAL1-03` takes `CAL1-05a` **and `CAL1-03g`** with it; `CAL1-04` and `CAL1-06` take `CAL1-08a` with them. Every `a` part is a prerequisite of the slice it sits in, never a consumer of it. `CAL1-01` validates this graph before the first slice opens: a part that both contributes to a slice and depends on it is a ledger defect, not a sequencing judgement.
+**`CAL1-08a` and `CAL1-08b` both sit in `V-growth`, and are retained as separate identifiers only because the execution ledger and this roadmap cite them by name.** The split once resolved an apparent cycle, in which the residual appeared to belong to `V-package` while its computation needed comparison's window. `RRA-004` no longer authorizes a package residual field, so the cycle is gone and both parts publish in one commit.
+
+`CAL1-03` takes `CAL1-05a` **and `CAL1-03g`** with it. `CAL1-04` and `CAL1-06`
+form `V-package`; both `CAL1-08` parts form `V-growth`. Every part is a prerequisite of its own
+publication commit, never a consumer of it.
 
 ## Stop conditions
 
@@ -1430,7 +1485,23 @@ One bounded customer or safety outcome per PR, with:
 
 ### CAL1 has no exception
 
-CAL1 follows the normal rule. Its slices are family-shaped rather than function-shaped, because a family is the smallest unit that can publish one governed successor version and reconcile against an independent oracle. `V-mapping` merges before every other slice; each later slice states which earlier successor version it consumes. That ordering is a dependency, not a licence to review the program as one pull request.
+CAL1 follows the small-slice rule through seven family-shaped, independently verifiable commits
+inside one later pull request. The commits are ordered mapping, package, formula, comparison,
+growth, basket, concentration. Each publishes exactly one successor with its owned compatibility
+row and its RED/GREEN/reconciliation evidence — except `V-mapping`, which adds **no** row,
+because the row admitting `rra003.mapping.v3` is a `(mapping, package, formula)` triple naming a
+package version that does not exist until `V-package`. Intermediate commits remain non-governing proposal
+history; only the complete final head may merge.
+
+**The delivery unit is proposed, not settled.** The text this reconciliation replaced required owner approval to change the reviewable unit, and that requirement survives the change of unit: the seven-commits-in-one-pull-request model below is a proposal awaiting an owner ruling, in the same way the residual placement was a proposal until its dated decision record confirmed it. No implementation pull request opens against this model before that ruling exists; the argument for it is recorded here so the owner can rule on it.
+
+**This is not the exception section 0.1 rejected.** That exception was a single undivided unit
+justified by the claim that the successor families share package and formula identities — false,
+because the governed successor versions are per family. Article IV requires small, independently
+verifiable *slices*, and names no unit of pull request. Seven commits that each publish one
+governed version, carry their own evidence, and can each be reviewed on their own terms are those
+slices; keeping them in one pull request is what stops an intermediate successor contract from
+reaching `main`, which is the same protection separate merges were reaching for.
 
 ### Prohibited combinations
 
@@ -1504,7 +1575,10 @@ Use these statuses only. Inventing one is a review finding — it happened on `#
 - `PROPOSED` — roadmap or specification work exists but is not approved or active.
 - `READY_FOR_PLAN` — governing authority exists; design questions remain.
 - `READY_FOR_IMPLEMENTATION` — an approved bounded plan and its RED tests exist.
-- `IN_IMPLEMENTATION` — one approved branch is implementing the task.
+- `IN_IMPLEMENTATION` — one approved branch is implementing the task. A program stays
+  `IN_IMPLEMENTATION` while merged work exists on `main` and a governance question gates the next
+  branch; the gating question is named in the program's row rather than reverting it to `BLOCKED`,
+  which is reserved for programs with no merged implementation.
 - `IN_REVIEW` — implementation is complete and under adversarial review.
 - `MERGED` — the owner merged to `main`.
 - `BLOCKED` — a named dependency or owner decision prevents progress.
@@ -1518,7 +1592,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 
 ---
 
-## 16. Recommended current status at `f865079`
+## 16. Recommended current status at `0216287`
 
 *This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-023` makes `R7-06`'s definition of done include "flipping §16's `R7` row". Like `§15`, it may not be renumbered without amending the decision that cites it.*
 
@@ -1535,7 +1609,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
 | R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
 | R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
-| **CAL1 Calculation correction** | **IN_IMPLEMENTATION** | Both blockers this row previously named are discharged: `docs/superpowers/plans/2026-08-26-cal1-01-v-mapping-execution-ledger.md` is the approved ledger, and `#292` (`1813682`) merged `V-mapping`'s admission, coverage-manifest ingestion, and journey work to `main`. **The slice is not complete and `rra003.mapping.v3` has not published** — `mapping.py:22` still pins `rra003.mapping.v2` and `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` is `xfail(strict=True)` by design, because the ledger makes it a stop condition that no PR moves `MAPPING_VERSION` before the slice is complete. The constant moves in the slice's final PR, and the strict marker fails there to force its own removal |
+| **CAL1 Calculation correction** | **IN_IMPLEMENTATION** | Both blockers this row previously named are discharged: `docs/superpowers/plans/2026-08-26-cal1-01-v-mapping-execution-ledger.md` is the approved ledger, and `#292` (`1813682`) merged `V-mapping`'s admission, coverage-manifest ingestion, and journey work to `main`. **The slice is not complete and `rra003.mapping.v3` has not published** — `mapping.py:22` still pins `rra003.mapping.v2` and `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` is `xfail(strict=True)` by design, because the ledger makes it a stop condition that no PR moves `MAPPING_VERSION` before the publication commit. All seven successor constants remain unpublished. The constant moves in the first ordered publication commit of the proposed later implementation PR, and the strict marker fails there to force its own removal. **Next: the owner ruling on the delivery unit**, which gates opening that PR |
 | **T1 Trust/catalog** | PROPOSED | Needs bounded authority; design can proceed during late CAL1 |
 | **U1 Design system** | READY_FOR_PLAN | Shell primitives exist; data/evidence component work depends on T1 contracts |
 | **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain |
@@ -1566,21 +1640,23 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 ### Critical path
 
 1. ~~**CAL1-01/02:** create the execution ledger, fix the slice sequence, add independent RED fixtures.~~ **Done** — `docs/superpowers/plans/2026-08-26-cal1-01-v-mapping-execution-ledger.md`.
-2. **CAL1-03 + CAL1-05a + CAL1-03g:** finish and merge `V-mapping` complete, gate included. **Partly merged:** `#292` (`1813682`) landed the admission rules, coverage-manifest ingestion, and the journey's source-contract collection. **Still open:** the browser journey cannot yet submit a coverage manifest, and the slice's final PR is the one that moves `MAPPING_VERSION` to `rra003.mapping.v3` — no earlier PR may, which is why `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` is `xfail(strict=True)` until then. `V-mapping` completes before every later slice, and finishing it without `CAL1-03g` opens the very window the gate exists to close.
-3. **CAL1-04 + CAL1-06 + CAL1-08a:** merge the complete `V-package` slice, publishing `rra004.package.v3` once. Do not merge `CAL1-04` alone, and do not draft this slice until `CAL1-01` has settled where the growth rounding residual is written.
-4. **CAL1-05b + CAL1-07a + CAL1-09a + CAL1-10a:** merge `V-formula`, publishing `rra004.formula.v2` once and complete. It merges before the derived families, which consume it.
-5. **CAL1-07b, then CAL1-08b, then CAL1-09b, then CAL1-10b:** merge `V-comparison`, `V-growth`, `V-basket`, and `V-concentration` in that order — `V-growth` after `V-comparison` because `RRA-008` makes growth consume comparison's window — each publishing one `rra008.*` version over the landed package and formula versions. Every slice carries its own refusals, bilingual wording, and surfaces.
-6. **CAL1-11/12:** run the final compatibility sweep; add mutation and pharmacy golden evidence.
-7. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
-8. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
-9. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
-10. **OPS1-01:** activate the governance a provisional non-production bootstrap needs, and settle provider, region, residency, and products. No final capacity claim is made here.
-11. **OPS1-02, then OPS1-03:** provision the provisional non-production environment through CI, then configure its managed services and capture the live PostgreSQL minor and Spaces compatibility evidence.
-12. **OPS1-09:** run the governed hosted benchmark against that measured target and reissue the sizing authority. It cannot precede `OPS1-03`, which produces the target it measures.
-13. **OPS1-04 through OPS1-07:** recovery and capacity evidence, observability, and the pilot runbook.
-14. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
-15. **G2/G3:** activate retention and workspace authority.
-16. **W1-01 onward:** begin durable workspace/history implementation.
+2. **Obtain the owner ruling on the delivery unit, then open one later CAL1 implementation PR from a fresh `origin/main` carrying `#300` (`8acef78`) or later**, carrying all seven publication commits. The seven-commits-in-one-pull-request model is proposed, not settled, and no implementation pull request opens before that ruling. Intermediate commits are reviewed and tested but never merged separately; only the complete final head may merge.
+3. **Commit 1 — `V-mapping`:** finish `CAL1-03` + `CAL1-05a` + `CAL1-03g` and move only `rra003.mapping.v3`. **Prerequisites merged:** `#292` (`1813682`) landed the admission rules, coverage-manifest API ingestion, the gate wiring, and the journey's source-contract collection; `#300` (`8acef78`) landed the browser manifest attestation surface. **Still open:** the publication step and the admission rules it carries — the transaction-date refusal and the manifest exception fields, both recorded as outstanding in the `CAL1-01` ledger. This commit moves `MAPPING_VERSION`, which is why `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` is `xfail(strict=True)` until then. Completing `V-mapping` without `CAL1-03g` opens the very window the gate exists to close.
+4. **Commit 2 — `V-package`:** publish `rra004.package.v3` once and complete, from `CAL1-04` + `CAL1-06`, with package population, basis, and coverage fields only and no residual field. Do not carry `CAL1-04` alone.
+5. **Commit 3 — `V-formula`:** publish `rra004.formula.v2` once and complete, from `CAL1-05b` + `CAL1-07a` + `CAL1-09a` + `CAL1-10a`. It precedes the derived families, which consume it.
+6. **Commits 4–7:** publish `V-comparison`, then `V-growth`, then `V-basket`, then `V-concentration`, in that order — `V-growth` after `V-comparison` because `RRA-008` makes growth consume comparison's window, and `V-growth` owns all rounding-residual evidence. Concentration is last. Every commit carries its own refusals, bilingual wording, surfaces, RED/GREEN, reconciliation, and owned compatibility row.
+7. **CAL1-11/12:** run the final compatibility sweep; add mutation and pharmacy golden evidence.
+8. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, then
+   merge the one complete seven-commit PR.
+9. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
+10. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
+11. **OPS1-01:** activate the governance a provisional non-production bootstrap needs, and settle provider, region, residency, and products. No final capacity claim is made here.
+12. **OPS1-02, then OPS1-03:** provision the provisional non-production environment through CI, then configure its managed services and capture the live PostgreSQL minor and Spaces compatibility evidence.
+13. **OPS1-09:** run the governed hosted benchmark against that measured target and reissue the sizing authority. It cannot precede `OPS1-03`, which produces the target it measures.
+14. **OPS1-04 through OPS1-07:** recovery and capacity evidence, observability, and the pilot runbook.
+15. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
+16. **G2/G3:** activate retention and workspace authority.
+17. **W1-01 onward:** begin durable workspace/history implementation.
 
 ### Parallel-safe work now
 
