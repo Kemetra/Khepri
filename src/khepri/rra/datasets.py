@@ -25,6 +25,7 @@ from khepri.rra.sessions import (
     assert_same_scope,
     require_upload_consent,
 )
+from khepri.rra.source_contract import SourceContract
 from khepri.rra.storage import StoredEnvelope
 
 
@@ -128,6 +129,7 @@ class ProfilingService:
         self,
         *,
         session_id: str,
+        contract: SourceContract,
         now: datetime,
         request: ReportRequest = DEFAULT_REPORT_REQUEST,
     ) -> tuple[DatasetProfileRecord, bool]:
@@ -144,7 +146,7 @@ class ProfilingService:
 
         existing = self._profiles.get_profile_for_upload(upload.upload_id, scope)
         if existing is not None:
-            return _answering(existing, request), False
+            return _answering(existing, request, contract), False
 
         content = self._objects.get(
             upload.object_key,
@@ -163,7 +165,7 @@ class ProfilingService:
             media_type=upload.media_type,
             source_sha256_hex=upload.sha256_hex,
         )
-        document = build_document(profile, request=request)
+        document = build_document(profile, request=request, contract=contract)
         candidate = DatasetProfileRecord(
             profile_id=self._new_profile_id(),
             owner_id=upload.owner_id,
@@ -180,7 +182,10 @@ class ProfilingService:
             document=document,
         )
         stored = self._profiles.add_profile(candidate)
-        return _answering(stored, request), stored.profile_id == candidate.profile_id
+        return (
+            _answering(stored, request, contract),
+            stored.profile_id == candidate.profile_id,
+        )
 
     def get_session_profile(
         self,
@@ -198,20 +203,34 @@ class ProfilingService:
 def build_document(
     profile: DatasetProfile,
     *,
+    contract: SourceContract,
     request: ReportRequest = DEFAULT_REPORT_REQUEST,
 ) -> dict[str, Any]:
-    mapping = build_mapping(profile)
+    """The stored profile document, including the reading it was admitted under.
+
+    The contract is recorded beside the profile rather than alongside it,
+    because the digest is what later binds a coverage manifest to *this*
+    admission. `khepri.rra.coverage` refuses a manifest whose
+    `source_contract_digest` names a different reading of the same bytes, and
+    that refusal is only possible if the digest is written here.
+    """
+    mapping = build_mapping(profile, contract=contract)
     decision = assess_admissibility(profile, mapping, request=request)
     return {
         "profile": profile.as_document(),
         "mapping": mapping.as_document(),
         "admissibility": decision.as_document(),
+        "source_contract": {
+            **contract.as_document(),
+            "digest": contract.digest,
+        },
     }
 
 
 def _answering(
     record: DatasetProfileRecord,
     request: ReportRequest,
+    contract: SourceContract,
 ) -> DatasetProfileRecord:
     """Return the stored profile only if it answers the question being asked.
 
@@ -231,7 +250,31 @@ def _answering(
         raise ProfileRequestConflict(
             "This upload was profiled under different requested semantics."
         )
+    if _recorded_contract_digest(record) != contract.digest:
+        # The same reasoning as the semantics guard, for the other half of what
+        # a profile records. A stored profile answers the declaration it was
+        # admitted under; handing it back for a different one would report a
+        # mapping built from a reading this caller did not declare, and the
+        # digest they are shown would address neither.
+        raise ProfileRequestConflict(
+            "This upload was profiled under a different source contract."
+        )
     return record
+
+
+def _recorded_contract_digest(record: DatasetProfileRecord) -> str | None:
+    """The digest of the contract a stored profile was admitted under.
+
+    `None` for a profile written before contracts existed, which never equals a
+    real digest -- so a legacy profile is a conflict here rather than a silent
+    match, and the caller is told to re-profile rather than handed a mapping
+    built without their declaration.
+    """
+    stored = record.document.get("source_contract")
+    if not isinstance(stored, dict):
+        return None
+    digest = stored.get("digest")
+    return None if digest is None else str(digest)
 
 
 def _requested_semantics(record: DatasetProfileRecord) -> tuple[str, ...]:

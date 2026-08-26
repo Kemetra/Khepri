@@ -13,6 +13,7 @@ from khepri.rra.admissibility import (
     ReportRequest,
     assess_admissibility,
 )
+from khepri.rra.admission import AdmittedEvents, EventsRefused, admit_events
 from khepri.rra.aggregates import (
     REDACTION_SENTINEL,
     UNLABELLED_BUCKET_LABEL,
@@ -24,7 +25,6 @@ from khepri.rra.aggregates import (
     reconciles,
 )
 from khepri.rra.mapping import (
-    MAPPING_VERSION,
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
     SEMANTIC_COST,
@@ -49,6 +49,7 @@ from khepri.rra.profiling import (
     parse_date,
     safe_value_label,
 )
+from khepri.rra.source_contract import SourceContract
 from khepri.rra.versions import (
     REASON_PACKAGE_VERSION_UNADMITTED,
     admits_package,
@@ -308,24 +309,36 @@ class _Aggregated:
     unit_kind: str
 
 
+@dataclass(frozen=True, slots=True)
+class AdmittedInput:
+    """One reading of one file: what it is, and what it was declared to mean.
+
+    Grouped rather than passed as five parallel arguments, because they are not
+    independent -- `_assert_derived_from_profile` re-derives every one of them
+    from `content` and refuses the package if any disagrees. A caller cannot
+    legitimately vary one alone, so the signature no longer offers to.
+
+    The contract belongs in the group for the same reason it is required at all:
+    under `rra003.mapping.v3` the mapping is a function of profile *and*
+    declaration, so a mapping travelling without its contract cannot be checked.
+    """
+
+    content: bytes
+    media_type: str
+    profile: DatasetProfile
+    mapping: RetailMapping
+    decision: AdmissibilityDecision
+    contract: SourceContract
+
+
 def build_fact_package(
+    admitted: AdmittedInput,
     *,
-    content: bytes,
-    media_type: str,
-    profile: DatasetProfile,
-    mapping: RetailMapping,
-    decision: AdmissibilityDecision,
     formula_version: str = FORMULA_VERSION,
 ) -> FactPackage:
+    """One package, or a refusal."""
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):
-        return _build(
-            content=content,
-            media_type=media_type,
-            profile=profile,
-            mapping=mapping,
-            decision=decision,
-            formula_version=formula_version,
-        )
+        return _build(admitted, formula_version=formula_version)
 
 
 def assert_versions_admitted(
@@ -360,27 +373,133 @@ def assert_versions_admitted(
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _Totals:
+    """The package-level sums, each already answering the currency question."""
+
+    revenue: Decimal | None
+    units: int | None
+    transactions: int | None
+    transactions_reason: str
+    cost: Decimal | None
+    discount: Decimal | None
+    returns: Decimal | None
+
+
+def _totals(measures: _Measures, admitted_events: AdmittedEvents) -> _Totals:
+    """Every package total, with the monetary ones gated on one proven currency.
+
+    Grouped so the gate is applied in one place. `RRA-003` refuses monetary
+    facts "and their derived results" when the currency is missing, malformed or
+    mixed, "but does not suppress independently proven count-only facts" -- so
+    the split runs through this function and not through eight call sites that
+    each have to remember which side they are on.
+    """
+    complete = measures.transaction_identifiers_complete
+    return _Totals(
+        revenue=_monetary(admitted_events, measures.revenue),
+        units=_sum_integer(measures.units),
+        transactions=_distinct(measures.transactions) if complete else None,
+        transactions_reason=(
+            REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
+        ),
+        cost=_monetary(admitted_events, measures.cost),
+        discount=_monetary(admitted_events, measures.discount),
+        returns=_monetary(admitted_events, measures.returns),
+    )
+
+
+def _admitted_frame(frame: pl.DataFrame, admitted_events: AdmittedEvents) -> pl.DataFrame:
+    """The frame narrowed to the rows admission kept.
+
+    `RRA-003` excludes explicitly void and cancelled events from *every*
+    population, and a population read off the unfiltered frame is one they were
+    not excluded from -- which would leave the exclusion true of an intermediate
+    object and false of every figure anybody sees.
+
+    Narrowed once here rather than re-filtered per measure, so every published
+    figure is computed over one population and no later reader has to remember
+    the exclusion.
+    """
+    if not admitted_events.excluded_count:
+        return frame
+    return frame[list(admitted_events.kept_positions)]
+
+
+def _monetary(
+    admitted_events: AdmittedEvents,
+    values: list[Decimal | None],
+) -> Decimal | None:
+    """A monetary total, or nothing when the currency was not proven.
+
+    `RRA-003`: "Missing, malformed, or mixed currency refuses monetary facts and
+    their derived results but does not suppress independently proven count-only
+    facts." So this withholds the total while the unit and transaction counts
+    beside it stand.
+    """
+    if admitted_events.monetary_refused:
+        return None
+    return _sum_decimal(values)
+
+
+def _admitted_events(admitted: AdmittedInput) -> AdmittedEvents:
+    """`RRA-003` admission, run before any measure is read.
+
+    An unknown event kind or status refuses the whole population here rather
+    than silently excluding its row; a mixed or missing currency reports what it
+    costs, which is the monetary facts alone.
+
+    **`EventsRefused` is translated, not allowed to escape.** It and
+    `FactsRefused` are sibling `ValueError` subclasses, so the `except
+    FactsRefused` in `packages.build_session_package` -- the only place a refusal
+    becomes `PackageRefused`, and so the only path to the governed 409 -- does
+    not catch it. Letting it through returns HTTP 500 for ordinary bad input,
+    which both misreports a correctly-detected declaration defect as a server
+    fault and discards the reason `RRA-003` requires be stated. The `from error`
+    keeps the original for the server-side log.
+    """
+    try:
+        return admit_events(
+            content=admitted.content,
+            media_type=admitted.media_type,
+            mapping=admitted.mapping,
+            contract=admitted.contract,
+        )
+    except EventsRefused as error:
+        raise FactsRefused(str(error)) from error
+
+
 def _build(
+    admitted: AdmittedInput,
     *,
-    content: bytes,
-    media_type: str,
-    profile: DatasetProfile,
-    mapping: RetailMapping,
-    decision: AdmissibilityDecision,
     formula_version: str,
 ) -> FactPackage:
+    content = admitted.content
+    media_type = admitted.media_type
+    profile = admitted.profile
+    mapping = admitted.mapping
+    decision = admitted.decision
     if formula_version != FORMULA_VERSION:
         raise FactsRefused("Formula version is not implemented by this package builder.")
     assert_versions_admitted(
-        mapping_version=MAPPING_VERSION,
+        # The mapping this package actually combines, read from the mapping
+        # itself rather than from `MAPPING_VERSION`. The module constant is
+        # what `build_mapping` *stamps*; it is not necessarily what the caller
+        # handed over, and the gate asks whether the versions a result combines
+        # were authorized together. Reading the global answers a different
+        # question -- one where a package built from a v2 mapping is checked as
+        # though it were v3 -- and `_assert_derived_from_profile` below already
+        # proves the mapping belongs to this input.
+        mapping_version=mapping.mapping_version,
         package_version=PACKAGE_VERSION,
         formula_version=formula_version,
     )
-    _assert_derived_from_profile(content, media_type, profile, mapping, decision)
+    _assert_derived_from_profile(admitted)
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
 
-    frame = materialize(content, media_type)
+    admitted_events = _admitted_events(admitted)
+    frame = _admitted_frame(materialize(content, media_type), admitted_events)
     measures = _measures(frame, profile, mapping)
     if measures.monetary_precision > MAX_MONETARY_PRECISION:
         raise FactsRefused("Monetary input precision exceeds the governed maximum.")
@@ -390,21 +509,14 @@ def _build(
     refusals: list[RefusedResult] = []
     caveats: list[str] = []
 
-    revenue_total = _sum_decimal(measures.revenue)
-    units_total = _sum_integer(measures.units)
-    transactions_total = (
-        _distinct(measures.transactions)
-        if measures.transaction_identifiers_complete
-        else None
-    )
-    transactions_reason = (
-        REASON_INPUT_UNAVAILABLE
-        if measures.transaction_identifiers_complete
-        else REASON_INCOMPLETE_IDENTIFIERS
-    )
-    cost_total = _sum_decimal(measures.cost)
-    discount_total = _sum_decimal(measures.discount)
-    returns_total = _sum_decimal(measures.returns)
+    totals = _totals(measures, admitted_events)
+    revenue_total = totals.revenue
+    units_total = totals.units
+    transactions_total = totals.transactions
+    transactions_reason = totals.transactions_reason
+    cost_total = totals.cost
+    discount_total = totals.discount
+    returns_total = totals.returns
 
     def add(
         metric: str,
@@ -488,7 +600,11 @@ def _build(
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_ORDER_VALUE,
-        numerator=_sum_decimal(orders.left) if measures.transaction_identifiers_complete else None,
+        numerator=(
+            _monetary(admitted_events, orders.left)
+            if measures.transaction_identifiers_complete
+            else None
+        ),
         denominator=_distinct(orders.right) if measures.transaction_identifiers_complete else None,
         unit_kind=UNIT_MONETARY,
         precision=money,
@@ -498,15 +614,17 @@ def _build(
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_SELLING_PRICE,
-        numerator=_sum_decimal(selling.left),
+        numerator=_monetary(admitted_events, selling.left),
         denominator=_sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),
     )
 
-    margin_revenue = _sum_decimal(margin.left)
-    margin_cost = _sum_decimal(margin.right)
+    # Gated like the totals: `RRA-003` refuses monetary facts "and their derived
+    # results", and gross profit is derived from two of them.
+    margin_revenue = _monetary(admitted_events, margin.left)
+    margin_cost = _monetary(admitted_events, margin.right)
     gross_profit = (
         None if margin_revenue is None or margin_cost is None else margin_revenue - margin_cost
     )
@@ -630,13 +748,7 @@ def _unavailable_reason(mapping: RetailMapping, semantic: str) -> str:
     return REASON_INPUT_UNAVAILABLE
 
 
-def _assert_derived_from_profile(
-    content: bytes,
-    media_type: str,
-    profile: DatasetProfile,
-    mapping: RetailMapping,
-    decision: AdmissibilityDecision,
-) -> None:
+def _assert_derived_from_profile(admitted: AdmittedInput) -> None:
     """Refuse artifacts that were not derived from this exact input.
 
     Profile, mapping, and admissibility are all deterministic functions of the
@@ -644,16 +756,20 @@ def _assert_derived_from_profile(
     digest check alone would accept a profile that carries the right source
     hash while misstating labels, inferred types, or personal-data risk.
     """
+    content = admitted.content
+    profile = admitted.profile
+    mapping = admitted.mapping
+    decision = admitted.decision
     digest = hashlib.sha256(content).hexdigest()
     if digest != profile.source_sha256_hex:
         raise FactsRefused("Content does not match the profile it is attributed to.")
     if build_profile(
         content=content,
-        media_type=media_type,
+        media_type=admitted.media_type,
         source_sha256_hex=digest,
     ) != profile:
         raise FactsRefused("Profile does not describe the supplied content.")
-    if build_mapping(profile) != mapping:
+    if build_mapping(profile, contract=admitted.contract) != mapping:
         raise FactsRefused("Mapping was not derived from the supplied profile.")
     positions = [
         entry.column.position for entry in mapping.mappings if entry.column is not None

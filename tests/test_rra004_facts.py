@@ -36,6 +36,7 @@ from khepri.rra.facts import (
     UNIT_COUNT,
     UNIT_MONETARY,
     UNIT_RATIO,
+    AdmittedInput,
     FactPackage,
     FactsRefused,
     build_fact_package,
@@ -49,6 +50,7 @@ from khepri.rra.mapping import (
     build_mapping,
 )
 from khepri.rra.profiling import build_profile, canonical_json
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -59,20 +61,31 @@ GOLDEN = (
 )
 
 
-def package(content: bytes) -> FactPackage:
+def admitted(content: bytes) -> AdmittedInput:
+    """The admitted reading these bytes produce, under the shared contract.
+
+    Shared by `package` and by the cases that assert a refusal, so the
+    construction under test is written once. A second copy is how the two drift
+    and a refusal stops being about the thing it names.
+    """
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
-    return build_fact_package(
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    return AdmittedInput(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         profile=profile,
         mapping=mapping,
         decision=assess_admissibility(profile, mapping),
+        contract=TEST_CONTRACT,
     )
+
+
+def package(content: bytes) -> FactPackage:
+    return build_fact_package(admitted(content))
 
 
 def test_core_kpis_are_computed_exactly() -> None:
@@ -361,7 +374,7 @@ def test_package_records_its_provenance() -> None:
 
     assert result.profile_digest == profile.digest
     assert result.source_sha256_hex == hashlib.sha256(GOLDEN).hexdigest()
-    assert result.mapping_version == build_mapping(profile).mapping_version
+    assert result.mapping_version == build_mapping(profile, contract=TEST_CONTRACT).mapping_version
 
 
 def test_inadmissible_datasets_never_produce_facts() -> None:
@@ -371,17 +384,20 @@ def test_inadmissible_datasets_never_produce_facts() -> None:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     decision = assess_admissibility(profile, mapping)
 
     assert decision.admissible is False
     with pytest.raises(FactsRefused):
         build_fact_package(
-            content=content,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=decision,
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=decision,
+                contract=TEST_CONTRACT,
+            ),
         )
 
 
@@ -399,16 +415,19 @@ def test_content_that_does_not_match_the_profile_is_refused() -> None:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(GOLDEN).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     other = GOLDEN.replace(b"125.50", b"999.99")
 
     with pytest.raises(FactsRefused):
         build_fact_package(
-            content=other,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
+            AdmittedInput(
+                content=other,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
         )
 
 
@@ -424,16 +443,22 @@ def test_a_mapping_from_another_schema_is_refused() -> None:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(reordered).hexdigest(),
     )
-    foreign = build_mapping(other_profile)
+    foreign = build_mapping(other_profile, contract=TEST_CONTRACT)
     assert foreign.for_semantic("transaction_date").column.position == 2
 
     with pytest.raises(FactsRefused):
         build_fact_package(
-            content=GOLDEN,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=foreign,
-            decision=assess_admissibility(profile, build_mapping(profile)),
+            AdmittedInput(
+                content=GOLDEN,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=foreign,
+                decision=assess_admissibility(
+                profile,
+                build_mapping(profile, contract=TEST_CONTRACT),
+            ),
+                contract=TEST_CONTRACT,
+            ),
         )
 
 
@@ -525,11 +550,17 @@ def test_a_profile_that_misstates_the_content_is_refused() -> None:
 
     with pytest.raises(FactsRefused):
         build_fact_package(
-            content=GOLDEN,
-            media_type=CSV_MEDIA_TYPE,
-            profile=tampered,
-            mapping=build_mapping(tampered),
-            decision=assess_admissibility(tampered, build_mapping(tampered)),
+            AdmittedInput(
+                content=GOLDEN,
+                media_type=CSV_MEDIA_TYPE,
+                profile=tampered,
+                mapping=build_mapping(tampered, contract=TEST_CONTRACT),
+                decision=assess_admissibility(
+                tampered,
+                build_mapping(tampered, contract=TEST_CONTRACT),
+            ),
+                contract=TEST_CONTRACT,
+            ),
         )
 
 
@@ -539,15 +570,18 @@ def test_an_unimplemented_formula_version_is_refused() -> None:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(GOLDEN).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
 
     with pytest.raises(FactsRefused):
         build_fact_package(
-            content=GOLDEN,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
+            AdmittedInput(
+                content=GOLDEN,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
             formula_version="rra004.formula.v99",
         )
 
@@ -782,21 +816,9 @@ def test_ordinary_text_is_not_mistaken_for_an_email() -> None:
 
 def test_a_column_answering_two_measures_never_produces_facts() -> None:
     content = b"date,sales quantity\n2026-01-05,10\n2026-01-06,20\n"
-    profile = build_profile(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        source_sha256_hex=hashlib.sha256(content).hexdigest(),
-    )
-    mapping = build_mapping(profile)
 
     with pytest.raises(FactsRefused):
-        build_fact_package(
-            content=content,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
-        )
+        build_fact_package(admitted(content))
 
 
 def test_a_dotted_phone_number_is_redacted() -> None:

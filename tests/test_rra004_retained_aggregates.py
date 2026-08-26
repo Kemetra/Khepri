@@ -23,12 +23,14 @@ from khepri.rra.facts import (
     FORMULA_VERSION,
     METRIC_REVENUE,
     PACKAGE_VERSION,
+    AdmittedInput,
     FactPackage,
     build_fact_package,
 )
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import SEMANTIC_PRODUCT, build_mapping
 from khepri.rra.profiling import build_profile
+from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 # Two products, four rows, two invoices, two dates. Deliberately not a row count:
 # Water sits in three rows and two invoices, so a row count would report three.
@@ -47,14 +49,17 @@ def package(content: bytes) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile)
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def wide_source(distinct_products: int) -> bytes:

@@ -25,7 +25,6 @@ from khepri.rra.intake import (
     UploadTooLarge,
 )
 from khepri.rra.journey.routes import JourneyServices, add_journey_routes
-from khepri.rra.mapping import KNOWN_SEMANTICS
 from khepri.rra.packages import (
     FactPackageRecord,
     FactPackageService,
@@ -33,6 +32,11 @@ from khepri.rra.packages import (
     PackageRefused,
     ProfileNotFound,
     package_refused_detail,
+)
+from khepri.rra.profile_request import (
+    ProfileRequestBody,
+    declared_contract,
+    governed_semantics,
 )
 from khepri.rra.profiling import ProfileRejected
 from khepri.rra.report_api import add_report_routes
@@ -75,12 +79,6 @@ class UploadResponse(BaseModel):
     sha256_hex: str
     media_type: str
     expires_at: datetime
-
-
-class ProfileRequestBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    requested_semantics: list[str] = []
 
 
 class ProfileColumnResponse(BaseModel):
@@ -254,17 +252,14 @@ def create_app(
         ) -> ProfileResponse:
             if session_id is None:
                 raise _session_unavailable()
-            requested = set(payload.requested_semantics)
-            if not requested <= KNOWN_SEMANTICS:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Requested retail semantics are not governed.",
-                )
+            requested = governed_semantics(payload)
+            contract = declared_contract(payload)
             try:
                 record, created = profiling_service.profile_session_upload(
                     session_id=session_id,
                     now=clock(),
                     request=ReportRequest(requested_semantics=frozenset(requested)),
+                    contract=contract,
                 )
             except SessionExpired as error:
                 raise _session_unavailable() from error
