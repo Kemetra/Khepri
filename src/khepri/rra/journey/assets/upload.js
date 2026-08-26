@@ -11,6 +11,7 @@ const errorSummary = document.querySelector("#error-summary");
 const dropZone = document.querySelector("#drop-zone");
 const recovery = document.querySelector("#upload-recovery");
 const contractFields = document.querySelectorAll("[data-contract-field]");
+const manifestFields = document.querySelectorAll("[data-manifest-field]");
 let file = null;
 let uploaded = false;
 
@@ -46,7 +47,33 @@ const declaration = () => {
   }
   return contract;
 };
-const profileRequest = () => JSON.stringify({ requested_semantics: [], source_contract: declaration() });
+// The coverage attestation, sent only when the operator made one. `RRA-003`
+// refuses a manifest that names no scope, so an always-present object would
+// turn every unattested upload into a governed refusal -- the manifest key is
+// therefore absent, not null and not empty. Blank is "did not attest", which is
+// a different fact from the contract's "declared nothing for this column" and
+// is why this does not reuse `declaration()`'s null/"" distinction.
+//
+// A partly filled attestation is sent as it stands and refused by
+// `build_coverage_manifest` with a stated reason. Completing it here -- adding
+// the missing days, inferring the timezone -- would be the client synthesizing
+// coverage proof, which is the one thing this attestation exists to prevent.
+const attestation = () => {
+  const manifest = {};
+  let attested = false;
+  for (const control of manifestFields) {
+    const typed = control.value.trim();
+    if (typed) attested = true;
+    manifest[control.dataset.manifestField] = control.dataset.manifestList === undefined
+      ? typed
+      : typed.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return attested ? manifest : null;
+};
+const profileRequest = () => {
+  const attested = attestation();
+  return JSON.stringify({ requested_semantics: [], source_contract: declaration(), ...(attested ? { coverage_manifest: attested } : {}) });
+};
 // The stated reason when the server gives one, and the page's own wording when it
 // does not. A governed refusal names what it refused, and flattening that into a
 // generic message is what leaves an operator with nothing to act on.

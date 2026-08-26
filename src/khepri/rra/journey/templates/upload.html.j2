@@ -85,6 +85,58 @@
       </p>
       {% endfor %}
     </fieldset>
+    {#
+      The coverage attestation, and the reason it is optional rather than
+      required. `RRA-003` holds that "a date spine, observed minimum or maximum
+      date, equal row or day counts, and absence of events never synthesize
+      coverage proof", so this cannot be derived from the file and is not
+      defaulted here either. Without it the assessment still runs and only
+      completeness-dependent comparison and growth refuse, which is why an
+      operator who cannot attest is not blocked from uploading.
+
+      `data-manifest-field` carries the wire name, as `data-contract-field`
+      does above, so `upload.js` builds the object from the form rather than
+      restating the field list. Nothing here is marked required: the manifest
+      is omitted entirely when the operator leaves it blank, and a partly
+      filled one is refused by `build_coverage_manifest` with a stated reason
+      rather than being silently completed.
+    #}
+    <fieldset id="coverage-manifest" class="contract-fieldset">
+      <legend>{{ copy.manifest_legend }}</legend>
+      <p class="meta">{{ copy.manifest_intro }}</p>
+      <p class="contract-row">
+        <label for="manifest-timezone">{{ copy.manifest_timezone }}</label>
+        <input id="manifest-timezone" data-manifest-field="timezone" type="text" dir="ltr" spellcheck="false" aria-describedby="manifest-timezone-hint">
+        <span id="manifest-timezone-hint" class="meta">{{ copy.manifest_timezone_hint }}</span>
+      </p>
+      <p class="contract-row">
+        <label for="manifest-covered-start">{{ copy.manifest_covered_start }}</label>
+        <input id="manifest-covered-start" data-manifest-field="covered_start" type="date">
+      </p>
+      <p class="contract-row">
+        <label for="manifest-covered-end">{{ copy.manifest_covered_end }}</label>
+        <input id="manifest-covered-end" data-manifest-field="covered_end" type="date">
+      </p>
+      <p class="contract-row">
+        <label for="manifest-aggregate-scope">{{ copy.manifest_aggregate_scope }}</label>
+        <input id="manifest-aggregate-scope" data-manifest-field="aggregate_scope" type="text">
+      </p>
+      <p class="contract-row">
+        <label for="manifest-covered-days">{{ copy.manifest_covered_days }}</label>
+        <input id="manifest-covered-days" data-manifest-field="covered_days" data-manifest-list type="text" dir="ltr" spellcheck="false" aria-describedby="manifest-covered-days-hint">
+        <span id="manifest-covered-days-hint" class="meta">{{ copy.manifest_covered_days_hint }}</span>
+      </p>
+      <p class="contract-row">
+        <label for="manifest-event-kinds">{{ copy.manifest_event_kinds }}</label>
+        <input id="manifest-event-kinds" data-manifest-field="event_kinds" data-manifest-list type="text" spellcheck="false" aria-describedby="manifest-event-kinds-hint">
+        <span id="manifest-event-kinds-hint" class="meta">{{ copy.manifest_event_kinds_hint }}</span>
+      </p>
+      <p class="contract-row">
+        <label for="manifest-statuses">{{ copy.manifest_statuses }}</label>
+        <input id="manifest-statuses" data-manifest-field="statuses" data-manifest-list type="text" spellcheck="false" aria-describedby="manifest-statuses-hint">
+        <span id="manifest-statuses-hint" class="meta">{{ copy.manifest_statuses_hint }}</span>
+      </p>
+    </fieldset>
     <div id="selected-file" class="selected-file" aria-live="polite"></div>
     <div id="upload-progress" class="progress-wrap" hidden>
       <div class="progress-track" role="progressbar" aria-label="{{ copy.upload_progress }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>

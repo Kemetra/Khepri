@@ -1,11 +1,76 @@
 from __future__ import annotations
 
+import json
 from importlib.resources import files
 
 import pytest
 from playwright.sync_api import Error, sync_playwright
 
+from khepri.rra.coverage_request import CoverageManifestBody
 from tests.test_rra_journey_api import client
+
+_ATTESTED = {
+    "timezone": "Africa/Cairo",
+    "covered_start": "2026-01-01",
+    "covered_end": "2026-01-02",
+    "aggregate_scope": "All stores",
+    "covered_days": "2026-01-01, 2026-01-02",
+    "event_kinds": "sale",
+    "statuses": "posted",
+}
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_the_upload_page_sends_a_manifest_only_when_one_is_attested(
+    language: str,
+) -> None:
+    """`profileRequest()` itself, run in a browser over the served module.
+
+    Executed rather than grepped: a source assertion that the omission text is
+    present passes against a body that always returns the object, and an
+    always-present manifest names no scope, which `build_coverage_manifest`
+    refuses -- so every operator who declined to attest would be refused.
+    """
+    module = client().get("/beta/assets/upload.js").text
+    body = client().get(f"/beta/{language}/upload").text
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch()
+        except Error as error:
+            pytest.skip(f"Pinned Chromium is unavailable: {error}")
+        try:
+            page = browser.new_page()
+            page.set_content(body, wait_until="domcontentloaded")
+            # The module's own `attestation`/`profileRequest`, lifted out of the
+            # served file and evaluated against the served page's real controls.
+            harness = (
+                module[module.index("const attestation") : module.index("// The stated reason")]
+                + "\nreturn profileRequest();"
+            )
+            blank = page.evaluate(
+                "() => { const manifestFields ="
+                " document.querySelectorAll('[data-manifest-field]');"
+                " const declaration = () => ({});"
+                f" {harness} }}"
+            )
+            assert "coverage_manifest" not in blank
+
+            for name, value in _ATTESTED.items():
+                page.fill(f"[data-manifest-field='{name}']", value)
+            attested = page.evaluate(
+                "() => { const manifestFields ="
+                " document.querySelectorAll('[data-manifest-field]');"
+                " const declaration = () => ({});"
+                f" {harness} }}"
+            )
+            sent = json.loads(attested)["coverage_manifest"]
+            assert sent["timezone"] == "Africa/Cairo"
+            assert sent["covered_days"] == ["2026-01-01", "2026-01-02"]
+            assert sent["event_kinds"] == ["sale"]
+            assert CoverageManifestBody(**sent)._scopes() == ("All stores",)
+        finally:
+            browser.close()
 
 
 @pytest.mark.browser
