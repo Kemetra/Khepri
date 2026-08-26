@@ -95,6 +95,14 @@ def add_coverage_routes(
     ) -> CompletenessResponse:
         if session_id is None:
             raise _session_unavailable()
+        if end < start:
+            # 400, not 409: an inverted range is a caller error, not a dataset
+            # in a state that cannot answer -- and `admits_completeness` would
+            # otherwise see an empty day range and prove it vacuously.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="end must not be before start.",
+            )
         record = _session_profile(profiling_service, session_id, clock)
         try:
             manifest = session_completeness(

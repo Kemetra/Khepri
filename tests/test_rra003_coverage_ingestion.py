@@ -537,48 +537,76 @@ def test_the_route_refuses_an_operator_declared_binding(binding_field: str) -> N
     assert response.status_code == 422
 
 
-def test_the_route_refuses_a_manifest_that_omits_a_day_in_its_own_window() -> None:
-    """A structurally unusable manifest is refused before it is stored.
-
-    `build_coverage_manifest` already refuses this; the assertion here is that
-    the refusal reaches the route as a governed 400 rather than a 500. 400 and
-    not 422 for the reason `declared_contract` records: the body is well-formed
-    and every field is the right type, so what is wrong is the *attestation*.
-    """
-    test = ready()
-
-    response = test.client.post(
-        "/api/v1/beta/profile",
-        json=profile_with(manifest_body(covered_days=[_START.isoformat()])),
-    )
-
-    assert response.status_code == 400
-
-
-def test_the_route_refuses_a_manifest_naming_no_scope() -> None:
-    """A manifest that names nothing attests nothing."""
-    test = ready()
-
-    response = test.client.post(
-        "/api/v1/beta/profile",
-        json=profile_with(manifest_body(aggregate_scope=None, store_roster=[])),
-    )
-
-    assert response.status_code == 400
-
-
-def test_the_route_refuses_a_day_both_closed_and_a_gap() -> None:
-    """Opposite claims about one day are a contradiction, not a preference."""
-    test = ready()
-
-    response = test.client.post(
-        "/api/v1/beta/profile",
-        json=profile_with(
-            manifest_body(
-                closed_days=[_END.isoformat()],
-                extraction_gap_days=[_END.isoformat()],
-            )
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # `build_coverage_manifest` already refuses each of these; the assertion
+        # is that the refusal reaches the route as a governed 400 rather than a
+        # 500. 400 and not 422 for the reason `declared_contract` records: the
+        # body is well-formed and every field is the right type, so what is
+        # wrong is the *attestation*.
+        #
+        # A window the covered days do not span.
+        pytest.param({"covered_days": [_START.isoformat()]}, id="omits_a_day_in_its_window"),
+        # A manifest that names nothing attests nothing.
+        pytest.param(
+            {"aggregate_scope": None, "store_roster": []}, id="names_no_scope"
         ),
+        # Opposite claims about one day are a contradiction, not a preference.
+        pytest.param(
+            {
+                "closed_days": [_END.isoformat()],
+                "extraction_gap_days": [_END.isoformat()],
+            },
+            id="day_both_closed_and_a_gap",
+        ),
+        # Both scope modes at once: `CoverageManifest.scopes` would silently
+        # prefer the aggregate and discard the roster, so the roster's stores
+        # would be attested by nothing while appearing declared.
+        pytest.param(
+            {"aggregate_scope": _SCOPE, "store_roster": ["Cairo"]},
+            id="both_scope_modes",
+        ),
+        # A blank identity is not a scope. The resulting set is nonempty, so
+        # only an explicit check refuses it.
+        pytest.param(
+            {"aggregate_scope": "", "store_roster": []}, id="blank_aggregate_scope"
+        ),
+        pytest.param(
+            {"aggregate_scope": None, "store_roster": [""]}, id="blank_store_identity"
+        ),
+        # A timezone that does not exist proves nothing about when a day began
+        # or ended -- the exact gap `RRA-003` requires the timezone to close.
+        pytest.param({"timezone": "Mars/Base"}, id="unrecognised_timezone"),
+        pytest.param({"timezone": ""}, id="empty_timezone"),
+        # `RRA-003` requires the manifest to record "included event kinds and
+        # statuses". An empty declaration records neither while still admitting
+        # completeness, which is the population boundary failing open.
+        pytest.param({"event_kinds": []}, id="no_event_kinds"),
+        pytest.param({"statuses": []}, id="no_statuses"),
+        # A day beyond `covered_end` would let one extra pair satisfy a query
+        # for a window the operator never declared.
+        pytest.param(
+            {
+                "covered_days": [
+                    _START.isoformat(),
+                    _END.isoformat(),
+                    date(2026, 3, 6).isoformat(),
+                ]
+            },
+            id="day_outside_declared_window",
+        ),
+    ],
+)
+def test_the_route_refuses_a_structurally_unusable_manifest(
+    overrides: dict[str, object],
+) -> None:
+    """Every structural defect that makes an attestation prove nothing."""
+    test = ready()
+
+    response = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(**overrides)),
     )
 
     assert response.status_code == 400
@@ -606,4 +634,72 @@ def test_a_per_store_roster_attests_each_store_it_names() -> None:
 
     assert response.status_code == 200
     assert response.json()["complete"] is True
+
+
+def test_an_inverted_window_is_refused_not_proven_vacuously() -> None:
+    """`end` before `start` is a caller error, never a proof.
+
+    `_days` returns no dates for an inverted range, so "every day is attested
+    and none is a gap" holds of every manifest -- proving a window nobody
+    attested. Asserted as 400 rather than 409 because the request is malformed,
+    not a dataset in a state that cannot answer; a 409 would tell the operator
+    their attestation was short when their query was backwards.
+    """
+    test = ready()
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body()),
+    )
+    assert profiled.status_code == 201
+
+    response = test.client.get(
+        "/api/v1/beta/coverage/completeness",
+        params=completeness_query(start=_END, end=_START),
+    )
+
+    assert response.status_code == 400
+
+
+def test_reposting_unordered_collections_is_the_same_attestation() -> None:
+    """`store_roster`, `event_kinds` and `statuses` are sets, not sequences.
+
+    Their posted order was previously retained in the digested document, so an
+    operator re-posting the same stores or filters in a different sequence had
+    the re-request refused as a different attestation. Sorting them in
+    `as_document` makes the two digest identically.
+
+    Driven through the route rather than compared as two digests, because the
+    conflict this pins is `_assert_same_attestation`'s, which only the second
+    POST reaches.
+    """
+    test = ready()
+    first = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(
+            manifest_body(
+                aggregate_scope=None,
+                store_roster=["Cairo", "Giza"],
+                covered_days=[_START.isoformat(), _END.isoformat()],
+                event_kinds=["sale", "return"],
+                statuses=["posted", "void"],
+            )
+        ),
+    )
+    assert first.status_code == 201
+
+    second = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(
+            manifest_body(
+                aggregate_scope=None,
+                store_roster=["Giza", "Cairo"],
+                covered_days=[_END.isoformat(), _START.isoformat()],
+                event_kinds=["return", "sale"],
+                statuses=["void", "posted"],
+            )
+        ),
+    )
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
 

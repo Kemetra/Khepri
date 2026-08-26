@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 COVERAGE_MANIFEST_VERSION = "rra003.coverage-manifest.v1"
 
@@ -91,6 +92,13 @@ class CoverageManifest:
         would give one attestation several digests, so `packages` would refuse a
         fact package it had itself just published, at random.
 
+        The remaining collections -- `store_roster`, `event_kinds`, `statuses`
+        -- are semantically unordered too, so they are sorted here for the same
+        reason rather than emitted in posted order: two attestations naming the
+        same stores or filters in a different sequence must digest identically,
+        or `_assert_same_attestation` treats an equivalent re-post as a
+        conflict.
+
         `canonical_json` sorts keys and cannot help here: it never reorders the
         values inside a list.
         """
@@ -102,10 +110,10 @@ class CoverageManifest:
             "covered_start": self.covered_start.isoformat(),
             "covered_end": self.covered_end.isoformat(),
             "aggregate_scope": self.aggregate_scope,
-            "store_roster": list(self.store_roster),
+            "store_roster": sorted(self.store_roster),
             "covered_pairs": _pairs_as_document(self.covered_pairs),
-            "event_kinds": list(self.event_kinds),
-            "statuses": list(self.statuses),
+            "event_kinds": sorted(self.event_kinds),
+            "statuses": sorted(self.statuses),
             "closures": _pairs_as_document(self.closures),
             "extraction_gaps": _pairs_as_document(self.extraction_gaps),
             "partial_terminal_boundary": self.partial_terminal_boundary,
@@ -248,18 +256,57 @@ def build_coverage_manifest(
 
 def _assert_usable(manifest: CoverageManifest) -> None:
     """Every structural defect that makes a manifest prove nothing."""
-    if not manifest.scopes:
-        raise ManifestRefused(
-            "A coverage manifest must name one aggregate scope or a store roster."
-        )
+    _assert_one_scope_mode(manifest)
     if manifest.covered_end < manifest.covered_start:
         raise ManifestRefused("A coverage manifest ends before it starts.")
+    _assert_valid_timezone(manifest)
+    if not manifest.event_kinds or not manifest.statuses:
+        raise ManifestRefused(
+            "A coverage manifest must record its included event kinds and statuses."
+        )
     contradictory = manifest.closures & manifest.extraction_gaps
     if contradictory:
         raise ManifestRefused(
             "A day cannot be both an attested closure and an extraction gap."
         )
     _assert_spans_its_own_window(manifest)
+    _assert_pairs_within_window(manifest)
+
+
+def _assert_one_scope_mode(manifest: CoverageManifest) -> None:
+    """Exactly one scope mode, and every identity in it nonblank.
+
+    `RRA-003` treats an aggregate scope and a per-store roster as alternatives.
+    Accepting both would let `CoverageManifest.scopes` silently prefer the
+    aggregate and discard the roster, and a blank identity in either would let
+    an empty string stand in for a scope nothing attested.
+    """
+    if manifest.aggregate_scope is not None and manifest.store_roster:
+        raise ManifestRefused(
+            "A coverage manifest must name an aggregate scope or a store roster, "
+            "not both."
+        )
+    if not manifest.scopes:
+        raise ManifestRefused(
+            "A coverage manifest must name one aggregate scope or a store roster."
+        )
+    if any(not scope for scope in manifest.scopes):
+        raise ManifestRefused("A coverage manifest scope identity may not be blank.")
+
+
+def _assert_valid_timezone(manifest: CoverageManifest) -> None:
+    """The reporting timezone must be a real zone, not merely a nonempty string.
+
+    A day boundary attested under a timezone that does not exist proves nothing
+    about when a day began or ended -- the exact gap `RRA-003` requires the
+    timezone to close.
+    """
+    try:
+        ZoneInfo(manifest.timezone)
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ManifestRefused(
+            f"A coverage manifest names an unrecognised timezone: {manifest.timezone!r}."
+        ) from error
 
 
 def _assert_spans_its_own_window(manifest: CoverageManifest) -> None:
@@ -270,6 +317,22 @@ def _assert_spans_its_own_window(manifest: CoverageManifest) -> None:
                 raise ManifestRefused(
                     "A coverage manifest omits a day inside its own window."
                 )
+
+
+def _assert_pairs_within_window(manifest: CoverageManifest) -> None:
+    """No covered pair may fall outside the window the manifest declares.
+
+    `_assert_spans_its_own_window` proves the window is a subset of what is
+    covered; this proves the reverse. Without it, a manifest could attest a day
+    beyond `covered_end` and have that extra pair alone satisfy a completeness
+    query for a window the operator never declared.
+    """
+    window_days = frozenset(_days(manifest.covered_start, manifest.covered_end))
+    for _scope, day in manifest.covered_pairs:
+        if day not in window_days:
+            raise ManifestRefused(
+                "A coverage manifest attests a day outside its declared window."
+            )
 
 
 def _days(start: date, end: date) -> list[date]:
@@ -295,7 +358,15 @@ def admits_completeness(
 
     Fail-closed: every condition must hold, and an unrecognised scope or an
     unattested day is a refusal rather than an absence of evidence.
+
+    **An inverted window is refused outright, never proven vacuously.** With
+    `end < start`, `_days` returns no dates, and a check that every day in an
+    empty list is attested and gap-free is true of every manifest -- proving
+    nothing about a window nobody attested. So the shape is refused before it
+    reaches that check.
     """
+    if query.end < query.start:
+        return False
     if manifest.input_digest != query.input_digest:
         return False
     if manifest.source_contract_digest != query.source_contract_digest:
