@@ -55,6 +55,34 @@ def test_review_table_and_processing_status_have_required_semantics() -> None:
     assert 'aria-live="polite"' in processing
 
 
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_refusal_and_transport_error_no_longer_share_paint(language: str) -> None:
+    body = client().get(f"/beta/{language}/review").text
+    error_div = re.search(r'<div id="error-summary"[^>]*>', body).group(0)
+    findings_div = re.search(r'<div id="profile-findings"[^>]*', body).group(0)
+    assert 'class="error-summary"' in error_div
+    assert 'role="alert"' in error_div
+    assert "refusal-summary" not in error_div
+    assert 'class="refusal-summary"' in findings_div
+    assert 'role="status"' in findings_div
+    assert "error-summary" not in findings_div
+
+
+def test_refusal_css_uses_the_disclosure_shape_not_the_danger_family() -> None:
+    css = files("khepri.rra.journey").joinpath("assets", "journey.css").read_text(
+        encoding="utf-8"
+    )
+    rule = re.search(r"\.refusal-summary\s*\{[^}]*\}", css)
+    assert rule is not None
+    declaration = rule.group(0)
+    assert "border-inline-start: 4px solid var(--muted)" in declaration
+    assert "italic" in declaration
+    assert "--danger" not in declaration
+    assert "#d9a49f" not in declaration
+    assert "#faece9" not in declaration
+    assert "#6d201b" not in declaration
+
+
 def test_css_carries_focus_touch_narrow_and_reduced_motion_rules() -> None:
     css = files("khepri.rra.journey").joinpath("assets", "journey.css").read_text(
         encoding="utf-8"
