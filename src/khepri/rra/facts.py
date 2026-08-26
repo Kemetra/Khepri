@@ -49,7 +49,7 @@ from khepri.rra.profiling import (
     parse_date,
     safe_value_label,
 )
-from khepri.rra.source_contract import SourceContract
+from khepri.rra.source_contract import BasisDeclaration, SourceContract
 from khepri.rra.versions import (
     REASON_PACKAGE_VERSION_UNADMITTED,
     admits_package,
@@ -386,7 +386,11 @@ class _Totals:
     returns: Decimal | None
 
 
-def _totals(measures: _Measures, admitted_events: AdmittedEvents) -> _Totals:
+def _totals(
+    measures: _Measures,
+    admitted_events: AdmittedEvents,
+    basis: BasisDeclaration,
+) -> _Totals:
     """Every package total, with the monetary ones gated on one proven currency.
 
     Grouped so the gate is applied in one place. `RRA-003` refuses monetary
@@ -394,6 +398,17 @@ def _totals(measures: _Measures, admitted_events: AdmittedEvents) -> _Totals:
     mixed, "but does not suppress independently proven count-only facts" -- so
     the split runs through this function and not through eight call sites that
     each have to remember which side they are on.
+
+    **Cost and discount carry a second gate, on the basis declaration.** The
+    currency question is whether the amounts are comparable; the basis question
+    is whether the column may be *summed at all*. `RRA-003` refuses the discount
+    metric on "a bare discount, rate, percentage, repeated invoice total, or
+    overlapping component set", and refuses a cost that is unit, average,
+    standard or list rather than extended COGS -- so where the operator has not
+    attested the basis, admission has no proof the column is additive and there
+    is no total to publish. Gated here, on the published figure, because that is
+    the only figure anybody reads: honouring it on `AdmittedEvent` alone leaves
+    the refusal true of an intermediate object and false of the report.
     """
     complete = measures.transaction_identifiers_complete
     return _Totals(
@@ -403,10 +418,57 @@ def _totals(measures: _Measures, admitted_events: AdmittedEvents) -> _Totals:
         transactions_reason=(
             REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
         ),
-        cost=_monetary(admitted_events, measures.cost),
-        discount=_monetary(admitted_events, measures.discount),
+        cost=_on_attested_basis(
+            _monetary(admitted_events, measures.cost), basis.cost_is_extended
+        ),
+        discount=_on_attested_basis(
+            _monetary(admitted_events, measures.discount),
+            basis.discount_is_additive,
+        ),
         returns=_monetary(admitted_events, measures.returns),
     )
+
+
+def _on_attested_basis(total: Decimal | None, attested: bool) -> Decimal | None:
+    """A total the basis declaration permits, or nothing.
+
+    Withholding, not recomputing: the number this returns when the basis *is*
+    attested is byte-identical to the one before this gate existed, so no
+    published figure changes value and no formula moves. What changes is that an
+    unattested basis now yields a refusal where it previously yielded a figure
+    the declaration itself disclaimed.
+    """
+    return total if attested else None
+
+
+def _margin_inputs(
+    admitted_events: AdmittedEvents,
+    margin: _Matched,
+    basis: BasisDeclaration,
+) -> tuple[Decimal | None, Decimal | None]:
+    """The revenue and gross profit the margin is computed from, or refusals.
+
+    Gated like the totals: `RRA-003` refuses monetary facts "and their derived
+    results", and gross profit is derived from two of them.
+
+    **The cost side carries the basis gate too.** Refusing the `cost` total
+    while publishing a margin computed from the same unattested column would
+    republish the refused number under a different name -- and a margin is the
+    figure more likely to be read than the cost it came from. Withheld, not
+    recomputed: where the basis is attested this returns exactly what it
+    returned before the gate existed.
+
+    Returned as a pair because both callers downstream need `margin_revenue` --
+    gross profit as a term, gross margin as its denominator -- and re-deriving
+    it beside the profit is how the two come to disagree.
+    """
+    revenue = _monetary(admitted_events, margin.left)
+    cost = _on_attested_basis(
+        _monetary(admitted_events, margin.right), basis.cost_is_extended
+    )
+    if revenue is None or cost is None:
+        return revenue, None
+    return revenue, revenue - cost
 
 
 def _admitted_frame(frame: pl.DataFrame, admitted_events: AdmittedEvents) -> pl.DataFrame:
@@ -509,7 +571,7 @@ def _build(
     refusals: list[RefusedResult] = []
     caveats: list[str] = []
 
-    totals = _totals(measures, admitted_events)
+    totals = _totals(measures, admitted_events, admitted.contract.basis)
     revenue_total = totals.revenue
     units_total = totals.units
     transactions_total = totals.transactions
@@ -621,12 +683,8 @@ def _build(
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),
     )
 
-    # Gated like the totals: `RRA-003` refuses monetary facts "and their derived
-    # results", and gross profit is derived from two of them.
-    margin_revenue = _monetary(admitted_events, margin.left)
-    margin_cost = _monetary(admitted_events, margin.right)
-    gross_profit = (
-        None if margin_revenue is None or margin_cost is None else margin_revenue - margin_cost
+    margin_revenue, gross_profit = _margin_inputs(
+        admitted_events, margin, admitted.contract.basis
     )
     add(
         METRIC_GROSS_PROFIT,

@@ -143,6 +143,138 @@ def test_the_concentration_curve_publishes_on_the_shipped_pairing() -> None:
     ]
 
 
+def test_a_refused_triple_publishes_no_fact_under_the_predecessor_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal must also leave nothing behind, and that is a separate claim.
+
+    `test_building_a_package_refuses_an_unadmitted_triple` proves the builder
+    raises. Raising is not the whole requirement. `RRA-004` forbids a changed
+    input reaching a reader under an unmoved identity, and the identity a reader
+    is served by is the stored row -- `FactPackageRow` carries
+    `mapping_version`, and `read_retail_facts` serves whatever is there. So a
+    gate that refused *after* persisting, or a route that swallowed the refusal
+    and fell back to a previously stored publication, would satisfy the reason
+    assertion and still publish `rra003.mapping.v2` numbers computed from a v3
+    mapping.
+
+    Driven through the route and asserted against the database, because the
+    store is the only place that claim is decidable. `prepared()` profiles but
+    does not publish, so the table starts empty and the assertion is that the
+    refusal added nothing -- not merely that it added nothing *new*.
+
+    **Both bindings of `MAPPING_VERSION` are moved, and before `prepared()`.**
+    This ordering is measured, not chosen for tidiness, and three other
+    arrangements reach a different guard entirely:
+
+    - `packages.py` does `from khepri.rra.mapping import MAPPING_VERSION`, a
+      binding separate from `mapping.MAPPING_VERSION`. Moving only the latter
+      leaves `_assert_profile_current` comparing the stored profile against the
+      *unmoved* v2, so patching one binding and not the other refuses for a
+      mismatch between the two patches rather than at the gate.
+    - Patching after `prepared()` profiles under v2 and then moves the stamp, so
+      the rebuilt mapping no longer matches the stored profile and
+      `_assert_derived_from_profile` refuses with "Stored profile does not
+      describe the current governed input" -- a real guard, and not this one.
+
+    Measured under a disabled gate, this arrangement is the one that publishes:
+    `admits_package` forced to `True` returns `201` and stores a row carrying
+    `rra003.mapping.v3`. The other arrangements still answer `409`, which is why
+    a test built on them cannot fail and proves nothing about the gate.
+
+    **Asserted against committed literals.** The two version strings below are
+    written out rather than imported from `mapping.py`: importing would make the
+    case read whatever the constant happens to say, so the assertion would
+    follow the version when a later slice moves it and stop describing the
+    refusal window at all.
+
+    `PACKAGE_UNAVAILABLE` is asserted on the detail so the `409` is pinned to
+    *this* refusal. Without it the case passes on any of the guards above, which
+    is exactly how it first went green against a gate that was not consulted.
+    """
+    from sqlalchemy import select
+
+    from khepri.rra import mapping, packages
+    from khepri.rra.packages import PACKAGE_UNAVAILABLE
+    from khepri.rra.persistence import FactPackageRow
+    from tests.test_rra004_packages import prepared
+
+    predecessor_mapping_version = "rra003.mapping.v2"
+    moved_mapping_version = "rra003.mapping.v3"
+
+    monkeypatch.setattr(mapping, "MAPPING_VERSION", moved_mapping_version)
+    monkeypatch.setattr(packages, "MAPPING_VERSION", moved_mapping_version)
+
+    test = prepared()
+    with test.factory() as database:
+        assert not database.scalars(select(FactPackageRow)).all(), (
+            "the fixture must start with nothing published, or this case cannot "
+            "tell a refusal that stored nothing from one that stored a row"
+        )
+
+    response = test.client.post("/api/v1/beta/facts")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == PACKAGE_UNAVAILABLE, (
+        "the 409 must be the version gate's refusal, not an earlier guard's"
+    )
+    with test.factory() as database:
+        stored = database.scalars(select(FactPackageRow)).all()
+    published = [row.mapping_version for row in stored]
+    assert not published, f"a refused version pairing published {published}"
+    assert predecessor_mapping_version not in published
+    assert moved_mapping_version not in published
+
+
+def test_one_refused_family_leaves_the_other_three_publishing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`RRA-008` scope, asserted over all four families rather than one survivor.
+
+    `test_a_family_on_an_unadmitted_formula_refuses_only_itself` names comparison
+    as the survivor. One survivor does not distinguish "growth refused" from
+    "growth and basket refused", and the requirement is that the three unmoved
+    families all still answer.
+
+    **The fixture choice is the load-bearing part.**
+    `_package_with_two_settled_periods` has no product column, so concentration
+    refuses it for its own data reason -- `aggregate_unavailable` -- and a
+    three-survivor claim written over that fixture would be false for reasons
+    that have nothing to do with the version gate. Measured, not assumed:
+    `_package_with_a_concentration_curve` publishes figures in all four sections
+    on the shipped pairing, which is what makes losing exactly one of them
+    observable.
+
+    The negative half is asserted on the *reason*, not just on presence: a
+    second family refusing for `family_version_pairing_unadmitted` is the
+    over-refusal this case exists to catch, and would be invisible to an
+    assertion that only counted figures.
+    """
+    from khepri.rra import bundle
+    from khepri.rra.analysis import growth
+
+    monkeypatch.setattr(growth, "GROWTH_FORMULA_VERSION", "rra008.growth.v2")
+
+    analysed = bundle._analysed(_package_with_a_concentration_curve())
+    published = {figure.section for figure in analysed.figures}
+
+    assert analysed.refusals.get(bundle.SECTION_GROWTH) == (
+        REASON_FAMILY_VERSION_UNADMITTED
+    )
+    assert bundle.SECTION_GROWTH not in published, (
+        "the refused family must publish no figure of its own"
+    )
+    for section in (
+        bundle.SECTION_COMPARISON,
+        bundle.SECTION_CONCENTRATION,
+        bundle.SECTION_BASKET,
+    ):
+        assert section in published, f"{section} did not move, so it must still publish"
+        assert analysed.refusals.get(section) != REASON_FAMILY_VERSION_UNADMITTED, (
+            f"{section} was refused for a version pairing it never moved"
+        )
+
+
 def _package_from(
     header: str,
     rows: list[tuple[str, ...]],

@@ -39,6 +39,8 @@ from decimal import Decimal, InvalidOperation
 import polars as pl
 
 from khepri.rra.mapping import (
+    SEMANTIC_COST,
+    SEMANTIC_DISCOUNT,
     SEMANTIC_REVENUE,
     SEMANTIC_UNITS,
     RetailMapping,
@@ -57,9 +59,29 @@ STATUS_EXCLUDED = frozenset({"void", "cancelled", "canceled"})
 
 _ISO_CURRENCY_LENGTH = 3
 
+#: How `RRA-003`'s canonical composite is spelled. `"|"` is the delimiter the
+#: calculation oracle's `canonical_transaction_key` records, so a component
+#: value carrying one is escaped rather than the delimiter being changed --
+#: changing it would break the recorded format agreement.
+KEY_DELIMITER = "|"
+KEY_ESCAPE = "\\"
+
 
 class EventsRefused(ValueError):
     """A population that cannot be proven from what the extract declared."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Reading:
+    """One materialized frame and the column positions its header resolved to.
+
+    The two always travel together -- `labels` is derived from `frame.columns`
+    and is meaningless against any other frame -- so passing them as one value
+    keeps a reader from having to check that a given pair belongs together.
+    """
+
+    frame: pl.DataFrame
+    labels: dict[str, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +102,20 @@ class AdmittedEvent:
     revenue: Decimal | None
     units: int | None
     transaction_id: str | None
+    cost: Decimal | None
+    discount: Decimal | None
+    #: The identity `transaction_count` actually counts. Equal to
+    #: `transaction_id` when the contract proves it unique package-wide;
+    #: otherwise the declared composite, joined in `RRA-003`'s words as "an
+    #: admitted composite of the source transaction identifier and every
+    #: field needed for uniqueness", with each component escaped so a value
+    #: carrying the delimiter cannot forge a collision. `None` only where no
+    #: identity is declared at all -- a bare identifier not proven unique and no
+    #: composite declared -- which `source_contract` already refuses at
+    #: declaration time, so this module only has to read the outcome, not
+    #: re-derive the proof. A *declared* composite that cannot be built refuses
+    #: the population instead of arriving here as `None`.
+    transaction_key: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,8 +172,17 @@ class AdmittedEvents:
 
     @property
     def transaction_count(self) -> int:
-        """Distinct canonical transactions, also count-only."""
-        return len({event.transaction_id for event in self.events if event.transaction_id})
+        """Distinct canonical transactions, also count-only.
+
+        Counts `transaction_key`, not the bare `transaction_id` -- `RRA-003`
+        requires the composite whenever a bare identifier is not proven
+        package-wide unique, and counting the bare identifier instead would
+        collapse two different stores' identically-numbered receipts into
+        one transaction.
+        """
+        return len(
+            {event.transaction_key for event in self.events if event.transaction_key}
+        )
 
 
 def admit_events(
@@ -156,6 +201,7 @@ def admit_events(
     refuse. `RetailMapping` already resolved revenue and units under recorded
     evidence; this reads the positions it resolved.
     """
+    _assert_identity_proven(contract)
     frame = materialize(content, media_type)
     labels = {label: index for index, label in enumerate(frame.columns)}
     kinds = _event_kinds(frame, labels, contract)
@@ -178,6 +224,18 @@ def admit_events(
     )
     units = _unit_column(frame, mapping)
     transaction_ids = _transaction_id_column(frame, labels, contract)
+    reading = _Reading(frame=frame, labels=labels)
+    keys = _transaction_key_column(reading, contract, transaction_ids, frozenset(kept))
+    discounts = (
+        [None] * frame.height
+        if monetary_refused or not contract.basis.discount_is_additive
+        else _measure_column(frame, mapping, SEMANTIC_DISCOUNT)
+    )
+    costs = (
+        [None] * frame.height
+        if monetary_refused or not contract.basis.cost_is_extended
+        else _measure_column(frame, mapping, SEMANTIC_COST)
+    )
     events = [
         AdmittedEvent(
             event_kind=kinds[index],
@@ -185,6 +243,9 @@ def admit_events(
             revenue=revenues[index],
             units=units[index],
             transaction_id=transaction_ids[index],
+            cost=costs[index],
+            discount=discounts[index],
+            transaction_key=keys[index],
         )
         for index in kept
     ]
@@ -392,6 +453,135 @@ def _transaction_id_column(
         None if raw is None else str(raw).strip() or None
         for raw in _raw_column(frame, labels[declared])
     ]
+
+
+def _transaction_key_column(
+    reading: _Reading,
+    contract: SourceContract,
+    transaction_ids: list[str | None],
+    kept: frozenset[int],
+) -> list[str | None]:
+    """Every row's canonical transaction key, `RRA-003`'s composite or the
+    bare identifier, whichever the contract proves.
+
+    A bare `transaction_id` qualifies as the key only where the contract
+    proves it package-wide unique. Otherwise `RRA-003` requires "an admitted
+    composite of the source transaction identifier and every field needed for
+    uniqueness" -- built here by joining `transaction_key_components`' own
+    declared columns, so two stores numbering receipts from 1 do not collapse
+    into one transaction merely because the bare identifiers collide.
+
+    **A missing component refuses the population, and does not yield `None`.**
+    `RRA-003`: "Missing components or collisions refuse transactions." Two ways
+    a component can be missing, both refused here:
+
+    - *The column is absent from the file.* A declaration naming a column the
+      extract does not carry proves nothing about identity, and
+      `source_contract._assert_transaction_key` already establishes that these
+      components are load-bearing -- it refuses a composite omitting the source
+      identifier. A composite whose columns are absent is the same defect
+      discovered one layer later, so `_column`'s existing refusal is allowed to
+      fire rather than being bypassed.
+    - *A present column's cell is blank.* Refused rather than recorded as an
+      unprovable row. `transaction_count` returns `int`, so a `None` key makes
+      an unprovable identity indistinguishable from the *stated fact* that the
+      row contributed no transaction -- which is the collapse `monetary_refused`
+      was introduced into this module to prevent. Recording it instead would
+      need a distinguishable marker of its own, and inventing one here without
+      a consumer is deferred (`CAL1-01` ledger, `M1`).
+
+    **The blank-cell refusal applies only to a row that survives exclusion.**
+    `RRA-003` excludes an explicitly void or cancelled row from every
+    population, and the answer is computable without it -- so a blank component
+    on a row nothing counts is not a missing proof, it is a row already
+    correctly dropped. Refusing over it would be exactly the blanket refusal
+    this module's own docstring warns of: "the one a blanket refusal loses, and
+    losing it refuses more than the specification allows". Excluded positions
+    yield `None`, which no caller reads, because `admit_events` builds events
+    only over `kept`.
+
+    The *absent column* refusal stays unconditional by contrast: a declaration
+    naming a column the extract does not carry is a defect in the declaration
+    rather than in any one row, and `_column` settles it before a single row is
+    examined.
+
+    Column reads are hoisted the same way `_measure_column` hoists them.
+    """
+    if contract.identity.transaction_id_unique_package_wide:
+        return transaction_ids
+    components = contract.identity.transaction_key_components
+    if not components:
+        return [None] * reading.frame.height
+    columns = [
+        _column(reading.frame, reading.labels, component) for component in components
+    ]
+    return [
+        _joined_key(columns, components, index) if index in kept else None
+        for index in range(reading.frame.height)
+    ]
+
+
+def _joined_key(
+    columns: list[list[str | None]],
+    components: tuple[str, ...],
+    index: int,
+) -> str:
+    """One row's composite key, refusing the population where a component is blank.
+
+    A composite with a hole is not a proven identity -- `RRA-003`: "Missing
+    components or collisions refuse transactions" -- so a gap refuses rather
+    than being joined into a shorter key or reported as a silent zero.
+    """
+    values: list[str] = []
+    for column, component in zip(columns, components, strict=True):
+        value = column[index]
+        if value is None:
+            raise EventsRefused(
+                f"Row {index} states no {component!r}, so its canonical "
+                "transaction key has a missing component."
+            )
+        values.append(value)
+    return KEY_DELIMITER.join(_escaped(value) for value in values)
+
+
+def _escaped(value: str) -> str:
+    """One component, encoded so the join cannot forge a collision.
+
+    Declared columns constrain column *names*; the values in them are arbitrary
+    source data and may carry the delimiter. Unescaped, `("INV-1", "S1|X")` and
+    `("INV-1|S1", "X")` join to the same key and two distinct transactions count
+    as one -- the same magnitude of error as the repeated-invoice regression the
+    composite exists to fix, and `RRA-003` makes a collision a refusal rather
+    than a rounding difference.
+
+    The escape character is escaped *first*, so an `INV\\|1` in the source
+    cannot be read back as a delimiter. Transparent for values carrying neither
+    character, which is why the key still reads exactly as
+    `RRA-003` states it -- `INV-1|S1|2026-03-04|T1`.
+    """
+    return value.replace(KEY_ESCAPE, KEY_ESCAPE * 2).replace(
+        KEY_DELIMITER, KEY_ESCAPE + KEY_DELIMITER
+    )
+
+
+def _assert_identity_proven(contract: SourceContract) -> None:
+    """`RRA-003` requires either a unique event key or an explicit line-grain
+    attestation; refuse the whole population when neither holds.
+
+    `source_contract.build_source_contract` already enforces this at
+    declaration time -- but `contract_from_document` deliberately does not
+    re-validate a replayed declaration (see its own docstring), and
+    `packages._stored_contract` reaches `admit_events` through exactly that
+    path. So this check has to live here too, or a stored profile whose
+    contract predates the rule -- or was constructed without going through
+    the builder -- would be admitted with no identity proof at all.
+    """
+    identity = contract.identity
+    if not identity.event_key_columns and not identity.unique_line_grain_attested:
+        raise EventsRefused(
+            "The source contract supplies neither event keys nor an "
+            "attested unique line grain."
+        )
 
 
 def _raw_column(frame: pl.DataFrame, position: int) -> list[str | None]:

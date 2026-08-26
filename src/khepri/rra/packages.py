@@ -43,6 +43,7 @@ from khepri.rra.datasets import (
     ProfileRepository,
     build_document,
     document_digest,
+    stored_manifest,
 )
 from khepri.rra.facts import (
     FORMULA_VERSION,
@@ -95,7 +96,16 @@ def _readmit(
         source_sha256_hex=upload.sha256_hex,
     )
     contract = _stored_contract(profile_record)
-    document = build_document(profile, request=request, contract=contract)
+    # The attestation is inside the document this rebuild has to reproduce, so
+    # it is read back rather than left out. Omitting it would digest differently
+    # for every profile carrying one and refuse the package -- reporting its own
+    # construction rather than the mismatch the digest exists to detect.
+    document = build_document(
+        profile,
+        request=request,
+        contract=contract,
+        manifest=stored_manifest(profile_record),
+    )
     if document_digest(document) != profile_record.profile_digest:
         raise PackageRefused(
             "Stored profile does not describe the current governed input."

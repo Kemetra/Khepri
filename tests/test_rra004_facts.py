@@ -50,6 +50,14 @@ from khepri.rra.mapping import (
     build_mapping,
 )
 from khepri.rra.profiling import build_profile, canonical_json
+from khepri.rra.source_contract import (
+    BasisDeclaration,
+    ContractAttribution,
+    EventDeclaration,
+    IdentityDeclaration,
+    SourceContract,
+    build_source_contract,
+)
 from tests.rra003_contract_fixtures import TEST_CONTRACT
 
 GOLDEN = (
@@ -1022,3 +1030,137 @@ def test_ordinary_multiword_labels_are_not_redacted() -> None:
         "Cairo Downtown 2026",
         "Store 12",
     ]
+
+
+# ---------------------------------------------------------------------------
+# The basis declaration, reaching the figure a customer actually sees.
+#
+# `RRA-003` refuses the discount metric on "a bare discount, rate, percentage,
+# repeated invoice total, or overlapping component set", and refuses a cost that
+# is unit, average, standard or list rather than extended COGS.
+# `BasisDeclaration.discount_is_additive` / `.cost_is_extended` are the
+# operator's attestations that neither defect is present.
+#
+# `admission.py` honours them on `AdmittedEvent.discount` / `.cost`. But
+# `_totals` builds the *published* figures from `measures.*`, which is read off
+# the frame and mapping and never off the admitted events -- so a contract
+# disclaiming the basis still published the total. These cases assert the
+# refusal on the published figure, which is the only thing a customer sees.
+#
+# Their subject IS the contract, so they build their own declarations inline
+# rather than using `TEST_CONTRACT` -- see `rra003_contract_fixtures`' docstring.
+# ---------------------------------------------------------------------------
+
+BASIS_CSV = (
+    b"date,revenue,units,cogs,discount_amount,invoice_no\n"
+    b"2026-01-05,200.00,4,120.00,10.00,INV-1\n"
+    b"2026-01-06,300.00,6,180.00,5.00,INV-2\n"
+)
+
+
+def _basis_contract(
+    *, cost_is_extended: bool = True, discount_is_additive: bool = True
+) -> SourceContract:
+    """`TEST_CONTRACT`'s declaration with one basis attestation withdrawn."""
+    return build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_facts_basis",
+            evidence="Test fixture: a basis attestation deliberately withheld.",
+        ),
+        events=EventDeclaration(
+            event_kind_column=None,
+            sale_only=True,
+            status_column=None,
+            posted_only=True,
+            currency_column=None,
+            currency_code="EGP",
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=(),
+            unique_line_grain_attested=True,
+            transaction_id_column="invoice_no",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=cost_is_extended,
+            discount_is_additive=discount_is_additive,
+        ),
+    )
+
+
+def _basis_package(contract: SourceContract) -> FactPackage:
+    """One package built over `BASIS_CSV` under the given declaration."""
+    profile = build_profile(
+        content=BASIS_CSV,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(BASIS_CSV).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=BASIS_CSV,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+def test_an_attested_basis_still_publishes_cost_and_discount() -> None:
+    """The control. Both attestations present, both figures published -- so the
+    refusals below are the basis being honoured and not the fixture failing to
+    map its columns."""
+    result = _basis_package(_basis_contract())
+
+    assert result.value(METRIC_COST) == "300.00"
+    assert result.value(METRIC_DISCOUNT) == "15.00"
+    assert result.value(METRIC_GROSS_PROFIT) == "200.00"
+    assert result.value(METRIC_GROSS_MARGIN) == "0.4000"
+
+
+def test_a_discount_basis_not_attested_additive_refuses_the_published_total() -> None:
+    """`RRA-003` refuses the discount metric where the source does not already
+    prevent overlap and allocate every invoice-level amount exactly once.
+
+    The whole point is the *published* figure. A contract disclaiming additivity
+    while the report still carries `discount = 15.00` leaves the refusal true of
+    an intermediate object and false of the only number anybody reads.
+    """
+    result = _basis_package(_basis_contract(discount_is_additive=False))
+
+    assert result.fact(METRIC_DISCOUNT) is None
+    assert result.refusal(METRIC_DISCOUNT) is not None
+    # Revenue is measured on its own basis and is unaffected.
+    assert result.value(METRIC_REVENUE) == "500.00"
+
+
+def test_a_cost_basis_not_attested_extended_refuses_the_published_total() -> None:
+    """`RRA-003`: "unit cost, average cost, standard cost, list cost, and a bare
+    ambiguous cost label are not additive COGS and are refused.\""""
+    result = _basis_package(_basis_contract(cost_is_extended=False))
+
+    assert result.fact(METRIC_COST) is None
+    assert result.refusal(METRIC_COST) is not None
+    assert result.value(METRIC_REVENUE) == "500.00"
+
+
+def test_an_unattested_cost_basis_also_refuses_the_results_derived_from_it() -> None:
+    """`RRA-003` refuses monetary facts "and their derived results".
+
+    Gross profit and gross margin are computed from the same unattested cost, so
+    refusing the `cost` total while publishing a margin derived from it would
+    publish the refused number under a different name -- and the margin is the
+    figure most likely to be read.
+    """
+    result = _basis_package(_basis_contract(cost_is_extended=False))
+
+    assert result.fact(METRIC_GROSS_PROFIT) is None
+    assert result.fact(METRIC_GROSS_MARGIN) is None
+    assert result.refusal(METRIC_GROSS_PROFIT) is not None
+    assert result.refusal(METRIC_GROSS_MARGIN) is not None

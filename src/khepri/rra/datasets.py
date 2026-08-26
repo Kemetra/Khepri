@@ -4,13 +4,20 @@ import hashlib
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Protocol
 
 from khepri.rra.admissibility import (
     DEFAULT_REPORT_REQUEST,
     ReportRequest,
     assess_admissibility,
+)
+from khepri.rra.coverage import (
+    CompletenessQuery,
+    CoverageManifest,
+    ManifestBinding,
+    admits_completeness,
+    manifest_from_document,
 )
 from khepri.rra.intake import SessionReader, StoragePolicyViolation, UploadRepository
 from khepri.rra.mapping import build_mapping
@@ -28,6 +35,14 @@ from khepri.rra.sessions import (
 from khepri.rra.source_contract import SourceContract
 from khepri.rra.storage import StoredEnvelope
 
+#: Governed reasons a completeness question is refused. Closed vocabulary: a
+#: caller distinguishing "nobody attested this" from "the attestation covers a
+#: different reading" from "it does not reach this window" needs three codes, and
+#: collapsing any two would make an operator's fix unguessable.
+REASON_MANIFEST_ABSENT = "coverage_manifest_absent"
+REASON_MANIFEST_CONTRACT_MISMATCH = "coverage_manifest_contract_mismatch"
+REASON_MANIFEST_WINDOW_UNPROVEN = "coverage_manifest_window_unproven"
+
 
 class UploadNotFound(LookupError):
     pass
@@ -35,6 +50,21 @@ class UploadNotFound(LookupError):
 
 class ProfileCorrupted(ValueError):
     """A stored profile no longer matches the digest it is addressed by."""
+
+
+class CoverageUnproven(ValueError):
+    """Completeness was asked for and no attestation proves it.
+
+    Carries a governed reason code rather than only a sentence, because the
+    caller has to distinguish an absent attestation from one bound to another
+    reading: the first is fixed by attesting coverage, the second by re-attesting
+    under the declaration actually recorded. A single message would leave the
+    operator guessing which.
+    """
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class ProfileRequestConflict(ValueError):
@@ -107,6 +137,22 @@ class ProfileObjectReader(Protocol):
     def get(self, key: str, *, envelope: StoredEnvelope) -> bytes: ...
 
 
+class CoverageAttestation(Protocol):
+    """An attestation that still needs the admission it is bound to.
+
+    A Protocol rather than the request model itself, so this service depends on
+    the two things it uses and not on the HTTP layer.
+    `khepri.rra.coverage_request.CoverageManifestBody` satisfies it.
+
+    `timezone` is on the Protocol because the day boundary is the operator's to
+    declare -- nothing in the admission can supply it. See `manifest_binding`.
+    """
+
+    timezone: str
+
+    def to_manifest(self, *, binding: ManifestBinding) -> CoverageManifest: ...
+
+
 class ProfilingService:
     def __init__(
         self,
@@ -132,6 +178,7 @@ class ProfilingService:
         contract: SourceContract,
         now: datetime,
         request: ReportRequest = DEFAULT_REPORT_REQUEST,
+        attestation: CoverageAttestation | None = None,
     ) -> tuple[DatasetProfileRecord, bool]:
         session = self._sessions.get_session(session_id)
         if session is None:
@@ -144,9 +191,14 @@ class ProfilingService:
         scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
         assert_same_scope(scope, upload.scope)
 
+        question = ProfileQuestion(
+            request=request,
+            contract=contract,
+            attestation=attestation,
+        )
         existing = self._profiles.get_profile_for_upload(upload.upload_id, scope)
         if existing is not None:
-            return _answering(existing, request, contract), False
+            return _answering(existing, question), False
 
         content = self._objects.get(
             upload.object_key,
@@ -165,7 +217,12 @@ class ProfilingService:
             media_type=upload.media_type,
             source_sha256_hex=upload.sha256_hex,
         )
-        document = build_document(profile, request=request, contract=contract)
+        document = build_document(
+            profile,
+            request=request,
+            contract=contract,
+            manifest=_bound_manifest(attestation, profile=profile, contract=contract),
+        )
         candidate = DatasetProfileRecord(
             profile_id=self._new_profile_id(),
             owner_id=upload.owner_id,
@@ -183,7 +240,7 @@ class ProfilingService:
         )
         stored = self._profiles.add_profile(candidate)
         return (
-            _answering(stored, request, contract),
+            _answering(stored, question),
             stored.profile_id == candidate.profile_id,
         )
 
@@ -205,6 +262,7 @@ def build_document(
     *,
     contract: SourceContract,
     request: ReportRequest = DEFAULT_REPORT_REQUEST,
+    manifest: CoverageManifest | None = None,
 ) -> dict[str, Any]:
     """The stored profile document, including the reading it was admitted under.
 
@@ -213,10 +271,25 @@ def build_document(
     admission. `khepri.rra.coverage` refuses a manifest whose
     `source_contract_digest` names a different reading of the same bytes, and
     that refusal is only possible if the digest is written here.
+
+    **The manifest is baked in here or nowhere.** This document is
+    content-addressed: `DatasetProfileRecord.verify` refuses one whose digest
+    moved, and `packages._readmit` rebuilds it from the bytes plus what was
+    stored and refuses a package when the rebuild digests differently. Writing an
+    attestation into an existing document would therefore have to rewrite
+    `profile_digest`, which `PackageProvenance.expected` compares against every
+    already-published package -- turning a valid package into `PackageCorrupted`.
+    So an attestation arrives with the declaration it is bound to, once.
+
+    **Absent means absent.** With no manifest the key is omitted rather than set
+    to an empty section, because an empty attestation is indistinguishable
+    downstream from one covering nothing, and because omitting it keeps every
+    profile written without a manifest digesting exactly as it did before
+    attestations existed.
     """
     mapping = build_mapping(profile, contract=contract)
     decision = assess_admissibility(profile, mapping, request=request)
-    return {
+    document: dict[str, Any] = {
         "profile": profile.as_document(),
         "mapping": mapping.as_document(),
         "admissibility": decision.as_document(),
@@ -225,12 +298,161 @@ def build_document(
             "digest": contract.digest,
         },
     }
+    if manifest is not None:
+        document["coverage_manifest"] = manifest.as_document()
+    return document
+
+
+def _bound_manifest(
+    attestation: CoverageAttestation | None,
+    *,
+    profile: DatasetProfile,
+    contract: SourceContract,
+) -> CoverageManifest | None:
+    """The attested manifest bound to this admission, or nothing attested."""
+    if attestation is None:
+        return None
+    return attestation.to_manifest(
+        binding=manifest_binding(
+            profile=profile,
+            contract=contract,
+            timezone=attestation.timezone,
+        )
+    )
+
+
+def manifest_binding(
+    *,
+    profile: DatasetProfile,
+    contract: SourceContract,
+    timezone: str,
+) -> ManifestBinding:
+    """What an attestation on this admission is bound to.
+
+    **Two of the three come from the admission, and the third cannot.** The two
+    digests are assembled here rather than read off the operator's payload, which
+    is the whole of why the use-time check can fail: an attestation carrying its
+    own idea of which bytes and which reading it covers would be compared against
+    itself, and `RRA-003`'s separation of the input digest from the source
+    contract would stop discriminating.
+
+    The timezone is the operator's, and taking it from them is not a weakening of
+    that rule but the same rule applied. A retail day boundary is not a property
+    of the bytes -- `RRA-003` is explicit that coverage is never established from
+    observed values -- so there is nothing here to derive it from. Substituting a
+    constant would store an attestation the operator did not make, over a window
+    whose every attested day means something different under another zone, in a
+    document that is digested and cannot be corrected in place.
+    """
+    return ManifestBinding(
+        input_digest=profile.source_sha256_hex,
+        source_contract_digest=contract.digest,
+        timezone=timezone,
+    )
+
+
+def stored_manifest(record: DatasetProfileRecord) -> CoverageManifest | None:
+    """The attestation a stored profile carries, or `None` for one with none.
+
+    `None` rather than a refusal, because a profile without an attestation is
+    ordinary: `RRA-003` refuses the completeness-dependent *comparisons* on such
+    a profile, not the profile. The refusal belongs at the point of use, which is
+    `session_completeness`.
+    """
+    section = record.document.get("coverage_manifest")
+    if not isinstance(section, dict):
+        return None
+    return manifest_from_document(section)
+
+
+def session_completeness(
+    record: DatasetProfileRecord,
+    *,
+    scope: str,
+    start: date,
+    end: date,
+) -> CoverageManifest:
+    """The attestation proving this window complete, or a governed refusal.
+
+    **This is where the binding is checked, and it has to be here.** A manifest
+    validated only as it was written leaves the binding unproven at the moment it
+    matters: the attestation is stored inside the document, and everything about
+    which bytes and which reading it covers is a claim that must hold when a
+    caller relies on it, not merely when it arrived.
+
+    The query is built from the *profile's* recorded contract digest and its own
+    source digest, never from the manifest's fields. That is the difference
+    between a check and a tautology -- comparing the manifest's
+    `source_contract_digest` to itself would admit every attestation, including
+    one carried over from a corrected reading of identical bytes, which is the
+    exact reuse `RRA-003` names the source contract to prevent.
+    """
+    manifest = stored_manifest(record)
+    if manifest is None:
+        raise CoverageUnproven(
+            REASON_MANIFEST_ABSENT,
+            "No coverage manifest was attested for this dataset.",
+        )
+    recorded = _attested_reading(record, manifest)
+    query = CompletenessQuery(
+        input_digest=record.source_sha256_hex,
+        source_contract_digest=recorded,
+        scope=scope,
+        start=start,
+        end=end,
+    )
+    if not admits_completeness(manifest, query):
+        raise CoverageUnproven(
+            REASON_MANIFEST_WINDOW_UNPROVEN,
+            "The coverage manifest does not prove this window completely covered.",
+        )
+    return manifest
+
+
+def _attested_reading(
+    record: DatasetProfileRecord,
+    manifest: CoverageManifest,
+) -> str:
+    """The contract digest this attestation must be bound to, or a refusal.
+
+    Split from `session_completeness` so the identity check reads as its own
+    named question rather than as two more branches in the window check. Both
+    refusals carry one reason code because both mean the same thing to an
+    operator: this attestation does not belong to the reading recorded here, and
+    the fix is to re-attest under the declaration actually admitted.
+    """
+    recorded = _recorded_contract_digest(record)
+    if recorded is None:
+        raise CoverageUnproven(
+            REASON_MANIFEST_CONTRACT_MISMATCH,
+            "This dataset records no source contract to bind an attestation to.",
+        )
+    if manifest.source_contract_digest != recorded:
+        raise CoverageUnproven(
+            REASON_MANIFEST_CONTRACT_MISMATCH,
+            "The coverage manifest was attested under a different reading of this file.",
+        )
+    return recorded
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileQuestion:
+    """Everything a profile request declares, compared as one thing.
+
+    Grouped rather than passed flat because `_answering` compares all three
+    against what a stored profile recorded, and a signature that let a caller
+    supply two and forget the third is how the manifest went unguarded in the
+    first place. Adding a field here forces every construction site to name it.
+    """
+
+    request: ReportRequest
+    contract: SourceContract
+    attestation: CoverageAttestation | None = None
 
 
 def _answering(
     record: DatasetProfileRecord,
-    request: ReportRequest,
-    contract: SourceContract,
+    question: ProfileQuestion,
 ) -> DatasetProfileRecord:
     """Return the stored profile only if it answers the question being asked.
 
@@ -246,11 +468,12 @@ def _answering(
     only the first left the second open, because two callers racing on an
     unprofiled upload both find nothing to check.
     """
-    if _requested_semantics(record) != tuple(sorted(request.requested_semantics)):
+    if _requested_semantics(record) != tuple(sorted(question.request.requested_semantics)):
         raise ProfileRequestConflict(
             "This upload was profiled under different requested semantics."
         )
-    if _recorded_contract_digest(record) != contract.digest:
+    _assert_same_attestation(record, question)
+    if _recorded_contract_digest(record) != question.contract.digest:
         # The same reasoning as the semantics guard, for the other half of what
         # a profile records. A stored profile answers the declaration it was
         # admitted under; handing it back for a different one would report a
@@ -260,6 +483,78 @@ def _answering(
             "This upload was profiled under a different source contract."
         )
     return record
+
+
+def _assert_same_attestation(
+    record: DatasetProfileRecord,
+    question: ProfileQuestion,
+) -> None:
+    """The attestation is the third thing a profile records, so it is compared.
+
+    The same reasoning as the contract guard beside it. A stored profile answers
+    the attestation it was admitted under; handing it back for a different one
+    would report completeness this caller never declared -- or, worse, report a
+    success for an attestation that never took effect, which is what this did
+    before the guard existed.
+
+    **Absent on both sides is a match, not a mismatch.** Most callers attest
+    nothing, and turning two identical unattested requests into a conflict would
+    break the idempotence every existing profile test relies on.
+
+    **Absent on one side is a conflict in both directions.** Adding an
+    attestation to a profile that has none cannot be honoured as an amendment:
+    baking it in changes the document, so it would have to rewrite
+    `profile_digest`, which `packages.PackageProvenance.expected` compares
+    against every published package. Withholding one that was given would drop
+    proof that was validly recorded. Both are answers to a question nobody
+    asked, so both refuse and the operator is told to start a fresh session.
+
+    Compared over the canonical document rather than by object identity, so two
+    attestations naming the same days in different orders are the same
+    attestation -- which is the property `as_document`'s sorting provides.
+    """
+    stored = _recorded_manifest_document(record)
+    requested = _requested_manifest_document(record, question)
+    if stored != requested:
+        raise ProfileRequestConflict(
+            "This upload was profiled under a different coverage manifest."
+        )
+
+
+def _recorded_manifest_document(
+    record: DatasetProfileRecord,
+) -> dict[str, object] | None:
+    """The attestation a stored profile carries, in canonical form.
+
+    Reuses `stored_manifest`'s readback rather than reading the raw section, so
+    there is one way to interpret a stored attestation and a malformed one is
+    refused here exactly as it is at use time.
+    """
+    manifest = stored_manifest(record)
+    return None if manifest is None else manifest.as_document()
+
+
+def _requested_manifest_document(
+    record: DatasetProfileRecord,
+    question: ProfileQuestion,
+) -> dict[str, object] | None:
+    """The attestation this request declares, in the same canonical form.
+
+    Bound to the stored profile's own identity -- its source digest and the
+    contract digest it recorded -- rather than to the incoming declaration, so
+    the comparison is between two attestations of the same admission and differs
+    only where the operator's declaration differs. Binding it to the incoming
+    contract instead would make every contract change also read as a manifest
+    change, reporting the wrong one of the two conflicts.
+    """
+    if question.attestation is None:
+        return None
+    binding = ManifestBinding(
+        input_digest=record.source_sha256_hex,
+        source_contract_digest=_recorded_contract_digest(record) or "",
+        timezone=question.attestation.timezone,
+    )
+    return question.attestation.to_manifest(binding=binding).as_document()
 
 
 def _recorded_contract_digest(record: DatasetProfileRecord) -> str | None:
