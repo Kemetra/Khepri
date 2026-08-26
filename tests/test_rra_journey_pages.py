@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import re
+
 from tests.test_rra_journey_api import client
+
+_JOURNEY_MODULES = ("common.js", "upload.js", "review.js", "processing.js", "report.js")
 
 
 def test_every_journey_page_has_a_secure_bilingual_document_shell() -> None:
@@ -52,6 +56,32 @@ def test_common_module_routes_an_unavailable_session_to_expired() -> None:
     assert 'location.replace(routeFor("expired"))' in script
     assert "error.status !== 503" in script
     assert "?deletion=requested" in script
+
+
+def test_no_journey_module_authors_a_customer_facing_string() -> None:
+    test = client()
+    assert _JOURNEY_MODULES
+    for name in _JOURNEY_MODULES:
+        script = test.get(f"/beta/assets/{name}")
+        assert script.status_code == 200
+        literals = re.findall(r'"([^"\\]*)"', script.text)
+        arabic = [text for text in literals if re.search(r"[؀-ۿ]", text)]
+        assert arabic == [], f"{name} authors Arabic copy: {arabic}"
+        sentences = [
+            text
+            for text in literals
+            if re.fullmatch(r"[A-Z][A-Za-z0-9 ,'’-]{14,}\.", text)
+        ]
+        assert sentences == [], f"{name} authors English copy: {sentences}"
+
+
+def test_upload_module_reads_its_wording_from_the_page() -> None:
+    body = client().get("/beta/en/upload").text
+    assert "data-file-invalid=" in body
+    assert "data-upload-failed=" in body
+    script = client().get("/beta/assets/upload.js").text
+    assert "dataset.fileInvalid" in script
+    assert "dataset.uploadFailed" in script
 
 
 def test_pending_deletion_has_a_stable_confirmation_page() -> None:
