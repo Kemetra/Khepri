@@ -675,17 +675,37 @@ class TestTheBetaJourneyIsUntouched:
 
         assert f'href="{SHELL_PREFIX}' not in html, f"{step}/{language}"
 
-    def test_the_shell_stylesheet_does_not_reach_the_journey(self) -> None:
-        """`shell-components.css` sits in the journey's asset directory and is the shell's.
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    @pytest.mark.parametrize("step", ["upload", "review", "processing", "report", "expired"])
+    def test_no_shell_owned_asset_reaches_the_journey(self, step: str, language: str) -> None:
+        """No `/beta` page may reference anything the shell serves. `RRA-010` Verification.
 
-        It is the one file under `khepri.rra.journey` this slice changes, and it is a journey asset
-        by path only: `shell.html.j2` is the sole template that links it, and the exclusion is about
-        the beta surface rather than about a directory. Asserted so that stays true.
+        `shell.css` and `shell-components.css` sit in the journey's asset directory and are the
+        shell's: `shell.html.j2` is their only linking template, and the exclusion is about the beta
+        surface rather than about a directory.
+
+        **The asset set is read from `shell_api._ASSETS` rather than spelled out here**, because
+        that dict *is* the definition of a shell-owned asset -- the allowlist the shell serves by
+        exact name. An earlier revision named `shell-components.css` alone, so `shell.css` could
+        have been linked from a journey template with this guard still green, and `shell.css` is
+        the more consequential leak of the two: it declares the tokens, so a journey rule could
+        then resolve a shell-declared custom property. `RRA-010` excludes exactly that dependency
+        and required this widening before any slice relied on the boundary.
+
+        Reading the allowlist also makes the invariant outlive this slice. A future shell-owned
+        asset is covered the moment it is served, with no edit here -- which a hardcoded list
+        could not do, and a list that drifts is how the single-filename version came to
+        under-cover.
         """
+        from khepri.runtime.shell_api import _ASSETS
         from tests.test_rra_journey_api import client
 
-        for step in ("upload", "review", "processing", "report", "expired"):
-            assert "shell-components.css" not in client().get(f"/beta/en/{step}").text, step
+        assert _ASSETS, "the shell serves no assets; this guard would assert nothing"
+
+        html = client().get(f"/beta/{language}/{step}").text
+
+        for asset in _ASSETS:
+            assert asset not in html, f"{asset} reached /beta/{language}/{step}"
 
 
 class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
