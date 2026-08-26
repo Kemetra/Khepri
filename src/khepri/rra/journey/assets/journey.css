@@ -34,8 +34,15 @@
    * value is declared in the journey's own stylesheet, which is where the authority to declare it
    * also sits." So these are the journey's values, owned here, not a copy of anyone else's.
    *
-   * The cascade makes that the only workable shape as well as the governed one. `base.html.j2` links
-   * this stylesheet alone; no shell stylesheet is served to `/beta` at all, which
+   * Named with a `journey-` prefix, distinct from the shell's own `--text-*`/`--leading-*` tokens
+   * declared in its own asset. The two cascades never co-load, so an unprefixed name would work
+   * identically today -- but an identical name across two independently-owned stylesheets leaves
+   * ownership undecidable by inspection alone, which is the ambiguity a reused shell name would
+   * reintroduce even while the value stays journey-declared. The prefix makes authority readable
+   * from the name.
+   *
+   * The cascade makes journey-local declaration the only workable shape as well as the governed one.
+   * `base.html.j2` links this stylesheet alone; no shell stylesheet is served to `/beta` at all, which
    * `test_no_shell_owned_asset_reaches_the_journey` now asserts against the shell's own allowlist. A
    * custom property declared elsewhere would resolve to nothing here, and an invalid `font-size` is
    * *dropped* rather than ignored, so the element would silently fall back to its inherited size.
@@ -49,11 +56,11 @@
    * someone to make it. And `body` sets `line-height: 1.6` while a 1.5 leading is a different
    * decision, not a rounding of the same one; collapsing them would restyle every paragraph in the
    * journey, which this slice has no mandate for. */
-  --text-xs: 0.7rem;
-  --text-sm: 0.82rem;
-  --text-display: clamp(1.9rem, 3vw, 2.25rem);
-  --text-lede: clamp(1rem, 2vw, 1.16rem);
-  --leading-tight: 1.15;
+  --journey-text-xs: 0.7rem;
+  --journey-text-sm: 0.82rem;
+  --journey-text-display: clamp(1.9rem, 3vw, 2.25rem);
+  --journey-text-lede: clamp(1rem, 2vw, 1.16rem);
+  --journey-leading-tight: 1.15;
 
   font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
 }
@@ -86,17 +93,17 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
  * change shape. The shell keeps the name it earns and this takes its own. */
 .journey-document { max-width: 860px; background: var(--surface); border: 0; padding: 0; box-shadow: none; }
 .journey-document--wide { max-width: 100%; }
-h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--text-display); font-weight: 650; line-height: var(--leading-tight); letter-spacing: -.018em; }
+h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--journey-text-display); font-weight: 650; line-height: var(--journey-leading-tight); letter-spacing: -.018em; }
 [dir="rtl"] h1 { letter-spacing: 0; }
-.lede { max-width: 62ch; color: var(--muted); font-size: var(--text-lede); }
+.lede { max-width: 62ch; color: var(--muted); font-size: var(--journey-text-lede); }
 .intake-facts { display: grid; grid-template-columns: 1fr 1fr 1.4fr; margin-block: 1.8rem; padding-block: 1.1rem; border-block: 1px solid var(--line); }
 .intake-facts div { padding-inline-end: 1rem; }
 .intake-facts dt { color: var(--muted); font: .68rem/1.2 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
-/* `.83rem` becomes `--text-sm` (0.82rem): 0.16px smaller at a 16px root, and the unitless
+/* `.83rem` becomes `--journey-text-sm` (0.82rem): 0.16px smaller at a 16px root, and the unitless
  * `line-height: 1.6` carries 0.26px of leading with it. A deliberate delta, not a side effect --
  * this file held `.82`, `.83`, `.84`, and `.86rem` as four separate values inside 0.04rem, which is
  * four accidents rather than four decisions. Measured on the rendered page, both languages. */
-.intake-facts dd { margin: .45rem 0 0; font-size: var(--text-sm); }
+.intake-facts dd { margin: .45rem 0 0; font-size: var(--journey-text-sm); }
 .consent-row { display: flex; align-items: flex-start; gap: .75rem; margin-block: 1.75rem; padding: 1.1rem; border: 1px solid var(--line); }
 .consent-row input { inline-size: 22px; block-size: 22px; flex: none; accent-color: var(--accent-dark); }
 /* The source-contract declaration. Inputs are width-capped and wrap rather than
@@ -165,23 +172,23 @@ th { color: var(--muted); font-size: .78rem; }
 .report-meta dd { margin: .3rem 0 0; font-weight: 600; }
 .report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; max-width: 820px; margin-block: 2rem; border: 1px solid var(--line); }
 .report-card { min-block-size: 64px; padding: 1.1rem 1.8rem; border-block-end: 1px solid var(--line); color: var(--accent); text-decoration: none; }
-.site-footer { padding: 1.5rem clamp(1rem, 5vw, 4rem); color: var(--muted); font-size: var(--text-sm); }
+.site-footer { padding: 1.5rem clamp(1rem, 5vw, 4rem); color: var(--muted); font-size: var(--journey-text-sm); }
 
 @media (max-width: 640px) {
   .site-header { min-height: 60px; }
-  /* `.86rem` becomes `--text-sm`: 0.64px smaller, the largest delta in this change and still under a
+  /* `.86rem` becomes `--journey-text-sm`: 0.64px smaller, the largest delta in this change and still under a
    * pixel. The `18ch` cap is deliberately unchanged -- a `ch` measure is relative to the font size,
    * so the wordmark's truncation point tracks the text rather than fighting it. */
-  .brand span:last-child { max-width: 18ch; font-size: var(--text-sm); }
+  .brand span:last-child { max-width: 18ch; font-size: var(--journey-text-sm); }
   .journey-shell { width: min(100% - 1rem, 1050px); margin-block: 1rem 2rem; }
   h1 { font-size: clamp(1.75rem, 8vw, 2.15rem); }
   .step-nav ol { justify-content: space-between; gap: .35rem; }
-  /* `.68rem` becomes `--text-xs` (0.7rem) -- the only *grow* here, and the only change that could
+  /* `.68rem` becomes `--journey-text-xs` (0.7rem) -- the only *grow* here, and the only change that could
    * have pushed the step nav past the 390px viewport the browser test asserts no overflow at. So it
    * was measured rather than reasoned: label content runs 189.7px in English and 159.5px in Arabic
    * inside a 353px `ol`, on all four steps, and `space-between` absorbs the 4.6px with room to
    * spare. Arabic is the *narrower* of the two here, contrary to the usual assumption. */
-  .step-nav a { font-size: var(--text-xs); }
+  .step-nav a { font-size: var(--journey-text-xs); }
   .intake-facts { grid-template-columns: 1fr 1fr; gap: 1rem; }
   .intake-facts div:last-child { grid-column: 1 / -1; }
   .drop-zone { min-block-size: 170px; padding: 1.25rem; }
