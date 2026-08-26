@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "border-inline-start: 4px solid var(--muted)",
+        "files": [
+          "src/khepri/rra/journey/assets/journey.css"
+        ],
+        "createdAt": "2026-08-26T16:34:21.621Z",
+        "reason": "KHEPRI_DESIGN_LANGUAGE.md §4.6 mandates this exact disclosure-shape treatment for the refusal state; §4.4 documents the identical shape as shipped precedent"
+      }
+    ]
+  }
+}

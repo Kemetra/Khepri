@@ -1,4 +1,4 @@
-import { api, deleteContent, language, resume, routeFor } from "/beta/assets/common.js";
+import { api, deleteContent, resume, routeFor } from "/beta/assets/common.js";
 
 const MAX_BYTES = 50 * 1024 * 1024;
 const CONSENT_VERSION = "rra001.beta-consent.v1";
@@ -68,7 +68,7 @@ const update = () => {
 const choose = (candidate) => {
   if (!valid(candidate)) {
     file = null;
-    message(language === "ar" ? "اختر ملف CSV أو XLSX لا يتجاوز 50 ميجابايت." : "Choose a CSV or XLSX file no larger than 50 MB.");
+    message(errorSummary.dataset.fileInvalid);
   } else {
     file = candidate;
     selected.textContent = candidate.name;
@@ -110,7 +110,7 @@ form.addEventListener("submit", async (event) => {
     await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: profileRequest() });
     location.assign(routeFor("review"));
   } catch (error) {
-    message(uploaded ? refusalText(error) : (language === "ar" ? "تعذر إكمال الرفع الآمن. حاول مرة أخرى." : "The secure upload could not be completed. Try again."));
+    message(uploaded ? refusalText(error) : errorSummary.dataset.uploadFailed);
     recovery.hidden = !uploaded;
     update();
   }

@@ -97,6 +97,8 @@ _EN = {
         "The file was uploaded but could not be profiled. Delete this session and "
         "request a new invitation."
     ),
+    "file_invalid": "Choose a CSV or XLSX file no larger than 50 MB.",
+    "upload_failed": "The secure upload could not be completed. Try again.",
     "review_unavailable": "Review data is unavailable.",
     "analysis_unavailable": "Analysis could not be started.",
     "refusal_title": "This file was not accepted:",
@@ -218,6 +220,8 @@ _AR = {
     "profile_rejected": (
         "تم رفع الملف لكن تعذر تحليله الأولي. احذف هذه الجلسة واطلب دعوة جديدة."
     ),
+    "file_invalid": "اختر ملف CSV أو XLSX لا يتجاوز 50 ميجابايت.",
+    "upload_failed": "تعذر إكمال الرفع الآمن. حاول مرة أخرى.",
     "review_unavailable": "بيانات المراجعة غير متاحة.",
     "analysis_unavailable": "تعذر بدء التحليل.",
     "refusal_title": "لم يُقبل هذا الملف:",
