@@ -44,6 +44,7 @@ from khepri.rra.facts import (
     UNIT_COUNT,
     UNIT_MONETARY,
     UNIT_RATIO,
+    AdmittedInput,
     build_fact_package,
 )
 from khepri.rra.intake import CSV_MEDIA_TYPE
@@ -76,13 +77,15 @@ def package(content: bytes = LARGE):
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def figures_of(unit_kind: str, *, kind: str = KIND_VALUE):

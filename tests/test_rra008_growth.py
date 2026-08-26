@@ -31,6 +31,7 @@ from khepri.rra.bundle import SECTION_GROWTH, SECTION_REASONS
 from khepri.rra.facts import (
     REASON_INPUT_UNAVAILABLE,
     UNIT_MONETARY,
+    AdmittedInput,
     Fact,
     FactPackage,
     RefusedResult,
@@ -53,13 +54,15 @@ def package_for(content: bytes) -> FactPackage:
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def daily(rows: list[tuple[str, int]]) -> FactPackage:

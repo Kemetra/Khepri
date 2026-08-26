@@ -308,34 +308,36 @@ class _Aggregated:
     unit_kind: str
 
 
+@dataclass(frozen=True, slots=True)
+class AdmittedInput:
+    """One reading of one file: what it is, and what it was declared to mean.
+
+    Grouped rather than passed as five parallel arguments, because they are not
+    independent -- `_assert_derived_from_profile` re-derives every one of them
+    from `content` and refuses the package if any disagrees. A caller cannot
+    legitimately vary one alone, so the signature no longer offers to.
+
+    The contract belongs in the group for the same reason it is required at all:
+    under `rra003.mapping.v3` the mapping is a function of profile *and*
+    declaration, so a mapping travelling without its contract cannot be checked.
+    """
+
+    content: bytes
+    media_type: str
+    profile: DatasetProfile
+    mapping: RetailMapping
+    decision: AdmissibilityDecision
+    contract: SourceContract
+
+
 def build_fact_package(
+    admitted: AdmittedInput,
     *,
-    content: bytes,
-    media_type: str,
-    profile: DatasetProfile,
-    mapping: RetailMapping,
-    decision: AdmissibilityDecision,
-    contract: SourceContract,
     formula_version: str = FORMULA_VERSION,
 ) -> FactPackage:
-    """One package, or a refusal.
-
-    The contract is required because the mapping is re-derived below to prove it
-    came from this profile, and under `rra003.mapping.v3` that derivation is a
-    function of profile *and* declaration. Re-deriving without it would compare
-    the caller's mapping against a differently-declared one and refuse every
-    package.
-    """
+    """One package, or a refusal."""
     with localcontext(Context(prec=ARITHMETIC_PRECISION)):
-        return _build(
-            content=content,
-            media_type=media_type,
-            profile=profile,
-            mapping=mapping,
-            decision=decision,
-            contract=contract,
-            formula_version=formula_version,
-        )
+        return _build(admitted, formula_version=formula_version)
 
 
 def assert_versions_admitted(
@@ -371,15 +373,15 @@ def assert_versions_admitted(
 
 
 def _build(
+    admitted: AdmittedInput,
     *,
-    content: bytes,
-    media_type: str,
-    profile: DatasetProfile,
-    mapping: RetailMapping,
-    decision: AdmissibilityDecision,
-    contract: SourceContract,
     formula_version: str,
 ) -> FactPackage:
+    content = admitted.content
+    media_type = admitted.media_type
+    profile = admitted.profile
+    mapping = admitted.mapping
+    decision = admitted.decision
     if formula_version != FORMULA_VERSION:
         raise FactsRefused("Formula version is not implemented by this package builder.")
     assert_versions_admitted(
@@ -395,9 +397,7 @@ def _build(
         package_version=PACKAGE_VERSION,
         formula_version=formula_version,
     )
-    _assert_derived_from_profile(
-        content, media_type, profile, mapping, decision, contract
-    )
+    _assert_derived_from_profile(admitted)
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
 
@@ -651,14 +651,7 @@ def _unavailable_reason(mapping: RetailMapping, semantic: str) -> str:
     return REASON_INPUT_UNAVAILABLE
 
 
-def _assert_derived_from_profile(
-    content: bytes,
-    media_type: str,
-    profile: DatasetProfile,
-    mapping: RetailMapping,
-    decision: AdmissibilityDecision,
-    contract: SourceContract,
-) -> None:
+def _assert_derived_from_profile(admitted: AdmittedInput) -> None:
     """Refuse artifacts that were not derived from this exact input.
 
     Profile, mapping, and admissibility are all deterministic functions of the
@@ -666,16 +659,20 @@ def _assert_derived_from_profile(
     digest check alone would accept a profile that carries the right source
     hash while misstating labels, inferred types, or personal-data risk.
     """
+    content = admitted.content
+    profile = admitted.profile
+    mapping = admitted.mapping
+    decision = admitted.decision
     digest = hashlib.sha256(content).hexdigest()
     if digest != profile.source_sha256_hex:
         raise FactsRefused("Content does not match the profile it is attributed to.")
     if build_profile(
         content=content,
-        media_type=media_type,
+        media_type=admitted.media_type,
         source_sha256_hex=digest,
     ) != profile:
         raise FactsRefused("Profile does not describe the supplied content.")
-    if build_mapping(profile, contract=contract) != mapping:
+    if build_mapping(profile, contract=admitted.contract) != mapping:
         raise FactsRefused("Mapping was not derived from the supplied profile.")
     positions = [
         entry.column.position for entry in mapping.mappings if entry.column is not None

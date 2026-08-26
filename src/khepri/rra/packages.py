@@ -47,10 +47,16 @@ from khepri.rra.datasets import (
 from khepri.rra.facts import (
     FORMULA_VERSION,
     PACKAGE_VERSION,
+    AdmittedInput,
     FactsRefused,
     build_fact_package,
 )
-from khepri.rra.intake import SessionReader, StoragePolicyViolation, UploadRepository
+from khepri.rra.intake import (
+    SessionReader,
+    StoragePolicyViolation,
+    UploadMetadata,
+    UploadRepository,
+)
 from khepri.rra.mapping import MAPPING_VERSION, build_mapping
 from khepri.rra.profiling import PROFILE_VERSION, build_profile, canonical_json
 from khepri.rra.sessions import (
@@ -62,6 +68,47 @@ from khepri.rra.sessions import (
 from khepri.rra.source_contract import SourceContract, contract_from_document
 from khepri.rra.storage import StoredEnvelope
 from khepri.rra.versions import REASON_PACKAGE_VERSION_UNADMITTED
+
+
+def _readmit(
+    *,
+    content: bytes,
+    upload: UploadMetadata,
+    profile_record: DatasetProfileRecord,
+    request: ReportRequest,
+) -> AdmittedInput:
+    """Re-derive the admitted reading these bytes produce, or refuse.
+
+    The persisted profile is what the caller was shown and what governs
+    admissibility, so the package is refused rather than published against a
+    profile the current bytes and rules no longer produce.
+
+    **Re-derived under the contract the profile was admitted with**, read back
+    from the stored document rather than declared afresh. A new declaration
+    would digest differently and refuse every package -- and the digest is
+    exactly the check that would then be reporting its own construction rather
+    than a real mismatch.
+    """
+    profile = build_profile(
+        content=content,
+        media_type=upload.media_type,
+        source_sha256_hex=upload.sha256_hex,
+    )
+    contract = _stored_contract(profile_record)
+    document = build_document(profile, request=request, contract=contract)
+    if document_digest(document) != profile_record.profile_digest:
+        raise PackageRefused(
+            "Stored profile does not describe the current governed input."
+        )
+    mapping = build_mapping(profile, contract=contract)
+    return AdmittedInput(
+        content=content,
+        media_type=upload.media_type,
+        profile=profile,
+        mapping=mapping,
+        decision=assess_admissibility(profile, mapping, request=request),
+        contract=contract,
+    )
 
 
 def _stored_contract(profile_record: DatasetProfileRecord) -> SourceContract:
@@ -368,37 +415,14 @@ class FactPackageService:
         if hashlib.sha256(content).hexdigest() != upload.sha256_hex:
             raise StoragePolicyViolation("Stored upload does not match its recorded digest.")
 
-        profile = build_profile(
+        admitted = _readmit(
             content=content,
-            media_type=upload.media_type,
-            source_sha256_hex=upload.sha256_hex,
+            upload=upload,
+            profile_record=profile_record,
+            request=request,
         )
-        # The persisted profile is what the caller was shown and what governs
-        # admissibility, so the package is refused rather than published against
-        # a profile the current bytes and rules no longer produce.
-        # Rebuilt under the contract the profile was admitted with, read back
-        # from the stored document. A freshly declared contract would digest
-        # differently and refuse every package, and the digest is exactly the
-        # check that would then be reporting its own construction.
-        stored_contract = _stored_contract(profile_record)
-        if document_digest(
-            build_document(profile, request=request, contract=stored_contract)
-        ) != (profile_record.profile_digest):
-            raise PackageRefused(
-                "Stored profile does not describe the current governed input."
-            )
-
-        mapping = build_mapping(profile, contract=stored_contract)
-        decision = assess_admissibility(profile, mapping, request=request)
         try:
-            package = build_fact_package(
-                content=content,
-                media_type=upload.media_type,
-                profile=profile,
-                mapping=mapping,
-                decision=decision,
-                contract=stored_contract,
-            )
+            package = build_fact_package(admitted)
         except FactsRefused as error:
             raise PackageRefused(str(error)) from error
 

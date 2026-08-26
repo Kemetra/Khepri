@@ -19,7 +19,7 @@ from khepri.rra.deterministic_narrative import (
     MAX_SECTIONS,
     DeterministicNarrator,
 )
-from khepri.rra.facts import FactPackage, build_fact_package
+from khepri.rra.facts import AdmittedInput, FactPackage, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import (
@@ -52,13 +52,15 @@ def package(content: bytes = GOLDEN) -> FactPackage:
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def request_for(pkg: FactPackage) -> NarrativeRequest:

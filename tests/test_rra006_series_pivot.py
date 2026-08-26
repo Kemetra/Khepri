@@ -34,7 +34,7 @@ import re
 
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bundle import KIND_ROWS, LANGUAGE_ARABIC, LANGUAGE_ENGLISH, ReportBundle
-from khepri.rra.facts import build_fact_package
+from khepri.rra.facts import AdmittedInput, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
@@ -81,12 +81,14 @@ def bundle() -> ReportBundle:
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return ReportBundle.of(
         build_fact_package(
-            content=CONTENT,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
-            contract=TEST_CONTRACT,
+            AdmittedInput(
+                content=CONTENT,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
         )
     )
 

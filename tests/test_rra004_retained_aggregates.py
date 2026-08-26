@@ -23,6 +23,7 @@ from khepri.rra.facts import (
     FORMULA_VERSION,
     METRIC_REVENUE,
     PACKAGE_VERSION,
+    AdmittedInput,
     FactPackage,
     build_fact_package,
 )
@@ -50,13 +51,15 @@ def package(content: bytes) -> FactPackage:
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def wide_source(distinct_products: int) -> bytes:

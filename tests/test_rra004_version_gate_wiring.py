@@ -159,7 +159,7 @@ def _package_from(
     from datetime import date, timedelta
 
     from khepri.rra.admissibility import assess_admissibility
-    from khepri.rra.facts import build_fact_package
+    from khepri.rra.facts import AdmittedInput, build_fact_package
     from khepri.rra.intake import CSV_MEDIA_TYPE
     from khepri.rra.mapping import build_mapping
     from khepri.rra.profiling import build_profile
@@ -179,13 +179,15 @@ def _package_from(
     if mapping_version is not None:
         mapping = replace(mapping, mapping_version=mapping_version)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def _package_with_a_concentration_curve() -> object:

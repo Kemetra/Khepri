@@ -31,7 +31,7 @@ from khepri.rra.delivery_persistence import (
     SqlDeliveryStore,
     surface_digest,
 )
-from khepri.rra.facts import FactPackage, build_fact_package
+from khepri.rra.facts import AdmittedInput, FactPackage, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.jobs import EnqueueJob, LeaseRequest, ReportJob
@@ -102,13 +102,15 @@ def package(content: bytes = GOLDEN) -> FactPackage:
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def stored(

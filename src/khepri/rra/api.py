@@ -25,7 +25,6 @@ from khepri.rra.intake import (
     UploadTooLarge,
 )
 from khepri.rra.journey.routes import JourneyServices, add_journey_routes
-from khepri.rra.mapping import KNOWN_SEMANTICS
 from khepri.rra.packages import (
     FactPackageRecord,
     FactPackageService,
@@ -33,6 +32,11 @@ from khepri.rra.packages import (
     PackageRefused,
     ProfileNotFound,
     package_refused_detail,
+)
+from khepri.rra.profile_request import (
+    ProfileRequestBody,
+    declared_contract,
+    governed_semantics,
 )
 from khepri.rra.profiling import ProfileRejected
 from khepri.rra.report_api import add_report_routes
@@ -45,7 +49,6 @@ from khepri.rra.sessions import (
     InvitationService,
     SessionExpired,
 )
-from khepri.rra.source_contract import ContractRefused, SourceContractBody
 
 ConsentVersion = Annotated[
     str,
@@ -76,24 +79,6 @@ class UploadResponse(BaseModel):
     sha256_hex: str
     media_type: str
     expires_at: datetime
-
-
-class ProfileRequestBody(BaseModel):
-    """What a caller asks for, and what they declare their file to mean.
-
-    **The contract is required, not defaulted.** `RRA-003` holds that "generic
-    headers and observed values never establish event kind, status, currency,
-    gross/net basis, VAT treatment, additivity, allocation, or coverage", and
-    `rra003.mapping.v3` is the version that makes that binding on the ingestion
-    path. A default contract would be indistinguishable downstream from one the
-    operator chose, so there is no default: a request without a declaration is
-    refused rather than profiled on inferred semantics.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    requested_semantics: list[str] = []
-    source_contract: SourceContractBody
 
 
 class ProfileColumnResponse(BaseModel):
@@ -267,20 +252,8 @@ def create_app(
         ) -> ProfileResponse:
             if session_id is None:
                 raise _session_unavailable()
-            requested = set(payload.requested_semantics)
-            if not requested <= KNOWN_SEMANTICS:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Requested retail semantics are not governed.",
-                )
-            try:
-                contract = payload.source_contract.to_contract()
-            except ContractRefused as error:
-                # 400 rather than 422: the body is well-formed and every field
-                # is the right type. What is wrong is the *declaration* -- a
-                # semantic left unproven, or proven twice -- which is a governed
-                # refusal naming what to fix, not a schema violation.
-                raise HTTPException(status_code=400, detail=str(error)) from error
+            requested = governed_semantics(payload)
+            contract = declared_contract(payload)
             try:
                 record, created = profiling_service.profile_session_upload(
                     session_id=session_id,

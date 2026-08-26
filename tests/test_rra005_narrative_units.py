@@ -37,7 +37,7 @@ from khepri.rra.deterministic_narrative import (
     DeterministicNarrator,
     _fact_figure,
 )
-from khepri.rra.facts import FactPackage, build_fact_package
+from khepri.rra.facts import AdmittedInput, FactPackage, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import NarrativeRequest, validate
@@ -63,13 +63,15 @@ def package() -> FactPackage:
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=CONTENT,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=CONTENT,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def drafted():

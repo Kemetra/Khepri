@@ -33,7 +33,7 @@ from khepri.rra.bundle import (
     Section,
     is_drawable,
 )
-from khepri.rra.facts import build_fact_package
+from khepri.rra.facts import AdmittedInput, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
@@ -51,13 +51,15 @@ def package_for(content: bytes) -> FactPackage:
     )
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        profile=profile,
-        mapping=mapping,
-        decision=assess_admissibility(profile, mapping),
-        contract=TEST_CONTRACT,
-    )
+               AdmittedInput(
+                   content=content,
+                   media_type=CSV_MEDIA_TYPE,
+                   profile=profile,
+                   mapping=mapping,
+                   decision=assess_admissibility(profile, mapping),
+                   contract=TEST_CONTRACT,
+               ),
+           )
 
 
 def full_package() -> FactPackage:
