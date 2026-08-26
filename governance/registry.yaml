@@ -47,23 +47,25 @@ artifacts:
     state: retired
     document: governance/decisions/KHEPRI-DEC-005-rra-runtime-architecture.md
     depends_on: []
-    superseded_by: KHEPRI-DEC-008
+    superseded_by: KHEPRI-DEC-028
   - type: decision
     id: KHEPRI-DEC-006
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-006-rra-benchmark-workload.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-029
   - type: decision
     id: KHEPRI-DEC-007
     state: retired
     document: governance/decisions/KHEPRI-DEC-007-rra-infrastructure-sizing.md
     depends_on: []
-    superseded_by: KHEPRI-DEC-008
+    superseded_by: KHEPRI-DEC-028
   - type: decision
     id: KHEPRI-DEC-008
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-008-rra-portable-runtime-target.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-028
   - type: decision
     id: KHEPRI-DEC-009
     state: retired
@@ -165,9 +167,28 @@ artifacts:
     depends_on: []
   - type: decision
     id: KHEPRI-DEC-027
-    state: active
+    state: retired
     document: governance/decisions/KHEPRI-DEC-027-digitalocean-fra1-target-direction.md
     depends_on: []
+    superseded_by: KHEPRI-DEC-030
+  - type: decision
+    id: KHEPRI-DEC-028
+    state: active
+    document: governance/decisions/KHEPRI-DEC-028-rra-portable-runtime-target-digitalocean.md
+    depends_on: []
+  - type: decision
+    id: KHEPRI-DEC-029
+    state: active
+    document: governance/decisions/KHEPRI-DEC-029-rra-benchmark-workload-and-environment.md
+    depends_on:
+      - KHEPRI-DEC-028
+  - type: decision
+    id: KHEPRI-DEC-030
+    state: active
+    document: governance/decisions/KHEPRI-DEC-030-fra1-provisional-bootstrap-authority.md
+    depends_on:
+      - KHEPRI-DEC-028
+      - KHEPRI-DEC-029
 
   - type: specification
     id: FND-001

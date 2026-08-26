@@ -1,5 +1,11 @@
 # DRAFT — KHEPRI-DEC-NNN-BENCHMARK: RRA beta benchmark workload and environment
 
+> **PROMOTED — superseded by an activated decision.** This draft was adopted as
+> **`KHEPRI-DEC-029`** (`governance/decisions/KHEPRI-DEC-029-rra-benchmark-workload-and-environment.md`),
+> active in `governance/registry.yaml` with `depends_on: [KHEPRI-DEC-028]`, retiring
+> `KHEPRI-DEC-006`. The placeholder `KHEPRI-DEC-NNN-TARGET` was allocated as `KHEPRI-DEC-028`.
+> Read the activated decision, not this draft. Retained as the reasoning record.
+
 **Status: planning-only draft. Not a governed artifact — including after this commit is merged.**
 
 Merging this commit does **not** make this document governing. `governance/registry.yaml` is

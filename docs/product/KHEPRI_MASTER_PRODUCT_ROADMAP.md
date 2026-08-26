@@ -58,7 +58,7 @@ Citations in **active** governed artifacts:
 
 | Artifact | Cites | What the identifier must keep meaning |
 |---|---|---|
-| `governance/decisions/KHEPRI-DEC-027-digitalocean-fra1-target-direction.md` | `OPS1-02` | "`OPS1-02` remains blocked until the final target-selection/environment descriptor is complete and approved." `OPS1-02` is CI-only provisioning of the non-production environment, and nothing else. |
+| `governance/decisions/KHEPRI-DEC-030-fra1-provisional-bootstrap-authority.md` | `OPS1-02` | Retires `KHEPRI-DEC-027`, whose blanket "`OPS1-02` remains blocked" clause is re-scoped: the provisional non-production bootstrap at the §4 measurement shape is authorized; final capacity, expansion, and external traffic remain blocked. `OPS1-02` is CI-only provisioning of the non-production environment, and nothing else. |
 | `governance/specifications/RCA-002.md` | `R5-02`, `R5-04`, `R8-01` | `R8-01`'s surface map and its open browser-security-policy question; the two deferred `R5` credential tasks. |
 | `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` | `R3-11`, `R5-02`…`R5-06` | The Clerk credential-ownership dispositions. |
 | `governance/decisions/KHEPRI-DEC-023-commercial-consent-route-authorization.md` | `R6-01`, `R6-08`, `R7-04`, `R7-05`, `R7-06` | The merged commercial-bridge slice boundaries. |
@@ -686,26 +686,26 @@ The production-like local staging stack is merged: one built Khepri image runs w
 
 ## Tasks
 
-`OPS1-01` through `OPS1-07` keep the meanings they carry in the archived roadmap, because `KHEPRI-DEC-027` is active and blocks on `OPS1-02` by name. New work is appended as `OPS1-08` through `OPS1-10`. The table is ordered by dependency, not by identifier.
+`OPS1-01` through `OPS1-07` keep the meanings they carry in the archived roadmap, because `KHEPRI-DEC-027` blocked on `OPS1-02` by name and its successor `KHEPRI-DEC-030` continues to gate on that identifier. New work is appended as `OPS1-08` through `OPS1-10`. The table is ordered by dependency, not by identifier.
 
 | ID | Task | Depends on | Parallel | Output |
 |---|---|---|---|---|
 | OPS1-08 | Maintain the merged production-like local stack and its contract tests | merged | CAL1 | Local staging foundation |
-| OPS1-01 | Activate the DigitalOcean FRA1 governance needed for a provisional non-production bootstrap and settle provider, region, residency, and products | owner decisions, `KHEPRI-DEC-027` | CAL1 | Concrete services, provisional measurement shape, RTO/RPO, secret source, network/egress, backup/PITR, registry, OTLP/log destinations; no final capacity claim |
-| OPS1-02 | Provision the provisional non-production environment through CI only | OPS1-01 | late CAL1/T1 | Hosted staging at the provisional shape. `KHEPRI-DEC-027` remains blocking until the required governance activation permits this bootstrap |
+| OPS1-01 | ~~Activate the DigitalOcean FRA1 governance needed for a provisional non-production bootstrap~~ **Done** — `KHEPRI-DEC-028` (runtime target and products), `KHEPRI-DEC-029` (benchmark), `KHEPRI-DEC-030` (provisional bootstrap authority) are active; `KHEPRI-DEC-008`, `KHEPRI-DEC-006`, `KHEPRI-DEC-027` retired | owner decisions | CAL1 | Concrete services, provisional measurement shape, RTO/RPO, secret source, network/egress, backup/PITR, registry, OTLP/log destinations; no final capacity claim |
+| OPS1-02 | Provision the provisional non-production environment through CI only | OPS1-01 | late CAL1/T1 | Hosted staging at the provisional shape. **Unblocked for the provisional bootstrap only** by `KHEPRI-DEC-030` §3–4; anything beyond that shape still requires a further owner decision |
 | OPS1-03 | Configure managed PostgreSQL, private object storage, secrets, TLS ingress, image registry, and operational telemetry; capture the live PostgreSQL minor and verify Spaces | OPS1-02 | T1/R8 | Provisional environment facts and storage compatibility evidence; certification refuses a live/recorded PostgreSQL minor mismatch |
-| OPS1-09 | Run the governed hosted benchmark and reissue `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` against the measured target, without the retired broker fields | OPS1-03, CAL1 | no | Final web/worker/DB sizing and environment evidence; `visibility_timeout_seconds`, `message_retention_seconds`, `receive_wait_seconds`, and `max_receive_count` leave the file per `KHEPRI-DEC-008` |
+| OPS1-09 | Run the governed hosted benchmark and reissue `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` against the measured target, without the retired broker fields | OPS1-03, CAL1 | no | Final web/worker/DB sizing and environment evidence; `visibility_timeout_seconds`, `message_retention_seconds`, `receive_wait_seconds`, and `max_receive_count` leave the file per `KHEPRI-DEC-028` |
 | OPS1-04 | Run expand/deploy/contract migration exercises, backup/restore, deletion-after-restore, encryption read-back, worker crash/recovery, retry, and dead-letter exercises | OPS1-09 | no | Recovery evidence; expand remains compatible with old roles, contract waits for a later release, and incompatible changes explicitly quiesce affected roles |
 | OPS1-05 | Run capacity and soak tests | OPS1-04 | no | Concurrency and sustained-load evidence against the final sizing |
 | OPS1-06 | Add content-free alerts, dashboards, runbooks, and break-glass evidence | OPS1-05 | R8-08 | Operability |
 | OPS1-07 | Define release, rollback, database migration, and incident procedures | OPS1-06 | no | Alpha/pilot runbook using expand → deploy → contract |
-| OPS1-10 | Authorize external private-beta traffic only after M2 gates pass | all M2 dependencies; `KHEPRI-DEC-008` pre-beta demonstrations | no | **An owner-merged beta-authorization artifact defining the client count and the observation period**, which `KHEPRI-DEC-008` requires and which no other task produces, plus the explicit go/no-go record |
+| OPS1-10 | Authorize external private-beta traffic only after M2 gates pass | all M2 dependencies; `KHEPRI-DEC-028` pre-beta demonstrations | no | **An owner-merged beta-authorization artifact defining the client count and the observation period**, which `KHEPRI-DEC-028` requires and which no other task produces, plus the explicit go/no-go record |
 
 ## M2 operational gate
 
 No external design partner uses Khepri until hosted non-production, recovery evidence, calculation validation, authentication handoff, and the pilot runbook are complete.
 
-**A go/no-go record is not sufficient to open external traffic.** `KHEPRI-DEC-008` is active and states that "the later beta-authorization artifact must still define the client count and observation period", and it lists what implementation must demonstrate before beta launch: cross-session isolation and consent enforcement; deterministic reconciliation and reruns; raw-row exclusion from narrative requests; Arabic/English fact and caveat parity; accessible RTL web and PDF output; safe Excel output; immediate deletion and seven-day expiry; restart, retry, dead-letter, and orphan recovery; content-free telemetry; and at least 95% complete report bundles within ten minutes for the approved benchmark workload. `OPS1-10` produces that artifact for the owner to merge; it does not substitute for it.
+**A go/no-go record is not sufficient to open external traffic.** `KHEPRI-DEC-028` is active and states that "the later beta-authorization artifact must still define the client count and observation period", and it lists what implementation must demonstrate before beta launch: cross-session isolation and consent enforcement; deterministic reconciliation and reruns; raw-row exclusion from narrative requests; Arabic/English fact and caveat parity; accessible RTL web and PDF output; safe Excel output; immediate deletion and seven-day expiry; restart, retry, dead-letter, and orphan recovery; content-free telemetry; and at least 95% complete report bundles within ten minutes for the approved benchmark workload. `OPS1-10` produces that artifact for the owner to merge; it does not substitute for it.
 
 ---
 
