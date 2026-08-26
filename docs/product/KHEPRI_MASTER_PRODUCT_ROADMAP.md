@@ -1574,11 +1574,13 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 7. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, and merge the remaining slices.
 8. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
 9. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
-10. **OPS1-01/09:** complete the environment descriptor and reissue the sizing authority.
-11. **OPS1-02 through OPS1-07:** hosted non-production, recovery and capacity evidence, and the pilot runbook.
-12. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
-13. **G2/G3:** activate retention and workspace authority.
-14. **W1-01 onward:** begin durable workspace/history implementation.
+10. **OPS1-01:** activate the governance a provisional non-production bootstrap needs, and settle provider, region, residency, and products. No final capacity claim is made here.
+11. **OPS1-02, then OPS1-03:** provision the provisional non-production environment through CI, then configure its managed services and capture the live PostgreSQL minor and Spaces compatibility evidence.
+12. **OPS1-09:** run the governed hosted benchmark against that measured target and reissue the sizing authority. It cannot precede `OPS1-03`, which produces the target it measures.
+13. **OPS1-04 through OPS1-07:** recovery and capacity evidence, observability, and the pilot runbook.
+14. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
+15. **G2/G3:** activate retention and workspace authority.
+16. **W1-01 onward:** begin durable workspace/history implementation.
 
 ### Parallel-safe work now
 

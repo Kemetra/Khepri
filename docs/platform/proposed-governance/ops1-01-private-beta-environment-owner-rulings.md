@@ -237,11 +237,16 @@ The following are **not** closed by this section:
 
 These are verification/activation tasks, not reasons to reopen the whole architecture. Their dependency order is:
 
-1. activate the required DEC-008 and DEC-006 restatements and the authority for a provisional non-production bootstrap; the DEC-008 restatement still revises both the managed-PostgreSQL minor-upgrade row and the unconditional stable-egress row;
+1. activate the required DEC-008 and DEC-006 restatements **and supersede `KHEPRI-DEC-027`**, in one governance transition, so that a provisional non-production bootstrap is authorized by exactly one unambiguous active authority.
+
+   `KHEPRI-DEC-027` is `state: active`, its §4 withholds authority to provision or commit spend, and its consequences say in terms that "`OPS1-02` remains blocked until the final target-selection/environment descriptor is complete and approved". This sequence deliberately defers that final descriptor to steps 4–5. Restating DEC-008 and DEC-006 alone therefore leaves DEC-027's block standing: either the provisioning is still prohibited, or two active decisions disagree about whether it is. The successor must carry DEC-027's provisioning bar forward for *final* capacity while admitting the provisional bootstrap explicitly, and name the measurement shape in section 10 as what the bootstrap may claim.
+
 2. provision only that provisional non-production environment, using the measurement shape in section 10 rather than claiming final capacity;
 3. capture and record the live PostgreSQL minor version, empirically verify DigitalOcean Spaces against the exact Khepri storage/deletion/multipart contract, and refuse later certification if the live minor differs from the recorded value;
-4. run the `OPS1-09` governed benchmark on the hosted target;
-5. reissue the final sizing and environment evidence against FRA1 from that measurement;
+4. run the `OPS1-09` benchmark on the provisional hosted target **as an exploratory measurement, not as governed certification**;
+5. approve the final environment descriptor and sizing from that measurement, then **re-run the governed `OPS1-09` benchmark against the final descriptor and issue the certification from that run**.
+
+   The provisional run cannot certify the final target. `KHEPRI-DEC-006`'s digest discipline — and this document's own minor-version rule in section 3 — invalidate earlier evidence once the environment descriptor changes. A benchmark measured against the provisional shape is therefore not valid evidence for the descriptor that supersedes it, so certifying from it would leave every downstream exercise resting on evidence its own governance had already invalidated;
 6. run `OPS1-04` recovery exercises, including backup/restore, deletion-after-restore, encryption read-back, worker crash/retry/redrive, and proof of the selected RTO/RPO;
 7. run `OPS1-05` capacity and soak evidence;
 8. complete `OPS1-06` content-free observability, alerts, dashboards, and runbooks, including the admitted liveness/readiness probes and governed OpenTelemetry/OTLP emission path;
@@ -251,4 +256,6 @@ These are verification/activation tasks, not reasons to reopen the whole archite
 
 Merging this planning file records that these are the owner's selected OPS1 implementation directions and gives later OPS1 planning a single precedence point instead of three contradictory target drafts.
 
-It does **not** make a contradictory runtime rule governing by prose. `governance/registry.yaml` remains authoritative. The next governance PR must translate the applicable rulings into the DEC-008/DEC-006 successor decisions and final environment descriptor atomically enough that the validator sees one unambiguous active authority.
+It does **not** make a contradictory runtime rule governing by prose. `governance/registry.yaml` remains authoritative, and nothing here authorizes provisioning: `KHEPRI-DEC-027` still blocks `OPS1-02`, and a planning file cannot lift a bar an active decision holds.
+
+The next governance PR must translate the applicable rulings into the DEC-008/DEC-006 successor decisions, **a `KHEPRI-DEC-027` successor**, and the final environment descriptor, atomically enough that the validator sees one unambiguous active authority. Splitting DEC-027's supersession into a later PR would leave a window in which the restatements read as permission the still-active DEC-027 withholds.
