@@ -136,11 +136,60 @@ version.
 - All four `RRA-008` families → their own slices, after `V-formula`.
 - The growth residual → `V-growth`, per §1.1.
 
+### Where each admission rule actually lives
+
+`RRA-003` assigns these rules to `rra003.mapping.v3` **semantically**. Their **runtime**
+locations are not all in `mapping.py`, and the difference decides which files this slice must
+touch. Read from `739d474`:
+
+| Rule | Runtime location today | Why not `mapping.py` |
+|---|---|---|
+| Column → semantic resolution | `mapping.py` `build_mapping` | This is what mapping does |
+| Declared column overrides inference | `mapping.py` `_declared_over_inferred` | Same |
+| Event kind, status, currency **semantics** | **nowhere** — `mapping.py` has no such semantic | `SEMANTIC_*` covers date, revenue, units, transaction id, product, category, store, channel, cost, discount, returns. There is no event-kind, status, or currency semantic to resolve |
+| Void/cancelled row **exclusion** | **nowhere** | Mapping resolves columns to semantics; it never filters rows. Exclusion must happen where the frame is read |
+| One ISO 4217 currency for monetary facts | **nowhere** | Same: a per-row check over the frame |
+| Reading the rows | `facts.py` `_measures` | Reads columns straight off the mapping |
+
+Verified by search: `status`, `void`, `cancel`, and `currency` appear nowhere in
+`aggregates.py` or `admissibility.py`, and no such semantic exists in `mapping.py`.
+
+**So `_declared_over_inferred` is a stub, not most of the way there.** It re-points
+`transaction_id` and nothing else, because `transaction_id` is the only one of these rules that
+already had a semantic to re-point.
+
+**Consequence for the module boundary.** Row admission does not belong in `mapping.py`, and not
+only for tidiness: CodeScene already reports that module at mean cyclomatic complexity **4.50
+against a threshold of 4**. Adding event-kind, status, currency and basis admission there earns a
+`degraded` verdict and a refactor mid-slice. The admission rules land in their own module
+consuming profile plus contract, with `mapping.py` keeping column resolution and `facts.py`
+consuming the admitted result.
+
 **Boundary proof.** `rra003.mapping.v3` is published by exactly one slice — this one — and every
-task contributing to it is inside this slice. No admission rule the version governs is deferred:
-the normalized measures are here rather than split into `V-formula`, because `RRA-003` names
-them as admission and only the `RRA-004` formula *rows* are `V-formula`. Splitting a measure's
-admission out of `V-mapping` would publish `mapping.v3` incomplete.
+task contributing to it is inside this slice, including the rules above whose runtime home is not
+`mapping.py`. No admission rule the version governs is deferred: the normalized measures are here
+rather than split into `V-formula`, because `RRA-003` names them as admission and only the
+`RRA-004` formula *rows* are `V-formula`. Splitting a measure's admission out of `V-mapping`
+would publish `mapping.v3` incomplete.
+
+### The slice is one publication, not one pull request
+
+**`V-mapping` lands as a sequence of PRs, of which only the last moves the version.** The
+one-version-per-slice rule constrains *publication*: `rra003.mapping.v3` must be published once,
+complete, by this slice. It says nothing about how many pull requests contribute the plumbing
+that precedes the publication, and `governance/CONSTITUTION.md` Article IV — product code admitted
+"only in small, independently verifiable slices" — actively favours the split over one PR
+carrying admission, ingestion, journey and wording together.
+
+What makes this safe is §4.2's ordering: **the version constant moves in the final PR.** Until it
+does, no intermediate PR publishes a governed version, so none can publish `mapping.v3` early,
+twice, or incomplete — the three failures the rule exists to prevent. Each PR is independently
+verifiable on its own terms: the suite stays green at its baseline, and the behaviour it adds is
+proven by its own tests.
+
+The stop condition is unchanged and worth restating: **no PR in this sequence may move
+`MAPPING_VERSION` before the slice is complete**, and the PR that does move it carries every
+admission rule the version governs.
 
 ---
 
