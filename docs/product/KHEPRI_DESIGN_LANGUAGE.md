@@ -64,7 +64,7 @@ The M2 critique reads at `b19f365`. Several of its findings have since shipped. 
 | P1 #12 four user strings inlined in JS | **RESOLVED** — all five JS files read copy from `data-*`; 0 hardcoded strings |
 | P2 `--text-*` defined and unused | **LIVE — 0 `var(--text-*)` in all of `src/`** |
 | P1 `.skip-link` is two mechanisms | **LIVE** — `journey.css:39` `fixed`/`translateY(-180%)` vs `shell-components.css:45` `absolute`/`-9999px`, inverted colours |
-| G font-size drift | **LIVE — 12 distinct raw sizes; `.82` `.83` `.84` `.86rem` coexist** |
+| G font-size drift | **LIVE — 12 distinct raw sizes across 17 declarations**, counted over all four rule-bearing sheets (`shell.css` declares tokens only). `.82` `.83` `.84` `.86rem` coexist — four values inside 0.04rem |
 | P1 #16 `aria-current` absent | **LIVE — 0 occurrences in all of `src/`** |
 | P1 #10 refusal shares error paint | **LIVE** — `review.html.j2:7` `#profile-findings` uses `.error-summary`. Its `role="status"` is already correct; the *paint* is the defect |
 | P1 #8 "available on request" for a published URL | **LIVE** — `rendering/html.py:145` |
@@ -362,6 +362,40 @@ nav mechanism"):
   Landing four links in `M3-U1` would render navigation with nothing behind it.
 - The navigation needs its **own parity-paired label key**. It currently borrows the Team title,
   which is imprecise for one item and wrong for four.
+
+### 3.6 Shell, journey, and report — the three-way relationship
+
+Four surfaces consume **the same governed facts**. None recalculates them — templates, controllers,
+dashboards, APIs, semantic views, and AI may select and present facts, and may not compute them.
+That single rule is what lets the four look different without disagreeing.
+
+| Surface | Role | Design consequence |
+|---|---|---|
+| **Shell** (`/app`) | Commercial and organization context | A frame. Carries identity, scope, destinations, language. Owns no analysis content. |
+| **Journey** (`/beta`) | Focused task mode for one analysis | A document per page, one primary decision per page. Owns no commercial context. |
+| **Report** | Premium executive deliverable | Print-first. Own token namespace (§2.6). Denser ink, white paper, repeated `thead`, `break-inside` control. |
+| **Evidence** | Proof layer | **Contextual only** — reached from the claim it supports. Never a primary destination (§4.7). |
+| **Excel** | Structured downstream artifact | Reached from the analysis that produced it, alongside the report. |
+
+**What each surface owes the others:**
+
+- **Shell → journey:** scope, and a 303 that sets its cookie only on success. The shell must make the
+  organization legible *before* the crossing, because the journey currently cannot name it — that is
+  an AUTHORITY-BLOCKED gap, not a design choice.
+- **Journey → report:** the report is the journey's terminal artifact, not a separate destination
+  reached from navigation. Analyses is the history spine; **artifacts are reached from the analysis
+  that produced them.** This is why "Reports" is argued against as a primary destination.
+- **Report → evidence:** a claim links to its own proof. The report is where §4.7's live defect
+  bites — evidence is published at a URL while the prose says "available on request."
+- **Report → shell:** nothing. The report is a document; it does not carry app chrome. This is the
+  one boundary where divergence is correct, and §2.6 states the sibling rule that keeps the two
+  namespaces semantically aligned anyway.
+- **All → all:** state vocabulary, refusal treatment, caveat scoping, and the 44px floor are
+  product-wide. A refusal must read as a refusal in the app, in the report, in print, and in dark.
+
+**The seam that has no owner:** the shell and journey are correctly separate *modes* but should share
+one *frame*. Today they diverge in skip-link mechanism (§4.10), primary button (§8.4), and exit
+affordance (§4.9). Those are three symptoms of one missing slice (§8.7).
 
 ---
 
@@ -764,7 +798,7 @@ against a single surface colour) at the shell's tokenized 44px. Low-risk and ins
 
 ### 8.5 Token consumption — READY, and the largest live gap
 
-`var(--text-*)` has **0 consumers in `src/`**; 12 distinct raw font sizes ship with
+`var(--text-*)` has **0 consumers in `src/`**; 12 distinct raw font sizes across 17 declarations ship with
 `.82/.83/.84/.86rem` coexisting; 17 spacing values are off-scale; `journey.css` re-inlines three
 danger hexes `shell.css` already names. **`U1-01` owns this and it needs no new authority** — the
 values do not change, only where they are read from. Sequenced journey → shell.
