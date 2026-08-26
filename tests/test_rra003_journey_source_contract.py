@@ -211,6 +211,21 @@ def test_the_currency_control_makes_a_lowercase_code_hard_to_send() -> None:
         encoding="utf-8"
     )
     assert "#contract-currency-code { text-transform: uppercase; }" in css
+    # The invalid state is a token, never a literal: `R8-01` censused every hex
+    # below `:root` and `R8-02` only removes from that census. A new literal here
+    # failed `test_the_orphan_value_count_does_not_grow` in fix round 1.
+    invalid_rule = next(
+        line
+        for line in css.splitlines()
+        if line.startswith("#contract-currency-code:invalid")
+    )
+    assert "var(--danger)" in invalid_rule
+    assert "#" not in invalid_rule.split("{", 1)[1], (
+        "the invalid state must use a token, not a hex literal"
+    )
+    # Colour is not the only signal: the border also thickens, so the state
+    # survives a monochrome display and colour blindness.
+    assert "border-width" in invalid_rule
     # And the value actually sent is normalised, which the CSS cannot do.
     script = journey_asset("upload.js")
     assert "toUpperCase()" in script

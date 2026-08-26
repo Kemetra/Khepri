@@ -81,7 +81,19 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: clamp(1.9rem, 3vw, 2.
    will send: the operator sees `EGP` while typing `egp`, and the mistake is
    corrected visibly before submit rather than refused after it. */
 #contract-currency-code { text-transform: uppercase; }
-#contract-currency-code:invalid:not(:placeholder-shown) { border-color: #b3261e; }
+/* `var(--danger)` rather than a literal. `R8-01` censused every hex below `:root`
+   and `R8-02` is replacing those with tokens, so a new literal here would be a
+   regression whatever the colour -- and a colour chosen outside the token set is
+   a colour chosen outside the design. `--danger-border` would be the closer
+   semantic fit, but it is declared in `shell.css`, which the journey pages do not
+   load; `--danger` is the danger token actually in scope here.
+
+   Colour is deliberately not the only signal. `:invalid` also thickens the border,
+   so the state survives a monochrome display and any form of colour blindness, and
+   the rule itself stays legible in `#contract-currency-hint`, which the input
+   points at with `aria-describedby` and which is readable before the mistake is
+   made rather than only after. */
+#contract-currency-code:invalid:not(:placeholder-shown) { border-color: var(--danger); border-width: 2px; }
 .drop-zone { display: grid; justify-items: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); background: #fafbfd; text-align: center; cursor: pointer; }
 .drop-zone.is-dragging { border-color: var(--accent); border-style: solid; background: #f0f5fa; }
 .drop-icon { color: var(--accent-dark); }
