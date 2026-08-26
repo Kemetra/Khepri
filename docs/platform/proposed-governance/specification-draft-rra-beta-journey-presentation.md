@@ -39,10 +39,11 @@ presentation specification**, so ordinary maintenance of a shipped surface has n
 authority at any size.
 
 A specification written to permit seven known fixes would be reverse-engineered from a backlog. The
-boundary below is derived from the family charter instead, and §11 shows that **three of the seven
-findings remain blocked after activation** — which is the test of whether the derivation was honest.
-The owner rulings in §10 narrowed the authority further rather than widening it: D-2 removed a
-finding from the implementable column that an earlier draft of this document had left open.
+boundary below is derived from the family charter instead, and §11 shows the result: **of the seven
+journey findings, two remain blocked after activation — and three further recorded findings stay
+blocked as well.** That is the test of whether the derivation was honest. The owner rulings in §10
+narrowed the authority rather than widening it: D-2 moved a finding *out* of the implementable
+column that an earlier revision of this document had left open.
 
 ---
 
@@ -150,14 +151,26 @@ governs the surface `RRA-006` does not.
 The authority proposed is **maintenance of the presentation of surfaces that already exist**. It is
 bounded by three tests, all of which a candidate change must pass:
 
-1. **Surface identity.** The change alters how an existing journey surface is *presented*. It does
-   not add a surface, a step, a state, or a route.
-2. **Capability neutrality.** After the change, the set of things a customer can *do* is identical.
-   Every action, destination, and outcome already existed.
+1. **Surface identity.** The change alters how an existing journey surface is *presented*. It adds
+   no surface, step, workflow state, or route.
+2. **Capability neutrality.** The change adds no capability, route, workflow state, or backend
+   behavior. **Neutrality is measured against the runtime and domain, not against the rendered
+   page.** A presentation change MAY make an already-authorized destination or outcome *reachable*
+   — that is what a recovery affordance or a keyboard-reachable control does. It MUST NOT create a
+   destination, action, or outcome the runtime does not already serve.
 3. **Domain silence.** The change reads no new data, computes nothing, persists nothing, and sends
    nothing new anywhere.
 
 A change failing any of the three is outside this authority however small it looks.
+
+**Why test 2 is stated against the runtime rather than the page.** A test reading "the set of
+rendered actions is identical" would forbid the very corrections this authority exists for: a skip
+link that becomes reachable, a scroll container that gains a tab stop, and the `/beta`-local
+recovery affordance D-1 explicitly permits all add a *rendered* action while adding no capability.
+Measured against the runtime, the line falls in the right place — a link to
+`/beta/{language}/upload` passes because that address is already routed and served, and a control
+invoking something the runtime does not serve fails, whatever it looks like. **This is the boundary's
+load-bearing distinction and a reviewer should test a slice against it directly.**
 
 ### 4.1 Scope — exactly which artifacts
 
@@ -434,9 +447,17 @@ specification's to fix. It requires a slice under `RRA-009`.
 
 ## 11. Finding-by-finding mapping, after the owner rulings
 
-**Four of the seven become implementable; three stay blocked.** With D-1 through D-4 ruled, there is
-no longer a "requires separate owner decision" column — every finding now resolves to implementable
-or blocked, and what blocks each one is named.
+**Five of the seven journey findings become implementable; two stay blocked.** Counting the three
+further findings in the second table below, **five of ten** recorded findings remain blocked after
+activation. With D-1 through D-4 ruled, there is no longer a "requires separate owner decision"
+column — every finding resolves to implementable or blocked, and what blocks each one is named.
+
+> **Corrected on `#288`.** An earlier revision said "four of the seven become implementable; three
+> stay blocked" while this table marked findings 1–5 implementable and 6–7 blocked. The table was
+> right and the prose was wrong: finding 4 is implementable in its `/beta`-local form, and merging
+> its split verdict into the blocked column undercounted the authority's own reach. The two counts
+> are kept separate rather than blended — the seven journey findings are this specification's
+> subject; the three report and navigation findings are blocked by other artifacts entirely.
 
 This table is the honesty check on §4's derivation: an authority that unblocked all seven would be
 evidence it had been written backwards from the backlog.
@@ -525,8 +546,21 @@ accidental:
 
 - `RRA-009` — this specification defers to it (§7) and excludes its copy catalogue (D-4), but
   defers rather than builds on it. A dependency would assert a coupling that does not exist.
-- `RCA-002` — a specification under `RRA` may not depend on one under `RCA`; the README fixes a
-  specification to exactly one family, and the two are complementary rather than dependent.
+- `RCA-002` — **omitted because the relationship is complementary, not dependent.** `RCA-002`
+  excludes the journey and assigns it to `RRA`; this specification receives that assignment. It
+  builds on none of `RCA-002`'s requirements, and its own obligations would hold unchanged if
+  `RCA-002` did not exist. The assignment is context, and context is cited in prose rather than
+  declared as a dependency.
+
+  > **Correction, from review on `#288`.** An earlier revision of this section justified the
+  > omission by asserting that a specification under `RRA` *may not* depend on one under `RCA`.
+  > **That rule does not exist.** `governance/README.md`'s "depends on exactly one family"
+  > constrains the number of **family-typed** dependencies, and
+  > `src/khepri_gov/validator.py:306-309` implements exactly that — it counts only dependencies
+  > whose artifact `type` is `family`. Cross-family *specification* dependencies are routine and
+  > already shipped: `RCA-001 depends_on [RCA, RRA-001, RRA-002]` and
+  > `RCA-002 depends_on [RCA, RCA-001, RRA-006, RRA-009]`. The omission above is therefore an
+  > assessment of this specification's actual coupling, which is what it should always have been.
 
 **Verification required at activation:** confirm `RRA` and `RRA-006` are both still `active` in the
 registry as it then stands. If either has been retired or superseded, the dependency intent above is
@@ -540,8 +574,9 @@ retired one, and the validator fails closed on an unknown identifier.
 - **Not authority.** No registry entry, no allocated identifier, no activation. Owner rulings on
   scope are recorded (§10); a ruling on scope is not a grant of authority, and only the merge of a
   document-plus-registry-entry pair makes this governing.
-- **Not a licence for the seven findings.** Three remain blocked after activation (§11), two of them
-  by the owner's own narrowing rulings.
+- **Not a licence for the seven findings.** Two of the seven remain blocked after activation, both
+  by the owner's own narrowing rulings, and three further recorded findings stay blocked by other
+  artifacts (§11).
 - Not a widening of `RRA`. The family already owns the surface; this proposes the missing
   specification for it.
 - Not a change to `RCA-002`, whose exclusion is the reason this is needed and stays exactly as
