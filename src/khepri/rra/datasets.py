@@ -191,9 +191,14 @@ class ProfilingService:
         scope = SessionScope(owner_id=session.owner_id, session_id=session.session_id)
         assert_same_scope(scope, upload.scope)
 
+        question = ProfileQuestion(
+            request=request,
+            contract=contract,
+            attestation=attestation,
+        )
         existing = self._profiles.get_profile_for_upload(upload.upload_id, scope)
         if existing is not None:
-            return _answering(existing, request, contract), False
+            return _answering(existing, question), False
 
         content = self._objects.get(
             upload.object_key,
@@ -235,7 +240,7 @@ class ProfilingService:
         )
         stored = self._profiles.add_profile(candidate)
         return (
-            _answering(stored, request, contract),
+            _answering(stored, question),
             stored.profile_id == candidate.profile_id,
         )
 
@@ -430,10 +435,24 @@ def _attested_reading(
     return recorded
 
 
+@dataclass(frozen=True, slots=True)
+class ProfileQuestion:
+    """Everything a profile request declares, compared as one thing.
+
+    Grouped rather than passed flat because `_answering` compares all three
+    against what a stored profile recorded, and a signature that let a caller
+    supply two and forget the third is how the manifest went unguarded in the
+    first place. Adding a field here forces every construction site to name it.
+    """
+
+    request: ReportRequest
+    contract: SourceContract
+    attestation: CoverageAttestation | None = None
+
+
 def _answering(
     record: DatasetProfileRecord,
-    request: ReportRequest,
-    contract: SourceContract,
+    question: ProfileQuestion,
 ) -> DatasetProfileRecord:
     """Return the stored profile only if it answers the question being asked.
 
@@ -449,11 +468,12 @@ def _answering(
     only the first left the second open, because two callers racing on an
     unprofiled upload both find nothing to check.
     """
-    if _requested_semantics(record) != tuple(sorted(request.requested_semantics)):
+    if _requested_semantics(record) != tuple(sorted(question.request.requested_semantics)):
         raise ProfileRequestConflict(
             "This upload was profiled under different requested semantics."
         )
-    if _recorded_contract_digest(record) != contract.digest:
+    _assert_same_attestation(record, question)
+    if _recorded_contract_digest(record) != question.contract.digest:
         # The same reasoning as the semantics guard, for the other half of what
         # a profile records. A stored profile answers the declaration it was
         # admitted under; handing it back for a different one would report a
@@ -463,6 +483,78 @@ def _answering(
             "This upload was profiled under a different source contract."
         )
     return record
+
+
+def _assert_same_attestation(
+    record: DatasetProfileRecord,
+    question: ProfileQuestion,
+) -> None:
+    """The attestation is the third thing a profile records, so it is compared.
+
+    The same reasoning as the contract guard beside it. A stored profile answers
+    the attestation it was admitted under; handing it back for a different one
+    would report completeness this caller never declared -- or, worse, report a
+    success for an attestation that never took effect, which is what this did
+    before the guard existed.
+
+    **Absent on both sides is a match, not a mismatch.** Most callers attest
+    nothing, and turning two identical unattested requests into a conflict would
+    break the idempotence every existing profile test relies on.
+
+    **Absent on one side is a conflict in both directions.** Adding an
+    attestation to a profile that has none cannot be honoured as an amendment:
+    baking it in changes the document, so it would have to rewrite
+    `profile_digest`, which `packages.PackageProvenance.expected` compares
+    against every published package. Withholding one that was given would drop
+    proof that was validly recorded. Both are answers to a question nobody
+    asked, so both refuse and the operator is told to start a fresh session.
+
+    Compared over the canonical document rather than by object identity, so two
+    attestations naming the same days in different orders are the same
+    attestation -- which is the property `as_document`'s sorting provides.
+    """
+    stored = _recorded_manifest_document(record)
+    requested = _requested_manifest_document(record, question)
+    if stored != requested:
+        raise ProfileRequestConflict(
+            "This upload was profiled under a different coverage manifest."
+        )
+
+
+def _recorded_manifest_document(
+    record: DatasetProfileRecord,
+) -> dict[str, object] | None:
+    """The attestation a stored profile carries, in canonical form.
+
+    Reuses `stored_manifest`'s readback rather than reading the raw section, so
+    there is one way to interpret a stored attestation and a malformed one is
+    refused here exactly as it is at use time.
+    """
+    manifest = stored_manifest(record)
+    return None if manifest is None else manifest.as_document()
+
+
+def _requested_manifest_document(
+    record: DatasetProfileRecord,
+    question: ProfileQuestion,
+) -> dict[str, object] | None:
+    """The attestation this request declares, in the same canonical form.
+
+    Bound to the stored profile's own identity -- its source digest and the
+    contract digest it recorded -- rather than to the incoming declaration, so
+    the comparison is between two attestations of the same admission and differs
+    only where the operator's declaration differs. Binding it to the incoming
+    contract instead would make every contract change also read as a manifest
+    change, reporting the wrong one of the two conflicts.
+    """
+    if question.attestation is None:
+        return None
+    binding = ManifestBinding(
+        input_digest=record.source_sha256_hex,
+        source_contract_digest=_recorded_contract_digest(record) or "",
+        timezone=question.attestation.timezone,
+    )
+    return question.attestation.to_manifest(binding=binding).as_document()
 
 
 def _recorded_contract_digest(record: DatasetProfileRecord) -> str | None:
