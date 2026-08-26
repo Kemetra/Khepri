@@ -26,12 +26,23 @@ let uploaded = false;
 // "" reaches `build_source_contract` and earns the 400 that states what is
 // missing. `data-contract-required` marks which those are, so the distinction
 // lives on the control it describes rather than as a list here.
+//
+// A control marked `autocapitalize="characters"` is sent uppercased. The CSS
+// `text-transform` on the currency field is presentation only -- it changes what
+// the operator sees, not the string the form submits -- so `egp` would still
+// reach `_assert_iso_currency` and be refused. Normalising here makes the field
+// send what it displays. Driven off the attribute rather than a field name, so
+// the rule lives on the control it describes.
+const textValue = (control) => {
+  const typed = control.value.trim();
+  return control.autocapitalize === "characters" ? typed.toUpperCase() : typed;
+};
 const declaration = () => {
   const contract = {};
   for (const control of contractFields) {
     const name = control.dataset.contractField;
     const blank = control.dataset.contractRequired === undefined ? null : "";
-    contract[name] = control.type === "checkbox" ? control.checked : (control.value.trim() || blank);
+    contract[name] = control.type === "checkbox" ? control.checked : (textValue(control) || blank);
   }
   return contract;
 };

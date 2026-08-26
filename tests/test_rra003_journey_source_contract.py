@@ -148,16 +148,23 @@ def test_the_uncollected_declarations_are_exactly_the_known_gap() -> None:
 
 
 @pytest.mark.parametrize(
-    "claim",
+    ("claim", "refusal_message"),
     [
-        "sale_only",
-        "posted_only",
-        "unique_line_grain_attested",
-        "transaction_id_unique_package_wide",
+        ("sale_only", "must map or declare event kind; it is never inferred"),
+        ("posted_only", "must map or declare status; it is never inferred"),
+        (
+            "unique_line_grain_attested",
+            "must supply event keys or attest unique line grain",
+        ),
+        (
+            "transaction_id_unique_package_wide",
+            "transaction identifier not proven unique needs a composite key",
+        ),
     ],
 )
 def test_declining_a_package_level_claim_needs_a_column_the_form_lacks(
     claim: str,
+    refusal_message: str,
 ) -> None:
     """Why the gap above matters, stated as behaviour rather than as a field list.
 
@@ -166,12 +173,62 @@ def test_declining_a_package_level_claim_needs_a_column_the_form_lacks(
     declined. So unticking one is currently a governed refusal with no remedy on
     the page. The refusal is correct -- the rule is doing its job -- and it is
     the *collection surface* that is incomplete, which is what this records.
+
+    **Each claim is pinned to the message it actually produces.** A bare
+    `raises(ContractRefused)` would be satisfied by any refusal at all, so a
+    fixture regression that blanked `contract_id` would make all four
+    parametrisations pass on "must record its identifier" -- proving nothing
+    about the checkbox each one is named for.
     """
     declared = client_profile_payload()["source_contract"]
     assert isinstance(declared, dict)
 
-    with pytest.raises(ContractRefused):
+    with pytest.raises(ContractRefused, match=refusal_message):
         SourceContractBody(**{**declared, claim: False}).to_contract()
+
+
+def test_the_currency_control_makes_a_lowercase_code_hard_to_send() -> None:
+    """A correctable typo must not cost a session.
+
+    `_assert_iso_currency` refuses anything but three uppercase letters, and on
+    the resume path that refusal costs the whole session rather than the field
+    (a resubmit re-runs `upload()`, which answers 409 for a session that already
+    has an upload). So the mistake is prevented at the control instead of
+    reported after it: the browser blocks a non-three-letter value, the field
+    displays what it will send, and the client uppercases the value on its way
+    into the payload.
+
+    The CSS transform alone would be cosmetic -- it changes the rendering, not
+    the submitted string -- so the normalisation in `declaration()` is the part
+    that actually prevents the refusal, and it is asserted here.
+    """
+    page = upload_template()
+    assert 'pattern="[A-Za-z]{3}"' in page
+    # The rule is legible before the mistake, not only in a validation bubble.
+    assert 'aria-describedby="contract-currency-hint"' in page
+    assert 'id="contract-currency-hint"' in page
+    css = files("khepri.rra.journey").joinpath("assets", "journey.css").read_text(
+        encoding="utf-8"
+    )
+    assert "#contract-currency-code { text-transform: uppercase; }" in css
+    # And the value actually sent is normalised, which the CSS cannot do.
+    script = journey_asset("upload.js")
+    assert "toUpperCase()" in script
+
+
+def test_a_lowercase_currency_would_be_refused_if_it_reached_the_server() -> None:
+    """Why the control is hardened: the server has no tolerance to fall back on.
+
+    This pins the server's rule so the prevention above cannot be quietly
+    dropped as unnecessary. `SourceContractBody` accepts the string as a string;
+    it is `to_contract()` that refuses it, which is exactly the 400 an operator
+    would otherwise meet after submitting.
+    """
+    declared = client_profile_payload()["source_contract"]
+    assert isinstance(declared, dict)
+
+    with pytest.raises(ContractRefused, match="uppercase ISO 4217 code"):
+        SourceContractBody(**{**declared, "currency_code": "egp"}).to_contract()
 
 
 def test_the_payload_the_client_posts_satisfies_the_real_request_model() -> None:
@@ -399,6 +456,21 @@ def test_the_error_path_keeps_the_servers_stated_reason() -> None:
     assert "return null" in reader
 
 
+def executable_lines(script: str) -> str:
+    """The script with `//` comments stripped, so prose cannot satisfy a test.
+
+    An assertion on a bare word is met by a comment mentioning it, which is how
+    a test about rendering a refusal survived the deletion of the code that
+    renders one. Everything asserted about behaviour is asserted against this.
+    """
+    kept = []
+    for line in script.splitlines():
+        head = line.split("//", 1)[0]
+        if head.strip():
+            kept.append(head)
+    return "\n".join(kept)
+
+
 def test_the_review_surface_renders_a_governed_refusal_bilingually() -> None:
     """The reason reaches a surface, and its wording is the server's.
 
@@ -406,13 +478,42 @@ def test_the_review_surface_renders_a_governed_refusal_bilingually() -> None:
     `data-*` attributes and the script reads them, so no Arabic is compiled
     into an asset. A refusal rendered from a string in JavaScript would ship
     one language and silently drop the other.
+
+    **Anchored on syntax only executing code produces.** The renderer is
+    asserted by its definition *and* its invocation from both catch sites, and
+    by the specific `dataset` reads it makes -- so deleting the function or
+    either call site fails this test. A comment mentioning a refusal cannot
+    satisfy any of it, because comments are stripped first.
     """
-    script = journey_asset("review.js")
-    assert "refusal" in script.lower()
+    code = executable_lines(journey_asset("review.js"))
+    # Defined, and actually called -- from both places a refusal can arrive.
+    assert "const refusal = (" in code
+    assert code.count("refusal(failure,") == 2, (
+        "refusal() must be invoked from both the load() and confirm catch sites"
+    )
+    # The two paths a governed refusal reaches: the review load, and the
+    # facts/reports POSTs behind the confirm button.
+    assert "load().catch((failure) => refusal(failure," in code
+    assert "} catch (failure) {" in code
+    # The server's own stated reason is what is shown, read off the error.
+    assert "failure?.detail" in code
+    # Both halves of the surrounding wording come from the page, not the script.
+    assert "error.dataset.refusalTitle" in code
+    assert "error.dataset.refusalStated" in code
+    # And the fallbacks for "no stated reason", also page-owned.
+    assert "error.dataset.analysisUnavailable" in code
+    assert "error.dataset.reviewUnavailable" in code
     for language in ("en", "ar"):
         wording = JOURNEY_COPY[language]["refusal_stated"]
         assert wording, f"{language} has no wording for a stated refusal"
-        assert wording not in script, "refusal wording belongs on the page, not in JS"
+        assert wording not in script_text(), (
+            "refusal wording belongs on the page, not in JS"
+        )
+
+
+def script_text() -> str:
+    """The whole asset, comments included: no wording may appear anywhere."""
+    return journey_asset("review.js")
 
 
 def test_the_refusal_wording_ships_in_both_languages() -> None:

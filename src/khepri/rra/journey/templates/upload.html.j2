@@ -43,7 +43,19 @@
       </p>
       <p class="contract-row">
         <label for="contract-currency-code">{{ copy.contract_currency_code }}</label>
-        <input id="contract-currency-code" data-contract-field="currency_code" type="text" dir="ltr" maxlength="3" size="3" required>
+        {#
+          `pattern` plus an uppercasing `text-transform` because a lowercase
+          `egp` is refused ("A declared currency must be one uppercase ISO 4217
+          code") and, on the resume path, that costs the session rather than the
+          field. The constraint is declared on the control so the browser blocks
+          submission before the request is made.
+
+          The native validation bubble is not the only signal: `aria-describedby`
+          ties a persistent visible hint to the input, so the rule is readable
+          before the mistake and by a screen reader, not just after it.
+        #}
+        <input id="contract-currency-code" data-contract-field="currency_code" type="text" dir="ltr" maxlength="3" size="3" pattern="[A-Za-z]{3}" inputmode="latin" autocapitalize="characters" spellcheck="false" aria-describedby="contract-currency-hint" required>
+        <span id="contract-currency-hint" class="meta">{{ copy.contract_currency_hint }}</span>
       </p>
       <p class="contract-row">
         <label for="contract-transaction-id-column">{{ copy.contract_transaction_id_column }}</label>

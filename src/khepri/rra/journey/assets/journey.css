@@ -77,6 +77,11 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: clamp(1.9rem, 3vw, 2.
 .contract-row--claim { align-items: flex-start; min-block-size: 44px; }
 .contract-row--claim input { inline-size: 22px; block-size: 22px; flex: none; accent-color: var(--accent-dark); }
 .contract-row input:focus-visible { outline: 2px solid var(--accent-dark); outline-offset: 1px; }
+/* The declared currency must be uppercase ISO 4217, so the field shows what it
+   will send: the operator sees `EGP` while typing `egp`, and the mistake is
+   corrected visibly before submit rather than refused after it. */
+#contract-currency-code { text-transform: uppercase; }
+#contract-currency-code:invalid:not(:placeholder-shown) { border-color: #b3261e; }
 .drop-zone { display: grid; justify-items: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); background: #fafbfd; text-align: center; cursor: pointer; }
 .drop-zone.is-dragging { border-color: var(--accent); border-style: solid; background: #f0f5fa; }
 .drop-icon { color: var(--accent-dark); }

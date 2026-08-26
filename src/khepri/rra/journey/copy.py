@@ -112,6 +112,7 @@ _EN = {
     "contract_id": "Reference for this declaration",
     "contract_evidence": "Who declared this, and on what authority",
     "contract_currency_code": "Currency code for every amount (for example EGP)",
+    "contract_currency_hint": "Three letters, shown as capitals (EGP, USD, SAR).",
     "contract_sale_only": "Every row is a sale — returns and refunds are excluded",
     "contract_posted_only": (
         "Every row is posted — void and cancelled events are excluded"
@@ -229,6 +230,7 @@ _AR = {
     "contract_id": "مرجع هذا الإقرار",
     "contract_evidence": "من أقرَّ بهذا، وبأي صفة",
     "contract_currency_code": "رمز العملة لكل المبالغ (مثال: EGP)",
+    "contract_currency_hint": "ثلاثة أحرف لاتينية تُكتب بحروف كبيرة (EGP أو USD أو SAR).",
     "contract_sale_only": "كل صف عملية بيع — المرتجعات والمبالغ المستردة مستبعدة",
     "contract_posted_only": "كل صف مُرحَّل — العمليات الملغاة والباطلة مستبعدة",
     "contract_unique_line_grain_attested": "كل صف يمثل بنداً واحداً من الطلب",
