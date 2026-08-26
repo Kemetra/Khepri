@@ -76,6 +76,8 @@ def mapped_contract(**overrides: object) -> SourceContract:
         "posted_only": False,
         "currency_code": None,
         "event_key_columns": ("invoice",),
+        "transaction_key_components": (),
+        "transaction_id_unique_package_wide": True,
     }
     fields.update(overrides)
     return build_source_contract(
@@ -95,8 +97,10 @@ def mapped_contract(**overrides: object) -> SourceContract:
             event_key_columns=fields["event_key_columns"],  # type: ignore[arg-type]
             unique_line_grain_attested=False,
             transaction_id_column="invoice",
-            transaction_key_components=(),
-            transaction_id_unique_package_wide=True,
+            transaction_key_components=fields["transaction_key_components"],  # type: ignore[arg-type]
+            transaction_id_unique_package_wide=bool(
+                fields["transaction_id_unique_package_wide"]
+            ),
         ),
         basis=BasisDeclaration(
             revenue_vat_exclusive=True,
@@ -551,4 +555,344 @@ def test_admission_reads_each_column_once_not_once_per_row() -> None:
     assert calls <= 32, (
         f"admission materialized columns {calls} times for {rows} rows -- "
         "column reads must be hoisted out of the per-row loop"
+    )
+
+
+# ---------------------------------------------------------------------------
+# M3 gap 1: canonical transaction key construction.
+# ---------------------------------------------------------------------------
+
+REPEATED_INVOICE_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency,store\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP,S1\n"
+    b"2026-03-04,INV-2,sale,posted,200.00,4,EGP,S1\n"
+    b"2026-03-04,INV-1,sale,posted,300.00,6,EGP,S2\n"
+    b"2026-03-04,INV-2,sale,posted,400.00,8,EGP,S2\n"
+)
+
+
+def test_a_composite_transaction_key_distinguishes_repeated_bare_invoice_ids() -> None:
+    """`RRA-003`: a bare identifier is the key only when proven package-wide
+    unique. Two stores each numbering receipts from 1 must not collapse into
+    one transaction just because the bare `invoice` values collide.
+
+    `tests/rra_calculation_oracle.py::REPEATED_INVOICE_EXPECTED` derives four
+    distinct canonical keys for this exact shape (source id + store + date):
+    `INV-1|S1|...`, `INV-2|S1|...`, `INV-1|S2|...`, `INV-2|S2|...`.
+    """
+    admitted = admit(
+        REPEATED_INVOICE_CSV,
+        mapped_contract(
+            transaction_id_unique_package_wide=False,
+            transaction_key_components=("invoice", "store"),
+        ),
+    )
+
+    assert admitted.transaction_count == 4
+
+
+def test_a_composite_key_is_built_from_the_declared_components_in_order() -> None:
+    """The canonical key joins each declared component's own column value,
+    not just any values that happen to disambiguate the rows."""
+    single_row = (
+        b"date,invoice,event_kind,status,amount,qty,currency,store\n"
+        b"2026-03-04,INV-9,sale,posted,10.00,1,EGP,S9\n"
+    )
+    admitted = admit(
+        single_row,
+        mapped_contract(
+            transaction_id_unique_package_wide=False,
+            transaction_key_components=("invoice", "store"),
+        ),
+    )
+
+    assert len(admitted.events) == 1
+    assert admitted.events[0].transaction_key == "INV-9|S9"
+
+
+def test_a_bare_unique_identifier_still_supplies_the_transaction_key() -> None:
+    """Package-wide uniqueness proven means the bare identifier IS the key --
+    `mapped_contract()`'s default -- and `transaction_count` must keep counting
+    it, exactly as every already-passing test above depends on."""
+    admitted = admit(REPEATED_INVOICE_CSV, mapped_contract())
+
+    assert admitted.transaction_count == 2
+    assert admitted.events[0].transaction_key == "INV-1"
+
+
+# ---------------------------------------------------------------------------
+# M3 gap 2: unique-key / line-grain attestation, enforced at admission time.
+#
+# `source_contract.build_source_contract` already refuses an unattested
+# declaration at *construction* time (`_assert_identity_declared`). But
+# `contract_from_document` -- the path `packages._stored_contract` uses to
+# replay a stored profile -- deliberately does NOT re-validate (see its own
+# docstring: re-validating "would refuse a stored contract whose rules have
+# since tightened"). So a contract lacking both proofs can still reach
+# `admit_events` on the replay path, and `admission.py` itself has no check.
+# These cases construct the `SourceContract` the way that replay path does --
+# directly, bypassing the builder -- so they actually exercise admission.
+# ---------------------------------------------------------------------------
+
+
+def _unattested_contract(**overrides: object) -> SourceContract:
+    """A contract built by-passing `build_source_contract`'s own attestation
+    check, the way `contract_from_document` replays a stored declaration
+    without re-validating it. This is the only way to get an unattested
+    contract in front of `admit_events` at all."""
+    fields: dict[str, object] = {
+        "event_kind_column": "event_kind",
+        "status_column": "status",
+        "currency_column": "currency",
+        "event_key_columns": (),
+        "unique_line_grain_attested": False,
+    }
+    fields.update(overrides)
+    return SourceContract(
+        contract_version="rra003.source-contract.v1",
+        contract_id="src_admission_unattested",
+        evidence="Constructed directly to bypass builder validation.",
+        events=EventDeclaration(
+            event_kind_column=fields["event_kind_column"],  # type: ignore[arg-type]
+            sale_only=False,
+            status_column=fields["status_column"],  # type: ignore[arg-type]
+            posted_only=False,
+            currency_column=fields["currency_column"],  # type: ignore[arg-type]
+            currency_code=None,
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=fields["event_key_columns"],  # type: ignore[arg-type]
+            unique_line_grain_attested=fields["unique_line_grain_attested"],  # type: ignore[arg-type]
+            transaction_id_column="invoice",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+
+
+def test_admission_refuses_a_population_with_neither_key_nor_line_grain_proof() -> None:
+    """`RRA-003` requires either a unique key or an explicit line-grain
+    attestation. Neither is present here, so admission itself must refuse --
+    it cannot rely solely on the builder, which the replay path bypasses."""
+    contract = _unattested_contract(
+        event_key_columns=(), unique_line_grain_attested=False
+    )
+
+    with pytest.raises(EventsRefused) as refused:
+        admit(MIXED_CURRENCY_CSV, contract)
+
+    message = str(refused.value).lower()
+    assert "line grain" in message or "event key" in message or "identity" in message
+
+
+def test_admission_admits_when_line_grain_is_attested_with_no_event_keys() -> None:
+    """The attestation alone is sufficient -- `event_key_columns` empty is not
+    itself a refusal once `unique_line_grain_attested` is `True`."""
+    contract = _unattested_contract(
+        event_key_columns=(), unique_line_grain_attested=True
+    )
+
+    admitted = admit(MIXED_CURRENCY_CSV, contract)
+
+    assert len(admitted.events) == 2
+
+
+def test_admission_admits_when_event_keys_are_declared_with_no_attestation() -> None:
+    """The other proof alone is sufficient -- declared event keys with
+    `unique_line_grain_attested=False` must not be refused."""
+    contract = _unattested_contract(
+        event_key_columns=("invoice",), unique_line_grain_attested=False
+    )
+
+    admitted = admit(MIXED_CURRENCY_CSV, contract)
+
+    assert len(admitted.events) == 2
+
+
+# ---------------------------------------------------------------------------
+# M3 gaps 3 and 4: discount and cost normalized measures.
+# ---------------------------------------------------------------------------
+
+DISCOUNT_AND_COST_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency,discount_amount,cost\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP,10.00,55.00\n"
+    b"2026-03-05,INV-2,sale,posted,200.00,4,EGP,5.00,110.00\n"
+)
+
+
+def test_discount_is_admitted_as_a_normalized_measure_like_revenue() -> None:
+    """`mapping.py` already resolves `SEMANTIC_DISCOUNT`; admission must read
+    it onto each event the same way it reads revenue."""
+    admitted = admit(DISCOUNT_AND_COST_CSV, mapped_contract())
+
+    assert [event.discount for event in admitted.events] == [
+        Decimal("10.00"),
+        Decimal("5.00"),
+    ]
+
+
+def test_cost_is_admitted_as_a_normalized_measure_like_revenue() -> None:
+    """`mapping.py` already resolves `SEMANTIC_COST`; admission must read it
+    onto each event the same way it reads revenue."""
+    admitted = admit(DISCOUNT_AND_COST_CSV, mapped_contract())
+
+    assert [event.cost for event in admitted.events] == [
+        Decimal("55.00"),
+        Decimal("110.00"),
+    ]
+
+
+def test_discount_and_cost_are_withheld_alongside_revenue_on_currency_refusal() -> None:
+    """`RRA-003`: currency refusal withholds monetary facts and their derived
+    results. Discount and cost are monetary, so a mixed currency must withhold
+    them exactly as it withholds revenue -- not leave them computed under an
+    unproven currency."""
+    mixed = (
+        b"date,invoice,event_kind,status,amount,qty,currency,discount_amount,cost\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP,10.00,55.00\n"
+        b"2026-03-05,INV-2,sale,posted,200.00,4,USD,5.00,110.00\n"
+    )
+
+    admitted = admit(mixed, mapped_contract())
+
+    assert admitted.monetary_refused is True
+    assert all(event.discount is None for event in admitted.events)
+    assert all(event.cost is None for event in admitted.events)
+
+
+def test_discount_is_withheld_when_the_basis_does_not_attest_additivity() -> None:
+    """`BasisDeclaration.discount_is_additive` is the operator's attestation
+    that the mapped discount column is already non-overlapping, allocated
+    additive currency -- `RRA-003`: "A bare discount, rate, percentage,
+    repeated invoice total, or overlapping component set refuses the discount
+    metric." Where the basis does not attest additivity, admission has no
+    proof the column may be summed, so it is withheld the same way an
+    unproven currency withholds revenue -- publishing a figure the basis
+    itself disclaims would be the inference `RRA-003` forbids."""
+    admitted = admit(
+        DISCOUNT_AND_COST_CSV,
+        mapped_contract(),
+    )
+    assert admitted.events[0].discount is not None  # sanity: additive by default
+
+    non_additive_contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_admission_non_additive",
+            evidence="Discount basis not attested additive.",
+        ),
+        events=EventDeclaration(
+            event_kind_column="event_kind",
+            sale_only=False,
+            status_column="status",
+            posted_only=False,
+            currency_column="currency",
+            currency_code=None,
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=("invoice",),
+            unique_line_grain_attested=False,
+            transaction_id_column="invoice",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=False,
+        ),
+    )
+
+    admitted = admit(DISCOUNT_AND_COST_CSV, non_additive_contract)
+
+    assert all(event.discount is None for event in admitted.events)
+    # Revenue and cost are unaffected by the discount basis flag specifically.
+    assert admitted.events[0].revenue == Decimal("100.00")
+
+
+def test_cost_is_withheld_when_the_basis_does_not_attest_extended() -> None:
+    """`BasisDeclaration.cost_is_extended` is the attestation that the mapped
+    cost column is already row-level extended COGS, not a unit/average/list
+    cost. `RRA-003`: "unit cost, average cost, standard cost, list cost, and a
+    bare ambiguous cost label are not additive COGS and are refused." Where
+    the basis does not attest extended cost, admission withholds it."""
+    non_extended_contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_admission_non_extended",
+            evidence="Cost basis not attested extended.",
+        ),
+        events=EventDeclaration(
+            event_kind_column="event_kind",
+            sale_only=False,
+            status_column="status",
+            posted_only=False,
+            currency_column="currency",
+            currency_code=None,
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=("invoice",),
+            unique_line_grain_attested=False,
+            transaction_id_column="invoice",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=False,
+            discount_is_additive=True,
+        ),
+    )
+
+    admitted = admit(DISCOUNT_AND_COST_CSV, non_extended_contract)
+
+    assert all(event.cost is None for event in admitted.events)
+    assert admitted.events[0].revenue == Decimal("100.00")
+
+
+def test_discount_and_cost_columns_are_read_once_each_not_once_per_row() -> None:
+    """Same performance discipline as the existing revenue/units/transaction-id
+    proof: discount and cost must be hoisted out of the per-row loop too."""
+    import polars as pl
+
+    rows = 200
+    header = (
+        b"date,invoice,event_kind,status,amount,qty,currency,"
+        b"discount_amount,cost\n"
+    )
+    body = b"".join(
+        b"2026-03-%02d,INV-%d,sale,posted,100.00,2,EGP,5.00,50.00\n"
+        % ((index % 28) + 1, index)
+        for index in range(rows)
+    )
+    content = header + body
+    contract = mapped_contract()
+
+    calls = 0
+    original = pl.DataFrame.get_column
+
+    def counting_get_column(self: pl.DataFrame, name: str):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return original(self, name)
+
+    pl.DataFrame.get_column = counting_get_column  # type: ignore[method-assign]
+    try:
+        admitted = admit(content, contract)
+    finally:
+        pl.DataFrame.get_column = original  # type: ignore[method-assign]
+
+    assert len(admitted.events) == rows
+    assert calls <= 40, (
+        f"admission materialized columns {calls} times for {rows} rows with "
+        "discount and cost columns -- reads must stay hoisted out of the loop"
     )
