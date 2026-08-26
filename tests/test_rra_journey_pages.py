@@ -84,6 +84,60 @@ def test_upload_module_reads_its_wording_from_the_page() -> None:
     assert "dataset.uploadFailed" in script
 
 
+def test_upload_page_collects_an_operator_coverage_attestation() -> None:
+    body = client().get("/beta/en/upload").text
+    for field in (
+        "timezone",
+        "covered_start",
+        "covered_end",
+        "aggregate_scope",
+        "covered_days",
+        "event_kinds",
+        "statuses",
+    ):
+        assert f'data-manifest-field="{field}"' in body
+
+
+def test_the_attestation_the_upload_page_emits_is_one_the_domain_admits() -> None:
+    """The page's own controls, filled, produce a manifest `RRA-003` accepts.
+
+    Asserting the markup alone would pass on a surface that collects the right
+    field names in a shape `build_coverage_manifest` refuses, which is the
+    failure this slice exists to prevent -- an attestation unreachable from a
+    browser is not fixed by one the browser cannot get accepted.
+    """
+    from khepri.rra.coverage_request import CoverageManifestBody
+
+    body = client().get("/beta/en/upload").text
+    fields = re.findall(r'data-manifest-field="([^"]+)"', body)
+    lists = {"covered_days", "event_kinds", "statuses"}
+    typed = {
+        "timezone": "Africa/Cairo",
+        "covered_start": "2026-01-01",
+        "covered_end": "2026-01-02",
+        "aggregate_scope": "All stores",
+        "covered_days": ["2026-01-01", "2026-01-02"],
+        "event_kinds": ["sale"],
+        "statuses": ["posted"],
+    }
+    assert set(fields) == set(typed)
+    emitted = {name: typed[name] for name in fields}
+    assert all(isinstance(emitted[name], list) for name in lists)
+
+    manifest = CoverageManifestBody(**emitted)
+
+    assert manifest.covered_start.isoformat() == "2026-01-01"
+    assert manifest._scopes() == ("All stores",)
+    assert len(manifest._pairs(manifest.covered_days)) == 2
+
+
+def test_upload_module_omits_the_manifest_when_nothing_is_attested() -> None:
+    script = client().get("/beta/assets/upload.js").text
+    assert "manifestFields" in script
+    assert "coverage_manifest" in script
+    assert "attestation()" in script
+
+
 def test_pending_deletion_has_a_stable_confirmation_page() -> None:
     body = client().get("/beta/en/expired?deletion=requested").text
     assert "Deletion requested" in body

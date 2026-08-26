@@ -97,6 +97,26 @@ _EN = {
         "The file was uploaded but could not be profiled. Delete this session and "
         "request a new invitation."
     ),
+    "manifest_legend": "Tell us what period this file covers",
+    "manifest_intro": (
+        "Optional. Without it we still report what your file shows, but we "
+        "decline period comparisons and growth, because a file cannot prove "
+        "which days it was meant to include. Leave it blank to skip."
+    ),
+    "manifest_timezone": "Timezone your trading day is counted in",
+    "manifest_timezone_hint": "For example Africa/Cairo.",
+    "manifest_covered_start": "First day this file is meant to cover",
+    "manifest_covered_end": "Last day this file is meant to cover",
+    "manifest_aggregate_scope": "Name of the store or group this file covers",
+    "manifest_covered_days": "Every day in that period, separated by commas",
+    "manifest_covered_days_hint": (
+        "Include each day from the first to the last, including any day that "
+        "traded nothing."
+    ),
+    "manifest_event_kinds": "Kinds of row the file includes, separated by commas",
+    "manifest_event_kinds_hint": "For example sale.",
+    "manifest_statuses": "Statuses the file includes, separated by commas",
+    "manifest_statuses_hint": "For example posted.",
     "file_invalid": "Choose a CSV or XLSX file no larger than 50 MB.",
     "upload_failed": "The secure upload could not be completed. Try again.",
     "review_unavailable": "Review data is unavailable.",
@@ -220,6 +240,25 @@ _AR = {
     "profile_rejected": (
         "تم رفع الملف لكن تعذر تحليله الأولي. احذف هذه الجلسة واطلب دعوة جديدة."
     ),
+    "manifest_legend": "أخبرنا بالفترة التي يغطيها هذا الملف",
+    "manifest_intro": (
+        "اختياري. بدونه نعرض ما يظهره ملفك، لكننا نمتنع عن مقارنات الفترات "
+        "والنمو، لأن الملف لا يثبت بذاته الأيام التي كان يُفترض أن يشملها. "
+        "اتركه فارغاً لتخطّيه."
+    ),
+    "manifest_timezone": "المنطقة الزمنية التي يُحسب بها يوم العمل",
+    "manifest_timezone_hint": "مثال: Africa/Cairo.",
+    "manifest_covered_start": "أول يوم يغطيه هذا الملف",
+    "manifest_covered_end": "آخر يوم يغطيه هذا الملف",
+    "manifest_aggregate_scope": "اسم الفرع أو المجموعة التي يغطيها الملف",
+    "manifest_covered_days": "كل يوم في تلك الفترة، مفصولة بفواصل",
+    "manifest_covered_days_hint": (
+        "أدرج كل يوم من الأول إلى الأخير، بما في ذلك أي يوم لم تحدث فيه مبيعات."
+    ),
+    "manifest_event_kinds": "أنواع الصفوف التي يشملها الملف، مفصولة بفواصل",
+    "manifest_event_kinds_hint": "مثال: sale.",
+    "manifest_statuses": "الحالات التي يشملها الملف، مفصولة بفواصل",
+    "manifest_statuses_hint": "مثال: posted.",
     "file_invalid": "اختر ملف CSV أو XLSX لا يتجاوز 50 ميجابايت.",
     "upload_failed": "تعذر إكمال الرفع الآمن. حاول مرة أخرى.",
     "review_unavailable": "بيانات المراجعة غير متاحة.",

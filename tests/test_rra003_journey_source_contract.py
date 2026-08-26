@@ -420,7 +420,13 @@ def test_both_profile_call_sites_send_the_collected_contract() -> None:
     for post in posts:
         assert "profileRequest()" in post, f"a profile POST carries no contract: {post}"
     # And that builder is what actually names the field the route requires.
-    builder = re.search(r"const profileRequest = [^\n]*", script)
+    # Matched to the end of its body rather than to the end of its first line:
+    # the builder became a block when the optional coverage attestation was
+    # added beside the contract, and a single-line match would then read only
+    # `const profileRequest = () => {` and miss the field it exists to check.
+    builder = re.search(
+        r"const profileRequest = .*?(?=\n(?:const|let|var|//) )", script, re.DOTALL
+    )
     assert builder is not None, "upload.js has no single profile-body builder"
     assert "source_contract" in builder.group()
     assert "declaration()" in builder.group()
