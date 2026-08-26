@@ -630,13 +630,19 @@ def _declared_over_inferred(
 
 
 def _pointed_at(mapping: SemanticMapping, label: str) -> SemanticMapping:
-    """The same semantic, resolved to the declared column.
+    """The same semantic, resolved to the declared column, or left unresolved.
 
-    A declared column the file does not carry is left as the inference found it
-    rather than fabricated here. That is not a silent pass: `RRA-003` requires
-    the declaration to be checked against the profile, and this slice's
-    admission tests assert the refusal. Inventing a candidate for an absent
-    column would make that refusal unreachable.
+    **A declared column the file does not carry leaves the semantic
+    unavailable** -- it does not fall back to what inference found. `RRA-003`
+    refuses to establish identity from headers, so publishing transaction facts
+    from an inferred `invoice_no` after the operator declared `external_id`
+    would do exactly that, under a contract that says otherwise. The declaration
+    is evidence; the inference it displaced is not evidence for a different
+    column.
+
+    `STATE_UNAVAILABLE` rather than a fabricated candidate, because there is no
+    column to point at and inventing one would publish a figure computed from
+    nothing the contract named.
     """
     for candidate in mapping.candidates:
         if candidate.safe_label == label:
@@ -654,7 +660,12 @@ def _pointed_at(mapping: SemanticMapping, label: str) -> SemanticMapping:
                     ),
                 ),
             )
-    return mapping
+    return SemanticMapping(
+        semantic=mapping.semantic,
+        requirement=mapping.requirement,
+        state=STATE_UNAVAILABLE,
+        candidates=(),
+    )
 
 
 def _award_shared_columns(columns: list[ColumnProfile]) -> tuple[SemanticMapping, ...]:

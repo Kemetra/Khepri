@@ -301,7 +301,7 @@ def test_unknown_request_fields_are_refused() -> None:
 
     response = test.client.post(
         "/api/v1/beta/profile",
-        json={"requested_semantics": [], "formula": "revenue * 2"},
+        json=profile_payload(formula="revenue * 2"),
     )
 
     assert response.status_code == 422

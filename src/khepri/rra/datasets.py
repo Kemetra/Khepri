@@ -146,7 +146,7 @@ class ProfilingService:
 
         existing = self._profiles.get_profile_for_upload(upload.upload_id, scope)
         if existing is not None:
-            return _answering(existing, request), False
+            return _answering(existing, request, contract), False
 
         content = self._objects.get(
             upload.object_key,
@@ -182,7 +182,10 @@ class ProfilingService:
             document=document,
         )
         stored = self._profiles.add_profile(candidate)
-        return _answering(stored, request), stored.profile_id == candidate.profile_id
+        return (
+            _answering(stored, request, contract),
+            stored.profile_id == candidate.profile_id,
+        )
 
     def get_session_profile(
         self,
@@ -227,6 +230,7 @@ def build_document(
 def _answering(
     record: DatasetProfileRecord,
     request: ReportRequest,
+    contract: SourceContract,
 ) -> DatasetProfileRecord:
     """Return the stored profile only if it answers the question being asked.
 
@@ -246,7 +250,31 @@ def _answering(
         raise ProfileRequestConflict(
             "This upload was profiled under different requested semantics."
         )
+    if _recorded_contract_digest(record) != contract.digest:
+        # The same reasoning as the semantics guard, for the other half of what
+        # a profile records. A stored profile answers the declaration it was
+        # admitted under; handing it back for a different one would report a
+        # mapping built from a reading this caller did not declare, and the
+        # digest they are shown would address neither.
+        raise ProfileRequestConflict(
+            "This upload was profiled under a different source contract."
+        )
     return record
+
+
+def _recorded_contract_digest(record: DatasetProfileRecord) -> str | None:
+    """The digest of the contract a stored profile was admitted under.
+
+    `None` for a profile written before contracts existed, which never equals a
+    real digest -- so a legacy profile is a conflict here rather than a silent
+    match, and the caller is told to re-profile rather than handed a mapping
+    built without their declaration.
+    """
+    stored = record.document.get("source_contract")
+    if not isinstance(stored, dict):
+        return None
+    digest = stored.get("digest")
+    return None if digest is None else str(digest)
 
 
 def _requested_semantics(record: DatasetProfileRecord) -> tuple[str, ...]:
