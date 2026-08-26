@@ -46,6 +46,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib.resources import files
 
 import pytest
 from fastapi import FastAPI
@@ -696,16 +697,39 @@ class TestTheBetaJourneyIsUntouched:
         asset is covered the moment it is served, with no edit here -- which a hardcoded list
         could not do, and a list that drifts is how the single-filename version came to
         under-cover.
+
+        **Markup alone is not the boundary.** Two ways a shell asset could load while the HTML
+        named only journey-owned files: the response could be an error page that mentions no asset
+        at all, and the journey's own stylesheet could pull one in transitively. So the page is
+        asserted to have rendered, and the served stylesheet is scanned too -- with `@import`
+        banned outright rather than its targets enumerated, since a name-scan loses to a relative
+        path and `shell.css`'s own suite already holds itself to the same rule.
+
+        A stylesheet injected at runtime by journey JavaScript would need a browser-level
+        assertion, which this in-process frame test is the wrong place for; no journey script
+        constructs a stylesheet link today.
         """
         from khepri.runtime.shell_api import _ASSETS
         from tests.test_rra_journey_api import client
 
         assert _ASSETS, "the shell serves no assets; this guard would assert nothing"
 
-        html = client().get(f"/beta/{language}/{step}").text
+        response = client().get(f"/beta/{language}/{step}")
+
+        # An error page names no asset, so the scan below would pass having proved nothing.
+        assert response.status_code == 200, f"/beta/{language}/{step} -> {response.status_code}"
+        html = response.text
+
+        stylesheet = (
+            files("khepri.rra.journey")
+            .joinpath("assets", "journey.css")
+            .read_text(encoding="utf-8")
+        )
+        assert "@import" not in stylesheet, "an @import can pull in an asset the markup never names"
 
         for asset in _ASSETS:
             assert asset not in html, f"{asset} reached /beta/{language}/{step}"
+            assert asset not in stylesheet, f"journey.css references {asset}"
 
 
 class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
