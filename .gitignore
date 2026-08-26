@@ -46,3 +46,8 @@ ops/staging/certs/
 # instead; this keeps a committed `.env` from splitting the two runtimes for
 # everyone at once.
 .env
+
+# The Impeccable design hook's per-session state: absolute machine paths and
+# session UUIDs, meaningless in another checkout. `config.json` beside it is the
+# durable half -- the adjudicated rule suppressions -- and is committed.
+.impeccable/hook.cache.json
