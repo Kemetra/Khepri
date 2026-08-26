@@ -458,36 +458,34 @@ def test_a_manifest_is_bound_to_the_reading_it_was_attested_under() -> None:
     assert stored_manifest["timezone"] == "Africa/Cairo"
 
 
-def test_a_scope_the_manifest_never_attested_is_refused() -> None:
-    """Fail-closed: an unrecognised scope is a refusal, not an absence."""
+@pytest.mark.parametrize(
+    ("manifest_overrides", "query_overrides"),
+    [
+        # Fail-closed: an unrecognised scope is a refusal, not an absence.
+        pytest.param({}, {"scope": "Alexandria"}, id="unattested_scope"),
+        # A manifest proves the window it attested, not the one it is asked.
+        pytest.param({}, {"end": date(2026, 3, 6)}, id="day_outside_window"),
+        # A window whose last bucket is admittedly partial proves nothing whole.
+        pytest.param(
+            {"partial_terminal_boundary": True}, {}, id="partial_terminal_boundary"
+        ),
+    ],
+)
+def test_an_unproven_window_refuses_completeness(
+    manifest_overrides: dict[str, object],
+    query_overrides: dict[str, object],
+) -> None:
+    """Every way a query can fall outside what the manifest attested is refused."""
     test = ready()
     profiled = test.client.post(
         "/api/v1/beta/profile",
-        json=profile_with(manifest_body()),
+        json=profile_with(manifest_body(**manifest_overrides)),
     )
     assert profiled.status_code == 201
 
     response = test.client.get(
         "/api/v1/beta/coverage/completeness",
-        params=completeness_query(scope="Alexandria"),
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "coverage_manifest_window_unproven"
-
-
-def test_a_day_outside_the_attested_window_is_refused() -> None:
-    """A manifest proves the window it attested, not the one it is asked."""
-    test = ready()
-    profiled = test.client.post(
-        "/api/v1/beta/profile",
-        json=profile_with(manifest_body()),
-    )
-    assert profiled.status_code == 201
-
-    response = test.client.get(
-        "/api/v1/beta/coverage/completeness",
-        params=completeness_query(end=date(2026, 3, 6)),
+        params=completeness_query(**query_overrides),
     )
 
     assert response.status_code == 409
@@ -608,22 +606,4 @@ def test_a_per_store_roster_attests_each_store_it_names() -> None:
 
     assert response.status_code == 200
     assert response.json()["complete"] is True
-
-
-def test_a_partial_terminal_boundary_refuses_completeness() -> None:
-    """A window whose last bucket is admittedly partial proves nothing whole."""
-    test = ready()
-    profiled = test.client.post(
-        "/api/v1/beta/profile",
-        json=profile_with(manifest_body(partial_terminal_boundary=True)),
-    )
-    assert profiled.status_code == 201
-
-    response = test.client.get(
-        "/api/v1/beta/coverage/completeness",
-        params=completeness_query(),
-    )
-
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "coverage_manifest_window_unproven"
 
