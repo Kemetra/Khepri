@@ -742,6 +742,40 @@ def test_a_blank_component_cell_refuses_rather_than_counting_short() -> None:
     assert "store" in str(refused.value)
 
 
+def test_a_blank_component_on_an_excluded_row_does_not_refuse_the_population() -> None:
+    """Exclusion and refusal must stay distinguishable on the composite path.
+
+    `RRA-003` excludes an explicitly void or cancelled row from every
+    population, and the answer is computable without it. So a blank component
+    cell on a *void* row is not a missing identity proof -- it is a row that was
+    already correctly dropped, and refusing the whole population over it is the
+    blanket refusal `admission.py`'s own docstring names: "the one a blanket
+    refusal loses, and losing it refuses more than the specification allows".
+
+    The counterpart to the blank-cell refusal above. Together they say the
+    refusal is about rows that survive exclusion, and only those.
+    """
+    void_row_missing_store = (
+        b"date,invoice,event_kind,status,amount,qty,currency,store\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP,S1\n"
+        b"2026-03-05,INV-2,sale,void,999.00,99,EGP,\n"
+        b"2026-03-06,INV-3,sale,posted,50.00,1,EGP,S2\n"
+    )
+
+    admitted = admit(
+        void_row_missing_store,
+        mapped_contract(
+            transaction_id_unique_package_wide=False,
+            transaction_key_components=("invoice", "store"),
+        ),
+    )
+
+    assert len(admitted.events) == 2
+    assert admitted.excluded_count == 1
+    assert admitted.transaction_count == 2
+    assert admitted.revenue_total == Decimal("150.00")
+
+
 def test_the_composite_join_stays_injective_for_delimiter_bearing_values() -> None:
     """Declared columns constrain column *names*, never the arbitrary source
     *values* in them -- so a value carrying the delimiter must not forge a

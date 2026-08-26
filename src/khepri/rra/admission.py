@@ -72,6 +72,19 @@ class EventsRefused(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class _Reading:
+    """One materialized frame and the column positions its header resolved to.
+
+    The two always travel together -- `labels` is derived from `frame.columns`
+    and is meaningless against any other frame -- so passing them as one value
+    keeps a reader from having to check that a given pair belongs together.
+    """
+
+    frame: pl.DataFrame
+    labels: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
 class AdmittedEvent:
     """One normalized retail event, as far as this slice admits one.
 
@@ -211,7 +224,8 @@ def admit_events(
     )
     units = _unit_column(frame, mapping)
     transaction_ids = _transaction_id_column(frame, labels, contract)
-    transaction_keys = _transaction_key_column(frame, labels, contract, transaction_ids)
+    reading = _Reading(frame=frame, labels=labels)
+    keys = _transaction_key_column(reading, contract, transaction_ids, frozenset(kept))
     discounts = (
         [None] * frame.height
         if monetary_refused or not contract.basis.discount_is_additive
@@ -231,7 +245,7 @@ def admit_events(
             transaction_id=transaction_ids[index],
             cost=costs[index],
             discount=discounts[index],
-            transaction_key=transaction_keys[index],
+            transaction_key=keys[index],
         )
         for index in kept
     ]
@@ -442,10 +456,10 @@ def _transaction_id_column(
 
 
 def _transaction_key_column(
-    frame: pl.DataFrame,
-    labels: dict[str, int],
+    reading: _Reading,
     contract: SourceContract,
     transaction_ids: list[str | None],
+    kept: frozenset[int],
 ) -> list[str | None]:
     """Every row's canonical transaction key, `RRA-003`'s composite or the
     bare identifier, whichever the contract proves.
@@ -476,16 +490,34 @@ def _transaction_key_column(
       need a distinguishable marker of its own, and inventing one here without
       a consumer is deferred (`CAL1-01` ledger, `M1`).
 
+    **The blank-cell refusal applies only to a row that survives exclusion.**
+    `RRA-003` excludes an explicitly void or cancelled row from every
+    population, and the answer is computable without it -- so a blank component
+    on a row nothing counts is not a missing proof, it is a row already
+    correctly dropped. Refusing over it would be exactly the blanket refusal
+    this module's own docstring warns of: "the one a blanket refusal loses, and
+    losing it refuses more than the specification allows". Excluded positions
+    yield `None`, which no caller reads, because `admit_events` builds events
+    only over `kept`.
+
+    The *absent column* refusal stays unconditional by contrast: a declaration
+    naming a column the extract does not carry is a defect in the declaration
+    rather than in any one row, and `_column` settles it before a single row is
+    examined.
+
     Column reads are hoisted the same way `_measure_column` hoists them.
     """
     if contract.identity.transaction_id_unique_package_wide:
         return transaction_ids
     components = contract.identity.transaction_key_components
     if not components:
-        return [None] * frame.height
-    columns = [_column(frame, labels, component) for component in components]
+        return [None] * reading.frame.height
+    columns = [
+        _column(reading.frame, reading.labels, component) for component in components
+    ]
     return [
-        _joined_key(columns, components, index) for index in range(frame.height)
+        _joined_key(columns, components, index) if index in kept else None
+        for index in range(reading.frame.height)
     ]
 
 
