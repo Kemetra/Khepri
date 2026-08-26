@@ -1,7 +1,22 @@
 const language = document.body.dataset.language;
+// The status alone cannot distinguish "your JSON was malformed" from a governed
+// refusal naming the version pairing it refused. The server states its reason in
+// `detail`, so the error carries it and the caller can show what was actually
+// refused instead of a generic failure.
 class ApiError extends Error {
-  constructor(status) { super(String(status)); this.status = status; }
+  constructor(status, detail) { super(detail || String(status)); this.status = status; this.detail = detail || null; }
 }
+// A refused response is not necessarily JSON: a gateway can answer HTML and a 204
+// has no body at all. So the read is guarded and a failure to parse leaves the
+// detail null rather than replacing the status with a parser error.
+const statedReason = async (response) => {
+  try {
+    const body = await response.json();
+    return typeof body?.detail === "string" ? body.detail : null;
+  } catch (error) {
+    return null;
+  }
+};
 const api = async (path, options = {}) => {
   const headers = { ...(options.headers || {}) };
   const response = await fetch(path, {
@@ -9,7 +24,7 @@ const api = async (path, options = {}) => {
     ...options,
     headers,
   });
-  if (!response.ok) throw new ApiError(response.status);
+  if (!response.ok) throw new ApiError(response.status, await statedReason(response));
   return response.status === 204 ? null : response.json();
 };
 

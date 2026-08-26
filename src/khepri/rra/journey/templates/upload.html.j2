@@ -19,6 +19,60 @@
     </label>
     <input id="sales-file" class="visually-hidden" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled>
     <p id="file-help" class="meta">CSV · XLSX · 50 MB</p>
+    {#
+      The source contract, declared by the operator. `RRA-003` holds that generic
+      headers and observed values never establish event kind, status, currency,
+      basis, or identity, so none of these is inferred from the file and none is
+      defaulted in the client: each is a control the operator sets and can see.
+
+      Every control is a native input with a `for`/`id` label pair, so it is
+      focusable and operable from the keyboard alone. `data-contract-field`
+      carries the wire name, which is what lets `upload.js` build the request
+      body from the form instead of restating the field list a second time.
+    #}
+    <fieldset id="source-contract" class="contract-fieldset">
+      <legend>{{ copy.contract_legend }}</legend>
+      <p class="meta">{{ copy.contract_intro }}</p>
+      <p class="contract-row">
+        <label for="contract-contract-id">{{ copy.contract_id }}</label>
+        <input id="contract-contract-id" data-contract-field="contract_id" data-contract-required type="text" required>
+      </p>
+      <p class="contract-row">
+        <label for="contract-evidence">{{ copy.contract_evidence }}</label>
+        <input id="contract-evidence" data-contract-field="evidence" data-contract-required type="text" required>
+      </p>
+      <p class="contract-row">
+        <label for="contract-currency-code">{{ copy.contract_currency_code }}</label>
+        <input id="contract-currency-code" data-contract-field="currency_code" type="text" dir="ltr" maxlength="3" size="3" required>
+      </p>
+      <p class="contract-row">
+        <label for="contract-transaction-id-column">{{ copy.contract_transaction_id_column }}</label>
+        <input id="contract-transaction-id-column" data-contract-field="transaction_id_column" type="text">
+      </p>
+      {#
+        Checkboxes rather than a defaulted boolean: `SourceContractBody` would
+        accept an omitted flag and supply a value, and that value would be
+        indistinguishable downstream from one the operator chose. An unticked
+        box is the operator declining the claim, which is a declaration; an
+        absent field is an inference.
+      #}
+      {% for field, label in [
+        ("sale_only", copy.contract_sale_only),
+        ("posted_only", copy.contract_posted_only),
+        ("unique_line_grain_attested", copy.contract_unique_line_grain_attested),
+        ("transaction_id_unique_package_wide", copy.contract_transaction_id_unique_package_wide),
+        ("revenue_vat_exclusive", copy.contract_revenue_vat_exclusive),
+        ("revenue_is_net_of_returns", copy.contract_revenue_is_net_of_returns),
+        ("units_are_integral", copy.contract_units_are_integral),
+        ("cost_is_extended", copy.contract_cost_is_extended),
+        ("discount_is_additive", copy.contract_discount_is_additive),
+      ] %}
+      <p class="contract-row contract-row--claim">
+        <input id="contract-{{ field | replace('_', '-') }}" data-contract-field="{{ field }}" type="checkbox">
+        <label for="contract-{{ field | replace('_', '-') }}">{{ label }}</label>
+      </p>
+      {% endfor %}
+    </fieldset>
     <div id="selected-file" class="selected-file" aria-live="polite"></div>
     <div id="upload-progress" class="progress-wrap" hidden>
       <div class="progress-track" role="progressbar" aria-label="{{ copy.upload_progress }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>

@@ -97,6 +97,35 @@ _EN = {
         "The file was uploaded but could not be profiled. Delete this session and "
         "request a new invitation."
     ),
+    "review_unavailable": "Review data is unavailable.",
+    "analysis_unavailable": "Analysis could not be started.",
+    "refusal_title": "This file was not accepted:",
+    "refusal_stated": (
+        "The assessment was refused on governed grounds. The stated reason is "
+        "shown above."
+    ),
+    "contract_legend": "Tell us what your file means",
+    "contract_intro": (
+        "These cannot be read from your column names, so we never guess them. "
+        "Your answers are recorded with the assessment."
+    ),
+    "contract_id": "Reference for this declaration",
+    "contract_evidence": "Who declared this, and on what authority",
+    "contract_currency_code": "Currency code for every amount (for example EGP)",
+    "contract_sale_only": "Every row is a sale — returns and refunds are excluded",
+    "contract_posted_only": (
+        "Every row is posted — void and cancelled events are excluded"
+    ),
+    "contract_unique_line_grain_attested": "Each row is one order line",
+    "contract_transaction_id_column": "Column holding the transaction reference",
+    "contract_transaction_id_unique_package_wide": (
+        "That reference is unique across the whole file"
+    ),
+    "contract_revenue_vat_exclusive": "Revenue amounts exclude VAT",
+    "contract_revenue_is_net_of_returns": "Revenue is already net of returns",
+    "contract_units_are_integral": "Units are whole numbers",
+    "contract_cost_is_extended": "Cost is the line total, not a unit cost",
+    "contract_discount_is_additive": "Discounts can be added across rows",
 }
 
 _AR = {
@@ -188,6 +217,28 @@ _AR = {
     "profile_rejected": (
         "تم رفع الملف لكن تعذر تحليله الأولي. احذف هذه الجلسة واطلب دعوة جديدة."
     ),
+    "review_unavailable": "بيانات المراجعة غير متاحة.",
+    "analysis_unavailable": "تعذر بدء التحليل.",
+    "refusal_title": "لم يُقبل هذا الملف:",
+    "refusal_stated": "تم رفض التقييم لأسباب حاكمة، والسبب المعلن مذكور أعلاه.",
+    "contract_legend": "أخبرنا بمعنى بيانات ملفك",
+    "contract_intro": (
+        "لا يمكن استنتاج هذه المعاني من أسماء الأعمدة، ولذلك لا نخمنها أبداً. "
+        "تُسجَّل إجاباتك مع التقييم."
+    ),
+    "contract_id": "مرجع هذا الإقرار",
+    "contract_evidence": "من أقرَّ بهذا، وبأي صفة",
+    "contract_currency_code": "رمز العملة لكل المبالغ (مثال: EGP)",
+    "contract_sale_only": "كل صف عملية بيع — المرتجعات والمبالغ المستردة مستبعدة",
+    "contract_posted_only": "كل صف مُرحَّل — العمليات الملغاة والباطلة مستبعدة",
+    "contract_unique_line_grain_attested": "كل صف يمثل بنداً واحداً من الطلب",
+    "contract_transaction_id_column": "العمود الذي يحمل مرجع المعاملة",
+    "contract_transaction_id_unique_package_wide": "هذا المرجع فريد في الملف بأكمله",
+    "contract_revenue_vat_exclusive": "مبالغ الإيرادات لا تشمل ضريبة القيمة المضافة",
+    "contract_revenue_is_net_of_returns": "الإيرادات صافية من المرتجعات بالفعل",
+    "contract_units_are_integral": "الوحدات أعداد صحيحة",
+    "contract_cost_is_extended": "التكلفة هي إجمالي البند، وليست تكلفة الوحدة",
+    "contract_discount_is_additive": "يمكن جمع الخصومات على مستوى الصفوف",
 }
 
 if _EN.keys() != _AR.keys():

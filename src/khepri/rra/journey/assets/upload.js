@@ -10,8 +10,36 @@ const selected = document.querySelector("#selected-file");
 const errorSummary = document.querySelector("#error-summary");
 const dropZone = document.querySelector("#drop-zone");
 const recovery = document.querySelector("#upload-recovery");
+const contractFields = document.querySelectorAll("[data-contract-field]");
 let file = null;
 let uploaded = false;
+
+// Read out of the operator's own controls, never composed here. `RRA-003` refuses
+// to establish event kind, status, currency, basis, or identity from the data, and
+// a declaration this file invented would be indistinguishable at the server from
+// one the operator chose -- which is the same inference wearing a client's clothes.
+//
+// A blank optional column is sent as null, because the server reads null as "not
+// declared by column" while "" would name a column called "". The two required
+// identifiers are sent as the empty string instead: they are typed `str`, so null
+// is a *schema* violation and answers 422 -- the very failure this fixes -- while
+// "" reaches `build_source_contract` and earns the 400 that states what is
+// missing. `data-contract-required` marks which those are, so the distinction
+// lives on the control it describes rather than as a list here.
+const declaration = () => {
+  const contract = {};
+  for (const control of contractFields) {
+    const name = control.dataset.contractField;
+    const blank = control.dataset.contractRequired === undefined ? null : "";
+    contract[name] = control.type === "checkbox" ? control.checked : (control.value.trim() || blank);
+  }
+  return contract;
+};
+const profileRequest = () => JSON.stringify({ requested_semantics: [], source_contract: declaration() });
+// The stated reason when the server gives one, and the page's own wording when it
+// does not. A governed refusal names what it refused, and flattening that into a
+// generic message is what leaves an operator with nothing to act on.
+const refusalText = (error) => error?.detail || errorSummary.dataset.profileRejected;
 
 const message = (text) => {
   errorSummary.textContent = text;
@@ -68,10 +96,10 @@ form.addEventListener("submit", async (event) => {
     await api("/api/v1/beta/consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consent_version: CONSENT_VERSION }) });
     await upload();
     uploaded = true;
-    await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requested_semantics: [] }) });
+    await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: profileRequest() });
     location.assign(routeFor("review"));
   } catch (error) {
-    message(uploaded ? errorSummary.dataset.profileRejected : (language === "ar" ? "تعذر إكمال الرفع الآمن. حاول مرة أخرى." : "The secure upload could not be completed. Try again."));
+    message(uploaded ? refusalText(error) : (language === "ar" ? "تعذر إكمال الرفع الآمن. حاول مرة أخرى." : "The secure upload could not be completed. Try again."));
     recovery.hidden = !uploaded;
     update();
   }
@@ -85,11 +113,23 @@ const bootstrap = async () => {
     const state = await resume();
     if (state?.upload_present && !state.profile_present) {
       uploaded = true;
-      await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requested_semantics: [] }) });
+      // The upload landed but its profile response was lost, so the file is here
+      // and the profile is not. This posts the declaration as it stands on the
+      // page: nothing is stored in the browser, so on a fresh load the form is
+      // blank and the declaration is incomplete.
+      //
+      // That is handled, not ignored. A blank `contract_id` makes
+      // `to_contract()` raise `ContractRefused`, and the route answers 400 with
+      // a stated reason rather than the 422 a missing contract earned -- "400
+      // rather than 422, and the distinction is the point". `refusalText` then
+      // shows the operator that reason. Synthesizing a contract here to finish
+      // the request unattended is the one thing `RRA-003` forbids, so the
+      // refusal is the correct outcome and the operator declares and resubmits.
+      await api("/api/v1/beta/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: profileRequest() });
       location.replace(routeFor("review"));
     }
   } catch (error) {
-    message(uploaded ? errorSummary.dataset.profileRejected : (error.status === 401 ? errorSummary.dataset.invitation : errorSummary.dataset.temporary));
+    message(uploaded ? refusalText(error) : (error.status === 401 ? errorSummary.dataset.invitation : errorSummary.dataset.temporary));
     recovery.hidden = !uploaded;
   }
 };

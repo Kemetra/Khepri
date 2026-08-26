@@ -3,7 +3,18 @@
 {% block content %}
 <section class="journey-document journey-document--wide" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.review_title }}</h1><p class="lede">{{ copy.review_intro }}</p>
-  <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden></div>
+  {#
+    Both languages of the refusal wording travel on the page, like the value
+    vocabulary below, so `review.js` renders a governed refusal without carrying
+    a word of either language. The server's own stated reason is shown alongside
+    when it gives one: it names which version pairing was refused, and that is
+    the part a generic message destroys.
+  #}
+  <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden
+    data-refusal-title="{{ copy.refusal_title }}"
+    data-refusal-stated="{{ copy.refusal_stated }}"
+    data-review-unavailable="{{ copy.review_unavailable }}"
+    data-analysis-unavailable="{{ copy.analysis_unavailable }}"></div>
   <div id="profile-findings" class="error-summary" role="status" hidden
     data-title="{{ copy.review_blocked_title }}"
     data-generic="{{ copy.reason_generic }}"
