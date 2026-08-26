@@ -1,5 +1,19 @@
 # DRAFT — KHEPRI-DEC-NNN-TARGET: RRA private-beta runtime target and DigitalOcean FRA1 environment descriptor
 
+> **PROMOTED IN PART — superseded by an activated decision.** The runtime-target restatement was
+> adopted as **`KHEPRI-DEC-028`**
+> (`governance/decisions/KHEPRI-DEC-028-rra-portable-runtime-target-digitalocean.md`), active in
+> `governance/registry.yaml`, retiring `KHEPRI-DEC-008`. The provisioning authority this draft
+> withheld is **`KHEPRI-DEC-030`**, which retires `KHEPRI-DEC-027`.
+>
+> **This draft's selected-target table was NOT adopted.** It chose Droplets, a Regional Load
+> Balancer, GitHub Actions Environment Secrets on a systemd `EnvironmentFile`, and Grafana Cloud,
+> because it carried `KHEPRI-DEC-008`'s unconditional stable-egress row forward — which is mutually
+> exclusive with VPC connectivity on App Platform. The owner rulings merged in `#289` supersede that
+> table (see its §0) and relax the egress row, and `KHEPRI-DEC-028` adopts the relaxed row plus App
+> Platform web and worker, App Platform runtime secrets, and the Better Stack direction. Read the
+> activated decision, not this draft. Retained as the reasoning record.
+
 **Status: planning-only draft. Not a governed artifact — including after this commit is merged.**
 
 Merging this commit does **not** make this document governing. `governance/registry.yaml` is

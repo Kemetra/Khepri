@@ -1,5 +1,12 @@
 # OPS1-01 — Private-beta environment owner rulings
 
+> **ACTIVATED.** The governance transition this record's §13 step 1 requires is merged: the two
+> governance-impacting rulings (PostgreSQL minor upgrades in §3, egress in §6) are now carried by
+> **`KHEPRI-DEC-028`**, the benchmark restatement by **`KHEPRI-DEC-029`**, and the provisional
+> bootstrap authority by **`KHEPRI-DEC-030`**, which together retire `KHEPRI-DEC-008`,
+> `KHEPRI-DEC-006`, and `KHEPRI-DEC-027`. Those decisions govern; this record remains the
+> reasoning behind them. §13 steps 2–9 remain outstanding.
+
 **Status: planning-only proposal record.** This file records the owner's selected implementation direction for the remaining OPS1-01 environment choices. It does **not** amend `governance/registry.yaml`, supersede an active decision, authorize provisioning or spend, or open external traffic. Any ruling that conflicts with an active governed artifact must be activated through the repository's normal governance transition before implementation relies on it.
 
 Prepared against `main` at `ceace057ce1e180fa6fddc851208aa0fd9d1808d`.
