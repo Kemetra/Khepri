@@ -183,6 +183,13 @@ forced Droplets purely to manufacture an address no approved dependency currentl
 approved dependency requires source-IP allowlisting today; if one is later approved, this row
 requires the stable identity rather than permitting its absence.
 
+That provider constraint is recorded in the OPS1 portability analysis
+(`docs/platform/proposed-governance/ops1-provider-portability-and-target-selection.md`, finding
+D6), which cites DigitalOcean's own documentation at
+<https://docs.digitalocean.com/products/app-platform/how-to/add-ip-address/>. The citation is given
+here because a governed decision should not rest on an external factual claim a reader cannot trace
+from the decision itself. A provider change to this behaviour would reopen the row.
+
 #### The S3-compatible requirement is a portability boundary, not neutrality
 
 Carried forward unchanged.
@@ -264,6 +271,10 @@ response validation rejecting unsupported numbers, citations, claims, or unsafe 
 Training opt-out without verified Zero Data Retention is insufficient. If any gate is absent,
 revoked, or unverifiable, the OpenAI adapter remains disabled and RRA delivers the deterministic
 cited facts-only report authorized by `RRA-005` and `RRA-006`.
+
+The exact model snapshot is an operational configuration selected through bilingual grounding,
+latency, refusal, and privacy-gate evidence. Changing providers or materially changing provider
+data handling requires a new or superseding architecture decision.
 
 ### Observability and recovery
 
@@ -440,7 +451,9 @@ customer-defined formulas.
 
 - Implement the runtime PostgreSQL minor-version check that compares the live server version
   against the recorded value and refuses certification on a mismatch. Until it exists, no run
-  against this target is governed evidence.
+  against this target is governed evidence. **`KHEPRI-DEC-029` is the owning decision**, because
+  the check gates certification and that decision holds `environment_digest`; it is listed here
+  because this decision's capability row is unsatisfied without it, not to claim ownership.
 - Empirically verify Spaces against the `khepri.rra.storage` contract and record the result.
 - Re-issue `governance/benchmarks/KHEPRI-BMK-001-sizing.yaml` against the selected target.
 - Unlock `src/khepri/runtime/config.py` from any remaining AWS-shaped pinning.

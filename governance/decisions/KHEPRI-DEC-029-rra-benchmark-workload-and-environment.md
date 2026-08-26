@@ -341,12 +341,19 @@ constants, which requires a superseding decision.
 Fail-closed under Constitution V. Restated from `KHEPRI-DEC-006` with the AWS-shaped items
 re-pointed, one item settled, and one item's broker half removed.
 
-1. **Settled by implementation, recorded rather than re-asked.** Whether the approved 50 MB ceiling
-   means 50,000,000 or 52,428,800 bytes. `src/khepri/rra/persistence.py` enforces
-   `size_bytes > 0 AND size_bytes <= 52428800` as a database CHECK constraint — durable schema, not
-   configuration. The larger reading is already binding on every stored input. The underlying
-   wording in `RRA-002` and `KHEPRI-DEC-003` still says "50 MB" without disambiguation; aligning
-   that text is a specification matter and is not resolved here.
+1. **Still open.** Whether the approved 50 MB ceiling in `RRA-002` and `KHEPRI-DEC-003` means
+   50,000,000 or 52,428,800 bytes. Active `RRA-002` says "Enforce a 50 MB maximum" without
+   disambiguation, and this decision provisionally uses the larger reading because it is the
+   conservative one — a population bounded at 52,428,800 bytes contains every dataset bounded at
+   50,000,000.
+
+   `src/khepri/rra/persistence.py` enforces `size_bytes > 0 AND size_bytes <= 52428800` as a
+   database CHECK constraint, so the larger reading is already binding on every stored input.
+   **That is evidence about the shipped system, not a settlement of the governance question.** This
+   decision carries forward, unchanged, the principle that "a governed workload is defined by the
+   approved artifact and implemented by code, never the reverse", so treating a CHECK constraint as
+   dispositive of an active specification's wording would be that inversion. The item stays open
+   until `RRA-002`'s text is corrected, which is a specification matter and not this decision's.
 2. Web and worker compute sizing on the selected products — `OPS1-09`.
 3. The worker concurrency bound — `OPS1-09`.
 4. The database tier, storage, and PostgreSQL 17 minor version — `OPS1-09` and the environment

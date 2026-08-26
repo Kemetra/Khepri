@@ -80,11 +80,20 @@ The bootstrap may claim this shape and no more:
 | Web | 1 shared vCPU, 1 GiB RAM |
 | Worker | 2 vCPU, 4 GiB RAM |
 | Worker replicas | 1 |
-| PostgreSQL | a Managed PostgreSQL 17 tier supporting PITR and private networking, at the smallest size satisfying both |
+| PostgreSQL | a suitable Managed PostgreSQL 17 tier with PITR and private networking enabled |
 
 The worker starts materially above the web role because report rendering launches pinned Chromium
 alongside the analytical workload, and Chromium is the largest single memory consumer and does not
 shrink with dataset size. The web role performs no rendering and holds no fact package.
+
+The web, worker, and replica rows are the owner ruling's section 10 values verbatim. **The database
+row is deliberately left as the ruling states it** — "a suitable Managed PostgreSQL 17 tier with
+PITR and private networking enabled" — rather than resolved to a named tier here. The owner settled
+the capability, not the SKU, and naming one would be this decision inventing a sizing value the
+ruling withheld. Whichever tier `OPS1-02` provisions must satisfy PITR and private networking, and
+the environment descriptor records the concrete choice; the RTO and RPO objectives
+`KHEPRI-DEC-028` records constrain it, and high-availability topology remains a beta-authorization
+checkpoint rather than a bootstrap requirement.
 
 **These values exist only to bootstrap hosted measurement.** They are neither final capacity values
 nor a beta commitment. `OPS1-09` may move them up or down from evidence, and the final values are
@@ -110,6 +119,14 @@ approved separately as described below.
 Each is a verification or activation task, not a reason to reopen the architecture. In dependency
 order:
 
+0. **Carried forward from `KHEPRI-DEC-027` §3, undischarged.** Confirm that no operational defect
+   identified by the OPS1 analysis would make a provisioned environment unsafe or non-recoverable,
+   and record the confirmation. This decision does **not** assert that gate is met: the analysis in
+   `docs/platform/proposed-governance/ops1-provider-portability-and-target-selection.md` records
+   open items, some of which may since have been fixed in code, and no artifact evidences that
+   review. Retiring `KHEPRI-DEC-027` must not silently discharge one of its stop-gates, so it is
+   restated here as the first thing the bootstrap owes rather than dropped. It gates provisioning
+   under §3, not merely beta authorization;
 1. provision only the provisional non-production environment at the §4 shape;
 2. capture and record the live PostgreSQL minor version, and empirically verify DigitalOcean Spaces
    against the exact Khepri storage, deletion, and multipart contract. Spaces remains a
