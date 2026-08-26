@@ -26,8 +26,11 @@ Docker Compose, uv, Ruff, Khepri governance validation, and CodeScene's server-s
 - Correction architecture: PR #262 merged at `18019b5`.
 - Governed semantics: PR #264 merged at `f86507920155077fd3c87eb8878d29fb1624db69`.
 - Active authorities: `RRA-003`, `RRA-004`, `RRA-008`, and `RRA-009` on `main`.
-- Roadmap: PR #266 merged at `b16744e`; `CAL1` is `READY_FOR_PLAN` and this plan is its ledger.
-- Next task: independent RED calculation proofs.
+- Roadmap: `CAL1` is `IN_IMPLEMENTATION` (roadmap §16). The `CAL1-01` execution ledger exists at
+  `docs/superpowers/plans/2026-08-26-cal1-01-v-mapping-execution-ledger.md`, and `#292`
+  (`1813682`) executed against it.
+- Next task: the browser coverage-manifest submission surface, then `V-mapping`'s final PR — the
+  only one permitted to move `MAPPING_VERSION` to `rra003.mapping.v3`.
 - Required delivery: the ordered slices in "Delivery slices" below, each its own PR against a fresh
   `origin/main`, starting from `b16744e` or later.
 
@@ -355,10 +358,11 @@ active specification governs both and the disagreement is a defect in one of the
   for a family pairing would suppress every independently answerable result until the last family
   merged — a blackout, not a shrinking set.
 
-  **Build that path; do not assume it exists.** No current `PackageRefused` meets the obligation:
-  it is a bare `ValueError` subclass with no code and no audit hook, the four raises in
-  `packages.py` pass plain English strings, `common.js`'s `ApiError` keeps only the HTTP status and
-  discards the body, and `review.js` prints one fixed sentence. That is pre-existing debt against
+  **Build that path; do not assume it exists.** `PackageRefused` is still a bare `ValueError`
+  subclass with no code and no audit hook, and three of the four raises in `packages.py` still pass
+  plain English strings. **The client half is closed as of `#292` (`1813682`)**: `common.js`'s
+  `ApiError` now carries the response body's `detail`, and `review.js`'s `refusal()` renders the
+  stated reason rather than one fixed sentence. The rest is pre-existing debt against
   the same obligation, not a precedent to copy. This slice already carries client work for the
   source-contract surface, so the refusal rendering belongs beside it. Prove all four parts.
 - [ ] Add the mutation evidence that the gate can fail: removing a seam's comparison kills a named
@@ -379,14 +383,20 @@ active specification governs both and the disagreement is a defect in one of the
 - [ ] Validate that binding on use, not only on write: a manifest whose source-contract identity
   differs from the contract the events were admitted under refuses the completeness-dependent
   results rather than being reused.
-- [ ] Build the ingestion path. No coverage-manifest route, schema, or storage exists anywhere in
-  `src/khepri` today, so a plan that only changes calculation, bundle and wording leaves the
-  manifest unreachable: Task 11's staging journey could not submit one, and completeness-dependent
-  comparisons and growth would refuse permanently in production rather than for a stated reason
-  about the data. Include the authorized submission route with `extra="forbid"` validation, the
-  input-digest and source-contract binding, persistence, and an end-to-end test **at the mapping
-  boundary**: a submitted manifest is accepted, bound to the input digest and source contract,
-  persisted, and confirmed by `rra003.mapping.v3`.
+- [ ] Finish the ingestion path. **The API half landed in `#292` (`1813682`)**: the manifest is
+  submitted on `POST /api/v1/beta/profile` as an optional `coverage_manifest`
+  (`coverage_request.CoverageManifestBody`, `extra="forbid"`), bound to the input digest and the
+  source contract, persisted into the digested profile document, and read back at use time through
+  `GET /api/v1/beta/coverage/completeness`. It rides the profile request rather than its own POST
+  because attaching a manifest to an existing profile would rewrite `profile_digest`, which every
+  published package cites.
+  **What remains is the browser surface**: `upload.js:49` serializes `requested_semantics` and
+  `source_contract` only and `upload.html.j2` has no manifest controls, so Task 11's staging
+  journey still cannot submit one, and completeness-dependent comparisons and growth still refuse
+  from a real upload for want of an attestation rather than for a stated reason about the data.
+  The end-to-end test **at the mapping boundary** — a submitted manifest accepted, bound,
+  persisted, and confirmed by `rra003.mapping.v3` — cannot close until that surface exists and the
+  final PR moves the version constant.
 
   **The assertion that a manifest *admits a comparison* cannot be made here, and belongs to
   `V-comparison`.** The gate this slice introduces refuses `mapping.v3` against the still-current

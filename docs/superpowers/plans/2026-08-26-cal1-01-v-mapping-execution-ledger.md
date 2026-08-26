@@ -63,6 +63,13 @@ the green gate the handoff requires.
 
 Read from `739d474`, not assumed. This is what stops `V-mapping` from re-doing landed work.
 
+**This table is a snapshot at `739d474` and is deliberately not rewritten.** `#292` (`1813682`)
+has since executed against it, so several rows describe a state `main` has moved past — the
+coverage row's "no route, no storage, no ingestion" most of all. The line citations
+(`facts.py:351`, `mapping.py:21`) were accurate at `739d474` and have drifted by a few lines
+since. Read the rows as "what this slice was planned against", not as current fact; §7 records
+what actually landed. `MAPPING_VERSION` is the one row still true as written, and by design.
+
 | Artifact | State on `main` | Consequence for `V-mapping` |
 |---|---|---|
 | `src/khepri/rra/versions.py` | The gate exists: `ADMITTED_PACKAGE_PAIRS`, `ADMITTED_FAMILY_PAIRS`, `admits_package`, `admits_family`, and both reason codes | The gate is **not** built in this slice, and this slice **adds no row** (§4.1). It proves the gate now refuses |
@@ -183,9 +190,15 @@ believing these are done:
   so the refusal belongs where those windows are selected rather than duplicated at admission.
   `AdmittedEvent` therefore carries no `day` field: one that always held `None` would read as
   done while lying to its first caller.
-- **The coverage-manifest ingestion path** — route, schema, storage — is still absent. `RRA-003`
-  puts manifest confirmation inside `rra003.mapping.v3`, so it cannot be deferred past this
-  slice.
+- **The coverage-manifest ingestion path** — route, schema, storage — **landed in `#292`
+  (`1813682`)**: `coverage_api.py` serves `GET /api/v1/beta/coverage/completeness`,
+  `coverage_request.CoverageManifestBody` rides the profile request, and `datasets.py` persists
+  the attestation into the digested profile document and reads it back through `stored_manifest`
+  and `session_completeness`. **What remains open is the browser surface**: `upload.js:49`
+  serializes `requested_semantics` and `source_contract` only, and `upload.html.j2` exposes no
+  manifest controls, so a completeness-dependent comparison from a real upload still refuses for
+  want of an attestation. `RRA-003` puts manifest confirmation inside `rra003.mapping.v3`, so that
+  surface cannot be deferred past this slice.
 - **The browser journey and the bilingual wording** for every refusal this slice introduces.
 
 ### The slice is one publication, not one pull request
@@ -335,14 +348,18 @@ and no audit hook". Read at `739d474`, that is no longer true of the seam this s
 
 So the version-gate refusal already has its code and its wording seam. **What is still missing,
 and is therefore `V-mapping`'s to add:** the *bilingual* customer wording under `RRA-009` (the
-current path yields one English sentence), the **audit representation** of the refusal, and a
-client that **preserves and renders** it — `common.js`'s `ApiError` keeps only the HTTP status
-and discards the body (verified at `common.js:2-13`), and `review.js` prints one fixed sentence,
-so the governed reason cannot reach the review page today.
+current path yields one English sentence) and the **audit representation** of the refusal.
 
-That client gap is exactly what M6's criterion (§6.1) fails on if left alone: the journey would
-show a generic sentence rather than a refusal *stating which pairing was refused*. Carrying
-`ApiError`'s body and rendering it is in scope here, not deferred to `CAL1-11`.
+**The client half is done.** `#292` (`1813682`) closed it: `common.js`'s `ApiError` now takes a
+`detail` argument and keeps it (`this.detail = detail || null`), read by `statedReason` from the
+response body and guarded so a non-JSON body leaves it `null` rather than replacing the status
+with a parser error. `review.js`'s `refusal()` renders that stated reason under the page heading,
+falling back to generic wording only when the server stated none.
+
+That client gap was exactly what M6's criterion (§6.1) would have failed on if left alone: the
+journey would have shown a generic sentence rather than a refusal *stating which pairing was
+refused*. Carrying `ApiError`'s body and rendering it was in scope here, not deferred to
+`CAL1-11`, and it landed here.
 
 The remaining debt is **pre-existing, not a blessed precedent** — this slice may not cite it to
 excuse its own codes.
