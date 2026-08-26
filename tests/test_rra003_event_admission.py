@@ -155,8 +155,6 @@ def test_an_unknown_status_refuses_rather_than_excluding_the_row() -> None:
     either. Dropping it would be a guess about what the extract meant, and the
     population that guess feeds would no longer be proven.
     """
-    from khepri.rra.admission import EventsRefused
-
     with pytest.raises(EventsRefused) as refused:
         admit(UNKNOWN_STATUS_CSV, mapped_contract())
 
@@ -258,8 +256,6 @@ def test_a_sale_only_declaration_refuses_a_return_row() -> None:
     carries a return has made a false statement about the file, and admitting
     it would let the declaration override the data it describes.
     """
-    from khepri.rra.admission import EventsRefused
-
     # The contract names `event_kind` as an event key, so it is a column the
     # *declaration* points at rather than one found by spelling. That is the
     # only kind of column this check may consult.
@@ -302,7 +298,7 @@ def test_admission_runs_inside_the_package_builder() -> None:
     )
     mapping = build_mapping(profile, contract=contract)
 
-    with pytest.raises((EventsRefused, FactsRefused)) as refused:
+    with pytest.raises(FactsRefused) as refused:
         build_fact_package(
             AdmittedInput(
                 content=UNKNOWN_STATUS_CSV,
@@ -404,3 +400,155 @@ def test_mixed_currency_still_publishes_the_counts() -> None:
     package = package_from(monetary, mapped_contract())
 
     assert package.value("units") == "6"
+
+
+def test_an_unknown_status_refuses_as_a_governed_refusal_not_a_crash() -> None:
+    """`EventsRefused` must not escape the package builder as itself.
+
+    `EventsRefused` and `FactsRefused` are sibling `ValueError` subclasses, so
+    `except FactsRefused` does not catch the former. `packages.build_session_package`
+    wraps only `FactsRefused` into `PackageRefused`, and `api.build_retail_facts`
+    handles only `PackageRefused` -- so an `EventsRefused` crossing this boundary
+    reaches the client as HTTP 500 rather than the governed 409 refusal.
+
+    That misreports a correctly-detected bad declaration as a server defect and
+    discards the refusal reason `RRA-003` requires be stated. The trigger is
+    ordinary stored data: a declared status column carrying a value the contract
+    does not admit.
+
+    `test_admission_runs_inside_the_package_builder` above cannot catch this --
+    it accepts either exception type, so it passes whether or not the boundary
+    translates. This asserts the governed type specifically.
+    """
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.facts import AdmittedInput, FactsRefused, build_fact_package
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+
+    contract = mapped_contract()
+    profile = build_profile(
+        content=UNKNOWN_STATUS_CSV,
+        media_type="text/csv",
+        source_sha256_hex=hashlib.sha256(UNKNOWN_STATUS_CSV).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+
+    with pytest.raises(FactsRefused) as refused:
+        build_fact_package(
+            AdmittedInput(
+                content=UNKNOWN_STATUS_CSV,
+                media_type="text/csv",
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            )
+        )
+
+    # The reason survives translation; a refusal that loses it states nothing.
+    assert "status" in str(refused.value).lower()
+
+
+def test_a_contract_naming_an_absent_column_refuses_as_a_governed_refusal() -> None:
+    """The same boundary, reached by the other `EventsRefused` path.
+
+    `_column` raises `EventsRefused` when the contract names a column the file
+    does not carry. That is a declaration defect the operator can correct, so it
+    must arrive as a governed refusal too, not as a 500.
+    """
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.facts import AdmittedInput, FactsRefused, build_fact_package
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+
+    contract = mapped_contract(status_column="settlement_state")
+    profile = build_profile(
+        content=UNKNOWN_STATUS_CSV,
+        media_type="text/csv",
+        source_sha256_hex=hashlib.sha256(UNKNOWN_STATUS_CSV).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+
+    with pytest.raises(FactsRefused) as refused:
+        build_fact_package(
+            AdmittedInput(
+                content=UNKNOWN_STATUS_CSV,
+                media_type="text/csv",
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            )
+        )
+
+    assert "settlement_state" in str(refused.value)
+
+
+def test_admission_reads_each_column_once_not_once_per_row() -> None:
+    """Column reads must scale with columns, not with rows times columns.
+
+    `_measure` and `_transaction_id` materialized a whole column per row --
+    `frame.get_column(...).cast(pl.String).to_list()` then indexed one element.
+    The comprehension calls `_measure` for revenue, `_unit_count` -> `_measure`
+    for units, and `_transaction_id` once each, so admission performed roughly
+    `3 * kept` full column materializations: quadratic in row count, on the
+    `POST /api/v1/beta/facts` request thread.
+
+    This asserts the mechanism rather than elapsed time, which would be flaky on
+    a shared runner and would not say what regressed. A per-row implementation
+    exceeds this bound on the first extra row; a hoisted one is unaffected by
+    row count, which is the property under test.
+    """
+    import hashlib
+
+    import polars as pl
+
+    from khepri.rra.admission import admit_events
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+
+    rows = 200
+    header = b"date,invoice,event_kind,status,amount,qty,currency\n"
+    body = b"".join(
+        b"2026-03-%02d,INV-%d,sale,posted,100.00,2,EGP\n" % ((index % 28) + 1, index)
+        for index in range(rows)
+    )
+    content = header + body
+    contract = mapped_contract()
+    profile = build_profile(
+        content=content,
+        media_type="text/csv",
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+
+    calls = 0
+    original = pl.DataFrame.get_column
+
+    def counting_get_column(self: pl.DataFrame, name: str):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return original(self, name)
+
+    pl.DataFrame.get_column = counting_get_column  # type: ignore[method-assign]
+    try:
+        admitted = admit_events(
+            content=content,
+            media_type="text/csv",
+            mapping=mapping,
+            contract=contract,
+        )
+    finally:
+        pl.DataFrame.get_column = original  # type: ignore[method-assign]
+
+    assert len(admitted.events) == rows
+    # Seven columns exist; a handful of reads per column leaves generous room for
+    # implementation detail while still failing hard on anything per-row.
+    assert calls <= 32, (
+        f"admission materialized columns {calls} times for {rows} rows -- "
+        "column reads must be hoisted out of the per-row loop"
+    )

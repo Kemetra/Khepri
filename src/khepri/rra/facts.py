@@ -13,7 +13,7 @@ from khepri.rra.admissibility import (
     ReportRequest,
     assess_admissibility,
 )
-from khepri.rra.admission import AdmittedEvents, admit_events
+from khepri.rra.admission import AdmittedEvents, EventsRefused, admit_events
 from khepri.rra.aggregates import (
     REDACTION_SENTINEL,
     UNLABELLED_BUCKET_LABEL,
@@ -448,13 +448,25 @@ def _admitted_events(admitted: AdmittedInput) -> AdmittedEvents:
     An unknown event kind or status refuses the whole population here rather
     than silently excluding its row; a mixed or missing currency reports what it
     costs, which is the monetary facts alone.
+
+    **`EventsRefused` is translated, not allowed to escape.** It and
+    `FactsRefused` are sibling `ValueError` subclasses, so the `except
+    FactsRefused` in `packages.build_session_package` -- the only place a refusal
+    becomes `PackageRefused`, and so the only path to the governed 409 -- does
+    not catch it. Letting it through returns HTTP 500 for ordinary bad input,
+    which both misreports a correctly-detected declaration defect as a server
+    fault and discards the reason `RRA-003` requires be stated. The `from error`
+    keeps the original for the server-side log.
     """
-    return admit_events(
-        content=admitted.content,
-        media_type=admitted.media_type,
-        mapping=admitted.mapping,
-        contract=admitted.contract,
-    )
+    try:
+        return admit_events(
+            content=admitted.content,
+            media_type=admitted.media_type,
+            mapping=admitted.mapping,
+            contract=admitted.contract,
+        )
+    except EventsRefused as error:
+        raise FactsRefused(str(error)) from error
 
 
 def _build(

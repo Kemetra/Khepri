@@ -167,17 +167,24 @@ def admit_events(
         for index in range(frame.height)
         if statuses[index] not in STATUS_EXCLUDED
     ]
+    # Every column this loop needs, materialized once. Reading them per row made
+    # admission quadratic in row count on the `POST /api/v1/beta/facts` request
+    # thread: three full column materializations for every kept row, each one
+    # discarding all but a single element.
+    revenues = (
+        [None] * frame.height
+        if monetary_refused
+        else _measure_column(frame, mapping, SEMANTIC_REVENUE)
+    )
+    units = _unit_column(frame, mapping)
+    transaction_ids = _transaction_id_column(frame, labels, contract)
     events = [
         AdmittedEvent(
             event_kind=kinds[index],
             status=statuses[index],
-            revenue=(
-                None
-                if monetary_refused
-                else _measure(frame, mapping, SEMANTIC_REVENUE, index)
-            ),
-            units=_unit_count(frame, mapping, index),
-            transaction_id=_transaction_id(frame, labels, contract, index),
+            revenue=revenues[index],
+            units=units[index],
+            transaction_id=transaction_ids[index],
         )
         for index in kept
     ]
@@ -332,17 +339,25 @@ def _column(
     ]
 
 
-def _measure(
+def _measure_column(
     frame: pl.DataFrame,
     mapping: RetailMapping,
     semantic: str,
-    index: int,
-) -> Decimal | None:
-    """One row's value for a mapped measure, or `None` where none is resolved."""
+) -> list[Decimal | None]:
+    """Every row's value for a mapped measure, read in one pass.
+
+    An unresolved semantic, a blank cell, and an unparsable one all yield `None`
+    here rather than a refusal: whether a missing measure refuses the population
+    is `facts.py`'s question, and this module answers only what the extract says.
+    """
     column = mapping.for_semantic(semantic).column
     if column is None:
-        return None
-    raw = frame.get_column(frame.columns[column.position]).cast(pl.String).to_list()[index]
+        return [None] * frame.height
+    return [_one_measure(raw) for raw in _raw_column(frame, column.position)]
+
+
+def _one_measure(raw: object) -> Decimal | None:
+    """One cell as a governed decimal, or `None` where it states no number."""
     if raw is None or not str(raw).strip():
         return None
     try:
@@ -351,24 +366,37 @@ def _measure(
         return None
 
 
-def _unit_count(frame: pl.DataFrame, mapping: RetailMapping, index: int) -> int | None:
-    value = _measure(frame, mapping, SEMANTIC_UNITS, index)
-    return None if value is None else int(value)
+def _unit_column(frame: pl.DataFrame, mapping: RetailMapping) -> list[int | None]:
+    """Every row's unit count, from the same single pass as any other measure."""
+    return [
+        None if value is None else int(value)
+        for value in _measure_column(frame, mapping, SEMANTIC_UNITS)
+    ]
 
 
-def _transaction_id(
+def _transaction_id_column(
     frame: pl.DataFrame,
     labels: dict[str, int],
     contract: SourceContract,
-    index: int,
-) -> str | None:
+) -> list[str | None]:
+    """Every row's declared transaction id, or `None` where none is declared.
+
+    An undeclared or absent column is not a refusal here -- `_column` refuses a
+    contract-named column the file lacks, while identity is optional at this
+    boundary and `facts.py` decides what its absence costs.
+    """
     declared = contract.identity.transaction_id_column
     if declared is None or declared not in labels:
-        return None
-    raw = (
-        frame.get_column(frame.columns[labels[declared]]).cast(pl.String).to_list()[index]
-    )
-    return None if raw is None else str(raw).strip() or None
+        return [None] * frame.height
+    return [
+        None if raw is None else str(raw).strip() or None
+        for raw in _raw_column(frame, labels[declared])
+    ]
+
+
+def _raw_column(frame: pl.DataFrame, position: int) -> list[str | None]:
+    """One column's cells as strings, materialized exactly once."""
+    return frame.get_column(frame.columns[position]).cast(pl.String).to_list()
 
 
 __all__ = [
