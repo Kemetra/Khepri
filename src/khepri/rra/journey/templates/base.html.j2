@@ -18,10 +18,10 @@
   </header>
   <nav class="step-nav" aria-label="{{ copy.journey_progress }}">
     <ol>
-      <li class="{% if step == 'upload' %}current{% endif %}"><a href="/beta/{{ language }}/upload"><span>1</span> {{ copy.step_upload }}</a></li>
-      <li class="{% if step == 'review' %}current{% endif %}"><a href="/beta/{{ language }}/review"><span>2</span> {{ copy.step_review }}</a></li>
-      <li class="{% if step == 'processing' %}current{% endif %}"><a href="/beta/{{ language }}/processing"><span>3</span> {{ copy.step_processing }}</a></li>
-      <li class="{% if step == 'report' %}current{% endif %}"><a href="/beta/{{ language }}/report"><span>4</span> {{ copy.step_report }}</a></li>
+      <li class="{% if step == 'upload' %}current{% endif %}"><a href="/beta/{{ language }}/upload" {% if step == 'upload' %}aria-current="step"{% endif %}><span>1</span> {{ copy.step_upload }}</a></li>
+      <li class="{% if step == 'review' %}current{% endif %}"><a href="/beta/{{ language }}/review" {% if step == 'review' %}aria-current="step"{% endif %}><span>2</span> {{ copy.step_review }}</a></li>
+      <li class="{% if step == 'processing' %}current{% endif %}"><a href="/beta/{{ language }}/processing" {% if step == 'processing' %}aria-current="step"{% endif %}><span>3</span> {{ copy.step_processing }}</a></li>
+      <li class="{% if step == 'report' %}current{% endif %}"><a href="/beta/{{ language }}/report" {% if step == 'report' %}aria-current="step"{% endif %}><span>4</span> {{ copy.step_report }}</a></li>
     </ol>
   </nav>
   <main id="main-content" class="journey-shell" tabindex="-1">

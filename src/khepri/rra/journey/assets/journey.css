@@ -139,6 +139,11 @@ h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--text-display); 
 .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .selected-file { min-block-size: 1.5rem; color: var(--muted); }
 .error-summary { margin-block: 1.5rem; padding: 1rem; border: 1px solid #d9a49f; background: #faece9; color: #6d201b; }
+/* A governed refusal is an outcome, not a problem: `border-inline-start: 4px solid var(--muted)`
+ * plus italic carry that meaning independently of each other, per
+ * `KHEPRI_DESIGN_LANGUAGE.md` §4.6. No fill and no `--danger` family -- refusal and a transport
+ * or system error must not share paint. */
+.refusal-summary { margin-block: 1.5rem; padding-inline-start: 1rem; border-inline-start: 4px solid var(--muted); color: var(--muted); font-style: italic; }
 .progress-track, .indeterminate { overflow: hidden; block-size: 6px; margin-block: 1rem; background: #e3ded1; }
 .progress-track span, .indeterminate span { display: block; block-size: 100%; inline-size: 0; background: var(--accent-dark); }
 .indeterminate span { inline-size: 35%; animation: journey-progress 1.4s ease-in-out infinite alternate; }
