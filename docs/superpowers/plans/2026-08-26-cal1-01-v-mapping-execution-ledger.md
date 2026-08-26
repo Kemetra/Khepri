@@ -66,13 +66,27 @@ Read from `739d474`, not assumed. This is what stops `V-mapping` from re-doing l
 | Artifact | State on `main` | Consequence for `V-mapping` |
 |---|---|---|
 | `src/khepri/rra/versions.py` | The gate exists: `ADMITTED_PACKAGE_PAIRS`, `ADMITTED_FAMILY_PAIRS`, `admits_package`, `admits_family`, and both reason codes | The gate is **not** built in this slice, and this slice **adds no row** (§4.1). It proves the gate now refuses |
-| `facts.py:351` | Calls `admits_package`; refuses at package scope | Seam wired. This slice does not re-wire it |
+| `facts.py:351` | Calls `admits_package`; refuses at package scope | Seam wired. This slice fixes *which* mapping version it reads -- see below |
 | `bundle.py:1564` | Calls `admits_family`; refuses one family, leaving others standing | Seam wired at the correct scope per `RRA-008` |
 | `src/khepri/rra/source_contract.py` | The governed vocabulary and contract model exist | Not consumed anywhere. This slice **wires it into the profile route and `build_mapping`** |
 | `src/khepri/rra/coverage.py` | Manifest model, binding, and `source_contract_digest` validation exist | No route, no storage, no ingestion. This slice **builds the ingestion path** |
 | `mapping.py:21` | `MAPPING_VERSION = "rra003.mapping.v2"` | This slice moves it to `v3` |
 | `facts.py:60-61` | `rra004.package.v2`, `rra004.formula.v1` | **Unchanged by this slice.** They are `V-package` and `V-formula` |
 | `analysis/*.py` | All four families at `rra008.*.v1` | **Unchanged by this slice** |
+
+**One defect fixed in the gate, and it is not a widening.** `facts._build` received a
+`RetailMapping` carrying its own `mapping_version` and then asked the table about the
+`MAPPING_VERSION` module constant. `versions.py` says the gate enforces "that the versions a
+result actually **combines** were authorized to appear together", and the mapping actually
+combined is the object's -- so a package built from a `v2` mapping object was being checked as
+though it were `v3`. `_build` now reads `mapping.mapping_version`; the module import it no longer
+needs is dropped. **No row is added and no pairing is admitted that was not admitted before**, and
+the full suite is unchanged at the 3250-passing baseline, which is the claim the fix makes.
+
+It also creates the seam §4.2 assumes: a test moves one version by restamping the mapping it
+hands the builder, rather than by patching a module global. `test_rra004_version_gate_wiring`'s
+assertions are replaced on that seam, not relaxed -- the refusal proved is the same one, now
+reached the way production reaches it.
 
 **The mission plan's Task 3 bullet "add the fail-closed version compatibility gate, whole, in
 this slice" is satisfied by construction, not skipped.** The gate landed early, in PR #273, at

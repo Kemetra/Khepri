@@ -38,6 +38,7 @@ from typing import Any, Protocol
 from khepri.rra.admissibility import ReportRequest, assess_admissibility
 from khepri.rra.datasets import (
     DatasetProfileRecord,
+    ProfileCorrupted,
     ProfileObjectReader,
     ProfileRepository,
     build_document,
@@ -58,9 +59,34 @@ from khepri.rra.sessions import (
     assert_same_scope,
     require_upload_consent,
 )
-from khepri.rra.source_contract import contract_from_document
+from khepri.rra.source_contract import SourceContract, contract_from_document
 from khepri.rra.storage import StoredEnvelope
 from khepri.rra.versions import REASON_PACKAGE_VERSION_UNADMITTED
+
+
+def _stored_contract(profile_record: DatasetProfileRecord) -> SourceContract:
+    """The declaration a stored profile was admitted under.
+
+    **A profile written before `source_contract` existed is refused, not
+    crashed.** `RRA-003` makes the declaration the basis of admission, so a
+    stored profile carrying none cannot be re-derived: there is no reading to
+    rebuild the mapping from, and guessing one would admit the events under a
+    contract nobody declared.
+
+    `ProfileCorrupted` rather than a bare `KeyError`, following every other
+    stored-artifact check on this path -- `package_source` raises
+    `PackageCorrupted` for a document that states no curve, and `datasets`
+    raises this for a profile that contradicts its own document. `api` already
+    turns it into a 503 on the facts routes. The plan requires historical v2
+    artifacts to remain immutable and never reinterpreted; refusing to
+    reinterpret one is that rule, and a crash is not.
+    """
+    document = profile_record.document.get("source_contract")
+    if not isinstance(document, dict):
+        raise ProfileCorrupted(
+            "Stored dataset profile records no source contract."
+        )
+    return contract_from_document(document)
 
 
 class ProfileNotFound(LookupError):
@@ -354,9 +380,7 @@ class FactPackageService:
         # from the stored document. A freshly declared contract would digest
         # differently and refuse every package, and the digest is exactly the
         # check that would then be reporting its own construction.
-        stored_contract = contract_from_document(
-            profile_record.document["source_contract"]
-        )
+        stored_contract = _stored_contract(profile_record)
         if document_digest(
             build_document(profile, request=request, contract=stored_contract)
         ) != (profile_record.profile_digest):
