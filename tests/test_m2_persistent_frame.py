@@ -46,6 +46,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib.resources import files
 
 import pytest
 from fastapi import FastAPI
@@ -675,17 +676,60 @@ class TestTheBetaJourneyIsUntouched:
 
         assert f'href="{SHELL_PREFIX}' not in html, f"{step}/{language}"
 
-    def test_the_shell_stylesheet_does_not_reach_the_journey(self) -> None:
-        """`shell-components.css` sits in the journey's asset directory and is the shell's.
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    @pytest.mark.parametrize("step", ["upload", "review", "processing", "report", "expired"])
+    def test_no_shell_owned_asset_reaches_the_journey(self, step: str, language: str) -> None:
+        """No `/beta` page may reference anything the shell serves. `RRA-010` Verification.
 
-        It is the one file under `khepri.rra.journey` this slice changes, and it is a journey asset
-        by path only: `shell.html.j2` is the sole template that links it, and the exclusion is about
-        the beta surface rather than about a directory. Asserted so that stays true.
+        `shell.css` and `shell-components.css` sit in the journey's asset directory and are the
+        shell's: `shell.html.j2` is their only linking template, and the exclusion is about the beta
+        surface rather than about a directory.
+
+        **The asset set is read from `shell_api._ASSETS` rather than spelled out here**, because
+        that dict *is* the definition of a shell-owned asset -- the allowlist the shell serves by
+        exact name. An earlier revision named `shell-components.css` alone, so `shell.css` could
+        have been linked from a journey template with this guard still green, and `shell.css` is
+        the more consequential leak of the two: it declares the tokens, so a journey rule could
+        then resolve a shell-declared custom property. `RRA-010` excludes exactly that dependency
+        and required this widening before any slice relied on the boundary.
+
+        Reading the allowlist also makes the invariant outlive this slice. A future shell-owned
+        asset is covered the moment it is served, with no edit here -- which a hardcoded list
+        could not do, and a list that drifts is how the single-filename version came to
+        under-cover.
+
+        **Markup alone is not the boundary.** Two ways a shell asset could load while the HTML
+        named only journey-owned files: the response could be an error page that mentions no asset
+        at all, and the journey's own stylesheet could pull one in transitively. So the page is
+        asserted to have rendered, and the served stylesheet is scanned too -- with `@import`
+        banned outright rather than its targets enumerated, since a name-scan loses to a relative
+        path and `shell.css`'s own suite already holds itself to the same rule.
+
+        A stylesheet injected at runtime by journey JavaScript would need a browser-level
+        assertion, which this in-process frame test is the wrong place for; no journey script
+        constructs a stylesheet link today.
         """
+        from khepri.runtime.shell_api import _ASSETS
         from tests.test_rra_journey_api import client
 
-        for step in ("upload", "review", "processing", "report", "expired"):
-            assert "shell-components.css" not in client().get(f"/beta/en/{step}").text, step
+        assert _ASSETS, "the shell serves no assets; this guard would assert nothing"
+
+        response = client().get(f"/beta/{language}/{step}")
+
+        # An error page names no asset, so the scan below would pass having proved nothing.
+        assert response.status_code == 200, f"/beta/{language}/{step} -> {response.status_code}"
+        html = response.text
+
+        stylesheet = (
+            files("khepri.rra.journey")
+            .joinpath("assets", "journey.css")
+            .read_text(encoding="utf-8")
+        )
+        assert "@import" not in stylesheet, "an @import can pull in an asset the markup never names"
+
+        for asset in _ASSETS:
+            assert asset not in html, f"{asset} reached /beta/{language}/{step}"
+            assert asset not in stylesheet, f"journey.css references {asset}"
 
 
 class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
