@@ -30,6 +30,7 @@ from decimal import Decimal
 
 import pytest
 
+from khepri.rra.admission import EventsRefused
 from khepri.rra.source_contract import (
     BasisDeclaration,
     ContractAttribution,
@@ -74,6 +75,7 @@ def mapped_contract(**overrides: object) -> SourceContract:
         "sale_only": False,
         "posted_only": False,
         "currency_code": None,
+        "event_key_columns": ("invoice",),
     }
     fields.update(overrides)
     return build_source_contract(
@@ -90,7 +92,7 @@ def mapped_contract(**overrides: object) -> SourceContract:
             currency_code=fields["currency_code"],  # type: ignore[arg-type]
         ),
         identity=IdentityDeclaration(
-            event_key_columns=("invoice",),
+            event_key_columns=fields["event_key_columns"],  # type: ignore[arg-type]
             unique_line_grain_attested=False,
             transaction_id_column="invoice",
             transaction_key_components=(),
@@ -107,10 +109,30 @@ def mapped_contract(**overrides: object) -> SourceContract:
 
 
 def admit(content: bytes, contract: SourceContract):
-    """The admitted events these bytes and this declaration produce."""
-    from khepri.rra.admission import admit_events
+    """The admitted events these bytes and this declaration produce.
 
-    return admit_events(content=content, contract=contract)
+    Built through the real `build_profile`/`build_mapping` pair, so the measure
+    columns come from the mapping's recorded evidence rather than from a label
+    this module happened to choose. Renaming a fixture's columns to any other
+    spelling `mapping.py` resolves must leave every assertion here standing.
+    """
+    import hashlib
+
+    from khepri.rra.admission import admit_events
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+
+    profile = build_profile(
+        content=content,
+        media_type="text/csv",
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    return admit_events(
+        content=content,
+        media_type="text/csv",
+        mapping=build_mapping(profile, contract=contract),
+        contract=contract,
+    )
 
 
 def test_explicitly_void_rows_are_excluded_from_every_population() -> None:
@@ -238,10 +260,58 @@ def test_a_sale_only_declaration_refuses_a_return_row() -> None:
     """
     from khepri.rra.admission import EventsRefused
 
+    # The contract names `event_kind` as an event key, so it is a column the
+    # *declaration* points at rather than one found by spelling. That is the
+    # only kind of column this check may consult.
     with pytest.raises(EventsRefused) as refused:
         admit(
             RETURNS_CSV,
-            mapped_contract(event_kind_column=None, sale_only=True),
+            mapped_contract(
+                event_kind_column=None,
+                sale_only=True,
+                event_key_columns=("invoice", "event_kind"),
+            ),
         )
 
     assert "sale" in str(refused.value).lower()
+
+
+def test_admission_runs_inside_the_package_builder() -> None:
+    """The rule this whole module exists for, proved where it must hold.
+
+    Calling `admit_events` directly proves only that admission works. It cannot
+    fail when the builder stops calling it -- and a module with no caller passes
+    every one of its own tests while excluding no row and refusing no
+    population. `test_rra004_version_gate_wiring` makes the same argument about
+    the version gate, and for the same reason this drives `build_fact_package`.
+
+    An unknown status must refuse the package, not be silently dropped.
+    """
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.facts import AdmittedInput, FactsRefused, build_fact_package
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+
+    contract = mapped_contract()
+    profile = build_profile(
+        content=UNKNOWN_STATUS_CSV,
+        media_type="text/csv",
+        source_sha256_hex=hashlib.sha256(UNKNOWN_STATUS_CSV).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+
+    with pytest.raises((EventsRefused, FactsRefused)) as refused:
+        build_fact_package(
+            AdmittedInput(
+                content=UNKNOWN_STATUS_CSV,
+                media_type="text/csv",
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            )
+        )
+
+    assert "status" in str(refused.value).lower()

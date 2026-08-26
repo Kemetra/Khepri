@@ -13,6 +13,7 @@ from khepri.rra.admissibility import (
     ReportRequest,
     assess_admissibility,
 )
+from khepri.rra.admission import AdmittedEvents, admit_events
 from khepri.rra.aggregates import (
     REDACTION_SENTINEL,
     UNLABELLED_BUCKET_LABEL,
@@ -372,6 +373,37 @@ def assert_versions_admitted(
         )
 
 
+def _monetary(
+    admitted_events: AdmittedEvents,
+    values: list[Decimal | None],
+) -> Decimal | None:
+    """A monetary total, or nothing when the currency was not proven.
+
+    `RRA-003`: "Missing, malformed, or mixed currency refuses monetary facts and
+    their derived results but does not suppress independently proven count-only
+    facts." So this withholds the total while the unit and transaction counts
+    beside it stand.
+    """
+    if admitted_events.monetary_refused:
+        return None
+    return _sum_decimal(values)
+
+
+def _admitted_events(admitted: AdmittedInput) -> AdmittedEvents:
+    """`RRA-003` admission, run before any measure is read.
+
+    An unknown event kind or status refuses the whole population here rather
+    than silently excluding its row; a mixed or missing currency reports what it
+    costs, which is the monetary facts alone.
+    """
+    return admit_events(
+        content=admitted.content,
+        media_type=admitted.media_type,
+        mapping=admitted.mapping,
+        contract=admitted.contract,
+    )
+
+
 def _build(
     admitted: AdmittedInput,
     *,
@@ -401,6 +433,7 @@ def _build(
     if not decision.admissible:
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
 
+    admitted_events = _admitted_events(admitted)
     frame = materialize(content, media_type)
     measures = _measures(frame, profile, mapping)
     if measures.monetary_precision > MAX_MONETARY_PRECISION:
@@ -411,7 +444,7 @@ def _build(
     refusals: list[RefusedResult] = []
     caveats: list[str] = []
 
-    revenue_total = _sum_decimal(measures.revenue)
+    revenue_total = _monetary(admitted_events, measures.revenue)
     units_total = _sum_integer(measures.units)
     transactions_total = (
         _distinct(measures.transactions)

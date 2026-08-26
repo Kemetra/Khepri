@@ -39,6 +39,11 @@ from decimal import Decimal, InvalidOperation
 
 import polars as pl
 
+from khepri.rra.mapping import (
+    SEMANTIC_REVENUE,
+    SEMANTIC_UNITS,
+    RetailMapping,
+)
 from khepri.rra.profiling import materialize
 from khepri.rra.source_contract import SourceContract
 
@@ -124,30 +129,49 @@ class AdmittedEvents:
         return len({event.transaction_id for event in self.events if event.transaction_id})
 
 
-def admit_events(*, content: bytes, contract: SourceContract) -> AdmittedEvents:
-    """The events these bytes and this declaration admit, or a refusal."""
-    frame = materialize(content, "text/csv")
+def admit_events(
+    *,
+    content: bytes,
+    media_type: str,
+    mapping: RetailMapping,
+    contract: SourceContract,
+) -> AdmittedEvents:
+    """The events these bytes and this declaration admit, or a refusal.
+
+    **Measures come from the mapping, never from a header.** `RRA-003` holds
+    that headers "never establish event kind, status, currency, gross/net basis,
+    VAT treatment, additivity, allocation, or coverage", so reading a column
+    because it is spelled `amount` would be the inference this module exists to
+    refuse. `RetailMapping` already resolved revenue and units under recorded
+    evidence; this reads the positions it resolved.
+    """
+    frame = materialize(content, media_type)
     labels = {label: index for index, label in enumerate(frame.columns)}
     kinds = _event_kinds(frame, labels, contract)
     statuses = _statuses(frame, labels, contract)
     currency, monetary_refused = _currency(frame, labels, contract)
 
-    events: list[AdmittedEvent] = []
-    excluded = 0
-    for index in range(frame.height):
-        if statuses[index] in STATUS_EXCLUDED:
-            excluded += 1
-            continue
-        events.append(
-            AdmittedEvent(
-                day=None,
-                event_kind=kinds[index],
-                status=statuses[index],
-                revenue=_amount(frame, labels, index) if not monetary_refused else None,
-                units=_units(frame, labels, index),
-                transaction_id=_transaction_id(frame, labels, contract, index),
-            )
+    kept = [
+        index
+        for index in range(frame.height)
+        if statuses[index] not in STATUS_EXCLUDED
+    ]
+    events = [
+        AdmittedEvent(
+            day=None,
+            event_kind=kinds[index],
+            status=statuses[index],
+            revenue=(
+                None
+                if monetary_refused
+                else _measure(frame, mapping, SEMANTIC_REVENUE, index)
+            ),
+            units=_unit_count(frame, mapping, index),
+            transaction_id=_transaction_id(frame, labels, contract, index),
         )
+        for index in kept
+    ]
+    excluded = frame.height - len(kept)
     return AdmittedEvents(
         events=tuple(events),
         currency=currency,
@@ -166,16 +190,17 @@ def _event_kinds(
     if declared is None:
         _assert_sale_only_holds(frame, labels, contract)
         return [EVENT_SALE] * frame.height
-    values = _column(frame, labels, declared)
-    kinds = []
-    for value in values:
-        kind = (value or "").strip().lower()
-        if kind not in {EVENT_SALE, EVENT_RETURN}:
-            raise EventsRefused(
-                f"An event kind of {value!r} is neither a sale nor a return."
-            )
-        kinds.append(kind)
-    return kinds
+    return [_one_kind(value) for value in _column(frame, labels, declared)]
+
+
+def _one_kind(value: str | None) -> str:
+    """A sale or a return, or a refusal naming what the extract said instead."""
+    kind = (value or "").strip().lower()
+    if kind not in {EVENT_SALE, EVENT_RETURN}:
+        raise EventsRefused(
+            f"An event kind of {value!r} is neither a sale nor a return."
+        )
+    return kind
 
 
 def _assert_sale_only_holds(
@@ -191,15 +216,19 @@ def _assert_sale_only_holds(
     established nothing -- admitting it would let the declaration override the
     data it describes, which is the inference this specification refuses.
 
-    Checked against a conventional `event_kind` column when the file carries one
-    and the contract did not map it. That is the case a false claim actually
-    takes: the operator declared `sale_only` over an extract that says otherwise
-    in plain sight. Where the file names no such column there is nothing to
-    contradict, and the claim stands on the contract's own attestation.
+    **Checked against a column the contract itself named**, never one found by
+    spelling. `sale_only` and a mapped `event_kind_column` are mutually
+    exclusive -- `source_contract` refuses a semantic declared twice -- so the
+    column consulted here is the one the *identity* declaration names as an
+    event key, where the operator pointed at something that also records kind.
+    Where the contract names no such column there is nothing to contradict and
+    the claim stands on its own attestation, which is what `RRA-003` admits it
+    on. Guessing at `event_kind`/`event_type` labels would re-introduce the
+    header inference this module refuses.
     """
     if not contract.events.sale_only:
         return
-    for label in ("event_kind", "event_type", "transaction_type"):
+    for label in contract.identity.event_key_columns:
         if label not in labels:
             continue
         kinds = {
@@ -210,7 +239,6 @@ def _assert_sale_only_holds(
                 "The source contract declares sale-only rows, but the extract "
                 f"carries a return in {label!r}."
             )
-        return
 
 
 def _statuses(
@@ -222,16 +250,22 @@ def _statuses(
     declared = contract.events.status_column
     if declared is None:
         return [STATUS_POSTED] * frame.height
-    values = _column(frame, labels, declared)
-    statuses = []
-    for value in values:
-        status = (value or "").strip().lower()
-        if status != STATUS_POSTED and status not in STATUS_EXCLUDED:
-            raise EventsRefused(
-                f"A status of {value!r} neither proves posted nor excludes the row."
-            )
-        statuses.append(status)
-    return statuses
+    return [_one_status(value) for value in _column(frame, labels, declared)]
+
+
+def _one_status(value: str | None) -> str:
+    """Posted, or explicitly excluded, or a refusal.
+
+    The third branch is the point: an unknown status is neither proof nor an
+    exclusion, and dropping its row would be a guess about what the extract
+    meant.
+    """
+    status = (value or "").strip().lower()
+    if status != STATUS_POSTED and status not in STATUS_EXCLUDED:
+        raise EventsRefused(
+            f"A status of {value!r} neither proves posted nor excludes the row."
+        )
+    return status
 
 
 def _currency(
@@ -287,34 +321,28 @@ def _column(
     ]
 
 
-def _amount(
+def _measure(
     frame: pl.DataFrame,
-    labels: dict[str, int],
+    mapping: RetailMapping,
+    semantic: str,
     index: int,
 ) -> Decimal | None:
-    return _decimal_at(frame, labels, "amount", index)
-
-
-def _units(frame: pl.DataFrame, labels: dict[str, int], index: int) -> int | None:
-    value = _decimal_at(frame, labels, "qty", index)
-    return None if value is None else int(value)
-
-
-def _decimal_at(
-    frame: pl.DataFrame,
-    labels: dict[str, int],
-    label: str,
-    index: int,
-) -> Decimal | None:
-    if label not in labels:
+    """One row's value for a mapped measure, or `None` where none is resolved."""
+    column = mapping.for_semantic(semantic).column
+    if column is None:
         return None
-    raw = frame.get_column(frame.columns[labels[label]]).cast(pl.String).to_list()[index]
+    raw = frame.get_column(frame.columns[column.position]).cast(pl.String).to_list()[index]
     if raw is None or not str(raw).strip():
         return None
     try:
         return Decimal(str(raw).strip())
     except InvalidOperation:
         return None
+
+
+def _unit_count(frame: pl.DataFrame, mapping: RetailMapping, index: int) -> int | None:
+    value = _measure(frame, mapping, SEMANTIC_UNITS, index)
+    return None if value is None else int(value)
 
 
 def _transaction_id(
