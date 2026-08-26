@@ -373,6 +373,59 @@ def assert_versions_admitted(
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _Totals:
+    """The package-level sums, each already answering the currency question."""
+
+    revenue: Decimal | None
+    units: int | None
+    transactions: int | None
+    transactions_reason: str
+    cost: Decimal | None
+    discount: Decimal | None
+    returns: Decimal | None
+
+
+def _totals(measures: _Measures, admitted_events: AdmittedEvents) -> _Totals:
+    """Every package total, with the monetary ones gated on one proven currency.
+
+    Grouped so the gate is applied in one place. `RRA-003` refuses monetary
+    facts "and their derived results" when the currency is missing, malformed or
+    mixed, "but does not suppress independently proven count-only facts" -- so
+    the split runs through this function and not through eight call sites that
+    each have to remember which side they are on.
+    """
+    complete = measures.transaction_identifiers_complete
+    return _Totals(
+        revenue=_monetary(admitted_events, measures.revenue),
+        units=_sum_integer(measures.units),
+        transactions=_distinct(measures.transactions) if complete else None,
+        transactions_reason=(
+            REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
+        ),
+        cost=_monetary(admitted_events, measures.cost),
+        discount=_monetary(admitted_events, measures.discount),
+        returns=_monetary(admitted_events, measures.returns),
+    )
+
+
+def _admitted_frame(frame: pl.DataFrame, admitted_events: AdmittedEvents) -> pl.DataFrame:
+    """The frame narrowed to the rows admission kept.
+
+    `RRA-003` excludes explicitly void and cancelled events from *every*
+    population, and a population read off the unfiltered frame is one they were
+    not excluded from -- which would leave the exclusion true of an intermediate
+    object and false of every figure anybody sees.
+
+    Narrowed once here rather than re-filtered per measure, so every published
+    figure is computed over one population and no later reader has to remember
+    the exclusion.
+    """
+    if not admitted_events.excluded_count:
+        return frame
+    return frame[list(admitted_events.kept_positions)]
+
+
 def _monetary(
     admitted_events: AdmittedEvents,
     values: list[Decimal | None],
@@ -434,7 +487,7 @@ def _build(
         raise FactsRefused("Dataset is not admissible for a governed fact package.")
 
     admitted_events = _admitted_events(admitted)
-    frame = materialize(content, media_type)
+    frame = _admitted_frame(materialize(content, media_type), admitted_events)
     measures = _measures(frame, profile, mapping)
     if measures.monetary_precision > MAX_MONETARY_PRECISION:
         raise FactsRefused("Monetary input precision exceeds the governed maximum.")
@@ -444,21 +497,14 @@ def _build(
     refusals: list[RefusedResult] = []
     caveats: list[str] = []
 
-    revenue_total = _monetary(admitted_events, measures.revenue)
-    units_total = _sum_integer(measures.units)
-    transactions_total = (
-        _distinct(measures.transactions)
-        if measures.transaction_identifiers_complete
-        else None
-    )
-    transactions_reason = (
-        REASON_INPUT_UNAVAILABLE
-        if measures.transaction_identifiers_complete
-        else REASON_INCOMPLETE_IDENTIFIERS
-    )
-    cost_total = _sum_decimal(measures.cost)
-    discount_total = _sum_decimal(measures.discount)
-    returns_total = _sum_decimal(measures.returns)
+    totals = _totals(measures, admitted_events)
+    revenue_total = totals.revenue
+    units_total = totals.units
+    transactions_total = totals.transactions
+    transactions_reason = totals.transactions_reason
+    cost_total = totals.cost
+    discount_total = totals.discount
+    returns_total = totals.returns
 
     def add(
         metric: str,
@@ -542,7 +588,11 @@ def _build(
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_ORDER_VALUE,
-        numerator=_sum_decimal(orders.left) if measures.transaction_identifiers_complete else None,
+        numerator=(
+            _monetary(admitted_events, orders.left)
+            if measures.transaction_identifiers_complete
+            else None
+        ),
         denominator=_distinct(orders.right) if measures.transaction_identifiers_complete else None,
         unit_kind=UNIT_MONETARY,
         precision=money,
@@ -552,15 +602,17 @@ def _build(
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_SELLING_PRICE,
-        numerator=_sum_decimal(selling.left),
+        numerator=_monetary(admitted_events, selling.left),
         denominator=_sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),
     )
 
-    margin_revenue = _sum_decimal(margin.left)
-    margin_cost = _sum_decimal(margin.right)
+    # Gated like the totals: `RRA-003` refuses monetary facts "and their derived
+    # results", and gross profit is derived from two of them.
+    margin_revenue = _monetary(admitted_events, margin.left)
+    margin_cost = _monetary(admitted_events, margin.right)
     gross_profit = (
         None if margin_revenue is None or margin_cost is None else margin_revenue - margin_cost
     )

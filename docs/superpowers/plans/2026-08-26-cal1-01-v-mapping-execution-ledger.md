@@ -172,6 +172,22 @@ rather than split into `V-formula`, because `RRA-003` names them as admission an
 `RRA-004` formula *rows* are `V-formula`. Splitting a measure's admission out of `V-mapping`
 would publish `mapping.v3` incomplete.
 
+### Outstanding inside `V-mapping`
+
+Recorded here rather than left as a placeholder in code, so the slice cannot reach its final PR
+believing these are done:
+
+- **The transaction-date requirement has no refusal.** `RRA-003` lists a transaction date first
+  among the fields a normalized event carries, and `admission.py` does not refuse a row lacking
+  one. The date is resolved as a mapped semantic and read by the comparison windows downstream,
+  so the refusal belongs where those windows are selected rather than duplicated at admission.
+  `AdmittedEvent` therefore carries no `day` field: one that always held `None` would read as
+  done while lying to its first caller.
+- **The coverage-manifest ingestion path** — route, schema, storage — is still absent. `RRA-003`
+  puts manifest confirmation inside `rra003.mapping.v3`, so it cannot be deferred past this
+  slice.
+- **The browser journey and the bilingual wording** for every refusal this slice introduces.
+
 ### The slice is one publication, not one pull request
 
 **`V-mapping` lands as a sequence of PRs, of which only the last moves the version.** The

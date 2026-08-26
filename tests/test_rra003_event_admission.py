@@ -315,3 +315,92 @@ def test_admission_runs_inside_the_package_builder() -> None:
         )
 
     assert "status" in str(refused.value).lower()
+
+
+def package_from(content: bytes, contract: SourceContract):
+    """One governed package over these bytes, through the real builder."""
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.facts import AdmittedInput, build_fact_package
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+
+    profile = build_profile(
+        content=content,
+        media_type="text/csv",
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type="text/csv",
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+def test_a_void_row_reaches_no_published_figure() -> None:
+    """"Explicitly void and cancelled events are excluded from every population."
+
+    *Every* population, which is the published package and not only the
+    intermediate admitted set. `admit_events` filtering the row while
+    `_measures` still reads the whole frame would leave the exclusion true of an
+    object nobody publishes and false of every figure anybody sees.
+
+    The void row carries 999.00 and 99 precisely so that a package computed over
+    it is unmistakable.
+    """
+    package = package_from(VOID_AND_POSTED_CSV, mapped_contract())
+
+    assert package.value("revenue") == "150.00"
+    assert package.value("units") == "3"
+
+
+def test_mixed_currency_withholds_every_monetary_fact() -> None:
+    """Monetary facts, plural -- not revenue alone.
+
+    `RRA-003` refuses "monetary facts and their derived results". The package
+    publishes revenue, AOV, ASP, cost, gross profit, margin, discount and
+    returns from monetary inputs; withholding one of them and publishing seven
+    under an unproven currency refuses far less than the rule requires.
+    """
+    monetary = (
+        b"date,invoice,event_kind,status,net_sales,units,cogs,currency\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,60.00,EGP\n"
+        b"2026-03-05,INV-2,sale,posted,200.00,4,120.00,USD\n"
+    )
+
+    package = package_from(monetary, mapped_contract())
+
+    # Every metric the package derives from a monetary input, enumerated rather
+    # than sampled: a gate applied to some of them and not others publishes
+    # figures under a currency the package refused to prove.
+    for metric in (
+        "revenue",
+        "cost",
+        "gross_profit",
+        "gross_margin",
+        "discount",
+        "returns",
+        "average_order_value",
+        "average_selling_price",
+    ):
+        assert package.value(metric) is None, metric
+
+
+def test_mixed_currency_still_publishes_the_counts() -> None:
+    """The other half of the same sentence, on the published package."""
+    monetary = (
+        b"date,invoice,event_kind,status,net_sales,units,cogs,currency\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,60.00,EGP\n"
+        b"2026-03-05,INV-2,sale,posted,200.00,4,120.00,USD\n"
+    )
+
+    package = package_from(monetary, mapped_contract())
+
+    assert package.value("units") == "6"

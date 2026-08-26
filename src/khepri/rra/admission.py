@@ -34,7 +34,6 @@ the specification allows.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import polars as pl
@@ -65,9 +64,17 @@ class EventsRefused(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class AdmittedEvent:
-    """One normalized retail event, as `RRA-003` defines one."""
+    """One normalized retail event, as far as this slice admits one.
 
-    day: date | None
+    **No transaction date yet.** `RRA-003` lists one first among the fields a
+    normalized event carries, and there is no refusal here for a row lacking
+    one -- the date is resolved as a mapped semantic and read by the comparison
+    windows downstream, so admitting it here would duplicate that resolution
+    without any consumer. A field that always held `None` would read as done
+    while lying to the first caller that trusted it, so it is absent instead.
+    Recorded as outstanding in the `CAL1-01` ledger.
+    """
+
     event_kind: str
     status: str
     revenue: Decimal | None
@@ -88,6 +95,10 @@ class AdmittedEvents:
     currency: str | None
     monetary_refused: bool
     excluded_count: int
+    #: Positions of the rows that survived admission, in frame order. Carried so
+    #: a caller reading the frame directly can narrow it to the same rows rather
+    #: than re-deriving the exclusion and risking a different answer.
+    kept_positions: tuple[int, ...]
 
     @property
     def revenue_total(self) -> Decimal | None:
@@ -158,7 +169,6 @@ def admit_events(
     ]
     events = [
         AdmittedEvent(
-            day=None,
             event_kind=kinds[index],
             status=statuses[index],
             revenue=(
@@ -177,6 +187,7 @@ def admit_events(
         currency=currency,
         monetary_refused=monetary_refused,
         excluded_count=excluded,
+        kept_positions=tuple(kept),
     )
 
 
