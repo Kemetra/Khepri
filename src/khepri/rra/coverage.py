@@ -38,6 +38,10 @@ from datetime import date, timedelta
 
 COVERAGE_MANIFEST_VERSION = "rra003.coverage-manifest.v1"
 
+#: A scope-day pair is exactly a scope and a day. Named so the read-back refusal
+#: of a malformed stored pair reads as a width check rather than a bare `2`.
+_SCOPE_DAY_WIDTH = 2
+
 
 class ManifestRefused(ValueError):
     """A manifest that cannot prove anything, refused before it is stored."""
@@ -76,6 +80,101 @@ class CoverageManifest:
         if self.aggregate_scope is not None:
             return frozenset({self.aggregate_scope})
         return frozenset(self.store_roster)
+
+    def as_document(self) -> dict[str, object]:
+        """The canonical shape a stored profile records this attestation in.
+
+        **Every collection is sorted, and that is load-bearing rather than
+        tidy.** Three fields are `frozenset`, whose iteration order is not
+        stable across processes, and this document is nested inside the profile
+        document whose digest addresses it. Emitting a set in iteration order
+        would give one attestation several digests, so `packages` would refuse a
+        fact package it had itself just published, at random.
+
+        `canonical_json` sorts keys and cannot help here: it never reorders the
+        values inside a list.
+        """
+        return {
+            "manifest_version": self.manifest_version,
+            "input_digest": self.input_digest,
+            "source_contract_digest": self.source_contract_digest,
+            "timezone": self.timezone,
+            "covered_start": self.covered_start.isoformat(),
+            "covered_end": self.covered_end.isoformat(),
+            "aggregate_scope": self.aggregate_scope,
+            "store_roster": list(self.store_roster),
+            "covered_pairs": _pairs_as_document(self.covered_pairs),
+            "event_kinds": list(self.event_kinds),
+            "statuses": list(self.statuses),
+            "closures": _pairs_as_document(self.closures),
+            "extraction_gaps": _pairs_as_document(self.extraction_gaps),
+            "partial_terminal_boundary": self.partial_terminal_boundary,
+        }
+
+
+def _pairs_as_document(pairs: frozenset[ScopeDay]) -> list[list[str]]:
+    """Scope-day pairs in one stable order, as JSON-native values."""
+    return [
+        [scope, day.isoformat()]
+        for scope, day in sorted(pairs, key=lambda pair: (pair[0], pair[1]))
+    ]
+
+
+def manifest_from_document(document: dict[str, object]) -> CoverageManifest:
+    """The attestation a stored profile recorded, read back verbatim.
+
+    **Read, not re-admitted**, for the reason `contract_from_document` records
+    about the contract beside it: `packages` re-derives the stored profile
+    document and compares its digest, so this read has to reproduce exactly what
+    was written. Re-validating the attestation here would refuse a stored
+    manifest whose construction rules have since tightened, rather than
+    reporting the digest mismatch the rebuild exists to report.
+
+    The attestation was validated when it was accepted. What is checked at
+    rebuild time is the digest, and what is checked at *use* time is the
+    binding -- `admits_completeness`, which is not this function.
+    """
+    return CoverageManifest(
+        manifest_version=str(document["manifest_version"]),
+        input_digest=str(document["input_digest"]),
+        source_contract_digest=str(document["source_contract_digest"]),
+        timezone=str(document["timezone"]),
+        covered_start=date.fromisoformat(str(document["covered_start"])),
+        covered_end=date.fromisoformat(str(document["covered_end"])),
+        aggregate_scope=_optional_scope(document["aggregate_scope"]),
+        store_roster=tuple(str(store) for store in _sequence(document, "store_roster")),
+        covered_pairs=_pairs_from_document(document, "covered_pairs"),
+        event_kinds=tuple(str(kind) for kind in _sequence(document, "event_kinds")),
+        statuses=tuple(str(status) for status in _sequence(document, "statuses")),
+        closures=_pairs_from_document(document, "closures"),
+        extraction_gaps=_pairs_from_document(document, "extraction_gaps"),
+        partial_terminal_boundary=bool(document["partial_terminal_boundary"]),
+    )
+
+
+def _optional_scope(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _sequence(document: dict[str, object], key: str) -> list[object]:
+    section = document[key]
+    if not isinstance(section, list):
+        raise ManifestRefused(f"A stored coverage manifest has a malformed {key}.")
+    return section
+
+
+def _pairs_from_document(
+    document: dict[str, object],
+    key: str,
+) -> frozenset[ScopeDay]:
+    """Scope-day pairs read back, refusing a shape that is not a pair."""
+    pairs: set[ScopeDay] = set()
+    for entry in _sequence(document, key):
+        if not isinstance(entry, list | tuple) or len(entry) != _SCOPE_DAY_WIDTH:
+            raise ManifestRefused(f"A stored coverage manifest has a malformed {key}.")
+        scope, day = entry
+        pairs.add((str(scope), date.fromisoformat(str(day))))
+    return frozenset(pairs)
 
 
 @dataclass(frozen=True, slots=True)

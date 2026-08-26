@@ -8,6 +8,7 @@ from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from khepri.rra.admissibility import ReportRequest
+from khepri.rra.coverage_api import add_coverage_routes
 from khepri.rra.datasets import (
     DatasetProfileRecord,
     ProfileCorrupted,
@@ -35,6 +36,7 @@ from khepri.rra.packages import (
 )
 from khepri.rra.profile_request import (
     ProfileRequestBody,
+    declared_attestation,
     declared_contract,
     governed_semantics,
 )
@@ -254,12 +256,14 @@ def create_app(
                 raise _session_unavailable()
             requested = governed_semantics(payload)
             contract = declared_contract(payload)
+            attestation = declared_attestation(payload)
             try:
                 record, created = profiling_service.profile_session_upload(
                     session_id=session_id,
                     now=clock(),
                     request=ReportRequest(requested_semantics=frozenset(requested)),
                     contract=contract,
+                    attestation=attestation,
                 )
             except SessionExpired as error:
                 raise _session_unavailable() from error
@@ -403,6 +407,7 @@ def create_app(
     # above, one function deeper -- see `report_api.add_report_routes`.
     add_report_routes(app, services=report_services, clock=clock)
     add_journey_routes(app, services=journey_services, clock=clock)
+    add_coverage_routes(app, profiling_service=profiling_service, clock=clock)
 
     if deletion_service is not None:
 
