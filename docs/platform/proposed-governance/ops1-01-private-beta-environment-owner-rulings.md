@@ -26,7 +26,7 @@ The private-beta environment is to be designed around the following concrete tar
 | Region | FRA1 (Frankfurt) | Carries forward active `KHEPRI-DEC-027`. |
 | Web compute | DigitalOcean App Platform web service | No Droplet in the initial private-beta target. |
 | Worker compute | DigitalOcean App Platform worker | Separate role from web; same pinned Khepri image. |
-| Migration execution | App Platform pre-deploy / one-shot job | Must complete before web and worker start. |
+| Migration execution | App Platform pre-deploy / one-shot job | Alembic migrations follow expand → deploy → contract; pre-deploy expansion remains compatible with running old roles. |
 | Relational store | DigitalOcean Managed PostgreSQL 17 | TLS required; PITR required; exact live minor version must be evidence-bound. |
 | Object storage | DigitalOcean Spaces, private, FRA1 — **conditional pending compatibility proof** | S3-compatible; application-side envelope encryption remains authoritative. |
 | Image registry | DigitalOcean Container Registry | Deploy immutable image digests; never deploy a floating `latest` tag. |
@@ -51,6 +51,15 @@ pinned Khepri image
 
 Web and worker remain independently scalable roles. The worker remains single-job-at-a-time inside one process and scales by replica count rather than by adding an internal broker or concurrent worker pool. The migration role is one-shot and release-gating; it never runs beside a migration of the same release on another path.
 
+Database changes use **expand → deploy → contract**:
+
+1. an App Platform pre-deploy job runs the Alembic **expand** migration before the new roles deploy;
+2. expansion remains compatible with the currently running old web and worker roles;
+3. the new web and worker roles deploy and replace the old roles;
+4. destructive **contract** cleanup runs in a later release only after the old roles are gone.
+
+No pre-deploy migration may drop or rename a still-used object, or add an incompatible constraint, while old roles may still run. If a change cannot be made compatible, the release must explicitly quiesce the affected roles before applying it rather than assuming pre-deploy ordering makes the change safe.
+
 No initial Droplet is selected. This deliberately avoids adding host patching, SSH administration, Docker-daemon administration, and self-managed load balancing to the beta's operational surface.
 
 ## 3. Managed PostgreSQL and minor-version changes
@@ -61,9 +70,9 @@ Self-hosted PostgreSQL on a Droplet is rejected for the initial private beta bec
 
 The selected provider may apply PostgreSQL minor upgrades. The owner accepts that operational fact subject to the following control:
 
-1. the environment descriptor records the exact live PostgreSQL minor version;
-2. that minor version contributes to `environment_digest`;
-3. the runtime/benchmark certification path must compare the live server minor version with the recorded value;
+1. after the managed database is created, the exact live PostgreSQL minor version is captured from that database;
+2. the captured value is recorded before certification and contributes to `environment_digest`;
+3. the runtime/benchmark certification path compares the live server minor version with the recorded value;
 4. a mismatch refuses certification rather than silently accepting the old digest;
 5. a minor-version change requires descriptor/digest re-issuance and the re-evidence required by the governing benchmark decision.
 
@@ -136,13 +145,16 @@ pull request
   -> test / security checks
   -> push immutable image to DOCR
   -> validate infrastructure/app specification
-  -> run gated migration job
-  -> deploy web + worker
+  -> run compatible Alembic expand migration job
+  -> deploy web + worker and retire old roles
   -> readiness check
   -> content-free smoke verification
+  -> in a later release, run eligible contract cleanup
 ```
 
 Automatic deployment merely because `main` changed is not selected. Deployment remains an explicit CI action with the exact image digest recorded and may execute only after the applicable governance and deployment authority are active.
+
+The pre-deploy job is not permission to make destructive schema changes before old roles stop. Expand migrations must remain compatible with those roles. Contract migrations wait for a later release after replacement is complete; when compatibility is impossible, the deployment procedure explicitly quiesces the affected roles before migration.
 
 Long-lived infrastructure is defined with Terraform; App Platform role/process configuration is defined through an App Platform specification. Manual console edits are break-glass, not the desired steady-state source of truth.
 
@@ -166,20 +178,20 @@ These are targets, not claims of achieved capability and not provider guarantees
 
 The seven-day content/backup horizon imposed by existing beta governance remains binding; an RPO target does not widen retention.
 
-## 10. Benchmark starting shape, not final sizing
+## 10. Provisional non-production bootstrap shape, not final sizing
 
 No final web, worker, or database sizing is selected by this planning record. Final sizing belongs to `OPS1-09` and the governed benchmark evidence.
 
-For the first hosted measurement only, use a **benchmark starting shape** that is at least as conservative as the production-like local stack already exercised:
+After the required governance activation permits a non-production environment, bootstrap the first hosted measurement with this **provisional shape**:
 
-| Role | First hosted measurement shape |
+| Role | Provisional measurement shape |
 |---|---|
 | Web | 1 shared vCPU, 1 GiB RAM |
 | Worker | 2 vCPU, 4 GiB RAM |
-| PostgreSQL | a Managed PostgreSQL 17 shape capable of running the governed workload with PITR/private networking enabled; exact tier selected by OPS1-09 setup |
+| PostgreSQL | a suitable Managed PostgreSQL 17 tier with PITR and private networking enabled |
 | Worker replicas | 1 |
 
-The worker starts materially above the web role because report rendering launches pinned Chromium alongside the analytical workload. These values exist only to start measurement; they are neither a capacity claim nor a beta commitment. `OPS1-09` may move them up or down from evidence, and `OPS1-05` must run capacity/soak evidence before external private-beta traffic.
+The worker starts materially above the web role because report rendering launches pinned Chromium alongside the analytical workload. These values exist only to bootstrap hosted measurement; they are neither final capacity values nor a beta commitment. After creation, capture the live PostgreSQL minor version and complete the mandatory Spaces compatibility verification. `OPS1-09` then runs on the hosted target and may move the provisional values up or down from evidence. Its final environment evidence must record the resulting sizes and captured PostgreSQL minor, and certification must refuse whenever the live minor differs from the recorded value. `OPS1-05` must later run capacity/soak evidence before external private-beta traffic.
 
 High availability for PostgreSQL is a **beta-authorization checkpoint**, not assumed by the first staging measurement. The final beta topology must either enable the provider's HA/standby capability or carry recovery evidence proving that a simpler topology still satisfies the approved RTO/RPO and governing durability requirements.
 
@@ -203,7 +215,7 @@ For OPS1 planning, the following choices are no longer open alternatives unless 
 
 - DigitalOcean / FRA1;
 - App Platform for both web and worker;
-- App Platform one-shot/pre-deploy migrations;
+- App Platform one-shot/pre-deploy migrations using expand → deploy → contract compatibility sequencing;
 - Managed PostgreSQL 17 rather than self-hosted PostgreSQL;
 - DOCR for the target deployment;
 - App Platform runtime secrets for the initial beta;
@@ -223,19 +235,17 @@ The following are **not** closed by this section:
 
 ## 13. What remains a stop-gate
 
-These are verification/activation tasks, not reasons to reopen the whole architecture:
+These are verification/activation tasks, not reasons to reopen the whole architecture. Their dependency order is:
 
-1. activate the required DEC-008 supersession/restatement, revising **both** the managed-PostgreSQL minor-upgrade row and the unconditional stable-egress row;
-2. activate the DEC-006 benchmark-environment restatement required by the FRA1 target;
-3. empirically verify DigitalOcean Spaces against the exact Khepri storage/deletion/multipart contract before final product selection;
-4. add the runtime live PostgreSQL minor-version certification check;
-5. add admitted liveness/readiness probes;
-6. implement and verify the governed content-free OpenTelemetry/OTLP emission path;
-7. run `OPS1-09` and reissue sizing against FRA1;
-8. provision non-production only after the governing descriptor is active;
-9. run backup/restore, deletion-after-restore, encryption read-back, worker crash/retry/redrive, and recovery drills;
-10. demonstrate the selected RTO/RPO and capacity requirements;
-11. create alerts, dashboards, runbooks, release/rollback procedures, and the eventual private-beta authorization artifact.
+1. activate the required DEC-008 and DEC-006 restatements and the authority for a provisional non-production bootstrap; the DEC-008 restatement still revises both the managed-PostgreSQL minor-upgrade row and the unconditional stable-egress row;
+2. provision only that provisional non-production environment, using the measurement shape in section 10 rather than claiming final capacity;
+3. capture and record the live PostgreSQL minor version, empirically verify DigitalOcean Spaces against the exact Khepri storage/deletion/multipart contract, and refuse later certification if the live minor differs from the recorded value;
+4. run the `OPS1-09` governed benchmark on the hosted target;
+5. reissue the final sizing and environment evidence against FRA1 from that measurement;
+6. run `OPS1-04` recovery exercises, including backup/restore, deletion-after-restore, encryption read-back, worker crash/retry/redrive, and proof of the selected RTO/RPO;
+7. run `OPS1-05` capacity and soak evidence;
+8. complete `OPS1-06` content-free observability, alerts, dashboards, and runbooks, including the admitted liveness/readiness probes and governed OpenTelemetry/OTLP emission path;
+9. complete release, rollback, database-migration, and incident procedures, then pursue the separate later private-beta authorization artifact.
 
 ## 14. Merge interpretation
 
