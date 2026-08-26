@@ -118,6 +118,62 @@ def test_every_collected_field_is_a_field_the_wire_model_accepts() -> None:
         assert field in accepted, f"the form collects {field}, which the model forbids"
 
 
+#: Accepted by `SourceContractBody` and deliberately not on the form yet. Each is
+#: the column-mapped branch of a rule whose package-level branch the form does
+#: collect, so declining one of those claims currently leads to a refusal the
+#: operator cannot act on. Recorded as a literal so the gap is a stated,
+#: reviewable boundary of this slice rather than an accident: a later slice adding
+#: a control has to shorten this list, and that failure is the reminder.
+UNCOLLECTED_WIRE_FIELDS = frozenset(
+    {
+        "event_kind_column",
+        "status_column",
+        "currency_column",
+        "event_key_columns",
+        "transaction_key_components",
+    }
+)
+
+
+def test_the_uncollected_declarations_are_exactly_the_known_gap() -> None:
+    """The form's boundary, pinned so it cannot widen unnoticed.
+
+    A control added to the page must shrink this set, and a field added to the
+    wire model must be either collected or listed here. Without this, the next
+    accepted-but-uncollectible field arrives silently and an operator meets a
+    governed refusal with no control to resolve it.
+    """
+    accepted = set(SourceContractBody.model_fields)
+    assert accepted - declared_field_names() == UNCOLLECTED_WIRE_FIELDS
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "sale_only",
+        "posted_only",
+        "unique_line_grain_attested",
+        "transaction_id_unique_package_wide",
+    ],
+)
+def test_declining_a_package_level_claim_needs_a_column_the_form_lacks(
+    claim: str,
+) -> None:
+    """Why the gap above matters, stated as behaviour rather than as a field list.
+
+    Each of these four checkboxes reads as a choice, but the form offers no
+    control for the column that `RRA-003` requires instead when the claim is
+    declined. So unticking one is currently a governed refusal with no remedy on
+    the page. The refusal is correct -- the rule is doing its job -- and it is
+    the *collection surface* that is incomplete, which is what this records.
+    """
+    declared = client_profile_payload()["source_contract"]
+    assert isinstance(declared, dict)
+
+    with pytest.raises(ContractRefused):
+        SourceContractBody(**{**declared, claim: False}).to_contract()
+
+
 def test_the_payload_the_client_posts_satisfies_the_real_request_model() -> None:
     """The regression, asserted against the model rather than against a string.
 
@@ -218,20 +274,27 @@ def test_an_empty_form_earns_a_stated_refusal_rather_than_a_422() -> None:
 REQUIRED_TEXT_FIELDS = ("contract_id", "evidence")
 
 
+def untouched_value(name: str, filled: object) -> object:
+    """What one control contributes when the operator never touches it.
+
+    An unticked checkbox is `False`; a blank required identifier is `""`, which
+    reaches the governed refusal; a blank optional column is null, which the
+    server reads as "not declared by column".
+    """
+    if isinstance(filled, bool):
+        return False
+    return "" if name in REQUIRED_TEXT_FIELDS else None
+
+
 def blank_form_payload() -> dict[str, object]:
     """What `declaration()` builds from controls the operator never touched.
 
     Derived from the same source of truth as the filled payload, so the two
     cannot disagree about which fields exist.
     """
-    contract: dict[str, object] = {}
     filled = client_profile_payload()["source_contract"]
     assert isinstance(filled, dict)
-    for name, value in filled.items():
-        if isinstance(value, bool):
-            contract[name] = False
-        else:
-            contract[name] = "" if name in REQUIRED_TEXT_FIELDS else None
+    contract = {name: untouched_value(name, value) for name, value in filled.items()}
     return {"requested_semantics": [], "source_contract": contract}
 
 
@@ -253,7 +316,7 @@ def test_a_blank_required_field_travels_as_empty_text_not_as_null() -> None:
     # Null is a schema violation; the empty string is a declaration that is
     # incomplete, which is a different and reportable thing.
     with pytest.raises(ValidationError):
-        SourceContractBody(**{**{"contract_id": None, "evidence": None}})
+        SourceContractBody(contract_id=None, evidence=None)
     with pytest.raises(ContractRefused):
         SourceContractBody(contract_id="", evidence="").to_contract()
 
@@ -388,6 +451,28 @@ def test_the_collection_surface_labels_every_control_it_adds() -> None:
     assert "onclick" not in template
 
 
+def contract_copy_keys() -> set[str]:
+    """The copy keys the collection surface renders, read from the template."""
+    source = files("khepri.rra.journey").joinpath(
+        "templates", "upload.html.j2"
+    ).read_text(encoding="utf-8")
+    return set(re.findall(r"copy\.(contract_[a-z_]+)", source))
+
+
+def assert_wording_reaches_the_page(language: str, keys: set[str]) -> None:
+    """Every key has wording, and that wording reaches the rendered page.
+
+    Both halves matter: a key missing from a dictionary leaves the control
+    unlabelled, and a key present but never rendered does the same while passing
+    a dictionary-only check.
+    """
+    page = upload_template(language)
+    for key in keys:
+        wording = JOURNEY_COPY[language].get(key)
+        assert wording, f"{language} is missing {key}"
+        assert wording in page, f"{language} page omits {key}"
+
+
 def test_the_declaration_controls_carry_bilingual_labels() -> None:
     """The form's own wording is server-owned copy, like the rest of the page.
 
@@ -395,21 +480,10 @@ def test_the_declaration_controls_carry_bilingual_labels() -> None:
     neither can be hardcoded into the markup. Asserting the key exists in both
     dictionaries is what keeps the Arabic page from rendering English labels.
     """
-    source = files("khepri.rra.journey").joinpath(
-        "templates", "upload.html.j2"
-    ).read_text(encoding="utf-8")
-    keys = set(re.findall(r"copy\.(contract_[a-z_]+)", source))
+    keys = contract_copy_keys()
     assert keys, "the collection surface renders no governed copy"
-    for key in keys:
-        for language in ("en", "ar"):
-            assert JOURNEY_COPY[language].get(key), f"{language} is missing {key}"
-    # And the wording actually reaches the page an operator is served, in the
-    # language they asked for. A key present in the dictionary but never rendered
-    # would leave the control unlabelled while passing the check above.
     for language in ("en", "ar"):
-        page = upload_template(language)
-        for key in keys:
-            assert JOURNEY_COPY[language][key] in page, f"{language} page omits {key}"
+        assert_wording_reaches_the_page(language, keys)
 
 
 def test_the_client_payload_and_the_form_agree_on_every_key() -> None:
