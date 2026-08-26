@@ -26,6 +26,39 @@
   --focus: #1f5fa8;
   --radius: 3px;
   --shadow: none;
+
+  /* Type scale, mirrored from `shell.css:109-129` at identical values.
+   *
+   * **Mirrored, not shared.** `base.html.j2` links this stylesheet alone and `shell.html.j2` links
+   * `shell.css` -- two allowlists, two routes, and the sheets never co-load. A bare
+   * `var(--text-sm)` here would resolve to nothing, and an invalid `font-size` is dropped rather
+   * than ignored, so the element would fall back to the inherited size. Declaring the values here
+   * is what makes them consumable at all.
+   *
+   * This is the same shape the palette already has: `shell.css`'s own note records that sixteen of
+   * its colours "come from `journey.css:15-30` unchanged". `journey.css`'s `:root` is the origin and
+   * `shell.css` is the promoted copy; the type scale now travels the other way at the same values.
+   * One value, two files -- the duplication is the cascade's, not a choice.
+   *
+   * Only the tiers this stylesheet actually consumes are declared -- four type sizes and one
+   * leading. Mirroring all nine `--text-*` would put five unconsumed tokens in a second file, which
+   * is the defect this change exists to remove, and `test_r801`'s orphan check scans below `:root`
+   * so it would not see them. `--text-base`, `--text-md`, `--text-lg`, `--text-xl`, and
+   * `--text-2xl` arrive with their first consumer.
+   *
+   * `--leading-normal` (1.5) is likewise absent: `body` sets `line-height: 1.6` and the two are a
+   * near-miss, not the same decision. Collapsing them would change every paragraph in the journey,
+   * which is a visual change this slice has no mandate for. `shell.css:107` does not name the pair.
+   *
+   * `--text-md` in particular must not be read as available for `h1`'s `1.15rem` margin: `shell.css`
+   * flags that coincidence itself -- in this file `1.15rem` occurs only as a margin and `1.4rem`
+   * only as a padding, so a type token on either would be a category error. */
+  --text-xs: 0.7rem;
+  --text-sm: 0.82rem;
+  --text-display: clamp(1.9rem, 3vw, 2.25rem);
+  --text-lede: clamp(1rem, 2vw, 1.16rem);
+  --leading-tight: 1.15;
+
   font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
 }
 
@@ -57,13 +90,15 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
  * change shape. The shell keeps the name it earns and this takes its own. */
 .journey-document { max-width: 860px; background: var(--surface); border: 0; padding: 0; box-shadow: none; }
 .journey-document--wide { max-width: 100%; }
-h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: clamp(1.9rem, 3vw, 2.25rem); font-weight: 650; line-height: 1.15; letter-spacing: -.018em; }
+h1 { max-width: 24ch; margin: 1.15rem 0 .65rem; font-size: var(--text-display); font-weight: 650; line-height: var(--leading-tight); letter-spacing: -.018em; }
 [dir="rtl"] h1 { letter-spacing: 0; }
-.lede { max-width: 62ch; color: var(--muted); font-size: clamp(1rem, 2vw, 1.16rem); }
+.lede { max-width: 62ch; color: var(--muted); font-size: var(--text-lede); }
 .intake-facts { display: grid; grid-template-columns: 1fr 1fr 1.4fr; margin-block: 1.8rem; padding-block: 1.1rem; border-block: 1px solid var(--line); }
 .intake-facts div { padding-inline-end: 1rem; }
 .intake-facts dt { color: var(--muted); font: .68rem/1.2 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
-.intake-facts dd { margin: .45rem 0 0; font-size: .83rem; }
+/* `.83rem` -> `--text-sm` (0.82rem), one of the four near-duplicates `shell.css:107` names for this
+ * collapse. 0.16px smaller at a 16px root; the four values were never four decisions. */
+.intake-facts dd { margin: .45rem 0 0; font-size: var(--text-sm); }
 .consent-row { display: flex; align-items: flex-start; gap: .75rem; margin-block: 1.75rem; padding: 1.1rem; border: 1px solid var(--line); }
 .consent-row input { inline-size: 22px; block-size: 22px; flex: none; accent-color: var(--accent-dark); }
 .drop-zone { display: grid; justify-items: center; gap: .7rem; min-block-size: 185px; padding: 2rem; border: 1px dashed var(--line); background: #fafbfd; text-align: center; cursor: pointer; }
@@ -99,15 +134,22 @@ th { color: var(--muted); font-size: .78rem; }
 .report-meta dd { margin: .3rem 0 0; font-weight: 600; }
 .report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; max-width: 820px; margin-block: 2rem; border: 1px solid var(--line); }
 .report-card { min-block-size: 64px; padding: 1.1rem 1.8rem; border-block-end: 1px solid var(--line); color: var(--accent); text-decoration: none; }
-.site-footer { padding: 1.5rem clamp(1rem, 5vw, 4rem); color: var(--muted); font-size: .82rem; }
+.site-footer { padding: 1.5rem clamp(1rem, 5vw, 4rem); color: var(--muted); font-size: var(--text-sm); }
 
 @media (max-width: 640px) {
   .site-header { min-height: 60px; }
-  .brand span:last-child { max-width: 18ch; font-size: .86rem; }
+  /* `.86rem` -> `--text-sm`, the fourth of the run at `shell.css:107`. 0.64px smaller, and the
+   * `18ch` cap is unchanged -- a `ch` measure follows the font size, so the wordmark's truncation
+   * point moves with it rather than against it. */
+  .brand span:last-child { max-width: 18ch; font-size: var(--text-sm); }
   .journey-shell { width: min(100% - 1rem, 1050px); margin-block: 1rem 2rem; }
   h1 { font-size: clamp(1.75rem, 8vw, 2.15rem); }
   .step-nav ol { justify-content: space-between; gap: .35rem; }
-  .step-nav a { font-size: .68rem; }
+  /* `.68rem` -> `--text-xs` (0.7rem), the pair `shell.css:107` names. The only *grow* in this
+   * change, and the one that could have overflowed the 390px viewport the browser test asserts
+   * against, so it was measured rather than reasoned: step-label content runs 189.7px (en) and
+   * 159.5px (ar) inside a 353px `ol`, on all four pages. `space-between` absorbs the 4.6px. */
+  .step-nav a { font-size: var(--text-xs); }
   .intake-facts { grid-template-columns: 1fr 1fr; gap: 1rem; }
   .intake-facts div:last-child { grid-column: 1 / -1; }
   .drop-zone { min-block-size: 170px; padding: 1.25rem; }
