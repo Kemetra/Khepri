@@ -187,18 +187,26 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
                           └── Confirm       §6 Confirm mapping (M2)
                                └── Impact Preview   §6 Analysis Impact Preview (M2, CONTRACT-BLOCKED)
                                     └── Analyze     §6 Processing journey (M2, LOCKED — real states only)
-                                         └── What Changed   §4/M4 decision entry (FUTURE SHAPING REQUIRED)
-                                              ├── Explore          §22 Guided Exploration (X1, post-M4)
-                                              ├── Evidence / Why   §10 (LOCKED — contextual only)
-                                              ├── Fix when possible §6 Fix & Continue (M2)
+                                         └── Result: report · evidence · artifacts
+                                              │      §6/§16 journey result — SHIPPED (M2)
+                                              │      §7.4 Analysis detail — CONTRACT-BLOCKED (M3)
+                                              │
+                                              ├── Evidence / Why   §10 (LOCKED — contextual only, M2 SHIPPED)
+                                              ├── Fix when possible §6 Fix & Continue (M2, AUTHORITY-BLOCKED)
                                               ├── Save / Compare   §7.3 Run Again (M3) · G4/C1 Compare (M4)
                                               ├── Export / Share   §7.4 Analysis detail (M3) · §16 Secure
                                               │                     Share (future, AUTHORITY-BLOCKED)
-                                              └── Return next period
-                                                                    §7.3 Run New Period (M3, CONTRACT-BLOCKED)
-                                                        └── Guided questions   §22 Smart Next Questions (X1)
-                                                             └── Ask Khepri later
-                                                                                §22 (G9/AI1, PROPOSED)
+                                              ├── Return next period
+                                              │                     §7.3 Run New Period (M3, CONTRACT-BLOCKED)
+                                              │
+                                              └── What Changed (M4 enrichment of the same result, not a
+                                                   replacement for it) §4/M4 decision entry
+                                                   (FUTURE SHAPING REQUIRED)
+                                                        ├── Explore        §22 Guided Exploration (X1, post-M4)
+                                                        └── Guided questions
+                                                             §22 Smart Next Questions (X1)
+                                                                  └── Ask Khepri later
+                                                                       §22 (G9/AI1, PROPOSED)
 ```
 
 | Phase | Section | Milestone | Status |
@@ -207,8 +215,11 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
 | Start / Resume | §6, §7.3 | M2 / M3 | Draft Safety CONTRACT-BLOCKED; resume needs active `G3` |
 | Upload → Recognize → Pre-check → Confirm | §6 | M2 | LOCKED shape; Remember My Data CONTRACT-BLOCKED |
 | Impact Preview → Analyze | §6 | M2 | Impact Preview CONTRACT-BLOCKED (`T1`); processing states SHIPPED pattern |
-| What Changed → Explore → Evidence | §4, §10, §22 | M4 | FUTURE SHAPING REQUIRED; evidence contextual LOCKED |
-| Fix when possible | §6 | M2 | R8-10, session-scoped; LOCKED direction |
+| Result: report / evidence / artifacts | §6, §7.4, §16 | M2 / M3 | M2 journey result SHIPPED; M3 Analysis detail CONTRACT-BLOCKED |
+| Evidence / Why | §10 | M2 | Contextual only, LOCKED; already reachable from the SHIPPED M2 result |
+| Fix when possible | §6 | M2 | AUTHORITY-BLOCKED — needs an active RRA specification, not `R8-10` |
+| What Changed (M4 enrichment) | §4, §22 | M4 | FUTURE SHAPING REQUIRED — adds to the M2/M3 result, does not gate it |
+| Explore | §22 | post-M4 | `X1`, PROPOSED |
 | Save / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
 | Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
 | Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
@@ -282,19 +293,26 @@ concludes.
 positions, or simulated progress.** This matches the shipped indeterminate-progress treatment: a bar
 that does not know its position does not report one.
 
-### Fix & Continue — M2 minimum
+### Fix & Continue — desired M2 direction, AUTHORITY-BLOCKED
 
-**LOCKED direction, IMPLEMENTATION-BLOCKED beyond the current session.** Where a pre-check or refusal
-cause is customer-correctable within the current session, the journey returns to the relevant
+**LOCKED direction, AUTHORITY-BLOCKED implementation.** Where a pre-check or refusal cause is
+customer-correctable within the current session, the desired journey returns to the relevant
 mapping/attestation step rather than forcing a full restart:
 
 ```text
 Refuse / identify problem → explain → return to the relevant step → correct → resume
 ```
 
-A refusal whose cause the customer cannot correct is not offered a false path back. `R8-10` owns this
-for the current session's mapping/attestation steps; resuming a **saved, closed** session is Draft
-Safety (above) and `W1-04`'s resume operation, gated on active `G3`.
+A refusal whose cause the customer cannot correct is not offered a false path back.
+
+**This is not `R8-10`'s to build, and no current authority grants it.** Active `RRA-010` governs only
+presentation changes to the existing journey and explicitly excludes "a new workflow state, step, or
+journey phase" and any capability the runtime does not already serve. Today the review step *displays*
+the confirmed mapping without letting the customer edit it, and `Restart` deletes the session outright
+rather than preserving progress — so an editable return-and-resume path is a new workflow capability,
+not a presentation fix, and needs an active RRA specification naming it before any implementation task
+exists. Resuming a **saved, closed** session is a separate, already-scoped capability: Draft Safety
+(above) and `W1-04`'s resume operation, gated on active `G3`.
 
 ### Authority gap — organization identity in the journey
 

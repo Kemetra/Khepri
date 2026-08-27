@@ -739,7 +739,7 @@ The merged R8 shell remains the base. The remaining work is:
 |---|---|---|---|
 | R8-08 | Govern and implement content-free product activation telemetry | approved scope | Invite/auth -> org selected -> analysis started -> admission reviewed -> report ready -> evidence opened -> report downloaded |
 | R8-09 | If a real design partner requires browser sign-in, approve and implement one browser-shaped invite-only provider handoff. **This is `R8-03` reopened**, not new work | amending or successor identity authority over `KHEPRI-DEC-025` §2 | No public signup; identity only; organization and authority remain Khepri-owned |
-| R8-10 | Add analysis quality and evidence entry points to the journey and shell, **including Fix & Continue: where a pre-check or refusal cause is customer-correctable within the current session, return to the relevant mapping/attestation step rather than forcing a restart** | T1 minimum | User understands what was computed, caveated, and refused before downloading; a correctable problem can be fixed without losing session progress |
+| R8-10 | Add analysis quality and evidence entry points to the journey and shell | T1 minimum | User understands what was computed, caveated, and refused before downloading |
 | R8-11 | Run design-partner browser and mobile acceptance | CAL1, T1, OPS1 staging | Complete bilingual journey under live authorization |
 
 **`R8-09` inherits `R8-03`'s closure, and the closure was an authority boundary rather than a difficulty.** The archived roadmap records `R8-03` CLOSED at 2026-08-22 with no code written, for three separate reasons: recovery is out of scope while Clerk owns credentials (`KHEPRI-DEC-025` §3, `RCA-002` A-5); the invalid-session surface already shipped inside `R8-02`'s shared `unavailable` surface; and the existing handoff takes a Bearer credential in an `Authorization` header plus a JSON body naming an organization, which an HTML form cannot send and which presumes an organization the user has not yet chosen.
@@ -747,6 +747,8 @@ The merged R8 shell remains the base. The remaining work is:
 So `R8-09` does not begin with engineering. `KHEPRI-DEC-025` §2 authorizes **"One external-authentication route"**, and its prohibitions include **"No public or post-authentication self-service bootstrap"**. A browser-shaped sign-in is a *second* external-authentication route, so it needs the owner to merge amending or successor authority first. Read the `R8-03` disposition in the archive before planning this task.
 
 `R8-09` is conditional only in timing, not in the M2 outcome: an external design partner must have a supported authentication handoff. Manual developer session creation is not an external-user product flow.
+
+**Fix & Continue — AUTHORITY-BLOCKED, not `R8-10`.** Returning to a mapping/attestation step to correct a customer-correctable pre-check or refusal cause, without losing session progress, is desired M2 product direction but is **not** authorized by any current specification and does not belong to `R8-10`. Active `RRA-010` governs presentation-only changes to the existing journey and explicitly excludes "a new workflow state, step, or journey phase" and any new capability the runtime does not already serve; today the review step only *displays* the confirmed mapping (read-only) and `Restart` deletes the session outright, so an editable return-and-resume path is a new workflow capability, not a presentation fix. This needs an active RRA specification naming that capability before any implementation task exists for it.
 
 ---
 
