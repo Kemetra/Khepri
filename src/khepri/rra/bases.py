@@ -268,11 +268,31 @@ class BasisBinding:
     precision: int
 
 
+def _transactions_for(
+    population: str,
+    counted: dict[str, int | None] | None,
+    fallback: int | None,
+) -> int | None:
+    """This population's distinct transaction count, not every sale's.
+
+    Three bases record transactions over three different populations, and one
+    count across all sales overstated the narrower ones. Computed in `facts`
+    beside the measures, for the reason the event counts are: this module is a
+    formatter and knows nothing about revenue or units.
+
+    Falls back to the all-sales count for a caller supplying none, which is
+    what this produced before the distinction existed.
+    """
+    if counted is None or population not in counted:
+        return fallback
+    return counted[population]
+
 def retain_bases(
     *,
     events: tuple[object, ...],
     binding: BasisBinding,
     counts: dict[str, int] | None = None,
+    transaction_counts: dict[str, int | None] | None = None,
 ) -> tuple[RetainedBasis, ...]:
     """The reconciliation bases derivable from one admitted event set.
 
@@ -315,7 +335,11 @@ def retain_bases(
             input_digest=binding.input_digest,
             mapping_version=binding.mapping_version,
             precision=binding.precision,
-            transaction_count=transactions if counts_transactions else None,
+            transaction_count=(
+                _transactions_for(population, transaction_counts, transactions)
+                if counts_transactions
+                else None
+            ),
             currency=binding.currency if monetary else None,
         )
         for name, population, sale_only, counts_transactions, monetary in _RETAINED

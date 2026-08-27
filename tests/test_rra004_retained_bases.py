@@ -314,6 +314,12 @@ def counts_of(package: FactPackage) -> dict[str, int]:
     return {basis.name: basis.event_count for basis in package.retained_bases}
 
 
+def transaction_counts_of(package: FactPackage) -> dict[str, int | None]:
+    return {
+        basis.name: basis.transaction_count for basis in package.retained_bases
+    }
+
+
 def test_a_complete_population_basis_excludes_the_rows_it_does_not_contain() -> None:
     """`RRA-004` requires every derived fact to cite "exactly one **compatible**
     basis", and a basis naming `sales_complete_revenue_units` while counting a
@@ -366,3 +372,31 @@ def test_a_basis_whose_measure_is_absent_counts_nothing() -> None:
 
     assert counts[BASIS_FINANCIAL_REVENUE_COST] == 0
     assert counts[BASIS_FINANCIAL_REVENUE] == 2
+def test_each_basis_counts_the_transactions_of_its_own_population() -> None:
+    """The other half of the same defect: `event_count` was fixed, this was not.
+
+    `retain_bases` computed one distinct-key count across *all* sales and gave
+    it to every basis that records transactions, so
+    `sales_complete_transactions`, `sales_complete_revenue_transactions` and
+    `sales_complete_units_transactions` recorded the same number while naming
+    three different populations.
+
+    A keyed sale carrying revenue but no units is in the first two and not the
+    third, so the third overstated its transaction count -- inside
+    `as_document()`, and therefore inside the package digest and on the audit
+    surface, exactly as the event counts did.
+    """
+    three_sales_one_without_units = (
+        b"date,revenue,units,invoice_no\n"
+        b"2026-01-05,100.00,2,INV-1\n"
+        b"2026-01-06,50.00,1,INV-2\n"
+        b"2026-01-07,25.00,,INV-3\n"
+    )
+    counted = transaction_counts_of(package_from(three_sales_one_without_units))
+
+    # Three keyed sales, and every one of them carries revenue.
+    assert counted[BASIS_SALES_TRANSACTION] == 3
+    assert counted[BASIS_SALES_REVENUE_TRANSACTION] == 3
+    # INV-3 has no units, so it is not in this population and its key is not
+    # one of the transactions this basis is evidence for.
+    assert counted[BASIS_SALES_UNITS_TRANSACTION] == 2

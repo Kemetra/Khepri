@@ -919,6 +919,7 @@ def _build(
                 precision=money,
             ),
             counts=_population_counts(measures),
+            transaction_counts=_population_transaction_counts(measures),
         ),
     )
 
@@ -967,6 +968,33 @@ def _population_counts(measures: _Measures) -> dict[str, int]:
         ),
     }
 
+
+def _population_transaction_counts(measures: _Measures) -> dict[str, int | None]:
+    """How many distinct canonical transactions each population contains.
+
+    The companion to `_population_counts`, and needed separately because a
+    transaction count is a *distinct key* count rather than a row count: two
+    rows of one invoice are two events and one transaction.
+
+    `retain_bases` previously took one count across all sales and gave it to
+    every basis recording transactions, so `sales_complete_transactions`,
+    `sales_complete_revenue_transactions` and
+    `sales_complete_units_transactions` reported the same number while naming
+    three different populations -- a keyed sale with revenue but no units is
+    in the first two and not the third.
+
+    `None` rather than zero where no eligible row carries a key, for the
+    reason `bases._sale_keys` records: zero asserts the population was counted
+    and found empty, which is a different claim from having no key to count.
+    """
+    sale_keys = _sale_only(measures.transactions, measures)
+    revenue_keys = _matched(_sale_only(measures.revenue, measures), sale_keys)
+    units_keys = _matched(_positive_units(measures), sale_keys)
+    return {
+        POPULATION_SALES_COMPLETE_TRANSACTIONS: _distinct(sale_keys),
+        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS: _distinct(revenue_keys.right),
+        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS: _distinct(units_keys.right),
+    }
 
 def _signatures_of(
     admitted: AdmittedInput,
