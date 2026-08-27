@@ -183,10 +183,13 @@ here in the same breath as the phase, not left implicit.
 
 **Primary M2 path — the current, shipped one-time journey shape, no M3 dependency:**
 
+**The shipped journey has four steps: `upload → review → processing → report`** — one combined
+"Review" step covers pre-check and confirmation together, not two separate steps.
+
 ```text
 Try*
-  → Enter organization → Start (new) → Upload → Pre-check → Confirm
-  → Analyze → Result (report · evidence · artifacts)
+  → Enter organization → Start (new) → Upload → Review (pre-check + confirm)
+  → Analyze (processing) → Result (report · evidence · artifacts)
 
 *"Try" is entering an organization the customer already has invited access to
  (Commercial shell, SHIPPED). A pre-authentication sample is a separate,
@@ -196,7 +199,7 @@ Try*
 **M2 direction, not yet in the current journey — does not gate the primary path above:**
 
 ```text
-Confirm → Impact Preview → Analyze        (data CONTRACT-BLOCKED on T1; the journey step itself is
+Review → Impact Preview → Analyze         (data CONTRACT-BLOCKED on T1; the journey step itself is
                                             AUTHORITY-BLOCKED — RRA-010 excludes new journey phases,
                                             and no such step exists in the shipped journey today)
 ```
@@ -205,7 +208,7 @@ Confirm → Impact Preview → Analyze        (data CONTRACT-BLOCKED on T1; the 
 
 ```text
 Enter organization → Start → Resume       (Draft Safety, W1-04 saved-setup resume)
-Upload → Recognize → Pre-check            (Remember My Data, W1-01 profile, for a repeat source)
+Upload → Recognize → Review               (Remember My Data, W1-01 profile, for a repeat source)
 Result → Analysis detail                  (M3's durable home for the same result — §7.4)
 ```
 
@@ -222,10 +225,12 @@ Result ─┬─ Evidence / Why              (§10, contextual, M2 SHIPPED)
         └─ What Changed                (M4 enrichment of the same result, not a
                                          replacement for it — FUTURE SHAPING REQUIRED)
              ├─ Explore                 (X1-02, optional inside M4 or post-M4)
-             └─ Guided questions        (X1-04, post-M4 only — not in the
-                                          roadmap's M4-eligible X1-01..03)
-                  ├─ Save Answer        (X1-05 Saved Answers, post-M4)
-                  └─ Ask Khepri later   (G9/AI1, PROPOSED, later)
+             ├─ Guided questions        (X1-04, post-M4 only — not in the
+             │                           roadmap's M4-eligible X1-01..03)
+             ├─ Save Answer             (X1-05 Saved Answers, depends on W1 + X1-03,
+             │                           NOT on X1-04 — post-M4, independent branch)
+             └─ Ask Khepri later        (G9/AI1, depends on M4/T1/SV1,
+                                         NOT on any X1 task — PROPOSED, independent)
 ```
 
 **All phases, primary path and branches together** — "Milestone" names which milestone owns the
@@ -237,9 +242,9 @@ phase, not a required stop on the way to the next row:
 | Start (new) | §6 | M2 | Current path, no Resume/Recognize dependency |
 | Resume (branch) | §6, §7.3 | M3 | Draft Safety is `W1-04` saved-setup resume; CONTRACT-BLOCKED on active `G3`; optional, does not gate Start |
 | Upload | §6 | M2 | Current one-time path, LOCKED shape |
-| Recognize (branch) | §6 | M3 | Remember My Data is `W1-01`'s profile contract; CONTRACT-BLOCKED on active `G3`; optional, does not gate Pre-check |
-| Pre-check → Confirm | §6 | M2 | LOCKED shape |
-| Impact Preview → Analyze | §6 | M2 | Impact Preview data CONTRACT-BLOCKED (`T1`), journey step AUTHORITY-BLOCKED (`RRA-010` excludes new journey phases); processing states SHIPPED pattern |
+| Recognize (branch) | §6 | M3 | Remember My Data is `W1-01`'s profile contract; CONTRACT-BLOCKED on active `G3`; optional, does not gate Review |
+| Review (pre-check + confirm) | §6 | M2 | One shipped `review` step, LOCKED shape; not two separate steps |
+| Impact Preview → Analyze | §6 | M2 | Impact Preview data CONTRACT-BLOCKED (`T1`), journey step AUTHORITY-BLOCKED (`RRA-010` excludes new journey phases — no such step exists in the shipped journey); processing states SHIPPED pattern |
 | Result: report / evidence / artifacts | §6, §7.4, §16 | M2 / M3 | M2 journey result SHIPPED; M3 Analysis detail CONTRACT-BLOCKED |
 | Evidence / Why | §10 | M2 | Contextual only, LOCKED; already reachable from the SHIPPED M2 result |
 | Fix when possible | §6 | M2 | AUTHORITY-BLOCKED — needs an active RRA specification, not `R8-10` |
@@ -249,8 +254,8 @@ phase, not a required stop on the way to the next row:
 | Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
 | Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
 | Guided questions | §22 | post-M4 | `X1-04` is outside the roadmap's M4-eligible `X1-01`–`X1-03`; PROPOSED |
-| Save Answer | §22 | post-M4 | `X1-05` Saved Answers, PROPOSED — reopenable decision artifact, distinct from Run Again |
-| Ask Khepri | §22 | later | `G9/AI1`, PROPOSED, boundary unchanged |
+| Save Answer | §22 | post-M4 | `X1-05` Saved Answers, PROPOSED — depends on `W1`/`X1-03`, not `X1-04`; independent of Guided questions |
+| Ask Khepri | §22 | later | `G9/AI1`, PROPOSED — depends on `M4`/`T1`/`SV1`, no `X1` dependency; independent of Guided questions |
 
 **Reading this map correctly:** every arrow is a customer-visible transition, not an implementation
 guarantee. A phase marked CONTRACT-BLOCKED or AUTHORITY-BLOCKED is real product direction with no
