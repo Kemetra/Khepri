@@ -277,6 +277,18 @@ def accepted_window(package: FactPackage, mode: str = MODE_PERIOD_OVER_PERIOD):
     return _window_for(package, mode)
 
 
+def window_refusal(package: FactPackage, mode: str = MODE_PERIOD_OVER_PERIOD) -> str:
+    """Why this family accepted no window for `mode`.
+
+    The companion to `accepted_window`, for the same reason that exists: growth
+    consumes this family's *acceptance*, so it must also report this family's
+    *cause* rather than assume the window was simply absent. Four causes reach
+    one `None`, and a customer told the wrong one is sent to a fix that cannot
+    work -- re-exporting history does not make two windows comparable.
+    """
+    return _absent_reason(package, mode)
+
+
 def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
     """Both governed comparisons, or a refusal when neither can be made.
 

@@ -1713,8 +1713,14 @@ def _sampled(points: list[object]) -> list[object]:
     """
     if len(points) <= MAX_CURVE_POINTS:
         return points
-    step = len(points) / MAX_CURVE_POINTS
-    kept = {int(index * step) for index in range(MAX_CURVE_POINTS)}
+    # `MAX_CURVE_POINTS - 1` spaced points plus the last one, so the drawn curve
+    # is `MAX_CURVE_POINTS` and not one more. Spacing the full count and then
+    # adding the final index produced 101 points whenever that index was not
+    # already chosen -- while `curve_points_sampled` tells the customer the curve
+    # is drawn from 100. A disclosure that overstates by one is still a
+    # disclosure that does not match the page.
+    step = len(points) / (MAX_CURVE_POINTS - 1)
+    kept = {int(index * step) for index in range(MAX_CURVE_POINTS - 1)}
     kept.add(len(points) - 1)
     return [point for index, point in enumerate(points) if index in kept]
 

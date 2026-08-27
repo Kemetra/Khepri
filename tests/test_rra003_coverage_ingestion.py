@@ -703,3 +703,34 @@ def test_reposting_unordered_collections_is_the_same_attestation() -> None:
     assert second.status_code == 200
     assert second.json() == first.json()
 
+
+def test_an_attested_profile_builds_a_package_that_carries_its_coverage() -> None:
+    """`packages._readmit` read the stored manifest and then did not pass it on.
+
+    It was read to rebuild the profile *document* for the digest comparison, and
+    the `AdmittedInput` beside it was constructed without the field -- which
+    defaults to `None`. Every package built from a real session therefore carried
+    no coverage signature, `comparison._structurally_compatible` found none and
+    returned `False`, and the comparison and growth families refused every
+    customer report.
+
+    **Both published families would have been inert in production** while the
+    whole suite passed, because the `RRA-008` fixtures attest their own coverage
+    and the production path did not. Found in review, and only visible from a
+    test that drives the service rather than building a package by hand.
+    """
+    test = ready()
+    profiled = test.client.post("/api/v1/beta/profile", json=profile_with(manifest_body()))
+    assert profiled.status_code == 201, profiled.text
+
+    built = test.client.post("/api/v1/beta/facts")
+    assert built.status_code == 201, built.text
+    document = built.json()["document"]
+
+    assert document["coverage_manifest_identity"], (
+        "the package records no manifest identity, so it saw no attestation"
+    )
+    assert document["coverage_signatures"], (
+        "the package retained no coverage signature, so comparison and growth "
+        "refuse every report this session produces"
+    )

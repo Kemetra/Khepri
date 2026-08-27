@@ -427,3 +427,37 @@ def test_an_unsampled_curve_makes_no_such_claim() -> None:
 
     scoped = {(caveat.section, caveat.code) for caveat in bundle.caveats}
     assert (SECTION_CONCENTRATION, CAVEAT_CURVE_SAMPLED) not in scoped
+
+
+def test_a_sampled_curve_draws_exactly_the_cap_it_advertises() -> None:
+    """`curve_points_sampled` tells the customer the curve is drawn from 100.
+
+    `_sampled` spaced `MAX_CURVE_POINTS` indices and then added the final one,
+    producing 101 whenever that index was not already among them -- so the
+    disclosure overstated the page by one. Found in review.
+
+    Asserted as equality, not a bound: a cap the prose names is a number a reader
+    can count, and "at most 100" would pass on a curve that draws 4.
+    """
+    # `_sampled` directly, because it is where the count is decided. Counting
+    # distinct *labels* off the bundle is one deduplication away from being
+    # insensitive: a label is a rank, and the off-by-one kept two indices that
+    # collapsed to the same rank -- so the assertion held while the page drew
+    # 101 points.
+    assert len(bundle_module._sampled(list(range(250)))) == MAX_CURVE_POINTS
+    assert len(bundle_module._sampled(list(range(101)))) == MAX_CURVE_POINTS
+    assert bundle_module._sampled(list(range(40))) == list(range(40))
+
+    bundle = bundle_of(wide_package(distinct=250, published=True))
+    points = {
+        figure.label for figure in bundle.figures
+        if figure.metric == concentration.METRIC_CURVE
+    }
+    assert len(points) == MAX_CURVE_POINTS
+
+    # And the last rank is still drawn: it is the whole ranked set by definition,
+    # and a curve stopping short of it understates concentration at the one rank
+    # a reader can check against 100%.
+    curve = concentration.curve_series(wide_package(distinct=250, published=True))
+    assert curve is not None
+    assert max(points, key=int) == curve.series.buckets[-1].label

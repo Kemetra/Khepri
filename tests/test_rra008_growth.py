@@ -393,3 +393,36 @@ def test_every_refusal_reason_is_a_governed_section_reason() -> None:
         REASON_INPUT_UNAVAILABLE,
     ):
         assert reason in SECTION_REASONS[SECTION_GROWTH]
+
+
+def test_growth_reports_the_cause_comparison_gave_for_the_window() -> None:
+    """Growth consumes comparison's acceptance, so it reports comparison's cause.
+
+    An unattested package has a prior period; what it lacks is proof the two
+    windows are comparable. Reporting `prior_window_absent` told the customer to
+    export more history, which produces the same refusal again -- the same
+    misattribution `comparison._absent_reason` was corrected for, one module
+    over. Found in review.
+    """
+    body = b"".join(
+        f"{(START + timedelta(days=index)).isoformat()},{amount},{units},INV-{index}\n".encode()
+        for index, (amount, units) in enumerate(EXACT)
+    )
+    unattested = package_for(HEADER + body)
+    assert not unattested.coverage_signatures, "the case needs coverage unproven"
+
+    refused = growth.derive(unattested)
+    assert isinstance(refused, RefusedResult)
+    assert refused.reason == comparison.REASON_COVERAGE_INCOMPATIBLE
+
+
+def test_a_dataset_with_no_prior_period_still_says_so() -> None:
+    """The converse, so the coverage reason cannot swallow the absent one."""
+    body = b"".join(
+        f"{(START + timedelta(days=index)).isoformat()},{amount},{units},INV-{index}\n".encode()
+        for index, (amount, units) in enumerate(EXACT[:2])
+    )
+    days = tuple(START + timedelta(days=index) for index in range(2))
+    refused = growth.derive(package_for(HEADER + body, days=days))
+    assert isinstance(refused, RefusedResult)
+    assert refused.reason == REASON_PRIOR_WINDOW_ABSENT

@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from decimal import Context, Decimal, localcontext
 
 from khepri.rra.aggregates import Bucket
-from khepri.rra.analysis.comparison import accepted_window
+from khepri.rra.analysis.comparison import accepted_window, window_refusal
 from khepri.rra.analysis.windows import MODE_PERIOD_OVER_PERIOD
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
@@ -173,9 +173,14 @@ def _derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
         )
     window = accepted_window(package, MODE_PERIOD_OVER_PERIOD)
     if window is None:
+        # The cause comparison gave, not a cause recomputed here. Growth
+        # consumes that family's accepted window, so when it declines one on
+        # coverage grounds this section refuses for coverage too -- reporting
+        # `prior_window_absent` would tell a customer to export more history
+        # when the earlier period is present and the two are not comparable.
         return RefusedResult(
             metric=METRIC_REVENUE_CHANGE,
-            reason=REASON_PRIOR_WINDOW_ABSENT,
+            reason=window_refusal(package, MODE_PERIOD_OVER_PERIOD),
         )
     labels = (window.current.label, window.prior.label)
     periods = _periods(package, labels)
