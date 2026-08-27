@@ -244,22 +244,17 @@ def test_profile_refuses_an_unknown_source_contract_field() -> None:
     assert response.status_code == 422
 
 
-@pytest.mark.xfail(
-    reason=(
-        "`V-mapping` publishes `rra003.mapping.v3` in its FINAL pull request, so"
-        " `MAPPING_VERSION` is still `v2` here. The execution ledger makes that a stop"
-        " condition: 'no PR in this sequence may move MAPPING_VERSION before the slice is"
-        " complete', because publishing a governed version early, twice, or incomplete are"
-        " the three failures the one-version-per-slice rule exists to prevent."
-        " This assertion is committed rather than held back so it cannot be lost, and it is"
-        " `strict` so that the pull request moving the constant FAILS here and must replace"
-        " this marker with a plain passing assertion. Relaxing the assertion itself is"
-        " forbidden; expiring this marker on schedule is the point."
-    ),
-    strict=True,
-)
 def test_profile_accepts_a_complete_contract_and_stamps_mapping_v3() -> None:
-    """The version this whole slice publishes, on the route that admits."""
+    """The version this whole slice publishes, on the route that admits.
+
+    **The planted `strict` xfail is gone, and its removal is this commit's
+    publication step.** An earlier slice committed this assertion ahead of the
+    constant so it could not be lost, marked `strict` so that whichever pull
+    request moved `MAPPING_VERSION` would fail here and be forced to notice.
+    That request is this one: the marker said "expiring this marker on schedule
+    is the point", and the schedule is now. The assertion itself is unchanged --
+    relaxing it was forbidden, and it was not relaxed.
+    """
     test = ready()
 
     response = test.client.post(

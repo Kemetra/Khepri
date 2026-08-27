@@ -222,3 +222,60 @@ def test_a_contract_without_evidence_is_refused() -> None:
     """An attestation nobody signed is not an attestation."""
     with pytest.raises(ContractRefused):
         _contract(evidence="   ")
+
+
+def test_a_blank_mapped_column_name_is_refused() -> None:
+    """A whitespace column name reads as mapped and establishes nothing.
+
+    `_assert_exactly_one` asks whether a column is `not None`, so `" "` satisfies
+    the declare-exactly-once rule while naming no column any reader could
+    resolve. `RRA-003` requires event kind to be "supplied by an explicitly
+    mapped source column", and a blank string is not one -- it is the absence of
+    a declaration wearing a declaration's shape, which is the inference this
+    contract exists to refuse.
+    """
+    with pytest.raises(ContractRefused):
+        _contract(events=_event(event_kind_column=" ", sale_only=False))
+
+
+def test_a_blank_mapped_status_column_is_refused() -> None:
+    """The same hole, proven on a second semantic so a one-field fix cannot pass."""
+    with pytest.raises(ContractRefused):
+        _contract(events=_event(status_column="", posted_only=False))
+
+
+def test_supplying_both_event_identity_proofs_is_refused() -> None:
+    """`RRA-003` offers two ways to prove event identity, "in exactly one of these ways".
+
+    Supplying event keys *and* attesting unique line grain leaves it unrecorded
+    which one admission relied on. That matters because the two fail differently:
+    a repeated event key refuses the affected populations, while a line-grain
+    attestation is falsified by a repeated canonical row signature. A contract
+    admitting both records no answer to "what was relied on here?".
+    """
+    with pytest.raises(ContractRefused):
+        _contract(
+            identity=_identity(
+                event_key_columns=("line_id",),
+                unique_line_grain_attested=True,
+            )
+        )
+
+
+def test_package_wide_uniqueness_without_a_transaction_identifier_is_refused() -> None:
+    """Uniqueness asserted of nothing.
+
+    `transaction_id_unique_package_wide=True` is the claim that lets a bare
+    identifier serve as the canonical transaction key. With no identifier column
+    it asserts the uniqueness of a value that does not exist, and
+    `_assert_transaction_key` returns early on the flag alone -- so the composite
+    requirement never runs and admission is left with no transaction identity at
+    all.
+    """
+    with pytest.raises(ContractRefused):
+        _contract(
+            identity=_identity(
+                transaction_id_column=None,
+                transaction_id_unique_package_wide=True,
+            )
+        )

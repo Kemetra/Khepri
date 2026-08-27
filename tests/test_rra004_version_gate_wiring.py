@@ -33,7 +33,10 @@ from khepri.rra.versions import (
     REASON_FAMILY_VERSION_UNADMITTED,
     REASON_PACKAGE_VERSION_UNADMITTED,
 )
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 
 def test_building_a_package_refuses_an_unadmitted_triple() -> None:
@@ -307,19 +310,42 @@ def _package_from(
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    # The default builds under the published identity, so the tests whose
+    # subject is the *family* seam keep reaching it: after `V-mapping` moved
+    # `MAPPING_VERSION`, a freshly stamped mapping is refused at the package
+    # seam and no family is ever dispatched. An explicit `mapping_version` is
+    # how a caller moves one version ahead of its consumers on purpose.
+    #
+    # Restamping is sound only for a value the package gate refuses. A mapping
+    # restamped to something the gate *admits* would then fail
+    # `facts._assert_derived_from_profile`, which re-derives the mapping and
+    # compares by value -- so the admitted case patches the constant and lets
+    # `build_mapping` stamp it.
+    def _built(mapping: object) -> object:
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
+
     if mapping_version is not None:
-        mapping = replace(mapping, mapping_version=mapping_version)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+        return _built(
+            replace(
+                build_mapping(profile, contract=TEST_CONTRACT),
+                mapping_version=mapping_version,
+            )
+        )
+    # The whole build, inside the block. `facts._assert_derived_from_profile`
+    # re-derives the mapping with `build_mapping` and compares by value, so the
+    # constant must still be the published one when the package is built, not
+    # merely when the mapping was stamped.
+    with published_mapping_identity():
+        return _built(build_mapping(profile, contract=TEST_CONTRACT))
 
 
 def _package_with_a_concentration_curve() -> object:

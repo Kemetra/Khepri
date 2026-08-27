@@ -39,6 +39,7 @@ from khepri.rra.source_contract import (
     SourceContract,
     build_source_contract,
 )
+from tests.rra003_contract_fixtures import published_mapping_identity
 from tests.rra_calculation_oracle import (
     ALLOCATED_DISCOUNT_EXPECTED,
     ALLOCATED_DISCOUNT_ROWS,
@@ -306,10 +307,16 @@ def test_admission_runs_inside_the_package_builder() -> None:
         media_type="text/csv",
         source_sha256_hex=hashlib.sha256(UNKNOWN_STATUS_CSV).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=contract)
+    # Pinned: this module's subject is admission, not the version gate, and
+    # both raise `FactsRefused`. Unpinned, these tests would pass on the
+    # version pairing while claiming to prove a status or currency refusal --
+    # a green that proves neither. See `CAL1 refusal window` note in
+    # `rra003_contract_fixtures`.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
 
-    with pytest.raises(FactsRefused) as refused:
-        build_fact_package(
+        with pytest.raises(FactsRefused) as refused:
+            build_fact_package(
             AdmittedInput(
                 content=UNKNOWN_STATUS_CSV,
                 media_type="text/csv",
@@ -337,17 +344,26 @@ def package_from(content: bytes, contract: SourceContract):
         media_type="text/csv",
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=contract)
-    return build_fact_package(
-        AdmittedInput(
-            content=content,
-            media_type="text/csv",
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
-            contract=contract,
+    # Pinned: this module's subject is admission, not the version gate, and
+    # both raise `FactsRefused`. Unpinned, these tests would pass on the
+    # version pairing while claiming to prove a status or currency refusal --
+    # a green that proves neither. See `CAL1 refusal window` note in
+    # `rra003_contract_fixtures`.
+    # The build is inside the block too: `facts._assert_derived_from_profile`
+    # re-derives the mapping and compares it by value, so a pin that closed
+    # here would fail as "Mapping was not derived from the supplied profile".
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type="text/csv",
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            )
         )
-    )
 
 
 def test_a_void_row_reaches_no_published_figure() -> None:
@@ -443,10 +459,16 @@ def test_an_unknown_status_refuses_as_a_governed_refusal_not_a_crash() -> None:
         media_type="text/csv",
         source_sha256_hex=hashlib.sha256(UNKNOWN_STATUS_CSV).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=contract)
+    # Pinned: this module's subject is admission, not the version gate, and
+    # both raise `FactsRefused`. Unpinned, these tests would pass on the
+    # version pairing while claiming to prove a status or currency refusal --
+    # a green that proves neither. See `CAL1 refusal window` note in
+    # `rra003_contract_fixtures`.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
 
-    with pytest.raises(FactsRefused) as refused:
-        build_fact_package(
+        with pytest.raises(FactsRefused) as refused:
+            build_fact_package(
             AdmittedInput(
                 content=UNKNOWN_STATUS_CSV,
                 media_type="text/csv",
@@ -481,10 +503,16 @@ def test_a_contract_naming_an_absent_column_refuses_as_a_governed_refusal() -> N
         media_type="text/csv",
         source_sha256_hex=hashlib.sha256(UNKNOWN_STATUS_CSV).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=contract)
+    # Pinned: this module's subject is admission, not the version gate, and
+    # both raise `FactsRefused`. Unpinned, these tests would pass on the
+    # version pairing while claiming to prove a status or currency refusal --
+    # a green that proves neither. See `CAL1 refusal window` note in
+    # `rra003_contract_fixtures`.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
 
-    with pytest.raises(FactsRefused) as refused:
-        build_fact_package(
+        with pytest.raises(FactsRefused) as refused:
+            build_fact_package(
             AdmittedInput(
                 content=UNKNOWN_STATUS_CSV,
                 media_type="text/csv",
@@ -534,7 +562,13 @@ def test_admission_reads_each_column_once_not_once_per_row() -> None:
         media_type="text/csv",
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=contract)
+    # Pinned: this module's subject is admission, not the version gate, and
+    # both raise `FactsRefused`. Unpinned, these tests would pass on the
+    # version pairing while claiming to prove a status or currency refusal --
+    # a green that proves neither. See `CAL1 refusal window` note in
+    # `rra003_contract_fixtures`.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
 
     calls = 0
     original = pl.DataFrame.get_column

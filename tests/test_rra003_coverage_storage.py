@@ -13,7 +13,10 @@ uses for `client` from `test_rra_journey_api.py`.
 
 from __future__ import annotations
 
+import pytest
+
 from khepri.rra.coverage import COVERAGE_MANIFEST_VERSION
+from tests.rra003_contract_fixtures import REFUSAL_WINDOW
 from tests.test_rra003_coverage_ingestion import (
     _END,
     _START,
@@ -93,6 +96,7 @@ def test_the_stored_manifest_serializes_in_sorted_order() -> None:
     ]
 
 
+@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_an_attested_profile_still_publishes_a_fact_package() -> None:
     """The stored attestation must survive `packages._readmit`'s rebuild.
 

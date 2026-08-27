@@ -58,7 +58,10 @@ from khepri.rra.source_contract import (
     SourceContract,
     build_source_contract,
 )
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -81,7 +84,14 @@ def admitted(content: bytes) -> AdmittedInput:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    # Built under the published mapping identity: this module's subject is the
+    # fact package's own arithmetic and refusals, never the version gate. After
+    # `V-mapping` moved `MAPPING_VERSION`, a freshly stamped mapping meets an
+    # unlisted triple and every build here would refuse before computing
+    # anything. `RRA-004` keeps historical packages valid under their recorded
+    # versions, so this is the governed reading of the admitted triple.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return AdmittedInput(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -93,7 +103,11 @@ def admitted(content: bytes) -> AdmittedInput:
 
 
 def package(content: bytes) -> FactPackage:
-    return build_fact_package(admitted(content))
+    # The build is inside the block too, because
+    # `facts._assert_derived_from_profile` re-derives the mapping and compares
+    # it by value.
+    with published_mapping_identity():
+        return build_fact_package(admitted(content))
 
 
 def test_core_kpis_are_computed_exactly() -> None:
@@ -382,7 +396,13 @@ def test_package_records_its_provenance() -> None:
 
     assert result.profile_digest == profile.digest
     assert result.source_sha256_hex == hashlib.sha256(GOLDEN).hexdigest()
-    assert result.mapping_version == build_mapping(profile, contract=TEST_CONTRACT).mapping_version
+    # Compared under the same identity the package was built with: `package()`
+    # pins to the published mapping, so re-deriving outside that block would
+    # compare a v2 package against a v3 stamp and fail on the version move
+    # rather than on provenance, which is this test's subject.
+    with published_mapping_identity():
+        expected = build_mapping(profile, contract=TEST_CONTRACT).mapping_version
+    assert result.mapping_version == expected
 
 
 def test_inadmissible_datasets_never_produce_facts() -> None:
@@ -1099,17 +1119,18 @@ def _basis_package(contract: SourceContract) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(BASIS_CSV).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=contract)
-    return build_fact_package(
-        AdmittedInput(
-            content=BASIS_CSV,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
-            contract=contract,
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                content=BASIS_CSV,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            )
         )
-    )
 
 
 def test_an_attested_basis_still_publishes_cost_and_discount() -> None:

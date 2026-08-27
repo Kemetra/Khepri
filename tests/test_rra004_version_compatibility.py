@@ -34,15 +34,45 @@ from khepri.rra.versions import (
 )
 
 
-def test_the_shipped_package_triple_is_admitted() -> None:
-    """The versions this build actually publishes must be a listed pair."""
+def test_the_shipped_package_triple_is_refused_while_the_window_is_open() -> None:
+    """The refusal window, stated as the assertion that measures it.
+
+    This test asserted the opposite until `V-mapping` published
+    `rra003.mapping.v3`, and the inversion is the governed behaviour rather
+    than a regression. `RRA-004` requires a new mapping to create a new
+    recorded identity, and the successor package and formula are not published
+    yet, so the triple this build combines is deliberately unlisted and every
+    package build refuses.
+
+    **`V-concentration` must flip this test back**, and that is what makes the
+    closing criterion self-verifying: the last family commit empties the
+    refusing set, at which point the shipped triple is admitted again and this
+    assertion states the ordinary invariant once more. A branch head that still
+    fails it has not closed the window.
+    """
     from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
     from khepri.rra.mapping import MAPPING_VERSION
 
-    assert admits_package(
+    assert not admits_package(
         mapping_version=MAPPING_VERSION,
         package_version=PACKAGE_VERSION,
         formula_version=FORMULA_VERSION,
+    )
+
+
+def test_the_published_predecessor_triple_stays_admitted() -> None:
+    """The immutable row, which no publication commit may edit.
+
+    `RRA-004` keeps historical packages "immutable under their recorded
+    versions", so this row outlives every successor. Asserted against
+    hardcoded literals rather than against `ADMITTED_PACKAGE_PAIRS`, because a
+    test that reads the table it is checking would pass whatever the table
+    said.
+    """
+    assert admits_package(
+        mapping_version="rra003.mapping.v2",
+        package_version="rra004.package.v2",
+        formula_version="rra004.formula.v1",
     )
 
 

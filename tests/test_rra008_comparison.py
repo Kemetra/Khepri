@@ -9,6 +9,7 @@ failure this family exists to avoid.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -45,7 +46,10 @@ from khepri.rra.mapping import (
     build_mapping,
 )
 from khepri.rra.profiling import build_profile
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 HEADER = b"date,revenue,units,invoice_no,category,branch\n"
 
@@ -62,17 +66,21 @@ def package_for(rows: list[tuple[date | None, str]]) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is
+    # comparison, not the version gate, so its packages must keep combining a
+    # triple `versions.ADMITTED_PACKAGE_PAIRS` admits.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def month_start(offset: int, *, year: int = 2024, month: int = 1) -> date:
@@ -354,11 +362,11 @@ def test_year_over_year_refuses_alone_when_coverage_is_under_a_year() -> None:
 
 
 @pytest.mark.parametrize(
-    "package",
+    "build",
     [
-        pytest.param(monthly(13), id="no-counterpart-period"),
+        pytest.param(lambda: monthly(13), id="no-counterpart-period"),
         pytest.param(
-            package_for(
+            lambda: package_for(
                 [
                     (date(2026, 1, 1), "100.00"),
                     (date(2026, 1, 2), ""),
@@ -370,8 +378,14 @@ def test_year_over_year_refuses_alone_when_coverage_is_under_a_year() -> None:
     ],
 )
 def test_a_mode_that_states_nothing_refuses_every_metric_it_would_have(
-    package: FactPackage,
+    build: Callable[[], FactPackage],
 ) -> None:
+    # Built inside the test rather than in the `pytest.param` call, which
+    # evaluates at import. A package construction that refuses -- as it does
+    # whenever a version this file combines has moved ahead of its consumers --
+    # would otherwise abort collection of the whole module, turning one
+    # attributable failure into a suite that cannot run.
+    package = build()
     # Recording only the absolute delta would leave the percentage
     # indistinguishable from a metric quietly left out, which is the distinction
     # refusals() exists to preserve. A whole-mode failure has no survivor and
