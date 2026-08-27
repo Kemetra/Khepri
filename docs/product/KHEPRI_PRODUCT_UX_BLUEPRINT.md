@@ -425,8 +425,16 @@ objects would create two places a retention state can disagree. **This is also w
 in the owner's customer-journey outline resolves**: export/download actions for a given analysis'
 report, evidence, and Excel artifact live here, as an affordance within Analysis detail — not as a
 sixth primary navigation destination or a second discoverable index (see §8, proposed-reconciled
-pending merge). PDF
-generation is on-demand where practical, not automatic for every analysis (`D1-08`).
+pending merge).
+
+**The governed report bundle's PDF is not on-demand and must not become so.** Active `RRA-006`
+requires web, PDF, and Excel to publish together as one reconciled bundle, and `ReportPublication`
+rejects any set naming fewer than every required surface — `RRA-006`'s own words are "treat partial
+export failure as an incomplete bundle." On-demand generation is desired direction only for a
+possible *future* `D1-08` export/snapshot mechanism distinct from this governed bundle, and any such
+mechanism would need its own reconciliation with `RRA-006` before it could apply to the same
+artifact. Analysis detail exposes the governed bundle's PDF as already generated, not generated on
+request.
 
 **Analysis Passport — LOCKED direction, CONTRACT-BLOCKED.** A compact identity/provenance summary for
 the analysis, drawn from `W1-06`'s immutable provenance record: reporting/data period,
@@ -435,11 +443,13 @@ state, run timestamp, and analysis/methodology version context. **Digests and ma
 stay behind contextual audit detail** (§10), never leading the passport itself.
 
 **Methodology Change Notice — LOCKED direction, CONTRACT-BLOCKED.** When a prior and later analysis
-differ because governed mapping, formula, family, or view versions changed, the customer is told —
+differ because governed mapping or formula/family versions changed, the customer is told —
 conceptually, *"Analysis methodology changed since the previous run."* — with the specific change
 reachable, not buried. **This must not imply numeric comparability where the versions are
 incompatible.** This is `W1-08`'s existing version/availability-diff capability, presented to the
-customer; it is not a second version subsystem.
+customer; it is not a second version subsystem. **A semantic-view version notice is out of `W1-08`'s
+M3 scope** — `SV1` view definitions do not exist until after `C1`, which itself starts only after
+M3/`W1`; extending the same principle to view versions is a later `SV1`/`D1` concern.
 
 ### 7.5 Activity
 
