@@ -177,7 +177,7 @@ It duplicates no detailed prose — each phase links to the section that defines
 names the milestone(s) that own it. Where a phase's capability is not yet authorized, that is stated
 here in the same breath as the phase, not left implicit.
 
-```
+```text
 Try                              §6 Data intake / §21 Try Sample Analysis (AUTHORITY-BLOCKED)
  └── Enter organization          §6 Commercial shell — SHIPPED (M2)
       └── Start / Resume         §6 Draft Safety (M2) · W1-04 resume (M3, CONTRACT-BLOCKED)
@@ -247,7 +247,7 @@ Focused task mode. **Workspace navigation is not added inside it.**
 **LOCKED product direction.** Uploading is not one action; semantic understanding is proven, not
 assumed. The journey progressively establishes:
 
-```
+```text
 Upload → recognize source → understand data (pre-check) → confirm mapping
   → show analysis impact → analyze
 ```
@@ -288,7 +288,7 @@ that does not know its position does not report one.
 cause is customer-correctable within the current session, the journey returns to the relevant
 mapping/attestation step rather than forcing a full restart:
 
-```
+```text
 Refuse / identify problem → explain → return to the relevant step → correct → resume
 ```
 
@@ -920,10 +920,11 @@ blueprint version, and the current report is not redesigned here.
 **Journey organization identity / persistent frame authority gap.** Locked product direction, blocked
 implementation (§6). Needs the authority question resolved before any design commits to it.
 
-**Guided Exploration — `X1-02`/`X1-03`/`X1-04`/`X1-05`.** Explore actions on a KPI or chart, curated
-next-question suggestions, and Saved Answers, all selected from supported governed question
-contracts — never LLM-inferred speculative questions. `X1-01` through `X1-03` may ship inside M4;
-Saved Answers and pinning may follow immediately after. Depends on `SV1`/`D1`.
+**Guided Exploration — `X1-01`/`X1-02`/`X1-03`/`X1-04`/`X1-05`.** The supported question catalog,
+Explore actions on a KPI or chart, curated next-question suggestions, and Saved Answers, all selected
+from supported governed question contracts — never LLM-inferred speculative questions. `X1-01`
+through `X1-03` may ship inside M4; Saved Answers and pinning may follow immediately after. Depends on
+`SV1`/`D1`.
 
 **Ask Khepri — `G9/AI1`, later, boundary unchanged.** Natural-language questions answered only from
 governed facts and semantic views, with evidence for every material claim and explicit refusal for

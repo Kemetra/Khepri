@@ -824,7 +824,7 @@ active `G3` authority exactly as the rest of `W1` is — adding wording does not
 | W1-02 | Add persistence and one-head migrations | W1-01 | no migration branch | Schema |
 | W1-03 | Extend encrypted object namespaces and metadata under G2 | W1-01, G2 | W1-02 tests | Storage lifecycle |
 | W1-04 | Implement authorized create/read/list/delete/resume operations, **including saved-setup resume (Draft Safety) and re-running a dataset/analysis configuration for a new period or unchanged period (Run Again / Run New Period) where the prior configuration remains compatible** | W1-02, R6 | W1-05 skeleton | Service/API |
-| W1-05 | Build the four primary customer surfaces — Overview, Data, Analyses, Team — reconciled with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8/§20. Reports are discovered from Analysis detail, not a separate index; Metrics and Activity are contextual (§7.5, §8), not primary destinations; "Workspace" stays an internal domain term, not a customer-facing surface label | stable W1 API, U1 | W1-04 | Customer Organization UI |
+| W1-05 | Build the new M3 customer surfaces — Overview, Data, Analyses — and integrate them with the existing shipped Team destination into one four-item primary navigation (Overview, Data, Analyses, Team), reconciled with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8/§20. **Team itself is already SHIPPED under active `RCA-002`** (blueprint §6) and is not rebuilt by this task. Reports are discovered from Analysis detail, not a separate index; Metrics and Activity are contextual (§7.5, §8), not primary destinations; "Workspace" stays an internal domain term, not a customer-facing surface label | stable W1 API, U1 | W1-04 | Customer Organization UI (Overview, Data, Analyses) + integrated navigation |
 | W1-06 | Preserve immutable provenance and fact/report bindings, **exposed to the customer as a compact Analysis Passport (period, organization/data reference, scope coverage, run timestamp, methodology/version context) with digests and machine identifiers kept behind contextual audit detail** | W1-03/04 | no | Reproducibility evidence |
 | W1-07 | Implement immediate deletion, retention sweep, backup-aware lifecycle, and deletion evidence | W1-03, G2 | no | Lifecycle enforcement |
 | W1-08 | Add version and availability diff between analyses, **presented to the customer as a Methodology Change Notice when a prior and later analysis differ because governed mapping/formula/family/view versions changed, with the diff detail reachable rather than implying numeric comparability where it does not hold** | W1-04, T1 | W1-05 | What changed in inputs, mappings, metrics, refusals, and versions |
@@ -1336,12 +1336,12 @@ contextually rather than as primary destinations — see W1-05 and blueprint §8
 
 ```text
 Overview
+  └─ contextual recent activity, where the capability exists (W1-09, §7.5)
 Data
 Analyses
+  └─ Analysis detail: report / evidence / PDF / Excel (no separate Reports index)
+       └─ version/availability diff, methodology change notice (W1-08)
 Team
-  ├─ Analysis detail: report / evidence / PDF / Excel (no separate Reports index)
-  ├─ Analysis detail: version/availability diff, methodology change notice (W1-08)
-  └─ Overview: contextual recent activity, where the capability exists (W1-09, §7.5)
 Deletion/retention state
 ```
 

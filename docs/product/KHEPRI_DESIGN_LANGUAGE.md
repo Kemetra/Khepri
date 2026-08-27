@@ -699,7 +699,7 @@ Analyses, Team.** Each still enters navigation only in the slice that implements
 Overview answers **"what happened, and what do I do now?"** — it is *operational orientation*, not
 analytics. M3 is explicitly not the executive dashboard.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  KHEPRI    Acme Trading    {Overview · Data · Analyses · Team}  العربية   │
 ├──────────────────────────────────────────────────────────────────────────┤
