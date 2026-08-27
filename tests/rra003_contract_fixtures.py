@@ -16,6 +16,50 @@ Tests whose subject **is** the contract -- refusals, digest binding, admission -
 build their own declarations inline and must not use this. A shared fixture that
 grew a special case for each of them would stop being unremarkable, and the
 admission tests would start proving properties of this file.
+
+## Publishing a governed version: what this module's helpers are for
+
+`published_mapping_identity()` and the sets beside it exist for one situation --
+a commit that moves a governed version constant while its consumers have not
+moved yet. Four rules, each learned by getting it wrong first.
+
+**1. Pin the whole triple.** The three constants bind three different ways:
+`MAPPING_VERSION` off the mapping *object*, `PACKAGE_VERSION` off its *module* at
+call time, and `FORMULA_VERSION` as a keyword default **bound at import** --
+which is why `build_fact_package.__kwdefaults__` is patched too. A pin covering
+one of the three is not a pin; that mistake cost 683 failures, then 689.
+
+**2. The pin must span `build_mapping` *and* `build_fact_package`.**
+`facts._assert_derived_from_profile` re-derives the mapping and compares it by
+value, so restamping the object afterwards -- or closing the pin before the
+package is built -- fails as "Mapping was not derived from the supplied profile"
+rather than as a version refusal.
+
+**3. Pin to whichever triple admits the family the module is about.** A module
+rendering all four families is served by the predecessor pin. A module whose
+subject *is* one family builds under the triple that admits it. A module whose
+subject is the **gate** must not pin at all -- it asserts the refusal against
+hardcoded triples.
+
+**4. The pin inverts when the last family lands.** During a staged publication
+the predecessor admits the families not yet moved; when the last one lands it
+admits *none* of them and the successor admits all four. At that point the pin
+is correct only for modules about `RRA-004` package arithmetic, and a *rendering*
+fixture still pinned to the predecessor renders nothing its consumers were
+written to check. `rra009_fixtures.rich_package` moved for exactly this reason.
+
+**A refused section still renders.** `RRA-008` refuses the affected analysis and
+not the report, so a refused section's governed prose reaches every customer
+surface. Build expectations with `refusal_prose` and `publishing_sections`, never
+from what publishes -- that assumption was the single root cause behind three
+separate-looking failures.
+
+**Attest coverage where a family needs it.** `rra008.comparison.v2` refuses a
+window no manifest proves and growth consumes comparison's acceptance, so a
+fixture whose subject is either has to call `attesting_manifest`. Absent it, a
+case refuses before reaching the behaviour it was written for -- and a test
+asserting only the exception *type* would pass while proving nothing. Assert the
+reason.
 """
 
 from __future__ import annotations
