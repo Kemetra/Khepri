@@ -1,6 +1,12 @@
 # Khepri Product UX Blueprint
 
 **Baseline:** `df9f1d1` (`origin/main`), 2026-08-26.
+**Reconciled:** `ed57967` (`origin/main`), 2026-08-27 — added §5.1 Integrated Customer Experience Map;
+resolved the `W1-05` navigation conflict (§8, formerly CONFLICT-BLOCKED) after the roadmap amendment;
+added M2 data-intake/processing/Fix & Continue direction (§6) and M3 repeat-use direction (§7.3/§7.4);
+added Mobile/Branded Report/Secure Share/Ready Notification (§16) and guided-exploration/Ask
+Khepri/Try Sample Analysis pointers (§22). Sections not touched by this reconciliation were not
+re-verified against `ed57967` and still read at `df9f1d1`.
 
 ## 1. Purpose and authority
 
@@ -132,6 +138,15 @@ Direction only: an executive overview, period comparison, branches, products and
 concentration, explicit limitations and refusals, contextual evidence, and governed exploration where
 authorized. **No M4 page-level UX is specified here.**
 
+**"What Changed?" as the entry narrative — direction only, `D1` gated.** Where M4 shapes the decision
+workspace, the owner-approved direction leads with the decision story rather than a wall of charts:
+*What Changed? → Executive Summary → major movements → important findings → items needing attention →
+deeper KPIs/charts/breakdowns.* This is `D1-03`'s headline-KPIs-and-change-summary wording, read as an
+information hierarchy rather than a flat module list; it does not add a task and does not pull the
+decision workspace into M3. **This is not a directive to turn M3 Overview into an analytics
+dashboard** — §7.1 excludes KPI cards, charts, and business metrics from Overview by name, and that
+exclusion is unchanged by this direction.
+
 ---
 
 ## 5. Global information architecture
@@ -154,6 +169,59 @@ M3   Organization
 
 ---
 
+## 5.1 Integrated Customer Experience Map
+
+**This is the canonical end-to-end journey.** It exists so a designer, product owner, Claude Code, or
+Codex can see the whole customer path in one place without reconstructing it from every section below.
+It duplicates no detailed prose — each phase links to the section that defines it, and each phase
+names the milestone(s) that own it. Where a phase's capability is not yet authorized, that is stated
+here in the same breath as the phase, not left implicit.
+
+```
+Try                              §6 Data intake / §21 Try Sample Analysis (AUTHORITY-BLOCKED)
+ └── Enter organization          §6 Commercial shell — SHIPPED (M2)
+      └── Start / Resume         §6 Draft Safety (M2) · W1-04 resume (M3, CONTRACT-BLOCKED)
+           └── Upload            §6 Data intake and understanding (M2)
+                └── Recognize    §6 Remember My Data (M2/M3, CONTRACT-BLOCKED)
+                     └── Pre-check          §6 Data Pre-check (M2, LOCKED shape)
+                          └── Confirm       §6 Confirm mapping (M2)
+                               └── Impact Preview   §6 Analysis Impact Preview (M2, CONTRACT-BLOCKED)
+                                    └── Analyze     §6 Processing journey (M2, LOCKED — real states only)
+                                         └── What Changed   §4/M4 decision entry (FUTURE SHAPING REQUIRED)
+                                              ├── Explore          §22 Guided Exploration (X1, post-M4)
+                                              ├── Evidence / Why   §10 (LOCKED — contextual only)
+                                              ├── Fix when possible §6 Fix & Continue (M2)
+                                              ├── Save / Compare   §7.3 Run Again (M3) · G4/C1 Compare (M4)
+                                              ├── Export / Share   §7.4 Analysis detail (M3) · §16 Secure
+                                              │                     Share (future, AUTHORITY-BLOCKED)
+                                              └── Return next period
+                                                                    §7.3 Run New Period (M3, CONTRACT-BLOCKED)
+                                                        └── Guided questions   §22 Smart Next Questions (X1)
+                                                             └── Ask Khepri later
+                                                                                §22 (G9/AI1, PROPOSED)
+```
+
+| Phase | Section | Milestone | Status |
+|---|---|---|---|
+| Try / Enter organization | §6 | M2 | Commercial shell SHIPPED; pre-auth sample AUTHORITY-BLOCKED |
+| Start / Resume | §6, §7.3 | M2 / M3 | Draft Safety CONTRACT-BLOCKED; resume needs active `G3` |
+| Upload → Recognize → Pre-check → Confirm | §6 | M2 | LOCKED shape; Remember My Data CONTRACT-BLOCKED |
+| Impact Preview → Analyze | §6 | M2 | Impact Preview CONTRACT-BLOCKED (`T1`); processing states SHIPPED pattern |
+| What Changed → Explore → Evidence | §4, §10, §22 | M4 | FUTURE SHAPING REQUIRED; evidence contextual LOCKED |
+| Fix when possible | §6 | M2 | R8-10, session-scoped; LOCKED direction |
+| Save / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
+| Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
+| Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
+| Guided questions | §22 | post-M4 | `X1`, PROPOSED |
+| Ask Khepri | §22 | later | `G9/AI1`, PROPOSED, boundary unchanged |
+
+**Reading this map correctly:** every arrow is a customer-visible transition, not an implementation
+guarantee. A phase marked CONTRACT-BLOCKED or AUTHORITY-BLOCKED is real product direction with no
+current authority to build it — see §18/§21 for the exact dependency. This map does not itself unblock
+anything; it exists so those dependencies are visible in one place.
+
+---
+
 ## 6. M2 experience
 
 ### Commercial shell — SHIPPED
@@ -173,6 +241,60 @@ render the surface and neither offers the control.
 ### Journey — SHIPPED
 
 Focused task mode. **Workspace navigation is not added inside it.**
+
+### Data intake and understanding — progressive, not one opaque step
+
+**LOCKED product direction.** Uploading is not one action; semantic understanding is proven, not
+assumed. The journey progressively establishes:
+
+```
+Upload → recognize source → understand data (pre-check) → confirm mapping
+  → show analysis impact → analyze
+```
+
+The interface must not imply the system understood the data's meaning before governed admission
+(`RRA-003`) proves it. Each stage names what Khepri has confirmed so far, not what it eventually
+concludes.
+
+- **Recognize source / Remember My Data — PROVISIONAL, product direction.** For a repeat submission
+  from a source the organization has used before, Khepri should be able to offer an approved
+  source/mapping profile for review rather than a blank mapping step: first run is *Upload → Map →
+  Confirm → Analyze*; a later run from the same source is *Upload → "We recognized this format" →
+  Review → Analyze*. **A materially changed source must not silently reuse a prior mapping** — that
+  would skip semantic admission rather than confirm it (Article V, fail-closed). Depends on `W1-01`'s
+  reusable source/mapping profile contract, itself gated on active `G3`.
+- **Data Pre-check — LOCKED shape, CONTRACT-BLOCKED content.** Before analysis, the customer sees what
+  Khepri understood, what is missing, what coverage is known, what needs the customer's confirmation,
+  and which analyses look supportable. It does not compute or promise an unsupported business result.
+- **Analysis Impact Preview — CONTRACT-BLOCKED.** Before the analysis step runs, show capability
+  availability drawn from the `T1` availability vocabulary — for example *Revenue: Available*,
+  *Margin: Unavailable — cost basis not established*, *Basket: Partial*. **This is availability, not a
+  confidence score; it must not invent certainty.** Owned by `T1-04`, gated on active `T1` authority.
+- **Draft Safety — LOCKED direction, CONTRACT-BLOCKED persistence.** Work in progress during mapping,
+  coverage, or setup should be savable and resumable rather than lost on interruption — *Save setup /
+  Resume later*. Exact persistence and retention semantics belong to `G2`/`G3`/`W1`, not to this
+  document.
+
+### Processing journey — real states only
+
+**LOCKED.** The customer sees only real runtime states — for example *Validating*, *Mapping*,
+*Analyzing*, *Reconciling*, *Building results*. **No fake percentages, fake ETAs, fake queue
+positions, or simulated progress.** This matches the shipped indeterminate-progress treatment: a bar
+that does not know its position does not report one.
+
+### Fix & Continue — M2 minimum
+
+**LOCKED direction, IMPLEMENTATION-BLOCKED beyond the current session.** Where a pre-check or refusal
+cause is customer-correctable within the current session, the journey returns to the relevant
+mapping/attestation step rather than forcing a full restart:
+
+```
+Refuse / identify problem → explain → return to the relevant step → correct → resume
+```
+
+A refusal whose cause the customer cannot correct is not offered a false path back. `R8-10` owns this
+for the current session's mapping/attestation steps; resuming a **saved, closed** session is Draft
+Safety (above) and `W1-04`'s resume operation, gated on active `G3`.
 
 ### Authority gap — organization identity in the journey
 
@@ -230,11 +352,35 @@ Per state: a completed analysis opens; a processing analysis **shows its state w
 durable progress page** unless a future contract provides one; a deleted analysis is a minimal
 tombstone with no content action, where the retention decision permits a record to remain at all.
 
+**Run Again / Run New Period — LOCKED direction, CONTRACT-BLOCKED.** Repeat use is a first-class
+journey: where authorized, an analysis or its history entry offers running the same configuration
+again or against a new period. **The prior configuration is reused only where it remains
+compatible**, and the customer can see what will be reused before confirming — this is not a silent
+re-run. Owned by `W1-04`; whether reuse is safe for a given configuration is the same fail-closed
+compatibility question `RRA-003`/`RRA-004` govern for the underlying facts, not a new UX-only rule.
+
 ### 7.4 Analysis detail and artifacts
 
 **LOCKED — no separate Reports index in M3.** Analysis detail is where deliverables are discovered.
 Where available: open report, evidence, download PDF, download Excel. A second list of the same
-objects would create two places a retention state can disagree.
+objects would create two places a retention state can disagree. **This is also where "Export Center"
+in the owner's customer-journey outline resolves**: export/download actions for a given analysis'
+report, evidence, and Excel artifact live here, as an affordance within Analysis detail — not as a
+sixth primary navigation destination or a second discoverable index (see §8, RECONCILED). PDF
+generation is on-demand where practical, not automatic for every analysis (`D1-08`).
+
+**Analysis Passport — LOCKED direction, CONTRACT-BLOCKED.** A compact identity/provenance summary for
+the analysis, drawn from `W1-06`'s immutable provenance record: reporting/data period,
+organization/data reference, branch/scope coverage, event/row scale where appropriate, coverage
+state, run timestamp, and analysis/methodology version context. **Digests and machine identifiers
+stay behind contextual audit detail** (§10), never leading the passport itself.
+
+**Methodology Change Notice — LOCKED direction, CONTRACT-BLOCKED.** When a prior and later analysis
+differ because governed mapping, formula, family, or view versions changed, the customer is told —
+conceptually, *"Analysis methodology changed since the previous run."* — with the specific change
+reachable, not buried. **This must not imply numeric comparability where the versions are
+incompatible.** This is `W1-08`'s existing version/availability-diff capability, presented to the
+customer; it is not a second version subsystem.
 
 ### 7.5 Activity
 
@@ -268,24 +414,21 @@ Inside Data, more specific language may be used: *data files* / ملفات ال�
 | **Metrics** | Contextual in M3. A dedicated destination requires a later contract and a demonstrated customer need. |
 | **Workspace** | Not a customer noun (§3). |
 
-### ⚠ CONFLICT-BLOCKED against `W1-05` — not lockable as written
+### RECONCILED — formerly CONFLICT-BLOCKED against `W1-05`
 
-The Master Product Roadmap **outranks this blueprint** (§1), and `W1-05` requires *"Workspace
-Overview, Datasets, Analyses, **Reports**, **Metrics**, and **Activity** surfaces"*
-(`KHEPRI_MASTER_PRODUCT_ROADMAP.md:746`). Four rows above — Reports, Activity, Metrics, and the
-Workspace label — contradict that scope directly.
+`KHEPRI_MASTER_PRODUCT_ROADMAP.md` `W1-05` previously required *"Workspace Overview, Datasets,
+Analyses, **Reports**, **Metrics**, and **Activity** surfaces"*, which contradicted the four rows
+above. **The owner has approved the four-surface direction, and `W1-05` is amended to match**: it now
+scopes to Overview, Data, Analyses, and Team, with Reports discovered from Analysis detail, Metrics
+and Activity contextual, and "Workspace" retained only as the internal domain term. The documentary
+conflict between this blueprint and the roadmap is resolved; the four rows above are **LOCKED**
+product direction (§20 items 1, 2, 4, 19, 20).
 
-**Under this document's own precedence chain, the roadmap governs.** These four rows are therefore
-**CONFLICT-BLOCKED**, not LOCKED: they are the recommended product direction, and they cannot be
-implemented against `W1-05` until one of the two artifacts is reconciled.
-
-**The reconciliation the roadmap needs**, if this direction is accepted: `W1-05` narrows to
-*"Overview, Data, Analyses, and Team surfaces"*, with Reports folded into analysis detail, Metrics
-and Activity noted as contextual, and "Workspace" retained only as the internal domain term. That is
-a roadmap amendment, and it is owner work — this blueprint cannot perform it.
-
-Until then a slice planner reading both documents must treat `W1-05` as governing and raise the
-conflict, rather than picking whichever scope is more convenient.
+**This does not make the surfaces implementation-ready.** Neither `W1` nor this blueprint is
+registered authority — `governance/registry.yaml` holds only `FND`, `RRA`, `RCA` — so §18's
+`CONTRACT-BLOCKED` rows and §19's slice-readiness column are unchanged by this reconciliation. Active
+`G2`/`G3` authority is still required before any M3 navigation slice may be implemented. Resolving the
+conflict removes a contradiction between two roadmap-level documents; it grants no authority.
 
 Each destination enters the navigation **in the slice that implements it**, never ahead of it
 (`FR-049`). The navigation also needs a parity-paired label key of its own; it currently borrows the
@@ -575,9 +718,46 @@ Longer-term product direction, preserved:
 | Final report | premium executive deliverable |
 | Evidence | proof layer |
 | Excel | structured downstream artifact |
+| Mobile | executive summary, not a second analytics product |
+| Ask Khepri | later — natural-language access to the same governed facts (§21, `G9/AI1`) |
+
+**LOCKED architectural invariant.** Data flows one direction only: admission/mapping/coverage →
+governed facts → semantic views where applicable → presentation surfaces. **No presentation surface
+performs its own business calculation** — this restates the roadmap's "templates, controllers,
+dashboards, APIs, semantic views, and AI may select and present facts; they may not recalculate them"
+for every surface listed above, including the two added by this reconciliation.
 
 All consume the same governed facts. **M3 only defines how analysis history exposes and reopens
 them.**
+
+### Mobile — executive summary, not a second analytics product
+
+**LOCKED direction, `D1-10` gated.** Mobile prioritizes: What Changed?, key supported metrics,
+findings, refusals/limitations, status, and a path to open the full analysis. It does not attempt to
+reproduce dense desktop report tables on a phone. This is `D1-10`'s existing bilingual/RTL/mobile
+scope, stated as a priority order rather than a new surface.
+
+### Branded Report — future, bounded
+
+**PROVISIONAL, AUTHORITY-BLOCKED.** Future direction: organization identity, logo, and reporting
+period may appear on deliverables, under the same bounded-branding authority `A1-04` defines for
+agency tenancy — not a separately invented white-label mechanism. **Branding must never remove**
+Khepri provenance where required, disclosure, evidence, caveats, refusals, or audit/version
+information governance requires. No branding authority is currently active.
+
+### Secure Share — future, no current owner
+
+**PROVISIONAL, no registered authority, no task ID.** Future capability: read-only, scoped, revocable,
+expiring sharing of an analysis, report, or result without exposing the original uploaded source file,
+with no cross-organization leakage and retention-aware behavior. Closest existing mechanism is
+`API1-03`'s signed embed sessions, which solve a different problem. **Do not claim current authority
+for this capability.**
+
+### Ready Notification — two distinct things
+
+**LOCKED distinction.** An in-product ready state (the analysis's operational state, §7.1/§7.3) is
+different from outbound delivery (email/push/scheduled digest). Outbound delivery belongs to `S2-03`
+under active `G8` authority; this blueprint does not define a second notification subsystem.
 
 ### Report accessibility baseline — SHIPPED
 
@@ -659,10 +839,10 @@ production code may not.
 
 Durable product decisions, safe to carry forward. None grants implementation authority.
 
-1. The customer-visible scope is the **Organization**. *(The "Workspace" label is CONFLICT-BLOCKED against `W1-05` — see §8.)*
-2. Four primary M3 destinations: **Overview, Data, Analyses, Team**. *(CONFLICT-BLOCKED against `W1-05`'s six-surface scope — see §8.)*
+1. The customer-visible scope is the **Organization**. *(The "Workspace" label question is RECONCILED against `W1-05` — see §8.)*
+2. Four primary M3 destinations: **Overview, Data, Analyses, Team**. *(RECONCILED against `W1-05`, now scoped to match — see §8.)*
 3. Arabic navigation: **الرئيسية · البيانات · التحليلات · الفريق**.
-4. **No separate Reports page**; artifacts are discovered from the analysis that produced them. *(CONFLICT-BLOCKED against `W1-05` — see §8.)*
+4. **No separate Reports page**; artifacts are discovered from the analysis that produced them. *(RECONCILED against `W1-05` — see §8.)*
 5. **Analyses is the single durable history spine**, newest first.
 6. **Evidence is contextual** — reached from the claim it supports; no generic Evidence destination.
 7. **Operational state and trust state are separate** and are never fused into one badge.
@@ -677,8 +857,8 @@ Durable product decisions, safe to carry forward. None grants implementation aut
 16. **History is not hidden** is a product *preference*, not a locked property: whether any record survives deletion is a retention decision. **AUTHORITY-BLOCKED** — see §11.
 17. **Deletion is owner-only** as product direction, and is not rendered until a registered artifact authorizes it. **AUTHORITY-BLOCKED** — see §11.
 18. **Hide controls that cannot validly complete**; never use a disabled destructive control as permission education.
-19. **Activity is contextual**; M3 navigation does not depend on it shipping. *(CONFLICT-BLOCKED against `W1-05` — see §8.)*
-20. **Metrics is contextual** in M3. *(CONFLICT-BLOCKED against `W1-05` — see §8.)*
+19. **Activity is contextual**; M3 navigation does not depend on it shipping. *(RECONCILED against `W1-05` — see §8.)*
+20. **Metrics is contextual** in M3. *(RECONCILED against `W1-05` — see §8.)*
 21. **No dead navigation** — a destination appears only when its surface ships; no "Coming Soon".
 22. **Overview is operational, never analytics** — no revenue, sales, branch, category, basket, or concentration content.
 23. **Audit and version identifiers sit behind disclosure**, never leading a primary customer row.
@@ -709,7 +889,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Clock cardinality (one clock vs per-artifact) | AUTHORITY-BLOCKED | `G2-01`/`G2-02`, activated by `G2-03`; today's evidence covers one beta session only |
 | Slice ordering of navigation links | LOCKED as a constraint | each link ships with its own surface (`FR-049`); see §19 |
 | Whether a tombstone exists at all | AUTHORITY-BLOCKED | `G2`/`G3` retention decision; `RCA-001:161` excludes report history |
-| Navigation scope: Reports / Activity / Metrics / "Workspace" | **CONFLICT-BLOCKED** | reconciling this blueprint with `W1-05` (roadmap:746); roadmap governs |
+| Navigation scope: Reports / Activity / Metrics / "Workspace" | **RECONCILED, still CONTRACT-BLOCKED** | scope conflict with `W1-05` resolved (§8); implementation still needs active `G2`/`G3` per §18 |
 | Durable progress / resume capability for a running analysis | IMPLEMENTATION-BLOCKED | `W1`; nothing persists commercial progress across a page load today |
 | Exact Activity payload | CONTRACT-BLOCKED | `W1-09` |
 | Journey organization identity | AUTHORITY-BLOCKED | authority permitting identity across the commercial→beta boundary |
@@ -717,6 +897,13 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Executive Report System structure | FUTURE SHAPING REQUIRED | its own shaping track |
 | Whether an analysis outlives its deleted data entry | PROVISIONAL | `G2`/`G3` retention contract |
 | Metrics as a dedicated destination | PROVISIONAL | `T1` + demonstrated customer need |
+| Remember My Data / reusable source-mapping profile | CONTRACT-BLOCKED | `W1-01` profile contract; active `G3`; must re-attest on material source change (Article V) |
+| Analysis Impact Preview | CONTRACT-BLOCKED | `T1-04` availability vocabulary; active `T1` |
+| Analysis Passport fields | CONTRACT-BLOCKED | `W1-06` provenance record; active `G3` |
+| Run Again / Run New Period compatibility rule | CONTRACT-BLOCKED | `W1-04`; underlying `RRA-003`/`RRA-004` compatibility contracts |
+| Try Sample Analysis (pre-authentication) | AUTHORITY-BLOCKED | successor to `KHEPRI-DEC-025` §2, which currently prohibits public/post-auth self-service bootstrap; `G5-01` |
+| Secure Share | AUTHORITY-BLOCKED, no task ID | a future sharing authority; `API1-03` is a related but distinct mechanism |
+| Branded Report | AUTHORITY-BLOCKED | bounded-branding authority (`A1-04`'s pattern); none currently active |
 
 ---
 
@@ -732,6 +919,22 @@ blueprint version, and the current report is not redesigned here.
 
 **Journey organization identity / persistent frame authority gap.** Locked product direction, blocked
 implementation (§6). Needs the authority question resolved before any design commits to it.
+
+**Guided Exploration — `X1-02`/`X1-03`/`X1-04`/`X1-05`.** Explore actions on a KPI or chart, curated
+next-question suggestions, and Saved Answers, all selected from supported governed question
+contracts — never LLM-inferred speculative questions. `X1-01` through `X1-03` may ship inside M4;
+Saved Answers and pinning may follow immediately after. Depends on `SV1`/`D1`.
+
+**Ask Khepri — `G9/AI1`, later, boundary unchanged.** Natural-language questions answered only from
+governed facts and semantic views, with evidence for every material claim and explicit refusal for
+unsupported ones, in Arabic and English parity. **It does not calculate novel KPIs, does not retrieve
+raw rows, and performs no writes or actions in the first release** — `AI1`'s existing non-goals. This
+reconciliation does not pull Ask Khepri earlier than `G9/AI1`'s stated preconditions (M4 stable, `T1`
+and `SV1` versioned, provider/privacy authority active).
+
+**Try Sample Analysis.** Public pre-authentication activation belongs to `G5/ON1`, not to any M2/M3
+task, and is currently AUTHORITY-BLOCKED against active `KHEPRI-DEC-025` §2 (§21). It is not folded
+forward into M2 or M3 scope by this reconciliation.
 
 ---
 
