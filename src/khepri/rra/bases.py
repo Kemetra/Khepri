@@ -272,6 +272,7 @@ def retain_bases(
     *,
     events: tuple[object, ...],
     binding: BasisBinding,
+    counts: dict[str, int] | None = None,
 ) -> tuple[RetainedBasis, ...]:
     """The reconciliation bases derivable from one admitted event set.
 
@@ -290,6 +291,15 @@ def retain_bases(
     per-value transaction membership sets that `aggregates` collapses to a
     count, and the aligned daily bases are retained separately by
     `daily_bases`. Both are recorded on the package by their own producers.
+
+    **`counts` says how many events each population actually contains.** A
+    population like `sales_complete_revenue_units` is not every sale -- it is the
+    sales carrying both measures -- and a basis counting the rest names a
+    completeness the package does not have. Those counts are computed where the
+    measures live, in `facts`, because this function is a formatter and knows
+    nothing about revenue or units. Omitted only by callers with no measures to
+    consult, which then get the event totals this produced before the
+    distinction existed.
     """
     sales = tuple(
         event for event in events if getattr(event, "event_kind", "") == "sale"
@@ -299,7 +309,9 @@ def retain_bases(
         RetainedBasis(
             name=name,
             population=population,
-            event_count=len(sales if sale_only else events),
+            event_count=(
+                (counts or {}).get(population, len(sales if sale_only else events))
+            ),
             input_digest=binding.input_digest,
             mapping_version=binding.mapping_version,
             precision=binding.precision,

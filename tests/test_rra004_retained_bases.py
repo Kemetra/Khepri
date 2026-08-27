@@ -16,22 +16,38 @@ defining field disagrees.
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
+from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.bases import (
     BASIS_DIMENSION_SALES_REVENUE,
     BASIS_FINANCIAL_REVENUE,
+    BASIS_FINANCIAL_REVENUE_COST,
     BASIS_SALES_REVENUE,
+    BASIS_SALES_REVENUE_TRANSACTION,
+    BASIS_SALES_REVENUE_UNITS,
+    BASIS_SALES_TRANSACTION,
     BASIS_SALES_UNITS,
+    BASIS_SALES_UNITS_TRANSACTION,
     GOVERNED_BASES,
     BasisRefused,
     RetainedBasis,
     compatible,
     dimension_basis,
 )
+from khepri.rra.facts import AdmittedInput, FactPackage, build_fact_package
+from khepri.rra.intake import CSV_MEDIA_TYPE
+from khepri.rra.mapping import build_mapping
 from khepri.rra.populations import (
     POPULATION_FINANCIAL_POSTED,
     POPULATION_SALES_POSTED,
+)
+from khepri.rra.profiling import build_profile
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
 )
 
 _DIGEST = "a" * 64
@@ -268,3 +284,85 @@ def _package(**overrides: object):
     }
     fields.update(overrides)
     return FactPackage(**fields)  # type: ignore[arg-type]
+
+
+# --- a basis counts its own population, found in review ---------------------
+
+
+def package_from(content: bytes) -> FactPackage:
+    """One package built through the real pipeline, under the admitted triple."""
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            )
+        )
+
+
+def counts_of(package: FactPackage) -> dict[str, int]:
+    return {basis.name: basis.event_count for basis in package.retained_bases}
+
+
+def test_a_complete_population_basis_excludes_the_rows_it_does_not_contain() -> None:
+    """`RRA-004` requires every derived fact to cite "exactly one **compatible**
+    basis", and a basis naming `sales_complete_revenue_units` while counting a
+    sale with no units is compatible with nothing.
+
+    **Every basis reported 3.** The count came from `len(sales)` for every
+    sale-only row regardless of which measures that row's population requires, so
+    the retained evidence claimed a completeness the package never had -- inside
+    `as_document()`, and therefore inside the package digest and on the audit
+    surface. Found in review.
+    """
+    three_sales_one_without_units = (
+        b"date,revenue,units,invoice_no\n"
+        b"2026-01-05,100.00,2,INV-1\n"
+        b"2026-01-06,50.00,1,INV-2\n"
+        b"2026-01-07,25.00,,INV-3\n"
+    )
+    counts = counts_of(package_from(three_sales_one_without_units))
+
+    # A basis counts its *population*, which is not the same as the measure its
+    # name mentions: `sales_units_basis` supports the units figure but is bound
+    # to `sales_posted`, and there are three posted sales.
+    assert counts[BASIS_SALES_REVENUE] == 3
+    assert counts[BASIS_SALES_UNITS] == 3
+    # These three name completeness populations, and one sale is not in them.
+    assert counts[BASIS_SALES_REVENUE_UNITS] == 2
+    assert counts[BASIS_SALES_UNITS_TRANSACTION] == 2
+    # While the populations that need no units are unaffected.
+    assert counts[BASIS_SALES_TRANSACTION] == 3
+    assert counts[BASIS_SALES_REVENUE_TRANSACTION] == 3
+
+
+def test_a_basis_whose_measure_is_absent_counts_nothing() -> None:
+    """The starkest case: no cost column at all, and the cost basis said 3.
+
+    `financial_complete_revenue_cost` is `financial_posted` with complete revenue
+    *and cost*. With no cost mapped the population is empty, and a basis
+    reporting the row count asserts evidence that does not exist.
+
+    It is recorded with a count of zero rather than omitted: `retain_bases` says
+    these are "produced wherever the events allow rather than being optional", so
+    the honest count is the answer and absence is not the disclosure.
+    """
+    no_cost_column = (
+        b"date,revenue,units,invoice_no\n"
+        b"2026-01-05,100.00,2,INV-1\n"
+        b"2026-01-06,50.00,1,INV-2\n"
+    )
+    counts = counts_of(package_from(no_cost_column))
+
+    assert counts[BASIS_FINANCIAL_REVENUE_COST] == 0
+    assert counts[BASIS_FINANCIAL_REVENUE] == 2

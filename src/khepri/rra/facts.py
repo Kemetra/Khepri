@@ -55,6 +55,17 @@ from khepri.rra.mapping import (
     RetailMapping,
     build_mapping,
 )
+from khepri.rra.populations import (
+    POPULATION_FINANCIAL_COMPLETE_REVENUE_COST,
+    POPULATION_FINANCIAL_POSTED,
+    POPULATION_SALES_COMPLETE_REVENUE,
+    POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS,
+    POPULATION_SALES_COMPLETE_REVENUE_UNITS,
+    POPULATION_SALES_COMPLETE_TRANSACTIONS,
+    POPULATION_SALES_COMPLETE_UNITS,
+    POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS,
+    POPULATION_SALES_POSTED,
+)
 from khepri.rra.profiling import (
     DatasetProfile,
     build_profile,
@@ -887,8 +898,54 @@ def _build(
                 currency=admitted_events.currency,
                 precision=money,
             ),
+            counts=_population_counts(measures),
         ),
     )
+
+
+def _population_counts(measures: _Measures) -> dict[str, int]:
+    """How many admitted events each governed population actually contains.
+
+    `RRA-004` defines the populations by the measures a row carries, not by its
+    event kind alone: `sales_complete_revenue_units` is the sales complete in
+    *both*, and a basis counting every sale claims a completeness the package
+    does not have. Computed here rather than in `bases` because the measures and
+    the sale-only helpers are here.
+
+    A population with no eligible event counts zero rather than being omitted:
+    `retain_bases` produces its bases "wherever the events allow rather than
+    being optional", so the honest count is the answer and absence is never the
+    disclosure.
+    """
+    sales = _sale_only(measures.revenue, measures)
+    sale_units = _positive_units(measures)
+    sale_keys = _sale_only(measures.transactions, measures)
+    financial = len(measures.revenue)
+    kinds = len([kind for kind in measures.event_kinds if kind == EVENT_SALE])
+
+    def both(left: list, right: list) -> int:
+        return sum(
+            1
+            for index in range(len(left))
+            if left[index] is not None and right[index] is not None
+        )
+
+    def present(values: list) -> int:
+        return sum(1 for value in values if value is not None)
+
+    return {
+        POPULATION_FINANCIAL_POSTED: financial,
+        POPULATION_SALES_POSTED: kinds,
+        POPULATION_SALES_COMPLETE_REVENUE: present(sales),
+        POPULATION_SALES_COMPLETE_UNITS: present(sale_units),
+        POPULATION_SALES_COMPLETE_REVENUE_UNITS: both(sales, sale_units),
+        POPULATION_SALES_COMPLETE_TRANSACTIONS: present(sale_keys),
+        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS: both(sales, sale_keys),
+        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS: both(sale_units, sale_keys),
+        POPULATION_FINANCIAL_COMPLETE_REVENUE_COST: both(
+            measures.revenue, measures.cost
+        ),
+    }
 
 
 def _signatures_of(
