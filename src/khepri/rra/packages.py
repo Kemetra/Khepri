@@ -100,11 +100,12 @@ def _readmit(
     # it is read back rather than left out. Omitting it would digest differently
     # for every profile carrying one and refuse the package -- reporting its own
     # construction rather than the mismatch the digest exists to detect.
+    manifest = stored_manifest(profile_record)
     document = build_document(
         profile,
         request=request,
         contract=contract,
-        manifest=stored_manifest(profile_record),
+        manifest=manifest,
     )
     if document_digest(document) != profile_record.profile_digest:
         raise PackageRefused(
@@ -112,6 +113,13 @@ def _readmit(
         )
     mapping = build_mapping(profile, contract=contract)
     return AdmittedInput(
+        # The same attestation the digest was checked against, handed to the
+        # build rather than only re-read for the comparison. Without it every
+        # production package carried no coverage signature, so
+        # `comparison._structurally_compatible` found none and the comparison
+        # and growth families refused every customer report -- while this suite
+        # passed, because its fixtures attest their own coverage.
+        manifest=manifest,
         content=content,
         media_type=upload.media_type,
         profile=profile,

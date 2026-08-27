@@ -678,7 +678,9 @@ def test_to_csv_renders_one_header_and_one_line_per_row() -> None:
     rendered = to_csv(CLEAN_ROWS).decode().splitlines()
     assert rendered[0] == ",".join(CSV_COLUMNS)
     assert len(rendered) == len(CLEAN_ROWS) + 1
-    assert rendered[1].startswith("2026-01-05,120.00,4,INV-1001,S1,P1,C1,70.00,")
+    assert rendered[1].startswith(
+        "2026-01-05,sale,posted,120.00,4,INV-1001,S1,P1,C1,70.00,"
+    )
 
 
 def test_to_csv_writes_an_absent_optional_dimension_as_an_empty_cell() -> None:
@@ -691,4 +693,5 @@ def test_to_csv_writes_an_absent_optional_dimension_as_an_empty_cell() -> None:
     from tests.rra_calculation_oracle import MISSING_PRODUCT_ZERO_REVENUE_ROWS
 
     rendered = to_csv(MISSING_PRODUCT_ZERO_REVENUE_ROWS).decode().splitlines()
-    assert rendered[-1] == "2026-03-18,0.00,1,INV-9003,S1,,,0.00,0.00"
+    assert rendered[-1] == "2026-03-18,sale,posted,0.00,1,INV-9003,S1,,,0.00,0.00"
+

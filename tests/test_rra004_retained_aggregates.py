@@ -20,7 +20,6 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import MAX_COMPARISON_BUCKETS, OTHER_BUCKET_LABEL
 from khepri.rra.facts import (
     COMPARISON_WINDOW_PERIODS,
-    FORMULA_VERSION,
     METRIC_REVENUE,
     PACKAGE_VERSION,
     AdmittedInput,
@@ -30,7 +29,11 @@ from khepri.rra.facts import (
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import SEMANTIC_PRODUCT, build_mapping
 from khepri.rra.profiling import build_profile
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    PUBLISHED_FORMULA_VERSION,
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 # Two products, four rows, two invoices, two dates. Deliberately not a row count:
 # Water sits in three rows and two invoices, so a row count would report three.
@@ -49,17 +52,24 @@ def package(content: bytes) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def wide_source(distinct_products: int) -> bytes:
@@ -77,7 +87,17 @@ def wide_source(distinct_products: int) -> bytes:
 
 
 def test_package_version_moves_to_the_amended_shape() -> None:
-    assert PACKAGE_VERSION == "rra004.package.v2"
+    """`V-package` publishes `rra004.package.v3`, and this is the assertion.
+
+    **The two halves say different things, and keeping them apart is the point.**
+    `PACKAGE_VERSION` is what this build *publishes*. The package's own
+    `package_version` is what that object *combines* -- and every package this
+    module builds is pinned to the published predecessor triple, because its
+    subject is retained aggregates rather than the version gate. Collapsing the
+    two is the defect `facts._build` was corrected for: it read the module
+    constant while checking a mapping the caller supplied.
+    """
+    assert PACKAGE_VERSION == "rra004.package.v3"
     assert package(GOLDEN).package_version == "rra004.package.v2"
 
 
@@ -92,13 +112,15 @@ def test_every_fact_discloses_the_formula_version_that_produced_it() -> None:
     result = package(GOLDEN)
 
     assert result.facts
+    # The pinned predecessor throughout: this module builds under the admitted
+    # triple, so what its facts combine is not what this build publishes.
     for fact in result.facts:
-        assert fact.formula_version == FORMULA_VERSION
-        assert fact.as_document()["formula_version"] == FORMULA_VERSION
+        assert fact.formula_version == PUBLISHED_FORMULA_VERSION
+        assert fact.as_document()["formula_version"] == PUBLISHED_FORMULA_VERSION
 
     for entry in (*result.series, *result.comparisons):
-        assert entry.formula_version == FORMULA_VERSION
-        assert entry.as_document()["formula_version"] == FORMULA_VERSION
+        assert entry.formula_version == PUBLISHED_FORMULA_VERSION
+        assert entry.as_document()["formula_version"] == PUBLISHED_FORMULA_VERSION
 
 
 def test_package_records_the_governed_comparison_window() -> None:

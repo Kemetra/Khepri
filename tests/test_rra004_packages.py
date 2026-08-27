@@ -413,20 +413,27 @@ def test_a_second_publication_cannot_be_asked_for_under_other_semantics() -> Non
 def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
     # RRA-004 makes a new formula a new version, not a replacement, so the
     # store must admit both rather than resolving back to the first.
+    #
+    # The successor is a version *ahead of this build*, and that is the whole
+    # point: the session must keep reading the package this build produces
+    # rather than a row stamped with a formula it does not implement. It
+    # named `rra004.formula.v2` until `V-formula` shipped that identity, at
+    # which point the row stopped being ahead of anything and the read
+    # legitimately resolved to it.
     test = prepared()
     assert test.client.post("/api/v1/beta/facts").status_code == 201
 
     with test.factory() as database:
         original = database.scalar(select(FactPackageRow))
         successor_document = dict(original.document)
-        successor_document["formula_version"] = "rra004.formula.v2"
+        successor_document["formula_version"] = "rra004.formula.v99"
         successor = FactPackageRecord(
             package_id="fct_next",
             owner_id=original.owner_id,
             session_id=original.session_id,
             profile_id=original.profile_id,
             package_version=original.package_version,
-            formula_version="rra004.formula.v2",
+            formula_version="rra004.formula.v99",
             mapping_version=original.mapping_version,
             profile_document_digest=original.profile_document_digest,
             source_sha256_hex=original.source_sha256_hex,

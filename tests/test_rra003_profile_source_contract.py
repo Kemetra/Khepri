@@ -244,22 +244,17 @@ def test_profile_refuses_an_unknown_source_contract_field() -> None:
     assert response.status_code == 422
 
 
-@pytest.mark.xfail(
-    reason=(
-        "`V-mapping` publishes `rra003.mapping.v3` in its FINAL pull request, so"
-        " `MAPPING_VERSION` is still `v2` here. The execution ledger makes that a stop"
-        " condition: 'no PR in this sequence may move MAPPING_VERSION before the slice is"
-        " complete', because publishing a governed version early, twice, or incomplete are"
-        " the three failures the one-version-per-slice rule exists to prevent."
-        " This assertion is committed rather than held back so it cannot be lost, and it is"
-        " `strict` so that the pull request moving the constant FAILS here and must replace"
-        " this marker with a plain passing assertion. Relaxing the assertion itself is"
-        " forbidden; expiring this marker on schedule is the point."
-    ),
-    strict=True,
-)
 def test_profile_accepts_a_complete_contract_and_stamps_mapping_v3() -> None:
-    """The version this whole slice publishes, on the route that admits."""
+    """The version this whole slice publishes, on the route that admits.
+
+    **The planted `strict` xfail is gone, and its removal is this commit's
+    publication step.** An earlier slice committed this assertion ahead of the
+    constant so it could not be lost, marked `strict` so that whichever pull
+    request moved `MAPPING_VERSION` would fail here and be forced to notice.
+    That request is this one: the marker said "expiring this marker on schedule
+    is the point", and the schedule is now. The assertion itself is unchanged --
+    relaxing it was forbidden, and it was not relaxed.
+    """
     test = ready()
 
     response = test.client.post(
@@ -430,3 +425,89 @@ def test_a_declared_column_the_file_lacks_leaves_the_semantic_unavailable() -> N
     )
 
     assert mapping.for_semantic(SEMANTIC_TRANSACTION_ID).column is None
+
+
+# --- blank declarations, found in review -----------------------------------
+#
+# `_is_mapped` already existed for exactly this shape: a whitespace string
+# satisfies a presence check while naming no column a reader can resolve. It was
+# applied to the semantic columns and not to the identity ones.
+
+
+def _identity_contract(
+    *,
+    event_key_columns: tuple[str, ...] = (),
+    unique_line_grain_attested: bool = True,
+    transaction_id_column: str | None = "invoice_no",
+    transaction_key_components: tuple[str, ...] = (),
+    transaction_id_unique_package_wide: bool = True,
+) -> object:
+    """One contract that differs from the fixtures only in its identity half."""
+    from khepri.rra.source_contract import (
+        BasisDeclaration,
+        ContractAttribution,
+        EventDeclaration,
+        IdentityDeclaration,
+        build_source_contract,
+    )
+
+    return build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_identity_case",
+            evidence="Test fixture: declared for a synthetic retail extract.",
+        ),
+        events=EventDeclaration(
+            event_kind_column=None,
+            sale_only=True,
+            status_column=None,
+            posted_only=True,
+            currency_column=None,
+            currency_code="EGP",
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=event_key_columns,
+            unique_line_grain_attested=unique_line_grain_attested,
+            transaction_id_column=transaction_id_column,
+            transaction_key_components=transaction_key_components,
+            transaction_id_unique_package_wide=transaction_id_unique_package_wide,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+
+
+def test_the_identity_fixture_is_admitted_as_written() -> None:
+    """So the refusals below are attributable to what each one changes."""
+    assert _identity_contract() is not None
+
+
+def test_a_blank_event_key_column_names_no_column() -> None:
+    """`(" ",)` satisfied the presence check while resolving to nothing.
+
+    `RRA-003` proves event identity by keys *or* by attested line grain. A blank
+    key column reported that the keys half was satisfied while leaving identity
+    inferred -- the outcome that rule exists to prevent.
+    """
+    from khepri.rra.source_contract import ContractRefused
+
+    with pytest.raises(ContractRefused):
+        _identity_contract(
+            event_key_columns=(" ",),
+            unique_line_grain_attested=False,
+        )
+
+
+def test_a_blank_transaction_key_component_names_no_column() -> None:
+    """A composite of `(" ", "invoice_no")` is narrower than it claims."""
+    from khepri.rra.source_contract import ContractRefused
+
+    with pytest.raises(ContractRefused):
+        _identity_contract(
+            transaction_key_components=(" ", "invoice_no"),
+            transaction_id_unique_package_wide=False,
+        )

@@ -61,7 +61,10 @@ from khepri.rra.rendering.wording import (
     worded,
 )
 from tests import rra_workbooks
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    manifest_for_csv,
+)
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 5)
@@ -96,17 +99,25 @@ def package() -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
+    # Built under the triple this build publishes. Every chart in this module
+    # belongs to an `RRA-008` family, and `V-concentration` closed the CAL1
+    # refusal window: `formula.v1` now admits no family, so the predecessor pin
+    # would render no chart and each case would pass on an empty workbook.
+    #
+    # Coverage attested, because `rra008.comparison.v2` refuses a window no
+    # manifest proves and growth consumes comparison's acceptance.
     mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+        AdmittedInput(
+            manifest=manifest_for_csv(content, TEST_CONTRACT),
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=TEST_CONTRACT,
+        ),
+    )
 
 
 def rendered(bundle: ReportBundle | None = None) -> tuple[

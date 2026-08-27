@@ -24,11 +24,16 @@ contract. A caveat is the governed channel for a qualification that must reach a
 reader in both languages, and it is attached to the price effect because that is
 where the term went.
 
-**One change, shared with the comparison family.** Which two periods are compared is
-`windows.compared_labels`, the same function `comparison.py` uses. If this module
-chose its own window, the report would state a revenue delta in the comparison
-section and decompose a different delta in the growth section, and both would
-reconcile perfectly, because reconciliation compares rendered strings.
+**One change, consumed from the comparison family.** `RRA-008`: growth "consumes the
+exact PoP window selected by period comparison and may not select another". This
+module asks `comparison.accepted_window` for the window that family *accepted*
+rather than calling `windows.compared_labels` and landing on the same two labels.
+
+Those look equivalent and are not. The labels are the picking rule, which is blind
+to coverage; acceptance is that rule plus the structural compatibility
+`rra008.comparison.v2` proves against the manifest. Re-deriving labels would
+decompose a delta the comparison section declined to state -- and both sections
+would reconcile perfectly, because reconciliation compares rendered strings.
 
 **Period-over-period only.** `RRA-008` asks the comparison family for two modes in as
 many words and asks this one for "a revenue change" without naming any. The mode is
@@ -49,7 +54,8 @@ from dataclasses import dataclass
 from decimal import Context, Decimal, localcontext
 
 from khepri.rra.aggregates import Bucket
-from khepri.rra.analysis.windows import MODE_PERIOD_OVER_PERIOD, compared_labels
+from khepri.rra.analysis.comparison import accepted_window, window_refusal
+from khepri.rra.analysis.windows import MODE_PERIOD_OVER_PERIOD
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     METRIC_UNITS,
@@ -66,7 +72,7 @@ from khepri.rra.mapping import SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_DATE, SEMA
 # This family's own formula version, pinned separately from the package's, so a
 # correction to the decomposition alone cannot reuse the identifiers of a
 # materially different number.
-GROWTH_FORMULA_VERSION = "rra008.growth.v1"
+GROWTH_FORMULA_VERSION = "rra008.growth.v2"
 
 METRIC_REVENUE_CHANGE = "growth_revenue_change"
 METRIC_PRICE_EFFECT = "growth_price_effect"
@@ -82,6 +88,12 @@ REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
 # Where the price-times-volume cross term was placed. A governed disclosure rather
 # than a fact, because a fact states a number.
 CAVEAT_INTERACTION_ASSIGNED_TO_PRICE = "growth_interaction_assigned_to_price"
+
+# The published price effect differs from the independently rounded one, because
+# `RRA-008` derives it by subtraction so the displayed parts reconcile exactly.
+# Recorded as audit evidence: it means something to someone auditing the
+# arithmetic and nothing to a retail owner acting on the figure.
+CAVEAT_ROUNDING_RESIDUAL = "growth_rounding_residual"
 
 # What these facts are derived from, in the governed mapping vocabulary. The date
 # is an input as much as the measures: it decides which two periods are compared.
@@ -112,6 +124,7 @@ class _Split:
     price: Decimal
     volume: Decimal
     caveats: tuple[str, ...]
+    residual: Decimal
 
     def value_of(self, metric: str) -> Decimal:
         if metric == METRIC_PRICE_EFFECT:
@@ -121,9 +134,15 @@ class _Split:
         return self.change
 
     def caveats_of(self, metric: str) -> tuple[str, ...]:
-        if metric == METRIC_PRICE_EFFECT:
-            return (*self.caveats, CAVEAT_INTERACTION_ASSIGNED_TO_PRICE)
-        return self.caveats
+        if metric != METRIC_PRICE_EFFECT:
+            return self.caveats
+        stated = (*self.caveats, CAVEAT_INTERACTION_ASSIGNED_TO_PRICE)
+        if not self.residual:
+            return stated
+        # Only when there is something to disclose. A caveat on every split
+        # would say the price was adjusted even where subtraction and
+        # independent rounding agree, which is most of them.
+        return (*stated, CAVEAT_ROUNDING_RESIDUAL)
 
 
 def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
@@ -152,12 +171,18 @@ def _derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
             metric=METRIC_REVENUE_CHANGE,
             reason=REASON_INPUT_UNAVAILABLE,
         )
-    labels = compared_labels(revenue.series, MODE_PERIOD_OVER_PERIOD)
-    if labels is None:
+    window = accepted_window(package, MODE_PERIOD_OVER_PERIOD)
+    if window is None:
+        # The cause comparison gave, not a cause recomputed here. Growth
+        # consumes that family's accepted window, so when it declines one on
+        # coverage grounds this section refuses for coverage too -- reporting
+        # `prior_window_absent` would tell a customer to export more history
+        # when the earlier period is present and the two are not comparable.
         return RefusedResult(
             metric=METRIC_REVENUE_CHANGE,
-            reason=REASON_PRIOR_WINDOW_ABSENT,
+            reason=window_refusal(package, MODE_PERIOD_OVER_PERIOD),
         )
+    labels = (window.current.label, window.prior.label)
     periods = _periods(package, labels)
     if periods is None:
         return RefusedResult(metric=METRIC_REVENUE_CHANGE, reason=REASON_UNITS_ABSENT)
@@ -230,15 +255,58 @@ def _split(
     volume = (
         prior.average_selling_price() * (current.units - prior.units)
     ).quantize(scale)
-    price = (
+    change = (current.revenue - prior.revenue).quantize(scale)
+    # `RRA-008`: "published price effect = published revenue delta - published
+    # volume effect". Derived by subtraction rather than quantized on its own,
+    # so the three published values reconcile exactly on the page. Rounding each
+    # independently left them disagreeing by one unit of the last place on 330
+    # measured cases, and `rra008.growth.v1` refused every one of them as a
+    # reconciliation failure -- which they were not.
+    price = change - volume
+    independent = (
         current.units
         * (current.average_selling_price() - prior.average_selling_price())
     ).quantize(scale)
-    change = (current.revenue - prior.revenue).quantize(scale)
-    if price + volume != change:
+    residual = price - independent
+    if abs(residual) > scale:
+        # `RRA-008` calls a residual larger than one unit of the published last
+        # place a reconciliation failure. No input reaches it: 8,963,136
+        # exhaustive cases and 300,000 random ones across five precisions put
+        # the maximum at exactly one unit. Kept because the specification sets
+        # the bound, and an invariant that cannot fire is the correct shape for
+        # one that must hold -- not because a dataset is expected to trip it.
         return RefusedResult(metric=METRIC_REVENUE_CHANGE, reason=REASON_NOT_ADDITIVE)
-    split = _Split(change=change, price=price, volume=volume, caveats=inherited)
+    split = _Split(
+        change=change,
+        price=price,
+        volume=volume,
+        caveats=inherited,
+        residual=residual,
+    )
     return tuple(_fact(split, metric, precision) for metric in GOVERNED_METRICS)
+
+
+def refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
+    """Nothing, and that is the complete record rather than a placeholder.
+
+    `refusals` exists for a family that **partly** refuses: its section is
+    present because it stated something, and `SECTION_REASONS` will not admit a
+    per-metric reason as a section state, so the refused results travel as
+    caveats scoped to the section. The comparison family needs it because two
+    modes can refuse for different causes and one `RefusedResult.reason` cannot
+    hold two.
+
+    Growth decomposes one mode into three metrics from a single `_Split`. Either
+    all three are stated or none is, so a refusal here is always total and
+    `derive` already returns it as the section's own reason. Returning that same
+    refusal again would render every disclosure twice -- once as the section
+    reason and once as a caveat scoped to the section.
+
+    Written as a function rather than left as `lambda package: ()` in the family
+    table so this reasoning is recorded where the next family author looks, and
+    so the empty tuple is a stated conclusion rather than an unfilled slot.
+    """
+    return ()
 
 
 def mode_of(fact: Fact) -> str | None:

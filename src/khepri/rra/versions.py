@@ -56,6 +56,17 @@ REASON_FAMILY_VERSION_UNADMITTED = "family_version_pairing_unadmitted"
 ADMITTED_PACKAGE_PAIRS: frozenset[tuple[str, str, str]] = frozenset(
     {
         ("rra003.mapping.v2", "rra004.package.v2", "rra004.formula.v1"),
+        # `V-package`'s own row, and the only one it adds. The formula stays
+        # `v1` because `rra004.formula.v2` does not exist until `V-formula`;
+        # naming it here would publish that identity early.
+        ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v1"),
+        # `V-formula`'s own row, and the only one it adds. **No family row
+        # accompanies it**: each `RRA-008` family adds its own
+        # `(formula.v2, family.v2)` pair when it lands, so all four refuse
+        # from here until `V-comparison`. The refusing set is largest at
+        # this commit and `V-concentration` empties it. That blackout is
+        # the designed window, not a gap to close early.
+        ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v2"),
     }
 )
 
@@ -67,6 +78,16 @@ ADMITTED_FAMILY_PAIRS: frozenset[tuple[str, str]] = frozenset(
         ("rra004.formula.v1", "rra008.growth.v1"),
         ("rra004.formula.v1", "rra008.basket.v1"),
         ("rra004.formula.v1", "rra008.concentration.v1"),
+        # `V-comparison`'s own row. Three families still refuse after it;
+        # each adds its own pair when it lands.
+        ("rra004.formula.v2", "rra008.comparison.v2"),
+        # `V-growth`'s own row. Basket and concentration still refuse.
+        ("rra004.formula.v2", "rra008.growth.v2"),
+        # `V-basket`'s own row. Concentration alone still refuses.
+        ("rra004.formula.v2", "rra008.basket.v2"),
+        # `V-concentration`'s own row, and the last of the seven. With it the
+        # refusing set is empty: every family pairs with the shipped formula.
+        ("rra004.formula.v2", "rra008.concentration.v2"),
     }
 )
 

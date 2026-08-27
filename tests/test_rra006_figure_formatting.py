@@ -50,7 +50,10 @@ from khepri.rra.facts import (
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 #: Values deliberately above the grouping threshold. The golden fixture in
 #: `test_rra006_bundle` tops out at `500.00`, which cannot distinguish a grouped
@@ -69,27 +72,50 @@ LARGE = (
 )
 
 
-def package(content: bytes = LARGE):
+def package(content: bytes = LARGE, *, published: bool = False):
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    # `published=True` builds under the triple this build publishes. The
+    # predecessor pin is right for a case about `RRA-004` figure formatting, and
+    # wrong for one whose figures come from an `RRA-008` family: with the refusal
+    # window closed, `formula.v1` admits no family and produces no such figure.
+    if published:
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
-def figures_of(unit_kind: str, *, kind: str = KIND_VALUE):
-    bundle = ReportBundle.of(package())
+def figures_of(unit_kind: str, *, kind: str = KIND_VALUE, published: bool = False):
+    bundle = ReportBundle.of(package(published=published))
     return [
         entry
         for entry in bundle.figures
@@ -179,7 +205,9 @@ class TestRatioFigures:
         # it by a hundred prints a six-figure percentage -- not a smaller defect
         # than the `0.8665` this slice set out to fix.
         rates = [
-            entry for entry in figures_of(UNIT_RATIO) if entry.metric in RATE_METRICS
+            entry
+            for entry in figures_of(UNIT_RATIO, published=True)
+            if entry.metric in RATE_METRICS
         ]
         assert rates, "the fixture must produce at least one rate figure"
         for entry in rates:

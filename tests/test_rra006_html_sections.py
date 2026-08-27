@@ -32,7 +32,11 @@ from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.wording import caveat_prose, refusal_message
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    manifest_for_csv,
+    published_mapping_identity,
+)
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 5)
@@ -46,7 +50,20 @@ ROWS = [
 ]
 
 
-def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
+def package_for(
+    rows: list[tuple[str, int, str]],
+    *,
+    published: bool = False,
+) -> FactPackage:
+    """One package over these rows.
+
+    `published=True` builds under the triple this build publishes rather than
+    under the predecessor pin. The pin is right for cases that render every
+    section -- under it all four families sit at `v1` and publish -- and wrong
+    for a case whose subject *is* a family that has reached its successor, which
+    `formula.v1` does not admit. Build under whichever triple admits the family
+    the case is about.
+    """
     body = b"".join(
         f"{(START + timedelta(days=index)).isoformat()},{amount},{units},"
         f"INV-{index},{product}\n".encode()
@@ -58,21 +75,46 @@ def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    if published:
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest_for_csv(content, TEST_CONTRACT),
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            )
+        )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
-def page(language: str = LANGUAGE_ENGLISH, rows: list | None = None) -> str:
-    bundle = ReportBundle.of(package_for(rows or ROWS))
+def page(
+    language: str = LANGUAGE_ENGLISH,
+    rows: list | None = None,
+    *,
+    published: bool = False,
+) -> str:
+    bundle = ReportBundle.of(package_for(rows or ROWS, published=published))
     surface = HtmlReportRenderer().render_html(bundle)
     # Reconciled here so no assertion below rests on a page the bundle would reject.
     reconcile(surface.content, bundle=bundle)
@@ -144,8 +186,13 @@ def test_a_refused_section_renders_its_governed_reason() -> None:
 
     The heading and the reason are both present, because a reader cannot otherwise
     tell "there was nothing to show" from "we could not show it".
+
+    Built under the triple this build publishes, because the subject is the
+    comparison family's *data* refusal. Under the predecessor pin that section
+    refuses as `family_version_pairing_unadmitted` instead, and the case would
+    assert a coverage message against a version refusal.
     """
-    rendered = page(rows=ROWS[:2])
+    rendered = page(rows=ROWS[:2], published=True)
     assert f'<section id="{SECTION_COMPARISON}"' in rendered
     assert 'class="refused"' in rendered
     assert "prior_window_absent" not in rendered
@@ -162,7 +209,10 @@ def test_a_drawable_section_renders_a_real_svg_element() -> None:
     The escaped-string design this replaced would have rendered `&lt;svg` here and
     passed every other test in this file.
     """
-    rendered = page()
+    # Built under the triple this build publishes: a chart belongs to an
+    # RRA-008 family, and `V-concentration` closed the refusal window, so
+    # `formula.v1` admits no family and the section draws nothing.
+    rendered = page(published=True)
     assert "<svg" in rendered
     assert "&lt;svg" not in rendered
     assert 'role="img"' in rendered
@@ -171,7 +221,10 @@ def test_a_drawable_section_renders_a_real_svg_element() -> None:
 
 def test_the_chart_is_labelled_for_a_screen_reader() -> None:
     """`aria-labelledby` pointing at a title and a description that exist."""
-    rendered = page()
+    # Built under the triple this build publishes: a chart belongs to an
+    # RRA-008 family, and `V-concentration` closed the refusal window, so
+    # `formula.v1` admits no family and the section draws nothing.
+    rendered = page(published=True)
     assert f'aria-labelledby="{SECTION_BASKET}-ct {SECTION_BASKET}-cd"' in rendered
     assert f'<title id="{SECTION_BASKET}-ct">' in rendered
     assert f'<desc id="{SECTION_BASKET}-cd">' in rendered
@@ -207,19 +260,29 @@ def test_a_scalar_chart_names_each_bar_in_the_readers_language() -> None:
 
     Their metrics are what distinguishes them -- the mode is common to all three --
     and a metric name is governed wording, so it is looked up rather than printed.
-    """
-    english = page(LANGUAGE_ENGLISH)
-    arabic = page(LANGUAGE_ARABIC)
 
-    assert "Price effect" in english
+    The price bar is named **realized price/mix effect**, which `RRA-008` requires
+    because aggregate average selling price also moves with product mix. The
+    machine metric stays `price_effect`; only the label a reader sees changes, and
+    it matches the table beside the chart -- one figure cannot carry two names on
+    one page.
+
+    Built under the triple this build publishes, because the subject *is* growth
+    and `rra008.growth.v2` is what draws these bars. Under the predecessor pin the
+    section refuses and the page carries no bar to name.
+    """
+    english = page(LANGUAGE_ENGLISH, published=True)
+    arabic = page(LANGUAGE_ARABIC, published=True)
+
+    assert "Realized price/mix effect" in english
     assert "Volume effect" in english
-    assert "أثر السعر" in arabic
+    assert "أثر السعر ومزيج المنتجات" in arabic
 
 
 def test_a_comparison_bar_names_the_window_it_compares() -> None:
     """A mode is governed wording, so it is translated rather than printed."""
-    english = page(LANGUAGE_ENGLISH)
-    arabic = page(LANGUAGE_ARABIC)
+    english = page(LANGUAGE_ENGLISH, published=True)
+    arabic = page(LANGUAGE_ARABIC, published=True)
     assert "Against the previous period" in english
     assert "مقابل الفترة السابقة" in arabic
 
@@ -277,8 +340,11 @@ def test_both_languages_render_every_section() -> None:
 
 def test_the_arabic_page_mirrors_its_chart() -> None:
     """The category axis mirrors for a right-to-left page, and the values do not."""
-    english = page(LANGUAGE_ENGLISH)
-    arabic = page(LANGUAGE_ARABIC)
+    # Built under the triple this build publishes: a chart belongs to an
+    # RRA-008 family, and `V-concentration` closed the refusal window, so
+    # `formula.v1` admits no family and the section draws nothing.
+    english = page(LANGUAGE_ENGLISH, published=True)
+    arabic = page(LANGUAGE_ARABIC, published=True)
     assert 'dir="rtl"' in arabic
     assert english != arabic
     assert "<svg" in arabic

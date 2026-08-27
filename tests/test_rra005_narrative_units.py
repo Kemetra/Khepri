@@ -42,7 +42,10 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import NarrativeRequest, validate
 from khepri.rra.profiling import build_profile
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 #: Carries `cogs`, so the package produces the `gross_margin` ratio the bare
 #: fixtures elsewhere have no way to reach.
@@ -61,17 +64,24 @@ def package() -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(CONTENT).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=CONTENT,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=CONTENT,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def drafted():

@@ -13,7 +13,14 @@ from khepri.rra.admissibility import (
     ReportRequest,
     assess_admissibility,
 )
-from khepri.rra.admission import AdmittedEvents, EventsRefused, admit_events
+from khepri.rra.admission import (
+    EVENT_RETURN,
+    EVENT_SALE,
+    STATUS_POSTED,
+    AdmittedEvents,
+    EventsRefused,
+    admit_events,
+)
 from khepri.rra.aggregates import (
     REDACTION_SENTINEL,
     UNLABELLED_BUCKET_LABEL,
@@ -24,6 +31,14 @@ from khepri.rra.aggregates import (
     granularity_for,
     reconciles,
 )
+from khepri.rra.bases import BasisBinding, RetainedBasis, retain_bases
+from khepri.rra.coverage import CoverageManifest
+from khepri.rra.coverage_signature import (
+    CoverageSignature,
+    SignatureRefused,
+    build_coverage_signature,
+)
+from khepri.rra.daily_bases import AlignedDailyBasis
 from khepri.rra.mapping import (
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
@@ -39,6 +54,17 @@ from khepri.rra.mapping import (
     STATE_AMBIGUOUS,
     RetailMapping,
     build_mapping,
+)
+from khepri.rra.populations import (
+    POPULATION_FINANCIAL_COMPLETE_REVENUE_COST,
+    POPULATION_FINANCIAL_POSTED,
+    POPULATION_SALES_COMPLETE_REVENUE,
+    POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS,
+    POPULATION_SALES_COMPLETE_REVENUE_UNITS,
+    POPULATION_SALES_COMPLETE_TRANSACTIONS,
+    POPULATION_SALES_COMPLETE_UNITS,
+    POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS,
+    POPULATION_SALES_POSTED,
 )
 from khepri.rra.profiling import (
     DatasetProfile,
@@ -58,8 +84,8 @@ from khepri.rra.versions import (
 # v2 carries the five items APP-014 added to RRA-004: the retained concentration
 # curve, distinct transaction counts, per-bucket date counts, the recorded
 # comparison window, and the formula version as a field on every emitted fact.
-PACKAGE_VERSION = "rra004.package.v2"
-FORMULA_VERSION = "rra004.formula.v1"
+PACKAGE_VERSION = "rra004.package.v3"
+FORMULA_VERSION = "rra004.formula.v2"
 
 # The governed comparison window, recorded rather than chosen by whichever module
 # needs one. `RRA-008` asks for "a prior window of equal length" and names no
@@ -230,6 +256,35 @@ class FactPackage:
     refusals: tuple[RefusedResult, ...]
     caveats: tuple[str, ...]
     comparison_window_periods: int = COMPARISON_WINDOW_PERIODS
+    # --- `rra004.package.v3` population, basis and coverage provenance -------
+    #
+    # `RRA-004`'s "Fact-package provenance" requires the package to record
+    # "dimensions, units, input digest, coverage-manifest identity, coverage
+    # signatures, canonical transaction keys or their stable basis identity, and
+    # aligned daily bases", and every fact to disclose a readable population
+    # code. Before v3 none of it was recorded: `_matched` built the AOV, ASP and
+    # margin populations and returned only their values.
+    #
+    # Defaulted so this shape can land before every producer fills it, and
+    # enumerated in `package_source.rebuild_fact_package` so an absent field is
+    # refused on read rather than defaulted back into existence.
+    #
+    # **No growth rounding-residual field.** `RRA-004`: package v3 "authorizes no
+    # growth rounding-residual field; that evidence belongs wholly to
+    # `rra008.growth.v2`" and does not widen this document.
+    #: One uppercase ISO 4217 code when the package carries monetary facts.
+    currency: str | None = None
+    #: The event kinds and statuses every population here was filtered to.
+    event_kind_filters: tuple[str, ...] = ()
+    status_filters: tuple[str, ...] = ()
+    #: The attestation this package's coverage claims rest on, by identity.
+    coverage_manifest_identity: str | None = None
+    #: Structural coverage signatures, one per accepted window and scope.
+    coverage_signatures: tuple[CoverageSignature, ...] = ()
+    #: Daily revenue and unit bases bound to those windows.
+    daily_bases: tuple[AlignedDailyBasis, ...] = ()
+    #: The reconciliation bases a fact may cite.
+    retained_bases: tuple[RetainedBasis, ...] = ()
 
     def fact(self, metric: str) -> Fact | None:
         return next((fact for fact in self.facts if fact.metric == metric), None)
@@ -279,6 +334,15 @@ class FactPackage:
             "comparisons": [entry.as_document() for entry in self.comparisons],
             "refusals": [refusal.as_document() for refusal in self.refusals],
             "caveats": list(self.caveats),
+            "currency": self.currency,
+            "event_kind_filters": sorted(self.event_kind_filters),
+            "status_filters": sorted(self.status_filters),
+            "coverage_manifest_identity": self.coverage_manifest_identity,
+            "coverage_signatures": [
+                signature.as_document() for signature in self.coverage_signatures
+            ],
+            "daily_bases": [basis.as_document() for basis in self.daily_bases],
+            "retained_bases": [basis.as_document() for basis in self.retained_bases],
         }
 
     @property
@@ -292,6 +356,11 @@ class _Measures:
     units: list[int | None]
     dates: list[date | None]
     transactions: list[str | None]
+    #: Each admitted row's event kind, in frame order. `RRA-004` assigns
+    #: sale-only populations to Transactions, AOV, ASP and items per
+    #: transaction, and `RRA-003` forbids establishing the kind from observed
+    #: values -- so it travels from admission rather than being re-derived.
+    event_kinds: list[str]
     cost: list[Decimal | None]
     discount: list[Decimal | None]
     returns: list[Decimal | None]
@@ -329,6 +398,14 @@ class AdmittedInput:
     mapping: RetailMapping
     decision: AdmissibilityDecision
     contract: SourceContract
+    #: The coverage attestation this reading rests on, or `None` where the
+    #: operator attested none. `RRA-008` is explicit that "without an
+    #: authoritative valid manifest, observed trends may survive but
+    #: completeness-dependent comparison and growth refuse" -- so an absent
+    #: manifest is an ordinary state that refuses those results rather than the
+    #: package. Defaulted because the profile route carries one only when the
+    #: customer attested.
+    manifest: CoverageManifest | None = None
 
 
 def build_fact_package(
@@ -414,7 +491,14 @@ def _totals(
     return _Totals(
         revenue=_monetary(admitted_events, measures.revenue),
         units=_sum_integer(measures.units),
-        transactions=_distinct(measures.transactions) if complete else None,
+        # `RRA-004`:92 -- "Transactions count posted sales only." A return
+        # is a posted event and belongs in revenue and units; it is not a
+        # transaction, and counting it inflates every ratio dividing by one.
+        transactions=(
+            _distinct(_sale_only(measures.transactions, measures))
+            if complete
+            else None
+        ),
         transactions_reason=(
             REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
         ),
@@ -425,7 +509,11 @@ def _totals(
             _monetary(admitted_events, measures.discount),
             basis.discount_is_additive,
         ),
-        returns=_monetary(admitted_events, measures.returns),
+        # `RRA-004`:83 -- `-sum(non-positive return revenue)`. `RRA-003`
+        # forbids the alternative outright: "No independently mapped
+        # return-amount measure is admitted." A return event states its own
+        # magnitude, so a separate column is a second answer to one question.
+        returns=_returns_magnitude(admitted_events, measures),
     )
 
 
@@ -542,6 +630,10 @@ def _build(
     mapping = admitted.mapping
     decision = admitted.decision
     if formula_version != FORMULA_VERSION:
+        # One builder implements one formula version. A caller asking for
+        # another would receive this builder's arithmetic stamped with that
+        # other identity, which is precisely the mislabelling the version
+        # system exists to prevent -- so this refuses rather than obliging.
         raise FactsRefused("Formula version is not implemented by this package builder.")
     assert_versions_admitted(
         # The mapping this package actually combines, read from the mapping
@@ -562,7 +654,7 @@ def _build(
 
     admitted_events = _admitted_events(admitted)
     frame = _admitted_frame(materialize(content, media_type), admitted_events)
-    measures = _measures(frame, profile, mapping)
+    measures = _measures(frame, profile, mapping, admitted_events)
     if measures.monetary_precision > MAX_MONETARY_PRECISION:
         raise FactsRefused("Monetary input precision exceeds the governed maximum.")
     row_count = frame.height
@@ -653,8 +745,20 @@ def _build(
     # A metric combining two measures is computed over the rows that carry both.
     # Dividing a revenue total drawn from one set of rows by a count drawn from
     # another publishes an average of a population that never existed.
-    orders = _matched(measures.revenue, measures.transactions)
-    selling = _matched(measures.revenue, measures.units)
+    # `RRA-004` assigns AOV `sales_complete_revenue_transactions` and ASP
+    # `sales_complete_revenue_units`, so both pair over sale rows only.
+    # Gross margin keeps `financial_complete_revenue_cost`, which `RRA-004`
+    # defines over financial rows -- returns included.
+    sale_revenue = _sale_only(measures.revenue, measures)
+    orders = _matched(sale_revenue, _sale_only(measures.transactions, measures))
+    selling = _matched(sale_revenue, _positive_units(measures))
+    # `RRA-004`: `sales_complete_revenue_units` admits "no unmatched eligible
+    # row", and `RRA-003`: "a sale or return event with zero units refuses
+    # unit-dependent facts". A sale carrying revenue but no positive units is
+    # eligible and unmatched, so the population does not exist for this dataset
+    # and ASP has nothing to average -- averaging the rest publishes a figure
+    # that reconciles against neither the revenue nor the units beside it.
+    complete_selling = not _unmatched(sale_revenue, _positive_units(measures))
     margin = _matched(measures.revenue, measures.cost)
     if any(pairing.partial for pairing in (orders, selling, margin)):
         caveats.append(CAVEAT_DERIVED_OVER_MATCHED_ROWS)
@@ -676,7 +780,11 @@ def _build(
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_SELLING_PRICE,
-        numerator=_monetary(admitted_events, selling.left),
+        numerator=(
+            _monetary(admitted_events, selling.left)
+            if complete_selling
+            else None
+        ),
         denominator=_sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
@@ -737,7 +845,15 @@ def _build(
         caveats=caveats,
     )
 
-    if any(fact.unit_kind == UNIT_MONETARY for fact in facts):
+    if admitted_events.currency is None and any(
+        fact.unit_kind == UNIT_MONETARY for fact in facts
+    ):
+        # Conditional under `rra004.package.v3`, unconditional before it. Under
+        # `v2` the package recorded no currency at all, so "not declared" was
+        # true of the document however the extract had been read. `v3` records
+        # the admitted currency, and a package stating both `EGP` and "currency
+        # not declared" contradicts itself -- visibly, since `RRA-009` renders
+        # caveats to customers.
         caveats.append(CAVEAT_CURRENCY_NOT_DECLARED)
     if measures.null_measure_inputs:
         caveats.append(CAVEAT_NULL_MEASURE_INPUTS)
@@ -763,7 +879,184 @@ def _build(
         comparisons=tuple(comparisons),
         refusals=tuple(sorted(refusals, key=lambda refusal: refusal.metric)),
         caveats=tuple(sorted(set(caveats))),
+        # `rra004.package.v3` provenance. `RRA-004` requires the package to
+        # record these, and requires every derived fact to cite "exactly one
+        # compatible basis" -- so a v3 package retaining none would leave every
+        # derived fact citing nothing.
+        currency=admitted_events.currency,
+        event_kind_filters=_admitted_kinds(admitted_events),
+        status_filters=(STATUS_POSTED,),
+        coverage_manifest_identity=(
+            None if admitted.manifest is None else admitted.manifest.input_digest
+        ),
+        coverage_signatures=_signatures_of(admitted, measures),
+        retained_bases=retain_bases(
+            events=admitted_events.events,
+            binding=BasisBinding(
+                input_digest=profile.source_sha256_hex,
+                mapping_version=mapping.mapping_version,
+                currency=admitted_events.currency,
+                precision=money,
+            ),
+            counts=_population_counts(measures),
+        ),
     )
+
+
+def _population_counts(measures: _Measures) -> dict[str, int]:
+    """How many admitted events each governed population actually contains.
+
+    `RRA-004` defines the populations by the measures a row carries, not by its
+    event kind alone: `sales_complete_revenue_units` is the sales complete in
+    *both*, and a basis counting every sale claims a completeness the package
+    does not have. Computed here rather than in `bases` because the measures and
+    the sale-only helpers are here.
+
+    A population with no eligible event counts zero rather than being omitted:
+    `retain_bases` produces its bases "wherever the events allow rather than
+    being optional", so the honest count is the answer and absence is never the
+    disclosure.
+    """
+    sales = _sale_only(measures.revenue, measures)
+    sale_units = _positive_units(measures)
+    sale_keys = _sale_only(measures.transactions, measures)
+    financial = len(measures.revenue)
+    kinds = len([kind for kind in measures.event_kinds if kind == EVENT_SALE])
+
+    def both(left: list, right: list) -> int:
+        return sum(
+            1
+            for index in range(len(left))
+            if left[index] is not None and right[index] is not None
+        )
+
+    def present(values: list) -> int:
+        return sum(1 for value in values if value is not None)
+
+    return {
+        POPULATION_FINANCIAL_POSTED: financial,
+        POPULATION_SALES_POSTED: kinds,
+        POPULATION_SALES_COMPLETE_REVENUE: present(sales),
+        POPULATION_SALES_COMPLETE_UNITS: present(sale_units),
+        POPULATION_SALES_COMPLETE_REVENUE_UNITS: both(sales, sale_units),
+        POPULATION_SALES_COMPLETE_TRANSACTIONS: present(sale_keys),
+        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS: both(sales, sale_keys),
+        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS: both(sale_units, sale_keys),
+        POPULATION_FINANCIAL_COMPLETE_REVENUE_COST: both(
+            measures.revenue, measures.cost
+        ),
+    }
+
+
+def _signatures_of(
+    admitted: AdmittedInput,
+    measures: _Measures,
+) -> tuple[CoverageSignature, ...]:
+    """One structural signature per attested scope, over the dates admitted.
+
+    Empty where the operator attested no coverage. `RRA-008` makes that an
+    ordinary state -- "observed trends may survive but completeness-dependent
+    comparison and growth refuse" -- so an absent manifest yields no signature
+    and the families that need one refuse for themselves.
+
+    The window comes from the admitted dates and the *proof* comes from the
+    manifest: `build_coverage_signature` reads only attested pairs, so a day the
+    frame carries and the manifest does not is simply not covered. Deriving the
+    window from data and its coverage from the attestation is the division
+    `RRA-004` draws -- observed bounds "are evidence but are not
+    coverage-manifest completeness proof".
+    """
+    manifest = admitted.manifest
+    if manifest is None:
+        return ()
+    days = [day for day in measures.dates if day is not None]
+    if not days:
+        return ()
+    signatures = []
+    for scope in sorted(manifest.scopes):
+        try:
+            signatures.append(
+                build_coverage_signature(
+                    manifest, scope=scope, start=min(days), end=max(days)
+                )
+            )
+        except SignatureRefused:
+            # A scope this window is not wholly attested for proves nothing about
+            # it, and a partial list would read as a complete one.
+            return ()
+    return tuple(signatures)
+
+
+def _admitted_kinds(admitted_events: AdmittedEvents) -> tuple[str, ...]:
+    """The event kinds this package actually admitted, in a stable order.
+
+    Read off the events rather than declared, because the filter a package
+    records must describe what it computed over: a contract admitting returns
+    over an extract containing none produced a sale-only package, and recording
+    the declaration would overstate the population.
+    """
+    return tuple(sorted({event.event_kind for event in admitted_events.events}))
+
+
+def _positive_units(measures: _Measures) -> list:
+    """Sale units, keeping only the strictly positive ones.
+
+    `RRA-003`: "ASP and basket calculations use positive posted-sale units only,
+    including free or bonus items." A zero-unit sale refuses unit-dependent
+    facts rather than contributing a zero, so it is blanked here too.
+    """
+    return [
+        value if value is not None and value > 0 else None
+        for value in _sale_only(measures.units, measures)
+    ]
+
+
+def _returns_magnitude(
+    admitted_events: AdmittedEvents,
+    measures: _Measures,
+) -> Decimal | None:
+    """The positive magnitude of admitted return revenue, per `RRA-004`:83.
+
+    `None` where the package proves no return magnitude -- `RRA-003` is
+    explicit that "absence of event-kind evidence cannot establish zero", so a
+    package with no admitted return event states nothing rather than zero.
+
+    **One check, not two.** An earlier form asked separately whether any return
+    event was admitted and whether any carried non-positive revenue. Both
+    answered `None`, so the first could be deleted with every test still green
+    -- a mutation check found exactly that. The two questions *should* differ:
+    `RRA-004`:48-49 lets an empty eligible population state zero "only when
+    admitted event-kind and status evidence proves that event class is absent",
+    so a package that admitted returns and found none is entitled to publish
+    zero. That is a `Returns` refusal-rule change rather than a population one,
+    and it is not this commit's row to move -- so the redundant branch is
+    removed rather than left standing as an untested claim.
+    """
+    magnitudes = [
+        value
+        for value, kind in zip(measures.revenue, measures.event_kinds, strict=False)
+        if kind == EVENT_RETURN and value is not None and value <= 0
+    ]
+    if not magnitudes:
+        return None
+    return _monetary(admitted_events, [-value for value in magnitudes])
+
+
+def _sale_only(values: list, measures: _Measures) -> list:
+    """The same list with every non-sale row blanked out.
+
+    `RRA-004`:92 -- "Transactions count posted sales only" -- and the same rule
+    governs AOV, ASP and items per transaction through their populations
+    (`RRA-004`:35-42). Blanking rather than compacting keeps the list
+    index-aligned with every other measure, which is what lets `_matched` pair
+    two of them without a join.
+
+    Returns stay inside revenue and units: `RRA-004`:92 keeps those net.
+    """
+    return [
+        value if kind == EVENT_SALE else None
+        for value, kind in zip(values, measures.event_kinds, strict=False)
+    ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -771,6 +1064,25 @@ class _Matched:
     left: list
     right: list
     partial: bool
+
+
+def _unmatched(left: list, right: list) -> bool:
+    """Whether some row carries one measure of a pairing and not the other.
+
+    `_matched` keeps the rows where both are present and reports `partial` so the
+    package can disclose the loss. This asks the stricter question a *ratio*
+    population needs: not "did we lose a row" but "is this population complete at
+    all". `RRA-004` puts "no unmatched eligible row" on
+    `sales_complete_revenue_units` and on none of the plain filters beside it.
+
+    A pairing with no left-hand values at all is not unmatched -- the measure is
+    absent rather than incomplete, and the metric is refused for that instead.
+    """
+    if not any(value is not None for value in left):
+        return False
+    return any(
+        (left[index] is None) != (right[index] is None) for index in range(len(left))
+    )
 
 
 def _matched(left: list, right: list) -> _Matched:
@@ -994,6 +1306,7 @@ def _measures(
     frame: pl.DataFrame,
     profile: DatasetProfile,
     mapping: RetailMapping,
+    admitted_events: AdmittedEvents,
 ) -> _Measures:
     height = frame.height
     null_inputs = False
@@ -1031,11 +1344,24 @@ def _measures(
         if date_format is not None:
             dates = _date_values(frame, date_column.position, date_format)
 
+    # The canonical transaction key admission built, never the bare mapped
+    # column. `RRA-003`: "A bare source transaction identifier qualifies only
+    # when its recorded source contract proves package-wide uniqueness.
+    # Otherwise the canonical key is an admitted composite containing the source
+    # identifier and every field required for uniqueness". `admission` decides
+    # which of those two a contract earned; reading the column here re-decided
+    # it as "always the bare one", so two stores' identically-numbered receipts
+    # collapsed into one transaction and every transaction-denominated metric
+    # inherited the error.
+    #
+    # Index-aligned rather than joined: `_admitted_frame` narrows the frame with
+    # `admitted_events.kept_positions`, and `events` is built over that same
+    # kept list in the same order, so frame row `i` is `events[i]`.
     transaction_column = mapping.for_semantic(SEMANTIC_TRANSACTION_ID).column
     transactions: list[str | None] = (
         [None] * height
         if transaction_column is None
-        else _text_values(frame, transaction_column.position)
+        else [event.transaction_key for event in admitted_events.events]
     )
 
     return _Measures(
@@ -1043,6 +1369,7 @@ def _measures(
         units=units,
         dates=dates,
         transactions=transactions,
+        event_kinds=[event.event_kind for event in admitted_events.events],
         cost=cost,
         discount=discount,
         returns=returns,

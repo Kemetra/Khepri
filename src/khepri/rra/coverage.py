@@ -39,6 +39,29 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 COVERAGE_MANIFEST_VERSION = "rra003.coverage-manifest.v1"
 
+#: Every manifest version this build knows how to interpret. Checked at *use*
+#: rather than only at construction, because `manifest_from_document` reads a
+#: stored document back verbatim -- deliberately, so a rebuild reproduces what
+#: was written -- and therefore carries whatever version that document recorded.
+#: A stamp nothing verifies is not evidence, and `RRA-003` requires the
+#: attestation to be versioned.
+RECOGNISED_MANIFEST_VERSIONS: frozenset[str] = frozenset({COVERAGE_MANIFEST_VERSION})
+
+#: What a manifest stored before `attested_by` existed reads back as.
+#:
+#: The field was added to the shape without moving `COVERAGE_MANIFEST_VERSION`,
+#: so old and new documents share `rra003.coverage-manifest.v1` and a direct
+#: lookup raised `KeyError` for every previously stored attested profile --
+#: failing package rebuild and every coverage check that read one.
+#:
+#: A distinct marker rather than a plausible attester name: an attestation that
+#: recorded no attribution has none, and inventing one would make it
+#: indistinguishable from a manifest that named its source. `_assert_bound`
+#: still refuses a *blank* attester, so this cannot become a way to accept a new
+#: manifest with nothing recorded -- readback is not admission.
+UNRECORDED_ATTESTER = "attribution not recorded"
+
+
 #: A scope-day pair is exactly a scope and a day. Named so the read-back refusal
 #: of a malformed stored pair reads as a width check rather than a bare `2`.
 _SCOPE_DAY_WIDTH = 2
@@ -63,6 +86,13 @@ class CoverageManifest:
     manifest_version: str
     input_digest: str
     source_contract_digest: str
+    #: Who attested this coverage claim and on what basis. `RRA-003` records
+    #: "the source-contract or attestation identity and its evidence" among a
+    #: manifest's fields, and `source_contract_digest` is not it: that identifies
+    #: the *reading* the attestation was made under, while this attributes the
+    #: coverage claim itself. An attested closure is a statement somebody made,
+    #: and one nobody signed cannot be weighed when it is later relied on.
+    attested_by: str
     timezone: str
     covered_start: date
     covered_end: date
@@ -106,6 +136,7 @@ class CoverageManifest:
             "manifest_version": self.manifest_version,
             "input_digest": self.input_digest,
             "source_contract_digest": self.source_contract_digest,
+            "attested_by": self.attested_by,
             "timezone": self.timezone,
             "covered_start": self.covered_start.isoformat(),
             "covered_end": self.covered_end.isoformat(),
@@ -146,6 +177,7 @@ def manifest_from_document(document: dict[str, object]) -> CoverageManifest:
         manifest_version=str(document["manifest_version"]),
         input_digest=str(document["input_digest"]),
         source_contract_digest=str(document["source_contract_digest"]),
+        attested_by=str(document.get("attested_by") or UNRECORDED_ATTESTER),
         timezone=str(document["timezone"]),
         covered_start=date.fromisoformat(str(document["covered_start"])),
         covered_end=date.fromisoformat(str(document["covered_end"])),
@@ -198,6 +230,12 @@ class ManifestBinding:
     input_digest: str
     source_contract_digest: str
     timezone: str
+    #: Defaulted so the many fixtures that build a binding for a reason
+    #: unrelated to attribution keep reading as one call. A blank value is
+    #: refused by `_assert_bound`, so the default cannot become a way to skip
+    #: the attestation -- it only keeps the required value out of call sites
+    #: that have nothing to say about it.
+    attested_by: str = "operator attestation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +276,7 @@ def build_coverage_manifest(
         manifest_version=COVERAGE_MANIFEST_VERSION,
         input_digest=binding.input_digest,
         source_contract_digest=binding.source_contract_digest,
+        attested_by=binding.attested_by,
         timezone=binding.timezone,
         covered_start=window.covered_start,
         covered_end=window.covered_end,
@@ -271,6 +310,39 @@ def _assert_usable(manifest: CoverageManifest) -> None:
         )
     _assert_spans_its_own_window(manifest)
     _assert_pairs_within_window(manifest)
+
+
+def assert_bound(manifest: CoverageManifest) -> None:
+    """Both bindings present and attributed, for a manifest about to be relied on.
+
+    **Deliberately not part of `_assert_usable`.** That function answers the
+    *structural* questions -- a named scope, a window that does not end before it
+    starts, no day both shut and missing -- and `profile_request._unbound` asks
+    exactly those against placeholder digests, because the real ones are not
+    known until the upload has been read. Folding a binding rule into it would
+    refuse every posted manifest before its digests could exist, turning a
+    validation-phase distinction the request path depends on into a 400.
+
+    So this is the *storage and use* phase: called where a manifest is built
+    against the real binding. `admits_completeness` proves that binding by
+    comparing these digests against the query's, and two empty strings satisfy
+    that comparison -- so a manifest bound to nothing would admit every file and
+    every reading, the exact reuse `RRA-003` names the input digest and the
+    source contract to prevent.
+    """
+    if not manifest.input_digest.strip():
+        raise ManifestRefused(
+            "A coverage manifest must be bound to the digest of the input it covers."
+        )
+    if not manifest.source_contract_digest.strip():
+        raise ManifestRefused(
+            "A coverage manifest must be bound to the source contract it was "
+            "attested under."
+        )
+    if not manifest.attested_by.strip():
+        raise ManifestRefused(
+            "A coverage manifest must record who attested it."
+        )
 
 
 def _assert_one_scope_mode(manifest: CoverageManifest) -> None:
@@ -367,15 +439,39 @@ def admits_completeness(
     """
     if query.end < query.start:
         return False
+    if manifest.manifest_version not in RECOGNISED_MANIFEST_VERSIONS:
+        return False
     if manifest.input_digest != query.input_digest:
         return False
     if manifest.source_contract_digest != query.source_contract_digest:
         return False
-    if manifest.partial_terminal_boundary:
+    if _boundary_cuts_the_window(manifest, query):
         return False
     if query.scope not in manifest.scopes:
         return False
     return _every_day_proven(manifest, query)
+
+
+def _boundary_cuts_the_window(
+    manifest: CoverageManifest,
+    query: CompletenessQuery,
+) -> bool:
+    """Whether a declared partial terminal boundary falls inside this window.
+
+    `RRA-003` lists the boundary among the *known exceptions* a manifest records,
+    beside closures and extraction gaps, and those refuse the days they touch
+    rather than the whole attestation. The boundary is by construction at the end
+    of the covered window -- the extract stopped part-way through that final
+    period -- so a query ending before `covered_end` is not cut by it.
+
+    Refusing every window instead would state a gap where the operator attested
+    none, discarding completeness proof that was actually given. That is the
+    same over-refusal the inverted-window check above avoids in the other
+    direction.
+    """
+    if not manifest.partial_terminal_boundary:
+        return False
+    return query.end >= manifest.covered_end
 
 
 def _every_day_proven(manifest: CoverageManifest, query: CompletenessQuery) -> bool:

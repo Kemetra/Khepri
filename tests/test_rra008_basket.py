@@ -39,7 +39,10 @@ from khepri.rra.facts import (
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import SEMANTIC_PRODUCT, build_mapping
 from khepri.rra.profiling import build_profile
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 # Eleven units over four rows, in three invoices. Water is in all three invoices;
 # Juice is in one. No two of {rows, units, transactions} are equal, so a metric
@@ -59,17 +62,24 @@ def package_for(content: bytes) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def facts_of(package: FactPackage) -> tuple[Fact, ...]:
@@ -190,35 +200,67 @@ def test_an_incomplete_identifier_column_says_so_rather_than_absent() -> None:
     assert result.reason == REASON_INCOMPLETE_IDENTIFIERS
 
 
-def test_the_synthetic_unlabelled_bucket_gets_no_attach_rate() -> None:
-    """A null is not "a given admissible dimension value", just as `other` is not.
+# A product column blank on two of three invoices. `rra008.basket.v1` published
+# Water at 0.3333 against a denominator of three -- counting two transactions
+# whose product is unknown as transactions that do not contain Water. They might.
+INCOMPLETE_DIMENSION = (
+    b"date,revenue,units,invoice_no,product\n"
+    b"2026-01-05,100.00,3,INV-1,Water\n"
+    b"2026-01-06,200.00,5,INV-2,\n"
+    b"2026-01-07,60.00,1,INV-3,\n"
+)
 
-    Rows with no product land in the synthetic `unlabelled` bucket. A rate over it
-    would state the share of transactions containing *no value*, which `RRA-008`
-    does not authorize and a reader would read as a product.
 
-    A source value literally spelled "unlabelled" is not affected: `build_comparison`
-    disambiguates any label that would shadow a reserved synthetic bucket.
+def test_one_missing_dimension_value_refuses_the_whole_attach_family() -> None:
+    """`RRA-008`: "Every eligible sale row must carry the dimension value; one
+    missing value refuses that dimension's entire attach family rather than
+    silently entering only the denominator."
+
+    **This test asserted the opposite under `rra008.basket.v1`.** It checked that
+    Water still received a rate, which is exactly the silent-denominator entry the
+    specification forbids: `_SYNTHETIC_LABELS` kept the unlabelled bucket from
+    *getting* a rate, and nothing kept it out of the denominator every other rate
+    divides by. Every published rate was therefore too low by an amount no reader
+    could see or bound.
+
+    Refusing is the honest answer because the true rate is not merely unmeasured:
+    an unlabelled transaction may or may not contain Water, and nothing in the
+    package decides which.
     """
-    content = (
-        b"date,revenue,units,invoice_no,product\n"
-        b"2026-01-05,100.00,3,INV-1,Water\n"
-        b"2026-01-06,200.00,5,INV-2,\n"
-        b"2026-01-07,60.00,1,INV-3,\n"
-    )
-    package = package_for(content)
+    package = package_for(INCOMPLETE_DIMENSION)
     published = package.comparison(SEMANTIC_PRODUCT)
     assert published is not None
     assert UNLABELLED_BUCKET_LABEL in {
         bucket.label for bucket in published.comparison.buckets
     }
 
+    attach = [
+        fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
+    ]
+    assert not attach, [fact.value for fact in attach]
+
+    refused = basket.refusals(package)
+    assert any(
+        entry.reason == basket.REASON_DIMENSION_INCOMPLETE
+        and entry.metric == METRIC_ATTACH_RATE
+        for entry in refused
+    ), refused
+
+
+def test_a_complete_dimension_still_states_every_attach_rate() -> None:
+    """The other half of the rule, and the reason it is not simply "refuse".
+
+    Refusing whenever a synthetic bucket exists would be indistinguishable from
+    refusing whenever the data is imperfect. Every row here carries a product, so
+    every value keeps its rate.
+    """
+    package = package_for(GOLDEN)
     labels = {
         basket.attached_value_of(fact, package)
         for fact in facts_of(package)
         if fact.metric == METRIC_ATTACH_RATE
     }
-    assert labels == {"Water"}
+    assert labels == {"Water", "Juice"}
 
 
 def test_attach_rate_uses_whatever_measure_ranked_the_dimension() -> None:

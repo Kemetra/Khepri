@@ -94,7 +94,7 @@ constant is public for that reason and for no other.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Context, Decimal, localcontext
 
 from khepri.rra.aggregates import Bucket
@@ -104,6 +104,7 @@ from khepri.rra.analysis.windows import (
     MODE_YEAR_OVER_YEAR,
     compared_labels,
 )
+from khepri.rra.coverage_signature import COVERAGE_MODE_PREFIX
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     RATIO_PRECISION,
@@ -132,7 +133,7 @@ from khepri.rra.mapping import SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_DATE
 # fraction; under the package's version every one of those produced identical
 # identifiers. `RRA-008` also requires the formula version recorded as provenance,
 # and a version that belongs to a different specification does not record it.
-COMPARISON_FORMULA_VERSION = "rra008.comparison.v1"
+COMPARISON_FORMULA_VERSION = "rra008.comparison.v2"
 
 # The modes and the window rule now live in `windows.py`, shared with the growth
 # family. Re-exported here because both were this module's public names before the
@@ -155,6 +156,16 @@ GOVERNED_METRICS = (METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT)
 
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
 REASON_NEGATIVE_BASE = "negative_base"
+#: `RRA-008`: "Sparse, non-contiguous, count-equal, gap-containing,
+#: scope-mismatched, store-mismatched, or filter-mismatched structures refuse.
+#: Equal counts, observed rows, date bounds, and generated date spines never
+#: prove alignment."
+REASON_COVERAGE_INCOMPATIBLE = "coverage_structurally_incompatible"
+
+#: `RRA-008` admits an incomplete current month against the prior period's
+#: day-`1..k` projection, and requires the result to carry "the bilingual
+#: partial-window caveat required by `RRA-009`".
+CAVEAT_PARTIAL_WINDOW = "comparison_partial_window"
 
 # Which cause speaks for the family when the two modes refuse for different
 # reasons -- a period-over-period predecessor missing while the year-earlier
@@ -170,7 +181,11 @@ REASON_NEGATIVE_BASE = "negative_base"
 # Reasons absent from this tuple sort last rather than raising: a metric-scoped
 # refusal like `negative_base` never reaches here, because the mode that records
 # one also produced an absolute delta and so did not refuse wholly.
-_REASON_PRECEDENCE = (REASON_INPUT_UNAVAILABLE, REASON_PRIOR_WINDOW_ABSENT)
+_REASON_PRECEDENCE = (
+    REASON_INPUT_UNAVAILABLE,
+    REASON_COVERAGE_INCOMPATIBLE,
+    REASON_PRIOR_WINDOW_ABSENT,
+)
 
 # What these facts are derived from, named in the governed mapping vocabulary.
 # `Fact.inputs` elsewhere holds semantic measures -- the formula version is
@@ -238,6 +253,40 @@ class _Outcome:
 
     facts: tuple[Fact, ...]
     refusals: tuple[RefusedResult, ...]
+
+
+def accepted_window(package: FactPackage, mode: str = MODE_PERIOD_OVER_PERIOD):
+    """The window this family accepted for `mode`, or `None` if it accepted none.
+
+    **The seam `RRA-008` requires of growth**: "Growth consumes the exact PoP
+    window selected by period comparison and may not select another", over "the
+    structural coverage compatibility already accepted by comparison".
+
+    Growth used to call `windows.compared_labels` itself and land on the same
+    two labels, which looked equivalent and is not: that shares the *rule*, not
+    the *acceptance*. Once this family refuses a window on coverage grounds --
+    a sparse structure, a scope mismatch, an unproven prefix -- the rule still
+    returns those labels, and a growth family re-deriving them would decompose
+    a window comparison declined to state. The gap is invisible while the two
+    agree and silent when they stop.
+
+    Returned as the window rather than the labels, because the labels are what
+    growth could already compute. What it could not compute is that comparison
+    accepted them.
+    """
+    return _window_for(package, mode)
+
+
+def window_refusal(package: FactPackage, mode: str = MODE_PERIOD_OVER_PERIOD) -> str:
+    """Why this family accepted no window for `mode`.
+
+    The companion to `accepted_window`, for the same reason that exists: growth
+    consumes this family's *acceptance*, so it must also report this family's
+    *cause* rather than assume the window was simply absent. Four causes reach
+    one `None`, and a customer told the wrong one is sent to a fix that cannot
+    work -- re-exporting history does not make two windows comparable.
+    """
+    return _absent_reason(package, mode)
 
 
 def derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
@@ -347,7 +396,7 @@ def _outcomes(package: FactPackage) -> tuple[_Outcome, ...]:
 def _derive_mode(package: FactPackage, mode: str) -> _Outcome:
     window = _window_for(package, mode)
     if window is None:
-        return _refused(mode, _absent_reason(package))
+        return _refused(mode, _absent_reason(package, mode))
     return _compare(window, package, mode)
 
 
@@ -421,7 +470,80 @@ def _window_for(package: FactPackage, mode: str) -> _Window | None:
     labels = compared_labels(trend.series, mode)
     if labels is None:
         return None
-    return _against_counterpart(labels, trend)
+    if not _structurally_compatible(package, labels):
+        return None
+    window = _against_counterpart(labels, trend)
+    if window is None:
+        return None
+    if not _is_partial(package):
+        return window
+    # `RRA-008`: a partial-prefix comparison "carries the bilingual
+    # partial-window caveat required by `RRA-009`". Carried on the window so
+    # every fact derived from it inherits the disclosure, rather than being
+    # attached per metric where one could be missed.
+    return replace(window, inherited=(*window.inherited, CAVEAT_PARTIAL_WINDOW))
+
+
+def _structurally_compatible(package: FactPackage, labels: tuple[str, str]) -> bool:
+    """Whether the package proves these two windows comparable.
+
+    `RRA-008`: "Complete full calendar periods are structurally compatible when
+    they have the same governed aggregate scope or complete admitted store set
+    and the same event-kind and status filters. Natural calendar length
+    differences, including 28-, 29-, 30-, and 31-day months, do not make
+    otherwise complete full periods incompatible."
+
+    Compared on the **retained structural signatures**, never on observed data:
+    the same specification says "Equal counts, observed rows, date bounds, and
+    generated date spines never prove alignment", and those are precisely what a
+    data-derived check would consult. `rra004.package.v3` retains signatures
+    that exclude absolute dates and every measure value for this reason -- so a
+    28-day February and a 31-day March of identical shape compare equal, which
+    is the natural-length rule falling out of the representation rather than
+    being special-cased.
+
+    **A package that retains no signature is not thereby compatible.** It is
+    unproven, and `RRA-008` refuses completeness-dependent comparison "without
+    an authoritative valid manifest". Returning `True` here would restore the
+    inference the signature exists to replace.
+    """
+    signatures = package.coverage_signatures
+    if not signatures:
+        return False
+    # **The scope set, not one scope.** `RRA-008` admits "the same governed
+    # aggregate scope *or* complete admitted store set", and a roster is the
+    # second form: one scope expressed as several stores, attested together.
+    # Requiring a single scope string refused every multi-store export -- an
+    # ordinary retail case, not an edge one -- because a per-store manifest
+    # emits one signature per store.
+    #
+    # What must agree is the *shape* every signature shares: each covers the
+    # same ordinals over the same window under the same filters. Two windows
+    # covered by different rosters, or by rosters covering different days,
+    # therefore still refuse -- which is the rule this exists to enforce.
+    filters = {
+        (signature.event_kinds, signature.statuses) for signature in signatures
+    }
+    coverage = {
+        (signature.mode, signature.covered_ordinals, signature.window_days)
+        for signature in signatures
+    }
+    return len(filters) == 1 and len(coverage) == 1
+
+
+def _is_partial(package: FactPackage) -> bool:
+    """Whether the accepted coverage is a prefix rather than a whole period.
+
+    `RRA-008` admits "an incomplete current month" against the prior period's
+    day-`1..k` projection, and requires the result to say so. The signature
+    already records which shape was attested, so this reads the recorded
+    structure rather than re-deciding it from dates -- the same division that
+    keeps `_structurally_compatible` off the data.
+    """
+    return any(
+        signature.mode == COVERAGE_MODE_PREFIX
+        for signature in package.coverage_signatures
+    )
 
 
 def _against_counterpart(
@@ -437,9 +559,27 @@ def _against_counterpart(
     )
 
 
-def _absent_reason(package: FactPackage) -> str:
-    if package.trend() is None:
+def _absent_reason(package: FactPackage, mode: str) -> str:
+    """Which of the causes behind `_window_for`'s `None` actually happened.
+
+    Four reach that one `return`, and they are different findings a reader acts
+    on differently. Reported in the order the window is built, so each cause is
+    only considered once the ones before it have been excluded:
+
+    - No trend at all: `required_input_unavailable`.
+    - A trend, but the manifest does not prove the two windows structurally
+      comparable: `coverage_structurally_incompatible`. Saying
+      `prior_window_absent` here tells a customer their file covers a single
+      period when it covers several, and sends them to re-export more history --
+      which produces the same refusal again.
+    - Otherwise no comparable pair exists at all: `prior_window_absent`.
+    """
+    trend = package.trend()
+    if trend is None:
         return REASON_INPUT_UNAVAILABLE
+    labels = compared_labels(trend.series, mode)
+    if labels is not None and not _structurally_compatible(package, labels):
+        return REASON_COVERAGE_INCOMPATIBLE
     return REASON_PRIOR_WINDOW_ABSENT
 
 

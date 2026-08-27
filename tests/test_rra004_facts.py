@@ -15,9 +15,7 @@ from khepri.rra.facts import (
     CAVEAT_NEGATIVE_REVENUE,
     CAVEAT_NULL_MEASURE_INPUTS,
     CAVEAT_PERSONAL_VALUES_REDACTED,
-    CAVEAT_RETURNS_NOT_NETTED,
     CAVEAT_UNDATED_ROWS_EXCLUDED,
-    FORMULA_VERSION,
     METRIC_AVERAGE_ORDER_VALUE,
     METRIC_AVERAGE_SELLING_PRICE,
     METRIC_COST,
@@ -28,11 +26,9 @@ from khepri.rra.facts import (
     METRIC_REVENUE,
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
-    PACKAGE_VERSION,
     REASON_AMBIGUOUS_MAPPING,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
-    REASON_ZERO_DENOMINATOR,
     UNIT_COUNT,
     UNIT_MONETARY,
     UNIT_RATIO,
@@ -58,7 +54,13 @@ from khepri.rra.source_contract import (
     SourceContract,
     build_source_contract,
 )
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    PUBLISHED_FORMULA_VERSION,
+    PUBLISHED_PACKAGE_VERSION,
+    REPEATED_INVOICE_CONTRACT,
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
@@ -81,7 +83,14 @@ def admitted(content: bytes) -> AdmittedInput:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    # Built under the published mapping identity: this module's subject is the
+    # fact package's own arithmetic and refusals, never the version gate. After
+    # `V-mapping` moved `MAPPING_VERSION`, a freshly stamped mapping meets an
+    # unlisted triple and every build here would refuse before computing
+    # anything. `RRA-004` keeps historical packages valid under their recorded
+    # versions, so this is the governed reading of the admitted triple.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
     return AdmittedInput(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -93,14 +102,25 @@ def admitted(content: bytes) -> AdmittedInput:
 
 
 def package(content: bytes) -> FactPackage:
-    return build_fact_package(admitted(content))
+    # The build is inside the block too, because
+    # `facts._assert_derived_from_profile` re-derives the mapping and compares
+    # it by value.
+    with published_mapping_identity():
+        return build_fact_package(admitted(content))
 
 
 def test_core_kpis_are_computed_exactly() -> None:
     result = package(GOLDEN)
 
-    assert result.package_version == PACKAGE_VERSION
-    assert result.formula_version == FORMULA_VERSION
+    # The predecessor identity, not `PACKAGE_VERSION`: `package()` builds under
+    # the published triple because this module's subject is the package's
+    # arithmetic, not the version gate. What a build *combines* and what this
+    # build *publishes* are different claims -- conflating them is the defect
+    # `facts._build` was corrected for.
+    assert result.package_version == PUBLISHED_PACKAGE_VERSION
+    # The predecessor identity: `package()` pins the whole triple, and what
+    # a build combines is not what this build publishes.
+    assert result.formula_version == PUBLISHED_FORMULA_VERSION
     assert result.row_count == 4
     assert result.value(METRIC_REVENUE) == "500.00"
     assert result.value(METRIC_UNITS) == "11"
@@ -144,8 +164,10 @@ def test_conditional_metrics_appear_when_their_inputs_exist() -> None:
     assert result.value(METRIC_GROSS_MARGIN) == "0.4000"
     assert result.fact(METRIC_GROSS_MARGIN).unit_kind == UNIT_RATIO
     assert result.value(METRIC_DISCOUNT) == "15.00"
-    assert result.value(METRIC_RETURNS) == "3.00"
-    assert CAVEAT_RETURNS_NOT_NETTED in result.caveats
+    # `refund_amount` is present and correctly ignored: `RRA-003` admits no
+    # independently mapped return-amount measure, and every row here is a
+    # declared sale, so no return event proves a magnitude.
+    assert result.value(METRIC_RETURNS) is None
 
 
 def test_an_average_never_mixes_two_row_populations() -> None:
@@ -162,9 +184,23 @@ def test_an_average_never_mixes_two_row_populations() -> None:
 
 
 def test_selling_price_and_margin_use_the_same_rows_as_their_pair() -> None:
+    """The two halves are governed differently, and that is the subject.
+
+    `RRA-004:18` puts "and no unmatched eligible row" on
+    `sales_complete_revenue_units` and on no other population, because ASP is a
+    *divisor*: dropping a row moves the average rather than the count, and a
+    reader cannot detect it from the published figures.
+    `financial_complete_revenue_cost` carries no such clause, so gross margin
+    narrows to the matched rows and discloses that it did.
+
+    **The ASP half asserted 50.00 and was wrong, which review caught.** The
+    second row carries units and no revenue -- eligible and unmatched -- so the
+    population does not exist for this dataset. Publishing 50.00 beside a units
+    total of 5 left a reader unable to reconcile either figure against the other.
+    """
     selling = package(b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,,3\n")
     assert selling.value(METRIC_UNITS) == "5"
-    assert selling.value(METRIC_AVERAGE_SELLING_PRICE) == "50.00"
+    assert selling.value(METRIC_AVERAGE_SELLING_PRICE) is None
 
     margin = package(
         b"date,revenue,units,cogs\n2026-01-05,100.00,2,60.00\n2026-01-06,50.00,1,\n"
@@ -199,9 +235,14 @@ def test_zero_denominator_refuses_the_derived_metric() -> None:
 
     assert result.value(METRIC_REVENUE) == "30.00"
     assert result.fact(METRIC_AVERAGE_SELLING_PRICE) is None
-    assert result.refusal(METRIC_AVERAGE_SELLING_PRICE).reason == (
-        REASON_ZERO_DENOMINATOR
-    )
+    # Refused for want of an eligible row rather than on a zero total.
+    # `RRA-003`: "a sale or return event with zero units refuses
+    # unit-dependent facts", and `rra004.formula.v2` applies that at the
+    # population -- ASP takes "positive posted-sale units only", so a
+    # zero-unit row is not in the population at all. The old reason said the
+    # denominator summed to zero, which described rows ASP was never
+    # entitled to read.
+    assert result.refusal(METRIC_AVERAGE_SELLING_PRICE) is not None
 
 
 def test_null_measure_cells_are_excluded_not_treated_as_zero() -> None:
@@ -236,8 +277,61 @@ def test_duplicate_rows_are_disclosed_rather_than_silently_removed() -> None:
     assert CAVEAT_DUPLICATE_ROWS in result.caveats
 
 
-def test_currency_is_declared_as_unknown_while_no_currency_is_mapped() -> None:
-    assert CAVEAT_CURRENCY_NOT_DECLARED in package(GOLDEN).caveats
+def test_mixed_currency_publishes_no_currency_and_no_monetary_fact() -> None:
+    """The case this test was always named for, now actually exercised.
+
+    It asserted the caveat on `GOLDEN`, which declares `EGP` -- so it passed
+    because the caveat was appended to *every* package carrying a monetary
+    fact, not because its own premise held. Under `rra004.package.v3` the caveat
+    is conditional on the admitted currency being absent, which is what makes
+    the premise reachable: a package whose currency is genuinely unproven.
+    """
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.profiling import build_profile
+    from tests.rra003_contract_fixtures import mixed_currency_contract
+
+    # Two currencies in one extract, which `RRA-003` refuses to reconcile:
+    # "Missing, malformed, or mixed currency refuses monetary facts and their
+    # derived results but does not suppress independently proven count-only
+    # facts." So the package publishes with no proven currency, which is exactly
+    # the state this caveat exists to disclose.
+    mixed = (
+        b"date,revenue,units,invoice_no,currency\n"
+        b"2026-01-05,100.00,2,INV-1,EGP\n"
+        b"2026-01-06,200.00,4,INV-2,USD\n"
+    )
+    contract = mixed_currency_contract()
+    with published_mapping_identity():
+        profile = build_profile(
+            content=mixed,
+            media_type=CSV_MEDIA_TYPE,
+            source_sha256_hex=hashlib.sha256(mixed).hexdigest(),
+        )
+        mapping = build_mapping(profile, contract=contract)
+        result = build_fact_package(
+            AdmittedInput(
+                content=mixed,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            )
+        )
+
+    # **The caveat and the refusal are alternatives, not companions.** Mixed
+    # currency sets `monetary_refused`, so no monetary fact is published and
+    # there is nothing left to caveat -- `RRA-003` refuses those facts outright
+    # while leaving count-only facts standing. The caveat discloses the weaker
+    # state: monetary facts published while the currency behind them was never
+    # declared. Asserting both here would demand two answers to one question.
+    assert result.currency is None
+    assert CAVEAT_CURRENCY_NOT_DECLARED not in result.caveats
+    assert result.value("revenue") is None
+    assert result.value("units") == "6"
+
 
 
 def test_time_series_reconciles_to_the_revenue_total() -> None:
@@ -382,7 +476,13 @@ def test_package_records_its_provenance() -> None:
 
     assert result.profile_digest == profile.digest
     assert result.source_sha256_hex == hashlib.sha256(GOLDEN).hexdigest()
-    assert result.mapping_version == build_mapping(profile, contract=TEST_CONTRACT).mapping_version
+    # Compared under the same identity the package was built with: `package()`
+    # pins to the published mapping, so re-deriving outside that block would
+    # compare a v2 package against a v3 stamp and fail on the version move
+    # rather than on provenance, which is this test's subject.
+    with published_mapping_identity():
+        expected = build_mapping(profile, contract=TEST_CONTRACT).mapping_version
+    assert result.mapping_version == expected
 
 
 def test_inadmissible_datasets_never_produce_facts() -> None:
@@ -745,13 +845,26 @@ def test_a_bare_returns_column_is_refused_rather_than_summed_as_money() -> None:
     assert result.refusal(METRIC_RETURNS).reason == REASON_AMBIGUOUS_MAPPING
 
 
-def test_a_returns_amount_is_published_when_the_label_declares_it() -> None:
+def test_an_independently_mapped_returns_column_is_not_admitted() -> None:
+    """`RRA-003` refuses it by name, and this case asserted the opposite.
+
+    "No independently mapped return-amount measure is admitted. Gross
+    merchandise value, tender or tax refunds, fees, exchange value, and
+    restocking charges cannot substitute."
+
+    A column labelled `refund_amount` is exactly the ambiguity that rule
+    exists for: it may be a tender refund, a restocking charge, or gross
+    merchandise value, and none of those is the governed returns magnitude.
+    Under `rra004.formula.v2` returns are derived from admitted return
+    revenue, so this extract -- every row a declared sale, no return event --
+    proves no returns and publishes none.
+    """
     content = b"date,revenue,refund_amount\n2026-01-05,100.00,2.00\n2026-01-06,200.00,3.00\n"
 
     result = package(content)
 
-    assert result.value(METRIC_RETURNS) == "5.00"
-    assert CAVEAT_RETURNS_NOT_NETTED in result.caveats
+    assert result.value(METRIC_RETURNS) is None
+    assert result.refusal(METRIC_RETURNS) is not None
 
 
 def test_count_magnitude_beyond_the_governed_maximum_is_refused() -> None:
@@ -1099,17 +1212,18 @@ def _basis_package(contract: SourceContract) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(BASIS_CSV).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=contract)
-    return build_fact_package(
-        AdmittedInput(
-            content=BASIS_CSV,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
-            contract=contract,
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                content=BASIS_CSV,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            )
         )
-    )
 
 
 def test_an_attested_basis_still_publishes_cost_and_discount() -> None:
@@ -1164,3 +1278,181 @@ def test_an_unattested_cost_basis_also_refuses_the_results_derived_from_it() -> 
     assert result.fact(METRIC_GROSS_MARGIN) is None
     assert result.refusal(METRIC_GROSS_PROFIT) is not None
     assert result.refusal(METRIC_GROSS_MARGIN) is not None
+
+
+# --- canonical transaction keys, issue #295 ---------------------------------
+
+
+def _repeated_invoice_package():
+    """The oracle's two-store repeated-invoice case, built under `package.v3`.
+
+    Deliberately *not* pinned: this case is about what `rra004.package.v3`
+    publishes, and `RRA-004` assigns canonical transaction keys to that version.
+    Building it under the predecessor triple would prove the defect still exists
+    in v2, which nobody disputes and nobody may fix.
+    """
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.intake import CSV_MEDIA_TYPE
+    from khepri.rra.profiling import build_profile
+    from tests.rra_calculation_oracle import REPEATED_INVOICE_ROWS, to_csv
+
+    content = to_csv(REPEATED_INVOICE_ROWS)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    # The contract that honestly describes this extract. `TEST_CONTRACT`
+    # declares the invoice number unique package-wide, which is true of every
+    # other fixture and false of this one -- and `RRA-003` admits the bare
+    # identifier exactly when that declaration holds, so admission would be
+    # right to return it. The defect this case proves is downstream of the
+    # declaration, not in it.
+    mapping = build_mapping(profile, contract=REPEATED_INVOICE_CONTRACT)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=REPEATED_INVOICE_CONTRACT,
+        )
+    )
+
+
+def test_repeated_invoices_in_two_stores_are_two_transactions_each() -> None:
+    """`RRA-003`'s canonical-transaction-key contract, at the point of use.
+
+    "A bare source transaction identifier qualifies only when its recorded
+    source contract proves package-wide uniqueness. Otherwise the canonical key
+    is an admitted composite containing the source identifier and every field
+    required for uniqueness, normally store, business date, and terminal."
+
+    `admission.py` builds that composite correctly and `facts._measures` then
+    reloaded the bare mapped column, so INV-1 from S1 and INV-1 from S2
+    collapsed into one transaction. Two stores' trading was published as two
+    transactions instead of four.
+
+    Expected values from `tests/rra_calculation_oracle.py`, derived by hand
+    outside every production helper.
+    """
+    from tests.rra_calculation_oracle import REPEATED_INVOICE_EXPECTED
+
+    result = _repeated_invoice_package()
+
+    assert result.value("transactions") == str(
+        REPEATED_INVOICE_EXPECTED["transactions"]
+    )
+
+
+def test_the_aov_denominator_uses_canonical_keys() -> None:
+    """Every transaction-denominated metric inherited the error at exactly 2x.
+
+    AOV is the one this package publishes, so it is the one asserted here.
+    Items per transaction is `rra008.basket.v1`'s and is corrected in its own
+    family commit.
+    """
+    from tests.rra_calculation_oracle import REPEATED_INVOICE_EXPECTED
+
+    result = _repeated_invoice_package()
+
+    assert result.value("average_order_value") == str(
+        REPEATED_INVOICE_EXPECTED["average_order_value"]
+    )
+
+
+def test_revenue_and_units_are_untouched_by_the_key_correction() -> None:
+    """The control, and the proof this is a transaction-identity defect.
+
+    Revenue and units never depended on transaction identity, so a correction
+    that moved them would have changed something it was not asked to.
+    """
+    from tests.rra_calculation_oracle import REPEATED_INVOICE_EXPECTED
+
+    result = _repeated_invoice_package()
+
+    assert result.value("revenue") == str(REPEATED_INVOICE_EXPECTED["revenue"])
+    assert result.value("units") == str(REPEATED_INVOICE_EXPECTED["units"])
+
+
+# --- `rra004.package.v3` provenance -----------------------------------------
+
+
+def test_a_package_records_the_currency_it_admitted() -> None:
+    """`RRA-004`'s provenance list names currency for monetary values.
+
+    `AdmittedEvents.currency` existed and was discarded, so a v3 package would
+    have published the field empty while the admission that produced it knew the
+    answer.
+    """
+    result = package(GOLDEN)
+
+    assert result.currency == "EGP"
+
+
+def test_a_package_that_declares_its_currency_does_not_caveat_it_as_undeclared()  -> None:
+    """The caveat was appended to every package carrying a monetary fact.
+
+    Under `rra004.package.v2` that was merely pessimistic: the package recorded
+    no currency, so "not declared" was true of the document. `v3` records one,
+    and a package stating both `EGP` and "currency not declared" contradicts
+    itself -- and `RRA-009` renders caveats to customers, so the contradiction
+    would be visible.
+    """
+    result = package(GOLDEN)
+
+    assert result.currency is not None
+    assert CAVEAT_CURRENCY_NOT_DECLARED not in result.caveats
+
+
+def test_a_package_records_the_filters_its_populations_were_taken_under() -> None:
+    """Read off the admitted events, not off the declaration.
+
+    A contract admitting returns over an extract containing none produces a
+    sale-only package; recording the declaration would overstate the population
+    the figures were computed over.
+    """
+    result = package(GOLDEN)
+
+    assert result.event_kind_filters == ("sale",)
+    assert result.status_filters == ("posted",)
+
+
+def test_a_package_retains_the_bases_its_facts_cite() -> None:
+    """`RRA-004`: "Every derived fact cites exactly one compatible basis or a
+    documented set of bases with the same population identity."
+
+    A v3 package retaining none would leave every derived fact citing nothing,
+    which satisfies the document shape and not the contract.
+    """
+    from khepri.rra.bases import GOVERNED_BASES
+
+    result = package(GOLDEN)
+
+    assert {basis.name for basis in result.retained_bases} == GOVERNED_BASES
+    assert all(basis.identity for basis in result.retained_bases)
+
+
+def test_the_retained_bases_agree_with_the_package_they_describe() -> None:
+    """Evidence that does not match the package it travels with is not evidence."""
+    result = package(GOLDEN)
+
+    for basis in result.retained_bases:
+        assert basis.input_digest == result.source_sha256_hex
+        assert basis.mapping_version == result.mapping_version
+
+
+def test_a_transaction_basis_counts_canonical_keys() -> None:
+    """The basis behind the transactions figure, over the same keys it counts."""
+    from khepri.rra.bases import BASIS_SALES_TRANSACTION
+
+    result = _repeated_invoice_package()
+
+    basis = next(
+        entry for entry in result.retained_bases if entry.name == BASIS_SALES_TRANSACTION
+    )
+    assert basis.transaction_count == 4
+    assert result.value("transactions") == "4"

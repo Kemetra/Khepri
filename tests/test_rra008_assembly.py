@@ -20,7 +20,9 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.analysis import concentration
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
+    CAVEAT_CURVE_SAMPLED,
     CHART_LINE,
+    MAX_CURVE_POINTS,
     SECTION_BASKET,
     SECTION_COMPARISON,
     SECTION_CONCENTRATION,
@@ -37,32 +39,82 @@ from khepri.rra.facts import AdmittedInput, build_fact_package
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    attesting_manifest,
+    landed_sections,
+    published_mapping_identity,
+)
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 5)
 
 
-def package_for(content: bytes) -> FactPackage:
+def package_for(
+    content: bytes,
+    *,
+    days: tuple[date, ...] = (),
+    published: bool = False,
+) -> FactPackage:
+    """`published=True` builds under the triple this build publishes.
+
+    The predecessor pin is right for a case that renders every section: under it
+    all four families sit at their predecessor and publish. A case whose subject
+    is a family that has reached its successor needs the triple that admits it,
+    or that section refuses as `family_version_pairing_unadmitted` and the case
+    asserts against a section that was never derived.
+    """
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    # Coverage is attested for exactly the days these rows carry. The growth
+    # family consumes the window `rra008.comparison.v2` accepted, and that
+    # family refuses a window no manifest proves -- so a fixture promising
+    # that every family can state something has to attest its own coverage.
+    # Absent `days` leaves the package unattested, which the refusal cases
+    # below require.
+    manifest = (
+        attesting_manifest(content=content, contract=TEST_CONTRACT, days=days)
+        if days
+        else None
+    )
+    if published:
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest,
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest,
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
-def full_package() -> FactPackage:
+def full_package(*, published: bool = False) -> FactPackage:
     """Five consecutive days over two products: every family can state something.
 
     Four settled periods either side means the comparison and growth families both
@@ -81,7 +133,8 @@ def full_package() -> FactPackage:
         f"INV-{index},{product}\n".encode()
         for index, (amount, units, product) in enumerate(rows)
     )
-    return package_for(HEADER + body)
+    days = tuple(START + timedelta(days=index) for index in range(len(rows)))
+    return package_for(HEADER + body, days=days, published=published)
 
 
 def bundle_of(package: FactPackage) -> ReportBundle:
@@ -109,12 +162,23 @@ def test_the_overview_still_carries_the_package_figures() -> None:
 
 
 def test_a_family_that_states_facts_becomes_a_present_section() -> None:
-    bundle = bundle_of(full_package())
-    for section_id in (SECTION_COMPARISON, SECTION_CONCENTRATION, SECTION_BASKET):
+    """Every family whose version this package's formula admits.
+
+    Named by the gate rather than by a hardcoded trio, because the four families
+    reach their successors one commit at a time: a fixed list stops meaning
+    "the families that can publish" the moment one of them moves, and then
+    asserts that a family which legitimately refuses must publish anyway.
+    """
+    package = full_package(published=True)
+    bundle = bundle_of(package)
+    landed = landed_sections(package.formula_version)
+
+    assert landed, "the case is vacuous with no family able to publish"
+    for section_id in landed:
         section = section_of(bundle, section_id)
         assert section is not None, section_id
-        assert section.state == SECTION_PRESENT
-        assert section.figure_ids
+        assert section.state == SECTION_PRESENT, section_id
+        assert section.figure_ids, section_id
 
 
 def test_a_family_that_refuses_becomes_a_refused_section_with_its_reason() -> None:
@@ -167,8 +231,22 @@ def test_a_familys_caveat_is_scoped_to_its_own_section() -> None:
     report_level = {caveat.code for caveat in bundle.caveats if caveat.section is None}
 
     assert scoped <= set(bundle.section_ids)
-    # The package's own caveats stay report-level.
-    assert report_level
+    # The package's own caveats stay report-level, and a family's never do.
+    #
+    # This asserted `report_level` was non-empty, which held only because
+    # `currency_not_declared` was appended to every package carrying a
+    # monetary fact. `rra004.package.v3` records the currency it admitted,
+    # so a package that declares one correctly carries no such caveat and
+    # this fixture's report-level set is legitimately empty. The subject is
+    # the *scoping* -- that a family's caveat names its own section and the
+    # package's names none -- so that is what is asserted.
+    package = full_package()
+    assert report_level == set(package.caveats)
+    assert all(
+        caveat.section in set(bundle.section_ids)
+        for caveat in bundle.caveats
+        if caveat.code not in set(package.caveats)
+    )
 
 
 def test_a_section_whose_figures_cannot_be_drawn_says_so() -> None:
@@ -202,8 +280,13 @@ def test_a_section_whose_figures_cannot_be_drawn_says_so() -> None:
 
 
 def test_a_drawable_section_carries_a_chart_of_its_own_figures() -> None:
-    """Basket's attach rates share one unit, so they are drawable."""
-    bundle = bundle_of(full_package())
+    """Basket's attach rates share one unit, so they are drawable.
+
+    Built under the triple this build publishes, because the subject *is* the
+    basket section and `rra008.basket.v2` is what derives those rates. Under the
+    predecessor pin the section refuses and carries no chart to inspect.
+    """
+    bundle = bundle_of(full_package(published=True))
     section = section_of(bundle, SECTION_BASKET)
     assert section is not None
     assert section.chart is not None
@@ -258,7 +341,7 @@ def test_the_concentration_curve_is_charted_as_a_cumulative_line() -> None:
     a dataset and asserted over whichever sections happened to be charted, so a section
     that was never charted was invisible to all of them.
     """
-    bundle = bundle_of(full_package())
+    bundle = bundle_of(full_package(published=True))
     section = section_of(bundle, SECTION_CONCENTRATION)
     assert section is not None
     assert section.chart is not None
@@ -270,3 +353,111 @@ def test_the_concentration_curve_is_charted_as_a_cumulative_line() -> None:
     plotted = [by_id[figure_id] for figure_id in section.chart.figure_ids]
     assert len(plotted) > 1
     assert {figure.metric for figure in plotted} == {concentration.METRIC_CURVE}
+
+
+# More distinct products than `MAX_CURVE_POINTS`, so the curve a surface draws is
+# a sample of the ranked set rather than the whole of it.
+def wide_package(*, distinct: int, published: bool = False) -> FactPackage:
+    """One row per product, so the ranked set has exactly `distinct` members."""
+    rows = [
+        (
+            (START + timedelta(days=index % 5)).isoformat(),
+            f"{(distinct - index) * 10}.00",
+            1,
+            f"INV-{index}",
+            f"P{index:04d}",
+        )
+        for index in range(distinct)
+    ]
+    body = b"".join(
+        f"{when},{amount},{units},{invoice},{product}\n".encode()
+        for when, amount, units, invoice, product in rows
+    )
+    days = tuple(START + timedelta(days=offset) for offset in range(5))
+    return package_for(HEADER + body, days=days, published=published)
+
+
+def test_a_sampled_curve_says_that_it_was_sampled() -> None:
+    """`bundle.MAX_CURVE_POINTS` caps a drawn curve at 100 evenly spaced points.
+
+    **`rra008.concentration.v1` dropped the rest in silence.** `_sampled` kept
+    every hundredth point and `CAVEAT_CURVE_SAMPLED` was defined, given prose in
+    both languages, and never attached to anything -- so a reader saw a curve
+    over 250 products, counted 100 points, and had no way to learn the difference.
+
+    The figures beside the curve are unaffected: they are computed over the full
+    distinct set, which is the whole reason the curve may be sampled at all.
+    """
+    bundle = bundle_of(wide_package(distinct=250, published=True))
+    section = section_of(bundle, SECTION_CONCENTRATION)
+    assert section is not None
+    assert section.state == SECTION_PRESENT, section.reason
+
+    # Counted as points rather than figures: each drawn point emits a `value`
+    # and a `rows` figure, and the count that matters is how much of the ranked
+    # set a reader can see. `_sampled` keeps the final point unconditionally, so
+    # a capped curve draws one more than the cap when the evenly spaced set did
+    # not already include it.
+    points = {
+        figure.label for figure in bundle.figures
+        if figure.metric == concentration.METRIC_CURVE
+    }
+    assert len(points) <= MAX_CURVE_POINTS + 1, len(points)
+    assert len(points) < 250, "the curve drew the whole ranked set, so nothing was sampled"
+
+    scoped = {(caveat.section, caveat.code) for caveat in bundle.caveats}
+    assert (SECTION_CONCENTRATION, CAVEAT_CURVE_SAMPLED) in scoped, sorted(
+        (str(section), code) for section, code in scoped
+    )
+
+
+def test_an_unsampled_curve_makes_no_such_claim() -> None:
+    """The converse, so the caveat cannot become decoration on every report.
+
+    Twelve products fit inside the cap, so every ranked point is drawn and there
+    is nothing to disclose.
+    """
+    bundle = bundle_of(wide_package(distinct=12, published=True))
+
+    points = {
+        figure.label for figure in bundle.figures
+        if figure.metric == concentration.METRIC_CURVE
+    }
+    assert len(points) == 12, len(points)
+
+    scoped = {(caveat.section, caveat.code) for caveat in bundle.caveats}
+    assert (SECTION_CONCENTRATION, CAVEAT_CURVE_SAMPLED) not in scoped
+
+
+def test_a_sampled_curve_draws_exactly_the_cap_it_advertises() -> None:
+    """`curve_points_sampled` tells the customer the curve is drawn from 100.
+
+    `_sampled` spaced `MAX_CURVE_POINTS` indices and then added the final one,
+    producing 101 whenever that index was not already among them -- so the
+    disclosure overstated the page by one. Found in review.
+
+    Asserted as equality, not a bound: a cap the prose names is a number a reader
+    can count, and "at most 100" would pass on a curve that draws 4.
+    """
+    # `_sampled` directly, because it is where the count is decided. Counting
+    # distinct *labels* off the bundle is one deduplication away from being
+    # insensitive: a label is a rank, and the off-by-one kept two indices that
+    # collapsed to the same rank -- so the assertion held while the page drew
+    # 101 points.
+    assert len(bundle_module._sampled(list(range(250)))) == MAX_CURVE_POINTS
+    assert len(bundle_module._sampled(list(range(101)))) == MAX_CURVE_POINTS
+    assert bundle_module._sampled(list(range(40))) == list(range(40))
+
+    bundle = bundle_of(wide_package(distinct=250, published=True))
+    points = {
+        figure.label for figure in bundle.figures
+        if figure.metric == concentration.METRIC_CURVE
+    }
+    assert len(points) == MAX_CURVE_POINTS
+
+    # And the last rank is still drawn: it is the whole ranked set by definition,
+    # and a curve stopping short of it understates concentration at the one rank
+    # a reader can check against 100%.
+    curve = concentration.curve_series(wide_package(distinct=250, published=True))
+    assert curve is not None
+    assert max(points, key=int) == curve.series.buckets[-1].label

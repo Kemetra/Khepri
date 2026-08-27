@@ -56,7 +56,10 @@ from khepri.rra.narrative import (
     NarrativeSection,
 )
 from khepri.rra.profiling import build_profile, canonical_json
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 ADAPTER_VERSION = "test.adapter.v1"
 
@@ -71,6 +74,22 @@ GOLDEN = (
     b"2026-01-06,90.00,2,INV-2,Snacks,Giza\n"
     b"2026-01-07,210.25,5,INV-3,Beverages,Cairo\n"
     b"2026-01-07,74.25,1,INV-3,Snacks,Giza\n"
+)
+
+#: A dataset that *earns* a package caveat, for the cases whose subject is
+#: caveat propagation rather than any particular caveat.
+#:
+#: They used to read one off `GOLDEN`, because `currency_not_declared` was
+#: appended to every package carrying a monetary fact. Under
+#: `rra004.package.v3` the package records the currency it admitted, so that
+#: caveat is conditional on the currency being genuinely unproven and
+#: `GOLDEN` -- which declares EGP -- correctly carries none. A missing unit
+#: value earns `null_measure_inputs` honestly.
+CAVEATED = (
+    b"date,revenue,units,invoice_no,category,branch\n"
+    b"2026-01-05,125.50,3,INV-1,Beverages,Cairo\n"
+    b"2026-01-06,90.00,,INV-2,Snacks,Giza\n"
+    b"2026-01-07,210.25,5,INV-3,Beverages,Cairo\n"
 )
 
 OTHER = (
@@ -94,17 +113,24 @@ def package(content: bytes = GOLDEN) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def narrative_for(text: str = "Revenue was 500.00.") -> NarrativeDraft:

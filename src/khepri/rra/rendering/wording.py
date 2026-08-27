@@ -66,14 +66,14 @@ class ChartCategory:
 LABEL_WORDING: dict[str, dict[str, str]] = {
     LANGUAGE_ENGLISH: {
         "metric.growth_revenue_change": "Revenue change",
-        "metric.growth_price_effect": "Price effect",
+        "metric.growth_price_effect": "Realized price/mix effect",
         "metric.growth_volume_effect": "Volume effect",
         "label.period_over_period": "Against the previous period",
         "label.year_over_year": "Against the same period last year",
     },
     LANGUAGE_ARABIC: {
         "metric.growth_revenue_change": "التغيّر في الإيرادات",
-        "metric.growth_price_effect": "أثر السعر",
+        "metric.growth_price_effect": "أثر السعر ومزيج المنتجات",
         "metric.growth_volume_effect": "أثر الحجم",
         "label.period_over_period": "مقابل الفترة السابقة",
         "label.year_over_year": "مقابل الفترة نفسها من العام الماضي",
@@ -97,7 +97,7 @@ METRIC_WORDING: dict[str, dict[str, str]] = {
         "discount": "Discounts given",
         "returns": "Returns",
         "growth_revenue_change": "Total revenue change",
-        "growth_price_effect": "Effect of price changes",
+        "growth_price_effect": "Realized price/mix effect",
         "growth_volume_effect": "Effect of volume changes",
     },
     LANGUAGE_ARABIC: {
@@ -112,7 +112,7 @@ METRIC_WORDING: dict[str, dict[str, str]] = {
         "discount": "الخصومات الممنوحة",
         "returns": "المرتجعات",
         "growth_revenue_change": "إجمالي تغير الإيرادات",
-        "growth_price_effect": "أثر تغير الأسعار",
+        "growth_price_effect": "أثر السعر ومزيج المنتجات",
         "growth_volume_effect": "أثر تغير الكميات",
     },
 }
@@ -137,6 +137,8 @@ _RESULT_REASON_CODES = {
     facts.REASON_INCOMPLETE_IDENTIFIERS,
     facts.REASON_AMBIGUOUS_MAPPING,
     basket.REASON_DIMENSION_ABSENT,
+    basket.REASON_DIMENSION_INCOMPLETE,
+    comparison.REASON_COVERAGE_INCOMPATIBLE,
     comparison.REASON_NEGATIVE_BASE,
     versions.REASON_FAMILY_VERSION_UNADMITTED,
 }
@@ -152,7 +154,9 @@ _GOVERNED_CAVEAT_CODES = {
     facts.CAVEAT_DERIVED_OVER_MATCHED_ROWS,
     CAVEAT_CHART_NOT_DRAWN,
     CAVEAT_CURVE_SAMPLED,
+    comparison.CAVEAT_PARTIAL_WINDOW,
     growth.CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+    growth.CAVEAT_ROUNDING_RESIDUAL,
 }
 
 
@@ -289,6 +293,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "a file that also covers the period you want to compare with — "
                 "the same months a year earlier, or the months immediately before."
             ),
+            "coverage_structurally_incompatible": (
+                "Comparison with an earlier period — not available. Your file "
+                "covers both periods, but not in the same way: the days or branches "
+                "recorded differ between them, so a difference between the two "
+                "would mix a real change with a gap in what was recorded. "
+                "Everything else in this review is unaffected. To add comparison, "
+                "export a file that covers both periods completely, for the same "
+                "branches."
+            ),
             "required_input_unavailable": (
                 "This analysis — not available. The figures this analysis needs "
                 "are not present in the file. The rest of the review is "
@@ -358,6 +371,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "غير متأثر، وهو يوصف الفترة التي قدّمتها. ولإتاحة المقارنة، "
                 "صدِّر ملفاً يغطي أيضاً الفترة التي تريد المقارنة بها — الأشهر "
                 "نفسها من العام السابق، أو الأشهر التي تسبقها مباشرة."
+            ),
+            "coverage_structurally_incompatible": (
+                "المقارنة بفترة سابقة — غير متاحة. يغطي ملفك الفترتين، لكن ليس "
+                "بالطريقة نفسها: الأيام أو الفروع المسجلة تختلف بينهما، ولذلك سيخلط "
+                "الفرق بينهما تغيراً حقيقياً بنقص في المسجل. وما عدا ذلك في هذا "
+                "التقرير غير متأثر. ولإتاحة المقارنة، صدِّر ملفاً يغطي الفترتين "
+                "كاملتين وللفروع نفسها."
             ),
             "required_input_unavailable": (
                 "هذا التحليل — غير متاح. الأرقام التي يحتاجها هذا التحليل غير "
@@ -441,6 +461,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "Attach rate is not shown — the file has no product or category "
                 "column to measure attachment against. Items per sale is unaffected."
             ),
+            "dimension_values_incomplete": (
+                "Attach rate is not shown — some sales have no product or "
+                "category recorded, so the share of sales containing any one "
+                "product cannot be measured honestly. Those sales might contain "
+                "it. Fill the product or category column on every row to see "
+                "these rates. Items per sale is unaffected."
+            ),
             "family_version_pairing_unadmitted": (
                 "{metric} is not shown — this analysis is being released in "
                 "stages, and the part that produces it has not yet been "
@@ -454,6 +481,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "{metric} is not shown — calculating a percentage change from a "
                 "negative starting value would reverse the apparent direction of "
                 "change. The absolute revenue change is unaffected."
+            ),
+            "coverage_structurally_incompatible": (
+                "{metric} is not shown — the two periods being compared are not "
+                "covered the same way in your file, so a difference between them "
+                "would mix a real change with a gap in what was recorded. Export a "
+                "file that covers both periods completely, for the same branches, and "
+                "this comparison appears."
             ),
         },
         LANGUAGE_ARABIC: {
@@ -484,6 +518,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "يحتوي الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد "
                 "الأصناف لكل عملية بيع غير متأثر."
             ),
+            "dimension_values_incomplete": (
+                "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — "
+                "بعض عمليات البيع لا يوجد لها منتج أو فئة مسجلة، ولذلك لا يمكن "
+                "قياس هذه النسبة بصدق؛ فقد تتضمن تلك العمليات المنتج نفسه. "
+                "املأ عمود المنتج أو الفئة في كل الصفوف لعرض هذه النسب. "
+                "عدد الأصناف لكل عملية بيع غير متأثر."
+            ),
             "family_version_pairing_unadmitted": (
                 "{metric} غير معروض — يصدر هذا التحليل على مراحل، والجزء الذي "
                 "ينتجه لم يصدر بعد مع الجزء الذي يقرأ ملفك. بقية هذا التقرير "
@@ -494,6 +535,12 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
             "negative_base": (
                 "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
                 "المعنى الظاهر للتغير. التغير المطلق في الإيرادات غير متأثر."
+            ),
+            "coverage_structurally_incompatible": (
+                "{metric} غير معروض — الفترتان المقارنتان غير مغطاتين بالطريقة نفسها "
+                "في ملفك، ولذلك سيخلط الفرق بينهما تغيراً حقيقياً بنقص في المسجل. "
+                "صدِّر ملفاً يغطي الفترتين كاملتين وللفروع نفسها، وستظهر هذه "
+                "المقارنة."
             ),
         },
     },
@@ -597,13 +644,27 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         ),
         "curve_points_sampled": (
             "The concentration curve is drawn from 100 evenly spaced points "
-            "across your full product range. The figures beside it use every row."
+            "across the full range of values it ranks. The figures beside it "
+            "use every row."
+        ),
+        "comparison_partial_window": (
+            "The current period is not finished. It is compared against the "
+            "same number of days at the start of the earlier period, so the "
+            "two cover the same stretch of trading. The comparison will change "
+            "as the rest of the period is recorded."
         ),
         "growth_interaction_assigned_to_price": (
             "Where price and quantity both changed, the combined part of "
             "the change is counted with the price effect. This is a stated "
             "convention, applied the same way every time, so the two "
             "effects still add exactly to the total."
+        ),
+        "growth_rounding_residual": (
+            "The price effect shown is the total change less the volume "
+            "effect, so the three figures add up exactly as displayed. That "
+            "makes it differ by one unit of the last decimal place shown "
+            "from the price effect calculated on its own. No figure is "
+            "missing and nothing was adjusted."
         ),
     },
     LANGUAGE_ARABIC: {
@@ -650,12 +711,23 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         ),
         "curve_points_sampled": (
             "رُسم منحنى التركز باستخدام 100 نقطة موزعة بالتساوي على كامل "
-            "نطاق المنتجات. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
+            "نطاق القيم التي يرتّبها. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
+        ),
+        "comparison_partial_window": (
+            "الفترة الحالية لم تكتمل بعد. وقد قُورنت بالعدد نفسه من الأيام من "
+            "بداية الفترة السابقة، حتى تغطي المقارنة المدة نفسها من النشاط. "
+            "وستتغير هذه المقارنة كلما سُجل ما تبقى من الفترة."
         ),
         "growth_interaction_assigned_to_price": (
             "عندما تغير السعر والكمية معاً، احتُسب الجزء المشترك من التغير ضمن "
             "أثر السعر. هذه قاعدة معلنة تُطبق بالطريقة نفسها كل مرة، ولذلك "
             "يظل مجموع الأثرين مساوياً تماماً للتغير الإجمالي."
+        ),
+        "growth_rounding_residual": (
+            "أثر السعر المعروض هو التغير الإجمالي مطروحاً منه أثر الحجم، حتى "
+            "يكون مجموع الأرقام الثلاثة مطابقاً تماماً كما تظهر. ولذلك يختلف "
+            "بمقدار وحدة واحدة من آخر خانة عشرية معروضة عن أثر السعر "
+            "محسوباً بمفرده. لم يسقط أي رقم ولم يُعدَّل شيء."
         ),
     },
 }

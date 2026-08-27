@@ -35,7 +35,19 @@ from khepri.rra.versions import (
 
 
 def test_the_shipped_package_triple_is_admitted() -> None:
-    """The versions this build actually publishes must be a listed pair."""
+    """`V-package` closed the package-scope refusal window it opened.
+
+    `V-mapping` moved the mapping and deliberately added no row, so the triple
+    this build combined was unlisted and every package refused. `V-package`
+    publishes `rra004.package.v3` and adds `(mapping.v3, package.v3,
+    formula.v1)` -- its own row and only its own -- so the package seam is whole
+    again while the four `RRA-008` families stay refused until each lands.
+
+    This assertion was inverted for exactly one commit. That it reads normally
+    again is the evidence that the window was closed rather than widened: no row
+    another commit owns was touched, and the predecessor triple below is
+    untouched too.
+    """
     from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
     from khepri.rra.mapping import MAPPING_VERSION
 
@@ -46,21 +58,72 @@ def test_the_shipped_package_triple_is_admitted() -> None:
     )
 
 
-def test_the_shipped_family_pairs_are_admitted() -> None:
-    """Each family this build dispatches must pair with the shipped formula."""
+def test_the_published_predecessor_triple_stays_admitted() -> None:
+    """The immutable row, which no publication commit may edit.
+
+    `RRA-004` keeps historical packages "immutable under their recorded
+    versions", so this row outlives every successor. Asserted against
+    hardcoded literals rather than against `ADMITTED_PACKAGE_PAIRS`, because a
+    test that reads the table it is checking would pass whatever the table
+    said.
+    """
+    assert admits_package(
+        mapping_version="rra003.mapping.v2",
+        package_version="rra004.package.v2",
+        formula_version="rra004.formula.v1",
+    )
+
+
+def test_only_the_families_that_have_landed_are_admitted() -> None:
+    """The refusing set, shrinking exactly one family per commit.
+
+    `V-formula` admitted none of the four; each family commit adds its own
+    `(formula.v2, family.v2)` pair when it lands, and `V-concentration` empties
+    the set. This assertion is the shrinking itself: a commit that widened the
+    gate to publish early would admit a family whose successor has not landed,
+    and a commit that forgot its own row would leave its family refusing its own
+    results.
+
+    Listed explicitly rather than derived from `ADMITTED_FAMILY_PAIRS`, because
+    a test reading the table it checks passes whatever the table says.
+    """
     from khepri.rra.analysis import basket, comparison, concentration, growth
     from khepri.rra.facts import FORMULA_VERSION
 
+    landed = {
+        comparison.COMPARISON_FORMULA_VERSION,
+        growth.GROWTH_FORMULA_VERSION,
+        basket.BASKET_FORMULA_VERSION,
+        concentration.CONCENTRATION_FORMULA_VERSION,
+    }
     for family_version in (
         comparison.COMPARISON_FORMULA_VERSION,
         growth.GROWTH_FORMULA_VERSION,
         basket.BASKET_FORMULA_VERSION,
         concentration.CONCENTRATION_FORMULA_VERSION,
     ):
+        assert (
+            admits_family(
+                formula_version=FORMULA_VERSION,
+                family_version=family_version,
+            )
+            is (family_version in landed)
+        )
+
+
+def test_the_published_predecessor_family_pairs_stay_admitted() -> None:
+    """The immutable rows, which no publication commit may edit."""
+    for family_version in (
+        "rra008.comparison.v1",
+        "rra008.growth.v1",
+        "rra008.basket.v1",
+        "rra008.concentration.v1",
+    ):
         assert admits_family(
-            formula_version=FORMULA_VERSION,
+            formula_version="rra004.formula.v1",
             family_version=family_version,
         )
+
 
 
 def test_a_moved_mapping_against_an_unmoved_package_is_refused() -> None:

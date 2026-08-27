@@ -17,6 +17,7 @@ from khepri.rra.coverage import (
     CoverageManifest,
     ManifestBinding,
     admits_completeness,
+    assert_bound,
     manifest_from_document,
 )
 from khepri.rra.intake import SessionReader, StoragePolicyViolation, UploadRepository
@@ -312,13 +313,18 @@ def _bound_manifest(
     """The attested manifest bound to this admission, or nothing attested."""
     if attestation is None:
         return None
-    return attestation.to_manifest(
+    manifest = attestation.to_manifest(
         binding=manifest_binding(
             profile=profile,
             contract=contract,
             timezone=attestation.timezone,
         )
     )
+    # A real binding, so this is a phase that owes the binding proof. Both
+    # real-binding paths assert it; `profile_request._unbound` deliberately does
+    # not, because its digests are placeholders for a structural check.
+    assert_bound(manifest)
+    return manifest
 
 
 def manifest_binding(
@@ -554,7 +560,10 @@ def _requested_manifest_document(
         source_contract_digest=_recorded_contract_digest(record) or "",
         timezone=question.attestation.timezone,
     )
-    return question.attestation.to_manifest(binding=binding).as_document()
+    manifest = question.attestation.to_manifest(binding=binding)
+    # The real binding, so this is the phase that owes the binding proof.
+    assert_bound(manifest)
+    return manifest.as_document()
 
 
 def _recorded_contract_digest(record: DatasetProfileRecord) -> str | None:

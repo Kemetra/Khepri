@@ -38,7 +38,10 @@ from khepri.rra.profiling import build_profile
 from khepri.rra.rendering import excel
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from tests import rra_workbooks
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 5)
@@ -63,17 +66,24 @@ def package(rows: list | None = None) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def workbook_of(rows: list | None = None) -> rra_workbooks.ReadWorkbook:
@@ -158,7 +168,7 @@ def test_a_refused_analysis_is_stated_where_a_reader_will_find_it() -> None:
     customer prose on the limitations sheet, and keeps the raw code on the audit
     trail -- so both halves are asserted, in the places they now live.
     """
-    from khepri.rra.rendering.wording import refusal_message
+    from khepri.rra.rendering.wording import section_refusal_message
 
     # Two days settle no prior period, so the comparison and growth families refuse.
     rows = ROWS[:2]
@@ -180,8 +190,8 @@ def test_a_refused_analysis_is_stated_where_a_reader_will_find_it() -> None:
         if cell
     }
     for section in refused:
-        message = refusal_message(
-            section.reason, context="section", language=LANGUAGE_ENGLISH
+        message = section_refusal_message(
+            section.section_id, section.reason, LANGUAGE_ENGLISH
         )
         assert message in limitations, section.section_id
         assert section.reason in audit, section.section_id

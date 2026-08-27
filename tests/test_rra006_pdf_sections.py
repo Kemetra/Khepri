@@ -39,7 +39,11 @@ from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LAN
 from khepri.rra.profiling import build_profile
 from khepri.rra.rendering import html as html_module
 from khepri.rra.rendering.html import HtmlReportRenderer
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+    publishing_sections,
+)
 from tests.test_rra006_pdf_surface import chromium_available
 
 PRINT_STYLESHEET = "report.print.css"
@@ -66,17 +70,24 @@ def package() -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def print_stylesheet() -> str:
@@ -323,16 +334,32 @@ def test_arabic_paginates_the_same_sections_onto_distinct_pages() -> None:
     """
     bundle = ReportBundle.of(package())
     metrics = discriminating_metrics(bundle)
-    assert all(metrics.values()), metrics
+    # Every section that *publishes*. A refused section states its reason and no
+    # metric, which is correct rather than missing -- and which sections are
+    # refused moves with every governed version, so it is asked of the bundle.
+    publishing = publishing_sections(bundle)
+
+    assert publishing, "the case is vacuous with nothing published"
+    assert all(metrics[section] for section in publishing), metrics
 
     arabic_pdf = printed(LANGUAGE_ARABIC)
     english_pdf = printed(LANGUAGE_ENGLISH)
     arabic = metric_pages(arabic_pdf, metrics)
     english = metric_pages(english_pdf, metrics)
 
-    assert set(arabic) == set(ORDERED_SECTIONS), "a section's metrics reached no page"
+    # Every section that publishes reaches a page. A refused one prints its
+    # reason and no metric, so asserting against the full governed order would
+    # demand a page of figures from a section that correctly states none --
+    # and which sections are refused moves with every governed version.
+    printed_order = [
+        section_id for section_id in ORDERED_SECTIONS if section_id in publishing
+    ]
+
+    assert set(arabic) == set(printed_order), "a section's metrics reached no page"
     # In governed order, so the printed sequence is the declared one.
-    assert [arabic[section_id] for section_id in ORDERED_SECTIONS] == sorted(arabic.values())
+    assert [arabic[section_id] for section_id in printed_order] == sorted(
+        arabic.values()
+    )
     # And identically to English, which is the shared-template guarantee itself.
     assert arabic == english, {"arabic": arabic, "english": english}
 

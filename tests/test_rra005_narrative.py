@@ -52,7 +52,10 @@ from khepri.rra.narrative import (
     validate,
 )
 from khepri.rra.profiling import build_profile, canonical_json
-from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.rra003_contract_fixtures import (
+    TEST_CONTRACT,
+    published_mapping_identity,
+)
 
 ADAPTER_VERSION = "test.adapter.v1"
 
@@ -60,6 +63,20 @@ GOLDEN = (
     b"date,revenue,units,invoice_no,category,branch\n"
     b"2026-01-05,125.50,3,INV-1,Beverages,Cairo\n"
     b"2026-01-06,90.00,2,INV-2,Snacks,Giza\n"
+    b"2026-01-07,210.25,5,INV-3,Beverages,Cairo\n"
+    b"2026-01-07,74.25,1,INV-3,Snacks,Giza\n"
+)
+
+#: A dataset that *earns* a package caveat. The cases below read one off
+#: `GOLDEN` while `currency_not_declared` was appended to every package
+#: carrying a monetary fact; `rra004.package.v3` records the currency it
+#: admitted, so that caveat is conditional now and `GOLDEN` -- which
+#: declares EGP -- correctly carries none. A missing unit earns
+#: `null_measure_inputs` honestly.
+CAVEATED = (
+    b"date,revenue,units,invoice_no,category,branch\n"
+    b"2026-01-05,125.50,3,INV-1,Beverages,Cairo\n"
+    b"2026-01-06,90.00,,INV-2,Snacks,Giza\n"
     b"2026-01-07,210.25,5,INV-3,Beverages,Cairo\n"
     b"2026-01-07,74.25,1,INV-3,Snacks,Giza\n"
 )
@@ -77,17 +94,24 @@ def package(content: bytes = GOLDEN) -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    mapping = build_mapping(profile, contract=TEST_CONTRACT)
-    return build_fact_package(
-               AdmittedInput(
-                   content=content,
-                   media_type=CSV_MEDIA_TYPE,
-                   profile=profile,
-                   mapping=mapping,
-                   decision=assess_admissibility(profile, mapping),
-                   contract=TEST_CONTRACT,
-               ),
-           )
+    # Built under the published mapping identity: this module's subject is not
+    # the version gate, so its packages must keep combining a triple
+    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
+    # block because `facts._assert_derived_from_profile` re-derives the mapping
+    # and compares it by value, so restamping the object afterwards would fail
+    # that provenance guard instead.
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
 
 
 def request_for(content: bytes = GOLDEN) -> NarrativeRequest:
@@ -317,13 +341,15 @@ def test_an_unsupported_language_is_refused_rather_than_dropped() -> None:
 
 
 def test_the_ground_is_derived_from_the_request_that_was_sent() -> None:
-    request = request_for()
+    # Over a dataset that earns a caveat: this read `currency_not_declared`
+    # off `GOLDEN` while that caveat was unconditional.
+    request = request_for(CAVEATED)
 
     ground = NarrativeGround.of(request)
 
     assert revenue_fact_id(request) in ground.identifiers
     assert Decimal("500.00") in ground.stateable((revenue_fact_id(request),)).numbers
-    assert "currency_not_declared" in ground.caveats
+    assert "null_measure_inputs" in ground.caveats
 
 
 def test_a_fact_is_reachable_by_either_of_its_identifiers() -> None:
@@ -686,9 +712,8 @@ def test_a_marker_that_changes_the_claim_is_refused_with_it(
     name: str,
 ) -> None:
     # `500 thousand` is not the supplied `500`, and `$500.00` names a currency
-    # this package raises `currency_not_declared` about precisely because it
-    # does not know one. Both modifiers sit outside the candidate, where `%`
-    # was too.
+    # the prose invented: the package states its own currency and never this
+    # one. Both modifiers sit outside the candidate, where `%` was too.
     request = request_for()
     fact_id = revenue_fact_id(request)
 
@@ -1284,9 +1309,10 @@ def test_a_currency_named_in_words_is_refused_beside_a_figure(
     claim_ar: str,
     claim_en: str,
 ) -> None:
-    # A package that raises `currency_not_declared` does so because it does not
-    # know one, so naming a currency in prose invents it exactly as `$500.00`
-    # does. The symbol half was a Unicode property; this half is a vocabulary.
+    # Naming a currency in prose invents one exactly as `$500.00` does: the
+    # package states which currency its figures are in, and prose naming a
+    # different one states something no fact supports. The symbol half was a
+    # Unicode property; this half is a vocabulary.
     request = request_for()
     fact_id = revenue_fact_id(request)
 
@@ -1730,7 +1756,10 @@ def test_a_fact_told_to_one_language_only_is_refused() -> None:
 
 
 def test_a_caveat_warned_of_in_one_language_only_is_refused() -> None:
-    request = request_for()
+    # A caveat the package genuinely carries, so the refusal is about the
+    # coverage differing between languages rather than about the caveat
+    # being unknown to the package.
+    request = request_for(CAVEATED)
     fact_id = revenue_fact_id(request)
 
     with pytest.raises(NarrativeRefused) as refusal:
@@ -1741,9 +1770,10 @@ def test_a_caveat_warned_of_in_one_language_only_is_refused() -> None:
                     section(
                         "Revenue 500.00.",
                         cited=(fact_id,),
-                        caveats=("currency_not_declared",),
+                        caveats=("null_measure_inputs",),
                     ),
                 ),
+                request_digest=request.digest,
             ),
             request=request,
         )
@@ -1752,25 +1782,26 @@ def test_a_caveat_warned_of_in_one_language_only_is_refused() -> None:
 
 
 def test_wording_may_differ_while_coverage_matches() -> None:
-    request = request_for()
+    request = request_for(CAVEATED)
     fact_id = revenue_fact_id(request)
 
     validate(
         draft(
             arabic=(
                 section(
-                    "سجلت الفترة إيرادات قدرها ٥٠٠٫٠٠ دون تحديد العملة.",
+                    "سجلت الفترة إيرادات قدرها ٥٠٠٫٠٠ مع نقص في بعض القيم.",
                     cited=(fact_id,),
-                    caveats=("currency_not_declared",),
+                    caveats=("null_measure_inputs",),
                 ),
             ),
             english=(
                 section(
-                    "Revenue reached 500.00; the currency is not stated in the data.",
+                    "Revenue reached 500.00; some measure values are missing.",
                     cited=(fact_id,),
-                    caveats=("currency_not_declared",),
+                    caveats=("null_measure_inputs",),
                 ),
             ),
+            request_digest=request.digest,
         ),
         request=request,
     )

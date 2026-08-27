@@ -28,12 +28,14 @@ so this module does too.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
 
 from khepri.rra.coverage import (
     COVERAGE_MANIFEST_VERSION,
+    UNRECORDED_ATTESTER,
     CompletenessQuery,
     CoverageManifest,
     ManifestBinding,
@@ -41,12 +43,15 @@ from khepri.rra.coverage import (
     ManifestRefused,
     ManifestWindow,
     admits_completeness,
+    assert_bound,
     build_coverage_manifest,
+    manifest_from_document,
 )
 
 _INPUT = "a" * 64
 _CONTRACT = "b" * 64
 _SCOPE = "all-stores"
+_ATTESTED_BY = "operations manager, 2026-08-27"
 _START = date(2026, 1, 1)
 _MIDDLE = date(2026, 1, 2)
 _END = date(2026, 1, 3)
@@ -67,6 +72,7 @@ def _manifest(
             input_digest=_INPUT,
             source_contract_digest=_CONTRACT,
             timezone="Africa/Cairo",
+            attested_by=_ATTESTED_BY,
         ),
         window=window
         or ManifestWindow(
@@ -222,3 +228,164 @@ def test_a_day_can_not_be_both_closed_and_a_gap() -> None:
                 extraction_gaps=((_SCOPE, _MIDDLE),),
             )
         )
+
+
+def test_a_manifest_stamped_with_an_unrecognised_version_is_refused() -> None:
+    """The stamp is evidence, not decoration, so it is checked at use.
+
+    `build_coverage_manifest` stamps `COVERAGE_MANIFEST_VERSION`, and
+    `manifest_from_document` reads back whatever a stored document recorded --
+    deliberately, so a rebuild reproduces exactly what was written. That makes
+    the constructor's stamp no proof at all at use time: a document carrying an
+    unrecognised version reaches `admits_completeness` intact. `RRA-003` requires
+    the manifest to be "versioned", which is only meaningful if an unknown
+    version refuses rather than being trusted.
+    """
+    unrecognised = CoverageManifest(
+        manifest_version="rra003.coverage-manifest.v9",
+        input_digest=_INPUT,
+        source_contract_digest=_CONTRACT,
+        attested_by=_ATTESTED_BY,
+        timezone="Africa/Cairo",
+        covered_start=_START,
+        covered_end=_END,
+        aggregate_scope=_SCOPE,
+        store_roster=(),
+        covered_pairs=frozenset(_pairs(_SCOPE, [_START, _MIDDLE, _END])),
+        event_kinds=("sale",),
+        statuses=("posted",),
+        closures=frozenset(),
+        extraction_gaps=frozenset(),
+        partial_terminal_boundary=False,
+    )
+
+    assert not _admits(unrecognised)
+
+
+def test_a_manifest_bound_to_empty_digests_is_refused() -> None:
+    """Two empty strings match each other, so a manifest bound to nothing
+    would admit everything.
+
+    `admits_completeness` compares the manifest's digests against the query's.
+    Blank on both sides satisfies that comparison while proving no binding to
+    any file or any reading, which is the opposite of what `RRA-003` requires
+    of an attestation "bound to the exact input digest".
+    """
+    unbound = build_coverage_manifest(
+        binding=ManifestBinding(
+            input_digest="",
+            source_contract_digest="",
+            timezone="Africa/Cairo",
+        ),
+        window=ManifestWindow(
+            covered_start=_START,
+            covered_end=_END,
+            aggregate_scope=_SCOPE,
+            store_roster=(),
+            covered_pairs=_pairs(_SCOPE, [_START, _MIDDLE, _END]),
+        ),
+        exceptions=ManifestExceptions(event_kinds=("sale",), statuses=("posted",)),
+    )
+
+    # Structurally fine, which is why `build_coverage_manifest` accepts it:
+    # `profile_request._unbound` validates a posted payload's shape against
+    # placeholder digests before the real ones exist. The binding proof is a
+    # later phase, and that is the door under test.
+    with pytest.raises(ManifestRefused):
+        assert_bound(unbound)
+
+
+def test_a_partial_terminal_boundary_refuses_only_windows_that_contain_it() -> None:
+    """`RRA-003` names the boundary as one known exception, not a blanket veto.
+
+    A partial terminal boundary is by definition at the end of the covered
+    window: the extract stopped mid-way through that last period. A window that
+    closed days earlier is unaffected by it, and refusing that window states a
+    gap where the manifest attests none -- which loses exactly the completeness
+    proof the operator did give.
+    """
+    manifest = _manifest(
+        exceptions=ManifestExceptions(
+            event_kinds=("sale",),
+            statuses=("posted",),
+            partial_terminal_boundary=True,
+        )
+    )
+
+    assert _admits(manifest, start=_START, end=_MIDDLE)
+    assert not _admits(manifest, start=_START, end=_END)
+
+
+def test_a_manifest_without_attribution_evidence_is_refused() -> None:
+    """`RRA-003` requires the attestation's own evidence, not only the
+    contract's.
+
+    The manifest already records `source_contract_digest`, which is the identity
+    of the *reading* it was attested under. That is a different fact from who
+    attested it and on what basis: `RRA-003` lists "the source-contract or
+    attestation identity **and its evidence**" among the fields a manifest
+    records, and the source contract's evidence attributes the contract rather
+    than the coverage claim. An operator-attested closure is a statement someone
+    made, and an attestation nobody signed cannot be weighed later.
+    """
+    unattributed = build_coverage_manifest(
+        binding=ManifestBinding(
+            input_digest=_INPUT,
+            source_contract_digest=_CONTRACT,
+            timezone="Africa/Cairo",
+            attested_by="   ",
+        ),
+        window=ManifestWindow(
+            covered_start=_START,
+            covered_end=_END,
+            aggregate_scope=_SCOPE,
+            store_roster=(),
+            covered_pairs=_pairs(_SCOPE, [_START, _MIDDLE, _END]),
+        ),
+        exceptions=ManifestExceptions(event_kinds=("sale",), statuses=("posted",)),
+    )
+
+    with pytest.raises(ManifestRefused):
+        assert_bound(unattributed)
+
+
+def test_attribution_evidence_travels_into_the_stored_document() -> None:
+    """Recorded, or it cannot be read back to attribute the claim."""
+    document = _manifest().as_document()
+
+    assert document["attested_by"] == _ATTESTED_BY
+
+
+def test_a_manifest_stored_before_attribution_still_reads_back() -> None:
+    """`attested_by` was added to the shape without moving the manifest version.
+
+    So a document written before this PR and one written after both carry
+    `rra003.coverage-manifest.v1`, and a direct `document["attested_by"]` lookup
+    raised `KeyError` for every previously stored attested profile -- failing
+    package rebuild and every coverage check that read one. Found in review.
+
+    It reads back as `UNRECORDED_ATTESTER` rather than as a plausible attester
+    name: an attestation that recorded no attribution has none, and inventing one
+    would make it indistinguishable from a manifest that named its source.
+
+    This is readback, not admission. `_assert_bound` still refuses a manifest
+    *submitted* with a blank attester, which the case below holds.
+    """
+    stored = _manifest().as_document()
+    legacy = {key: value for key, value in stored.items() if key != "attested_by"}
+
+    assert manifest_from_document(legacy).attested_by == UNRECORDED_ATTESTER
+    # And a document that did record one keeps it, so the fallback cannot
+    # quietly overwrite a real attestation.
+    assert manifest_from_document(stored).attested_by == _ATTESTED_BY
+
+
+def test_readback_does_not_admit_a_manifest_with_no_attester() -> None:
+    """The other half: accepting one is still refused.
+
+    Reading an old document leniently and accepting a new one leniently are
+    different acts, and only the first is safe. Without this, the fallback above
+    would look like a way to submit a manifest that names nobody.
+    """
+    with pytest.raises(ManifestRefused):
+        assert_bound(replace(_manifest(), attested_by="   "))

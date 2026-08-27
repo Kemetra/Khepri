@@ -180,20 +180,32 @@ def build_source_contract(
     )
 
 
+def _is_mapped(column: str | None) -> bool:
+    """Whether a declaration names a column a reader could actually resolve.
+
+    `None` is the absence of a mapping and `" "` is the same absence wearing a
+    mapping's shape: `RRA-003` requires each semantic to be "supplied by an
+    explicitly mapped source column", and a blank string names none. Treating it
+    as mapped would satisfy the declare-exactly-once rule while leaving the
+    semantic inferred, which is the outcome that rule exists to prevent.
+    """
+    return column is not None and bool(column.strip())
+
+
 def _assert_events_declared(events: EventDeclaration) -> None:
     """Event kind, status, and currency each proven exactly once."""
     _assert_exactly_one(
-        events.event_kind_column is not None,
+        _is_mapped(events.event_kind_column),
         events.sale_only,
         "event kind",
     )
     _assert_exactly_one(
-        events.status_column is not None,
+        _is_mapped(events.status_column),
         events.posted_only,
         "status",
     )
     _assert_exactly_one(
-        events.currency_column is not None,
+        _is_mapped(events.currency_column),
         events.currency_code is not None,
         "currency",
     )
@@ -235,10 +247,30 @@ def _assert_iso_currency(code: str) -> None:
 
 
 def _assert_identity_declared(identity: IdentityDeclaration) -> None:
-    """Event identity proven one of two ways, and a usable transaction key."""
+    """Event identity proven one of two ways, and a usable transaction key.
+
+    `RRA-003` proves source-event identity "in exactly one of these ways", and
+    both halves of that phrase bind. Neither leaves identity inferred. Both
+    leaves it unrecorded which proof admission relied on, and the two fail
+    differently -- a repeated event key refuses the affected populations, while a
+    line-grain attestation is falsified by a repeated canonical row signature --
+    so a contract carrying both answers no question a later reader can ask.
+    """
     if not identity.event_key_columns and not identity.unique_line_grain_attested:
         raise ContractRefused(
             "A source contract must supply event keys or attest unique line grain."
+        )
+    if identity.event_key_columns and identity.unique_line_grain_attested:
+        raise ContractRefused(
+            "A source contract proves event identity by keys or by attested "
+            "line grain, not both."
+        )
+    if any(not _is_mapped(column) for column in identity.event_key_columns):
+        # `(" ",)` satisfied the presence check above while naming no column a
+        # reader could resolve, which left event identity inferred -- the
+        # outcome the one-of-two-ways rule exists to prevent.
+        raise ContractRefused(
+            "Every event key column must name a source column."
         )
     _assert_transaction_key(identity)
 
@@ -251,10 +283,34 @@ def _assert_transaction_key(identity: IdentityDeclaration) -> None:
     transaction, and would collapse every sale in that day into one.
     """
     if identity.transaction_id_unique_package_wide:
+        if not _is_mapped(identity.transaction_id_column):
+            # Uniqueness asserted of a value that does not exist. The flag is
+            # what lets a bare identifier serve as the canonical transaction
+            # key, so accepting it without one returns early past the composite
+            # requirement and leaves admission no transaction identity at all.
+            raise ContractRefused(
+                "A source contract cannot prove a transaction identifier unique "
+                "without naming one."
+            )
         return
     if not identity.transaction_key_components:
         raise ContractRefused(
             "A transaction identifier not proven unique needs a composite key."
+        )
+    if any(
+        not _is_mapped(component)
+        for component in identity.transaction_key_components
+    ):
+        # Same absence wearing a mapping's shape: a composite of `(" ", "store")`
+        # names one resolvable column and one that is not there, so the key it
+        # builds is narrower than the contract claims.
+        raise ContractRefused(
+            "Every transaction key component must name a source column."
+        )
+    if not _is_mapped(identity.transaction_id_column):
+        raise ContractRefused(
+            "A composite transaction key must contain the source identifier, "
+            "so the contract has to name one."
         )
     if identity.transaction_id_column not in identity.transaction_key_components:
         raise ContractRefused(

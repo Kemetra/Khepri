@@ -5,10 +5,18 @@ import re
 
 import pytest
 
-from khepri.rra.analysis.basket import REASON_DIMENSION_ABSENT
-from khepri.rra.analysis.comparison import REASON_NEGATIVE_BASE
+from khepri.rra.analysis.basket import (
+    REASON_DIMENSION_ABSENT,
+    REASON_DIMENSION_INCOMPLETE,
+)
+from khepri.rra.analysis.comparison import (
+    CAVEAT_PARTIAL_WINDOW,
+    REASON_COVERAGE_INCOMPATIBLE,
+    REASON_NEGATIVE_BASE,
+)
 from khepri.rra.analysis.growth import (
     CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+    CAVEAT_ROUNDING_RESIDUAL,
     GOVERNED_METRICS,
 )
 from khepri.rra.bundle import (
@@ -68,6 +76,8 @@ _RESULT_REFUSAL_CODES = frozenset(
         REASON_INCOMPLETE_IDENTIFIERS,
         REASON_AMBIGUOUS_MAPPING,
         REASON_DIMENSION_ABSENT,
+        REASON_DIMENSION_INCOMPLETE,
+        REASON_COVERAGE_INCOMPATIBLE,
         REASON_NEGATIVE_BASE,
         REASON_FAMILY_VERSION_UNADMITTED,
     }
@@ -85,7 +95,9 @@ _GOVERNED_CAVEAT_CODES = frozenset(
         CAVEAT_DERIVED_OVER_MATCHED_ROWS,
         CAVEAT_CHART_NOT_DRAWN,
         CAVEAT_CURVE_SAMPLED,
+        CAVEAT_PARTIAL_WINDOW,
         CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+        CAVEAT_ROUNDING_RESIDUAL,
     }
 )
 
@@ -124,13 +136,30 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
         "الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد الأصناف لكل "
         "عملية بيع غير متأثر."
     ),
+    REASON_DIMENSION_INCOMPLETE: (
+        "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — بعض عمليات "
+        "البيع لا يوجد لها منتج أو فئة مسجلة، ولذلك لا يمكن قياس هذه النسبة "
+        "بصدق؛ فقد تتضمن تلك العمليات المنتج نفسه. املأ عمود المنتج أو الفئة في "
+        "كل الصفوف لعرض هذه النسب. عدد الأصناف لكل عملية بيع غير متأثر."
+    ),
     REASON_NEGATIVE_BASE: (
         "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
         "المعنى الظاهر للتغير. التغير المطلق في الإيرادات غير متأثر."
     ),
+    REASON_COVERAGE_INCOMPATIBLE: (
+        "{metric} غير معروض — الفترتان المقارنتان غير مغطاتين بالطريقة "
+        "نفسها في ملفك، ولذلك سيخلط الفرق بينهما تغيراً حقيقياً بنقص في "
+        "المسجل. صدِّر ملفاً يغطي الفترتين كاملتين وللفروع نفسها، وستظهر "
+        "هذه المقارنة."
+    ),
 }
 
 _ACCEPTED_ARABIC_CAVEAT_MESSAGES = {
+    CAVEAT_PARTIAL_WINDOW: (
+        "الفترة الحالية لم تكتمل بعد. وقد قُورنت بالعدد نفسه من الأيام من "
+        "بداية الفترة السابقة، حتى تغطي المقارنة المدة نفسها من النشاط. "
+        "وستتغير هذه المقارنة كلما سُجل ما تبقى من الفترة."
+    ),
     CAVEAT_CURRENCY_NOT_DECLARED: (
         "لا يحدد ملفك العملة المستخدمة للمبالغ. تُعرض الأرقام كما وردت من دون تحويل."
     ),
@@ -171,12 +200,18 @@ _ACCEPTED_ARABIC_CAVEAT_MESSAGES = {
     ),
     CAVEAT_CURVE_SAMPLED: (
         "رُسم منحنى التركز باستخدام 100 نقطة موزعة بالتساوي على كامل نطاق "
-        "المنتجات. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
+        "القيم التي يرتّبها. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
     ),
     CAVEAT_INTERACTION_ASSIGNED_TO_PRICE: (
         "عندما تغير السعر والكمية معاً، احتُسب الجزء المشترك من التغير ضمن أثر "
         "السعر. هذه قاعدة معلنة تُطبق بالطريقة نفسها كل مرة، ولذلك يظل مجموع "
         "الأثرين مساوياً تماماً للتغير الإجمالي."
+    ),
+    CAVEAT_ROUNDING_RESIDUAL: (
+        "أثر السعر المعروض هو التغير الإجمالي مطروحاً منه أثر الحجم، حتى "
+        "يكون مجموع الأرقام الثلاثة مطابقاً تماماً كما تظهر. ولذلك يختلف "
+        "بمقدار وحدة واحدة من آخر خانة عشرية معروضة عن أثر السعر محسوباً "
+        "بمفرده. لم يسقط أي رقم ولم يُعدَّل شيء."
     ),
 }
 
@@ -210,8 +245,19 @@ def test_metric_business_name_refuses_an_unknown_code() -> None:
         wording.metric_business_name("not_a_governed_metric", LANGUAGE_ENGLISH)
 
 
-def test_section_refusal_universe_is_nine_codes() -> None:
-    assert len(_SECTION_REFUSAL_CODES) == 9
+def test_section_refusal_universe_is_ten_codes() -> None:
+    """A deliberate count, moved deliberately.
+
+    `rra008.comparison.v2` adds the tenth: a window whose structural coverage the
+    manifest cannot prove comparable. It is distinct from `prior_window_absent`,
+    which says there is no earlier period at all -- and a reader acts on the
+    difference, because re-exporting more history does not fix the first.
+
+    Growth carries the same code: it consumes the window comparison accepted, so
+    a window refused on coverage grounds refuses growth with the cause comparison
+    gave rather than with a measure-shaped reason that would misattribute it.
+    """
+    assert len(_SECTION_REFUSAL_CODES) == 10
 
 
 def test_refusal_wording_section_tier_covers_every_code_in_every_language() -> None:
@@ -240,19 +286,29 @@ def test_refusal_message_raises_on_unknown_code() -> None:
         )
 
 
-def test_result_refusal_universe_is_eight_current_codes() -> None:
+def test_result_refusal_universe_is_ten_current_codes() -> None:
     """A deliberate count, moved deliberately.
 
-    Seven until the version compatibility gate landed. It added one result-tier
-    refusal, the unadmitted family pairing, so the universe is eight. Its sibling
-    -- an unadmitted package pairing -- is Internal under `RRA-009`, because no
-    report is published when it fires and no customer can encounter it.
+    Seven until the version compatibility gate landed, which added the unadmitted
+    family pairing. Its sibling -- an unadmitted *package* pairing -- is Internal
+    under `RRA-009`, because no report is published when it fires and no customer
+    can encounter it.
+
+    `rra008.basket.v2` adds the ninth: a dimension mapped but not carried on every
+    eligible row. The tenth is `rra008.comparison.v2`'s coverage refusal, which the
+    CAL1-11 sweep found defined and unattached -- so a comparison refused because
+    the manifest could not prove the windows comparable was telling a customer
+    their file covered a single period, and sending them to re-export history that
+    would not help. `RRA-008` refuses that dimension's whole attach family rather
+    than letting the unlabelled transactions enter only the denominator, so a
+    reader who sees no rates has to be told which of the two dimension failures
+    happened.
 
     The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
-    assert len(_RESULT_REFUSAL_CODES) == 8
+    assert len(_RESULT_REFUSAL_CODES) == 10
 
 
 def test_refusal_wording_result_tier_covers_every_code_in_every_language() -> None:

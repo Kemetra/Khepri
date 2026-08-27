@@ -191,6 +191,12 @@ GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
 # Adding a code is deliberate: a family that needs a new one adds it here in the
 # slice that introduces it, rather than passing a string through.
 SECTION_REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+# Distinct from the row above, and the distinction is what a reader acts on:
+# `prior_window_absent` means there is no earlier period in the file, while this
+# means there is one and the manifest does not prove the two comparable. Telling
+# a customer the first when the second happened sends them to re-export more
+# history, which produces the same refusal again.
+SECTION_REASON_COVERAGE_INCOMPATIBLE = "coverage_structurally_incompatible"
 # Spelled to match the fact package's `REASON_INPUT_UNAVAILABLE` rather than
 # given a section-flavoured synonym: a family that refuses for this reason hands
 # its own code straight to the section, and two spellings of one condition would
@@ -272,6 +278,7 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             SECTION_REASON_FAMILY_VERSION_UNADMITTED,
             SECTION_REASON_PRIOR_WINDOW_ABSENT,
             SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
+            SECTION_REASON_COVERAGE_INCOMPATIBLE,
         }
     ),
     SECTION_CONCENTRATION: frozenset(
@@ -295,6 +302,11 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             # fails misleadingly.
             SECTION_REASON_PRIOR_WINDOW_ABSENT,
             SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
+            # And the third way, for the same reason: growth consumes the window
+            # comparison *accepted*, so a window refused on coverage grounds
+            # refuses growth with the cause comparison gave rather than with a
+            # measure-shaped reason that would misattribute it.
+            SECTION_REASON_COVERAGE_INCOMPATIBLE,
         }
     ),
     SECTION_BASKET: frozenset(
@@ -1528,7 +1540,7 @@ _FAMILIES = {
     SECTION_GROWTH: _Family(
         derive=growth.derive,
         version=lambda: growth.GROWTH_FORMULA_VERSION,
-        refusals=lambda package: (),
+        refusals=growth.refusals,
         # No label, for the same reason: all three effects share one mode. The
         # metric is what says which effect a row or a bar is, and a chart resolves it
         # through the per-language table.
@@ -1585,17 +1597,40 @@ def _analysed(package: FactPackage) -> _Analysed:
             for fact in stated
         )
         caveats.extend(_scoped(section_id, stated, refused))
-    # Gated with the family it belongs to. The curve is retained on the package
-    # rather than derived by `concentration.derive`, so it is appended out here
-    # -- which meant the family's `continue` refused the section while the curve
-    # published anyway, under the very pairing the gate refused. `_section` then
-    # read those figures as a present section and discarded the refusal.
     if SECTION_CONCENTRATION not in refusals:
-        figures.extend(_curve_figures(package))
+        drawn, disclosed = _curve(package)
+        figures.extend(drawn)
+        caveats.extend(disclosed)
     return _Analysed(
         figures=tuple(figures),
         refusals=refusals,
         caveats=tuple(caveats),
+    )
+
+
+def _curve(
+    package: FactPackage,
+) -> tuple[tuple[CitedFigure, ...], tuple[StatedCaveat, ...]]:
+    """The concentration curve's figures, and the disclosure they may need.
+
+    Gated by its caller with the family it belongs to. The curve is retained on
+    the package rather than derived by `concentration.derive`, so it is appended
+    outside the family loop -- which once meant the family's `continue` refused
+    the section while the curve published anyway, under the very pairing the gate
+    refused, and `_section` then read those figures as a present section and
+    discarded the refusal.
+
+    The figures and the disclosure travel together because they are one claim: a
+    sampled curve and the sentence saying it was sampled cannot be separated
+    without the page stating a shape it does not qualify. The caveat is scoped to
+    the section rather than left report-level, because it qualifies this curve and
+    nothing else -- report-level would tell a reader the whole dataset was sampled.
+    """
+    drawn = _curve_figures(package)
+    if not _curve_sampled(package):
+        return drawn, ()
+    return drawn, (
+        StatedCaveat(code=CAVEAT_CURVE_SAMPLED, section=SECTION_CONCENTRATION),
     )
 
 
@@ -1649,6 +1684,26 @@ def _curve_figures(package: FactPackage) -> tuple[CitedFigure, ...]:
     )
 
 
+def _curve_sampled(package: FactPackage) -> bool:
+    """Whether the drawn curve is a sample of the ranked set rather than all of it.
+
+    `RRA-008` lets the curve be drawn from at most `MAX_CURVE_POINTS` evenly
+    spaced points because the *figures* beside it are computed over the full
+    distinct set -- that is what makes sampling the drawing honest. It stops being
+    honest when a reader is not told: a curve over 250 products showing 100 points
+    is indistinguishable from a curve over 100 products, and the difference
+    changes how steeply concentration appears to rise.
+
+    Asked of the same series the figures are built from, and compared against the
+    same cap `_sampled` applies, so the disclosure cannot disagree with the
+    drawing it describes.
+    """
+    series = concentration.curve_series(package)
+    if series is None:
+        return False
+    return len(series.as_document()["points"]) > MAX_CURVE_POINTS
+
+
 def _sampled(points: list[object]) -> list[object]:
     """At most `MAX_CURVE_POINTS` of a curve, evenly spaced, ending on the last.
 
@@ -1658,8 +1713,14 @@ def _sampled(points: list[object]) -> list[object]:
     """
     if len(points) <= MAX_CURVE_POINTS:
         return points
-    step = len(points) / MAX_CURVE_POINTS
-    kept = {int(index * step) for index in range(MAX_CURVE_POINTS)}
+    # `MAX_CURVE_POINTS - 1` spaced points plus the last one, so the drawn curve
+    # is `MAX_CURVE_POINTS` and not one more. Spacing the full count and then
+    # adding the final index produced 101 points whenever that index was not
+    # already chosen -- while `curve_points_sampled` tells the customer the curve
+    # is drawn from 100. A disclosure that overstates by one is still a
+    # disclosure that does not match the page.
+    step = len(points) / (MAX_CURVE_POINTS - 1)
+    kept = {int(index * step) for index in range(MAX_CURVE_POINTS - 1)}
     kept.add(len(points) - 1)
     return [point for index, point in enumerate(points) if index in kept]
 
