@@ -46,18 +46,25 @@ predecessor values, so no CAL1 successor has yet published. The next action is t
 the delivery unit, then the final `V-mapping` publication as commit 1 of the proposed later
 seven-commit implementation PR.
 
-## Current UX reconciliation
+## Proposed UX reconciliation — pending merge
 
 `W1-05` previously required a six-surface customer scope (Workspace Overview, Datasets, Analyses,
-Reports, Metrics, Activity) that conflicted with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8's owner-approved
-four-surface navigation (Overview, Data, Analyses, Team). That conflict is now resolved in this
-document's favor of the owner-approved direction: `W1-05` and the M3/M4 UI lists below carry the
-four-surface scope, with Reports/Metrics/Activity/Watchlists reached contextually rather than as
-primary destinations. See `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1 for the full integrated customer
-experience map and §8/§20 for the resolved navigation decision. **Neither `W1` nor the blueprint is
-registered authority** — `governance/registry.yaml` still holds only `FND`, `RRA`, `RCA` — so this
-reconciliation removes a documentary contradiction between two roadmap-level artifacts; it does not
-make any M3 UX slice implementation-ready. That still requires active `G2`/`G3` authority.
+Reports, Metrics, Activity) that conflicted with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8's four-surface
+navigation (Overview, Data, Analyses, Team). **This reconciliation proposes resolving that conflict**
+in favor of the four-surface direction: `W1-05` and the M3/M4 UI lists below are amended, on this
+branch, to carry the four-surface scope, with Reports/Metrics/Activity/Watchlists reached contextually
+rather than as primary destinations. See `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1 for the full integrated
+customer experience map and §8/§20 for the proposed navigation decision.
+
+**Per `governance/CONSTITUTION.md` Article II, a branch or pull request is a proposal; it becomes
+approved and governing only when the sole owner merges it to `main`.** Until that merge, treat this
+section and every downstream `W1-05` reference in this document as the *proposed* resolution, not the
+governing one — verify against `git log` on `main` before relying on it.
+
+**Neither `W1` nor the blueprint is registered authority**, merged or not — `governance/registry.yaml`
+still holds only `FND`, `RRA`, `RCA` — so this reconciliation removes a documentary contradiction
+between two roadmap-level artifacts; it does not make any M3 UX slice implementation-ready. That still
+requires active `G2`/`G3` authority.
 
 ---
 
@@ -999,16 +1006,22 @@ Move beyond operator-provisioned design partners only after M4 proves repeat dec
 
 A pre-authentication "Try Sample Analysis" is desired product direction for first-visit activation,
 owned by this program if and when it is authorized — **it is not `ON1-03`**, which is the
-*post*-auth guided first analysis. Active `KHEPRI-DEC-025` §2 authorizes one external-authentication
-route and prohibits "No public or post-authentication self-service bootstrap"; a pre-auth sample
-falls inside that prohibition as written. `G5-01` must decide whether and how a sample experience is
-authorized before any implementation task exists for it.
+*post*-auth guided first analysis. **It does not fall under `KHEPRI-DEC-025` §5's "no public or
+post-authentication self-service bootstrap" as written** — that prohibition is scoped to *accounts and
+links*, and a sample that creates neither is a different concern; citing it as the blocker would
+misidentify the authority this needs. The actual blockers are `RCA-002`'s Exclusions, which exclude
+both "public self-serve signup" and "any change to the `RRA` beta journey, its routes, its templates,
+or its assets," and active `RRA-010`, which authorizes only presentation changes to the existing
+journey and excludes any new route or workflow phase — a public, unauthenticated route into the
+analysis engine is neither. `G5-01` must decide whether and how a sample experience is authorized, and
+the authorizing artifact must be a new or amended RCA/RRA specification naming that public route, not
+merely a `G5` product decision on its own.
 
 ## Governance tasks
 
 | ID | Task | Depends on | Output |
 |---|---|---|---|
-| G5-01 | Decide self-serve versus assisted onboarding, verification, organization bootstrap, support boundaries, **and whether a pre-authentication sample/demo experience is authorized under a successor to `KHEPRI-DEC-025` §2** | M4 evidence | Product decisions |
+| G5-01 | Decide self-serve versus assisted onboarding, verification, organization bootstrap, support boundaries, **and whether a pre-authentication sample/demo experience is authorized under a new or amended RCA/RRA specification** (see the Try Sample Analysis note above — `RCA-002`'s public-self-serve and beta-journey Exclusions and active `RRA-010`'s presentation-only scope are the actual blockers, not `KHEPRI-DEC-025`) | M4 evidence | Product decisions |
 | G5-02 | Define signup, verification, first organization, invitation acceptance, and failure behavior | G5-01 | Active specification |
 | G5-03 | Decide email, rate limit, anti-abuse, domain, and provider boundaries | G5-01 | Operations decision |
 

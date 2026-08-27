@@ -1,12 +1,16 @@
 # Khepri Product UX Blueprint
 
 **Baseline:** `df9f1d1` (`origin/main`), 2026-08-26.
-**Reconciled:** `ed57967` (`origin/main`), 2026-08-27 — added §5.1 Integrated Customer Experience Map;
-resolved the `W1-05` navigation conflict (§8, formerly CONFLICT-BLOCKED) after the roadmap amendment;
-added M2 data-intake/processing/Fix & Continue direction (§6) and M3 repeat-use direction (§7.3/§7.4);
-added Mobile/Branded Report/Secure Share/Ready Notification (§16) and guided-exploration/Ask
-Khepri/Try Sample Analysis pointers (§22). Sections not touched by this reconciliation were not
-re-verified against `ed57967` and still read at `df9f1d1`.
+**Proposed reconciliation:** `ed57967` (`origin/main`), 2026-08-27, on branch
+`docs/ux-blueprint-reconcile` — adds §5.1 Integrated Customer Experience Map; **proposes** resolving
+the `W1-05` navigation conflict (§8, formerly CONFLICT-BLOCKED) via a companion roadmap amendment;
+adds M2 data-intake/processing/Fix & Continue direction (§6) and M3 repeat-use direction (§7.3/§7.4);
+adds Mobile/Branded Report/Secure Share/Ready Notification (§16) and guided-exploration/Ask
+Khepri/Try Sample Analysis pointers (§22). **Per `governance/CONSTITUTION.md` Article II, this remains
+a proposal until the owner merges it to `main`** — the `W1-05` reconciliation and every `LOCKED`
+marker this PR introduces are effective only on merge; verify against `git log` on `main` before
+treating them as governing. Sections not touched by this reconciliation were not re-verified against
+`ed57967` and still read at `df9f1d1`.
 
 ## 1. Purpose and authority
 
@@ -139,7 +143,7 @@ concentration, explicit limitations and refusals, contextual evidence, and gover
 authorized. **No M4 page-level UX is specified here.**
 
 **"What Changed?" as the entry narrative — direction only, `D1` gated.** Where M4 shapes the decision
-workspace, the owner-approved direction leads with the decision story rather than a wall of charts:
+workspace, the proposed direction leads with the decision story rather than a wall of charts:
 *What Changed? → Executive Summary → major movements → important findings → items needing attention →
 deeper KPIs/charts/breakdowns.* This is `D1-03`'s headline-KPIs-and-change-summary wording, read as an
 information hierarchy rather than a flat module list; it does not add a task and does not pull the
@@ -177,11 +181,24 @@ It duplicates no detailed prose — each phase links to the section that defines
 names the milestone(s) that own it. Where a phase's capability is not yet authorized, that is stated
 here in the same breath as the phase, not left implicit.
 
-**Primary M2 path — the current one-time journey, no M3 dependency:**
+**Primary M2 path — the current, shipped one-time journey shape, no M3 dependency:**
 
 ```text
-Try → Enter organization → Start (new) → Upload → Pre-check → Confirm
-  → Impact Preview → Analyze → Result (report · evidence · artifacts)
+Try*
+  → Enter organization → Start (new) → Upload → Pre-check → Confirm
+  → Analyze → Result (report · evidence · artifacts)
+
+*"Try" is entering an organization the customer already has invited access to
+ (Commercial shell, SHIPPED). A pre-authentication sample is a separate,
+ AUTHORITY-BLOCKED capability — see §21 and §22.
+```
+
+**M2 direction, not yet in the current journey — does not gate the primary path above:**
+
+```text
+Confirm → Impact Preview → Analyze        (data CONTRACT-BLOCKED on T1; the journey step itself is
+                                            AUTHORITY-BLOCKED — RRA-010 excludes new journey phases,
+                                            and no such step exists in the shipped journey today)
 ```
 
 **M3 branches — optional, do not gate the M2 path above:**
@@ -407,7 +424,8 @@ Where available: open report, evidence, download PDF, download Excel. A second l
 objects would create two places a retention state can disagree. **This is also where "Export Center"
 in the owner's customer-journey outline resolves**: export/download actions for a given analysis'
 report, evidence, and Excel artifact live here, as an affordance within Analysis detail — not as a
-sixth primary navigation destination or a second discoverable index (see §8, RECONCILED). PDF
+sixth primary navigation destination or a second discoverable index (see §8, proposed-reconciled
+pending merge). PDF
 generation is on-demand where practical, not automatic for every analysis (`D1-08`).
 
 **Analysis Passport — LOCKED direction, CONTRACT-BLOCKED.** A compact identity/provenance summary for
@@ -455,21 +473,27 @@ Inside Data, more specific language may be used: *data files* / ملفات ال�
 | **Metrics** | Contextual in M3. A dedicated destination requires a later contract and a demonstrated customer need. |
 | **Workspace** | Not a customer noun (§3). |
 
-### RECONCILED — formerly CONFLICT-BLOCKED against `W1-05`
+### PROPOSED RECONCILIATION — formerly CONFLICT-BLOCKED against `W1-05`
 
 `KHEPRI_MASTER_PRODUCT_ROADMAP.md` `W1-05` previously required *"Workspace Overview, Datasets,
 Analyses, **Reports**, **Metrics**, and **Activity** surfaces"*, which contradicted the four rows
-above. **The owner has approved the four-surface direction, and `W1-05` is amended to match**: it now
-scopes to Overview, Data, Analyses, and Team, with Reports discovered from Analysis detail, Metrics
-and Activity contextual, and "Workspace" retained only as the internal domain term. The documentary
-conflict between this blueprint and the roadmap is resolved; the four rows above are **LOCKED**
-product direction (§20 items 1, 2, 4, 19, 20).
+above. **This reconciliation proposes the four-surface direction and amends `W1-05` to match it on
+this branch**: scoped to Overview, Data, Analyses, and Team, with Reports discovered from Analysis
+detail, Metrics and Activity contextual, and "Workspace" retained only as the internal domain term.
 
-**This does not make the surfaces implementation-ready.** Neither `W1` nor this blueprint is
-registered authority — `governance/registry.yaml` holds only `FND`, `RRA`, `RCA` — so §18's
-`CONTRACT-BLOCKED` rows and §19's slice-readiness column are unchanged by this reconciliation. Active
-`G2`/`G3` authority is still required before any M3 navigation slice may be implemented. Resolving the
-conflict removes a contradiction between two roadmap-level documents; it grants no authority.
+**Per `governance/CONSTITUTION.md` Article II, a branch or pull request is a proposal; it becomes
+approved and governing only when the sole owner merges it to `main`.** The four rows above are
+therefore the **proposed** product direction on this branch, not yet `LOCKED` — they become `LOCKED`
+(§20 items 1, 2, 4, 19, 20) effective on merge, and this section's status must be re-read against
+`git log` at that point, not asserted here ahead of it. Until merge, a slice planner reading this
+document should treat the documentary conflict as *proposed to be resolved*, not resolved.
+
+**This does not make the surfaces implementation-ready even after merge.** Neither `W1` nor this
+blueprint is registered authority — `governance/registry.yaml` holds only `FND`, `RRA`, `RCA` — so
+§18's `CONTRACT-BLOCKED` rows and §19's slice-readiness column are unchanged by this reconciliation.
+Active `G2`/`G3` authority is still required before any M3 navigation slice may be implemented.
+Resolving the conflict removes a contradiction between two roadmap-level documents; it grants no
+authority, merged or not.
 
 Each destination enters the navigation **in the slice that implements it**, never ahead of it
 (`FR-049`). The navigation also needs a parity-paired label key of its own; it currently borrows the
@@ -879,12 +903,16 @@ production code may not.
 
 ## 20. Locked decisions register
 
-Durable product decisions, safe to carry forward. None grants implementation authority.
+Durable product decisions, safe to carry forward. None grants implementation authority. **Items 1, 2,
+4, 19, and 20 carry a `W1-05` reconciliation note: per `governance/CONSTITUTION.md` Article II, that
+reconciliation is proposed on this branch and becomes `LOCKED` only when this document's owning PR
+merges to `main` — read it as PROPOSED until a `git log` on `main` confirms the merge.** The remaining
+items in this register predate this reconciliation and are unaffected by it.
 
-1. The customer-visible scope is the **Organization**. *(The "Workspace" label question is RECONCILED against `W1-05` — see §8.)*
-2. Four primary M3 destinations: **Overview, Data, Analyses, Team**. *(RECONCILED against `W1-05`, now scoped to match — see §8.)*
+1. The customer-visible scope is the **Organization**. *(The "Workspace" label question is proposed-RECONCILED against `W1-05`, pending merge — see §8.)*
+2. Four primary M3 destinations: **Overview, Data, Analyses, Team**. *(Proposed-RECONCILED against `W1-05`, now scoped to match pending merge — see §8.)*
 3. Arabic navigation: **الرئيسية · البيانات · التحليلات · الفريق**.
-4. **No separate Reports page**; artifacts are discovered from the analysis that produced them. *(RECONCILED against `W1-05` — see §8.)*
+4. **No separate Reports page**; artifacts are discovered from the analysis that produced them. *(Proposed-RECONCILED against `W1-05`, pending merge — see §8.)*
 5. **Analyses is the single durable history spine**, newest first.
 6. **Evidence is contextual** — reached from the claim it supports; no generic Evidence destination.
 7. **Operational state and trust state are separate** and are never fused into one badge.
@@ -899,8 +927,8 @@ Durable product decisions, safe to carry forward. None grants implementation aut
 16. **History is not hidden** is a product *preference*, not a locked property: whether any record survives deletion is a retention decision. **AUTHORITY-BLOCKED** — see §11.
 17. **Deletion is owner-only** as product direction, and is not rendered until a registered artifact authorizes it. **AUTHORITY-BLOCKED** — see §11.
 18. **Hide controls that cannot validly complete**; never use a disabled destructive control as permission education.
-19. **Activity is contextual**; M3 navigation does not depend on it shipping. *(RECONCILED against `W1-05` — see §8.)*
-20. **Metrics is contextual** in M3. *(RECONCILED against `W1-05` — see §8.)*
+19. **Activity is contextual**; M3 navigation does not depend on it shipping. *(Proposed-RECONCILED against `W1-05`, pending merge — see §8.)*
+20. **Metrics is contextual** in M3. *(Proposed-RECONCILED against `W1-05`, pending merge — see §8.)*
 21. **No dead navigation** — a destination appears only when its surface ships; no "Coming Soon".
 22. **Overview is operational, never analytics** — no revenue, sales, branch, category, basket, or concentration content.
 23. **Audit and version identifiers sit behind disclosure**, never leading a primary customer row.
@@ -931,7 +959,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Clock cardinality (one clock vs per-artifact) | AUTHORITY-BLOCKED | `G2-01`/`G2-02`, activated by `G2-03`; today's evidence covers one beta session only |
 | Slice ordering of navigation links | LOCKED as a constraint | each link ships with its own surface (`FR-049`); see §19 |
 | Whether a tombstone exists at all | AUTHORITY-BLOCKED | `G2`/`G3` retention decision; `RCA-001:161` excludes report history |
-| Navigation scope: Reports / Activity / Metrics / "Workspace" | **RECONCILED, still CONTRACT-BLOCKED** | scope conflict with `W1-05` resolved (§8); implementation still needs active `G2`/`G3` per §18 |
+| Navigation scope: Reports / Activity / Metrics / "Workspace" | **PROPOSED-RECONCILED (pending merge), still CONTRACT-BLOCKED** | scope conflict with `W1-05` proposed-resolved on this branch (§8), effective on merge; implementation still needs active `G2`/`G3` per §18 |
 | Durable progress / resume capability for a running analysis | IMPLEMENTATION-BLOCKED | `W1`; nothing persists commercial progress across a page load today |
 | Exact Activity payload | CONTRACT-BLOCKED | `W1-09` |
 | Journey organization identity | AUTHORITY-BLOCKED | authority permitting identity across the commercial→beta boundary |
@@ -943,7 +971,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Analysis Impact Preview | CONTRACT-BLOCKED (data) / AUTHORITY-BLOCKED (journey step) | `T1-04` availability vocabulary needs active `T1`; the journey step itself needs an active RRA specification, since `RRA-010` excludes new journey phases |
 | Analysis Passport fields | CONTRACT-BLOCKED | `W1-06` provenance record; active `G3` |
 | Run Again / Run New Period compatibility rule | CONTRACT-BLOCKED | `W1-04`; underlying `RRA-003`/`RRA-004` compatibility contracts |
-| Try Sample Analysis (pre-authentication) | AUTHORITY-BLOCKED | successor to `KHEPRI-DEC-025` §2, which currently prohibits public/post-auth self-service bootstrap; `G5-01` |
+| Try Sample Analysis (pre-authentication) | AUTHORITY-BLOCKED | a new or amended RCA/RRA specification — `RCA-002` excludes public self-serve signup and any change to the beta journey's routes; active `RRA-010` is presentation-only and excludes new routes/phases; `G5-01` |
 | Secure Share | AUTHORITY-BLOCKED, no task ID | a future sharing authority; `API1-03` is a related but distinct mechanism |
 | Branded Report | AUTHORITY-BLOCKED | bounded-branding authority (`A1-04`'s pattern); none currently active |
 
@@ -976,7 +1004,10 @@ reconciliation does not pull Ask Khepri earlier than `G9/AI1`'s stated precondit
 and `SV1` versioned, provider/privacy authority active).
 
 **Try Sample Analysis.** Public pre-authentication activation belongs to `G5/ON1`, not to any M2/M3
-task, and is currently AUTHORITY-BLOCKED against active `KHEPRI-DEC-025` §2 (§21). It is not folded
+task, and is currently AUTHORITY-BLOCKED (§21) — `RCA-002` excludes public self-serve signup and any
+change to the beta journey's routes, and active `RRA-010` is presentation-only and excludes new
+journey phases; a new or amended RCA/RRA specification is required, not `KHEPRI-DEC-025`, whose
+account/link bootstrap prohibition does not reach a sample that creates neither. It is not folded
 forward into M2 or M3 scope by this reconciliation.
 
 ---
