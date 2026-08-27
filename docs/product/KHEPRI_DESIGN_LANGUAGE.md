@@ -3,6 +3,12 @@
 **Baseline:** `65579bc` (`origin/main`), 2026-08-26. Read in worktree `uxQ`.
 **Command:** `/impeccable shape` — design only. No CSS, template, route, test, package, backend, API,
 governance, or database change.
+**Proposed reconciliation:** `ed57967` (`origin/main`), 2026-08-27, on branch
+`docs/ux-blueprint-reconcile` — §3.5, §7, and §8.2 updated to reflect the `W1-05` navigation conflict
+being **proposed** RESOLVED by a companion roadmap/blueprint reconciliation; no visual, CSS, or token
+change. **This remains a proposal until the owner merges it to `main`** (`governance/CONSTITUTION.md`
+Article II) — verify against `git log` on `main` before treating the resolution as governing. Sections
+not touched were not re-verified against `ed57967`.
 
 ## 0. Authority and standing
 
@@ -369,14 +375,15 @@ several to a page — is the shell's genuine card.
 was a card on one side of the crossing and the absence of one three URLs away; the sheets never
 co-load, so no test could see it. The naming is the fix and must not be re-merged.
 
-### 3.5 Navigation — mechanism only
+### 3.5 Navigation — mechanism, and a proposed label set pending merge
 
-**⚠ The label set is not settled and this document does not settle it.** Blueprint §8 marks
-Overview · Data · Analyses · Team **LOCKED**, then marks four rows **CONFLICT-BLOCKED** against
-`W1-05`, which requires *Workspace Overview, Datasets, Analyses, Reports, Metrics, Activity*
-(roadmap:746). The roadmap outranks the blueprint. **Verified at this baseline: `governance/registry.yaml`
-contains `FND`, `RRA`, `RCA` and nothing else — `W1`, `T1`, `G2`, `G3`, `U1` have zero entries.**
-Neither side of the conflict is registered authority. See §8.2.
+**The label set is proposed-settled on this branch; registered authority to implement it is not, and
+neither is the label set until merge.** Blueprint §8 marks Overview · Data · Analyses · Team `LOCKED`,
+and this reconciliation proposes amending `W1-05` to the same four-item scope (§8.2) — the conflict
+this section previously flagged is proposed resolved, effective on merge to `main`
+(`governance/CONSTITUTION.md` Article II). **Verified at this baseline: `governance/registry.yaml`
+contains `FND`, `RRA`, `RCA` and nothing else — `W1`, `T1`, `G2`, `G3`, `U1` have zero entries.** So a
+settled label set would still not be implementation-ready even after merge; see §8.2.
 
 The **mechanism** is designable now — it is `M3-U1`'s own scope ("the frame, route continuity, the
 nav mechanism"):
@@ -690,18 +697,16 @@ test asserts it for `report.css`, so the rule cannot be relaxed one declaration 
 (§8.2). `M3-U5` forbids **"KPI cards; charts; business metrics."** No data below is real; no count is
 fixed.
 
-**The frame's destination slot below is drawn as a placeholder, not a label set.** §3.5 designs the
-navigation *mechanism* and mints no vocabulary; rendering four named destinations in this document's
-one worked example would settle by illustration what §8.2 records as an unreconciled conflict. Read
-the slot as "whatever destinations the reconciled scope defines, each entering in the slice that
-implements it."
+**The frame's destination slot below now names the reconciled label set (§8.2): Overview, Data,
+Analyses, Team.** Each still enters navigation only in the slice that implements its own surface —
+`FR-049` — so naming them here is not a claim that all four ship together.
 
 Overview answers **"what happened, and what do I do now?"** — it is *operational orientation*, not
 analytics. M3 is explicitly not the executive dashboard.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  KHEPRI    Acme Trading    {destinations — §8.2, unsettled}     العربية   │
+│  KHEPRI    Acme Trading    {Overview · Data · Analyses · Team}  العربية   │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │   Overview                                              --text-display   │
@@ -795,25 +800,27 @@ The option space, stated without a recommendation:
 
 Option 3 is the largest and would reverse a recorded deliberate absence.
 
-### 8.2 The navigation label set — CONFLICT, and neither side is registered
+### 8.2 The navigation label set — PROPOSED RESOLUTION pending merge, still no registered authority
 
-Blueprint §8 marks Overview · Data · Analyses · Team **LOCKED**, then marks four rows
-**CONFLICT-BLOCKED** against `W1-05`, which requires *Workspace Overview, Datasets, Analyses,
-Reports, Metrics, Activity* (roadmap:746). **The roadmap outranks the blueprint.**
+Blueprint §8 previously marked Overview · Data · Analyses · Team **LOCKED**, then marked four rows
+**CONFLICT-BLOCKED** against `W1-05`, which required *Workspace Overview, Datasets, Analyses,
+Reports, Metrics, Activity* (roadmap `W1-05`).
 
-**Verified at this baseline: `governance/registry.yaml` contains `FND`, `RRA`, `RCA` — and nothing
-else. `W1`, `T1`, `G2`, `G3`, `U1` have zero entries.** So this is not a conflict between authority
-and a proposal; it is a conflict between **two unregistered documents**, and absence from the registry
-is the stronger block. No M3 slice is admissible on either scope.
+**This reconciliation proposes the four-item direction and amends `W1-05` to match it on this
+branch**: Overview, Data, Analyses, Team as the primary customer surfaces; Reports folded into
+Analysis detail; Metrics and Activity contextual; "Workspace" retained only as the internal domain
+term. **Per `governance/CONSTITUTION.md` Article II, this branch is a proposal until the sole owner
+merges it to `main`** — the label set below becomes settled effective on that merge, not before:
+**Overview · Data · Analyses · Team**, Arabic **الرئيسية · البيانات · التحليلات · الفريق**.
 
-This document therefore designs **the mechanism** (§3.5) and mints **no label set**. The blueprint's
-own instruction is followed literally: *"a slice planner reading both documents must treat `W1-05` as
-governing and raise the conflict, rather than picking whichever scope is more convenient."*
-
-The reconciliation the roadmap needs, if the four-item direction is accepted: `W1-05` narrows to
-*"Overview, Data, Analyses, and Team surfaces"*, Reports folds into analysis detail, Metrics and
-Activity become contextual, and "Workspace" is retained only as the internal domain term. **That is a
-roadmap amendment and it is owner work.**
+**This does not register any authority, merged or not.** `governance/registry.yaml` still contains
+only `FND`, `RRA`, `RCA` — `W1`, `T1`, `G2`, `G3`, `U1` have zero entries, unchanged by this
+reconciliation. No M3 navigation
+slice is implementation-ready; resolving the label conflict removes a contradiction between two
+unregistered documents, nothing more, and only once merged. §3.5's mechanism design (destinations as
+wrapping text links, `aria-current`, 44px targets, no directional glyph, its own parity label key) is
+unaffected — it was always independent of which four words fill the slots, and once this reconciliation
+merges those words are also settled.
 
 ### 8.3 The trust vocabulary — CONTRACT-BLOCKED on unregistered `T1`
 
@@ -869,6 +876,6 @@ anywhere owns it*.
 - **No visual-world replacement.** Three independent sources say the shipped world is the authority.
 - **No new colour, no new typeface, no icon set, no elevation ramp, no dark palette.**
 - **No customer-facing trust labels** — `T1` is unregistered.
-- **No navigation label set** — the conflict is unreconciled and neither side is registered.
+- **Navigation label set (Overview · Data · Analyses · Team) is proposed on this branch, pending merge to `main`; not registered authority even once merged** — see §8.2.
 - **No report redesign** — blueprint §16.
 - **No fixed result counts** anywhere in any composition.

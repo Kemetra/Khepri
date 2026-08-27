@@ -46,6 +46,26 @@ predecessor values, so no CAL1 successor has yet published. The next action is t
 the delivery unit, then the final `V-mapping` publication as commit 1 of the proposed later
 seven-commit implementation PR.
 
+## Proposed UX reconciliation — pending merge
+
+`W1-05` previously required a six-surface customer scope (Workspace Overview, Datasets, Analyses,
+Reports, Metrics, Activity) that conflicted with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8's four-surface
+navigation (Overview, Data, Analyses, Team). **This reconciliation proposes resolving that conflict**
+in favor of the four-surface direction: `W1-05` and the M3/M4 UI lists below are amended, on this
+branch, to carry the four-surface scope, with Reports/Metrics/Activity/Watchlists reached contextually
+rather than as primary destinations. See `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1 for the full integrated
+customer experience map and §8/§20 for the proposed navigation decision.
+
+**Per `governance/CONSTITUTION.md` Article II, a branch or pull request is a proposal; it becomes
+approved and governing only when the sole owner merges it to `main`.** Until that merge, treat this
+section and every downstream `W1-05` reference in this document as the *proposed* resolution, not the
+governing one — verify against `git log` on `main` before relying on it.
+
+**Neither `W1` nor the blueprint is registered authority**, merged or not — `governance/registry.yaml`
+still holds only `FND`, `RRA`, `RCA` — so this reconciliation removes a documentary contradiction
+between two roadmap-level artifacts; it does not make any M3 UX slice implementation-ready. That still
+requires active `G2`/`G3` authority.
+
 ---
 
 ## 0. Merge strategy and source-of-truth rule
@@ -286,22 +306,26 @@ Khepri evolves as one product with role-scoped surfaces, not three separate appl
 
 Primary users: pharmacy owner, branch manager, commercial manager, finance manager.
 
-Target navigation by M4:
+**Primary navigation, reconciled with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8:**
 
 ```text
 Overview
-Workspaces
-Datasets
+Data
 Analyses
-Compare
-Branches
-Products & Categories
-Basket & Concentration
-Reports
-Metrics
-Watchlists
 Team
-Settings
+```
+
+`Settings` enters primary navigation only in the slice that ships it; it is not owned by any current program. Everything else below is reached contextually rather than through its own primary destination, per blueprint §8 and §20 items 1/2/4/19/20:
+
+```text
+Compare              — an action from Analyses / Analysis detail (G4/C1), not a destination
+Branches              \
+Products & Categories  |  decision-workspace modules inside Analysis detail / D1, not primary nav
+Basket & Concentration/
+Reports               — discovered from Analysis detail; no separate Reports index (W1-05)
+Metrics               — contextual quality/evidence surface (T1); a dedicated destination needs
+                         a later contract and demonstrated need
+Watchlists            — reached from an analysis/metric it monitors (G8/MON1/S2), post-M4
 ```
 
 ### 4.2 Analyst / Operator Studio
@@ -653,7 +677,7 @@ Before T1 product code, activate a bounded contract allocating:
 | T1-01 | Define `MetricDefinition`, `PopulationDefinition`, and reason/caveat registry contracts | CAL1 contract stable | U1 design | Versioned read-only definitions; no formula implementation |
 | T1-02 | Generate or validate the registry from governed RRA sources | T1-01, CAL1 merged | no | No hand-maintained parallel metric truth |
 | T1-03 | Add bilingual vocabulary and safe synonyms | T1-01 | U1 | Arabic/English names, descriptions, supported and explicitly unsupported interpretations |
-| T1-04 | Build `AnalysisQualitySummary` | T1-02 | T1-03 | Counts and lists of verified, caveated, refused, unavailable, and unsupported results |
+| T1-04 | Build `AnalysisQualitySummary`, **and the underlying pre-analysis capability-availability contract an Analysis Impact Preview would read from** — availability only, never a confidence score or invented certainty. **Journey placement of that preview as a new pre-analysis step is a separate, currently unauthorized concern** — see the Analysis Impact Preview note below | T1-02 | T1-03 | Counts and lists of verified, caveated, refused, unavailable, and unsupported results; pre-analysis capability-availability contract |
 | T1-05 | Build metric detail and evidence routes | T1-02 | U1 evidence drawer | Definition, formula version, population, inputs, coverage, filters, citations, reconciliation, caveats, and refusal alternatives |
 | T1-06 | Build source-to-surface lineage, **with its own parity and fail-closed tests in the same slice** | T1-02, CAL1 evidence bases | T1-05 | Source semantic -> basis -> fact -> claim/chart/report lineage |
 | T1-07 | Add content-free trust telemetry, **with its own content-free and fail-closed tests in the same slice** | approved scope, T1-04/T1-05 | R8-08 | Evidence opens, refusal views, mapping review, quality-summary use; never customer content |
@@ -664,6 +688,17 @@ Before T1 product code, activate a bounded contract allocating:
 M2 requires T1-01 through T1-05 and T1-08. Full lineage and trust telemetry may finish during early M3 if they do not weaken the design-partner evidence surface.
 
 **That is why `T1-08` depends on `T1-01` through `T1-05`, not on "all above".** A gate that required every task in the program could not be reached while the same paragraph declares two of those tasks deferrable — M2 would either admit a design partner without its parity and fail-closed evidence, or stall on work it just called optional. `T1-08` therefore covers the surfaces M2 actually ships, and `T1-06` and `T1-07` carry their own tests in their own slices, per the same-slice rule `CAL1` follows.
+
+**Analysis Impact Preview journey placement — AUTHORITY-BLOCKED, not `T1-04`'s to build.** `T1-04`
+owns only the underlying pre-analysis capability-availability contract (what data the availability
+vocabulary applies to). Rendering that contract as a new pre-analysis step inside the `/beta` journey
+is a different concern with the same shape as Fix & Continue (§R8 COMPLETION above): active `RRA-010`
+governs presentation-only changes to the existing journey and explicitly excludes "a new workflow
+state, step, or journey phase." An Impact Preview step does not exist in the current journey, so
+adding one is a new journey phase, not a presentation change to an existing one. This needs an active
+RRA specification naming that phase before any implementation task exists for it; `T1-04`'s contract
+can be built and consumed elsewhere (for example the review/pre-check step, if that step's existing
+authority already covers it) while the dedicated preview step itself waits on that authority.
 
 ---
 
@@ -731,6 +766,8 @@ So `R8-09` does not begin with engineering. `KHEPRI-DEC-025` §2 authorizes **"O
 
 `R8-09` is conditional only in timing, not in the M2 outcome: an external design partner must have a supported authentication handoff. Manual developer session creation is not an external-user product flow.
 
+**Fix & Continue — AUTHORITY-BLOCKED, not `R8-10`.** Returning to a mapping/attestation step to correct a customer-correctable pre-check or refusal cause, without losing session progress, is desired M2 product direction but is **not** authorized by any current specification and does not belong to `R8-10`. Active `RRA-010` governs presentation-only changes to the existing journey and explicitly excludes "a new workflow state, step, or journey phase" and any new capability the runtime does not already serve; today the review step only *displays* the confirmed mapping (read-only) and `Restart` deletes the session outright, so an editable return-and-resume path is a new workflow capability, not a presentation fix. This needs an active RRA specification naming that capability before any implementation task exists for it.
+
 ---
 
 # CROSS-CUTTING TRACK OPS1 — Hosted target and operational readiness
@@ -790,18 +827,27 @@ Authorize repeat use without silently changing the retention of uploads, facts, 
 
 Turn a one-time report into a repeat-use organization workspace while preserving isolation, versioning, provenance, and deletion evidence.
 
+## UX reconciliation note
+
+This program's task wording is reconciled with the Integrated Customer Experience Map in
+`KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1. No new task IDs are added for repeat-use UX: **Remember My
+Data** (reusable source/mapping profile), **Draft Safety** (save setup / resume later), **Run
+Again / Run New Period**, **Analysis Passport**, and **Methodology Change Notice** are wording
+additions to `W1-01`, `W1-04`, and `W1-08` below, not separate programs. Each remains gated on
+active `G3` authority exactly as the rest of `W1` is — adding wording does not change readiness.
+
 ## Tasks
 
 | ID | Task | Depends on | Parallel | Output |
 |---|---|---|---|---|
-| W1-01 | Define workspace, dataset version, analysis run, comparison run, and retained artifact domain contracts | active G3 | U1 IA | Domain model |
+| W1-01 | Define workspace, dataset version, analysis run, comparison run, retained artifact, **and reusable source/mapping profile** domain contracts. A profile record is descriptive metadata only — reusing it must re-attest against the current source rather than silently skipping semantic admission when the source has materially changed (Article V, fail-closed) | active G3 | U1 IA | Domain model |
 | W1-02 | Add persistence and one-head migrations | W1-01 | no migration branch | Schema |
 | W1-03 | Extend encrypted object namespaces and metadata under G2 | W1-01, G2 | W1-02 tests | Storage lifecycle |
-| W1-04 | Implement authorized create/read/list/delete/resume operations | W1-02, R6 | W1-05 skeleton | Service/API |
-| W1-05 | Build Workspace Overview, Datasets, Analyses, Reports, Metrics, and Activity surfaces | stable W1 API, U1 | W1-04 | Customer workspace UI |
-| W1-06 | Preserve immutable provenance and fact/report bindings | W1-03/04 | no | Reproducibility evidence |
+| W1-04 | Implement authorized create/read/list/delete/resume operations, **including saved-setup resume (Draft Safety) and re-running a dataset/analysis configuration for a new period or unchanged period (Run Again / Run New Period) where the prior configuration remains compatible** | W1-02, R6 | W1-05 skeleton | Service/API |
+| W1-05 | Build the new M3 customer surfaces — Overview, Data, Analyses — and integrate them with the existing shipped Team destination into one four-item primary navigation (Overview, Data, Analyses, Team), reconciled with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8/§20. **Team itself is already SHIPPED under active `RCA-002`** (blueprint §6) and is not rebuilt by this task. Reports are discovered from Analysis detail, not a separate index; Metrics and Activity are contextual (§7.5, §8), not primary destinations; "Workspace" stays an internal domain term, not a customer-facing surface label | stable W1 API, U1 | W1-04 | Customer Organization UI (Overview, Data, Analyses) + integrated navigation |
+| W1-06 | Preserve immutable provenance and fact/report bindings, **exposed to the customer as a compact Analysis Passport (period, organization/data reference, scope coverage, run timestamp, methodology/version context) with digests and machine identifiers kept behind contextual audit detail** | W1-03/04 | no | Reproducibility evidence |
 | W1-07 | Implement immediate deletion, retention sweep, backup-aware lifecycle, and deletion evidence | W1-03, G2 | no | Lifecycle enforcement |
-| W1-08 | Add version and availability diff between analyses | W1-04, T1 | W1-05 | What changed in inputs, mappings, metrics, refusals, and versions |
+| W1-08 | Add version and availability diff between analyses, **presented to the customer as a Methodology Change Notice when a prior and later analysis differ because governed mapping or formula/family versions changed, with the diff detail reachable rather than implying numeric comparability where it does not hold. Semantic-view version changes are out of scope here** — `SV1` view definitions do not exist until after `C1`, which itself starts only after M3/`W1`, so `W1-08` cannot exercise or test a view-version case; a view-level notice is a later `SV1`/`D1` extension of this same principle, not `W1-08`'s to build | W1-04, T1 | W1-05 | What changed in inputs, mappings, metrics, refusals, and versions |
 | W1-09 | Add favorites/pins and recent activity without creating a new calculation | W1-05 | no | Navigation convenience |
 | W1-10 | Add cross-org, expired, deleted, partial, corrupt, restore, and concurrent lifecycle tests | W1-04 through W1-09 | no | Security/recovery evidence |
 | W1-11 | Add content-free repeat-use telemetry | W1-05, approved scope | no | Second analysis, report reopen, workspace return, deletion completion |
@@ -956,11 +1002,26 @@ X1-01 through X1-03 may be included in the M4 release. Saved Answers and pinning
 
 Move beyond operator-provisioned design partners only after M4 proves repeat decision value.
 
+## Try Sample Analysis — AUTHORITY-BLOCKED
+
+A pre-authentication "Try Sample Analysis" is desired product direction for first-visit activation,
+owned by this program if and when it is authorized — **it is not `ON1-03`**, which is the
+*post*-auth guided first analysis. **It does not fall under `KHEPRI-DEC-025` §5's "no public or
+post-authentication self-service bootstrap" as written** — that prohibition is scoped to *accounts and
+links*, and a sample that creates neither is a different concern; citing it as the blocker would
+misidentify the authority this needs. The actual blockers are `RCA-002`'s Exclusions, which exclude
+both "public self-serve signup" and "any change to the `RRA` beta journey, its routes, its templates,
+or its assets," and active `RRA-010`, which authorizes only presentation changes to the existing
+journey and excludes any new route or workflow phase — a public, unauthenticated route into the
+analysis engine is neither. `G5-01` must decide whether and how a sample experience is authorized, and
+the authorizing artifact must be a new or amended RCA/RRA specification naming that public route, not
+merely a `G5` product decision on its own.
+
 ## Governance tasks
 
 | ID | Task | Depends on | Output |
 |---|---|---|---|
-| G5-01 | Decide self-serve versus assisted onboarding, verification, organization bootstrap, and support boundaries | M4 evidence | Product decisions |
+| G5-01 | Decide self-serve versus assisted onboarding, verification, organization bootstrap, support boundaries, **and whether a pre-authentication sample/demo experience is authorized under a new or amended RCA/RRA specification** (see the Try Sample Analysis note above — `RCA-002`'s public-self-serve and beta-journey Exclusions and active `RRA-010`'s presentation-only scope are the actual blockers, not `KHEPRI-DEC-025`) | M4 evidence | Product decisions |
 | G5-02 | Define signup, verification, first organization, invitation acceptance, and failure behavior | G5-01 | Active specification |
 | G5-03 | Decide email, rate limit, anti-abuse, domain, and provider boundaries | G5-01 | Operations decision |
 
@@ -970,7 +1031,7 @@ Move beyond operator-provisioned design partners only after M4 proves repeat dec
 |---|---|---|---|
 | ON1-01 | Build approved account verification and signup | active G5 | Auth flow |
 | ON1-02 | Build first-organization bootstrap and first-owner guarantee | ON1-01 | Organization creation |
-| ON1-03 | Build guided first-analysis onboarding with trust summary | ON1-02, T1 | Activation flow |
+| ON1-03 | Build guided first-analysis onboarding with trust summary (post-authentication) | ON1-02, T1 | Activation flow |
 | ON1-04 | Complete team, invitation, role, and membership administration UX | R2/R4/R6 | Admin UX |
 | ON1-05 | Add account/organization audit views using approved content-free events | retention authority | Audit UX |
 | ON1-06 | Add abuse, throttling, enumeration, replay, accessibility, and recovery-consequence tests | all above | Security evidence |
@@ -1093,8 +1154,10 @@ Let an agency serve multiple client organizations without creating a second path
 | A1-01 | Implement portfolio and client-association domain | active G7 | Domain |
 | A1-02 | Extend canonical authorization with explicit delegated access | A1-01, R6 | Authorization |
 | A1-03 | Build portfolio overview and client switcher | A1-02 | UI |
-| A1-04 | Implement bounded branding | G7 | Branding |
+| A1-04 | Implement bounded branding, **the same bounded-branding authority a future Branded Report (organization identity/logo/reporting period on deliverables) would reuse; branding must never remove Khepri provenance, disclosure, evidence, caveats, refusals, or governance-required audit/version information** | G7 | Branding |
 | A1-05 | Add exhaustive cross-client, detach, revocation, billing, and nonexistence tests | all above | Isolation evidence |
+
+**Secure Share has no current owner.** Read-only, scoped, revocable, expiring, cross-organization-safe sharing of an analysis/report/result without exposing the source upload is desired direction with no registered authority and no task ID. `API1-03`'s short-lived signed embed sessions are the closest existing mechanism but solve a different problem (partner embedding, not point-to-point sharing). Do not claim current authority for it; a future sharing authority is a precondition for any implementation task.
 
 ---
 
@@ -1121,7 +1184,7 @@ Monitor governed metrics and deliver approved reports without weakening metric v
 | MON1-03 | Build watchlist and alert-history UI | MON1-02 | UX |
 | S2-01 | Add schedule domain, persistence, and one-head migration | active G8 | Schedules |
 | S2-02 | Add durable scheduler/claim worker with bounded retries | S2-01 | Runtime |
-| S2-03 | Add secure delivery adapters and recipient reauthorization | S2-01/02 | Delivery |
+| S2-03 | Add secure delivery adapters and recipient reauthorization — **the outbound half of a Ready Notification** (email/push/scheduled delivery). The in-product ready state itself is the analysis's operational state, already owned by W1/blueprint §7.1/§7.3; this task owns only outbound delivery, and does not duplicate that state in a second notification subsystem | S2-01/02 | Delivery |
 | S2-04 | Build schedule and delivery UI | S2-01/03 | UX |
 | S2-05 | Add DST, duplicate trigger, stale metric version, revoked recipient, deletion, retry, and audit tests | all above | Reliability evidence |
 
@@ -1294,14 +1357,17 @@ No dashboard or history is faked.
 
 ### M3 UI
 
+Primary: **Overview, Data, Analyses, Team** (W1-05). Reports, Metrics, and Activity are reached
+contextually rather than as primary destinations — see W1-05 and blueprint §8.
+
 ```text
-Workspace Overview
-Datasets
+Overview
+  └─ contextual recent activity, where the capability exists (W1-09, §7.5)
+Data
 Analyses
-Reports
-Metrics
-Activity
-Version/availability diff
+  └─ Analysis detail: report / evidence / PDF / Excel (no separate Reports index)
+       └─ version/availability diff, methodology change notice (W1-08)
+Team
 Deletion/retention state
 ```
 
