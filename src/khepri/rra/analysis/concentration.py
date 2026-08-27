@@ -75,7 +75,7 @@ from khepri.rra.mapping import SEMANTIC_CATEGORY, SEMANTIC_PRODUCT, SEMANTIC_REV
 # decile rule alone would then reuse the same fact and citation identifiers for a
 # materially different number, and a stored citation would point at an answer that
 # had changed underneath it.
-CONCENTRATION_FORMULA_VERSION = "rra008.concentration.v1"
+CONCENTRATION_FORMULA_VERSION = "rra008.concentration.v2"
 
 METRIC_CURVE = "concentration_curve"
 METRIC_DISTINCT_VALUES = "concentration_distinct_values"

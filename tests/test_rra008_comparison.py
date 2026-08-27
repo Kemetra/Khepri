@@ -55,7 +55,11 @@ from tests.rra003_contract_fixtures import (
 HEADER = b"date,revenue,units,invoice_no,category,branch\n"
 
 
-def package_for(rows: list[tuple[date | None, str]]) -> FactPackage:
+def package_for(
+    rows: list[tuple[date | None, str]],
+    *,
+    attested: bool = True,
+) -> FactPackage:
     body = b"".join(
         f"{'' if when is None else when.isoformat()},"
         f"{amount},1,INV-{index},Beverages,Cairo\n".encode()
@@ -75,7 +79,7 @@ def package_for(rows: list[tuple[date | None, str]]) -> FactPackage:
     # manifest", so a module whose subject is comparison arithmetic has to
     # attest its own coverage or every case refuses before reaching the
     # arithmetic it was written to prove.
-    dated = tuple(when for when, _ in rows if when is not None)
+    dated = () if not attested else tuple(when for when, _ in rows if when is not None)
     manifest = (
         None
         if not dated
@@ -752,3 +756,51 @@ def test_a_window_the_manifest_does_not_prove_is_refused() -> None:
 
     assert not unattested.coverage_signatures
     assert comparison.accepted_window(unattested) is None
+
+
+def test_an_incompatible_window_refuses_for_coverage_not_for_absence() -> None:
+    """Four causes reach one `return None`, and they are not the same finding.
+
+    `_window_for` returns nothing when there is no trend, no label pair, no
+    counterpart bucket, or -- since `rra008.comparison.v2` -- when the manifest
+    does not prove the two windows structurally comparable. Collapsing the last
+    into `prior_window_absent` tells a customer "your file covers a single
+    period" when it covers several, and points them at re-exporting more history,
+    which produces the same refusal again.
+
+    `REASON_COVERAGE_INCOMPATIBLE` was defined by `V-comparison` and left
+    unattached; the CAL1-11 sweep is what found it.
+    """
+    # Four days leave two settled periods, so a label pair exists and a
+    # counterpart is found -- every other cause of the `None` is excluded. No
+    # manifest, so coverage alone is what is unproven. Measured: the same rows
+    # *with* a manifest publish, which is what makes the refusal attributable.
+    rows = [
+        (date(2026, 1, 5) + timedelta(days=offset), f"{100 + offset * 10}.00")
+        for offset in range(4)
+    ]
+    package = package_for(rows, attested=False)
+    assert package.trend() is not None, "a trend must exist, or absence is the honest reason"
+    assert not isinstance(comparison.derive(package_for(rows)), RefusedResult), (
+        "the attested twin must publish, or the refusal is not about coverage"
+    )
+    assert not package.coverage_signatures, "the case needs coverage to be unproven"
+
+    refused = comparison.derive(package)
+    assert isinstance(refused, RefusedResult), refused
+    assert refused.reason == comparison.REASON_COVERAGE_INCOMPATIBLE, refused.reason
+
+
+def test_a_genuinely_absent_prior_window_still_says_so() -> None:
+    """The converse, so the new reason cannot swallow the old one.
+
+    One period cannot settle a pair. Coverage is equally unproven here, and the
+    honest finding is still that there is no earlier period to compare against.
+    """
+    package = package_for([(date(2026, 1, 5), "100.00")], attested=False)
+    refused = comparison.derive(package)
+    assert isinstance(refused, RefusedResult), refused
+    assert refused.reason in {
+        comparison.REASON_PRIOR_WINDOW_ABSENT,
+        REASON_INPUT_UNAVAILABLE,
+    }, refused.reason

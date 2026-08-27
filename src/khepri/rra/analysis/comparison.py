@@ -181,7 +181,11 @@ CAVEAT_PARTIAL_WINDOW = "comparison_partial_window"
 # Reasons absent from this tuple sort last rather than raising: a metric-scoped
 # refusal like `negative_base` never reaches here, because the mode that records
 # one also produced an absolute delta and so did not refuse wholly.
-_REASON_PRECEDENCE = (REASON_INPUT_UNAVAILABLE, REASON_PRIOR_WINDOW_ABSENT)
+_REASON_PRECEDENCE = (
+    REASON_INPUT_UNAVAILABLE,
+    REASON_COVERAGE_INCOMPATIBLE,
+    REASON_PRIOR_WINDOW_ABSENT,
+)
 
 # What these facts are derived from, named in the governed mapping vocabulary.
 # `Fact.inputs` elsewhere holds semantic measures -- the formula version is
@@ -380,7 +384,7 @@ def _outcomes(package: FactPackage) -> tuple[_Outcome, ...]:
 def _derive_mode(package: FactPackage, mode: str) -> _Outcome:
     window = _window_for(package, mode)
     if window is None:
-        return _refused(mode, _absent_reason(package))
+        return _refused(mode, _absent_reason(package, mode))
     return _compare(window, package, mode)
 
 
@@ -529,9 +533,27 @@ def _against_counterpart(
     )
 
 
-def _absent_reason(package: FactPackage) -> str:
-    if package.trend() is None:
+def _absent_reason(package: FactPackage, mode: str) -> str:
+    """Which of the causes behind `_window_for`'s `None` actually happened.
+
+    Four reach that one `return`, and they are different findings a reader acts
+    on differently. Reported in the order the window is built, so each cause is
+    only considered once the ones before it have been excluded:
+
+    - No trend at all: `required_input_unavailable`.
+    - A trend, but the manifest does not prove the two windows structurally
+      comparable: `coverage_structurally_incompatible`. Saying
+      `prior_window_absent` here tells a customer their file covers a single
+      period when it covers several, and sends them to re-export more history --
+      which produces the same refusal again.
+    - Otherwise no comparable pair exists at all: `prior_window_absent`.
+    """
+    trend = package.trend()
+    if trend is None:
         return REASON_INPUT_UNAVAILABLE
+    labels = compared_labels(trend.series, mode)
+    if labels is not None and not _structurally_compatible(package, labels):
+        return REASON_COVERAGE_INCOMPATIBLE
     return REASON_PRIOR_WINDOW_ABSENT
 
 

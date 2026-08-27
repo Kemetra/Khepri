@@ -35,6 +35,7 @@ from khepri.rra.versions import (
 )
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    attesting_manifest,
     landed_sections,
     published_mapping_identity,
 )
@@ -53,6 +54,10 @@ UNPUBLISHED_MAPPING_VERSION = "rra003.mapping.v99"
 #: survivor for the mirror reason: it is still at `v1` under the pin these
 #: fixtures build with, so it publishes throughout the sequence.
 UNPUBLISHED_FAMILY_VERSION = "rra008.growth.v99"
+# Deliberately not the next real version. Naming `...v2` here made this
+# module assert a refusal that `V-concentration` then published, and the
+# case passed as a no-op patch instead of failing.
+UNPUBLISHED_CONCENTRATION_VERSION = "rra008.concentration.v99"
 
 
 def test_building_a_package_refuses_an_unadmitted_triple() -> None:
@@ -98,16 +103,19 @@ def test_a_family_on_an_unadmitted_formula_refuses_only_itself(
     package-level refusal here would return nothing at all.
 
     The mover is a version **no slice publishes**: naming a real successor would
-    make this case assert nothing from the commit that lands it onward. Basket
-    is the survivor because these fixtures build under the published
-    predecessor, where it is admitted throughout.
+    make this case assert nothing from the commit that lands it onward.
+
+    Built under the triple this build publishes. Basket was the survivor under
+    the predecessor pin while its successor was unpublished; `V-basket` landed
+    and `V-concentration` closed the window, so `formula.v1` now admits no family
+    at all and the survivor has to be sought where the families actually live.
     """
     from khepri.rra import bundle
     from khepri.rra.analysis import growth
 
     monkeypatch.setattr(growth, "GROWTH_FORMULA_VERSION", UNPUBLISHED_FAMILY_VERSION)
 
-    package = _package_with_two_settled_periods()
+    package = _package_with_two_settled_periods(published=True)
     analysed = bundle._analysed(package)
 
     assert analysed.refusals.get(bundle.SECTION_GROWTH) == (
@@ -139,7 +147,7 @@ def test_the_concentration_curve_does_not_escape_its_family_refusal(
     monkeypatch.setattr(
         concentration,
         "CONCENTRATION_FORMULA_VERSION",
-        "rra008.concentration.v2",
+        UNPUBLISHED_CONCENTRATION_VERSION,
     )
 
     analysed = bundle._analysed(_package_with_a_concentration_curve())
@@ -313,6 +321,7 @@ def _package_from(
     rows: list[tuple[str, ...]],
     *,
     mapping_version: str | None = None,
+    published: bool = False,
 ) -> object:
     """One governed package over four consecutive days of the given columns.
 
@@ -351,9 +360,20 @@ def _package_from(
     # `facts._assert_derived_from_profile`, which re-derives the mapping and
     # compares by value -- so the admitted case patches the constant and lets
     # `build_mapping` stamp it.
+    # Coverage attested for exactly the days these rows carry, so a case about
+    # the family seam is not stopped by `rra008.comparison.v2` refusing a window
+    # no manifest proves -- and growth, which consumes comparison's acceptance,
+    # is not stopped behind it.
+    manifest = attesting_manifest(
+        content=content,
+        contract=TEST_CONTRACT,
+        days=tuple(start + timedelta(days=index) for index in range(len(rows))),
+    )
+
     def _built(mapping: object) -> object:
         return build_fact_package(
             AdmittedInput(
+                manifest=manifest,
                 content=content,
                 media_type=CSV_MEDIA_TYPE,
                 profile=profile,
@@ -374,12 +394,22 @@ def _package_from(
     # re-derives the mapping with `build_mapping` and compares by value, so the
     # constant must still be the published one when the package is built, not
     # merely when the mapping was stamped.
+    if published:
+        # The triple this build publishes. `V-concentration` closed the refusal
+        # window, so `formula.v1` admits no family at all and the predecessor pin
+        # would refuse every section for a version reason -- leaving a case about
+        # the family seam with no family to observe.
+        return _built(build_mapping(profile, contract=TEST_CONTRACT))
     with published_mapping_identity():
         return _built(build_mapping(profile, contract=TEST_CONTRACT))
 
 
-def _package_with_a_concentration_curve() -> object:
-    """Rows over a product dimension, so concentration has a set to rank."""
+def _package_with_a_concentration_curve(*, published: bool = True) -> object:
+    """Rows over a product dimension, so concentration has a set to rank.
+
+    Published by default: every case using this fixture is about the family seam,
+    and the seam is only reachable on a triple that admits at least one family.
+    """
     return _package_from(
         "date,revenue,units,product,invoice_no",
         [
@@ -388,12 +418,14 @@ def _package_with_a_concentration_curve() -> object:
             ("180.00", "12", "Cough Syrup"),
             ("60.00", "6", "Dressing"),
         ],
+        published=published,
     )
 
 
 def _package_with_two_settled_periods(
     *,
     mapping_version: str | None = None,
+    published: bool = False,
 ) -> object:
     """Four consecutive days, which leaves two settled periods to compare.
 
@@ -405,6 +437,7 @@ def _package_with_two_settled_periods(
         "date,revenue,units,invoice_no",
         [("50.00", "5"), ("100.00", "10"), ("180.00", "12"), ("60.00", "6")],
         mapping_version=mapping_version,
+        published=published,
     )
 
 

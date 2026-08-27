@@ -29,7 +29,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     RICH_CONTRACT,
-    published_mapping_identity,
+    manifest_for_csv,
 )
 
 #: `event_kind` replaces `returns_amount`. `RRA-003` admits no independently
@@ -76,24 +76,31 @@ def rich_package() -> FactPackage:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(content).hexdigest(),
     )
-    # Built under the published mapping identity: this fixture's consumers
-    # test rendering, splitting and instrumentation, never the version gate,
-    # so their packages must keep combining a triple
-    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside
-    # the block because `facts._assert_derived_from_profile` re-derives the
-    # mapping and compares it by value.
-    with published_mapping_identity():
-        mapping = build_mapping(profile, contract=RICH_CONTRACT)
-        return build_fact_package(
-            AdmittedInput(
-                content=content,
-                media_type=CSV_MEDIA_TYPE,
-                profile=profile,
-                mapping=mapping,
-                decision=assess_admissibility(profile, mapping),
-                contract=RICH_CONTRACT,
-            ),
-        )
+    # Built under the triple this build publishes, which is what a customer
+    # receives. This fixture was pinned to the published predecessor for the
+    # length of the CAL1 refusal window: while a family's successor was
+    # unpublished the pin was the only triple that let its section render.
+    #
+    # `V-concentration` closed the window and inverted that. `formula.v1` now
+    # admits no `RRA-008` family at all, so a fixture whose consumers test
+    # rendering, splitting and instrumentation would render no family section
+    # and those consumers would assert against an empty report.
+    #
+    # Coverage is attested for the days these rows carry, because
+    # `rra008.comparison.v2` refuses a window no manifest proves and growth
+    # consumes comparison's acceptance.
+    mapping = build_mapping(profile, contract=RICH_CONTRACT)
+    return build_fact_package(
+        AdmittedInput(
+            manifest=manifest_for_csv(content, RICH_CONTRACT),
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=RICH_CONTRACT,
+        ),
+    )
 
 
 def rich_bundle() -> ReportBundle:

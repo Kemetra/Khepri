@@ -191,6 +191,12 @@ GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
 # Adding a code is deliberate: a family that needs a new one adds it here in the
 # slice that introduces it, rather than passing a string through.
 SECTION_REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+# Distinct from the row above, and the distinction is what a reader acts on:
+# `prior_window_absent` means there is no earlier period in the file, while this
+# means there is one and the manifest does not prove the two comparable. Telling
+# a customer the first when the second happened sends them to re-export more
+# history, which produces the same refusal again.
+SECTION_REASON_COVERAGE_INCOMPATIBLE = "coverage_structurally_incompatible"
 # Spelled to match the fact package's `REASON_INPUT_UNAVAILABLE` rather than
 # given a section-flavoured synonym: a family that refuses for this reason hands
 # its own code straight to the section, and two spellings of one condition would
@@ -272,6 +278,7 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             SECTION_REASON_FAMILY_VERSION_UNADMITTED,
             SECTION_REASON_PRIOR_WINDOW_ABSENT,
             SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
+            SECTION_REASON_COVERAGE_INCOMPATIBLE,
         }
     ),
     SECTION_CONCENTRATION: frozenset(
@@ -295,6 +302,11 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             # fails misleadingly.
             SECTION_REASON_PRIOR_WINDOW_ABSENT,
             SECTION_REASON_REQUIRED_INPUT_UNAVAILABLE,
+            # And the third way, for the same reason: growth consumes the window
+            # comparison *accepted*, so a window refused on coverage grounds
+            # refuses growth with the cause comparison gave rather than with a
+            # measure-shaped reason that would misattribute it.
+            SECTION_REASON_COVERAGE_INCOMPATIBLE,
         }
     ),
     SECTION_BASKET: frozenset(
@@ -1592,6 +1604,16 @@ def _analysed(package: FactPackage) -> _Analysed:
     # read those figures as a present section and discarded the refusal.
     if SECTION_CONCENTRATION not in refusals:
         figures.extend(_curve_figures(package))
+        if _curve_sampled(package):
+            # Scoped to the section rather than left report-level: it qualifies
+            # the concentration curve and nothing else, and a report-level
+            # caveat would tell a reader the whole dataset was sampled.
+            caveats.append(
+                StatedCaveat(
+                    code=CAVEAT_CURVE_SAMPLED,
+                    section=SECTION_CONCENTRATION,
+                )
+            )
     return _Analysed(
         figures=tuple(figures),
         refusals=refusals,
@@ -1647,6 +1669,26 @@ def _curve_figures(package: FactPackage) -> tuple[CitedFigure, ...]:
         for position, point in enumerate(points)
         for figure in _bucket(document, point, position, SECTION_CONCENTRATION)
     )
+
+
+def _curve_sampled(package: FactPackage) -> bool:
+    """Whether the drawn curve is a sample of the ranked set rather than all of it.
+
+    `RRA-008` lets the curve be drawn from at most `MAX_CURVE_POINTS` evenly
+    spaced points because the *figures* beside it are computed over the full
+    distinct set -- that is what makes sampling the drawing honest. It stops being
+    honest when a reader is not told: a curve over 250 products showing 100 points
+    is indistinguishable from a curve over 100 products, and the difference
+    changes how steeply concentration appears to rise.
+
+    Asked of the same series the figures are built from, and compared against the
+    same cap `_sampled` applies, so the disclosure cannot disagree with the
+    drawing it describes.
+    """
+    series = concentration.curve_series(package)
+    if series is None:
+        return False
+    return len(series.as_document()["points"]) > MAX_CURVE_POINTS
 
 
 def _sampled(points: list[object]) -> list[object]:

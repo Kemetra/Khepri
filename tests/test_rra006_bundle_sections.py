@@ -364,6 +364,14 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
     # of two settled periods has no change to split, and an absent revenue trend
     # has nothing to split at all. Neither is "units absent".
     #
+    # `coverage_structurally_incompatible` comes from RRA-008's requirement that
+    # completeness and alignment come only from the authoritative coverage
+    # manifest and the retained structural signatures. `rra008.comparison.v2`
+    # refuses a window those cannot prove comparable, and that is a different
+    # finding from `prior_window_absent`: the earlier period is present, and
+    # re-exporting more history does not help. Growth carries it for the reason
+    # it carries the other two -- it consumes the window comparison accepted.
+    #
     # Every family also carries `family_version_pairing_unadmitted`, which RRA-008
     # does not assign to any one of them because it is not about their inputs. It
     # is the version compatibility gate's family seam: any of the four may be the
@@ -373,7 +381,12 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
     # only one family could state would make that promise false for the other
     # three.
     assert SECTION_REASONS[SECTION_COMPARISON] == frozenset(
-        {"prior_window_absent", "required_input_unavailable", "family_version_pairing_unadmitted"}
+        {
+            "prior_window_absent",
+            "required_input_unavailable",
+            "family_version_pairing_unadmitted",
+            "coverage_structurally_incompatible",
+        }
     )
     assert SECTION_REASONS[SECTION_CONCENTRATION] == frozenset(
         {"distinct_set_uncomputable", "aggregate_unavailable", "family_version_pairing_unadmitted"}
@@ -385,6 +398,7 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
             "prior_window_absent",
             "required_input_unavailable",
             "family_version_pairing_unadmitted",
+            "coverage_structurally_incompatible",
         }
     )
     # Basket carries three. RRA-008 requires a transaction identifier for both its
@@ -471,6 +485,13 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
     assert frozenset(
         {
             "prior_window_absent",
+            # Added by `V-concentration`, which found the code defined by the
+            # comparison slice and attached to nothing. `rra008.comparison.v2`
+            # refuses a window the manifest cannot prove comparable, and that
+            # is not `prior_window_absent`: the earlier period is present, so
+            # re-exporting more history does not help. Growth carries it too,
+            # because it consumes the window comparison accepted.
+            "coverage_structurally_incompatible",
             # Added by the comparison slice, which proved it reachable: a
             # compared period holding only null revenue refuses the family with
             # the fact package's own required_input_unavailable, and a section

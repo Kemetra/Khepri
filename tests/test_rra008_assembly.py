@@ -20,7 +20,9 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.analysis import concentration
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
+    CAVEAT_CURVE_SAMPLED,
     CHART_LINE,
+    MAX_CURVE_POINTS,
     SECTION_BASKET,
     SECTION_COMPARISON,
     SECTION_CONCENTRATION,
@@ -167,7 +169,7 @@ def test_a_family_that_states_facts_becomes_a_present_section() -> None:
     "the families that can publish" the moment one of them moves, and then
     asserts that a family which legitimately refuses must publish anyway.
     """
-    package = full_package()
+    package = full_package(published=True)
     bundle = bundle_of(package)
     landed = landed_sections(package.formula_version)
 
@@ -339,7 +341,7 @@ def test_the_concentration_curve_is_charted_as_a_cumulative_line() -> None:
     a dataset and asserted over whichever sections happened to be charted, so a section
     that was never charted was invisible to all of them.
     """
-    bundle = bundle_of(full_package())
+    bundle = bundle_of(full_package(published=True))
     section = section_of(bundle, SECTION_CONCENTRATION)
     assert section is not None
     assert section.chart is not None
@@ -351,3 +353,77 @@ def test_the_concentration_curve_is_charted_as_a_cumulative_line() -> None:
     plotted = [by_id[figure_id] for figure_id in section.chart.figure_ids]
     assert len(plotted) > 1
     assert {figure.metric for figure in plotted} == {concentration.METRIC_CURVE}
+
+
+# More distinct products than `MAX_CURVE_POINTS`, so the curve a surface draws is
+# a sample of the ranked set rather than the whole of it.
+def wide_package(*, distinct: int, published: bool = False) -> FactPackage:
+    """One row per product, so the ranked set has exactly `distinct` members."""
+    rows = [
+        (
+            (START + timedelta(days=index % 5)).isoformat(),
+            f"{(distinct - index) * 10}.00",
+            1,
+            f"INV-{index}",
+            f"P{index:04d}",
+        )
+        for index in range(distinct)
+    ]
+    body = b"".join(
+        f"{when},{amount},{units},{invoice},{product}\n".encode()
+        for when, amount, units, invoice, product in rows
+    )
+    days = tuple(START + timedelta(days=offset) for offset in range(5))
+    return package_for(HEADER + body, days=days, published=published)
+
+
+def test_a_sampled_curve_says_that_it_was_sampled() -> None:
+    """`bundle.MAX_CURVE_POINTS` caps a drawn curve at 100 evenly spaced points.
+
+    **`rra008.concentration.v1` dropped the rest in silence.** `_sampled` kept
+    every hundredth point and `CAVEAT_CURVE_SAMPLED` was defined, given prose in
+    both languages, and never attached to anything -- so a reader saw a curve
+    over 250 products, counted 100 points, and had no way to learn the difference.
+
+    The figures beside the curve are unaffected: they are computed over the full
+    distinct set, which is the whole reason the curve may be sampled at all.
+    """
+    bundle = bundle_of(wide_package(distinct=250, published=True))
+    section = section_of(bundle, SECTION_CONCENTRATION)
+    assert section is not None
+    assert section.state == SECTION_PRESENT, section.reason
+
+    # Counted as points rather than figures: each drawn point emits a `value`
+    # and a `rows` figure, and the count that matters is how much of the ranked
+    # set a reader can see. `_sampled` keeps the final point unconditionally, so
+    # a capped curve draws one more than the cap when the evenly spaced set did
+    # not already include it.
+    points = {
+        figure.label for figure in bundle.figures
+        if figure.metric == concentration.METRIC_CURVE
+    }
+    assert len(points) <= MAX_CURVE_POINTS + 1, len(points)
+    assert len(points) < 250, "the curve drew the whole ranked set, so nothing was sampled"
+
+    scoped = {(caveat.section, caveat.code) for caveat in bundle.caveats}
+    assert (SECTION_CONCENTRATION, CAVEAT_CURVE_SAMPLED) in scoped, sorted(
+        (str(section), code) for section, code in scoped
+    )
+
+
+def test_an_unsampled_curve_makes_no_such_claim() -> None:
+    """The converse, so the caveat cannot become decoration on every report.
+
+    Twelve products fit inside the cap, so every ranked point is drawn and there
+    is nothing to disclose.
+    """
+    bundle = bundle_of(wide_package(distinct=12, published=True))
+
+    points = {
+        figure.label for figure in bundle.figures
+        if figure.metric == concentration.METRIC_CURVE
+    }
+    assert len(points) == 12, len(points)
+
+    scoped = {(caveat.section, caveat.code) for caveat in bundle.caveats}
+    assert (SECTION_CONCENTRATION, CAVEAT_CURVE_SAMPLED) not in scoped

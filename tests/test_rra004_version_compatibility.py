@@ -94,6 +94,7 @@ def test_only_the_families_that_have_landed_are_admitted() -> None:
         comparison.COMPARISON_FORMULA_VERSION,
         growth.GROWTH_FORMULA_VERSION,
         basket.BASKET_FORMULA_VERSION,
+        concentration.CONCENTRATION_FORMULA_VERSION,
     }
     for family_version in (
         comparison.COMPARISON_FORMULA_VERSION,

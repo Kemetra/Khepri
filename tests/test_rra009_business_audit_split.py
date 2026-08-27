@@ -189,7 +189,10 @@ def test_a_series_row_carries_both_a_measure_name_and_its_period() -> None:
 
 
 def test_a_labelless_derived_metric_is_named_from_the_derived_table() -> None:
-    cells = build_cells(_bundle(), LANGUAGE_ENGLISH)
+    # Built under the triple this build publishes: every metric below belongs to
+    # an `RRA-008` family, and `V-concentration` closed the refusal window, so
+    # `formula.v1` admits no family and the bundle carries none of them.
+    cells = build_cells(_bundle(published=True), LANGUAGE_ENGLISH)
     for metric in (
         "basket_items_per_transaction",
         "concentration_top_decile_share",

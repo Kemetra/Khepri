@@ -209,7 +209,10 @@ def test_a_drawable_section_renders_a_real_svg_element() -> None:
     The escaped-string design this replaced would have rendered `&lt;svg` here and
     passed every other test in this file.
     """
-    rendered = page()
+    # Built under the triple this build publishes: a chart belongs to an
+    # RRA-008 family, and `V-concentration` closed the refusal window, so
+    # `formula.v1` admits no family and the section draws nothing.
+    rendered = page(published=True)
     assert "<svg" in rendered
     assert "&lt;svg" not in rendered
     assert 'role="img"' in rendered
@@ -218,7 +221,10 @@ def test_a_drawable_section_renders_a_real_svg_element() -> None:
 
 def test_the_chart_is_labelled_for_a_screen_reader() -> None:
     """`aria-labelledby` pointing at a title and a description that exist."""
-    rendered = page()
+    # Built under the triple this build publishes: a chart belongs to an
+    # RRA-008 family, and `V-concentration` closed the refusal window, so
+    # `formula.v1` admits no family and the section draws nothing.
+    rendered = page(published=True)
     assert f'aria-labelledby="{SECTION_BASKET}-ct {SECTION_BASKET}-cd"' in rendered
     assert f'<title id="{SECTION_BASKET}-ct">' in rendered
     assert f'<desc id="{SECTION_BASKET}-cd">' in rendered
@@ -334,8 +340,11 @@ def test_both_languages_render_every_section() -> None:
 
 def test_the_arabic_page_mirrors_its_chart() -> None:
     """The category axis mirrors for a right-to-left page, and the values do not."""
-    english = page(LANGUAGE_ENGLISH)
-    arabic = page(LANGUAGE_ARABIC)
+    # Built under the triple this build publishes: a chart belongs to an
+    # RRA-008 family, and `V-concentration` closed the refusal window, so
+    # `formula.v1` admits no family and the section draws nothing.
+    english = page(LANGUAGE_ENGLISH, published=True)
+    arabic = page(LANGUAGE_ARABIC, published=True)
     assert 'dir="rtl"' in arabic
     assert english != arabic
     assert "<svg" in arabic

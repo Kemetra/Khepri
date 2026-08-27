@@ -138,6 +138,7 @@ _RESULT_REASON_CODES = {
     facts.REASON_AMBIGUOUS_MAPPING,
     basket.REASON_DIMENSION_ABSENT,
     basket.REASON_DIMENSION_INCOMPLETE,
+    comparison.REASON_COVERAGE_INCOMPATIBLE,
     comparison.REASON_NEGATIVE_BASE,
     versions.REASON_FAMILY_VERSION_UNADMITTED,
 }
@@ -292,6 +293,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "a file that also covers the period you want to compare with — "
                 "the same months a year earlier, or the months immediately before."
             ),
+            "coverage_structurally_incompatible": (
+                "Comparison with an earlier period — not available. Your file "
+                "covers both periods, but not in the same way: the days or branches "
+                "recorded differ between them, so a difference between the two "
+                "would mix a real change with a gap in what was recorded. "
+                "Everything else in this review is unaffected. To add comparison, "
+                "export a file that covers both periods completely, for the same "
+                "branches."
+            ),
             "required_input_unavailable": (
                 "This analysis — not available. The figures this analysis needs "
                 "are not present in the file. The rest of the review is "
@@ -361,6 +371,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "غير متأثر، وهو يوصف الفترة التي قدّمتها. ولإتاحة المقارنة، "
                 "صدِّر ملفاً يغطي أيضاً الفترة التي تريد المقارنة بها — الأشهر "
                 "نفسها من العام السابق، أو الأشهر التي تسبقها مباشرة."
+            ),
+            "coverage_structurally_incompatible": (
+                "المقارنة بفترة سابقة — غير متاحة. يغطي ملفك الفترتين، لكن ليس "
+                "بالطريقة نفسها: الأيام أو الفروع المسجلة تختلف بينهما، ولذلك سيخلط "
+                "الفرق بينهما تغيراً حقيقياً بنقص في المسجل. وما عدا ذلك في هذا "
+                "التقرير غير متأثر. ولإتاحة المقارنة، صدِّر ملفاً يغطي الفترتين "
+                "كاملتين وللفروع نفسها."
             ),
             "required_input_unavailable": (
                 "هذا التحليل — غير متاح. الأرقام التي يحتاجها هذا التحليل غير "
@@ -465,6 +482,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "negative starting value would reverse the apparent direction of "
                 "change. The absolute revenue change is unaffected."
             ),
+            "coverage_structurally_incompatible": (
+                "{metric} is not shown — the two periods being compared are not "
+                "covered the same way in your file, so a difference between them "
+                "would mix a real change with a gap in what was recorded. Export a "
+                "file that covers both periods completely, for the same branches, and "
+                "this comparison appears."
+            ),
         },
         LANGUAGE_ARABIC: {
             "required_input_unavailable": (
@@ -511,6 +535,12 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
             "negative_base": (
                 "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
                 "المعنى الظاهر للتغير. التغير المطلق في الإيرادات غير متأثر."
+            ),
+            "coverage_structurally_incompatible": (
+                "{metric} غير معروض — الفترتان المقارنتان غير مغطاتين بالطريقة نفسها "
+                "في ملفك، ولذلك سيخلط الفرق بينهما تغيراً حقيقياً بنقص في المسجل. "
+                "صدِّر ملفاً يغطي الفترتين كاملتين وللفروع نفسها، وستظهر هذه "
+                "المقارنة."
             ),
         },
     },
