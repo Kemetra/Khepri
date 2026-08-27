@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Context, Decimal, localcontext
 
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.analysis import comparison, growth
@@ -30,6 +30,7 @@ from khepri.rra.analysis.growth import (
 )
 from khepri.rra.bundle import SECTION_GROWTH, SECTION_REASONS
 from khepri.rra.facts import (
+    ARITHMETIC_PRECISION,
     REASON_INPUT_UNAVAILABLE,
     UNIT_MONETARY,
     AdmittedInput,
@@ -307,23 +308,53 @@ def test_the_rounding_residual_is_disclosed_where_an_auditor_finds_it() -> None:
     assert CAVEAT_ROUNDING_RESIDUAL not in fact_for(exact, METRIC_PRICE_EFFECT).caveats
 
 
+def independently_rounded_price(rows: list[tuple[str, int]], precision: int) -> Decimal:
+    """`round(U_c * (ASP_c - ASP_p))`, computed from the source rows.
+
+    The second value the residual is measured against, and deliberately *not*
+    derived from the published figures: production defines the published price as
+    `change - volume`, so any quantity built from those three is that identity
+    restated and cannot disagree with itself.
+
+    `daily` lays one row per consecutive day and the compared pair is the third
+    row against the second, so those two are the periods this reads.
+    """
+    (_, prior_units), (_, current_units) = (rows[1], rows[2])
+    prior_revenue, current_revenue = Decimal(rows[1][0]), Decimal(rows[2][0])
+    with localcontext(Context(prec=ARITHMETIC_PRECISION)):
+        prior_asp = prior_revenue / Decimal(prior_units)
+        current_asp = current_revenue / Decimal(current_units)
+        unrounded = Decimal(current_units) * (current_asp - prior_asp)
+        return unrounded.quantize(Decimal(1).scaleb(-precision))
+
+
 def test_the_residual_never_exceeds_one_unit_of_the_published_last_place() -> None:
     """The bound `RRA-008` sets, asserted over the measured population.
 
+    The residual is `published price - round(unrounded price)`. **The second term
+    is recomputed from the source rows on purpose**: an earlier version of this
+    test compared the published price against `change - volume`, which is what
+    production defines it to be, so the difference was exactly zero for every
+    input and the assertion held whatever the arithmetic did.
+
     Three roundings each move a value by at most half a unit, which would bound
-    the residual at 1.5 units if they were independent. They are not: `price` is
+    the residual at 1.5 units if they were independent. They are not -- `price` is
     derived from `change` and `volume`, so their errors partly cancel and the
-    reachable bound is one unit. This asserts the bound rather than the
-    cancellation, so it stays true if the arithmetic is rearranged.
+    reachable bound is one unit. `RESIDUAL` is a case that actually reaches it,
+    so the assertion is not vacuously satisfied by a population of zeroes.
     """
+    reached = False
     for rows in (RESIDUAL, EXACT, [("5.00", 2), ("10.01", 3), ("20.02", 7), ("8.00", 4)]):
         facts = growth.derive(daily(rows))
         assert not isinstance(facts, RefusedResult), rows
         price = fact_for(facts, METRIC_PRICE_EFFECT)
         ulp = Decimal(1).scaleb(-price.precision)
-        change = decimal_for(facts, METRIC_REVENUE_CHANGE)
-        volume = decimal_for(facts, METRIC_VOLUME_EFFECT)
-        assert abs((change - volume) - Decimal(price.value)) <= ulp, rows
+        residual = Decimal(price.value) - independently_rounded_price(
+            rows, price.precision
+        )
+        assert abs(residual) <= ulp, (rows, residual)
+        reached = reached or residual != 0
+    assert reached, "no case produced a residual, so the bound was never exercised"
 
 
 def test_a_total_refusal_is_recorded_once_rather_than_twice() -> None:

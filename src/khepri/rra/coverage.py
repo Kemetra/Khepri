@@ -47,6 +47,21 @@ COVERAGE_MANIFEST_VERSION = "rra003.coverage-manifest.v1"
 #: attestation to be versioned.
 RECOGNISED_MANIFEST_VERSIONS: frozenset[str] = frozenset({COVERAGE_MANIFEST_VERSION})
 
+#: What a manifest stored before `attested_by` existed reads back as.
+#:
+#: The field was added to the shape without moving `COVERAGE_MANIFEST_VERSION`,
+#: so old and new documents share `rra003.coverage-manifest.v1` and a direct
+#: lookup raised `KeyError` for every previously stored attested profile --
+#: failing package rebuild and every coverage check that read one.
+#:
+#: A distinct marker rather than a plausible attester name: an attestation that
+#: recorded no attribution has none, and inventing one would make it
+#: indistinguishable from a manifest that named its source. `_assert_bound`
+#: still refuses a *blank* attester, so this cannot become a way to accept a new
+#: manifest with nothing recorded -- readback is not admission.
+UNRECORDED_ATTESTER = "attribution not recorded"
+
+
 #: A scope-day pair is exactly a scope and a day. Named so the read-back refusal
 #: of a malformed stored pair reads as a width check rather than a bare `2`.
 _SCOPE_DAY_WIDTH = 2
@@ -162,7 +177,7 @@ def manifest_from_document(document: dict[str, object]) -> CoverageManifest:
         manifest_version=str(document["manifest_version"]),
         input_digest=str(document["input_digest"]),
         source_contract_digest=str(document["source_contract_digest"]),
-        attested_by=str(document["attested_by"]),
+        attested_by=str(document.get("attested_by") or UNRECORDED_ATTESTER),
         timezone=str(document["timezone"]),
         covered_start=date.fromisoformat(str(document["covered_start"])),
         covered_end=date.fromisoformat(str(document["covered_end"])),

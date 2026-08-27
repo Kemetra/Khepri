@@ -31,7 +31,7 @@ from khepri.rra.aggregates import (
     granularity_for,
     reconciles,
 )
-from khepri.rra.bases import RetainedBasis, retain_bases
+from khepri.rra.bases import BasisBinding, RetainedBasis, retain_bases
 from khepri.rra.coverage import CoverageManifest
 from khepri.rra.coverage_signature import (
     CoverageSignature,
@@ -741,6 +741,13 @@ def _build(
     sale_revenue = _sale_only(measures.revenue, measures)
     orders = _matched(sale_revenue, _sale_only(measures.transactions, measures))
     selling = _matched(sale_revenue, _positive_units(measures))
+    # `RRA-004`: `sales_complete_revenue_units` admits "no unmatched eligible
+    # row", and `RRA-003`: "a sale or return event with zero units refuses
+    # unit-dependent facts". A sale carrying revenue but no positive units is
+    # eligible and unmatched, so the population does not exist for this dataset
+    # and ASP has nothing to average -- averaging the rest publishes a figure
+    # that reconciles against neither the revenue nor the units beside it.
+    complete_selling = not _unmatched(sale_revenue, _positive_units(measures))
     margin = _matched(measures.revenue, measures.cost)
     if any(pairing.partial for pairing in (orders, selling, margin)):
         caveats.append(CAVEAT_DERIVED_OVER_MATCHED_ROWS)
@@ -762,7 +769,11 @@ def _build(
     _add_ratio(
         add,
         metric=METRIC_AVERAGE_SELLING_PRICE,
-        numerator=_monetary(admitted_events, selling.left),
+        numerator=(
+            _monetary(admitted_events, selling.left)
+            if complete_selling
+            else None
+        ),
         denominator=_sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
@@ -870,10 +881,12 @@ def _build(
         coverage_signatures=_signatures_of(admitted, measures),
         retained_bases=retain_bases(
             events=admitted_events.events,
-            input_digest=profile.source_sha256_hex,
-            mapping_version=mapping.mapping_version,
-            currency=admitted_events.currency,
-            precision=money,
+            binding=BasisBinding(
+                input_digest=profile.source_sha256_hex,
+                mapping_version=mapping.mapping_version,
+                currency=admitted_events.currency,
+                precision=money,
+            ),
         ),
     )
 
@@ -994,6 +1007,25 @@ class _Matched:
     left: list
     right: list
     partial: bool
+
+
+def _unmatched(left: list, right: list) -> bool:
+    """Whether some row carries one measure of a pairing and not the other.
+
+    `_matched` keeps the rows where both are present and reports `partial` so the
+    package can disclose the loss. This asks the stricter question a *ratio*
+    population needs: not "did we lose a row" but "is this population complete at
+    all". `RRA-004` puts "no unmatched eligible row" on
+    `sales_complete_revenue_units` and on none of the plain filters beside it.
+
+    A pairing with no left-hand values at all is not unmatched -- the measure is
+    absent rather than incomplete, and the metric is refused for that instead.
+    """
+    if not any(value is not None for value in left):
+        return False
+    return any(
+        (left[index] is None) != (right[index] is None) for index in range(len(left))
+    )
 
 
 def _matched(left: list, right: list) -> _Matched:

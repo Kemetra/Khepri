@@ -173,16 +173,13 @@ def _mode_of(ordinals: tuple[int, ...], span: int) -> str:
     )
 
 
-def project_prefix(parent: CoverageSignature, *, days: int) -> CoverageSignature:
-    """The days `1..k` prefix of a complete signature, per `RRA-004`.
+def _projectable(parent: CoverageSignature, *, days: int) -> tuple[int, ...]:
+    """The parent ordinals a `1..days` projection may keep, or a refusal.
 
-    A projection "preserves the parent signature and basis identities, input and
-    manifest bindings, governed aggregate scope or complete store set, and
-    event-kind and status filters in provenance", and "never infers missing
-    coverage, synthesizes an unproven day, or changes a parent measure value".
-    So every field but the mode, the ordinals and the length is carried over
-    unchanged, and the ordinals are a subset of the parent's rather than a
-    freshly generated range.
+    Four separate ways a projection would be unsound, each named for what
+    actually failed. They are sequential rather than combined because a caller
+    told only "not projectable" cannot tell an over-long window from an unproven
+    day, and the two are fixed differently.
     """
     if days < 1:
         raise SignatureRefused("A projection covers at least its first day.")
@@ -200,6 +197,21 @@ def project_prefix(parent: CoverageSignature, *, days: int) -> CoverageSignature
         raise SignatureRefused(
             "The parent signature does not prove every day of this projection."
         )
+    return kept
+
+
+def project_prefix(parent: CoverageSignature, *, days: int) -> CoverageSignature:
+    """The days `1..k` prefix of a complete signature, per `RRA-004`.
+
+    A projection "preserves the parent signature and basis identities, input and
+    manifest bindings, governed aggregate scope or complete store set, and
+    event-kind and status filters in provenance", and "never infers missing
+    coverage, synthesizes an unproven day, or changes a parent measure value".
+    So every field but the mode, the ordinals and the length is carried over
+    unchanged, and the ordinals are a subset of the parent's rather than a
+    freshly generated range.
+    """
+    kept = _projectable(parent, days=days)
     return CoverageSignature(
         manifest_version=parent.manifest_version,
         manifest_input_digest=parent.manifest_input_digest,

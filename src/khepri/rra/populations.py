@@ -86,4 +86,7 @@ def is_governed_population(code: str) -> bool:
     if code in GOVERNED_POPULATIONS:
         return True
     prefix = f"{POPULATION_DIMENSION_COMPLETE_SALES}{POPULATION_DIMENSION_SEPARATOR}"
-    return code.startswith(prefix) and bool(code[len(prefix) :])
+    # `.strip()` because `"dimension_complete_sales: "` is truthy while naming
+    # no dimension: a `RetainedBasis` could then cite a population whose member
+    # is whitespace, which reconciles against nothing.
+    return code.startswith(prefix) and bool(code[len(prefix) :].strip())

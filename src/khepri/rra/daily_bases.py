@@ -76,6 +76,11 @@ class AlignedDailyBasis:
     currency: str | None = None
 
     def __post_init__(self) -> None:
+        self._assert_window()
+        self._assert_days()
+
+    def _assert_window(self) -> None:
+        """What the basis claims to cover, before what it states about it."""
         if self.end < self.start:
             raise DailyBasisRefused("A daily basis cannot end before it starts.")
         if not is_governed_population(self.population):
@@ -83,6 +88,14 @@ class AlignedDailyBasis:
                 f"A daily basis cannot cite {self.population!r}, "
                 "which names no governed population."
             )
+
+    def _assert_days(self) -> None:
+        """And the days themselves, each refused for what it actually did.
+
+        A repeated day and a day outside the window are different findings: the
+        first double-counts, the second reconciles against evidence the window
+        never attested. One combined message could name neither.
+        """
         days = [value.day for value in self.values]
         if len(days) != len(set(days)):
             raise DailyBasisRefused("A daily basis states a day more than once.")

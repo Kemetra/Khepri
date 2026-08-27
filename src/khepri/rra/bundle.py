@@ -1597,27 +1597,40 @@ def _analysed(package: FactPackage) -> _Analysed:
             for fact in stated
         )
         caveats.extend(_scoped(section_id, stated, refused))
-    # Gated with the family it belongs to. The curve is retained on the package
-    # rather than derived by `concentration.derive`, so it is appended out here
-    # -- which meant the family's `continue` refused the section while the curve
-    # published anyway, under the very pairing the gate refused. `_section` then
-    # read those figures as a present section and discarded the refusal.
     if SECTION_CONCENTRATION not in refusals:
-        figures.extend(_curve_figures(package))
-        if _curve_sampled(package):
-            # Scoped to the section rather than left report-level: it qualifies
-            # the concentration curve and nothing else, and a report-level
-            # caveat would tell a reader the whole dataset was sampled.
-            caveats.append(
-                StatedCaveat(
-                    code=CAVEAT_CURVE_SAMPLED,
-                    section=SECTION_CONCENTRATION,
-                )
-            )
+        drawn, disclosed = _curve(package)
+        figures.extend(drawn)
+        caveats.extend(disclosed)
     return _Analysed(
         figures=tuple(figures),
         refusals=refusals,
         caveats=tuple(caveats),
+    )
+
+
+def _curve(
+    package: FactPackage,
+) -> tuple[tuple[CitedFigure, ...], tuple[StatedCaveat, ...]]:
+    """The concentration curve's figures, and the disclosure they may need.
+
+    Gated by its caller with the family it belongs to. The curve is retained on
+    the package rather than derived by `concentration.derive`, so it is appended
+    outside the family loop -- which once meant the family's `continue` refused
+    the section while the curve published anyway, under the very pairing the gate
+    refused, and `_section` then read those figures as a present section and
+    discarded the refusal.
+
+    The figures and the disclosure travel together because they are one claim: a
+    sampled curve and the sentence saying it was sampled cannot be separated
+    without the page stating a shape it does not qualify. The caveat is scoped to
+    the section rather than left report-level, because it qualifies this curve and
+    nothing else -- report-level would tell a reader the whole dataset was sampled.
+    """
+    drawn = _curve_figures(package)
+    if not _curve_sampled(package):
+        return drawn, ()
+    return drawn, (
+        StatedCaveat(code=CAVEAT_CURVE_SAMPLED, section=SECTION_CONCENTRATION),
     )
 
 

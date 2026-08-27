@@ -106,3 +106,22 @@ def test_the_two_base_populations_are_distinct() -> None:
     """
     assert POPULATION_FINANCIAL_POSTED != POPULATION_SALES_POSTED
     assert POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS != POPULATION_SALES_POSTED
+
+
+def test_a_dimension_population_needs_a_dimension_not_whitespace() -> None:
+    """`"dimension_complete_sales: "` is truthy and names nothing.
+
+    Found in review. The family is admitted by its prefix plus a non-empty
+    member, and a whitespace member satisfied that while leaving a
+    `RetainedBasis` citing a population that reconciles against nothing.
+    """
+    from khepri.rra.populations import (
+        POPULATION_DIMENSION_COMPLETE_SALES,
+        POPULATION_DIMENSION_SEPARATOR,
+        is_governed_population,
+    )
+
+    prefix = f"{POPULATION_DIMENSION_COMPLETE_SALES}{POPULATION_DIMENSION_SEPARATOR}"
+    assert is_governed_population(f"{prefix}product")
+    for blank in ("", " ", "   "):
+        assert not is_governed_population(prefix + blank), repr(blank)

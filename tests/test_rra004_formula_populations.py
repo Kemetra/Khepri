@@ -19,7 +19,12 @@ from __future__ import annotations
 import hashlib
 
 from khepri.rra.admissibility import assess_admissibility
-from khepri.rra.facts import AdmittedInput, build_fact_package
+from khepri.rra.facts import (
+    METRIC_AVERAGE_SELLING_PRICE,
+    REASON_INPUT_UNAVAILABLE,
+    AdmittedInput,
+    build_fact_package,
+)
 from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
@@ -31,10 +36,7 @@ from tests.rra_calculation_oracle import (
 )
 
 
-def _returns_package():
-    """Two posted sales and one posted return, admitted as what they are."""
-    content = to_csv(MESSY_RETURNS_ROWS)
-    contract = oracle_contract()
+def _package_from(content: bytes, contract):
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -51,6 +53,11 @@ def _returns_package():
             contract=contract,
         )
     )
+
+
+def _returns_package():
+    """Two posted sales and one posted return, admitted as what they are."""
+    return _package_from(to_csv(MESSY_RETURNS_ROWS), oracle_contract())
 
 
 def test_a_return_is_not_a_transaction() -> None:
@@ -120,35 +127,22 @@ def test_headline_revenue_and_units_still_include_the_return() -> None:
 # with the suite green.
 
 
-def _package_from(content: bytes, contract):
-    profile = build_profile(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        source_sha256_hex=hashlib.sha256(content).hexdigest(),
-    )
-    mapping = build_mapping(profile, contract=contract)
-    return build_fact_package(
-        AdmittedInput(
-            content=content,
-            media_type=CSV_MEDIA_TYPE,
-            profile=profile,
-            mapping=mapping,
-            decision=assess_admissibility(profile, mapping),
-            contract=contract,
-        )
-    )
-
-
-def test_a_zero_unit_sale_is_not_in_the_asp_population() -> None:
+def test_a_zero_unit_sale_refuses_asp_rather_than_leaving_the_population() -> None:
     """`RRA-003`: "a sale or return event with zero units refuses
     unit-dependent facts", and ASP takes "positive posted-sale units only".
 
-    `MESSY_RETURNS_ROWS` carries no zero-unit sale, so the positivity filter is
-    unreached there and could be deleted with that case still green. Here a
-    zero-unit row would drag the denominator up and the price down if counted.
+    **This case asserted 50.00 and was wrong, which review caught.** It read
+    "refuses unit-dependent facts" as "excludes the row from them", and those are
+    different acts. `RRA-004:18` settles it: `sales_complete_revenue_units` is
+    `sales_posted` with complete revenue, strictly positive units, "and no
+    unmatched eligible row". That last clause is on this population and on none of
+    the plain `sales_complete_*` filters beside it, because this one is a divisor.
 
-    ASP over the one eligible row is 100.00 / 2 = 50.00. Counting the zero-unit
-    sale would give 150.00 / 2 = 75.00.
+    Excluding the row published 50.00 beside a revenue of 150.00 and 2 units: a
+    reader dividing the two published figures gets 75.00, and neither number
+    reconciles against the other. `MESSY_RETURNS_ROWS` carries no zero-unit sale,
+    so the positivity filter is unreached there and this is the case that proves
+    the rule is applied at all.
     """
     content = (
         b"date,event_kind,revenue,units,invoice_no\n"
@@ -158,7 +152,13 @@ def test_a_zero_unit_sale_is_not_in_the_asp_population() -> None:
 
     result = _package_from(content, oracle_contract(status_column=None))
 
-    assert result.value("average_selling_price") == "50.00"
+    assert result.value("average_selling_price") is None
+    refused = {refusal.metric: refusal.reason for refusal in result.refusals}
+    assert METRIC_AVERAGE_SELLING_PRICE in refused, refused
+    # The revenue and units beside it are unaffected: `RRA-004` refuses the
+    # affected result, and a whole-dataset total is not unit-paired.
+    assert result.value("revenue") == "150.00"
+    assert result.value("units") == "2"
 
 
 def test_returns_state_nothing_where_no_return_event_was_admitted() -> None:
@@ -180,3 +180,59 @@ def test_returns_state_nothing_where_no_return_event_was_admitted() -> None:
 
     assert result.value("returns") is None
     assert result.refusal("returns") is not None
+
+
+# --- `sales_complete_revenue_units` admits no unmatched eligible row --------
+
+
+def test_asp_refuses_when_an_eligible_sale_row_is_unmatched() -> None:
+    """`RRA-004`: the population is `sales_posted` with complete revenue,
+    strictly positive units, **and no unmatched eligible row**.
+
+    A sale carrying revenue but zero units is eligible -- it is a posted sale
+    with revenue -- and unmatched, because it contributes no positive units. The
+    population therefore does not exist for this dataset and ASP has nothing to
+    average.
+
+    **It published 50.00.** 100.00 over 2 units, with the second sale's 50.00
+    dropped: a reader dividing the published revenue of 150.00 by the published
+    2 units gets 75.00 and cannot reconcile either number against the other.
+    `CAVEAT_DERIVED_OVER_MATCHED_ROWS` was attached, but it names no metric and
+    no quantity, so it cannot be used to reconcile the gap it discloses.
+
+    Found in review. The unmatched row is what distinguishes this from the
+    ordinary narrowing the other `sales_complete_*` populations do: those are
+    filters over a *sum*, and this one is a divisor.
+    """
+    unmatched = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,2,INV-1\n"
+        b"2026-01-06,sale,50.00,0,INV-2\n"
+    )
+    package = _package_from(unmatched, oracle_contract(status_column=None))
+
+    stated = {fact.metric for fact in package.facts}
+    assert METRIC_AVERAGE_SELLING_PRICE not in stated, "ASP averaged a partial population"
+
+    refused = {refusal.metric: refusal.reason for refusal in package.refusals}
+    assert METRIC_AVERAGE_SELLING_PRICE in refused, refused
+    assert refused[METRIC_AVERAGE_SELLING_PRICE] == REASON_INPUT_UNAVAILABLE
+
+
+def test_asp_still_states_a_population_with_no_unmatched_row() -> None:
+    """The converse, so the refusal cannot become "refuse whenever units vary".
+
+    Every sale here carries revenue and positive units, so nothing is unmatched
+    and the average is over the population `RRA-004` names.
+    """
+    matched = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,2,INV-1\n"
+        b"2026-01-06,sale,50.00,1,INV-2\n"
+    )
+    package = _package_from(matched, oracle_contract(status_column=None))
+    asp = next(
+        fact for fact in package.facts
+        if fact.metric == METRIC_AVERAGE_SELLING_PRICE
+    )
+    assert asp.value == "50.00"

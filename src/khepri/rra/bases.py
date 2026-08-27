@@ -33,7 +33,16 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from khepri.rra.populations import is_governed_population
+from khepri.rra.populations import (
+    POPULATION_FINANCIAL_COMPLETE_REVENUE_COST,
+    POPULATION_FINANCIAL_POSTED,
+    POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS,
+    POPULATION_SALES_COMPLETE_REVENUE_UNITS,
+    POPULATION_SALES_COMPLETE_TRANSACTIONS,
+    POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS,
+    POPULATION_SALES_POSTED,
+    is_governed_population,
+)
 from khepri.rra.profiling import canonical_json
 
 #: The twelve basis names `RRA-004` retains. A name is a role -- what the basis
@@ -181,13 +190,88 @@ def compatible(left: RetainedBasis, right: RetainedBasis) -> bool:
     )
 
 
+# The nine constant bases `RRA-004` enumerates, as a table rather than as nine
+# branches: each row is (name, population, sale-only, counts transactions,
+# monetary). Written here so the specification's list reads as a list, and so
+# adding one is an edit to data rather than to control flow.
+_RETAINED: tuple[tuple[str, str, bool, bool, bool], ...] = (
+    (BASIS_FINANCIAL_REVENUE, POPULATION_FINANCIAL_POSTED, False, False, True),
+    (BASIS_FINANCIAL_UNITS, POPULATION_FINANCIAL_POSTED, False, False, False),
+    (BASIS_SALES_REVENUE, POPULATION_SALES_POSTED, True, False, True),
+    (BASIS_SALES_UNITS, POPULATION_SALES_POSTED, True, False, False),
+    (
+        BASIS_SALES_TRANSACTION,
+        POPULATION_SALES_COMPLETE_TRANSACTIONS,
+        True,
+        True,
+        False,
+    ),
+    (
+        BASIS_SALES_REVENUE_UNITS,
+        POPULATION_SALES_COMPLETE_REVENUE_UNITS,
+        True,
+        False,
+        True,
+    ),
+    (
+        BASIS_SALES_REVENUE_TRANSACTION,
+        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS,
+        True,
+        True,
+        True,
+    ),
+    (
+        BASIS_SALES_UNITS_TRANSACTION,
+        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS,
+        True,
+        True,
+        False,
+    ),
+    (
+        BASIS_FINANCIAL_REVENUE_COST,
+        POPULATION_FINANCIAL_COMPLETE_REVENUE_COST,
+        False,
+        False,
+        True,
+    ),
+)
+
+
+def _sale_keys(sales: tuple[object, ...]) -> int | None:
+    """How many distinct canonical transactions the sales carry, or nothing.
+
+    `None` rather than zero when no event carries a key: a basis that counted
+    zero transactions would assert the population is empty, when what is true is
+    that the count is unavailable.
+    """
+    keys = {
+        getattr(event, "transaction_key", None)
+        for event in sales
+        if getattr(event, "transaction_key", None) is not None
+    }
+    return len(keys) if keys else None
+
+
+@dataclass(frozen=True, slots=True)
+class BasisBinding:
+    """What every basis in one package shares: the build it was retained under.
+
+    `RetainedBasis` records these on each row, because a basis is evidence and
+    evidence that cannot say what produced it is not evidence. They are one value
+    here because they are one fact about the package, and passing them
+    individually made `retain_bases` read as five unrelated inputs.
+    """
+
+    input_digest: str
+    mapping_version: str
+    currency: str | None
+    precision: int
+
+
 def retain_bases(
     *,
     events: tuple[object, ...],
-    input_digest: str,
-    mapping_version: str,
-    currency: str | None,
-    precision: int,
+    binding: BasisBinding,
 ) -> tuple[RetainedBasis, ...]:
     """The reconciliation bases derivable from one admitted event set.
 
@@ -207,83 +291,20 @@ def retain_bases(
     count, and the aligned daily bases are retained separately by
     `daily_bases`. Both are recorded on the package by their own producers.
     """
-    from khepri.rra.populations import (
-        POPULATION_FINANCIAL_COMPLETE_REVENUE_COST,
-        POPULATION_FINANCIAL_POSTED,
-        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS,
-        POPULATION_SALES_COMPLETE_REVENUE_UNITS,
-        POPULATION_SALES_COMPLETE_TRANSACTIONS,
-        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS,
-        POPULATION_SALES_POSTED,
+    sales = tuple(
+        event for event in events if getattr(event, "event_kind", "") == "sale"
     )
-
-    sales = tuple(event for event in events if getattr(event, "event_kind", "") == "sale")
-    keys = {
-        getattr(event, "transaction_key", None)
-        for event in sales
-        if getattr(event, "transaction_key", None) is not None
-    }
-    sale_keys = len(keys) if keys else None
-
-    def _basis(
-        name: str,
-        population: str,
-        count: int,
-        *,
-        transactions: int | None = None,
-        monetary: bool = True,
-    ) -> RetainedBasis:
-        return RetainedBasis(
+    transactions = _sale_keys(sales)
+    return tuple(
+        RetainedBasis(
             name=name,
             population=population,
-            event_count=count,
-            input_digest=input_digest,
-            mapping_version=mapping_version,
-            precision=precision,
-            transaction_count=transactions,
-            currency=currency if monetary else None,
+            event_count=len(sales if sale_only else events),
+            input_digest=binding.input_digest,
+            mapping_version=binding.mapping_version,
+            precision=binding.precision,
+            transaction_count=transactions if counts_transactions else None,
+            currency=binding.currency if monetary else None,
         )
-
-    return (
-        _basis(BASIS_FINANCIAL_REVENUE, POPULATION_FINANCIAL_POSTED, len(events)),
-        _basis(
-            BASIS_FINANCIAL_UNITS,
-            POPULATION_FINANCIAL_POSTED,
-            len(events),
-            monetary=False,
-        ),
-        _basis(BASIS_SALES_REVENUE, POPULATION_SALES_POSTED, len(sales)),
-        _basis(
-            BASIS_SALES_UNITS, POPULATION_SALES_POSTED, len(sales), monetary=False
-        ),
-        _basis(
-            BASIS_SALES_TRANSACTION,
-            POPULATION_SALES_COMPLETE_TRANSACTIONS,
-            len(sales),
-            transactions=sale_keys,
-            monetary=False,
-        ),
-        _basis(
-            BASIS_SALES_REVENUE_UNITS,
-            POPULATION_SALES_COMPLETE_REVENUE_UNITS,
-            len(sales),
-        ),
-        _basis(
-            BASIS_SALES_REVENUE_TRANSACTION,
-            POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS,
-            len(sales),
-            transactions=sale_keys,
-        ),
-        _basis(
-            BASIS_SALES_UNITS_TRANSACTION,
-            POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS,
-            len(sales),
-            transactions=sale_keys,
-            monetary=False,
-        ),
-        _basis(
-            BASIS_FINANCIAL_REVENUE_COST,
-            POPULATION_FINANCIAL_COMPLETE_REVENUE_COST,
-            len(events),
-        ),
+        for name, population, sale_only, counts_transactions, monetary in _RETAINED
     )

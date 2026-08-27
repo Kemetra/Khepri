@@ -498,11 +498,25 @@ def _structurally_compatible(package: FactPackage, labels: tuple[str, str]) -> b
     signatures = package.coverage_signatures
     if not signatures:
         return False
-    scopes = {signature.scope for signature in signatures}
+    # **The scope set, not one scope.** `RRA-008` admits "the same governed
+    # aggregate scope *or* complete admitted store set", and a roster is the
+    # second form: one scope expressed as several stores, attested together.
+    # Requiring a single scope string refused every multi-store export -- an
+    # ordinary retail case, not an edge one -- because a per-store manifest
+    # emits one signature per store.
+    #
+    # What must agree is the *shape* every signature shares: each covers the
+    # same ordinals over the same window under the same filters. Two windows
+    # covered by different rosters, or by rosters covering different days,
+    # therefore still refuse -- which is the rule this exists to enforce.
     filters = {
         (signature.event_kinds, signature.statuses) for signature in signatures
     }
-    return len(scopes) == 1 and len(filters) == 1
+    coverage = {
+        (signature.mode, signature.covered_ordinals, signature.window_days)
+        for signature in signatures
+    }
+    return len(filters) == 1 and len(coverage) == 1
 
 
 def _is_partial(package: FactPackage) -> bool:

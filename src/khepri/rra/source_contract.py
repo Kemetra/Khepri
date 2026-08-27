@@ -265,6 +265,13 @@ def _assert_identity_declared(identity: IdentityDeclaration) -> None:
             "A source contract proves event identity by keys or by attested "
             "line grain, not both."
         )
+    if any(not _is_mapped(column) for column in identity.event_key_columns):
+        # `(" ",)` satisfied the presence check above while naming no column a
+        # reader could resolve, which left event identity inferred -- the
+        # outcome the one-of-two-ways rule exists to prevent.
+        raise ContractRefused(
+            "Every event key column must name a source column."
+        )
     _assert_transaction_key(identity)
 
 
@@ -289,6 +296,21 @@ def _assert_transaction_key(identity: IdentityDeclaration) -> None:
     if not identity.transaction_key_components:
         raise ContractRefused(
             "A transaction identifier not proven unique needs a composite key."
+        )
+    if any(
+        not _is_mapped(component)
+        for component in identity.transaction_key_components
+    ):
+        # Same absence wearing a mapping's shape: a composite of `(" ", "store")`
+        # names one resolvable column and one that is not there, so the key it
+        # builds is narrower than the contract claims.
+        raise ContractRefused(
+            "Every transaction key component must name a source column."
+        )
+    if not _is_mapped(identity.transaction_id_column):
+        raise ContractRefused(
+            "A composite transaction key must contain the source identifier, "
+            "so the contract has to name one."
         )
     if identity.transaction_id_column not in identity.transaction_key_components:
         raise ContractRefused(

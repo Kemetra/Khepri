@@ -184,9 +184,23 @@ def test_an_average_never_mixes_two_row_populations() -> None:
 
 
 def test_selling_price_and_margin_use_the_same_rows_as_their_pair() -> None:
+    """The two halves are governed differently, and that is the subject.
+
+    `RRA-004:18` puts "and no unmatched eligible row" on
+    `sales_complete_revenue_units` and on no other population, because ASP is a
+    *divisor*: dropping a row moves the average rather than the count, and a
+    reader cannot detect it from the published figures.
+    `financial_complete_revenue_cost` carries no such clause, so gross margin
+    narrows to the matched rows and discloses that it did.
+
+    **The ASP half asserted 50.00 and was wrong, which review caught.** The
+    second row carries units and no revenue -- eligible and unmatched -- so the
+    population does not exist for this dataset. Publishing 50.00 beside a units
+    total of 5 left a reader unable to reconcile either figure against the other.
+    """
     selling = package(b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,,3\n")
     assert selling.value(METRIC_UNITS) == "5"
-    assert selling.value(METRIC_AVERAGE_SELLING_PRICE) == "50.00"
+    assert selling.value(METRIC_AVERAGE_SELLING_PRICE) is None
 
     margin = package(
         b"date,revenue,units,cogs\n2026-01-05,100.00,2,60.00\n2026-01-06,50.00,1,\n"

@@ -28,12 +28,14 @@ so this module does too.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
 
 from khepri.rra.coverage import (
     COVERAGE_MANIFEST_VERSION,
+    UNRECORDED_ATTESTER,
     CompletenessQuery,
     CoverageManifest,
     ManifestBinding,
@@ -43,6 +45,7 @@ from khepri.rra.coverage import (
     admits_completeness,
     assert_bound,
     build_coverage_manifest,
+    manifest_from_document,
 )
 
 _INPUT = "a" * 64
@@ -351,3 +354,38 @@ def test_attribution_evidence_travels_into_the_stored_document() -> None:
     document = _manifest().as_document()
 
     assert document["attested_by"] == _ATTESTED_BY
+
+
+def test_a_manifest_stored_before_attribution_still_reads_back() -> None:
+    """`attested_by` was added to the shape without moving the manifest version.
+
+    So a document written before this PR and one written after both carry
+    `rra003.coverage-manifest.v1`, and a direct `document["attested_by"]` lookup
+    raised `KeyError` for every previously stored attested profile -- failing
+    package rebuild and every coverage check that read one. Found in review.
+
+    It reads back as `UNRECORDED_ATTESTER` rather than as a plausible attester
+    name: an attestation that recorded no attribution has none, and inventing one
+    would make it indistinguishable from a manifest that named its source.
+
+    This is readback, not admission. `_assert_bound` still refuses a manifest
+    *submitted* with a blank attester, which the case below holds.
+    """
+    stored = _manifest().as_document()
+    legacy = {key: value for key, value in stored.items() if key != "attested_by"}
+
+    assert manifest_from_document(legacy).attested_by == UNRECORDED_ATTESTER
+    # And a document that did record one keeps it, so the fallback cannot
+    # quietly overwrite a real attestation.
+    assert manifest_from_document(stored).attested_by == _ATTESTED_BY
+
+
+def test_readback_does_not_admit_a_manifest_with_no_attester() -> None:
+    """The other half: accepting one is still refused.
+
+    Reading an old document leniently and accepting a new one leniently are
+    different acts, and only the first is safe. Without this, the fallback above
+    would look like a way to submit a manifest that names nobody.
+    """
+    with pytest.raises(ManifestRefused):
+        assert_bound(replace(_manifest(), attested_by="   "))
