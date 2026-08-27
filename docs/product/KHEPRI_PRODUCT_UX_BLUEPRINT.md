@@ -177,53 +177,52 @@ It duplicates no detailed prose — each phase links to the section that defines
 names the milestone(s) that own it. Where a phase's capability is not yet authorized, that is stated
 here in the same breath as the phase, not left implicit.
 
+**Primary M2 path — the current one-time journey, no M3 dependency:**
+
 ```text
-Try                              §6 Data intake / §21 Try Sample Analysis (AUTHORITY-BLOCKED)
- └── Enter organization          §6 Commercial shell — SHIPPED (M2)
-      └── Start / Resume         §6 Draft Safety — W1-04 saved-setup resume (M3, CONTRACT-BLOCKED)
-           └── Upload            §6 Data intake and understanding (M2, current one-time path)
-                └── Recognize    §6 Remember My Data — W1-01 profile (M3, CONTRACT-BLOCKED)
-                     └── Pre-check          §6 Data Pre-check (M2, LOCKED shape)
-                          └── Confirm       §6 Confirm mapping (M2)
-                               └── Impact Preview   §6 Analysis Impact Preview (M2, CONTRACT-BLOCKED)
-                                    └── Analyze     §6 Processing journey (M2, LOCKED — real states only)
-                                         └── Result: report · evidence · artifacts
-                                              │      §6/§16 journey result — SHIPPED (M2)
-                                              │      §7.4 Analysis detail — CONTRACT-BLOCKED (M3)
-                                              │
-                                              ├── Evidence / Why   §10 (LOCKED — contextual only, M2 SHIPPED)
-                                              ├── Fix when possible §6 Fix & Continue (M2, AUTHORITY-BLOCKED)
-                                              ├── Run Again / Compare
-                                              │                     §7.3 Run Again (M3, CONTRACT-BLOCKED) ·
-                                              │                     G4/C1 Compare (M4, BLOCKED)
-                                              ├── Export / Share   §7.4 Analysis detail (M3) · §16 Secure
-                                              │                     Share (future, AUTHORITY-BLOCKED)
-                                              ├── Return next period
-                                              │                     §7.3 Run New Period (M3, CONTRACT-BLOCKED)
-                                              │
-                                              └── What Changed (M4 enrichment of the same result, not a
-                                                   replacement for it) §4/M4 decision entry
-                                                   (FUTURE SHAPING REQUIRED)
-                                                        ├── Explore        §22 Guided Exploration
-                                                        │                   (X1-02, optional inside M4
-                                                        │                    or post-M4)
-                                                        └── Guided questions
-                                                             §22 Smart Next Questions (X1-04,
-                                                             optional inside M4 or post-M4)
-                                                                  ├── Save Answer
-                                                                  │    §22 Saved Answers, X1-05 (post-M4)
-                                                                  └── Ask Khepri later
-                                                                       §22 (G9/AI1, PROPOSED)
+Try → Enter organization → Start (new) → Upload → Pre-check → Confirm
+  → Impact Preview → Analyze → Result (report · evidence · artifacts)
 ```
+
+**M3 branches — optional, do not gate the M2 path above:**
+
+```text
+Enter organization → Start → Resume       (Draft Safety, W1-04 saved-setup resume)
+Upload → Recognize → Pre-check            (Remember My Data, W1-01 profile, for a repeat source)
+Result → Analysis detail                  (M3's durable home for the same result — §7.4)
+```
+
+**From the Result, in any milestone that has shipped its own authority:**
+
+```text
+Result ─┬─ Evidence / Why              (§10, contextual, M2 SHIPPED)
+        ├─ Fix when possible           (§6 Fix & Continue, AUTHORITY-BLOCKED)
+        ├─ Run Again / Compare         (§7.3 Run Again M3 CONTRACT-BLOCKED ·
+        │                               G4/C1 Compare M4 BLOCKED)
+        ├─ Export / Share              (§7.4 Analysis detail M3 ·
+        │                               §16 Secure Share, future AUTHORITY-BLOCKED)
+        ├─ Return next period          (§7.3 Run New Period, M3 CONTRACT-BLOCKED)
+        └─ What Changed                (M4 enrichment of the same result, not a
+                                         replacement for it — FUTURE SHAPING REQUIRED)
+             ├─ Explore                 (X1-02, optional inside M4 or post-M4)
+             └─ Guided questions        (X1-04, post-M4 only — not in the
+                                          roadmap's M4-eligible X1-01..03)
+                  ├─ Save Answer        (X1-05 Saved Answers, post-M4)
+                  └─ Ask Khepri later   (G9/AI1, PROPOSED, later)
+```
+
+**All phases, primary path and branches together** — "Milestone" names which milestone owns the
+phase, not a required stop on the way to the next row:
 
 | Phase | Section | Milestone | Status |
 |---|---|---|---|
 | Try / Enter organization | §6 | M2 | Commercial shell SHIPPED; pre-auth sample AUTHORITY-BLOCKED |
-| Start / Resume | §6, §7.3 | M3 | Draft Safety is `W1-04` saved-setup resume; CONTRACT-BLOCKED on active `G3` |
+| Start (new) | §6 | M2 | Current path, no Resume/Recognize dependency |
+| Resume (branch) | §6, §7.3 | M3 | Draft Safety is `W1-04` saved-setup resume; CONTRACT-BLOCKED on active `G3`; optional, does not gate Start |
 | Upload | §6 | M2 | Current one-time path, LOCKED shape |
-| Recognize | §6 | M3 | Remember My Data is `W1-01`'s profile contract; CONTRACT-BLOCKED on active `G3` |
+| Recognize (branch) | §6 | M3 | Remember My Data is `W1-01`'s profile contract; CONTRACT-BLOCKED on active `G3`; optional, does not gate Pre-check |
 | Pre-check → Confirm | §6 | M2 | LOCKED shape |
-| Impact Preview → Analyze | §6 | M2 | Impact Preview CONTRACT-BLOCKED (`T1`); processing states SHIPPED pattern |
+| Impact Preview → Analyze | §6 | M2 | Impact Preview data CONTRACT-BLOCKED (`T1`), journey step AUTHORITY-BLOCKED (`RRA-010` excludes new journey phases); processing states SHIPPED pattern |
 | Result: report / evidence / artifacts | §6, §7.4, §16 | M2 / M3 | M2 journey result SHIPPED; M3 Analysis detail CONTRACT-BLOCKED |
 | Evidence / Why | §10 | M2 | Contextual only, LOCKED; already reachable from the SHIPPED M2 result |
 | Fix when possible | §6 | M2 | AUTHORITY-BLOCKED — needs an active RRA specification, not `R8-10` |
@@ -232,7 +231,7 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
 | Run Again / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
 | Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
 | Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
-| Guided questions | §22 | M4 optional / post-M4 | `X1-04` may ship inside M4 per roadmap `X1`; PROPOSED |
+| Guided questions | §22 | post-M4 | `X1-04` is outside the roadmap's M4-eligible `X1-01`–`X1-03`; PROPOSED |
 | Save Answer | §22 | post-M4 | `X1-05` Saved Answers, PROPOSED — reopenable decision artifact, distinct from Run Again |
 | Ask Khepri | §22 | later | `G9/AI1`, PROPOSED, boundary unchanged |
 
@@ -286,10 +285,14 @@ sessions.
 - **Data Pre-check — LOCKED shape, CONTRACT-BLOCKED content.** Before analysis, the customer sees what
   Khepri understood, what is missing, what coverage is known, what needs the customer's confirmation,
   and which analyses look supportable. It does not compute or promise an unsupported business result.
-- **Analysis Impact Preview — CONTRACT-BLOCKED.** Before the analysis step runs, show capability
-  availability drawn from the `T1` availability vocabulary — for example *Revenue: Available*,
-  *Margin: Unavailable — cost basis not established*, *Basket: Partial*. **This is availability, not a
-  confidence score; it must not invent certainty.** Owned by `T1-04`, gated on active `T1` authority.
+- **Analysis Impact Preview — CONTRACT-BLOCKED on its data, AUTHORITY-BLOCKED as a journey step.**
+  Before the analysis step runs, show capability availability drawn from the `T1` availability
+  vocabulary — for example *Revenue: Available*, *Margin: Unavailable — cost basis not established*,
+  *Basket: Partial*. **This is availability, not a confidence score; it must not invent certainty.**
+  The underlying contract is `T1-04`'s, gated on active `T1` authority. **Rendering it as a new
+  pre-analysis step inside the `/beta` journey needs its own RRA authority** — active `RRA-010` governs
+  only presentation changes to the existing journey and excludes any new workflow state or phase, and
+  no Impact Preview step exists today for a presentation change to modify.
 
 **M3, not M2 — belong to the durable-workspace program, not the current one-time journey:**
 
@@ -937,7 +940,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Whether an analysis outlives its deleted data entry | PROVISIONAL | `G2`/`G3` retention contract |
 | Metrics as a dedicated destination | PROVISIONAL | `T1` + demonstrated customer need |
 | Remember My Data / reusable source-mapping profile | CONTRACT-BLOCKED | `W1-01` profile contract; active `G3`; must re-attest on material source change (Article V) |
-| Analysis Impact Preview | CONTRACT-BLOCKED | `T1-04` availability vocabulary; active `T1` |
+| Analysis Impact Preview | CONTRACT-BLOCKED (data) / AUTHORITY-BLOCKED (journey step) | `T1-04` availability vocabulary needs active `T1`; the journey step itself needs an active RRA specification, since `RRA-010` excludes new journey phases |
 | Analysis Passport fields | CONTRACT-BLOCKED | `W1-06` provenance record; active `G3` |
 | Run Again / Run New Period compatibility rule | CONTRACT-BLOCKED | `W1-04`; underlying `RRA-003`/`RRA-004` compatibility contracts |
 | Try Sample Analysis (pre-authentication) | AUTHORITY-BLOCKED | successor to `KHEPRI-DEC-025` §2, which currently prohibits public/post-auth self-service bootstrap; `G5-01` |

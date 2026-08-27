@@ -670,7 +670,7 @@ Before T1 product code, activate a bounded contract allocating:
 | T1-01 | Define `MetricDefinition`, `PopulationDefinition`, and reason/caveat registry contracts | CAL1 contract stable | U1 design | Versioned read-only definitions; no formula implementation |
 | T1-02 | Generate or validate the registry from governed RRA sources | T1-01, CAL1 merged | no | No hand-maintained parallel metric truth |
 | T1-03 | Add bilingual vocabulary and safe synonyms | T1-01 | U1 | Arabic/English names, descriptions, supported and explicitly unsupported interpretations |
-| T1-04 | Build `AnalysisQualitySummary`, **and, from the same availability vocabulary, a pre-analysis Analysis Impact Preview showing which capabilities the admitted data can support before the expensive analysis step runs** — availability only, never a confidence score or invented certainty | T1-02 | T1-03 | Counts and lists of verified, caveated, refused, unavailable, and unsupported results; pre-analysis capability availability |
+| T1-04 | Build `AnalysisQualitySummary`, **and the underlying pre-analysis capability-availability contract an Analysis Impact Preview would read from** — availability only, never a confidence score or invented certainty. **Journey placement of that preview as a new pre-analysis step is a separate, currently unauthorized concern** — see the Analysis Impact Preview note below | T1-02 | T1-03 | Counts and lists of verified, caveated, refused, unavailable, and unsupported results; pre-analysis capability-availability contract |
 | T1-05 | Build metric detail and evidence routes | T1-02 | U1 evidence drawer | Definition, formula version, population, inputs, coverage, filters, citations, reconciliation, caveats, and refusal alternatives |
 | T1-06 | Build source-to-surface lineage, **with its own parity and fail-closed tests in the same slice** | T1-02, CAL1 evidence bases | T1-05 | Source semantic -> basis -> fact -> claim/chart/report lineage |
 | T1-07 | Add content-free trust telemetry, **with its own content-free and fail-closed tests in the same slice** | approved scope, T1-04/T1-05 | R8-08 | Evidence opens, refusal views, mapping review, quality-summary use; never customer content |
@@ -681,6 +681,17 @@ Before T1 product code, activate a bounded contract allocating:
 M2 requires T1-01 through T1-05 and T1-08. Full lineage and trust telemetry may finish during early M3 if they do not weaken the design-partner evidence surface.
 
 **That is why `T1-08` depends on `T1-01` through `T1-05`, not on "all above".** A gate that required every task in the program could not be reached while the same paragraph declares two of those tasks deferrable — M2 would either admit a design partner without its parity and fail-closed evidence, or stall on work it just called optional. `T1-08` therefore covers the surfaces M2 actually ships, and `T1-06` and `T1-07` carry their own tests in their own slices, per the same-slice rule `CAL1` follows.
+
+**Analysis Impact Preview journey placement — AUTHORITY-BLOCKED, not `T1-04`'s to build.** `T1-04`
+owns only the underlying pre-analysis capability-availability contract (what data the availability
+vocabulary applies to). Rendering that contract as a new pre-analysis step inside the `/beta` journey
+is a different concern with the same shape as Fix & Continue (§R8 COMPLETION above): active `RRA-010`
+governs presentation-only changes to the existing journey and explicitly excludes "a new workflow
+state, step, or journey phase." An Impact Preview step does not exist in the current journey, so
+adding one is a new journey phase, not a presentation change to an existing one. This needs an active
+RRA specification naming that phase before any implementation task exists for it; `T1-04`'s contract
+can be built and consumed elsewhere (for example the review/pre-check step, if that step's existing
+authority already covers it) while the dedicated preview step itself waits on that authority.
 
 ---
 
