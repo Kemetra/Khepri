@@ -644,7 +644,8 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         ),
         "curve_points_sampled": (
             "The concentration curve is drawn from 100 evenly spaced points "
-            "across your full product range. The figures beside it use every row."
+            "across the full range of values it ranks. The figures beside it "
+            "use every row."
         ),
         "comparison_partial_window": (
             "The current period is not finished. It is compared against the "
@@ -661,8 +662,9 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         "growth_rounding_residual": (
             "The price effect shown is the total change less the volume "
             "effect, so the three figures add up exactly as displayed. That "
-            "makes it differ by one penny from the price effect calculated "
-            "on its own. No figure is missing and nothing was adjusted."
+            "makes it differ by one unit of the last decimal place shown "
+            "from the price effect calculated on its own. No figure is "
+            "missing and nothing was adjusted."
         ),
     },
     LANGUAGE_ARABIC: {
@@ -709,7 +711,7 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         ),
         "curve_points_sampled": (
             "رُسم منحنى التركز باستخدام 100 نقطة موزعة بالتساوي على كامل "
-            "نطاق المنتجات. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
+            "نطاق القيم التي يرتّبها. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
         ),
         "comparison_partial_window": (
             "الفترة الحالية لم تكتمل بعد. وقد قُورنت بالعدد نفسه من الأيام من "
@@ -724,8 +726,8 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         "growth_rounding_residual": (
             "أثر السعر المعروض هو التغير الإجمالي مطروحاً منه أثر الحجم، حتى "
             "يكون مجموع الأرقام الثلاثة مطابقاً تماماً كما تظهر. ولذلك يختلف "
-            "بمقدار قرش واحد عن أثر السعر محسوباً بمفرده. لم يسقط أي رقم ولم "
-            "يُعدَّل شيء."
+            "بمقدار وحدة واحدة من آخر خانة عشرية معروضة عن أثر السعر "
+            "محسوباً بمفرده. لم يسقط أي رقم ولم يُعدَّل شيء."
         ),
     },
 }
