@@ -52,7 +52,16 @@ def package_for(
     content: bytes,
     *,
     days: tuple[date, ...] = (),
+    published: bool = False,
 ) -> FactPackage:
+    """`published=True` builds under the triple this build publishes.
+
+    The predecessor pin is right for a case that renders every section: under it
+    all four families sit at their predecessor and publish. A case whose subject
+    is a family that has reached its successor needs the triple that admits it,
+    or that section refuses as `family_version_pairing_unadmitted` and the case
+    asserts against a section that was never derived.
+    """
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -75,6 +84,19 @@ def package_for(
         if days
         else None
     )
+    if published:
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest,
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
     with published_mapping_identity():
         mapping = build_mapping(profile, contract=TEST_CONTRACT)
         return build_fact_package(
@@ -90,7 +112,7 @@ def package_for(
         )
 
 
-def full_package() -> FactPackage:
+def full_package(*, published: bool = False) -> FactPackage:
     """Five consecutive days over two products: every family can state something.
 
     Four settled periods either side means the comparison and growth families both
@@ -110,7 +132,7 @@ def full_package() -> FactPackage:
         for index, (amount, units, product) in enumerate(rows)
     )
     days = tuple(START + timedelta(days=index) for index in range(len(rows)))
-    return package_for(HEADER + body, days=days)
+    return package_for(HEADER + body, days=days, published=published)
 
 
 def bundle_of(package: FactPackage) -> ReportBundle:
@@ -256,8 +278,13 @@ def test_a_section_whose_figures_cannot_be_drawn_says_so() -> None:
 
 
 def test_a_drawable_section_carries_a_chart_of_its_own_figures() -> None:
-    """Basket's attach rates share one unit, so they are drawable."""
-    bundle = bundle_of(full_package())
+    """Basket's attach rates share one unit, so they are drawable.
+
+    Built under the triple this build publishes, because the subject *is* the
+    basket section and `rra008.basket.v2` is what derives those rates. Under the
+    predecessor pin the section refuses and carries no chart to inspect.
+    """
+    bundle = bundle_of(full_package(published=True))
     section = section_of(bundle, SECTION_BASKET)
     assert section is not None
     assert section.chart is not None

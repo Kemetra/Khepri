@@ -5,7 +5,10 @@ import re
 
 import pytest
 
-from khepri.rra.analysis.basket import REASON_DIMENSION_ABSENT
+from khepri.rra.analysis.basket import (
+    REASON_DIMENSION_ABSENT,
+    REASON_DIMENSION_INCOMPLETE,
+)
 from khepri.rra.analysis.comparison import (
     CAVEAT_PARTIAL_WINDOW,
     REASON_NEGATIVE_BASE,
@@ -72,6 +75,7 @@ _RESULT_REFUSAL_CODES = frozenset(
         REASON_INCOMPLETE_IDENTIFIERS,
         REASON_AMBIGUOUS_MAPPING,
         REASON_DIMENSION_ABSENT,
+        REASON_DIMENSION_INCOMPLETE,
         REASON_NEGATIVE_BASE,
         REASON_FAMILY_VERSION_UNADMITTED,
     }
@@ -129,6 +133,12 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
         "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا يحتوي "
         "الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد الأصناف لكل "
         "عملية بيع غير متأثر."
+    ),
+    REASON_DIMENSION_INCOMPLETE: (
+        "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — بعض عمليات "
+        "البيع لا يوجد لها منتج أو فئة مسجلة، ولذلك لا يمكن قياس هذه النسبة "
+        "بصدق؛ فقد تتضمن تلك العمليات المنتج نفسه. املأ عمود المنتج أو الفئة في "
+        "كل الصفوف لعرض هذه النسب. عدد الأصناف لكل عملية بيع غير متأثر."
     ),
     REASON_NEGATIVE_BASE: (
         "{metric} غير معروض — حساب نسبة التغير من قيمة بداية سالبة سيعكس "
@@ -257,19 +267,25 @@ def test_refusal_message_raises_on_unknown_code() -> None:
         )
 
 
-def test_result_refusal_universe_is_eight_current_codes() -> None:
+def test_result_refusal_universe_is_nine_current_codes() -> None:
     """A deliberate count, moved deliberately.
 
-    Seven until the version compatibility gate landed. It added one result-tier
-    refusal, the unadmitted family pairing, so the universe is eight. Its sibling
-    -- an unadmitted package pairing -- is Internal under `RRA-009`, because no
-    report is published when it fires and no customer can encounter it.
+    Seven until the version compatibility gate landed, which added the unadmitted
+    family pairing. Its sibling -- an unadmitted *package* pairing -- is Internal
+    under `RRA-009`, because no report is published when it fires and no customer
+    can encounter it.
+
+    `rra008.basket.v2` adds the ninth: a dimension mapped but not carried on every
+    eligible row. `RRA-008` refuses that dimension's whole attach family rather
+    than letting the unlabelled transactions enter only the denominator, so a
+    reader who sees no rates has to be told which of the two dimension failures
+    happened.
 
     The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
-    assert len(_RESULT_REFUSAL_CODES) == 8
+    assert len(_RESULT_REFUSAL_CODES) == 9
 
 
 def test_refusal_wording_result_tier_covers_every_code_in_every_language() -> None:

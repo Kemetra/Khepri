@@ -92,7 +92,7 @@ from khepri.rra.mapping import (
 
 # This family's own formula version, pinned separately from the package's, so a
 # correction here cannot reuse the identifiers of a materially different number.
-BASKET_FORMULA_VERSION = "rra008.basket.v1"
+BASKET_FORMULA_VERSION = "rra008.basket.v2"
 
 METRIC_ITEMS_PER_TRANSACTION = "basket_items_per_transaction"
 METRIC_ATTACH_RATE = "basket_attach_rate"
@@ -109,6 +109,17 @@ REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
 # the aggregate present, `aggregate_unavailable` is no longer reachable here at
 # all, and an unreachable governed reason is worse than an absent one.
 REASON_DIMENSION_ABSENT = "dimension_absent"
+
+# Distinct from the reason above, and the distinction is the point. `dimension_absent`
+# means no governed dimension was mapped at all -- there is nothing to state a rate
+# over. This means one *was* mapped and some eligible row does not carry its value.
+#
+# `RRA-008`: "Every eligible sale row must carry the dimension value; one missing
+# value refuses that dimension's entire attach family rather than silently entering
+# only the denominator." Under `rra008.basket.v1` an unlabelled row was kept out of
+# the numerator by `_SYNTHETIC_LABELS` and left in the denominator, so every rate
+# published was too low by an amount no reader could see or bound.
+REASON_DIMENSION_INCOMPLETE = "dimension_values_incomplete"
 
 # Which dimensions `RRA-008` allows attach rate over, in the order preferred.
 GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
@@ -202,11 +213,19 @@ def _refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
                 reason=REASON_INPUT_UNAVAILABLE,
             )
         )
-    if _dimension(package) is None:
+    found = _dimension(package)
+    if found is None:
         refused.append(
             RefusedResult(
                 metric=METRIC_ATTACH_RATE,
                 reason=REASON_DIMENSION_ABSENT,
+            )
+        )
+    elif _incomplete(found[1]):
+        refused.append(
+            RefusedResult(
+                metric=METRIC_ATTACH_RATE,
+                reason=REASON_DIMENSION_INCOMPLETE,
             )
         )
     return tuple(refused)
@@ -324,11 +343,32 @@ def _attachable(entry: FactComparison) -> tuple[Bucket, ...]:
     )
 
 
+def _incomplete(entry: FactComparison) -> bool:
+    """Whether some eligible row did not carry this dimension's value.
+
+    Read off the synthetic `unlabelled` bucket, which is exactly where
+    `build_comparison` puts a null key -- so this asks the aggregate what it
+    already recorded rather than re-deriving completeness from the rows.
+
+    The redacted buckets are deliberately *not* treated as incomplete: a redacted
+    value is present and known, withheld only from display, so it counts in both
+    numerator and denominator without making any rate unknowable.
+    """
+    return any(
+        bucket.label == UNLABELLED_BUCKET_LABEL
+        for bucket in entry.comparison.buckets
+    )
+
+
 def _attach_facts(package: FactPackage) -> tuple[Fact, ...]:
     found = _dimension(package)
     if found is None:
         return ()
     dimension, entry = found
+    if _incomplete(entry):
+        # The whole family, not the unlabelled value alone: every other rate
+        # divides by a denominator this transaction inflates.
+        return ()
     total = Decimal(entry.comparison.distinct_transactions or 0)
     return tuple(
         _fact(

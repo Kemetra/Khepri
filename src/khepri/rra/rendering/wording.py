@@ -137,6 +137,7 @@ _RESULT_REASON_CODES = {
     facts.REASON_INCOMPLETE_IDENTIFIERS,
     facts.REASON_AMBIGUOUS_MAPPING,
     basket.REASON_DIMENSION_ABSENT,
+    basket.REASON_DIMENSION_INCOMPLETE,
     comparison.REASON_NEGATIVE_BASE,
     versions.REASON_FAMILY_VERSION_UNADMITTED,
 }
@@ -443,6 +444,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "Attach rate is not shown — the file has no product or category "
                 "column to measure attachment against. Items per sale is unaffected."
             ),
+            "dimension_values_incomplete": (
+                "Attach rate is not shown — some sales have no product or "
+                "category recorded, so the share of sales containing any one "
+                "product cannot be measured honestly. Those sales might contain "
+                "it. Fill the product or category column on every row to see "
+                "these rates. Items per sale is unaffected."
+            ),
             "family_version_pairing_unadmitted": (
                 "{metric} is not shown — this analysis is being released in "
                 "stages, and the part that produces it has not yet been "
@@ -485,6 +493,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا "
                 "يحتوي الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد "
                 "الأصناف لكل عملية بيع غير متأثر."
+            ),
+            "dimension_values_incomplete": (
+                "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — "
+                "بعض عمليات البيع لا يوجد لها منتج أو فئة مسجلة، ولذلك لا يمكن "
+                "قياس هذه النسبة بصدق؛ فقد تتضمن تلك العمليات المنتج نفسه. "
+                "املأ عمود المنتج أو الفئة في كل الصفوف لعرض هذه النسب. "
+                "عدد الأصناف لكل عملية بيع غير متأثر."
             ),
             "family_version_pairing_unadmitted": (
                 "{metric} غير معروض — يصدر هذا التحليل على مراحل، والجزء الذي "
