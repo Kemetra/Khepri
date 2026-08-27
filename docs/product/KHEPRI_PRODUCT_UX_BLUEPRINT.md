@@ -180,9 +180,9 @@ here in the same breath as the phase, not left implicit.
 ```text
 Try                              §6 Data intake / §21 Try Sample Analysis (AUTHORITY-BLOCKED)
  └── Enter organization          §6 Commercial shell — SHIPPED (M2)
-      └── Start / Resume         §6 Draft Safety (M2) · W1-04 resume (M3, CONTRACT-BLOCKED)
-           └── Upload            §6 Data intake and understanding (M2)
-                └── Recognize    §6 Remember My Data (M2/M3, CONTRACT-BLOCKED)
+      └── Start / Resume         §6 Draft Safety — W1-04 saved-setup resume (M3, CONTRACT-BLOCKED)
+           └── Upload            §6 Data intake and understanding (M2, current one-time path)
+                └── Recognize    §6 Remember My Data — W1-01 profile (M3, CONTRACT-BLOCKED)
                      └── Pre-check          §6 Data Pre-check (M2, LOCKED shape)
                           └── Confirm       §6 Confirm mapping (M2)
                                └── Impact Preview   §6 Analysis Impact Preview (M2, CONTRACT-BLOCKED)
@@ -193,7 +193,9 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
                                               │
                                               ├── Evidence / Why   §10 (LOCKED — contextual only, M2 SHIPPED)
                                               ├── Fix when possible §6 Fix & Continue (M2, AUTHORITY-BLOCKED)
-                                              ├── Save / Compare   §7.3 Run Again (M3) · G4/C1 Compare (M4)
+                                              ├── Run Again / Compare
+                                              │                     §7.3 Run Again (M3, CONTRACT-BLOCKED) ·
+                                              │                     G4/C1 Compare (M4, BLOCKED)
                                               ├── Export / Share   §7.4 Analysis detail (M3) · §16 Secure
                                               │                     Share (future, AUTHORITY-BLOCKED)
                                               ├── Return next period
@@ -205,6 +207,8 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
                                                         ├── Explore        §22 Guided Exploration (X1, post-M4)
                                                         └── Guided questions
                                                              §22 Smart Next Questions (X1)
+                                                                  ├── Save Answer
+                                                                  │    §22 Saved Answers, X1-05 (post-M4)
                                                                   └── Ask Khepri later
                                                                        §22 (G9/AI1, PROPOSED)
 ```
@@ -212,18 +216,21 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
 | Phase | Section | Milestone | Status |
 |---|---|---|---|
 | Try / Enter organization | §6 | M2 | Commercial shell SHIPPED; pre-auth sample AUTHORITY-BLOCKED |
-| Start / Resume | §6, §7.3 | M2 / M3 | Draft Safety CONTRACT-BLOCKED; resume needs active `G3` |
-| Upload → Recognize → Pre-check → Confirm | §6 | M2 | LOCKED shape; Remember My Data CONTRACT-BLOCKED |
+| Start / Resume | §6, §7.3 | M3 | Draft Safety is `W1-04` saved-setup resume; CONTRACT-BLOCKED on active `G3` |
+| Upload | §6 | M2 | Current one-time path, LOCKED shape |
+| Recognize | §6 | M3 | Remember My Data is `W1-01`'s profile contract; CONTRACT-BLOCKED on active `G3` |
+| Pre-check → Confirm | §6 | M2 | LOCKED shape |
 | Impact Preview → Analyze | §6 | M2 | Impact Preview CONTRACT-BLOCKED (`T1`); processing states SHIPPED pattern |
 | Result: report / evidence / artifacts | §6, §7.4, §16 | M2 / M3 | M2 journey result SHIPPED; M3 Analysis detail CONTRACT-BLOCKED |
 | Evidence / Why | §10 | M2 | Contextual only, LOCKED; already reachable from the SHIPPED M2 result |
 | Fix when possible | §6 | M2 | AUTHORITY-BLOCKED — needs an active RRA specification, not `R8-10` |
 | What Changed (M4 enrichment) | §4, §22 | M4 | FUTURE SHAPING REQUIRED — adds to the M2/M3 result, does not gate it |
 | Explore | §22 | post-M4 | `X1`, PROPOSED |
-| Save / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
+| Run Again / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
 | Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
 | Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
 | Guided questions | §22 | post-M4 | `X1`, PROPOSED |
+| Save Answer | §22 | post-M4 | `X1-05` Saved Answers, PROPOSED — reopenable decision artifact, distinct from Run Again |
 | Ask Khepri | §22 | later | `G9/AI1`, PROPOSED, boundary unchanged |
 
 **Reading this map correctly:** every arrow is a customer-visible transition, not an implementation
@@ -267,13 +274,12 @@ The interface must not imply the system understood the data's meaning before gov
 (`RRA-003`) proves it. Each stage names what Khepri has confirmed so far, not what it eventually
 concludes.
 
-- **Recognize source / Remember My Data — PROVISIONAL, product direction.** For a repeat submission
-  from a source the organization has used before, Khepri should be able to offer an approved
-  source/mapping profile for review rather than a blank mapping step: first run is *Upload → Map →
-  Confirm → Analyze*; a later run from the same source is *Upload → "We recognized this format" →
-  Review → Analyze*. **A materially changed source must not silently reuse a prior mapping** — that
-  would skip semantic admission rather than confirm it (Article V, fail-closed). Depends on `W1-01`'s
-  reusable source/mapping profile contract, itself gated on active `G3`.
+**This is the full end-state direction, not the current M2 minimum.** `recognize source` is the M3,
+`W1-01`-owned Remember My Data capability (below) and is CONTRACT-BLOCKED on active `G3`. The current
+M2 journey runs the remaining stages as one-time *Upload → Map (pre-check/confirm) → Analyze* without
+recognition — a first-time source path only, since M2 does not persist a reusable profile across
+sessions.
+
 - **Data Pre-check — LOCKED shape, CONTRACT-BLOCKED content.** Before analysis, the customer sees what
   Khepri understood, what is missing, what coverage is known, what needs the customer's confirmation,
   and which analyses look supportable. It does not compute or promise an unsupported business result.
@@ -281,10 +287,21 @@ concludes.
   availability drawn from the `T1` availability vocabulary — for example *Revenue: Available*,
   *Margin: Unavailable — cost basis not established*, *Basket: Partial*. **This is availability, not a
   confidence score; it must not invent certainty.** Owned by `T1-04`, gated on active `T1` authority.
-- **Draft Safety — LOCKED direction, CONTRACT-BLOCKED persistence.** Work in progress during mapping,
-  coverage, or setup should be savable and resumable rather than lost on interruption — *Save setup /
-  Resume later*. Exact persistence and retention semantics belong to `G2`/`G3`/`W1`, not to this
-  document.
+
+**M3, not M2 — belong to the durable-workspace program, not the current one-time journey:**
+
+- **Recognize source / Remember My Data — PROVISIONAL, M3 product direction.** For a repeat submission
+  from a source the organization has used before, Khepri should be able to offer an approved
+  source/mapping profile for review rather than a blank mapping step: first run is *Upload → Map →
+  Confirm → Analyze*; a later run from the same source is *Upload → "We recognized this format" →
+  Review → Analyze*. **A materially changed source must not silently reuse a prior mapping** — that
+  would skip semantic admission rather than confirm it (Article V, fail-closed). Owned by `W1-01`'s
+  reusable source/mapping profile contract, CONTRACT-BLOCKED on active `G3`. The current M2 journey is
+  the one-time *Upload → Map → Confirm → Analyze* path only; recognition is not part of the M2 minimum.
+- **Draft Safety — LOCKED direction, CONTRACT-BLOCKED persistence, M3.** Work in progress during
+  mapping, coverage, or setup should be savable and resumable rather than lost on interruption — *Save
+  setup / Resume later*. Owned by `W1-04`'s saved-setup resume operation, CONTRACT-BLOCKED on active
+  `G3`. Exact persistence and retention semantics belong to `G2`/`G3`/`W1`, not to this document.
 
 ### Processing journey — real states only
 
