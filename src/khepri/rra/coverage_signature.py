@@ -177,26 +177,34 @@ def _projectable(parent: CoverageSignature, *, days: int) -> tuple[int, ...]:
     """The parent ordinals a `1..days` projection may keep, or a refusal.
 
     Four separate ways a projection would be unsound, each named for what
-    actually failed. They are sequential rather than combined because a caller
-    told only "not projectable" cannot tell an over-long window from an unproven
-    day, and the two are fixed differently.
+    actually failed. They are checked in order and reported one at a time,
+    because a caller told only "not projectable" cannot tell an over-long window
+    from an unproven day, and the two are fixed differently.
+
+    Written as a table of (unsound, reason) rather than as four branches: the
+    list is what `RRA-004` enumerates, and adding a fifth way should be an edit
+    to data. The ordinals are computed first because the last rule is about them.
     """
-    if days < 1:
-        raise SignatureRefused("A projection covers at least its first day.")
-    if parent.mode != COVERAGE_MODE_FULL_CALENDAR:
-        raise SignatureRefused(
-            "Only a complete full-calendar signature may be projected; a "
-            "projection of a prefix would compound an unproven boundary."
-        )
-    if days > parent.window_days:
-        raise SignatureRefused(
-            "A projection cannot cover more days than its parent attested."
-        )
     kept = tuple(ordinal for ordinal in parent.covered_ordinals if ordinal <= days)
-    if len(kept) != days:
-        raise SignatureRefused(
-            "The parent signature does not prove every day of this projection."
-        )
+    refusals = (
+        (days < 1, "A projection covers at least its first day."),
+        (
+            parent.mode != COVERAGE_MODE_FULL_CALENDAR,
+            "Only a complete full-calendar signature may be projected; a "
+            "projection of a prefix would compound an unproven boundary.",
+        ),
+        (
+            days > parent.window_days,
+            "A projection cannot cover more days than its parent attested.",
+        ),
+        (
+            len(kept) != days,
+            "The parent signature does not prove every day of this projection.",
+        ),
+    )
+    for unsound, reason in refusals:
+        if unsound:
+            raise SignatureRefused(reason)
     return kept
 
 
