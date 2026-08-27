@@ -204,9 +204,12 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
                                               └── What Changed (M4 enrichment of the same result, not a
                                                    replacement for it) §4/M4 decision entry
                                                    (FUTURE SHAPING REQUIRED)
-                                                        ├── Explore        §22 Guided Exploration (X1, post-M4)
+                                                        ├── Explore        §22 Guided Exploration
+                                                        │                   (X1-02, optional inside M4
+                                                        │                    or post-M4)
                                                         └── Guided questions
-                                                             §22 Smart Next Questions (X1)
+                                                             §22 Smart Next Questions (X1-04,
+                                                             optional inside M4 or post-M4)
                                                                   ├── Save Answer
                                                                   │    §22 Saved Answers, X1-05 (post-M4)
                                                                   └── Ask Khepri later
@@ -225,11 +228,11 @@ Try                              §6 Data intake / §21 Try Sample Analysis (AUT
 | Evidence / Why | §10 | M2 | Contextual only, LOCKED; already reachable from the SHIPPED M2 result |
 | Fix when possible | §6 | M2 | AUTHORITY-BLOCKED — needs an active RRA specification, not `R8-10` |
 | What Changed (M4 enrichment) | §4, §22 | M4 | FUTURE SHAPING REQUIRED — adds to the M2/M3 result, does not gate it |
-| Explore | §22 | post-M4 | `X1`, PROPOSED |
+| Explore | §22 | M4 optional / post-M4 | `X1-02` may ship inside M4 per roadmap `X1`; PROPOSED |
 | Run Again / Compare | §7.3, `G4/C1` | M3 / M4 | Run Again CONTRACT-BLOCKED; Compare BLOCKED (no `G4` authority) |
 | Export / Share | §7.4, §16 | M3 / future | Export Center resolved into Analysis detail; Secure Share AUTHORITY-BLOCKED |
 | Return next period | §7.3 | M3 | Run New Period CONTRACT-BLOCKED |
-| Guided questions | §22 | post-M4 | `X1`, PROPOSED |
+| Guided questions | §22 | M4 optional / post-M4 | `X1-04` may ship inside M4 per roadmap `X1`; PROPOSED |
 | Save Answer | §22 | post-M4 | `X1-05` Saved Answers, PROPOSED — reopenable decision artifact, distinct from Run Again |
 | Ask Khepri | §22 | later | `G9/AI1`, PROPOSED, boundary unchanged |
 
@@ -791,8 +794,9 @@ for this capability.**
 ### Ready Notification — two distinct things
 
 **LOCKED distinction.** An in-product ready state (the analysis's operational state, §7.1/§7.3) is
-different from outbound delivery (email/push/scheduled digest). Outbound delivery belongs to `S2-03`
-under active `G8` authority; this blueprint does not define a second notification subsystem.
+different from outbound delivery (email/push/scheduled digest). Outbound delivery belongs to `S2-03`,
+**once a future `G8` authority becomes active** — `G8/MON1/S2` is currently `PROPOSED`, not active, and
+has no registry entry; this blueprint does not define a second notification subsystem in the meantime.
 
 ### Report accessibility baseline — SHIPPED
 
