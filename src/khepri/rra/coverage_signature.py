@@ -108,6 +108,29 @@ class CoverageSignature:
         ).hexdigest()
 
 
+def _covered(
+    manifest: CoverageManifest,
+    scope: str,
+    start: date,
+    ordinal: int,
+) -> bool:
+    """Whether the manifest proves the `ordinal`-th day of this window covered.
+
+    Two conditions, and the difference between them is `RRA-003`'s: a day the
+    operator attested is covered, and an extraction gap is not -- a gap's size is
+    unknown, where an attested closure proves complete zero activity and counts.
+
+    Named rather than inlined in the comprehension that calls it, where the date
+    had to be bound by a second `for` clause and the rule read as four decision
+    points instead of one question.
+    """
+    day = date.fromordinal(start.toordinal() + ordinal - 1)
+    return (scope, day) in manifest.covered_pairs and (
+        scope,
+        day,
+    ) not in manifest.extraction_gaps
+
+
 def build_coverage_signature(
     manifest: CoverageManifest,
     *,
@@ -133,9 +156,7 @@ def build_coverage_signature(
     ordinals = tuple(
         ordinal
         for ordinal in range(1, span + 1)
-        for day in ((start.toordinal() + ordinal - 1),)
-        if (scope, date.fromordinal(day)) in manifest.covered_pairs
-        and (scope, date.fromordinal(day)) not in manifest.extraction_gaps
+        if _covered(manifest, scope, start, ordinal)
     )
     if not ordinals:
         raise SignatureRefused(
