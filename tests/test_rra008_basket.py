@@ -41,6 +41,7 @@ from khepri.rra.mapping import SEMANTIC_PRODUCT, build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    oracle_contract,
     published_mapping_identity,
 )
 
@@ -81,6 +82,32 @@ def package_for(content: bytes) -> FactPackage:
             ),
         )
 
+
+def _package_with_returns(content: bytes) -> FactPackage:
+    """A package over an extract naming its event kinds.
+
+    `TEST_CONTRACT` declares no event-kind column, so a return cannot be
+    expressed through it at all. `oracle_contract` does, which is what the
+    return-sensitive cases in this module need.
+    """
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract(status_column=None)
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            ),
+        )
 
 def facts_of(package: FactPackage) -> tuple[Fact, ...]:
     derived = basket.derive(package)
@@ -355,3 +382,38 @@ def test_a_family_refusal_only_ever_names_a_reason_the_section_can_state() -> No
         derived = basket.derive(package_for(content))
         if isinstance(derived, RefusedResult):
             assert derived.reason in SECTION_REASONS[SECTION_BASKET]
+
+def test_items_per_transaction_excludes_posted_return_units() -> None:
+    """Sales of 10 and 15 units with a return of -2 is 12.5000, never 11.5000.
+
+    `_counts` divided `METRIC_UNITS` -- whose population is `financial_posted`
+    and therefore includes posted *return* units -- by a transaction count that
+    is sale-only. `RRA-008` is explicit: items per transaction is
+    `sum(positive posted-sale units)` over the canonical sale transaction key,
+    and returns enter "neither numerator nor denominator".
+
+    The published figure moves the wrong way and stays entirely plausible: a
+    reader cannot detect a basket understated by the returned units from the
+    numbers beside it.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-02-01,sale,400.00,10,INV-1\n"
+        b"2026-02-02,sale,600.00,15,INV-2\n"
+        b"2026-02-03,return,-90.00,-2,INV-3\n"
+    )
+
+    package = _package_with_returns(content)
+    facts = facts_of(package)
+    stated = next(
+        fact for fact in facts if fact.metric == METRIC_ITEMS_PER_TRANSACTION
+    )
+
+    # Proved first: without an admitted return this case cannot show the
+    # numerator excluding one, and would pass vacuously.
+    assert package.event_kind_filters == ("return", "sale"), (
+        "no return was admitted, so this proves nothing about excluding one"
+    )
+    assert stated.value == "12.5000", (
+        "the return units were netted into the numerator: 23 / 2 = 11.5000"
+    )

@@ -5,7 +5,8 @@ count, and the two are easy to confuse because both are integers that look right
 Four line items in three invoices is 1.3333 rows per transaction and 3.6667 items
 per transaction, and only the second answers the question.
 
-This module counts nothing itself. Items per transaction divides `METRIC_UNITS` by
+This module counts nothing itself. Items per transaction divides
+`METRIC_SALE_UNITS` by
 `METRIC_TRANSACTIONS`, both governed facts, and `METRIC_TRANSACTIONS` is already a
 distinct count that the package refuses outright when the identifier column has
 gaps. Attach rate divides `Bucket.transactions` by `Comparison.distinct_transactions`,
@@ -13,9 +14,12 @@ both retained by `APP-014` as distinct counts and both unioned rather than summe
 Reading governed aggregates rather than recounting is what satisfies the
 requirement -- there is no place here for a row count to creep in.
 
-**Items, not lines.** An earlier plan revision had items per transaction dividing
-row count by transaction count. Row count *is* line-item count; `RRA-008` says
-items, and the governed items measure is `METRIC_UNITS`.
+**Items, not lines, and sales only.** An earlier plan revision had items per
+transaction dividing row count by transaction count. Row count *is* line-item
+count; `RRA-008` says items. The governed measure is `METRIC_SALE_UNITS` rather
+than `METRIC_UNITS`: the latter's population is `financial_posted` and includes
+posted return units, while the denominator is sale-only, so a dataset with
+returns published a basket understated by the returned units.
 
 **One attach-rate fact per published value, and none for `other`.** Attach rate is
 inherently per value, and each rate is a separate claim a reader can act on, so
@@ -72,8 +76,8 @@ from khepri.rra.aggregates import (
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     METRIC_REVENUE,
+    METRIC_SALE_UNITS,
     METRIC_TRANSACTIONS,
-    METRIC_UNITS,
     RATIO_PRECISION,
     REASON_INPUT_UNAVAILABLE,
     UNIT_RATIO,
@@ -262,8 +266,16 @@ def _summary(package: FactPackage) -> RefusedResult:
 
 
 def _counts(package: FactPackage) -> _Basket | None:
-    """Units and transactions as governed facts, or nothing divisible."""
-    units = package.fact(METRIC_UNITS)
+    """Units and transactions as governed facts, or nothing divisible.
+
+    The numerator is `METRIC_SALE_UNITS`, not `METRIC_UNITS`. The latter is
+    `financial_posted` and includes posted return units, while the denominator
+    counts sale transactions only -- so a dataset with returns published a
+    basket understated by the returned units, and no reader could detect it
+    from the figures beside it. `RRA-008` puts returns in "neither numerator
+    nor denominator".
+    """
+    units = package.fact(METRIC_SALE_UNITS)
     transactions = package.fact(METRIC_TRANSACTIONS)
     if units is None or transactions is None:
         return None

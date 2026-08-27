@@ -108,6 +108,14 @@ METRIC_GROSS_PROFIT = "gross_profit"
 METRIC_GROSS_MARGIN = "gross_margin"
 METRIC_DISCOUNT = "discount"
 METRIC_RETURNS = "returns"
+#: The basket numerator `RRA-008` names: `sum(positive posted-sale units)`.
+#:
+#: Distinct from `METRIC_UNITS`, whose population is `financial_posted` and
+#: therefore includes posted *return* units. Items per transaction divides
+#: this by a sale-only transaction count, and `RRA-004` requires a derived
+#: fact to consume one population-certified aggregate rather than two totals
+#: drawn from different populations.
+METRIC_SALE_UNITS = "sale_units"
 
 REASON_INPUT_UNAVAILABLE = "required_input_unavailable"
 REASON_ZERO_DENOMINATOR = "zero_denominator"
@@ -706,6 +714,13 @@ def _build(
     add(
         METRIC_UNITS,
         units_total,
+        unit_kind=UNIT_COUNT,
+        precision=0,
+        inputs=(SEMANTIC_UNITS,),
+    )
+    add(
+        METRIC_SALE_UNITS,
+        _sum_integer(_positive_units(measures)),
         unit_kind=UNIT_COUNT,
         precision=0,
         inputs=(SEMANTIC_UNITS,),
