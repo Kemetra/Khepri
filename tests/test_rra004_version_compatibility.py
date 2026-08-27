@@ -90,7 +90,10 @@ def test_only_the_families_that_have_landed_are_admitted() -> None:
     from khepri.rra.analysis import basket, comparison, concentration, growth
     from khepri.rra.facts import FORMULA_VERSION
 
-    landed = {comparison.COMPARISON_FORMULA_VERSION}
+    landed = {
+        comparison.COMPARISON_FORMULA_VERSION,
+        growth.GROWTH_FORMULA_VERSION,
+    }
     for family_version in (
         comparison.COMPARISON_FORMULA_VERSION,
         growth.GROWTH_FORMULA_VERSION,

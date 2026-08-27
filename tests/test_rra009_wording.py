@@ -12,6 +12,7 @@ from khepri.rra.analysis.comparison import (
 )
 from khepri.rra.analysis.growth import (
     CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+    CAVEAT_ROUNDING_RESIDUAL,
     GOVERNED_METRICS,
 )
 from khepri.rra.bundle import (
@@ -90,6 +91,7 @@ _GOVERNED_CAVEAT_CODES = frozenset(
         CAVEAT_CURVE_SAMPLED,
         CAVEAT_PARTIAL_WINDOW,
         CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+        CAVEAT_ROUNDING_RESIDUAL,
     }
 )
 
@@ -186,6 +188,12 @@ _ACCEPTED_ARABIC_CAVEAT_MESSAGES = {
         "عندما تغير السعر والكمية معاً، احتُسب الجزء المشترك من التغير ضمن أثر "
         "السعر. هذه قاعدة معلنة تُطبق بالطريقة نفسها كل مرة، ولذلك يظل مجموع "
         "الأثرين مساوياً تماماً للتغير الإجمالي."
+    ),
+    CAVEAT_ROUNDING_RESIDUAL: (
+        "أثر السعر المعروض هو التغير الإجمالي مطروحاً منه أثر الحجم، حتى "
+        "يكون مجموع الأرقام الثلاثة مطابقاً تماماً كما تظهر. ولذلك يختلف "
+        "بمقدار قرش واحد عن أثر السعر محسوباً بمفرده. لم يسقط أي رقم ولم "
+        "يُعدَّل شيء."
     ),
 }
 

@@ -1528,7 +1528,7 @@ _FAMILIES = {
     SECTION_GROWTH: _Family(
         derive=growth.derive,
         version=lambda: growth.GROWTH_FORMULA_VERSION,
-        refusals=lambda package: (),
+        refusals=growth.refusals,
         # No label, for the same reason: all three effects share one mode. The
         # metric is what says which effect a row or a bar is, and a chart resolves it
         # through the per-language table.

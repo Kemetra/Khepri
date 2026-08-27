@@ -66,14 +66,14 @@ class ChartCategory:
 LABEL_WORDING: dict[str, dict[str, str]] = {
     LANGUAGE_ENGLISH: {
         "metric.growth_revenue_change": "Revenue change",
-        "metric.growth_price_effect": "Price effect",
+        "metric.growth_price_effect": "Realized price/mix effect",
         "metric.growth_volume_effect": "Volume effect",
         "label.period_over_period": "Against the previous period",
         "label.year_over_year": "Against the same period last year",
     },
     LANGUAGE_ARABIC: {
         "metric.growth_revenue_change": "التغيّر في الإيرادات",
-        "metric.growth_price_effect": "أثر السعر",
+        "metric.growth_price_effect": "أثر السعر ومزيج المنتجات",
         "metric.growth_volume_effect": "أثر الحجم",
         "label.period_over_period": "مقابل الفترة السابقة",
         "label.year_over_year": "مقابل الفترة نفسها من العام الماضي",
@@ -97,7 +97,7 @@ METRIC_WORDING: dict[str, dict[str, str]] = {
         "discount": "Discounts given",
         "returns": "Returns",
         "growth_revenue_change": "Total revenue change",
-        "growth_price_effect": "Effect of price changes",
+        "growth_price_effect": "Realized price/mix effect",
         "growth_volume_effect": "Effect of volume changes",
     },
     LANGUAGE_ARABIC: {
@@ -112,7 +112,7 @@ METRIC_WORDING: dict[str, dict[str, str]] = {
         "discount": "الخصومات الممنوحة",
         "returns": "المرتجعات",
         "growth_revenue_change": "إجمالي تغير الإيرادات",
-        "growth_price_effect": "أثر تغير الأسعار",
+        "growth_price_effect": "أثر السعر ومزيج المنتجات",
         "growth_volume_effect": "أثر تغير الكميات",
     },
 }
@@ -154,6 +154,7 @@ _GOVERNED_CAVEAT_CODES = {
     CAVEAT_CURVE_SAMPLED,
     comparison.CAVEAT_PARTIAL_WINDOW,
     growth.CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+    growth.CAVEAT_ROUNDING_RESIDUAL,
 }
 
 
@@ -612,6 +613,12 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "convention, applied the same way every time, so the two "
             "effects still add exactly to the total."
         ),
+        "growth_rounding_residual": (
+            "The price effect shown is the total change less the volume "
+            "effect, so the three figures add up exactly as displayed. That "
+            "makes it differ by one penny from the price effect calculated "
+            "on its own. No figure is missing and nothing was adjusted."
+        ),
     },
     LANGUAGE_ARABIC: {
         "currency_not_declared": (
@@ -668,6 +675,12 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "عندما تغير السعر والكمية معاً، احتُسب الجزء المشترك من التغير ضمن "
             "أثر السعر. هذه قاعدة معلنة تُطبق بالطريقة نفسها كل مرة، ولذلك "
             "يظل مجموع الأثرين مساوياً تماماً للتغير الإجمالي."
+        ),
+        "growth_rounding_residual": (
+            "أثر السعر المعروض هو التغير الإجمالي مطروحاً منه أثر الحجم، حتى "
+            "يكون مجموع الأرقام الثلاثة مطابقاً تماماً كما تظهر. ولذلك يختلف "
+            "بمقدار قرش واحد عن أثر السعر محسوباً بمفرده. لم يسقط أي رقم ولم "
+            "يُعدَّل شيء."
         ),
     },
 }

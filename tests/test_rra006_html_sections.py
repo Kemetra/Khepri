@@ -186,8 +186,13 @@ def test_a_refused_section_renders_its_governed_reason() -> None:
 
     The heading and the reason are both present, because a reader cannot otherwise
     tell "there was nothing to show" from "we could not show it".
+
+    Built under the triple this build publishes, because the subject is the
+    comparison family's *data* refusal. Under the predecessor pin that section
+    refuses as `family_version_pairing_unadmitted` instead, and the case would
+    assert a coverage message against a version refusal.
     """
-    rendered = page(rows=ROWS[:2])
+    rendered = page(rows=ROWS[:2], published=True)
     assert f'<section id="{SECTION_COMPARISON}"' in rendered
     assert 'class="refused"' in rendered
     assert "prior_window_absent" not in rendered
@@ -249,13 +254,23 @@ def test_a_scalar_chart_names_each_bar_in_the_readers_language() -> None:
 
     Their metrics are what distinguishes them -- the mode is common to all three --
     and a metric name is governed wording, so it is looked up rather than printed.
-    """
-    english = page(LANGUAGE_ENGLISH)
-    arabic = page(LANGUAGE_ARABIC)
 
-    assert "Price effect" in english
+    The price bar is named **realized price/mix effect**, which `RRA-008` requires
+    because aggregate average selling price also moves with product mix. The
+    machine metric stays `price_effect`; only the label a reader sees changes, and
+    it matches the table beside the chart -- one figure cannot carry two names on
+    one page.
+
+    Built under the triple this build publishes, because the subject *is* growth
+    and `rra008.growth.v2` is what draws these bars. Under the predecessor pin the
+    section refuses and the page carries no bar to name.
+    """
+    english = page(LANGUAGE_ENGLISH, published=True)
+    arabic = page(LANGUAGE_ARABIC, published=True)
+
+    assert "Realized price/mix effect" in english
     assert "Volume effect" in english
-    assert "أثر السعر" in arabic
+    assert "أثر السعر ومزيج المنتجات" in arabic
 
 
 def test_a_comparison_bar_names_the_window_it_compares() -> None:

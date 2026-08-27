@@ -39,6 +39,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    attesting_manifest,
     landed_sections,
     published_mapping_identity,
 )
@@ -47,7 +48,11 @@ HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 5)
 
 
-def package_for(content: bytes) -> FactPackage:
+def package_for(
+    content: bytes,
+    *,
+    days: tuple[date, ...] = (),
+) -> FactPackage:
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -59,10 +64,22 @@ def package_for(content: bytes) -> FactPackage:
     # block because `facts._assert_derived_from_profile` re-derives the mapping
     # and compares it by value, so restamping the object afterwards would fail
     # that provenance guard instead.
+    # Coverage is attested for exactly the days these rows carry. The growth
+    # family consumes the window `rra008.comparison.v2` accepted, and that
+    # family refuses a window no manifest proves -- so a fixture promising
+    # that every family can state something has to attest its own coverage.
+    # Absent `days` leaves the package unattested, which the refusal cases
+    # below require.
+    manifest = (
+        attesting_manifest(content=content, contract=TEST_CONTRACT, days=days)
+        if days
+        else None
+    )
     with published_mapping_identity():
         mapping = build_mapping(profile, contract=TEST_CONTRACT)
         return build_fact_package(
             AdmittedInput(
+                manifest=manifest,
                 content=content,
                 media_type=CSV_MEDIA_TYPE,
                 profile=profile,
@@ -92,7 +109,8 @@ def full_package() -> FactPackage:
         f"INV-{index},{product}\n".encode()
         for index, (amount, units, product) in enumerate(rows)
     )
-    return package_for(HEADER + body)
+    days = tuple(START + timedelta(days=index) for index in range(len(rows)))
+    return package_for(HEADER + body, days=days)
 
 
 def bundle_of(package: FactPackage) -> ReportBundle:

@@ -81,6 +81,8 @@ ADMITTED_FAMILY_PAIRS: frozenset[tuple[str, str]] = frozenset(
         # `V-comparison`'s own row. Three families still refuse after it;
         # each adds its own pair when it lands.
         ("rra004.formula.v2", "rra008.comparison.v2"),
+        # `V-growth`'s own row. Basket and concentration still refuse.
+        ("rra004.formula.v2", "rra008.growth.v2"),
     }
 )
 

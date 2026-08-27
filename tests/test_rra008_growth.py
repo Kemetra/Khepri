@@ -14,13 +14,12 @@ import hashlib
 from datetime import date, timedelta
 from decimal import Decimal
 
-import pytest
-
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.analysis import comparison, growth
 from khepri.rra.analysis.comparison import METRIC_DELTA_ABSOLUTE, MODE_PERIOD_OVER_PERIOD
 from khepri.rra.analysis.growth import (
     CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
+    CAVEAT_ROUNDING_RESIDUAL,
     GROWTH_FORMULA_VERSION,
     METRIC_PRICE_EFFECT,
     METRIC_REVENUE_CHANGE,
@@ -44,6 +43,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    attesting_manifest,
     published_mapping_identity,
 )
 
@@ -51,7 +51,11 @@ HEADER = b"date,revenue,units,invoice_no\n"
 START = date(2026, 1, 5)
 
 
-def package_for(content: bytes) -> FactPackage:
+def package_for(
+    content: bytes,
+    *,
+    days: tuple[date, ...] = (),
+) -> FactPackage:
     profile = build_profile(
         content=content,
         media_type=CSV_MEDIA_TYPE,
@@ -63,10 +67,23 @@ def package_for(content: bytes) -> FactPackage:
     # block because `facts._assert_derived_from_profile` re-derives the mapping
     # and compares it by value, so restamping the object afterwards would fail
     # that provenance guard instead.
+    # Coverage is attested for exactly the days these rows carry. Growth
+    # consumes the window `rra008.comparison.v2` accepted, and that family
+    # refuses a window no manifest proves -- so a module whose subject is the
+    # decomposition arithmetic has to attest its own coverage or every case
+    # refuses as `prior_window_absent` before reaching the arithmetic it was
+    # written to prove. Absent `days` leaves the package unattested, which is
+    # what this module's refusal cases require.
+    manifest = (
+        attesting_manifest(content=content, contract=TEST_CONTRACT, days=days)
+        if days
+        else None
+    )
     with published_mapping_identity():
         mapping = build_mapping(profile, contract=TEST_CONTRACT)
         return build_fact_package(
             AdmittedInput(
+                manifest=manifest,
                 content=content,
                 media_type=CSV_MEDIA_TYPE,
                 profile=profile,
@@ -88,7 +105,8 @@ def daily(rows: list[tuple[str, int]]) -> FactPackage:
         f"{(START + timedelta(days=index)).isoformat()},{amount},{units},INV-{index}\n".encode()
         for index, (amount, units) in enumerate(rows)
     )
-    return package_for(HEADER + body)
+    days = tuple(START + timedelta(days=index) for index in range(len(rows)))
+    return package_for(HEADER + body, days=days)
 
 
 def fact_for(facts: tuple[Fact, ...], metric: str) -> Fact:
@@ -179,7 +197,11 @@ def test_refuses_when_no_units_are_mapped() -> None:
         b"2026-01-07,180.00,INV-2\n"
         b"2026-01-08,60.00,INV-3\n"
     )
-    result = growth.derive(package_for(content))
+    # Coverage attested, so the refusal comes from the measure rather than from
+    # an unproven window. Without it this refuses as `prior_window_absent` and
+    # the case would prove nothing about units at all.
+    days = tuple(START + timedelta(days=index) for index in range(4))
+    result = growth.derive(package_for(content, days=days))
     assert isinstance(result, RefusedResult)
     assert result.reason == REASON_UNITS_ABSENT
 
@@ -196,12 +218,6 @@ def test_refuses_with_the_cause_when_no_pair_of_periods_is_settled() -> None:
 
 
 #: Marks the case `V-growth` must restore. Grep this name to find it.
-GROWTH_CONSUMES_COMPARISON = (
-    "V-growth: growth must consume comparison's accepted window"
-)
-
-
-@pytest.mark.xfail(reason=GROWTH_CONSUMES_COMPARISON, strict=True)
 def test_the_change_decomposed_is_the_change_the_comparison_family_states() -> None:
     """Two families, one delta.
 
@@ -209,14 +225,14 @@ def test_the_change_decomposed_is_the_change_the_comparison_family_states() -> N
     comparison section and split a different delta in the growth section, and both
     would reconcile perfectly.
 
-    **This is `V-growth`'s RED, failing for exactly the reason it warns
-    about.** `rra008.comparison.v2` refuses a window its manifest does not
-    prove; growth still calls `windows.compared_labels` itself and accepts
-    one regardless. The two families have genuinely diverged -- the defect
-    `RRA-008` closes by requiring growth to consume "the exact PoP window
-    selected by period comparison".
-
-    `strict` so `V-growth` cannot land without flipping it back.
+    **Consumed, not recomputed.** `growth.derive` asks
+    `comparison.accepted_window` for the window that family *accepted*, rather
+    than calling `windows.compared_labels` and landing on the same two labels.
+    Those looked equivalent while both families agreed, and are not: the labels
+    are the picking rule, blind to coverage, while acceptance is the rule plus
+    the structural compatibility `rra008.comparison.v2` proves. Once comparison
+    refuses a window no manifest attests, a growth family re-deriving labels
+    would decompose a delta comparison declined to state.
     """
     package = daily(EXACT)
     split = growth.derive(package)
@@ -231,6 +247,103 @@ def test_the_change_decomposed_is_the_change_the_comparison_family_states() -> N
         and comparison.mode_of(fact) == MODE_PERIOD_OVER_PERIOD
     )
     assert decimal_for(split, METRIC_REVENUE_CHANGE) == Decimal(stated.value)
+
+
+# `RRA-008` publishes the price effect by subtraction rather than by independent
+# rounding, so displayed reconciliation is exact by construction:
+#
+#   published change = round(Rc - Rp)
+#   published volume = round(unrounded volume)
+#   published price  = published change - published volume
+#   rounding residual = published price - round(unrounded price)
+#
+# 8,963,136 exhaustive cases and 300,000 random ones across five precisions put
+# the residual at no more than one unit of the published last place, and never
+# above it. `RESIDUAL` is one of the 330 measured cases where independent
+# rounding disagreed by exactly one ULP -- the whole population `rra008.growth.v1`
+# refused and `v2` publishes.
+#
+# Prior: 100.01 over 2 units. Current: 20.02 over 1 unit.
+RESIDUAL = [("5.00", 1), ("100.01", 2), ("20.02", 1), ("8.00", 1)]
+
+
+def test_a_one_ulp_rounding_disagreement_is_published_rather_than_refused() -> None:
+    """`rra008.growth.v1` refused this dataset. Publishing it is the change.
+
+    Independent rounding put price at -29.98 and volume at -50.00 against a
+    change of -79.99, so the additivity guard refused a decomposition that is
+    arithmetically fine. `RRA-008` publishes price by subtraction instead, and
+    records the disagreement as audit evidence.
+    """
+    facts = growth.derive(daily(RESIDUAL))
+    assert not isinstance(facts, RefusedResult), facts
+
+    change = decimal_for(facts, METRIC_REVENUE_CHANGE)
+    price = decimal_for(facts, METRIC_PRICE_EFFECT)
+    volume = decimal_for(facts, METRIC_VOLUME_EFFECT)
+    assert change == Decimal("-79.99")
+    assert volume == Decimal("-50.00")
+    # By subtraction, so the published parts reconcile exactly on the page.
+    assert price == change - volume == Decimal("-29.99")
+
+
+def test_the_rounding_residual_is_disclosed_where_an_auditor_finds_it() -> None:
+    """A published value that differs from the independently rounded one is a
+    disclosure, not a silent correction.
+
+    `RRA-008` requires the residual recorded as audit evidence. It is carried on
+    the price effect, because that is the value subtraction assigned, and as a
+    caveat rather than a fact -- `Fact.value` is a decimal string every consumer
+    parses, and a residual is a qualification rather than a governed figure.
+    """
+    facts = growth.derive(daily(RESIDUAL))
+    assert not isinstance(facts, RefusedResult)
+    assert CAVEAT_ROUNDING_RESIDUAL in fact_for(facts, METRIC_PRICE_EFFECT).caveats
+
+    # Absent when there is nothing to disclose: a residual-free split must not
+    # carry a caveat saying its price was adjusted.
+    exact = growth.derive(daily(EXACT))
+    assert not isinstance(exact, RefusedResult)
+    assert CAVEAT_ROUNDING_RESIDUAL not in fact_for(exact, METRIC_PRICE_EFFECT).caveats
+
+
+def test_the_residual_never_exceeds_one_unit_of_the_published_last_place() -> None:
+    """The bound `RRA-008` sets, asserted over the measured population.
+
+    Three roundings each move a value by at most half a unit, which would bound
+    the residual at 1.5 units if they were independent. They are not: `price` is
+    derived from `change` and `volume`, so their errors partly cancel and the
+    reachable bound is one unit. This asserts the bound rather than the
+    cancellation, so it stays true if the arithmetic is rearranged.
+    """
+    for rows in (RESIDUAL, EXACT, [("5.00", 2), ("10.01", 3), ("20.02", 7), ("8.00", 4)]):
+        facts = growth.derive(daily(rows))
+        assert not isinstance(facts, RefusedResult), rows
+        price = fact_for(facts, METRIC_PRICE_EFFECT)
+        ulp = Decimal(1).scaleb(-price.precision)
+        change = decimal_for(facts, METRIC_REVENUE_CHANGE)
+        volume = decimal_for(facts, METRIC_VOLUME_EFFECT)
+        assert abs((change - volume) - Decimal(price.value)) <= ulp, rows
+
+
+def test_a_total_refusal_is_recorded_once_rather_than_twice() -> None:
+    """`refusals` is the per-mode record a *partly* refusing family needs.
+
+    Growth splits one mode into three metrics from a single `_Split`: either all
+    three are stated or none is. `derive` already returns a total refusal as the
+    section's own reason, so repeating it here would render each disclosure twice
+    -- once as the section reason and once as a caveat scoped to that section.
+
+    Asserted against a dataset that genuinely refuses, so the empty tuple is the
+    considered answer for a real refusal rather than a vacuous pass over a
+    package that had nothing to refuse.
+    """
+    package = daily([("50.00", 5), ("100.00", 0), ("180.00", 12), ("60.00", 6)])
+    refused = growth.derive(package)
+    assert isinstance(refused, RefusedResult)
+    assert refused.reason == REASON_UNITS_ABSENT
+    assert growth.refusals(package) == ()
+
 
 
 def test_every_fact_records_this_family_formula_version() -> None:

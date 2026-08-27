@@ -35,12 +35,22 @@ _DERIVED_ARABIC_NAMES = {
 }
 
 
-def _bundle(rows: Rows | None = None) -> ReportBundle:
-    return ReportBundle.of(package_for(ROWS if rows is None else rows))
+def _bundle(rows: Rows | None = None, *, published: bool = False) -> ReportBundle:
+    """`published=True` builds under the triple this build publishes.
+
+    The default pin is right for cases that render every section: under it all
+    four families sit at their predecessor and publish. A case whose subject is
+    one family's *data* refusal needs the triple that admits that family, or the
+    section refuses as `family_version_pairing_unadmitted` instead and the case
+    asserts a coverage message against a version refusal.
+    """
+    return ReportBundle.of(
+        package_for(ROWS if rows is None else rows, published=published)
+    )
 
 
-def _surface(rows: Rows | None = None) -> HtmlSurface:
-    return HtmlReportRenderer().render_html(_bundle(rows))
+def _surface(rows: Rows | None = None, *, published: bool = False) -> HtmlSurface:
+    return HtmlReportRenderer().render_html(_bundle(rows, published=published))
 
 
 def _context(language: str = LANGUAGE_ENGLISH) -> dict[str, object]:
@@ -214,13 +224,13 @@ def test_evidence_page_carries_every_citation_identifier() -> None:
 
 
 def test_evidence_page_carries_the_raw_reason_code() -> None:
-    surface = _surface(ROWS[:2])
+    surface = _surface(ROWS[:2], published=True)
 
     assert "prior_window_absent" in surface.evidence[LANGUAGE_ENGLISH]
 
 
 def test_business_page_states_a_refusal_as_customer_prose_not_a_code() -> None:
-    surface = _surface(ROWS[:2])
+    surface = _surface(ROWS[:2], published=True)
 
     for language in REQUIRED_LANGUAGES:
         visible = _visible_text(surface.documents[language])
@@ -494,7 +504,11 @@ def test_no_internal_field_reaches_a_customer_surface() -> None:
     easy to leave behind -- the leak check reads visible text and would never have
     caught either.
     """
-    bundle = _bundle(ROWS[:2])
+    # Under the triple this build publishes, because the closing assertion needs
+    # the comparison family's *data* refusal rather than a version refusal, and
+    # this bundle must carry both a present and a refused section for the
+    # `state` leak check below to mean anything.
+    bundle = _bundle(ROWS[:2], published=True)
     surface = HtmlReportRenderer().render_html(bundle)
     for language in REQUIRED_LANGUAGES:
         for document in (surface.documents[language], surface.evidence[language]):
