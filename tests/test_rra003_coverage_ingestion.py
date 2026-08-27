@@ -56,7 +56,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -67,6 +67,7 @@ from khepri.rra.datasets import (
     CoverageUnproven,
     DatasetProfileRecord,
     ProfilingService,
+    document_digest,
     session_completeness,
 )
 from khepri.rra.deletion import DeletionService
@@ -74,6 +75,7 @@ from khepri.rra.intake import IntakeService, StoredObject
 from khepri.rra.packages import FactPackageService
 from khepri.rra.persistence import (
     Base,
+    DatasetProfileRow,
     SqlDeletionRepository,
     SqlFactPackageRepository,
     SqlProfileRepository,
@@ -184,6 +186,11 @@ class Harness:
     client: TestClient
     invitations: InvitationService
     profiles: SqlProfileRepository
+    #: Exposed so a test can rewrite a stored profile row directly. Simulating a
+    #: document persisted before a field existed is not something any route can
+    #: do -- the write path always emits the current shape -- so the row has to
+    #: be edited behind the repository.
+    factory: sessionmaker
 
     @property
     def session_id(self) -> str:
@@ -251,6 +258,7 @@ def harness() -> Harness:
         client=TestClient(app, base_url="https://testserver"),
         invitations=invitations,
         profiles=profiles,
+        factory=factory,
     )
 
 
@@ -733,4 +741,48 @@ def test_an_attested_profile_builds_a_package_that_carries_its_coverage() -> Non
     assert document["coverage_signatures"], (
         "the package retained no coverage signature, so comparison and growth "
         "refuse every report this session produces"
+    )
+
+
+def test_a_profile_stored_before_attribution_still_builds_its_package() -> None:
+    """Reading a legacy document leniently is only half the fix; it must re-emit.
+
+    `attested_by` was added to the manifest shape without moving
+    `COVERAGE_MANIFEST_VERSION`, so documents persisted before it exists carry no
+    such key. `manifest_from_document` was made lenient -- absent reads back as
+    `UNRECORDED_ATTESTER` -- which stopped the `KeyError`. But `as_document()`
+    then emitted the sentinel as a real value, and `packages._readmit` rebuilds
+    the profile document from the stored manifest and compares its digest
+    against the one persisted. The rebuilt document carried a key the stored one
+    did not, so the digests differed and the profile refused its own package.
+
+    **Neither half produced a package.** The crash became a refusal, which is
+    why a test asserting only that the read succeeds passes while production
+    stays broken. This drives the route so the digest comparison is really run.
+    """
+    test = ready()
+    profiled = test.client.post("/api/v1/beta/profile", json=profile_with(manifest_body()))
+    assert profiled.status_code == 201, profiled.text
+
+    # Age the stored row into a pre-`attested_by` document, digest included, so
+    # it is indistinguishable from one written before the field existed.
+    with test.factory.begin() as database:
+        stored = database.scalar(select(DatasetProfileRow))
+        document = dict(stored.document)
+        manifest = {
+            key: value
+            for key, value in dict(document["coverage_manifest"]).items()
+            if key != "attested_by"
+        }
+        assert "attested_by" not in manifest
+        document["coverage_manifest"] = manifest
+        stored.document = document
+        stored.profile_digest = document_digest(document)
+
+    built = test.client.post("/api/v1/beta/facts")
+
+    assert built.status_code == 201, built.text
+    assert built.json()["document"]["coverage_manifest_identity"], (
+        "the rebuilt package saw no attestation, so the legacy manifest was "
+        "read but not carried through"
     )

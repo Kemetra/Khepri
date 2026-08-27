@@ -389,3 +389,67 @@ def test_readback_does_not_admit_a_manifest_with_no_attester() -> None:
     """
     with pytest.raises(ManifestRefused):
         assert_bound(replace(_manifest(), attested_by="   "))
+
+
+def test_a_manifest_stored_before_attribution_round_trips_unchanged() -> None:
+    """Reading a legacy document leniently is not enough; it must serialize back.
+
+    `packages._readmit` re-serializes the manifest to rebuild the profile document
+    and compare its stored digest. Reading an absent `attested_by` as
+    `UNRECORDED_ATTESTER` stopped the `KeyError`, and then `as_document()` emitted
+    the key anyway -- so the digest differed and the same profile refused its
+    package instead of crashing. Neither produced a package: the fix was half
+    done, and review caught the other half.
+
+    Absence now serializes as absence. The manifest version deliberately does not
+    move for this: an unattributed document is the same document, not a new
+    shape, and inventing a governed version no commit owns is worse than the gap.
+    """
+    stored = _manifest().as_document()
+    legacy = {key: value for key, value in stored.items() if key != "attested_by"}
+
+    assert manifest_from_document(legacy).as_document() == legacy
+    # And a document that recorded an attester keeps it, byte for byte.
+    assert manifest_from_document(stored).as_document() == stored
+    assert manifest_from_document(stored).attested_by == _ATTESTED_BY
+
+
+def test_the_unrecorded_marker_cannot_be_submitted_as_an_attester() -> None:
+    """The read-back sentinel is not an attestation a caller may claim.
+
+    `UNRECORDED_ATTESTER` is what an absent field reads back as, and
+    `as_document()` re-emits it as absence so legacy documents round-trip. Those
+    two facts together would make it forgeable: the literal string would persist
+    a manifest attested today as one written before attribution existed,
+    manufacturing the provenance gap the marker exists to report. Non-blank was
+    the only check, and the sentinel is not blank.
+
+    **This is defence in depth, not a closed hole.** `CoverageManifestBody` has
+    `extra="forbid"` and no attester field, so no wire caller can supply one
+    today -- which is also why this drives the guard directly rather than a
+    route: there is no caller path to drive. The issue's open item is adding
+    that field *with* a journey control; this refusal is placed before it, so
+    the sentinel is not admissible the day a caller can name an attester.
+    """
+    with pytest.raises(ManifestRefused):
+        assert_bound(replace(_manifest(), attested_by=UNRECORDED_ATTESTER))
+    # Surrounding whitespace is not a way around it either.
+    with pytest.raises(ManifestRefused):
+        assert_bound(replace(_manifest(), attested_by=f"  {UNRECORDED_ATTESTER}  "))
+
+
+def test_a_legacy_document_is_still_readable_after_the_marker_is_refused() -> None:
+    """Refusing the marker at storage must not make old documents unreadable.
+
+    The refusal belongs where attestations are *stored*, not where they are
+    *read*: a document already persisted without the field has to keep loading,
+    or the guard against forging the gap would close the packages the gap was
+    made lenient to keep open.
+    """
+    legacy = {
+        key: value
+        for key, value in _manifest().as_document().items()
+        if key != "attested_by"
+    }
+
+    assert manifest_from_document(legacy).attested_by == UNRECORDED_ATTESTER
