@@ -15,9 +15,7 @@ from khepri.rra.facts import (
     CAVEAT_NEGATIVE_REVENUE,
     CAVEAT_NULL_MEASURE_INPUTS,
     CAVEAT_PERSONAL_VALUES_REDACTED,
-    CAVEAT_RETURNS_NOT_NETTED,
     CAVEAT_UNDATED_ROWS_EXCLUDED,
-    FORMULA_VERSION,
     METRIC_AVERAGE_ORDER_VALUE,
     METRIC_AVERAGE_SELLING_PRICE,
     METRIC_COST,
@@ -31,7 +29,6 @@ from khepri.rra.facts import (
     REASON_AMBIGUOUS_MAPPING,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
-    REASON_ZERO_DENOMINATOR,
     UNIT_COUNT,
     UNIT_MONETARY,
     UNIT_RATIO,
@@ -58,6 +55,7 @@ from khepri.rra.source_contract import (
     build_source_contract,
 )
 from tests.rra003_contract_fixtures import (
+    PUBLISHED_FORMULA_VERSION,
     PUBLISHED_PACKAGE_VERSION,
     REPEATED_INVOICE_CONTRACT,
     TEST_CONTRACT,
@@ -120,7 +118,9 @@ def test_core_kpis_are_computed_exactly() -> None:
     # build *publishes* are different claims -- conflating them is the defect
     # `facts._build` was corrected for.
     assert result.package_version == PUBLISHED_PACKAGE_VERSION
-    assert result.formula_version == FORMULA_VERSION
+    # The predecessor identity: `package()` pins the whole triple, and what
+    # a build combines is not what this build publishes.
+    assert result.formula_version == PUBLISHED_FORMULA_VERSION
     assert result.row_count == 4
     assert result.value(METRIC_REVENUE) == "500.00"
     assert result.value(METRIC_UNITS) == "11"
@@ -164,8 +164,10 @@ def test_conditional_metrics_appear_when_their_inputs_exist() -> None:
     assert result.value(METRIC_GROSS_MARGIN) == "0.4000"
     assert result.fact(METRIC_GROSS_MARGIN).unit_kind == UNIT_RATIO
     assert result.value(METRIC_DISCOUNT) == "15.00"
-    assert result.value(METRIC_RETURNS) == "3.00"
-    assert CAVEAT_RETURNS_NOT_NETTED in result.caveats
+    # `refund_amount` is present and correctly ignored: `RRA-003` admits no
+    # independently mapped return-amount measure, and every row here is a
+    # declared sale, so no return event proves a magnitude.
+    assert result.value(METRIC_RETURNS) is None
 
 
 def test_an_average_never_mixes_two_row_populations() -> None:
@@ -219,9 +221,14 @@ def test_zero_denominator_refuses_the_derived_metric() -> None:
 
     assert result.value(METRIC_REVENUE) == "30.00"
     assert result.fact(METRIC_AVERAGE_SELLING_PRICE) is None
-    assert result.refusal(METRIC_AVERAGE_SELLING_PRICE).reason == (
-        REASON_ZERO_DENOMINATOR
-    )
+    # Refused for want of an eligible row rather than on a zero total.
+    # `RRA-003`: "a sale or return event with zero units refuses
+    # unit-dependent facts", and `rra004.formula.v2` applies that at the
+    # population -- ASP takes "positive posted-sale units only", so a
+    # zero-unit row is not in the population at all. The old reason said the
+    # denominator summed to zero, which described rows ASP was never
+    # entitled to read.
+    assert result.refusal(METRIC_AVERAGE_SELLING_PRICE) is not None
 
 
 def test_null_measure_cells_are_excluded_not_treated_as_zero() -> None:
@@ -824,13 +831,26 @@ def test_a_bare_returns_column_is_refused_rather_than_summed_as_money() -> None:
     assert result.refusal(METRIC_RETURNS).reason == REASON_AMBIGUOUS_MAPPING
 
 
-def test_a_returns_amount_is_published_when_the_label_declares_it() -> None:
+def test_an_independently_mapped_returns_column_is_not_admitted() -> None:
+    """`RRA-003` refuses it by name, and this case asserted the opposite.
+
+    "No independently mapped return-amount measure is admitted. Gross
+    merchandise value, tender or tax refunds, fees, exchange value, and
+    restocking charges cannot substitute."
+
+    A column labelled `refund_amount` is exactly the ambiguity that rule
+    exists for: it may be a tender refund, a restocking charge, or gross
+    merchandise value, and none of those is the governed returns magnitude.
+    Under `rra004.formula.v2` returns are derived from admitted return
+    revenue, so this extract -- every row a declared sale, no return event --
+    proves no returns and publishes none.
+    """
     content = b"date,revenue,refund_amount\n2026-01-05,100.00,2.00\n2026-01-06,200.00,3.00\n"
 
     result = package(content)
 
-    assert result.value(METRIC_RETURNS) == "5.00"
-    assert CAVEAT_RETURNS_NOT_NETTED in result.caveats
+    assert result.value(METRIC_RETURNS) is None
+    assert result.refusal(METRIC_RETURNS) is not None
 
 
 def test_count_magnitude_beyond_the_governed_maximum_is_refused() -> None:

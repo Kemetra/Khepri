@@ -28,31 +28,43 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
-    TEST_CONTRACT,
+    RICH_CONTRACT,
     published_mapping_identity,
 )
 
-RICH_HEADER = b"date,revenue,units,invoice_no,product,cost,discount_amount,returns_amount\n"
+#: `event_kind` replaces `returns_amount`. `RRA-003` admits no independently
+#: mapped return-amount measure -- a column so labelled may be a tender
+#: refund or a restocking charge -- so `rra004.formula.v2` derives the
+#: returns magnitude from admitted return revenue instead. A fixture whose
+#: job is to carry *every* leakage metric therefore needs a real return
+#: event, which needs a column stating the kind.
+RICH_HEADER = b"date,event_kind,revenue,units,invoice_no,product,cost,discount_amount\n"
 
-RICH_ROWS: tuple[tuple[str, str, int, str, str, str, str, str], ...] = tuple(
-    (
-        f"2026-0{(index % 9) + 1}-01",
-        f"{100 + index * 10}.00",
-        4 + index,
-        f"INV-{index}",
-        f"P{index % 3}",
-        f"{50 + index * 5}.00",
-        f"{index}.00",
-        f"{index * 2}.00",
-    )
-    for index in range(14)
+RICH_ROWS: tuple[tuple[str, str, str, int, str, str, str, str], ...] = (
+    *(
+        (
+            f"2026-0{(index % 9) + 1}-01",
+            "sale",
+            f"{100 + index * 10}.00",
+            4 + index,
+            f"INV-{index}",
+            f"P{index % 3}",
+            f"{50 + index * 5}.00",
+            f"{index}.00",
+        )
+        for index in range(14)
+    ),
+    # One posted return, so the returns metric has something to state.
+    # `RRA-003`: return revenue is non-positive and its magnitude is published
+    # positive; return units are negative.
+    ("2026-09-01", "return", "-40.00", -1, "INV-R", "P0", "-20.00", "0.00"),
 )
 
 
 def rich_content() -> bytes:
     body = b"".join(
-        f"{date},{revenue},{units},{invoice},{product},{cost},{discount},{returns}\n".encode()
-        for date, revenue, units, invoice, product, cost, discount, returns in RICH_ROWS
+        f"{date},{kind},{revenue},{units},{invoice},{product},{cost},{discount}\n".encode()
+        for date, kind, revenue, units, invoice, product, cost, discount in RICH_ROWS
     )
     return RICH_HEADER + body
 
@@ -71,7 +83,7 @@ def rich_package() -> FactPackage:
     # the block because `facts._assert_derived_from_profile` re-derives the
     # mapping and compares it by value.
     with published_mapping_identity():
-        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        mapping = build_mapping(profile, contract=RICH_CONTRACT)
         return build_fact_package(
             AdmittedInput(
                 content=content,
@@ -79,7 +91,7 @@ def rich_package() -> FactPackage:
                 profile=profile,
                 mapping=mapping,
                 decision=assess_admissibility(profile, mapping),
-                contract=TEST_CONTRACT,
+                contract=RICH_CONTRACT,
             ),
         )
 

@@ -14,6 +14,8 @@ from khepri.rra.admissibility import (
     assess_admissibility,
 )
 from khepri.rra.admission import (
+    EVENT_RETURN,
+    EVENT_SALE,
     STATUS_POSTED,
     AdmittedEvents,
     EventsRefused,
@@ -67,7 +69,7 @@ from khepri.rra.versions import (
 # curve, distinct transaction counts, per-bucket date counts, the recorded
 # comparison window, and the formula version as a field on every emitted fact.
 PACKAGE_VERSION = "rra004.package.v3"
-FORMULA_VERSION = "rra004.formula.v1"
+FORMULA_VERSION = "rra004.formula.v2"
 
 # The governed comparison window, recorded rather than chosen by whichever module
 # needs one. `RRA-008` asks for "a prior window of equal length" and names no
@@ -338,6 +340,11 @@ class _Measures:
     units: list[int | None]
     dates: list[date | None]
     transactions: list[str | None]
+    #: Each admitted row's event kind, in frame order. `RRA-004` assigns
+    #: sale-only populations to Transactions, AOV, ASP and items per
+    #: transaction, and `RRA-003` forbids establishing the kind from observed
+    #: values -- so it travels from admission rather than being re-derived.
+    event_kinds: list[str]
     cost: list[Decimal | None]
     discount: list[Decimal | None]
     returns: list[Decimal | None]
@@ -460,7 +467,14 @@ def _totals(
     return _Totals(
         revenue=_monetary(admitted_events, measures.revenue),
         units=_sum_integer(measures.units),
-        transactions=_distinct(measures.transactions) if complete else None,
+        # `RRA-004`:92 -- "Transactions count posted sales only." A return
+        # is a posted event and belongs in revenue and units; it is not a
+        # transaction, and counting it inflates every ratio dividing by one.
+        transactions=(
+            _distinct(_sale_only(measures.transactions, measures))
+            if complete
+            else None
+        ),
         transactions_reason=(
             REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
         ),
@@ -471,7 +485,11 @@ def _totals(
             _monetary(admitted_events, measures.discount),
             basis.discount_is_additive,
         ),
-        returns=_monetary(admitted_events, measures.returns),
+        # `RRA-004`:83 -- `-sum(non-positive return revenue)`. `RRA-003`
+        # forbids the alternative outright: "No independently mapped
+        # return-amount measure is admitted." A return event states its own
+        # magnitude, so a separate column is a second answer to one question.
+        returns=_returns_magnitude(admitted_events, measures),
     )
 
 
@@ -588,6 +606,10 @@ def _build(
     mapping = admitted.mapping
     decision = admitted.decision
     if formula_version != FORMULA_VERSION:
+        # One builder implements one formula version. A caller asking for
+        # another would receive this builder's arithmetic stamped with that
+        # other identity, which is precisely the mislabelling the version
+        # system exists to prevent -- so this refuses rather than obliging.
         raise FactsRefused("Formula version is not implemented by this package builder.")
     assert_versions_admitted(
         # The mapping this package actually combines, read from the mapping
@@ -699,8 +721,13 @@ def _build(
     # A metric combining two measures is computed over the rows that carry both.
     # Dividing a revenue total drawn from one set of rows by a count drawn from
     # another publishes an average of a population that never existed.
-    orders = _matched(measures.revenue, measures.transactions)
-    selling = _matched(measures.revenue, measures.units)
+    # `RRA-004` assigns AOV `sales_complete_revenue_transactions` and ASP
+    # `sales_complete_revenue_units`, so both pair over sale rows only.
+    # Gross margin keeps `financial_complete_revenue_cost`, which `RRA-004`
+    # defines over financial rows -- returns included.
+    sale_revenue = _sale_only(measures.revenue, measures)
+    orders = _matched(sale_revenue, _sale_only(measures.transactions, measures))
+    selling = _matched(sale_revenue, _positive_units(measures))
     margin = _matched(measures.revenue, measures.cost)
     if any(pairing.partial for pairing in (orders, selling, margin)):
         caveats.append(CAVEAT_DERIVED_OVER_MATCHED_ROWS)
@@ -843,6 +870,67 @@ def _admitted_kinds(admitted_events: AdmittedEvents) -> tuple[str, ...]:
     the declaration would overstate the population.
     """
     return tuple(sorted({event.event_kind for event in admitted_events.events}))
+
+
+def _positive_units(measures: _Measures) -> list:
+    """Sale units, keeping only the strictly positive ones.
+
+    `RRA-003`: "ASP and basket calculations use positive posted-sale units only,
+    including free or bonus items." A zero-unit sale refuses unit-dependent
+    facts rather than contributing a zero, so it is blanked here too.
+    """
+    return [
+        value if value is not None and value > 0 else None
+        for value in _sale_only(measures.units, measures)
+    ]
+
+
+def _returns_magnitude(
+    admitted_events: AdmittedEvents,
+    measures: _Measures,
+) -> Decimal | None:
+    """The positive magnitude of admitted return revenue, per `RRA-004`:83.
+
+    `None` where the package proves no return magnitude -- `RRA-003` is
+    explicit that "absence of event-kind evidence cannot establish zero", so a
+    package with no admitted return event states nothing rather than zero.
+
+    **One check, not two.** An earlier form asked separately whether any return
+    event was admitted and whether any carried non-positive revenue. Both
+    answered `None`, so the first could be deleted with every test still green
+    -- a mutation check found exactly that. The two questions *should* differ:
+    `RRA-004`:48-49 lets an empty eligible population state zero "only when
+    admitted event-kind and status evidence proves that event class is absent",
+    so a package that admitted returns and found none is entitled to publish
+    zero. That is a `Returns` refusal-rule change rather than a population one,
+    and it is not this commit's row to move -- so the redundant branch is
+    removed rather than left standing as an untested claim.
+    """
+    magnitudes = [
+        value
+        for value, kind in zip(measures.revenue, measures.event_kinds, strict=False)
+        if kind == EVENT_RETURN and value is not None and value <= 0
+    ]
+    if not magnitudes:
+        return None
+    return _monetary(admitted_events, [-value for value in magnitudes])
+
+
+def _sale_only(values: list, measures: _Measures) -> list:
+    """The same list with every non-sale row blanked out.
+
+    `RRA-004`:92 -- "Transactions count posted sales only" -- and the same rule
+    governs AOV, ASP and items per transaction through their populations
+    (`RRA-004`:35-42). Blanking rather than compacting keeps the list
+    index-aligned with every other measure, which is what lets `_matched` pair
+    two of them without a join.
+
+    Returns stay inside revenue and units: `RRA-004`:92 keeps those net.
+    """
+    return [
+        value if kind == EVENT_SALE else None
+        for value, kind in zip(values, measures.event_kinds, strict=False)
+    ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1136,6 +1224,7 @@ def _measures(
         units=units,
         dates=dates,
         transactions=transactions,
+        event_kinds=[event.event_kind for event in admitted_events.events],
         cost=cost,
         discount=discount,
         returns=returns,

@@ -20,7 +20,6 @@ from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.aggregates import MAX_COMPARISON_BUCKETS, OTHER_BUCKET_LABEL
 from khepri.rra.facts import (
     COMPARISON_WINDOW_PERIODS,
-    FORMULA_VERSION,
     METRIC_REVENUE,
     PACKAGE_VERSION,
     AdmittedInput,
@@ -31,6 +30,7 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import SEMANTIC_PRODUCT, build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
+    PUBLISHED_FORMULA_VERSION,
     TEST_CONTRACT,
     published_mapping_identity,
 )
@@ -112,13 +112,15 @@ def test_every_fact_discloses_the_formula_version_that_produced_it() -> None:
     result = package(GOLDEN)
 
     assert result.facts
+    # The pinned predecessor throughout: this module builds under the admitted
+    # triple, so what its facts combine is not what this build publishes.
     for fact in result.facts:
-        assert fact.formula_version == FORMULA_VERSION
-        assert fact.as_document()["formula_version"] == FORMULA_VERSION
+        assert fact.formula_version == PUBLISHED_FORMULA_VERSION
+        assert fact.as_document()["formula_version"] == PUBLISHED_FORMULA_VERSION
 
     for entry in (*result.series, *result.comparisons):
-        assert entry.formula_version == FORMULA_VERSION
-        assert entry.as_document()["formula_version"] == FORMULA_VERSION
+        assert entry.formula_version == PUBLISHED_FORMULA_VERSION
+        assert entry.as_document()["formula_version"] == PUBLISHED_FORMULA_VERSION
 
 
 def test_package_records_the_governed_comparison_window() -> None:

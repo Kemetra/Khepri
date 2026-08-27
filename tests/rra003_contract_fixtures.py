@@ -169,6 +169,13 @@ PUBLISHED_MAPPING_VERSION = "rra003.mapping.v2"
 #: formula.v1)` the moment `V-package` moved the package constant -- a pairing
 #: nothing ever admitted, and rightly so.
 PUBLISHED_PACKAGE_VERSION = "rra004.package.v2"
+#: The formula third of the triple. Pinned differently from the other two, and
+#: the difference is the whole reason this helper exists: `build_fact_package`
+#: takes `formula_version` as a keyword argument whose default is **bound at
+#: import**, so patching the module attribute cannot reach it. The other two are
+#: read at call time -- the mapping off the object it is handed, the package off
+#: its own module -- so three constants need three mechanisms.
+PUBLISHED_FORMULA_VERSION = "rra004.formula.v1"
 
 
 @contextmanager
@@ -200,13 +207,28 @@ def published_mapping_identity() -> Iterator[None]:
     """
     original_mapping = mapping_module.MAPPING_VERSION
     original_package = facts_module.PACKAGE_VERSION
+    original_formula = facts_module.FORMULA_VERSION
+    original_defaults = facts_module.build_fact_package.__kwdefaults__
     mapping_module.MAPPING_VERSION = PUBLISHED_MAPPING_VERSION
     facts_module.PACKAGE_VERSION = PUBLISHED_PACKAGE_VERSION
+    # Both the constant and the bound default, because `build_fact_package`
+    # captured its `formula_version` default at import while `_build` compares
+    # against the module attribute at call time. Moving one without the other
+    # trips the builder's own "not implemented by this package builder" guard,
+    # which is right to refuse: a builder implements one formula version, and a
+    # caller asking for another would get this arithmetic under that identity.
+    facts_module.FORMULA_VERSION = PUBLISHED_FORMULA_VERSION
+    facts_module.build_fact_package.__kwdefaults__ = {
+        **(original_defaults or {}),
+        "formula_version": PUBLISHED_FORMULA_VERSION,
+    }
     try:
         yield
     finally:
         mapping_module.MAPPING_VERSION = original_mapping
         facts_module.PACKAGE_VERSION = original_package
+        facts_module.FORMULA_VERSION = original_formula
+        facts_module.build_fact_package.__kwdefaults__ = original_defaults
 
 
 #: Marks an assertion that states the *refusal window* rather than the outcome
@@ -263,3 +285,60 @@ def mixed_currency_contract(
             discount_is_additive=True,
         ),
     )
+
+
+def oracle_contract(
+    *,
+    contract_id: str = "src_oracle",
+    transaction_key_components: tuple[str, ...] = (),
+    status_column: str | None = "status",
+) -> SourceContract:
+    """The contract that honestly describes `tests/rra_calculation_oracle.to_csv`.
+
+    The oracle bridge emits `event_kind` and `status` columns -- `RRA-003`
+    requires every row to prove both and forbids establishing either from
+    observed values -- and carries no currency column, so the currency is a
+    package-level declaration.
+
+    Kept beside the other fixtures rather than in the oracle, because the oracle
+    computes no expectation and states no declaration: it renders rows, and what
+    those rows are declared to *mean* is the consumer's recorded reading.
+    """
+    return build_source_contract(
+        attribution=ContractAttribution(
+            contract_id=contract_id,
+            evidence="Test fixture: declared for the independent calculation oracle.",
+        ),
+        events=EventDeclaration(
+            event_kind_column="event_kind",
+            sale_only=False,
+            status_column=status_column,
+            posted_only=status_column is None,
+            currency_column=None,
+            currency_code="EGP",
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=(),
+            unique_line_grain_attested=True,
+            transaction_id_column=DEFAULT_TRANSACTION_COLUMN,
+            transaction_key_components=transaction_key_components,
+            transaction_id_unique_package_wide=not transaction_key_components,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+
+
+#: For the `RRA-009` rich fixture, which carries a mapped `event_kind` column so
+#: its posted return is admitted as one. Every other declaration matches
+#: `TEST_CONTRACT`; only the event kind moves from a package-level claim to a
+#: column, because a claim of "all rows are sales" would be false of it.
+RICH_CONTRACT = oracle_contract(
+    contract_id="src_rra009_rich",
+    status_column=None,
+)

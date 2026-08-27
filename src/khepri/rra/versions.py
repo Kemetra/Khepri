@@ -60,6 +60,13 @@ ADMITTED_PACKAGE_PAIRS: frozenset[tuple[str, str, str]] = frozenset(
         # `v1` because `rra004.formula.v2` does not exist until `V-formula`;
         # naming it here would publish that identity early.
         ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v1"),
+        # `V-formula`'s own row, and the only one it adds. **No family row
+        # accompanies it**: each `RRA-008` family adds its own
+        # `(formula.v2, family.v2)` pair when it lands, so all four refuse
+        # from here until `V-comparison`. The refusing set is largest at
+        # this commit and `V-concentration` empties it. That blackout is
+        # the designed window, not a gap to close early.
+        ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v2"),
     }
 )
 

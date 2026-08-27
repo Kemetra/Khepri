@@ -144,6 +144,8 @@ class OracleRow:
 
 CSV_COLUMNS = (
     "date",
+    "event_kind",
+    "status",
     "revenue",
     "units",
     "invoice_no",
@@ -163,26 +165,19 @@ def to_csv(rows: tuple[OracleRow, ...]) -> bytes:
     production an abstract record. This is the bridge, and it computes no
     expectation: it writes each field exactly as the row states it.
 
-    `event_kind` and `status` are deliberately not emitted. There is no mapping
-    rule that would resolve them today, so a column carrying them would be an
-    unmapped extra rather than a semantic -- and inventing a spelling would change
-    what the RED records measure.
+    `event_kind` and `status` are emitted, and the columns are named rather than
+    spelled to taste: `RRA-003` requires every row used by a governed calculation
+    to prove both, and forbids establishing either "from generic headers and
+    observed values". A consumer maps these columns through its source contract,
+    which is the governed spelling `V-mapping` landed.
 
-    **This is a forward dependency, not a permanent omission, and `V-mapping`
-    discharges it.** A review of this PR observed that a later slice feeding
-    `MESSY_RETURNS_ROWS` through this bridge cannot distinguish its two sales from
-    its return, because `RRA-003` forbids establishing event kind from observed
-    values or signs -- so such a slice would have to refuse the input or infer the
-    kind illegally, and could prove none of the sale-only AOV/ASP literals. That
-    is correct about the destination. The slice it names, however, is the same one
-    that resolves it: `V-mapping` extends the profile request with a source
-    contract carrying an "event-kind column or sale-only declaration", which is
-    the governed spelling this bridge is waiting on.
-
-    So when `V-mapping` lands that contract, this bridge gains the `event_kind`
-    column **and** the matching explicit contract declaration in the same slice.
-    Emitting a column now, ahead of the governed spelling, is what the paragraph
-    above refuses -- not the column itself.
+    **This discharges a forward dependency this bridge carried.** While the two
+    columns were absent, `MESSY_RETURNS_ROWS` was unusable by any honest
+    contract: its return is identifiable only by a negative revenue, so a
+    consumer would have had to declare `sale_only` -- false of an extract
+    containing a return -- or infer the kind from the sign, which is the
+    inference the specification refuses. Neither could prove the sale-only
+    AOV/ASP literals the case exists to state.
     """
     header = ",".join(CSV_COLUMNS).encode() + b"\n"
 
@@ -193,6 +188,8 @@ def to_csv(rows: tuple[OracleRow, ...]) -> bytes:
         ",".join(
             (
                 row.day.isoformat(),
+                cell(row.event_kind),
+                cell(row.status),
                 cell(row.revenue),
                 cell(row.units),
                 cell(row.invoice),

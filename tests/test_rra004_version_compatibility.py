@@ -74,8 +74,22 @@ def test_the_published_predecessor_triple_stays_admitted() -> None:
     )
 
 
-def test_the_shipped_family_pairs_are_admitted() -> None:
-    """Each family this build dispatches must pair with the shipped formula."""
+def test_every_family_refuses_while_the_formula_window_is_open() -> None:
+    """The blackout `V-formula` opens, and it is designed rather than a gap.
+
+    Each `RRA-008` family adds its own `(formula.v2, family.v2)` pair when it
+    lands, so `V-formula` adds none and all four refuse from here until
+    `V-comparison`. The refusing set is largest at this commit and
+    `V-concentration` empties it.
+
+    Admitting the families here would stamp successor family identities onto
+    results computed under a pairing nobody published -- the exact defect the
+    table exists to prevent. **Never widen the gate to make an intermediate
+    commit publish.**
+
+    Each family commit flips its own line back, which is what makes "this
+    family opened its own gate" a checkable claim rather than a promise.
+    """
     from khepri.rra.analysis import basket, comparison, concentration, growth
     from khepri.rra.facts import FORMULA_VERSION
 
@@ -85,10 +99,25 @@ def test_the_shipped_family_pairs_are_admitted() -> None:
         basket.BASKET_FORMULA_VERSION,
         concentration.CONCENTRATION_FORMULA_VERSION,
     ):
-        assert admits_family(
+        assert not admits_family(
             formula_version=FORMULA_VERSION,
             family_version=family_version,
         )
+
+
+def test_the_published_predecessor_family_pairs_stay_admitted() -> None:
+    """The immutable rows, which no publication commit may edit."""
+    for family_version in (
+        "rra008.comparison.v1",
+        "rra008.growth.v1",
+        "rra008.basket.v1",
+        "rra008.concentration.v1",
+    ):
+        assert admits_family(
+            formula_version="rra004.formula.v1",
+            family_version=family_version,
+        )
+
 
 
 def test_a_moved_mapping_against_an_unmoved_package_is_refused() -> None:
