@@ -152,6 +152,7 @@ _GOVERNED_CAVEAT_CODES = {
     facts.CAVEAT_DERIVED_OVER_MATCHED_ROWS,
     CAVEAT_CHART_NOT_DRAWN,
     CAVEAT_CURVE_SAMPLED,
+    comparison.CAVEAT_PARTIAL_WINDOW,
     growth.CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
 }
 
@@ -599,6 +600,12 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "The concentration curve is drawn from 100 evenly spaced points "
             "across your full product range. The figures beside it use every row."
         ),
+        "comparison_partial_window": (
+            "The current period is not finished. It is compared against the "
+            "same number of days at the start of the earlier period, so the "
+            "two cover the same stretch of trading. The comparison will change "
+            "as the rest of the period is recorded."
+        ),
         "growth_interaction_assigned_to_price": (
             "Where price and quantity both changed, the combined part of "
             "the change is counted with the price effect. This is a stated "
@@ -651,6 +658,11 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         "curve_points_sampled": (
             "رُسم منحنى التركز باستخدام 100 نقطة موزعة بالتساوي على كامل "
             "نطاق المنتجات. وتستخدم الأرقام المعروضة بجانبه كل الصفوف."
+        ),
+        "comparison_partial_window": (
+            "الفترة الحالية لم تكتمل بعد. وقد قُورنت بالعدد نفسه من الأيام من "
+            "بداية الفترة السابقة، حتى تغطي المقارنة المدة نفسها من النشاط. "
+            "وستتغير هذه المقارنة كلما سُجل ما تبقى من الفترة."
         ),
         "growth_interaction_assigned_to_price": (
             "عندما تغير السعر والكمية معاً، احتُسب الجزء المشترك من التغير ضمن "

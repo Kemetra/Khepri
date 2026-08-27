@@ -14,6 +14,8 @@ import hashlib
 from datetime import date, timedelta
 from decimal import Decimal
 
+import pytest
+
 from khepri.rra.admissibility import assess_admissibility
 from khepri.rra.analysis import comparison, growth
 from khepri.rra.analysis.comparison import METRIC_DELTA_ABSOLUTE, MODE_PERIOD_OVER_PERIOD
@@ -193,12 +195,28 @@ def test_refuses_with_the_cause_when_no_pair_of_periods_is_settled() -> None:
     assert result.reason == REASON_PRIOR_WINDOW_ABSENT
 
 
+#: Marks the case `V-growth` must restore. Grep this name to find it.
+GROWTH_CONSUMES_COMPARISON = (
+    "V-growth: growth must consume comparison's accepted window"
+)
+
+
+@pytest.mark.xfail(reason=GROWTH_CONSUMES_COMPARISON, strict=True)
 def test_the_change_decomposed_is_the_change_the_comparison_family_states() -> None:
     """Two families, one delta.
 
     If growth picked its own window, the report would state a revenue delta in the
     comparison section and split a different delta in the growth section, and both
     would reconcile perfectly.
+
+    **This is `V-growth`'s RED, failing for exactly the reason it warns
+    about.** `rra008.comparison.v2` refuses a window its manifest does not
+    prove; growth still calls `windows.compared_labels` itself and accepts
+    one regardless. The two families have genuinely diverged -- the defect
+    `RRA-008` closes by requiring growth to consume "the exact PoP window
+    selected by period comparison".
+
+    `strict` so `V-growth` cannot land without flipping it back.
     """
     package = daily(EXACT)
     split = growth.derive(package)

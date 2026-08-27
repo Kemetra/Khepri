@@ -42,6 +42,7 @@ from khepri.rra.rendering.html import HtmlReportRenderer
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
     published_mapping_identity,
+    publishing_sections,
 )
 from tests.test_rra006_pdf_surface import chromium_available
 
@@ -333,16 +334,32 @@ def test_arabic_paginates_the_same_sections_onto_distinct_pages() -> None:
     """
     bundle = ReportBundle.of(package())
     metrics = discriminating_metrics(bundle)
-    assert all(metrics.values()), metrics
+    # Every section that *publishes*. A refused section states its reason and no
+    # metric, which is correct rather than missing -- and which sections are
+    # refused moves with every governed version, so it is asked of the bundle.
+    publishing = publishing_sections(bundle)
+
+    assert publishing, "the case is vacuous with nothing published"
+    assert all(metrics[section] for section in publishing), metrics
 
     arabic_pdf = printed(LANGUAGE_ARABIC)
     english_pdf = printed(LANGUAGE_ENGLISH)
     arabic = metric_pages(arabic_pdf, metrics)
     english = metric_pages(english_pdf, metrics)
 
-    assert set(arabic) == set(ORDERED_SECTIONS), "a section's metrics reached no page"
+    # Every section that publishes reaches a page. A refused one prints its
+    # reason and no metric, so asserting against the full governed order would
+    # demand a page of figures from a section that correctly states none --
+    # and which sections are refused moves with every governed version.
+    printed_order = [
+        section_id for section_id in ORDERED_SECTIONS if section_id in publishing
+    ]
+
+    assert set(arabic) == set(printed_order), "a section's metrics reached no page"
     # In governed order, so the printed sequence is the declared one.
-    assert [arabic[section_id] for section_id in ORDERED_SECTIONS] == sorted(arabic.values())
+    assert [arabic[section_id] for section_id in printed_order] == sorted(
+        arabic.values()
+    )
     # And identically to English, which is the shared-template guarantee itself.
     assert arabic == english, {"arabic": arabic, "english": english}
 

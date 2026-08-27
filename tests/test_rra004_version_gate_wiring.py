@@ -35,6 +35,7 @@ from khepri.rra.versions import (
 )
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    landed_sections,
     published_mapping_identity,
 )
 
@@ -44,6 +45,14 @@ from tests.rra003_contract_fixtures import (
 #: driven by a version the sequence is *about* to admit proves the gate only
 #: until the next commit.
 UNPUBLISHED_MAPPING_VERSION = "rra003.mapping.v99"
+
+#: A family version no slice publishes, for the same reason. These cases move
+#: one family ahead of its formula and check that only that family refuses; a
+#: mover named `rra008.growth.v2` would stop being unadmitted the moment
+#: `V-growth` lands, and the case would quietly assert nothing. `basket` is the
+#: survivor for the mirror reason: it is still at `v1` under the pin these
+#: fixtures build with, so it publishes throughout the sequence.
+UNPUBLISHED_FAMILY_VERSION = "rra008.growth.v99"
 
 
 def test_building_a_package_refuses_an_unadmitted_triple() -> None:
@@ -84,14 +93,19 @@ def test_a_family_on_an_unadmitted_formula_refuses_only_itself(
 ) -> None:
     """The whole point of the family seam: the report survives.
 
-    Growth is moved to a successor its formula does not admit. Growth refuses
-    with the governed reason, and comparison -- which did not move -- still
-    publishes. A package-level refusal here would return nothing at all.
+    Growth is moved to a version its formula does not admit. Growth refuses with
+    the governed reason, and basket -- which did not move -- still publishes. A
+    package-level refusal here would return nothing at all.
+
+    The mover is a version **no slice publishes**: naming a real successor would
+    make this case assert nothing from the commit that lands it onward. Basket
+    is the survivor because these fixtures build under the published
+    predecessor, where it is admitted throughout.
     """
     from khepri.rra import bundle
     from khepri.rra.analysis import growth
 
-    monkeypatch.setattr(growth, "GROWTH_FORMULA_VERSION", "rra008.growth.v2")
+    monkeypatch.setattr(growth, "GROWTH_FORMULA_VERSION", UNPUBLISHED_FAMILY_VERSION)
 
     package = _package_with_two_settled_periods()
     analysed = bundle._analysed(package)
@@ -100,8 +114,8 @@ def test_a_family_on_an_unadmitted_formula_refuses_only_itself(
         REASON_FAMILY_VERSION_UNADMITTED
     )
     assert any(
-        figure.section == bundle.SECTION_COMPARISON for figure in analysed.figures
-    ), "comparison did not move, so it must still publish"
+        figure.section == bundle.SECTION_BASKET for figure in analysed.figures
+    ), "basket did not move, so it must still publish"
 
 
 def test_the_concentration_curve_does_not_escape_its_family_refusal(
@@ -241,7 +255,7 @@ def test_one_refused_family_leaves_the_other_three_publishing(
 ) -> None:
     """`RRA-008` scope, asserted over all four families rather than one survivor.
 
-    `test_a_family_on_an_unadmitted_formula_refuses_only_itself` names comparison
+    `test_a_family_on_an_unadmitted_formula_refuses_only_itself` names basket
     as the survivor. One survivor does not distinguish "growth refused" from
     "growth and basket refused", and the requirement is that the three unmoved
     families all still answer.
@@ -263,9 +277,10 @@ def test_one_refused_family_leaves_the_other_three_publishing(
     from khepri.rra import bundle
     from khepri.rra.analysis import growth
 
-    monkeypatch.setattr(growth, "GROWTH_FORMULA_VERSION", "rra008.growth.v2")
+    monkeypatch.setattr(growth, "GROWTH_FORMULA_VERSION", UNPUBLISHED_FAMILY_VERSION)
 
-    analysed = bundle._analysed(_package_with_a_concentration_curve())
+    package = _package_with_a_concentration_curve()
+    analysed = bundle._analysed(package)
     published = {figure.section for figure in analysed.figures}
 
     assert analysed.refusals.get(bundle.SECTION_GROWTH) == (
@@ -274,11 +289,19 @@ def test_one_refused_family_leaves_the_other_three_publishing(
     assert bundle.SECTION_GROWTH not in published, (
         "the refused family must publish no figure of its own"
     )
-    for section in (
-        bundle.SECTION_COMPARISON,
-        bundle.SECTION_CONCENTRATION,
-        bundle.SECTION_BASKET,
-    ):
+    # Every *other* family this package's formula admits. Listed by asking the
+    # package rather than by name, because the four families reach their
+    # successors one commit at a time: a hardcoded trio silently stops meaning
+    # "the others" the moment one of them lands, and would then assert that a
+    # family which legitimately moved must publish anyway.
+    others = [
+        section
+        for section in landed_sections(package.formula_version)
+        if section != bundle.SECTION_GROWTH
+    ]
+
+    assert others, "the case is vacuous without a family left to survive"
+    for section in others:
         assert section in published, f"{section} did not move, so it must still publish"
         assert analysed.refusals.get(section) != REASON_FAMILY_VERSION_UNADMITTED, (
             f"{section} was refused for a version pairing it never moved"

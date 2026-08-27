@@ -48,6 +48,7 @@ from khepri.rra.mapping import (
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    attesting_manifest,
     published_mapping_identity,
 )
 
@@ -69,10 +70,24 @@ def package_for(rows: list[tuple[date | None, str]]) -> FactPackage:
     # Built under the published mapping identity: this module's subject is
     # comparison, not the version gate, so its packages must keep combining a
     # triple `versions.ADMITTED_PACKAGE_PAIRS` admits.
+    # Coverage is attested for exactly the dates these rows carry. `RRA-008`
+    # refuses completeness-dependent comparison "without an authoritative valid
+    # manifest", so a module whose subject is comparison arithmetic has to
+    # attest its own coverage or every case refuses before reaching the
+    # arithmetic it was written to prove.
+    dated = tuple(when for when, _ in rows if when is not None)
+    manifest = (
+        None
+        if not dated
+        else attesting_manifest(
+            content=content, contract=TEST_CONTRACT, days=dated
+        )
+    )
     with published_mapping_identity():
         mapping = build_mapping(profile, contract=TEST_CONTRACT)
         return build_fact_package(
             AdmittedInput(
+                manifest=manifest,
                 content=content,
                 media_type=CSV_MEDIA_TYPE,
                 profile=profile,
@@ -627,3 +642,113 @@ def test_every_emitted_fact_names_a_governed_mode(metric: str) -> None:
     facts = [fact for fact in facts_of(monthly(14)) if fact.metric == metric]
     assert facts
     assert all(comparison.mode_of(fact) is not None for fact in facts)
+
+
+# --- `rra008.comparison.v2` ------------------------------------------------
+
+
+def test_this_family_publishes_its_governed_successor() -> None:
+    """`V-comparison` opens its own gate, which is part of its definition of done.
+
+    A family commit that published the successor without adding its
+    compatibility row would leave the family refusing its own results.
+    """
+    from khepri.rra.facts import FORMULA_VERSION
+    from khepri.rra.versions import admits_family
+
+    assert comparison.COMPARISON_FORMULA_VERSION == "rra008.comparison.v2"
+    assert admits_family(
+        formula_version=FORMULA_VERSION,
+        family_version=comparison.COMPARISON_FORMULA_VERSION,
+    )
+
+
+def test_the_accepted_window_is_available_to_the_family_that_must_consume_it() -> None:
+    """`RRA-008`: "Growth consumes the exact PoP window selected by period
+    comparison and may not select another."
+
+    Growth re-derived the labels through the same shared rule, which shares the
+    rule and not the acceptance. This exposes what comparison *accepted*, so a
+    later family consumes a decision rather than reproducing a computation.
+    """
+    package = monthly(26)
+
+    accepted = comparison.accepted_window(package)
+
+    assert accepted is not None
+    assert accepted.current.label != accepted.prior.label
+
+
+def test_a_package_comparison_refuses_offers_no_window_to_consume() -> None:
+    """The half that makes the seam worth having.
+
+    When this family accepts nothing, a consumer must receive nothing -- not the
+    labels the shared rule would still have produced.
+    """
+    assert comparison.accepted_window(monthly(1)) is None
+
+
+def test_the_partial_window_caveat_is_governed_and_bilingual() -> None:
+    """`RRA-008` requires a partial-prefix comparison to carry "the bilingual
+    partial-window caveat required by `RRA-009`".
+
+    A caveat with no wording cannot reach a customer, and `RRA-009` enforces
+    that structurally: its tables are checked for set equality at import, so a
+    code admitted without prose raises rather than rendering blank.
+    """
+    from khepri.rra.rendering.wording import (
+        _GOVERNED_CAVEAT_CODES,
+        LANGUAGE_ARABIC,
+        LANGUAGE_ENGLISH,
+        caveat_message,
+    )
+
+    assert comparison.CAVEAT_PARTIAL_WINDOW in _GOVERNED_CAVEAT_CODES
+
+    arabic = caveat_message(comparison.CAVEAT_PARTIAL_WINDOW, language=LANGUAGE_ARABIC)
+    english = caveat_message(
+        comparison.CAVEAT_PARTIAL_WINDOW, language=LANGUAGE_ENGLISH
+    )
+    assert arabic and english
+    assert arabic != english
+
+
+def test_a_window_the_manifest_does_not_prove_is_refused() -> None:
+    """`RRA-008`: "Sparse, non-contiguous, count-equal, gap-containing,
+    scope-mismatched, store-mismatched, or filter-mismatched structures refuse."
+
+    Built without an attestation, so no signature is retained and the comparison
+    is unproven rather than compatible. Accepting it would restore the inference
+    the signature exists to replace -- and `RRA-008` says so directly: "Without
+    an authoritative valid manifest, observed trends may survive but
+    completeness-dependent comparison and growth refuse."
+    """
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.profiling import build_profile
+
+    content = HEADER + b"".join(
+        f"2026-0{month}-01,100.00,1,INV-{month},Beverages,Cairo\n".encode()
+        for month in range(1, 5)
+    )
+    with published_mapping_identity():
+        profile = build_profile(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            source_sha256_hex=hashlib.sha256(content).hexdigest(),
+        )
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        unattested = build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            )
+        )
+
+    assert not unattested.coverage_signatures
+    assert comparison.accepted_window(unattested) is None

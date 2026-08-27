@@ -49,7 +49,7 @@ from khepri.rra.rendering.html import (
 )
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
-    published_mapping_identity,
+    manifest_for_csv,
 )
 
 
@@ -81,27 +81,30 @@ def bundle() -> ReportBundle:
         media_type=CSV_MEDIA_TYPE,
         source_sha256_hex=hashlib.sha256(CONTENT).hexdigest(),
     )
-    # Built under the published mapping identity: this module's subject is not
-    # the version gate, so its packages must keep combining a triple
-    # `versions.ADMITTED_PACKAGE_PAIRS` admits. The whole build sits inside the
-    # block because `facts._assert_derived_from_profile` re-derives the mapping
-    # and compares it by value, so restamping the object afterwards would fail
-    # that provenance guard instead.
-    with published_mapping_identity():
-        mapping = build_mapping(profile, contract=TEST_CONTRACT)
-        return ReportBundle.of(
-            build_fact_package(
-                AdmittedInput(
-                    content=CONTENT,
-                    media_type=CSV_MEDIA_TYPE,
-                    profile=profile,
-                    mapping=mapping,
-                    decision=assess_admissibility(profile, mapping),
-                    contract=TEST_CONTRACT,
-                ),
-            )
+    # Built unpinned, unlike its sibling rendering modules, because this
+    # module's subject *is* the comparison section: its cases assert how
+    # comparison's deltas share one series table. Pinning to the published
+    # predecessor asks the family gate about `formula.v1`, which refuses
+    # comparison now that it has reached `rra008.comparison.v2` -- leaving
+    # every case here asserting over a section that states nothing.
+    #
+    # The rule this follows: pin to whichever triple admits the family the
+    # module is about. Modules about all four are served by the predecessor
+    # pin; this one is about comparison, so it takes the published triple.
+    mapping = build_mapping(profile, contract=TEST_CONTRACT)
+    return ReportBundle.of(
+        build_fact_package(
+            AdmittedInput(
+                manifest=manifest_for_csv(CONTENT, TEST_CONTRACT),
+                content=CONTENT,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
         )
-
+    )
 
 def document(language: str = LANGUAGE_ENGLISH) -> str:
     return HtmlReportRenderer().render_html(bundle()).documents[language]
@@ -405,13 +408,22 @@ def test_each_named_exception_is_one_still_taken() -> None:
     stops being read: the next dimensionless metric would be waved through by a
     name left behind from a metric that had since been renamed or dropped.
     """
-    section_grouped = {"revenue_delta_absolute", "revenue_delta_percent"}
-    metrics = {
-        metric for section in _pivoting_metrics().values() for metric in section
-    }
+    from khepri.rra.analysis.comparison import (
+        METRIC_DELTA_ABSOLUTE,
+        METRIC_DELTA_PERCENT,
+    )
 
-    assert section_grouped <= metrics, (
-        f"excused metrics no longer pivot: {sorted(section_grouped - metrics)}"
+    # Checked against the metrics the comparison family *names*, not against
+    # the ones a bundle happens to publish today. Both are excused because they
+    # are section-grouped, which is a property of the metric rather than of
+    # whether its family has reached its successor version -- and while that
+    # family is refused mid-sequence it publishes nothing, which would read as
+    # "these metrics no longer pivot" and invite deleting an allowlist entry
+    # that commit 7 needs back.
+    section_grouped = {"revenue_delta_absolute", "revenue_delta_percent"}
+
+    assert section_grouped == {METRIC_DELTA_ABSOLUTE, METRIC_DELTA_PERCENT}, (
+        f"excused metrics no longer exist: {sorted(section_grouped)}"
     )
 
 

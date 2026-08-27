@@ -48,6 +48,7 @@ from tests import rra_workbooks
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
     published_mapping_identity,
+    refusal_prose,
 )
 
 # The size the stand-in web and PDF renderers report. They write no file, so
@@ -490,7 +491,13 @@ def test_a_total_the_bundle_never_published_appears_nowhere(tmp_path: Path) -> N
 def _allowed_identity_text(bundle: ReportBundle) -> set[str]:
     """Report-level vocabulary: identity, governed labels, and the disclosure."""
     identity = bundle.identity.as_document()
+    # A refused section still renders, carrying the customer prose that says
+    # why -- so that prose is governed content on the sheet exactly as a label
+    # is. Which sections are refused moves whenever a governed version moves,
+    # so it is recomputed rather than listed.
     allowed = set(GOVERNED_LABELS)
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        allowed |= refusal_prose(bundle, language)
     allowed |= set(identity)
     allowed |= {str(value) for value in identity.values()}
     allowed |= {bundle.bundle_id, bundle.narrative_state, EXCEL_SURFACE_VERSION}

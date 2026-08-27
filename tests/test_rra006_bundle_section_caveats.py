@@ -35,7 +35,18 @@ from tests.test_rra006_bundle import CAVEATED, language_of, package, surface_of
 
 
 def bundle_of() -> ReportBundle:
-    return ReportBundle.of(package())
+    """A bundle over a dataset that *earns* a caveat.
+
+    Every case here bends a caveat and asserts the reconciliation refuses. With
+    no caveat to bend, `rescoped` maps over an empty tuple, the surface is
+    unchanged, and the reconciliation correctly finds nothing wrong -- so the
+    case passes vacuously rather than proving anything. This read a caveat off
+    the default fixture while `currency_not_declared` was appended to every
+    package carrying a monetary fact; `rra004.package.v3` records the admitted
+    currency, so that caveat is conditional now and the default fixture
+    correctly carries none.
+    """
+    return ReportBundle.of(package(CAVEATED))
 
 
 def rescoped(bundle: ReportBundle, section: str | None) -> tuple[StatedCaveat, ...]:

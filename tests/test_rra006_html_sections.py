@@ -34,6 +34,7 @@ from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.wording import caveat_prose, refusal_message
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    manifest_for_csv,
     published_mapping_identity,
 )
 
@@ -49,7 +50,20 @@ ROWS = [
 ]
 
 
-def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
+def package_for(
+    rows: list[tuple[str, int, str]],
+    *,
+    published: bool = False,
+) -> FactPackage:
+    """One package over these rows.
+
+    `published=True` builds under the triple this build publishes rather than
+    under the predecessor pin. The pin is right for cases that render every
+    section -- under it all four families sit at `v1` and publish -- and wrong
+    for a case whose subject *is* a family that has reached its successor, which
+    `formula.v1` does not admit. Build under whichever triple admits the family
+    the case is about.
+    """
     body = b"".join(
         f"{(START + timedelta(days=index)).isoformat()},{amount},{units},"
         f"INV-{index},{product}\n".encode()
@@ -67,6 +81,19 @@ def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
     # block because `facts._assert_derived_from_profile` re-derives the mapping
     # and compares it by value, so restamping the object afterwards would fail
     # that provenance guard instead.
+    if published:
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest_for_csv(content, TEST_CONTRACT),
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            )
+        )
     with published_mapping_identity():
         mapping = build_mapping(profile, contract=TEST_CONTRACT)
         return build_fact_package(
@@ -81,8 +108,13 @@ def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
         )
 
 
-def page(language: str = LANGUAGE_ENGLISH, rows: list | None = None) -> str:
-    bundle = ReportBundle.of(package_for(rows or ROWS))
+def page(
+    language: str = LANGUAGE_ENGLISH,
+    rows: list | None = None,
+    *,
+    published: bool = False,
+) -> str:
+    bundle = ReportBundle.of(package_for(rows or ROWS, published=published))
     surface = HtmlReportRenderer().render_html(bundle)
     # Reconciled here so no assertion below rests on a page the bundle would reject.
     reconcile(surface.content, bundle=bundle)
@@ -228,8 +260,8 @@ def test_a_scalar_chart_names_each_bar_in_the_readers_language() -> None:
 
 def test_a_comparison_bar_names_the_window_it_compares() -> None:
     """A mode is governed wording, so it is translated rather than printed."""
-    english = page(LANGUAGE_ENGLISH)
-    arabic = page(LANGUAGE_ARABIC)
+    english = page(LANGUAGE_ENGLISH, published=True)
+    arabic = page(LANGUAGE_ARABIC, published=True)
     assert "Against the previous period" in english
     assert "مقابل الفترة السابقة" in arabic
 

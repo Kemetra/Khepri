@@ -342,3 +342,154 @@ RICH_CONTRACT = oracle_contract(
     contract_id="src_rra009_rich",
     status_column=None,
 )
+
+
+def attesting_manifest(
+    *,
+    content: bytes,
+    contract: SourceContract,
+    days: tuple,
+    scope: str = "all-stores",
+    covered: tuple | None = None,
+):
+    """A manifest attesting the span of `days` for one aggregate scope.
+
+    `RRA-008` refuses completeness-dependent comparison "without an
+    authoritative valid manifest", so a fixture whose subject is comparison
+    arithmetic has to attest its own coverage -- otherwise every case refuses on
+    coverage before reaching the arithmetic it was written to prove.
+
+    `covered` defaults to every day from the first to the last of `days`, which
+    is the ordinary case: a manifest must span its own declared window, and a
+    day carrying no sale is covered rather than missing whenever the operator
+    attested it. Passing `covered` explicitly produces the day-`1..k` prefix
+    `RRA-008` admits for an incomplete current period.
+    """
+    import hashlib
+    from datetime import date as _date
+
+    from khepri.rra.coverage import (
+        ManifestBinding,
+        ManifestExceptions,
+        ManifestWindow,
+        build_coverage_manifest,
+    )
+
+    if covered is None:
+        first, last = min(days), max(days)
+        attested = tuple(
+            _date.fromordinal(first.toordinal() + offset)
+            for offset in range((last - first).days + 1)
+        )
+    else:
+        attested = covered
+    return build_coverage_manifest(
+        binding=ManifestBinding(
+            input_digest=hashlib.sha256(content).hexdigest(),
+            source_contract_digest=contract.digest,
+            timezone="Africa/Cairo",
+            attested_by="Test fixture: operator attestation.",
+        ),
+        window=ManifestWindow(
+            covered_start=min(attested),
+            covered_end=max(attested),
+            aggregate_scope=scope,
+            store_roster=(),
+            covered_pairs=tuple((scope, day) for day in attested),
+        ),
+        exceptions=ManifestExceptions(
+            event_kinds=("sale", "return"),
+            statuses=("posted",),
+        ),
+    )
+
+
+def manifest_for_csv(content: bytes, contract: SourceContract):
+    """A manifest attesting every day spanned by a CSV whose first column is a date.
+
+    Comparison under `rra008.comparison.v2` refuses a window the manifest does
+    not prove, so any fixture wanting a comparison section must attest its own
+    coverage. Reading the dates back out of the rendered bytes keeps the
+    attestation and the extract in step: a fixture that gains a row gains its
+    coverage, and one that never carried dates gets no manifest rather than a
+    fabricated one.
+    """
+    from datetime import date as _date
+
+    days = []
+    for line in content.decode().strip().split("\n")[1:]:
+        head = line.split(",")[0].strip()
+        try:
+            days.append(_date.fromisoformat(head))
+        except ValueError:
+            continue
+    if not days:
+        return None
+    return attesting_manifest(content=content, contract=contract, days=tuple(days))
+
+
+def landed_sections(formula_version: str | None = None) -> frozenset[str]:
+    """Which analysis sections publish, read from the gate itself.
+
+    The `RRA-008` families land one commit at a time and each opens its own gate,
+    so between `V-formula` and `V-concentration` the set of publishing sections
+    is a moving target. A test asserting a fixed set has to be edited once per
+    family commit, and a missed edit reads as a regression rather than as the
+    designed window.
+
+    **Pass the formula version the package was actually built under.** A module
+    pinned to the published predecessor builds packages carrying
+    `rra004.formula.v1`, and the gate asks about *that* pairing -- so a pinned
+    bundle publishes the families still at `v1` and refuses the ones that have
+    moved to `v2`, which is the exact inverse of the unpinned answer.
+
+    **Deliberately not for the two gate-subject modules.** A gate test that
+    consults the gate's own table passes whatever that table says, which is the
+    tautology those modules exist to avoid.
+    """
+    from khepri.rra import bundle
+    from khepri.rra.facts import FORMULA_VERSION
+    from khepri.rra.versions import admits_family
+
+    combined = FORMULA_VERSION if formula_version is None else formula_version
+    return frozenset(
+        section_id
+        for section_id, family in bundle._FAMILIES.items()
+        if admits_family(formula_version=combined, family_version=family.version())
+    )
+
+
+def refusal_prose(bundle, language: str) -> frozenset[str]:
+    """Every governed refusal message this bundle's refused sections state.
+
+    **Why this belongs in shared fixtures rather than in each test.** A refused
+    section is not an absent one: it still renders, carrying customer prose that
+    says why. So any assertion of the form "every cell is a figure value or a
+    governed label" has to admit that prose too -- and which sections are
+    refused moves every time a governed version moves, which under a staged
+    publication sequence is every commit.
+
+    Written once here so a version move costs one recomputation rather than one
+    edit per surface. Pairs with `landed_sections`: that one answers *which*
+    sections publish, this one answers *what a refused one says*.
+    """
+    from khepri.rra.rendering.wording import section_refusal_message
+
+    return frozenset(
+        section_refusal_message(section.section_id, section.reason, language)
+        for section in bundle.sections
+        if section.reason
+    )
+
+
+def publishing_sections(bundle) -> frozenset[str]:
+    """The sections of this bundle that actually state something.
+
+    Read off the bundle rather than from the gate, so it stays true of a section
+    refused for its *own* reasons -- a single-period file has no prior window to
+    compare, which is a data fact rather than a version one. A test asserting
+    "every section carries metrics" means every section that publishes.
+    """
+    return frozenset(
+        section.section_id for section in bundle.sections if not section.reason
+    )

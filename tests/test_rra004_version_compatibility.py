@@ -74,34 +74,35 @@ def test_the_published_predecessor_triple_stays_admitted() -> None:
     )
 
 
-def test_every_family_refuses_while_the_formula_window_is_open() -> None:
-    """The blackout `V-formula` opens, and it is designed rather than a gap.
+def test_only_the_families_that_have_landed_are_admitted() -> None:
+    """The refusing set, shrinking exactly one family per commit.
 
-    Each `RRA-008` family adds its own `(formula.v2, family.v2)` pair when it
-    lands, so `V-formula` adds none and all four refuse from here until
-    `V-comparison`. The refusing set is largest at this commit and
-    `V-concentration` empties it.
+    `V-formula` admitted none of the four; each family commit adds its own
+    `(formula.v2, family.v2)` pair when it lands, and `V-concentration` empties
+    the set. This assertion is the shrinking itself: a commit that widened the
+    gate to publish early would admit a family whose successor has not landed,
+    and a commit that forgot its own row would leave its family refusing its own
+    results.
 
-    Admitting the families here would stamp successor family identities onto
-    results computed under a pairing nobody published -- the exact defect the
-    table exists to prevent. **Never widen the gate to make an intermediate
-    commit publish.**
-
-    Each family commit flips its own line back, which is what makes "this
-    family opened its own gate" a checkable claim rather than a promise.
+    Listed explicitly rather than derived from `ADMITTED_FAMILY_PAIRS`, because
+    a test reading the table it checks passes whatever the table says.
     """
     from khepri.rra.analysis import basket, comparison, concentration, growth
     from khepri.rra.facts import FORMULA_VERSION
 
+    landed = {comparison.COMPARISON_FORMULA_VERSION}
     for family_version in (
         comparison.COMPARISON_FORMULA_VERSION,
         growth.GROWTH_FORMULA_VERSION,
         basket.BASKET_FORMULA_VERSION,
         concentration.CONCENTRATION_FORMULA_VERSION,
     ):
-        assert not admits_family(
-            formula_version=FORMULA_VERSION,
-            family_version=family_version,
+        assert (
+            admits_family(
+                formula_version=FORMULA_VERSION,
+                family_version=family_version,
+            )
+            is (family_version in landed)
         )
 
 

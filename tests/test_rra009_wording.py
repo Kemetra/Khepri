@@ -6,7 +6,10 @@ import re
 import pytest
 
 from khepri.rra.analysis.basket import REASON_DIMENSION_ABSENT
-from khepri.rra.analysis.comparison import REASON_NEGATIVE_BASE
+from khepri.rra.analysis.comparison import (
+    CAVEAT_PARTIAL_WINDOW,
+    REASON_NEGATIVE_BASE,
+)
 from khepri.rra.analysis.growth import (
     CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
     GOVERNED_METRICS,
@@ -85,6 +88,7 @@ _GOVERNED_CAVEAT_CODES = frozenset(
         CAVEAT_DERIVED_OVER_MATCHED_ROWS,
         CAVEAT_CHART_NOT_DRAWN,
         CAVEAT_CURVE_SAMPLED,
+        CAVEAT_PARTIAL_WINDOW,
         CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
     }
 )
@@ -131,6 +135,11 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
 }
 
 _ACCEPTED_ARABIC_CAVEAT_MESSAGES = {
+    CAVEAT_PARTIAL_WINDOW: (
+        "الفترة الحالية لم تكتمل بعد. وقد قُورنت بالعدد نفسه من الأيام من "
+        "بداية الفترة السابقة، حتى تغطي المقارنة المدة نفسها من النشاط. "
+        "وستتغير هذه المقارنة كلما سُجل ما تبقى من الفترة."
+    ),
     CAVEAT_CURRENCY_NOT_DECLARED: (
         "لا يحدد ملفك العملة المستخدمة للمبالغ. تُعرض الأرقام كما وردت من دون تحويل."
     ),

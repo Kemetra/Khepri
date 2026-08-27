@@ -32,7 +32,12 @@ from khepri.rra.aggregates import (
     reconciles,
 )
 from khepri.rra.bases import RetainedBasis, retain_bases
-from khepri.rra.coverage_signature import CoverageSignature
+from khepri.rra.coverage import CoverageManifest
+from khepri.rra.coverage_signature import (
+    CoverageSignature,
+    SignatureRefused,
+    build_coverage_signature,
+)
 from khepri.rra.daily_bases import AlignedDailyBasis
 from khepri.rra.mapping import (
     SEMANTIC_CATEGORY,
@@ -382,6 +387,14 @@ class AdmittedInput:
     mapping: RetailMapping
     decision: AdmissibilityDecision
     contract: SourceContract
+    #: The coverage attestation this reading rests on, or `None` where the
+    #: operator attested none. `RRA-008` is explicit that "without an
+    #: authoritative valid manifest, observed trends may survive but
+    #: completeness-dependent comparison and growth refuse" -- so an absent
+    #: manifest is an ordinary state that refuses those results rather than the
+    #: package. Defaulted because the profile route carries one only when the
+    #: customer attested.
+    manifest: CoverageManifest | None = None
 
 
 def build_fact_package(
@@ -851,6 +864,10 @@ def _build(
         currency=admitted_events.currency,
         event_kind_filters=_admitted_kinds(admitted_events),
         status_filters=(STATUS_POSTED,),
+        coverage_manifest_identity=(
+            None if admitted.manifest is None else admitted.manifest.input_digest
+        ),
+        coverage_signatures=_signatures_of(admitted, measures),
         retained_bases=retain_bases(
             events=admitted_events.events,
             input_digest=profile.source_sha256_hex,
@@ -859,6 +876,45 @@ def _build(
             precision=money,
         ),
     )
+
+
+def _signatures_of(
+    admitted: AdmittedInput,
+    measures: _Measures,
+) -> tuple[CoverageSignature, ...]:
+    """One structural signature per attested scope, over the dates admitted.
+
+    Empty where the operator attested no coverage. `RRA-008` makes that an
+    ordinary state -- "observed trends may survive but completeness-dependent
+    comparison and growth refuse" -- so an absent manifest yields no signature
+    and the families that need one refuse for themselves.
+
+    The window comes from the admitted dates and the *proof* comes from the
+    manifest: `build_coverage_signature` reads only attested pairs, so a day the
+    frame carries and the manifest does not is simply not covered. Deriving the
+    window from data and its coverage from the attestation is the division
+    `RRA-004` draws -- observed bounds "are evidence but are not
+    coverage-manifest completeness proof".
+    """
+    manifest = admitted.manifest
+    if manifest is None:
+        return ()
+    days = [day for day in measures.dates if day is not None]
+    if not days:
+        return ()
+    signatures = []
+    for scope in sorted(manifest.scopes):
+        try:
+            signatures.append(
+                build_coverage_signature(
+                    manifest, scope=scope, start=min(days), end=max(days)
+                )
+            )
+        except SignatureRefused:
+            # A scope this window is not wholly attested for proves nothing about
+            # it, and a partial list would read as a complete one.
+            return ()
+    return tuple(signatures)
 
 
 def _admitted_kinds(admitted_events: AdmittedEvents) -> tuple[str, ...]:

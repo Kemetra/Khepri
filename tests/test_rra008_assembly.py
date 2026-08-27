@@ -39,6 +39,7 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    landed_sections,
     published_mapping_identity,
 )
 
@@ -119,12 +120,23 @@ def test_the_overview_still_carries_the_package_figures() -> None:
 
 
 def test_a_family_that_states_facts_becomes_a_present_section() -> None:
-    bundle = bundle_of(full_package())
-    for section_id in (SECTION_COMPARISON, SECTION_CONCENTRATION, SECTION_BASKET):
+    """Every family whose version this package's formula admits.
+
+    Named by the gate rather than by a hardcoded trio, because the four families
+    reach their successors one commit at a time: a fixed list stops meaning
+    "the families that can publish" the moment one of them moves, and then
+    asserts that a family which legitimately refuses must publish anyway.
+    """
+    package = full_package()
+    bundle = bundle_of(package)
+    landed = landed_sections(package.formula_version)
+
+    assert landed, "the case is vacuous with no family able to publish"
+    for section_id in landed:
         section = section_of(bundle, section_id)
         assert section is not None, section_id
-        assert section.state == SECTION_PRESENT
-        assert section.figure_ids
+        assert section.state == SECTION_PRESENT, section_id
+        assert section.figure_ids, section_id
 
 
 def test_a_family_that_refuses_becomes_a_refused_section_with_its_reason() -> None:

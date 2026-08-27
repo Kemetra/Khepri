@@ -9,6 +9,7 @@ from pathlib import Path
 from khepri.rra.bundle import ReportBundle
 from khepri.rra.narrative import LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
+from tests.rra003_contract_fixtures import landed_sections
 from tests.rra009_fixtures import rich_bundle
 from tests.test_rra006_html_sections import ROWS, package_for
 
@@ -79,8 +80,27 @@ def test_the_plain_fixture_carries_none_of_them() -> None:
     assert not (LEAKAGE_METRICS & metrics)
 
 
-def test_the_rich_fixture_presents_every_section() -> None:
-    assert [section.state for section in rich_bundle().sections] == ["present"] * 5
+def test_the_rich_fixture_presents_every_section_that_has_landed() -> None:
+    """Every analysis section publishes, once its family is admitted.
+
+    A fixed list of five had to be edited once per family commit, and a missed
+    edit reads as a regression rather than as the designed window.
+    `landed_sections()` asks the gate, using the formula version this bundle was
+    *built* under -- pinned to the published predecessor, so the families
+    admitted against it are the ones that have not moved.
+    """
+    from khepri.rra.bundle import _FAMILIES
+
+    bundle = rich_bundle()
+    landed = landed_sections(bundle.identity.formula_version)
+    states = {section.section_id: section.state for section in bundle.sections}
+
+    for section_id in _FAMILIES:
+        assert states[section_id] == (
+            "present" if section_id in landed else "refused"
+        ), section_id
+    # `overview` states the package's own figures and has no family to gate it.
+    assert states["overview"] == "present"
 
 
 def test_the_rich_fixture_renders_in_both_languages(tmp_path: Path) -> None:
@@ -342,7 +362,7 @@ def test_the_limitations_sheet_states_caveats_as_prose(tmp_path: Path) -> None:
 
 
 def test_the_limitations_sheet_states_refusals_as_prose(tmp_path: Path) -> None:
-    from khepri.rra.rendering.wording import refusal_message
+    from khepri.rra.rendering.wording import section_refusal_message
 
     bundle = ReportBundle.of(package_for(ROWS[:2]))
     strings = _shared_strings(bundle, tmp_path)
@@ -350,9 +370,17 @@ def test_the_limitations_sheet_states_refusals_as_prose(tmp_path: Path) -> None:
 
     assert refused
     for section in refused:
-        assert refusal_message(
-            section.reason, context="section", language=LANGUAGE_ENGLISH
-        ) in strings, section.section_id
+        # `section_refusal_message`, which is what the renderer writes. One
+        # reason is shared by all four families, so its prose is a template
+        # naming the section it refers to -- comparing the bare `refusal_message`
+        # template was only ever true of the reasons that name themselves, and
+        # held until a fixture could reach the shared one.
+        assert (
+            section_refusal_message(
+                section.section_id, section.reason, LANGUAGE_ENGLISH
+            )
+            in strings
+        ), section.section_id
 
 
 def test_every_charted_section_still_gets_a_chart(tmp_path: Path) -> None:
