@@ -240,6 +240,62 @@ The following are **not** closed by this section:
 - final web/worker/database sizing, which remains benchmark-driven;
 - PostgreSQL HA topology for external beta, which remains evidence-driven within the RTO/RPO target.
 
+## 12A. Gate 0 safety re-check — discharged for provisional OPS1-02 only
+
+**Baseline reviewed: `main` @ `892f5c9`.** Re-checked 2026-08-27 against current code and tests, not
+against the status text of the originating analysis. `KHEPRI-DEC-030` §6 step 0 carries forward
+`KHEPRI-DEC-027` §3 undischarged and requires confirming that no operational defect identified by
+the OPS1 analysis would make a provisioned environment **unsafe or non-recoverable**. That is the
+standard applied here; completeness is not.
+
+**BLOCKING: none.**
+
+Every defect in `ops1-provider-portability-and-target-selection.md` §22.1 and §2.3 was re-verified
+at its current call sites. Old line numbers and old status text were not trusted.
+
+### Resolved on current `main`
+
+| Defect (as originally recorded) | Current evidence |
+|---|---|
+| DEC-008 obligation 3 — five provider-header proofs, no envelope encryption | `src/khepri/rra/envelope.py` exists; `rra/storage.py` sends no `ServerSideEncryption`, `SSEKMSKeyId`, `BucketKeyEnabled`, or `ExpectedBucketOwner`. Read-back proof is a ciphertext digest |
+| DEC-008 obligation 4 — `config.py` pinned to `me-central-1`, account id, KMS ARN | `runtime/config.py:27-28`: "no region allowlist and no account identifier". `endpoint_url` seam at `runtime/wiring.py:131` |
+| Schema violation — `CHECK (encryption_algorithm = 'aws:kms')` | `migrations/versions/20260822_0020_portable_object_encryption.py` rewrites both constraints to `AES-256-GCM`. Remaining `aws:kms` strings are the historical `0002`/`0012` revisions and the downgrade path |
+| §22.1-1 — boot requires two unread SQS queue URLs | Not required at boot: neither name reaches `RuntimeSettings` or any `_required` call. Retained only for the frozen `infra/` AWS reference |
+| §22.1-4 — recovery sweep has no production caller | `runtime/worker.py:100` calls `self._queue.recover(now=now)` before every claim, deliberately not gated on an idle queue. `tests/test_ops1_worker_lease_recovery.py` — 7 tests pass, including one asserting the suite drives the deployed loop rather than calling recovery directly |
+
+### Open but non-blocking for the provisional bootstrap
+
+Each is sequenced *after* provisioning by §13 of this record or by `KHEPRI-DEC-030` §6, and none
+makes the authorized environment unsafe or non-recoverable.
+
+| Item | Current state | Why it does not block |
+|---|---|---|
+| Seven-day content deletion has no scheduled executor | `DeletionService.delete_session_content` is wired at `runtime/wiring.py:184` and callable on demand at `rra/api.py:418`; the only scheduled caller is `local/sweeper.py:201`, and `pyproject.toml:77` excludes `src/khepri/local` from the wheel. The AWS S3 lifecycle backstop is frozen CDK and is not provisioned by an App Platform deploy | The deletion path exists, works, and is reachable; what is missing is a scheduler. §22.1 assigns this "before beta traffic", and §13.6 sequences deletion-after-restore to step 6. Conditioned below |
+| RRA-007 orphan detection has no deployed caller | `recover_orphans` is called only from `local/sweeper.py:172`; the worker inlined lease recovery only | Same reasoning: capability present, scheduler absent, no traffic authorized |
+| Claim query is not work-conserving | `rra/job_persistence.py:190` uses plain `with_for_update()`; `skip_locked=True` appears only in the two recovery sweeps (`:211`, `:229`) | The analysis records the claim as *safe*, not incorrect. Throughput, not safety |
+| Heartbeat is stage-driven, not a 60-second interval | `rra/pipeline.py:318,320,322` heartbeat between stages | Now degrades to reclaim-and-retry rather than a stuck job, because recovery runs on the deployed path. Defect 4's fix demotes this one |
+| No OTLP emission path | Zero hits for `otel`/`otlp`/`opentelemetry` in `src/`, `pyproject.toml`, `Dockerfile` | §13.8 and `KHEPRI-DEC-030` §6.7 sequence observability to step 8 |
+| No `/health/live` or `/health/ready` endpoints | None present in `src/khepri` | §8 requires them before *traffic shifting*; no traffic is authorized here |
+| DigitalOcean Spaces compatibility unproven | Storage contract keeps `IfNoneMatch`, unversioned delete, list-after-delete confirmation, multipart abort; all fail closed via `StoragePolicyViolation` | `KHEPRI-DEC-030` §6.2 assigns empirical Spaces verification to *after* provisioning and keeps Spaces conditional |
+| Secrets and TLS | `KHEPRI_STORAGE_MASTER_KEY` (32-byte base64) via env; `sslmode=require` at `runtime/config.py:240` | Matches §5 and D5's "App Platform encrypted env vars are the minimum acceptable" |
+
+### Conditions attached to this discharge
+
+Gate 0 is discharged **only** for the provisional non-production bootstrap at §10 / `KHEPRI-DEC-030`
+§4 shape, and only while both hold:
+
+1. **No external, customer, or production content enters the provisional environment.** The
+   reasoning above rests on `KHEPRI-DEC-030`'s Consequences — "No external traffic is authorized by
+   this decision, and none may be opened on the strength of it." Content subject to a seven-day
+   clock does not enter an environment authorized to carry no traffic. If content ever does, the
+   missing deletion scheduler becomes blocking immediately.
+2. **A scheduled executor for content expiry and orphan recovery exists before beta
+   authorization**, per §13.6 and §13.9. This discharge does not satisfy that obligation and must
+   not be read as retiring it.
+
+No final capacity, no benchmark certification, no beta authorization, and no external traffic is
+implied or granted by this record.
+
 ## 13. What remains a stop-gate
 
 These are verification/activation tasks, not reasons to reopen the whole architecture. Their dependency order is:
