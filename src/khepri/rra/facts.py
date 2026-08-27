@@ -866,6 +866,11 @@ def _build(
     if row_count and int(frame.is_duplicated().sum()):
         caveats.append(CAVEAT_DUPLICATE_ROWS)
 
+    # Bound once and used for both the recorded filter and the signature gate,
+    # so the population the package publishes and the one the attestation is
+    # checked against cannot drift apart.
+    admitted_kinds = _admitted_kinds(admitted_events)
+
     return FactPackage(
         package_version=PACKAGE_VERSION,
         formula_version=formula_version,
@@ -884,12 +889,12 @@ def _build(
         # compatible basis" -- so a v3 package retaining none would leave every
         # derived fact citing nothing.
         currency=admitted_events.currency,
-        event_kind_filters=_admitted_kinds(admitted_events),
+        event_kind_filters=admitted_kinds,
         status_filters=(STATUS_POSTED,),
         coverage_manifest_identity=(
             None if admitted.manifest is None else admitted.manifest.input_digest
         ),
-        coverage_signatures=_signatures_of(admitted, measures),
+        coverage_signatures=_signatures_of(admitted, measures, admitted_kinds),
         retained_bases=retain_bases(
             events=admitted_events.events,
             binding=BasisBinding(
@@ -951,6 +956,7 @@ def _population_counts(measures: _Measures) -> dict[str, int]:
 def _signatures_of(
     admitted: AdmittedInput,
     measures: _Measures,
+    admitted_kinds: tuple[str, ...],
 ) -> tuple[CoverageSignature, ...]:
     """One structural signature per attested scope, over the dates admitted.
 
@@ -972,12 +978,18 @@ def _signatures_of(
     days = [day for day in measures.dates if day is not None]
     if not days:
         return ()
+    if not _attests_the_admitted_population(manifest, admitted_kinds):
+        return ()
     signatures = []
     for scope in sorted(manifest.scopes):
         try:
             signatures.append(
                 build_coverage_signature(
-                    manifest, scope=scope, start=min(days), end=max(days)
+                    manifest,
+                    scope=scope,
+                    start=min(days),
+                    end=max(days),
+                    admitted_kinds=admitted_kinds,
                 )
             )
         except SignatureRefused:
@@ -985,6 +997,38 @@ def _signatures_of(
             # it, and a partial list would read as a complete one.
             return ()
     return tuple(signatures)
+
+
+def _attests_the_admitted_population(
+    manifest: CoverageManifest,
+    admitted_kinds: tuple[str, ...],
+) -> bool:
+    """Whether the attestation describes the population the package computed over.
+
+    `RRA-004` binds a coverage signature to the filters it was attested under,
+    and `comparison._structurally_compatible` compares those filters *between
+    windows* -- so an attestation naming a wider population than the package
+    admitted is not caught by that comparison: both windows carry the same wrong
+    declaration and agree. The mismatch has to be refused where the signature is
+    built, against the data, or it is never detected at all.
+
+    Compared as sets, and the relation is **subset, not equality**: every kind
+    the package admitted must be attested, while an attestation naming more is
+    accepted. An operator attesting that sales *and* returns are complete for a
+    window makes a strictly stronger claim than the sale-only package needs, and
+    the sales it computed over are covered by it. Requiring equality would
+    refuse that ordinary, generic attestation.
+
+    The defect runs the other way: a manifest attesting sales alone over an
+    extract the package admitted returns from leaves the returns with no
+    completeness proof, while the signature would report the window proven.
+
+    Statuses are not compared here: `facts` admits `STATUS_POSTED` alone and
+    `admission` refuses every other status outright, so the package has no
+    status population that could diverge. When that stops being true this
+    becomes the place the comparison belongs.
+    """
+    return set(admitted_kinds) <= set(manifest.event_kinds)
 
 
 def _admitted_kinds(admitted_events: AdmittedEvents) -> tuple[str, ...]:

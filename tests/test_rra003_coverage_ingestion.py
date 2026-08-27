@@ -100,6 +100,10 @@ COVERAGE_CSV = (
     b"2026-03-05,INV-3,sale,posted,220.00,4,Giza,EGP\n"
 )
 
+#: One posted return, for the case where the package admits a kind the
+#: manifest does not attest. Kept beside the extract it extends.
+_RETURN_ROW = b"2026-03-05,INV-4,return,posted,-90.00,-2,Giza,EGP\n"
+
 
 def contract_body() -> dict[str, object]:
     """A complete declaration: every governed semantic proven exactly once.
@@ -785,4 +789,64 @@ def test_a_profile_stored_before_attribution_still_builds_its_package() -> None:
     assert built.json()["document"]["coverage_manifest_identity"], (
         "the rebuilt package saw no attestation, so the legacy manifest was "
         "read but not carried through"
+    )
+
+
+def test_a_manifest_attesting_less_than_the_package_admitted_signs_nothing() -> None:
+    """The attested filters are checked against the population really admitted.
+
+    `facts._signatures_of` retained `event_kinds` verbatim off the manifest, so a
+    manifest attesting `sale` over an extract the package admitted *returns*
+    from produced a signature reporting a window proven while the returns in it
+    had no completeness proof at all.
+
+    `comparison._structurally_compatible` compares these filters *between*
+    windows, so the mismatch is invisible there: both windows carry the same
+    declaration and agree. It has to be refused where the signature is built,
+    against the data, or it is never detected.
+
+    The relation is subset, not equality -- an attestation naming more kinds
+    than the package admitted is a strictly stronger claim and is accepted, as
+    the sale-only case below shows. This is the direction that loses proof.
+    """
+    with_return = COVERAGE_CSV + _RETURN_ROW
+    test = ready(with_return)
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(event_kinds=["sale"])),
+    )
+    assert profiled.status_code == 201, profiled.text
+
+    built = test.client.post("/api/v1/beta/facts")
+    assert built.status_code == 201, built.text
+    document = built.json()["document"]
+
+    # Proved first: without this the case passes vacuously if the return row is
+    # dropped, and it would be asserting nothing about attestation at all.
+    assert document["event_kind_filters"] == ["return", "sale"], (
+        "the package admitted no return, so this case cannot show an "
+        "attestation that omits one"
+    )
+    assert not document["coverage_signatures"], (
+        "a window was reported proven while the returns the package computed "
+        "over were never attested"
+    )
+
+
+def test_a_manifest_matching_the_admitted_population_still_signs() -> None:
+    """The guard refuses a mismatch, not every attestation.
+
+    Paired with the refusal above so a check that simply returned no signature
+    would fail here: the sale-only attestation over the sale-only extract is
+    exactly the ordinary case, and it must keep proving its window.
+    """
+    test = ready()
+    profiled = test.client.post("/api/v1/beta/profile", json=profile_with(manifest_body()))
+    assert profiled.status_code == 201, profiled.text
+
+    built = test.client.post("/api/v1/beta/facts")
+    assert built.status_code == 201, built.text
+
+    assert built.json()["document"]["coverage_signatures"], (
+        "the attested population matches the admitted one, so the window is proven"
     )
