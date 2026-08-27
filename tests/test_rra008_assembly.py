@@ -177,8 +177,22 @@ def test_a_familys_caveat_is_scoped_to_its_own_section() -> None:
     report_level = {caveat.code for caveat in bundle.caveats if caveat.section is None}
 
     assert scoped <= set(bundle.section_ids)
-    # The package's own caveats stay report-level.
-    assert report_level
+    # The package's own caveats stay report-level, and a family's never do.
+    #
+    # This asserted `report_level` was non-empty, which held only because
+    # `currency_not_declared` was appended to every package carrying a
+    # monetary fact. `rra004.package.v3` records the currency it admitted,
+    # so a package that declares one correctly carries no such caveat and
+    # this fixture's report-level set is legitimately empty. The subject is
+    # the *scoping* -- that a family's caveat names its own section and the
+    # package's names none -- so that is what is asserted.
+    package = full_package()
+    assert report_level == set(package.caveats)
+    assert all(
+        caveat.section in set(bundle.section_ids)
+        for caveat in bundle.caveats
+        if caveat.code not in set(package.caveats)
+    )
 
 
 def test_a_section_whose_figures_cannot_be_drawn_says_so() -> None:

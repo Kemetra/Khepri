@@ -38,6 +38,13 @@ from tests.rra003_contract_fixtures import (
     published_mapping_identity,
 )
 
+#: A mapping version no slice publishes, so no later commit can admit it and
+#: quietly turn these refusal proofs green. `rra003.mapping.v3` served until
+#: `V-package` added its row and made that pairing legitimate -- a refusal test
+#: driven by a version the sequence is *about* to admit proves the gate only
+#: until the next commit.
+UNPUBLISHED_MAPPING_VERSION = "rra003.mapping.v99"
+
 
 def test_building_a_package_refuses_an_unadmitted_triple() -> None:
     """A moved mapping against an unmoved package refuses the package.
@@ -56,7 +63,7 @@ def test_building_a_package_refuses_an_unadmitted_triple() -> None:
     from khepri.rra import facts
 
     with pytest.raises(facts.FactsRefused) as refused:
-        _package_with_two_settled_periods(mapping_version="rra003.mapping.v3")
+        _package_with_two_settled_periods(mapping_version=UNPUBLISHED_MAPPING_VERSION)
 
     assert REASON_PACKAGE_VERSION_UNADMITTED in str(refused.value)
 
@@ -182,7 +189,7 @@ def test_a_refused_triple_publishes_no_fact_under_the_predecessor_identity(
 
     Measured under a disabled gate, this arrangement is the one that publishes:
     `admits_package` forced to `True` returns `201` and stores a row carrying
-    `rra003.mapping.v3`. The other arrangements still answer `409`, which is why
+    `UNPUBLISHED_MAPPING_VERSION`. The other arrangements still answer `409`, which is why
     a test built on them cannot fail and proves nothing about the gate.
 
     **Asserted against committed literals.** The two version strings below are
@@ -203,7 +210,7 @@ def test_a_refused_triple_publishes_no_fact_under_the_predecessor_identity(
     from tests.test_rra004_packages import prepared
 
     predecessor_mapping_version = "rra003.mapping.v2"
-    moved_mapping_version = "rra003.mapping.v3"
+    moved_mapping_version = UNPUBLISHED_MAPPING_VERSION
 
     monkeypatch.setattr(mapping, "MAPPING_VERSION", moved_mapping_version)
     monkeypatch.setattr(packages, "MAPPING_VERSION", moved_mapping_version)
@@ -494,8 +501,8 @@ class TestTheInternalPackageRefusalStaysInternal:
     `str(error)`, so `POST /api/v1/beta/facts` returned the governed reason code and all three
     internal version identifiers to the caller:
 
-        package_version_pairing_unadmitted: rra003.mapping.v3, rra004.package.v2 and
-        rra004.formula.v1 were not authorized to be combined.
+        package_version_pairing_unadmitted: <mapping>, <package> and <formula>
+        were not authorized to be combined.
 
     A tier is a claim about every path the text can travel. These cases assert the claim on the
     path that falsified it.
@@ -511,19 +518,24 @@ class TestTheInternalPackageRefusalStaysInternal:
         fail on a rewording that leaks nothing.
         """
         from khepri.rra import mapping
+        from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
         from tests.test_rra004_packages import prepared
 
         # Patched where `build_mapping` *stamps* the version, because the route
         # builds its own mapping internally and there is no object to restamp.
         # `facts` no longer reads a module global -- it reads the version on the
         # mapping it is handed -- so moving the stamp is what moves the mapping.
-        monkeypatch.setattr(mapping, "MAPPING_VERSION", "rra003.mapping.v3")
+        monkeypatch.setattr(mapping, "MAPPING_VERSION", UNPUBLISHED_MAPPING_VERSION)
         response = prepared().client.post("/api/v1/beta/facts")
         detail = response.json()["detail"]
 
         assert response.status_code == 409
         assert REASON_PACKAGE_VERSION_UNADMITTED not in detail
-        for identifier in ("rra003.mapping.v3", "rra004.package.v2", "rra004.formula.v1"):
+        for identifier in (
+            UNPUBLISHED_MAPPING_VERSION,
+            PACKAGE_VERSION,
+            FORMULA_VERSION,
+        ):
             assert identifier not in detail, identifier
 
     def test_a_refusal_written_for_the_caller_still_reaches_them(self) -> None:

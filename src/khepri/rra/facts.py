@@ -13,7 +13,12 @@ from khepri.rra.admissibility import (
     ReportRequest,
     assess_admissibility,
 )
-from khepri.rra.admission import AdmittedEvents, EventsRefused, admit_events
+from khepri.rra.admission import (
+    STATUS_POSTED,
+    AdmittedEvents,
+    EventsRefused,
+    admit_events,
+)
 from khepri.rra.aggregates import (
     REDACTION_SENTINEL,
     UNLABELLED_BUCKET_LABEL,
@@ -24,6 +29,9 @@ from khepri.rra.aggregates import (
     granularity_for,
     reconciles,
 )
+from khepri.rra.bases import RetainedBasis, retain_bases
+from khepri.rra.coverage_signature import CoverageSignature
+from khepri.rra.daily_bases import AlignedDailyBasis
 from khepri.rra.mapping import (
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
@@ -58,7 +66,7 @@ from khepri.rra.versions import (
 # v2 carries the five items APP-014 added to RRA-004: the retained concentration
 # curve, distinct transaction counts, per-bucket date counts, the recorded
 # comparison window, and the formula version as a field on every emitted fact.
-PACKAGE_VERSION = "rra004.package.v2"
+PACKAGE_VERSION = "rra004.package.v3"
 FORMULA_VERSION = "rra004.formula.v1"
 
 # The governed comparison window, recorded rather than chosen by whichever module
@@ -230,6 +238,35 @@ class FactPackage:
     refusals: tuple[RefusedResult, ...]
     caveats: tuple[str, ...]
     comparison_window_periods: int = COMPARISON_WINDOW_PERIODS
+    # --- `rra004.package.v3` population, basis and coverage provenance -------
+    #
+    # `RRA-004`'s "Fact-package provenance" requires the package to record
+    # "dimensions, units, input digest, coverage-manifest identity, coverage
+    # signatures, canonical transaction keys or their stable basis identity, and
+    # aligned daily bases", and every fact to disclose a readable population
+    # code. Before v3 none of it was recorded: `_matched` built the AOV, ASP and
+    # margin populations and returned only their values.
+    #
+    # Defaulted so this shape can land before every producer fills it, and
+    # enumerated in `package_source.rebuild_fact_package` so an absent field is
+    # refused on read rather than defaulted back into existence.
+    #
+    # **No growth rounding-residual field.** `RRA-004`: package v3 "authorizes no
+    # growth rounding-residual field; that evidence belongs wholly to
+    # `rra008.growth.v2`" and does not widen this document.
+    #: One uppercase ISO 4217 code when the package carries monetary facts.
+    currency: str | None = None
+    #: The event kinds and statuses every population here was filtered to.
+    event_kind_filters: tuple[str, ...] = ()
+    status_filters: tuple[str, ...] = ()
+    #: The attestation this package's coverage claims rest on, by identity.
+    coverage_manifest_identity: str | None = None
+    #: Structural coverage signatures, one per accepted window and scope.
+    coverage_signatures: tuple[CoverageSignature, ...] = ()
+    #: Daily revenue and unit bases bound to those windows.
+    daily_bases: tuple[AlignedDailyBasis, ...] = ()
+    #: The reconciliation bases a fact may cite.
+    retained_bases: tuple[RetainedBasis, ...] = ()
 
     def fact(self, metric: str) -> Fact | None:
         return next((fact for fact in self.facts if fact.metric == metric), None)
@@ -279,6 +316,15 @@ class FactPackage:
             "comparisons": [entry.as_document() for entry in self.comparisons],
             "refusals": [refusal.as_document() for refusal in self.refusals],
             "caveats": list(self.caveats),
+            "currency": self.currency,
+            "event_kind_filters": sorted(self.event_kind_filters),
+            "status_filters": sorted(self.status_filters),
+            "coverage_manifest_identity": self.coverage_manifest_identity,
+            "coverage_signatures": [
+                signature.as_document() for signature in self.coverage_signatures
+            ],
+            "daily_bases": [basis.as_document() for basis in self.daily_bases],
+            "retained_bases": [basis.as_document() for basis in self.retained_bases],
         }
 
     @property
@@ -562,7 +608,7 @@ def _build(
 
     admitted_events = _admitted_events(admitted)
     frame = _admitted_frame(materialize(content, media_type), admitted_events)
-    measures = _measures(frame, profile, mapping)
+    measures = _measures(frame, profile, mapping, admitted_events)
     if measures.monetary_precision > MAX_MONETARY_PRECISION:
         raise FactsRefused("Monetary input precision exceeds the governed maximum.")
     row_count = frame.height
@@ -737,7 +783,15 @@ def _build(
         caveats=caveats,
     )
 
-    if any(fact.unit_kind == UNIT_MONETARY for fact in facts):
+    if admitted_events.currency is None and any(
+        fact.unit_kind == UNIT_MONETARY for fact in facts
+    ):
+        # Conditional under `rra004.package.v3`, unconditional before it. Under
+        # `v2` the package recorded no currency at all, so "not declared" was
+        # true of the document however the extract had been read. `v3` records
+        # the admitted currency, and a package stating both `EGP` and "currency
+        # not declared" contradicts itself -- visibly, since `RRA-009` renders
+        # caveats to customers.
         caveats.append(CAVEAT_CURRENCY_NOT_DECLARED)
     if measures.null_measure_inputs:
         caveats.append(CAVEAT_NULL_MEASURE_INPUTS)
@@ -763,7 +817,32 @@ def _build(
         comparisons=tuple(comparisons),
         refusals=tuple(sorted(refusals, key=lambda refusal: refusal.metric)),
         caveats=tuple(sorted(set(caveats))),
+        # `rra004.package.v3` provenance. `RRA-004` requires the package to
+        # record these, and requires every derived fact to cite "exactly one
+        # compatible basis" -- so a v3 package retaining none would leave every
+        # derived fact citing nothing.
+        currency=admitted_events.currency,
+        event_kind_filters=_admitted_kinds(admitted_events),
+        status_filters=(STATUS_POSTED,),
+        retained_bases=retain_bases(
+            events=admitted_events.events,
+            input_digest=profile.source_sha256_hex,
+            mapping_version=mapping.mapping_version,
+            currency=admitted_events.currency,
+            precision=money,
+        ),
     )
+
+
+def _admitted_kinds(admitted_events: AdmittedEvents) -> tuple[str, ...]:
+    """The event kinds this package actually admitted, in a stable order.
+
+    Read off the events rather than declared, because the filter a package
+    records must describe what it computed over: a contract admitting returns
+    over an extract containing none produced a sale-only package, and recording
+    the declaration would overstate the population.
+    """
+    return tuple(sorted({event.event_kind for event in admitted_events.events}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -994,6 +1073,7 @@ def _measures(
     frame: pl.DataFrame,
     profile: DatasetProfile,
     mapping: RetailMapping,
+    admitted_events: AdmittedEvents,
 ) -> _Measures:
     height = frame.height
     null_inputs = False
@@ -1031,11 +1111,24 @@ def _measures(
         if date_format is not None:
             dates = _date_values(frame, date_column.position, date_format)
 
+    # The canonical transaction key admission built, never the bare mapped
+    # column. `RRA-003`: "A bare source transaction identifier qualifies only
+    # when its recorded source contract proves package-wide uniqueness.
+    # Otherwise the canonical key is an admitted composite containing the source
+    # identifier and every field required for uniqueness". `admission` decides
+    # which of those two a contract earned; reading the column here re-decided
+    # it as "always the bare one", so two stores' identically-numbered receipts
+    # collapsed into one transaction and every transaction-denominated metric
+    # inherited the error.
+    #
+    # Index-aligned rather than joined: `_admitted_frame` narrows the frame with
+    # `admitted_events.kept_positions`, and `events` is built over that same
+    # kept list in the same order, so frame row `i` is `events[i]`.
     transaction_column = mapping.for_semantic(SEMANTIC_TRANSACTION_ID).column
     transactions: list[str | None] = (
         [None] * height
         if transaction_column is None
-        else _text_values(frame, transaction_column.position)
+        else [event.transaction_key for event in admitted_events.events]
     )
 
     return _Measures(

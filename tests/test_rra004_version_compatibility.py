@@ -34,26 +34,24 @@ from khepri.rra.versions import (
 )
 
 
-def test_the_shipped_package_triple_is_refused_while_the_window_is_open() -> None:
-    """The refusal window, stated as the assertion that measures it.
+def test_the_shipped_package_triple_is_admitted() -> None:
+    """`V-package` closed the package-scope refusal window it opened.
 
-    This test asserted the opposite until `V-mapping` published
-    `rra003.mapping.v3`, and the inversion is the governed behaviour rather
-    than a regression. `RRA-004` requires a new mapping to create a new
-    recorded identity, and the successor package and formula are not published
-    yet, so the triple this build combines is deliberately unlisted and every
-    package build refuses.
+    `V-mapping` moved the mapping and deliberately added no row, so the triple
+    this build combined was unlisted and every package refused. `V-package`
+    publishes `rra004.package.v3` and adds `(mapping.v3, package.v3,
+    formula.v1)` -- its own row and only its own -- so the package seam is whole
+    again while the four `RRA-008` families stay refused until each lands.
 
-    **`V-concentration` must flip this test back**, and that is what makes the
-    closing criterion self-verifying: the last family commit empties the
-    refusing set, at which point the shipped triple is admitted again and this
-    assertion states the ordinary invariant once more. A branch head that still
-    fails it has not closed the window.
+    This assertion was inverted for exactly one commit. That it reads normally
+    again is the evidence that the window was closed rather than widened: no row
+    another commit owns was touched, and the predecessor triple below is
+    untouched too.
     """
     from khepri.rra.facts import FORMULA_VERSION, PACKAGE_VERSION
     from khepri.rra.mapping import MAPPING_VERSION
 
-    assert not admits_package(
+    assert admits_package(
         mapping_version=MAPPING_VERSION,
         package_version=PACKAGE_VERSION,
         formula_version=FORMULA_VERSION,

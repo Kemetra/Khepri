@@ -76,6 +76,22 @@ GOLDEN = (
     b"2026-01-07,74.25,1,INV-3,Snacks,Giza\n"
 )
 
+#: A dataset that *earns* a package caveat, for the cases whose subject is
+#: caveat propagation rather than any particular caveat.
+#:
+#: They used to read one off `GOLDEN`, because `currency_not_declared` was
+#: appended to every package carrying a monetary fact. Under
+#: `rra004.package.v3` the package records the currency it admitted, so that
+#: caveat is conditional on the currency being genuinely unproven and
+#: `GOLDEN` -- which declares EGP -- correctly carries none. A missing unit
+#: value earns `null_measure_inputs` honestly.
+CAVEATED = (
+    b"date,revenue,units,invoice_no,category,branch\n"
+    b"2026-01-05,125.50,3,INV-1,Beverages,Cairo\n"
+    b"2026-01-06,90.00,,INV-2,Snacks,Giza\n"
+    b"2026-01-07,210.25,5,INV-3,Beverages,Cairo\n"
+)
+
 OTHER = (
     b"date,revenue,units,invoice_no,category,branch\n"
     b"2026-02-01,10.00,1,INV-9,Beverages,Luxor\n"

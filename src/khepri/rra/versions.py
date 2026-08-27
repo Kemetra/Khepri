@@ -56,6 +56,10 @@ REASON_FAMILY_VERSION_UNADMITTED = "family_version_pairing_unadmitted"
 ADMITTED_PACKAGE_PAIRS: frozenset[tuple[str, str, str]] = frozenset(
     {
         ("rra003.mapping.v2", "rra004.package.v2", "rra004.formula.v1"),
+        # `V-package`'s own row, and the only one it adds. The formula stays
+        # `v1` because `rra004.formula.v2` does not exist until `V-formula`;
+        # naming it here would publish that identity early.
+        ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v1"),
     }
 )
 

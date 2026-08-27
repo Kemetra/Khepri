@@ -22,7 +22,6 @@ from khepri.rra.performance import (
     BenchmarkTampered,
     PerformanceRegression,
 )
-from tests.rra003_contract_fixtures import REFUSAL_WINDOW
 from tests.rra_benchmark_fakes import BrokenRenderer, faithful_renderers, renderers_but
 
 ON_TIME_MS = 500_000
@@ -235,7 +234,6 @@ def test_durations_that_do_not_describe_one_sample_are_refused(
 # --- measuring the actual report path --------------------------------------
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_samples_come_from_running_the_report_path_over_built_datasets() -> None:
     declared = workload(2)
     renderers = faithful_renderers()
@@ -246,7 +244,6 @@ def test_samples_come_from_running_the_report_path_over_built_datasets() -> None
     assert [len(renderer.seen) for renderer in renderers] == [2, 2, 2]
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_report_the_path_could_not_complete_is_measured_as_incomplete() -> None:
     declared = workload(1)
 

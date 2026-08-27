@@ -31,7 +31,7 @@ from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.rendering.excel import ExcelSurfaceRenderer
 from khepri.rra.rendering.html import HtmlReportRenderer
 from khepri.rra.rendering.wording import caveat_prose
-from tests.test_rra006_bundle import language_of, package, surface_of
+from tests.test_rra006_bundle import CAVEATED, language_of, package, surface_of
 
 
 def bundle_of() -> ReportBundle:
@@ -89,7 +89,11 @@ def test_every_rra004_caveat_is_report_level() -> None:
     # so this is now a statement about the package's own codes rather than about
     # every caveat a bundle carries. Asserting the latter would have made the
     # arrival of the families look like a regression.
-    source = package()
+    # A dataset that earns a caveat. This read one off the default fixture
+    # while `currency_not_declared` was appended to every monetary package;
+    # `rra004.package.v3` records the admitted currency, so that caveat is
+    # now conditional and the default fixture correctly carries none.
+    source = package(CAVEATED)
     bundle = ReportBundle.of(source)
     assert source.caveats
     report_level = {

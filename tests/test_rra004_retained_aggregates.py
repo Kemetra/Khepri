@@ -87,7 +87,17 @@ def wide_source(distinct_products: int) -> bytes:
 
 
 def test_package_version_moves_to_the_amended_shape() -> None:
-    assert PACKAGE_VERSION == "rra004.package.v2"
+    """`V-package` publishes `rra004.package.v3`, and this is the assertion.
+
+    **The two halves say different things, and keeping them apart is the point.**
+    `PACKAGE_VERSION` is what this build *publishes*. The package's own
+    `package_version` is what that object *combines* -- and every package this
+    module builds is pinned to the published predecessor triple, because its
+    subject is retained aggregates rather than the version gate. Collapsing the
+    two is the defect `facts._build` was corrected for: it read the module
+    constant while checking a mapping the caller supplied.
+    """
+    assert PACKAGE_VERSION == "rra004.package.v3"
     assert package(GOLDEN).package_version == "rra004.package.v2"
 
 

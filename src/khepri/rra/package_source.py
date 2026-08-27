@@ -32,11 +32,14 @@ leased under against the scope the package was published under.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, runtime_checkable
 
 from khepri.rra.aggregates import Bucket, Comparison, ConcentrationCurve, Series
+from khepri.rra.bases import RetainedBasis
+from khepri.rra.coverage_signature import CoverageSignature
+from khepri.rra.daily_bases import AlignedDailyBasis, DailyValue
 from khepri.rra.facts import (
     Fact,
     FactComparison,
@@ -127,7 +130,121 @@ def rebuild_fact_package(document: Mapping[str, Any]) -> FactPackage:
         comparisons=tuple(_comparison(entry) for entry in _entries(document, "comparisons")),
         refusals=tuple(_refusal(entry) for entry in _entries(document, "refusals")),
         caveats=_labels(document, "caveats"),
+        currency=_optional_text(document, "currency"),
+        event_kind_filters=_labels(document, "event_kind_filters"),
+        status_filters=_labels(document, "status_filters"),
+        coverage_manifest_identity=_optional_text(
+            document, "coverage_manifest_identity"
+        ),
+        coverage_signatures=tuple(
+            _coverage_signature(entry)
+            for entry in _entries(document, "coverage_signatures")
+        ),
+        daily_bases=tuple(
+            _daily_basis(entry) for entry in _entries(document, "daily_bases")
+        ),
+        retained_bases=tuple(
+            _retained_basis(entry) for entry in _entries(document, "retained_bases")
+        ),
     )
+
+
+def _coverage_signature(entry: Mapping[str, Any]) -> CoverageSignature:
+    """One stored structural signature, field by field.
+
+    `identity` is deliberately not read: it is derived from the other fields, so
+    reading it would let a stored document assert an identity its own contents
+    do not produce.
+    """
+    return CoverageSignature(
+        manifest_version=_text(entry, "manifest_version"),
+        manifest_input_digest=_text(entry, "manifest_input_digest"),
+        source_contract_digest=_text(entry, "source_contract_digest"),
+        scope=_text(entry, "scope"),
+        event_kinds=_labels(entry, "event_kinds"),
+        statuses=_labels(entry, "statuses"),
+        mode=_text(entry, "mode"),
+        covered_ordinals=tuple(_counts(entry, "covered_ordinals")),
+        window_days=_count(entry, "window_days"),
+    )
+
+
+def _daily_basis(entry: Mapping[str, Any]) -> AlignedDailyBasis:
+    return AlignedDailyBasis(
+        scope=_text(entry, "scope"),
+        start=_day(entry, "start"),
+        end=_day(entry, "end"),
+        population=_text(entry, "population"),
+        event_kinds=_labels(entry, "event_kinds"),
+        statuses=_labels(entry, "statuses"),
+        values=tuple(_daily_value(value) for value in _entries(entry, "values")),
+        precision=_count(entry, "precision"),
+        currency=_optional_text(entry, "currency"),
+    )
+
+
+def _daily_value(entry: Mapping[str, Any]) -> DailyValue:
+    return DailyValue(
+        day=_day(entry, "day"),
+        revenue=_optional_decimal(entry, "revenue"),
+        units=_optional_count(entry, "units"),
+    )
+
+
+def _retained_basis(entry: Mapping[str, Any]) -> RetainedBasis:
+    """One stored reconciliation basis. `identity` is derived, so not read."""
+    return RetainedBasis(
+        name=_text(entry, "name"),
+        population=_text(entry, "population"),
+        event_count=_count(entry, "event_count"),
+        input_digest=_text(entry, "input_digest"),
+        mapping_version=_text(entry, "mapping_version"),
+        precision=_count(entry, "precision"),
+        transaction_count=_optional_count(entry, "transaction_count"),
+        currency=_optional_text(entry, "currency"),
+    )
+
+
+def _optional_text(document: Mapping[str, Any], name: str) -> str | None:
+    """Text a package may not carry at all.
+
+    A count-only package states no currency, and a package with no attestation
+    states no manifest identity. Null rebuilds as `None` and never as `""`,
+    which would read as a currency nobody named.
+    """
+    value = _required(document, name, optional=True)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PackageCorrupted(f"Stored fact package states no {name}.")
+    return value
+
+
+def _optional_decimal(document: Mapping[str, Any], name: str) -> Decimal | None:
+    value = _required(document, name, optional=True)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PackageCorrupted(f"Stored fact package states no {name}.")
+    try:
+        return Decimal(value)
+    except InvalidOperation as error:
+        raise PackageCorrupted(f"Stored fact package states no {name}.") from error
+
+
+def _counts(document: Mapping[str, Any], name: str) -> list[int]:
+    entries = _entries(document, name, of_mappings=False)
+    if any(not _is_count(entry) for entry in entries):
+        raise PackageCorrupted(f"Stored fact package states no {name}.")
+    return list(entries)
+
+
+def _day(document: Mapping[str, Any], name: str) -> date:
+    value = _text(document, name)
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise PackageCorrupted(f"Stored fact package states no {name}.") from error
 
 
 def _fact(entry: Mapping[str, Any]) -> Fact:

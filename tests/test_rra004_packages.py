@@ -40,11 +40,7 @@ from khepri.rra.persistence import (
 )
 from khepri.rra.profiling import canonical_json
 from khepri.rra.sessions import InvitationService, SessionScope
-from tests.rra003_contract_fixtures import (
-    REFUSAL_WINDOW,
-    TEST_CONTRACT,
-    profile_payload,
-)
+from tests.rra003_contract_fixtures import TEST_CONTRACT, profile_payload
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 GOLDEN_CSV = (
@@ -210,7 +206,6 @@ def test_facts_require_a_profile_first() -> None:
     assert "profile" in response.json()["detail"]
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_golden_dataset_publishes_its_governed_figures() -> None:
     test = prepared()
 
@@ -233,7 +228,6 @@ def test_a_golden_dataset_publishes_its_governed_figures() -> None:
     assert figures["average_order_value"] == "166.67"
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_aggregates_are_served_in_their_canonical_shape() -> None:
     document = prepared().client.post("/api/v1/beta/facts").json()["document"]
 
@@ -266,14 +260,12 @@ def test_aggregates_are_served_in_their_canonical_shape() -> None:
     assert len(set(citations)) == len(citations)
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_the_served_package_reconstructs_the_digest_it_is_addressed_by() -> None:
     body = prepared().client.post("/api/v1/beta/facts").json()
 
     assert _digest_of(body["document"]) == body["package_digest"]
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_refusals_are_published_rather_than_omitted() -> None:
     body = prepared().client.post("/api/v1/beta/facts").json()
 
@@ -285,7 +277,6 @@ def test_refusals_are_published_rather_than_omitted() -> None:
     assert "cost" not in {fact["metric"] for fact in body["document"]["facts"]}
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_package_is_published_once_and_then_returned_unchanged() -> None:
     test = prepared()
 
@@ -310,7 +301,6 @@ def test_reading_before_publication_is_a_refusal_not_an_empty_package() -> None:
     assert response.json()["detail"] == "No fact package is available for this session."
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_an_inadmissible_dataset_is_refused_with_a_reason() -> None:
     test = prepared(NO_MEASURE_CSV)
 
@@ -322,7 +312,6 @@ def test_an_inadmissible_dataset_is_refused_with_a_reason() -> None:
         assert database.scalar(select(FactPackageRow)) is None
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_package_is_bound_to_the_profile_it_was_published_against() -> None:
     test = prepared()
     test.client.post("/api/v1/beta/facts")
@@ -363,7 +352,6 @@ def test_a_missing_profile_refuses_the_package() -> None:
         test.service.build_session_package(session_id=_session(test), now=NOW)
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_deleting_session_content_removes_the_package_with_the_profile() -> None:
     test = prepared()
     assert test.client.post("/api/v1/beta/facts").status_code == 201
@@ -375,7 +363,6 @@ def test_deleting_session_content_removes_the_package_with_the_profile() -> None
         assert database.scalar(select(DatasetProfileRow)) is None
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_every_published_figure_carries_its_stable_fact_id() -> None:
     # RRA-004 requires stable fact identifiers; a consumer can only address a
     # figure by one if the served package actually carries it.
@@ -407,7 +394,6 @@ def test_the_package_inherits_the_semantics_the_profile_was_decided_under() -> N
     assert response.status_code == 409
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_second_publication_cannot_be_asked_for_under_other_semantics() -> None:
     # The facts endpoint takes no request of its own, so the semantics a
     # package was published under cannot drift from the profile's.
@@ -424,7 +410,6 @@ def test_a_second_publication_cannot_be_asked_for_under_other_semantics() -> Non
     assert second.json() == first.json()
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_new_governed_version_may_be_published_beside_the_old_one() -> None:
     # RRA-004 makes a new formula a new version, not a replacement, so the
     # store must admit both rather than resolving back to the first.
@@ -488,7 +473,6 @@ def test_a_profile_produced_under_a_superseded_profile_version_is_refused(
     assert test.client.post("/api/v1/beta/facts").status_code == 409
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_superseded_profile_never_serves_an_older_package_as_current(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -501,7 +485,6 @@ def test_a_superseded_profile_never_serves_an_older_package_as_current(
     assert test.client.post("/api/v1/beta/facts").status_code == 409
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_the_two_provenance_digests_are_named_apart_and_both_served() -> None:
     # One covers the profile alone and is what the package itself records; the
     # other covers the whole profile, mapping, and admissibility document and is
@@ -519,7 +502,6 @@ def test_the_two_provenance_digests_are_named_apart_and_both_served() -> None:
         assert row.profile_document_digest == profile.profile_digest
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_tampered_package_is_refused_rather_than_served() -> None:
     # The package is content-addressed and presented as immutable, so an altered
     # figure must not reach a consumer under the original address.
@@ -538,7 +520,6 @@ def test_a_tampered_package_is_refused_rather_than_served() -> None:
     assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_package_contradicting_its_own_document_is_refused() -> None:
     # The digest still verifies here; the row's metadata is what drifted.
     test = prepared()
@@ -550,7 +531,6 @@ def test_a_package_contradicting_its_own_document_is_refused() -> None:
     assert test.client.get("/api/v1/beta/facts").status_code == 503
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_package_under_any_superseded_governed_version_is_not_current() -> None:
     # Not only the mapping: whichever of the three governed versions moved, a
     # package the current builder would not publish is not this session's.
@@ -572,7 +552,6 @@ def _republish_under(test: Harness, *, formula_version: str) -> None:
         row.package_digest = _digest_of(document)
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_reading_never_serves_a_package_publishing_would_refuse(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -592,7 +571,6 @@ def test_reading_never_serves_a_package_publishing_would_refuse(
     assert "superseded" in written.json()["detail"]
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_tampered_profile_provenance_is_refused_on_both_paths() -> None:
     # The profile document digest sits beside the package rather than inside
     # it, so the package's own content address cannot vouch for it.
@@ -605,7 +583,6 @@ def test_a_tampered_profile_provenance_is_refused_on_both_paths() -> None:
     assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_tampered_profile_document_is_refused_on_both_paths() -> None:
     # The profile's own document is what every later claim cites, so altering
     # its admissibility section must not pass unnoticed.
@@ -623,7 +600,6 @@ def test_a_tampered_profile_document_is_refused_on_both_paths() -> None:
     assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_the_inner_profile_digest_is_bound_to_the_cited_profile() -> None:
     # Recomputing package_digest after tampering makes the package
     # self-consistent, so only the profile it names can contradict it.
@@ -640,7 +616,6 @@ def test_the_inner_profile_digest_is_bound_to_the_cited_profile() -> None:
     assert test.client.post("/api/v1/beta/facts").status_code == 503
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_a_package_claiming_another_input_is_refused() -> None:
     # Self-consistent and citing the real profile, but claiming a different
     # source digest and row count than that profile describes.
@@ -770,7 +745,6 @@ def test_a_profile_race_won_on_the_same_question_still_returns_the_stored_one() 
     assert stored.profile_id == first.json()["profile_id"]
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_reruns_over_the_same_input_are_byte_equivalent() -> None:
     first = prepared().client.post("/api/v1/beta/facts").json()
     second = prepared().client.post("/api/v1/beta/facts").json()

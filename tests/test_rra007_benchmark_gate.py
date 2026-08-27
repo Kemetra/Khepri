@@ -17,7 +17,6 @@ from khepri.rra.benchmark_gate import (
 from khepri.rra.benchmark_trial import DeterministicReportTrial, TrialOutcome, TrialPorts
 from khepri.rra.benchmark_workload import BenchmarkDataset, BenchmarkWorkload
 from khepri.rra.bundle import REQUIRED_SURFACES
-from tests.rra003_contract_fixtures import REFUSAL_WINDOW
 from tests.rra_benchmark_fakes import faithful_renderers
 
 WORKLOAD = BenchmarkWorkload(sample_count=2, rows_per_dataset=8)
@@ -134,7 +133,6 @@ def test_an_approved_benchmark_with_no_runner_blocks_rather_than_passes() -> Non
 # --- with a runner and an authorization supplied by a test ------------------
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_the_gate_runs_the_report_path_and_enforces_the_objective() -> None:
     code, said = gated(environment(), trial_for=faithful_trial)
 
@@ -158,7 +156,6 @@ def test_a_runner_whose_readings_are_inconsistent_fails_the_build() -> None:
     assert "inconsistent" in said.lower()
 
 
-@pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True)
 def test_evidence_from_another_workload_fails_the_build() -> None:
     code, said = gated(
         environment(workload_digest="rra007.workload.v1:another"),
@@ -172,19 +169,11 @@ def test_evidence_from_another_workload_fails_the_build() -> None:
 # --- content-free ----------------------------------------------------------
 
 
-# Only the authorized case builds a package, so only it meets the refusal
-# window. The unauthorized case stops at authorization and still states its
-# original claim -- marking the whole function made it an XPASS, which `strict`
-# correctly refused.
 @pytest.mark.parametrize(
     "supplied",
     [
         pytest.param(None, id="unauthorized"),
-        pytest.param(
-            environment(),
-            id="authorized",
-            marks=pytest.mark.xfail(reason=REFUSAL_WINDOW, strict=True),
-        ),
+        pytest.param(environment(), id="authorized"),
     ],
 )
 def test_the_gate_reports_no_dataset_content(supplied: dict[str, str] | None) -> None:
