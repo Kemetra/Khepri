@@ -46,25 +46,24 @@ predecessor values, so no CAL1 successor has yet published. The next action is t
 the delivery unit, then the final `V-mapping` publication as commit 1 of the proposed later
 seven-commit implementation PR.
 
-## Proposed UX reconciliation — pending merge
+## UX reconciliation — merged via #306
 
 `W1-05` previously required a six-surface customer scope (Workspace Overview, Datasets, Analyses,
 Reports, Metrics, Activity) that conflicted with `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §8's four-surface
-navigation (Overview, Data, Analyses, Team). **This reconciliation proposes resolving that conflict**
-in favor of the four-surface direction: `W1-05` and the M3/M4 UI lists below are amended, on this
-branch, to carry the four-surface scope, with Reports/Metrics/Activity/Watchlists reached contextually
-rather than as primary destinations. See `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1 for the full integrated
-customer experience map and §8/§20 for the proposed navigation decision.
+navigation (Overview, Data, Analyses, Team). **That conflict is resolved.** `W1-05` and the M3/M4 UI
+lists below carry the four-surface scope, with Reports/Metrics/Activity/Watchlists reached
+contextually rather than as primary destinations. See `KHEPRI_PRODUCT_UX_BLUEPRINT.md` §5.1 for the
+full integrated customer experience map and §8/§20 for the resolved navigation decision.
 
 **Per `governance/CONSTITUTION.md` Article II, a branch or pull request is a proposal; it becomes
-approved and governing only when the sole owner merges it to `main`.** Until that merge, treat this
-section and every downstream `W1-05` reference in this document as the *proposed* resolution, not the
-governing one — verify against `git log` on `main` before relying on it.
+approved and governing only when the sole owner merges it to `main`.** #306 merged to `main` at
+`1c51105`, so this section and every downstream `W1-05` reference in this document reflect the
+governing resolution.
 
-**Neither `W1` nor the blueprint is registered authority**, merged or not — `governance/registry.yaml`
-still holds only `FND`, `RRA`, `RCA` — so this reconciliation removes a documentary contradiction
-between two roadmap-level artifacts; it does not make any M3 UX slice implementation-ready. That still
-requires active `G2`/`G3` authority.
+**Neither `W1` nor the blueprint is registered authority** — `governance/registry.yaml` still holds
+only `FND`, `RRA`, `RCA` — so this reconciliation removes a documentary contradiction between two
+roadmap-level artifacts; it does not make any M3 UX slice implementation-ready. `LOCKED product
+direction` is not implementation authority: M3 UX still requires active `G2`/`G3` authority.
 
 ---
 
