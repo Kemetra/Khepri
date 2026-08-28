@@ -809,23 +809,28 @@ REPEATED_INVOICE_EXPECTED = {
 }
 """Repeated invoice IDs in different stores -- regression proof 5.
 
-_RED: production returns transactions "2", AOV "500.00", items per transaction
-"10.0000", against an oracle of 4, 250.00 and 5.0000.
+**Resolved, and kept as the regression proof.** `#308` (`7088749`) made
+`facts._measures` read the canonical key admission built rather than reloading the
+bare mapped column, and production now agrees with every literal here. Re-measured
+on the merged tree under `REPEATED_INVOICE_CONTRACT`:
 
-Empirically confirmed. `_distinct` in `facts.py` is
-`len({v for v in values if v is not None})` over the bare mapped identifier, so
-INV-1 from S1 and INV-1 from S2 collapse into one. Two stores' trading is reported
-as two transactions.
+    revenue 1000.00, units 20, transactions 4, AOV 250.00
 
-The violated rule is `RRA-003`'s canonical-transaction-key contract: "A bare
-source transaction identifier qualifies only when its recorded source contract
-proves package-wide uniqueness. Otherwise the canonical key is an admitted
-composite containing the source identifier and every field required for
-uniqueness, normally store, business date, and terminal or register." No contract
-is recorded here, so the composite is required and production uses the bare one.
+The contract matters and is why it is named rather than defaulted:
+`REPEATED_INVOICE_CONTRACT` declares `transaction_key_components=("invoice_no",
+"store", "date")` and therefore `transaction_id_unique_package_wide=False`. The
+bare fixture contract asserts the opposite, and under *that* declaration `INV-1`
+from two stores is one transaction and production would be right to say so --
+`RRA-003` admits the bare identifier "only when its recorded source contract
+proves package-wide uniqueness". A figure here is only right or wrong relative to
+the declaration it was built under.
 
-Every transaction-denominated metric inherits the error at exactly 2x: AOV doubles,
-items per transaction doubles. This is the defect `V-mapping` exists to correct.
+The violated rule, before the fix, was the rest of that sentence: "Otherwise the
+canonical key is an admitted composite containing the source identifier and every
+field required for uniqueness, normally store, business date, and terminal or
+register." Every transaction-denominated metric inherited the error at exactly 2x.
+`tests/test_rra004_facts.py:1325` is where the correction is asserted, with a
+control proving revenue and units were untouched by it.
 """
 
 
@@ -853,18 +858,37 @@ MISSING_TRANSACTION_IDENTITY_EXPECTED = {
 }
 """One refused metric leaving independent metrics standing -- regression proof 9.
 
-_RED: production returns transactions "2", AOV "150.00", items per transaction
-"3.0000", against an oracle that refuses all three.
+**These literals assume a composite contract, and are meaningless without one.**
+`OracleRow.canonical_transaction_key` is the composite `invoice|store|date|terminal`,
+so row 2 -- present invoice, absent store -- forms no key and the four
+transaction-denominated metrics refuse. That is what is stated below.
 
-Empirically confirmed. `transaction_identifiers_complete` in `_measures` checks
-only whether the mapped *identifier* column has gaps. Both invoice numbers are
-present, so production is satisfied and counts two -- while the store component
-the canonical key needs is missing on one row and no composite can be formed.
+Built under a contract naming those components, admission refuses at `_joined_key`
+-- "Row 1 states no 'store', so its canonical transaction key has a missing
+component" -- and `facts._admitted_events` turns that into a package-wide
+`FactsRefused` before any `FactPackage` exists.
 
-The violated rule is `RRA-003`: the canonical key needs "every field required for
-uniqueness", and a missing component refuses. Revenue 300.00, units 6 and
-ASP 50.00 agree, which is the survival half of the proof: the refusal must be
-narrow, and current code's *breadth* is correct even where its trigger is not.
+**That is not agreement, and the difference is the point of this case.** The
+literals below refuse four transaction-denominated metrics and keep three:
+revenue 300.00, units 6 and ASP 50.00, none of which needs a transaction key.
+`RRA-004`:97 requires exactly that -- "every refusal leaves facts whose own
+semantics and population remain independently proven". A package-wide refusal
+takes all seven, so the refusal is too broad rather than absent.
+
+Built under the *bare* `oracle_contract()`, production publishes `transactions 2`
+and `AOV 150.00` -- and is **right** to. That factory sets
+`transaction_id_unique_package_wide=not transaction_key_components`, so calling it
+with no arguments *attests* the invoice numbers are package-wide unique, and
+`RRA-003` admits the bare identifier exactly when that declaration holds. The two
+readings are not a mismatch; they are two different declarations, and reading them
+as one produced three successive wrong diagnoses of this note (`#312`, closed
+unmerged).
+
+So a slice consuming these literals must pass
+`oracle_contract(transaction_key_components=("invoice_no", "store", "date"))` or
+state its own -- and must expect the narrow refusal these literals describe, which
+neither contract produces today. The bare one publishes all seven; the composite
+one refuses all seven. The survival half is what the slice has to build.
 """
 
 
