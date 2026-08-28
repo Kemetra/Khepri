@@ -4,9 +4,9 @@
 
 **Repository:** `Kemetra/Khepri`
 
-**Verified baseline:** `origin/main` at `aa19ff6` on 2026-08-29; CAL1 state reconciled to `#308`
-(`7088749`), which published all seven successor versions, and the eight correction PRs merged
-after it, through `#325` (`aa19ff6`).
+**Verified baseline:** `origin/main` at `aa19ff6` on 2026-08-28; CAL1 state reconciled to `#308`
+(`7088749`), which published all seven successor versions, and the nine PRs merged after it — seven
+corrections and two documentation slices — through `#325` (`aa19ff6`).
 
 **Audience:** Ahmed Shaaban (owner and merge authority), Claude Code (planning and adversarial review), Codex (bounded implementation), design reviewers, and future operators.
 
@@ -509,12 +509,21 @@ Implement the active RRA-003/004/008 successor contracts so Khepri publishes a f
 
 ## Release strategy
 
-CAL1 is **not** an exception to the small-slice rule. The remaining implementation is one later
-pull request containing seven ordered, independently verifiable publication commits. Each commit
-has its own RED, GREEN, reconciliation, and compatibility evidence, publishes exactly one
-successor, and adds only the compatibility row owned by that successor. `V-mapping` adds no row
-because no successor package triple is expressible until `V-package`. Intermediate commits are
-non-governing proposal history; only the complete final head may merge.
+**Historical as of `#308` (`7088749`) — this strategy was executed, and the publication it
+describes is done.** It is kept because the version-per-family rule below still governs, and
+because `CAL1-15`'s acceptance is verified against what this section specified.
+
+CAL1 is **not** an exception to the small-slice rule. The publication was delivered as one pull
+request containing seven ordered, independently verifiable publication commits. Each commit had
+its own RED, GREEN, reconciliation, and compatibility evidence, published exactly one successor,
+and added only the compatibility row owned by that successor. `V-mapping` added no row because no
+successor package triple was expressible until `V-package`.
+
+**The "only the complete final head may merge" rule applied to that PR and has not governed
+since.** Nine PRs merged individually between `7088749` and `aa19ff6`, correcting defects in the
+published contracts. Whether the one-PR model governs the remaining `CAL1-11`…`CAL1-15` work is
+an open owner question — `#301` left it explicitly proposed and no `KHEPRI-DEC-*` row settles it.
+See § Current CAL1 reconciliation.
 
 **The governed successor versions are per family**, so each publication commit creates exactly
 one successor and no transitional version:
@@ -546,7 +555,8 @@ retained-basis work so package v3 publishes complete. The owner ruling, now expl
 places all growth rounding-residual evidence in `V-growth`, not in the persisted package.
 
 The fixed dependency order is mapping -> package -> formula -> comparison -> growth -> basket ->
-concentration. It is commit order inside the one later PR, not a sequence of owner merges.
+concentration. It was commit order inside the single publication PR `#308` (`7088749`), not a
+sequence of owner merges.
 
 **Four of these versions span more than one task, and the fourth column is the binding part of this table.** A slice is not a task; it is the smallest set of tasks that can publish one governed version complete.
 
@@ -581,8 +591,8 @@ publish.
 
 `CAL1-03` carried both, and its acceptance said so: a real upload can submit a manifest and a contract. **Both halves are now met.** The API accepts an optional `coverage_manifest` on `POST /api/v1/beta/profile` (`#292`, `1813682`), and `#300` (`8acef78`) added the browser surface: `upload.js` collects `[data-manifest-field]` controls and sends `coverage_manifest` only when the customer attests, with `upload.html.j2` carrying the controls and their bilingual wording. A real upload can now submit a manifest and a contract, so a completeness-dependent comparison or growth request from a browser upload no longer refuses merely for want of an attestation. **The exception fields are collected as of `#303` (`a2be74e`).** `upload.html.j2` now carries `closed_days`, `extraction_gap_days` and `partial_terminal_boundary` alongside timezone, covered window, covered days, aggregate scope, event kinds and statuses. The defect this paragraph previously recorded — an operator who knows of a closure, an extraction gap or a partial terminal boundary could not attest it from the journey, so a known gap was recorded as no gap — is closed. (`store_roster` is **not** a gap: `RRA-003` treats it and `aggregate_scope` as alternatives and `coverage.py` refuses a manifest carrying both, so the journey collecting the aggregate scope is the complete choice.) Completing those controls stays inside `V-mapping`, since `rra003.mapping.v3` governs manifest confirmation.
 
-With that surface landed, the first ordered commit of the later implementation PR carries the
-remaining admission rules and moves `rra003.mapping.v3`.
+With that surface landed, the first ordered commit of `#308` carried the remaining admission
+rules and moved `rra003.mapping.v3`.
 
 **`rra008.concentration.v2` publishes with presentation sampling, which this ledger did not name at all.** `RRA-008` puts it inside the concentration contract — "The full curve remains authoritative. Presentation-only sampling keeps no more than 100 points, including the final 100% point, and carries a bilingual sampling caveat" — and names sampling in that specification's own Verification list, so it is `RRA-008`'s to verify rather than a free presentation choice. No `CAL1` task mentioned it, so following this ledger publishes the concentration identity incomplete and leaves the sampling to change governed behaviour afterwards, under a version already on `main`. That is the defect the `V-package` rule above refuses, and the same-slice rule for caveats settles where it goes: `CAL1-11` is "a final sweep, not the task where surfaces catch up". `CAL1-10b` carries it. The merged mission plan reached this first; the roadmap was the outlier.
 
@@ -634,7 +644,7 @@ The release rules are therefore:
 | CAL1-12 | Add mutation evidence and pharmacy-focused golden fixtures | CAL1-11 | Named mutants for row-vs-transaction, unequal windows, unmatched populations, full-set concentration, sign/currency rules, and publication gating are killed |
 | CAL1-13 | Run the calculation validation gate | CAL1-12 | Governance, Ruff, full tests, independent fixtures, report reconciliation, deterministic reruns, version checks, and no skipped required behavior |
 | CAL1-14 | Run PostgreSQL/MinIO production-like local staging end to end | CAL1-13 | Upload -> admission -> facts -> worker -> HTML/PDF/Excel -> evidence; restart/retry/recovery and bilingual artifacts verified |
-| CAL1-15 | Complete external review and merge the one seven-commit implementation PR | CAL1-14 | No unresolved P0/P1 finding; CodeScene passes; every family sits on its single governed successor version, and no transitional version was published on `main` |
+| CAL1-15 | Complete external review of the assembled contract. **The seven-commit publication PR already merged at `#308` (`7088749`)**, so this task is now the review and the verification of its acceptance, not a merge | CAL1-14 | No unresolved P0/P1 finding; CodeScene passes; every family sits on its single governed successor version, and no transitional version was published on `main` — the last two are verified against the merged history rather than achieved here |
 
 ## Publication-commit contributions
 
@@ -1579,15 +1589,14 @@ One bounded customer or safety outcome per PR, with:
 
 ### CAL1 has no exception
 
-CAL1 follows the small-slice rule through seven family-shaped, independently verifiable commits
-inside one later pull request. The commits are ordered mapping, package, formula, comparison,
-growth, basket, concentration. Each publishes exactly one successor with its owned compatibility
-row and its RED/GREEN/reconciliation evidence — except `V-mapping`, which adds **no** row,
-because the row admitting `rra003.mapping.v3` is a `(mapping, package, formula)` triple naming a
-package version that does not exist until `V-package`. Intermediate commits remain non-governing proposal
-history; only the complete final head may merge.
+CAL1 followed the small-slice rule through seven family-shaped, independently verifiable commits
+inside one pull request, `#308` (`7088749`). The commits were ordered mapping, package, formula,
+comparison, growth, basket, concentration. Each published exactly one successor with its owned
+compatibility row and its RED/GREEN/reconciliation evidence — except `V-mapping`, which added
+**no** row, because the row admitting `rra003.mapping.v3` is a `(mapping, package, formula)`
+triple naming a package version that did not exist until `V-package`.
 
-**The delivery unit is proposed, not settled.** The text this reconciliation replaced required owner approval to change the reviewable unit, and that requirement survives the change of unit: the seven-commits-in-one-pull-request model below is a proposal awaiting an owner ruling, in the same way the residual placement was a proposal until its dated decision record confirmed it. No implementation pull request opens against this model before that ruling exists; the argument for it is recorded here so the owner can rule on it.
+**The delivery unit was proposed and never formally settled.** `#301` recorded the seven-commits-in-one-pull-request model as a proposal awaiting an owner ruling, in the same way the residual placement was a proposal until its dated decision record confirmed it. No `KHEPRI-DEC-*` row records that ruling. In practice the owner merged `#308` as exactly that PR, and then merged nine further PRs individually — so the model was followed for publication and not for the corrections that followed. Whether it governs the remaining `CAL1-11`…`CAL1-15` work is still the owner's to rule; this roadmap records the practice rather than resolving it.
 
 **This is not the exception section 0.1 rejected.** That exception was a single undivided unit
 justified by the claim that the successor families share package and formula identities — false,
