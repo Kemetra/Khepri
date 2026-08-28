@@ -654,9 +654,9 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
         ),
         "duplicate_rows_present": (
             "Some rows in your file are exact duplicates of each other. "
-            "They have been counted as supplied — if they are genuine "
-            "repeat sales this is correct, and if they are an export error "
-            "the totals are overstated."
+            "A genuine repeat sale and the same sale exported twice look "
+            "identical here, so the totals that would have counted them are "
+            "not shown rather than stated as one of those two readings."
         ),
         "negative_revenue_present": (
             "Some rows carry a negative sale amount. These are included as "
@@ -723,9 +723,9 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "من دون تحويل."
         ),
         "duplicate_rows_present": (
-            "بعض صفوف ملفك مكررة بالكامل. احتُسبت كما وردت — إذا كانت مبيعات "
-            "متكررة فعلاً فهذا صحيح، وإذا كانت خطأ في التصدير فالإجماليات أعلى "
-            "من الواقع."
+            "بعض صفوف ملفك مكررة بالكامل. عملية البيع المتكررة فعلاً والعملية "
+            "التي صُدِّرت مرتين تبدوان متطابقتين هنا، ولذلك لا تُعرض الإجماليات "
+            "التي كانت ستحتسبها بدلاً من ذكرها وفق أحد هذين التفسيرين."
         ),
         "negative_revenue_present": (
             "تتضمن بعض الصفوف قيمة بيع سالبة. أُدرجت كما وردت، وهذا صحيح إذا "

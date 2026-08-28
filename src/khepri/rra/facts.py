@@ -129,6 +129,23 @@ REASON_AMBIGUOUS_MAPPING = "ambiguous_mapping"
 #: missing is proof of which reading is true, and no column in the extract
 #: carries it.
 REASON_REPEATED_ROW_SIGNATURE = "repeated_row_signature"
+#: The fields `RRA-003` signs: "all admitted identity, dimension, and measure
+#: fields". Every semantic the mapping can admit is here, because the rule names
+#: all three kinds and lists no exception -- an omission would be a column two
+#: rows could differ in while still counting as the same event.
+SIGNED_SEMANTICS = (
+    SEMANTIC_TRANSACTION_DATE,
+    SEMANTIC_TRANSACTION_ID,
+    SEMANTIC_STORE,
+    SEMANTIC_PRODUCT,
+    SEMANTIC_CATEGORY,
+    SEMANTIC_CHANNEL,
+    SEMANTIC_REVENUE,
+    SEMANTIC_UNITS,
+    SEMANTIC_COST,
+    SEMANTIC_DISCOUNT,
+    SEMANTIC_RETURNS,
+)
 
 CAVEAT_CURRENCY_NOT_DECLARED = "currency_not_declared"
 CAVEAT_DUPLICATE_ROWS = "duplicate_rows_present"
@@ -663,6 +680,34 @@ def _margin_inputs(
     return revenue, revenue - cost
 
 
+def _signed_columns(mapping: RetailMapping) -> list[int]:
+    """The positions `RRA-003` signs: every semantic the mapping admitted."""
+    positions = {
+        mapping.for_semantic(semantic).column.position
+        for semantic in SIGNED_SEMANTICS
+        if mapping.for_semantic(semantic).column is not None
+    }
+    return sorted(positions)
+
+
+def _repeated_row_signature(frame: pl.DataFrame, mapping: RetailMapping) -> bool:
+    """Whether any admitted row repeats another across every signed field.
+
+    `RRA-003` signs "all admitted identity, dimension, and measure fields" --
+    not the source row. Comparing whole rows lets a column no semantic claims,
+    such as a free-text note, an export timestamp or a row id, make two
+    identical sales look distinct, and the refusal then fails *open* on exactly
+    the input it exists for.
+
+    An extract mapping nothing has no signature to repeat, so it cannot be
+    duplicated into one.
+    """
+    signed = _signed_columns(mapping)
+    if not frame.height or not signed:
+        return False
+    return bool(int(frame[:, signed].is_duplicated().sum()))
+
+
 def _admitted_frame(frame: pl.DataFrame, admitted_events: AdmittedEvents) -> pl.DataFrame:
     """The frame narrowed to the rows admission kept.
 
@@ -770,7 +815,7 @@ def _build(
     # `RRA-003`: an attestation of unique line grain is falsified by a repeated
     # canonical row signature, so this is read from the admitted frame before
     # any total is formed rather than disclosed after they are all published.
-    repeated_rows = bool(frame.height and int(frame.is_duplicated().sum()))
+    repeated_rows = _repeated_row_signature(frame, mapping)
     totals = _totals(
         measures,
         admitted_events,

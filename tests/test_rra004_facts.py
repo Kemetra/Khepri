@@ -1728,3 +1728,48 @@ def test_a_gapped_headline_does_not_take_the_trend_with_it() -> None:
         "2026-01-05",
         "2026-03-07",
     }
+
+
+def test_an_unmapped_column_cannot_hide_a_repeated_row_signature() -> None:
+    """`RRA-003` signs the admitted fields, not the file.
+
+    The signature is "a repeated canonical row signature across all admitted
+    identity, dimension, and measure fields" -- so a column the mapping never
+    admitted has no say in whether two rows are the same event. Comparing whole
+    source rows lets a free-text note, an export timestamp or a row id make two
+    otherwise identical sales look distinct, and the refusal then fails *open*
+    on exactly the input it exists for.
+
+    Both rows here state the same sale in every governed field and differ only
+    in a `note` column no semantic claims.
+    """
+    content = (
+        b"date,event_kind,status,revenue,units,invoice_no,store,product,"
+        b"category,cost,discount_amount,note\n"
+        b"2026-03-04,sale,posted,250.00,5,INV-1,S1,P1,C1,140.00,0.00,alpha\n"
+        b"2026-03-04,sale,posted,250.00,5,INV-1,S1,P1,C1,140.00,0.00,beta\n"
+    )
+    from tests.rra003_contract_fixtures import oracle_contract
+
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    assert result.fact(METRIC_REVENUE) is None, "an unmapped note defeated the refusal"
+    refused = result.refusal(METRIC_REVENUE)
+    assert refused is not None
+    assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
