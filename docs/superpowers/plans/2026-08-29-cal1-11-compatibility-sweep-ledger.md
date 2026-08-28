@@ -97,16 +97,25 @@ walking every module under `khepri.rra` and reading its own `CAVEAT_*` constants
 
 **Mutation evidence, two rounds — the first guard was defective and the record matters:**
 
-| Mutant | v1 (four named modules) | v2 (walked package) |
-|---|---|---|
-| `CAVEAT_*` added to `facts.py` | killed | killed |
-| `CAVEAT_*` added to `analysis/basket.py` | **SURVIVED** | killed |
+| Mutant | v1 (four named modules) | v2 (walked package) | v3 (walk + root) |
+|---|---|---|---|
+| `CAVEAT_*` in `facts.py` | killed | killed | killed |
+| `CAVEAT_*` in `analysis/basket.py` | **SURVIVED** | killed | killed |
+| `CAVEAT_*` in `khepri/rra/__init__.py` | **SURVIVED** | **SURVIVED** | killed |
 
 The first version named four source modules by hand — the very defect it was written to catch, one
 level up. `basket.py` and `concentration.py` were unscanned, and `concentration.py` already imports
 `CAVEAT_BUCKETS_TRUNCATED`, so a caveat appearing there is not hypothetical. `assert defined` catches
 "the scan found nothing", never "the scan missed a module". The walk closes it; the emptiness
 assertion on the module list guards the walk itself.
+
+**The same defect recurred twice more, each one level up.** `pkgutil.walk_packages` yields
+descendants and never the package root, so a caveat defined in `khepri/rra/__init__.py` sat outside
+a walk that looked complete; the root is now included explicitly. And an earlier version swallowed
+import errors, which would have let a module that defines an unregistered constant *and* raises on
+import contribute nothing while the other modules kept the comparison non-empty. Three rounds, one
+lesson: **a guard's own scope declaration is the weakest link, and no mutant placed inside that scope
+can find it.**
 
 Uses `vars(module)` rather than `dir(module)`: `dir()` includes imported names, which would attribute
 a constant to every module that imports it.

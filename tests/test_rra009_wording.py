@@ -558,12 +558,22 @@ def test_wording_module_imports_cleanly_with_complete_copy() -> None:
 # the surface a new constant appears on disarms itself silently. The package is
 # walked instead, so a new module is covered the day it is added.
 def _rra_module_names() -> tuple[str, ...]:
-    """Every importable module under `khepri.rra`, the package that owns caveats."""
+    """Every importable module in `khepri.rra`, the package that owns caveats.
+
+    The package root is included explicitly: `walk_packages` yields descendants
+    and never the package itself, so a caveat defined in `khepri/rra/__init__.py`
+    would sit outside a walk that looks complete.
+    """
     package = importlib.import_module("khepri.rra")
     return tuple(
         sorted(
-            info.name
-            for info in pkgutil.walk_packages(package.__path__, f"{package.__name__}.")
+            {package.__name__}
+            | {
+                info.name
+                for info in pkgutil.walk_packages(
+                    package.__path__, f"{package.__name__}."
+                )
+            }
         )
     )
 
