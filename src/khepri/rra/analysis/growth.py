@@ -61,6 +61,7 @@ from khepri.rra.facts import (
     EVENT_SALE,
     METRIC_UNITS,
     REASON_INPUT_UNAVAILABLE,
+    UNDATED_RETURN_PERIOD,
     UNIT_MONETARY,
     Fact,
     FactPackage,
@@ -200,6 +201,12 @@ def _derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
     # is the rule `RRA-003` states for event kinds and applies here too.
     admitted_returns = any(kind != EVENT_SALE for kind in package.event_kind_filters)
     if admitted_returns and not package.returning_periods:
+        return RefusedResult(
+            metric=METRIC_REVENUE_CHANGE,
+            reason=REASON_RETURNS_PRESENT,
+        )
+    # An undated return is in no period, so no window can be proven free of it.
+    if UNDATED_RETURN_PERIOD in package.returning_periods:
         return RefusedResult(
             metric=METRIC_REVENUE_CHANGE,
             reason=REASON_RETURNS_PRESENT,

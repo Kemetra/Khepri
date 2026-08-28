@@ -565,3 +565,30 @@ def test_a_package_with_no_return_evidence_refuses_rather_than_assuming() -> Non
 
     assert isinstance(result, RefusedResult), result
     assert result.reason == growth.REASON_RETURNS_PRESENT
+def test_an_undated_return_refuses_growth_however_the_dated_ones_fall() -> None:
+    """A return with no date belongs to no period, so no window excludes it.
+
+    `_returning_periods` first dropped undated rows, which left a *non-empty*
+    tuple naming the dated returns -- evidence that reads as complete. Growth then
+    checked the compared labels against it, found no overlap, and published over a
+    return it could not place. Found in review.
+
+    Recorded as a sentinel period instead. The dated return here is deliberately
+    outside both compared windows, so the case fails if the sentinel is ignored.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,10,INV-1\n"
+        b"2026-01-06,sale,200.00,20,INV-2\n"
+        b"2026-01-07,sale,300.00,25,INV-3\n"
+        b"2026-01-09,sale,120.00,8,INV-5\n"
+        b"2026-01-09,return,-50.00,-5,INV-6\n"
+        b",return,-20.00,-1,INV-7\n"
+    )
+    days = tuple(START + timedelta(days=index) for index in range(5))
+
+    package = _package_with_returns(content, days=days)
+    result = growth.derive(package)
+
+    assert isinstance(result, RefusedResult), result
+    assert result.reason == growth.REASON_RETURNS_PRESENT

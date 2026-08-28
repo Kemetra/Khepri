@@ -109,6 +109,13 @@ METRIC_GROSS_PROFIT = "gross_profit"
 METRIC_GROSS_MARGIN = "gross_margin"
 METRIC_DISCOUNT = "discount"
 METRIC_RETURNS = "returns"
+#: What `returning_periods` records for a posted return carrying no date.
+#:
+#: It belongs to no period, so no window can be proven free of it. A label no
+#: trend can produce, so it never collides with a real period and never
+#: matches a compared label -- growth refuses on it through the
+#: unknown-evidence branch rather than through a false period match.
+UNDATED_RETURN_PERIOD = "undated"
 
 REASON_INPUT_UNAVAILABLE = "required_input_unavailable"
 REASON_ZERO_DENOMINATOR = "zero_denominator"
@@ -1193,10 +1200,18 @@ def _returning_periods(
     if trend is None:
         return ()
     granularity = trend.series.granularity
-    labels = {
-        period_label(day, granularity)
+    returns = [
+        day
         for day, kind in zip(measures.dates, measures.event_kinds, strict=True)
-        if day is not None and kind != EVENT_SALE
+        if kind != EVENT_SALE
+    ]
+    # An undated return belongs to no period, so no window can be proven free of
+    # it. Recorded as the sentinel rather than dropped: dropping it left a
+    # non-empty tuple naming the *dated* returns, which reads as complete
+    # evidence and let growth publish over a return it could not place.
+    labels = {
+        UNDATED_RETURN_PERIOD if day is None else period_label(day, granularity)
+        for day in returns
     }
     return tuple(sorted(labels))
 
