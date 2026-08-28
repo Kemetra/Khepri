@@ -235,3 +235,47 @@ def test_an_ordinal_suffix_never_collides_with_a_literal_source_label() -> None:
     assert comparison.distinct_values == 3
     assert len(set(labels)) == 3
     assert sum(bucket.value for bucket in comparison.buckets) == Decimal("6.00")
+
+
+def test_a_bucket_with_a_gapped_row_refuses_rather_than_publishing_a_part() -> None:
+    """`RRA-004`:33 gives period and dimension revenue the headline's population.
+
+    "Revenue, period revenue, revenue comparison" is one row of the metric
+    assignment table with one population, and `RRA-004`:46 gives it "no
+    partial-coverage vocabulary". A bucket holding one row with revenue and one
+    without is a bucket whose own population has a gap, so summing the row that
+    carried a value publishes a part as though it were the whole.
+
+    Its neighbour is untouched: the refusal is per bucket, because each bucket is
+    its own population.
+    """
+    series = build_series(
+        dates=[date(2026, 1, 5), date(2026, 2, 6), date(2026, 2, 7)],
+        values=[Decimal("100.00"), None, Decimal("50.00")],
+        granularity=GRANULARITY_MONTH,
+    )
+
+    whole, gapped = series.buckets
+    assert whole.value == Decimal("100.00")
+    assert gapped.value is None
+    # The evidence that says why, and the reason a reader is not left guessing:
+    # two rows are in the bucket and neither a zero nor an absence explains it.
+    assert gapped.rows == 2
+
+
+def test_a_dimension_bucket_with_a_gapped_row_refuses_too() -> None:
+    """The same rule, on the comparison the customer actually ranks by.
+
+    Publishing `Snacks 50.00` beside `Beverages 100.00` states that Beverages
+    outsold Snacks two to one, which the file does not say: the Snacks row
+    without revenue might carry any amount at all.
+    """
+    comparison = build_comparison(
+        dimension="category",
+        keys=["Beverages", "Snacks", "Snacks"],
+        values=[Decimal("100.00"), None, Decimal("50.00")],
+    )
+
+    by_label = {bucket.label: bucket for bucket in comparison.buckets}
+    assert by_label["Beverages"].value == Decimal("100.00")
+    assert by_label["Snacks"].value is None

@@ -1739,6 +1739,7 @@ def _series(
             series.buckets,
             total=_sum_decimal([entry.values[index] for index in covered]),
             rows_total=len(covered),
+            gapped=any(entry.values[index] is None for index in covered),
         ):
             refusals.append(
                 RefusedResult(metric=metric, reason=REASON_RECONCILIATION_FAILED)
@@ -1828,6 +1829,7 @@ def _comparisons(
                 comparison.buckets,
                 total=entry.total,
                 rows_total=row_count,
+                gapped=any(value is None for value in entry.values),
             ):
                 refusals.append(
                     RefusedResult(metric=metric, reason=REASON_RECONCILIATION_FAILED)
