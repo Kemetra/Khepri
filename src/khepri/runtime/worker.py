@@ -1,6 +1,6 @@
 """One-at-a-time claim driver for the approved bounded report worker role.
 
-`KHEPRI-DEC-008` replaced the message broker with PostgreSQL claim-and-redrive, so
+`KHEPRI-DEC-028` replaced the message broker with PostgreSQL claim-and-redrive, so
 this loop claims a job rather than receiving a message. The shape is unchanged: claim
 one delivery, process it, settle it, repeat. What changed is that there is one clock
 instead of two -- the lease is the only thing making a job invisible to another
@@ -74,7 +74,7 @@ class ClaimWorkerLoop:
     def run_once(self) -> bool:
         """Recover expired leases, then claim and settle one job.
 
-        `KHEPRI-DEC-008` replaced the broker with "a claim query and a redrive
+        `KHEPRI-DEC-028` replaced the broker with "a claim query and a redrive
         sweep", and the sweep had no caller on the deployed path: the only one was
         `khepri.local.sweeper`, which `pyproject.toml` excludes from the wheel. A
         lease whose holder died was therefore never reclaimed in the image that

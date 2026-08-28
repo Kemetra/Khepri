@@ -285,7 +285,7 @@ def materialize(content: bytes, media_type: str) -> pl.DataFrame:
     The XLSX path names `engine="calamine"`, which Polars satisfies with the
     declared `fastexcel` dependency. That dependency is imported nowhere in this
     repository, so this call is the only thing that makes it required: reading
-    the manifest alone, it looks unused. KHEPRI-DEC-008 names the
+    the manifest alone, it looks unused. KHEPRI-DEC-028 names the
     fastexcel/calamine engine as the approved XLSX reader, so removing the
     dependency would break this line rather than tidy a manifest.
     """

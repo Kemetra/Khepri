@@ -23,7 +23,7 @@ from khepri.rra.envelope import EnvelopeError, MasterKey
 DATABASE_NAME = "khepri"
 
 DATABASE_SECRET_VARIABLE = "KHEPRI_DATABASE_SECRET"
-# `KHEPRI-DEC-008` states the runtime as a capability contract, so the storage coordinates are the
+# `KHEPRI-DEC-028` states the runtime as a capability contract, so the storage coordinates are the
 # ones an S3-compatible client needs and nothing more. There is no region allowlist and no account
 # identifier: a region is whatever the configured endpoint expects, and ownership is established by
 # the credentials rather than asserted on every call.
@@ -34,7 +34,7 @@ BUCKET_VARIABLE = "KHEPRI_BUCKET"
 # *source* is a deployment decision no artifact settles; this is only the boundary it arrives
 # through.
 MASTER_KEY_VARIABLE = "KHEPRI_STORAGE_MASTER_KEY"
-# Inert. `KHEPRI-DEC-008` removed Amazon SQS, "its adapter, and its one-message
+# Inert. `KHEPRI-DEC-028` removed Amazon SQS, "its adapter, and its one-message
 # driver", and job delivery is now the PostgreSQL claim query -- but the runtime went
 # on *requiring* both URLs and rejecting them when equal, so every new environment had
 # to invent two values nothing read. That requirement is gone: neither name reaches
