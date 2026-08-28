@@ -8,6 +8,9 @@ from datetime import date
 from decimal import Decimal
 
 MAX_COMPARISON_BUCKETS = 20
+#: The additive identity, so a row carrying no value adds nothing rather than
+#: needing a branch to skip it.
+ZERO = Decimal(0)
 # The same four places `facts.RATIO_PRECISION` uses, for the same reason: a share
 # is a fraction, and four places is what the governed ratio contract states.
 SHARE_PRECISION = 4
@@ -197,18 +200,19 @@ class _Accumulator:
         sale: bool = True,
     ) -> None:
         self.rows += 1
-        if sale:
-            self.sale_row = True
-        if value is None:
-            self.absent = True
-            if sale:
-                self.sale_absent = True
-        else:
-            self.total += value
-            self.present = True
-            if sale:
-                self.sale_total += value
-                self.sale_present = True
+        self.sale_row = self.sale_row or sale
+        # Each measure is recorded twice: once over the financial population and
+        # once over posted sales alone, which is the pair `RRA-004` and `RRA-008`
+        # assign to the published buckets and the concentration curve
+        # respectively. Written flat rather than nested on `sale`, because the
+        # sale-scoped write is the same statement guarded by one more term.
+        absent = value is None
+        self.absent = self.absent or absent
+        self.sale_absent = self.sale_absent or (absent and sale)
+        self.total += value or ZERO
+        self.sale_total += value if value is not None and sale else ZERO
+        self.present = self.present or not absent
+        self.sale_present = self.sale_present or (not absent and sale)
         if key is not None:
             self.keys.add(key)
 
