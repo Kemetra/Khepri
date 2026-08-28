@@ -1160,8 +1160,13 @@ def _daily_values(
             return None
         return mapping.get(day, 0)
 
-    has_revenue = monetary and any(value is not None for value in measures.revenue)
-    has_units = any(value is not None for value in measures.units)
+    # A measure is available only when *every* admitted row carries it. `any`
+    # marked a column available while the accumulation above silently skipped
+    # its invalid rows, so the basis recorded partial totals as complete
+    # evidence -- `RRA-004` calls a basis the thing a figure is reconciled
+    # against, and a partial total reconciles against nothing.
+    has_revenue = monetary and all(value is not None for value in measures.revenue)
+    has_units = all(value is not None for value in measures.units)
     return tuple(
         DailyValue(
             day=day,

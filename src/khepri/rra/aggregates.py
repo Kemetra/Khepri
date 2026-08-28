@@ -129,7 +129,17 @@ class Comparison:
             "truncated_values": self.truncated_values,
             "redacted_values": self.redacted_values,
             "distinct_transactions": self.distinct_transactions,
-            "incomplete_values": self.incomplete_values,
+            # Absence serializes as absence. `package_source` compares the
+            # rebuilt digest against the stored one, so emitting a key a legacy
+            # comparison does not carry makes that document re-digest
+            # differently and a validly stored package is refused as corrupt.
+            # `False` is the value a legacy document means, so omitting it
+            # loses nothing.
+            **(
+                {}
+                if not self.incomplete_values
+                else {"incomplete_values": self.incomplete_values}
+            ),
             "curve": None if self.curve is None else self.curve.as_document(),
             "buckets": [bucket.as_document(precision=precision) for bucket in self.buckets],
         }

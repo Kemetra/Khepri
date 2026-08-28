@@ -879,3 +879,30 @@ def test_an_incomplete_dimension_survives_the_package_round_trip() -> None:
     assert rebuilt.digest == built.digest, (
         'the rebuilt package re-digests differently, so delivery refuses it'
     )
+def test_a_comparison_stored_before_the_flag_round_trips_unchanged() -> None:
+    """Reading the field back was half; `as_document` must not add it either.
+
+    `_comparison` now reads `incomplete_values`, so a legacy comparison rebuilds
+    as `False` -- and then the serializer emitted the key anyway, widening a
+    document that never carried it and refusing the package on its digest. The
+    fourth occurrence of this shape on this branch. Found in review.
+    """
+    # A package that really carries the key, so removing it is a change.
+    content = (
+        b"date,revenue,units,invoice_no,product\n"
+        b"2026-01-05,100.00,3,INV-1,Water\n"
+        b"2026-01-06,200.00,5,INV-2,\n"
+    )
+    built = package(content)
+    stored = json.loads(json.dumps(built.as_document()))
+    legacy = json.loads(json.dumps(stored))
+    for entry in legacy['comparisons']:
+        entry.pop('incomplete_values', None)
+    assert legacy != stored, 'no comparison carried the flag, so nothing is proved'
+
+    rebuilt = rebuild_fact_package(legacy)
+
+    assert rebuilt.as_document() == legacy, (
+        'the rebuilt package widens a legacy comparison, so its digest differs '
+        'and delivery refuses it'
+    )
