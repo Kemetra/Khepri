@@ -138,6 +138,7 @@ def test_the_attestation_the_upload_page_emits_is_one_the_domain_admits() -> Non
     lists = {"covered_days", "event_kinds", "statuses", "closed_days", "extraction_gap_days"}
     typed = {
         "timezone": "Africa/Cairo",
+        "attested_by": "Mona Farouk, branch manager",
         "covered_start": "2026-01-01",
         "covered_end": "2026-01-02",
         "aggregate_scope": "All stores",

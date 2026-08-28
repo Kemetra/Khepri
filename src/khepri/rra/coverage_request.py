@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from khepri.rra.coverage import (
     CoverageManifest,
@@ -71,6 +71,18 @@ class CoverageManifestBody(BaseModel):
     #: coverage from an attestation and never from observed values -- so there is
     #: nothing in the bytes to derive a day boundary from.
     timezone: str
+    #: Who made this attestation, in the operator's own words.
+    #:
+    #: Collected for the reason `datasets.manifest_binding` already records
+    #: for the timezone: a retail day boundary is not a property of the bytes,
+    #: and neither is who attested them -- there is nothing in the admission to
+    #: derive either from. Before this was collected every submitted manifest
+    #: persisted as the shared literal "operator attestation", which names a
+    #: constant rather than a person and is not an attribution at all.
+    #:
+    #: Required, because `RRA-003` requires the attestation to record who made
+    #: it and an optional field would fall back to that same literal.
+    attested_by: str
     covered_start: date
     covered_end: date
     aggregate_scope: str | None = None
@@ -81,6 +93,22 @@ class CoverageManifestBody(BaseModel):
     closed_days: list[date] = []
     extraction_gap_days: list[date] = []
     partial_terminal_boundary: bool = False
+
+    @field_validator("attested_by")
+    @classmethod
+    def _attester_is_named(cls, value: str) -> str:
+        """Refused here as well as at storage, so the operator sees it early.
+
+        `coverage._require_attester` refuses a blank value too, but it runs
+        when the manifest is built against a real binding -- after the upload
+        has been read. Refusing at the wire keeps the message beside the
+        control that produced it.
+        """
+        if not value.strip():
+            raise ValueError(
+                "A coverage manifest must record who attested it."
+            )
+        return value
 
     def to_manifest(self, *, binding: ManifestBinding) -> CoverageManifest:
         """The governed manifest, or `ManifestRefused` naming what is unusable.

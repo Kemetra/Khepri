@@ -318,6 +318,7 @@ def _bound_manifest(
             profile=profile,
             contract=contract,
             timezone=attestation.timezone,
+            attested_by=attestation.attested_by,
         )
     )
     # A real binding, so this is a phase that owes the binding proof. Both
@@ -332,6 +333,7 @@ def manifest_binding(
     profile: DatasetProfile,
     contract: SourceContract,
     timezone: str,
+    attested_by: str | None = None,
 ) -> ManifestBinding:
     """What an attestation on this admission is bound to.
 
@@ -349,11 +351,25 @@ def manifest_binding(
     constant would store an attestation the operator did not make, over a window
     whose every attested day means something different under another zone, in a
     document that is digested and cannot be corrected in place.
+
+    `attested_by` is the operator's for exactly the same reason, and was the
+    one field this function did not pass through: it fell to
+    `ManifestBinding`'s fixture default, so every stored manifest recorded the
+    same literal. Defaulted here rather than required, because the many
+    callers that build a binding for a reason unrelated to attribution keep
+    reading as one call; the production path supplies it.
     """
+    if attested_by is None:
+        return ManifestBinding(
+            input_digest=profile.source_sha256_hex,
+            source_contract_digest=contract.digest,
+            timezone=timezone,
+        )
     return ManifestBinding(
         input_digest=profile.source_sha256_hex,
         source_contract_digest=contract.digest,
         timezone=timezone,
+        attested_by=attested_by,
     )
 
 
@@ -559,6 +575,11 @@ def _requested_manifest_document(
         input_digest=record.source_sha256_hex,
         source_contract_digest=_recorded_contract_digest(record) or "",
         timezone=question.attestation.timezone,
+        # The operator's, as at storage. Left to the fixture default here, the
+        # rebuilt document would differ from the stored one in that field alone
+        # and every re-profile would report a manifest conflict that is really
+        # this function's own construction.
+        attested_by=question.attestation.attested_by,
     )
     manifest = question.attestation.to_manifest(binding=binding)
     # The real binding, so this is the phase that owes the binding proof.

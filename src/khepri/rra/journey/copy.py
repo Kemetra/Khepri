@@ -103,6 +103,11 @@ _EN = {
         "decline period comparisons and growth, because a file cannot prove "
         "which days it was meant to include. Leave it blank to skip."
     ),
+    "manifest_attested_by": "Who is confirming this",
+    "manifest_attested_by_hint": (
+        "Your name and role, so the record shows who confirmed the period "
+        "this file covers."
+    ),
     "manifest_timezone": "Timezone your trading day is counted in",
     "manifest_timezone_hint": "For example Africa/Cairo.",
     "manifest_covered_start": "First day this file is meant to cover",
@@ -265,6 +270,11 @@ _AR = {
         "اختياري. بدونه نعرض ما يظهره ملفك، لكننا نمتنع عن مقارنات الفترات "
         "والنمو، لأن الملف لا يثبت بذاته الأيام التي كان يُفترض أن يشملها. "
         "اتركه فارغاً لتخطّيه."
+    ),
+    "manifest_attested_by": "من يؤكّد ذلك",
+    "manifest_attested_by_hint": (
+        "اسمك وصفتك الوظيفية، ليوضّح السجل من أكّد الفترة "
+        "التي يغطّيها هذا الملف."
     ),
     "manifest_timezone": "المنطقة الزمنية التي يُحسب بها يوم العمل",
     "manifest_timezone_hint": "مثال: Africa/Cairo.",

@@ -105,6 +105,12 @@ COVERAGE_CSV = (
 _RETURN_ROW = b"2026-03-05,INV-4,return,posted,-90.00,-2,Giza,EGP\n"
 
 
+#: Who attested, as an operator would name themselves. Not the shared
+#: literal "operator attestation", which is what every manifest recorded
+#: before the field was collected.
+_ATTESTER = "Mona Farouk, branch manager"
+
+
 def contract_body() -> dict[str, object]:
     """A complete declaration: every governed semantic proven exactly once.
 
@@ -137,6 +143,7 @@ def manifest_body(**overrides: object) -> dict[str, object]:
     """
     body = CoverageManifestBody(
         timezone="Africa/Cairo",
+        attested_by=_ATTESTER,
         covered_start=_START,
         covered_end=_END,
         aggregate_scope=_SCOPE,
@@ -850,3 +857,44 @@ def test_a_manifest_matching_the_admitted_population_still_signs() -> None:
     assert built.json()["document"]["coverage_signatures"], (
         "the attested population matches the admitted one, so the window is proven"
     )
+def test_the_operator_attester_reaches_the_stored_manifest() -> None:
+    """`RRA-003` requires the attestation to record who made it.
+
+    `CoverageManifest.attested_by` was required and refused blank, and neither
+    production construction supplied one -- so every submitted manifest was
+    persisted as the shared literal "operator attestation". The field named a
+    constant rather than a person, which is not an attribution at all.
+
+    Collected the way the timezone is, and for the reason `manifest_binding`
+    already records for it: a retail day boundary is not a property of the
+    bytes, and neither is who attested them. There is nothing in the admission
+    to derive either from.
+    """
+    test = ready()
+
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(attested_by=_ATTESTER)),
+    )
+    assert profiled.status_code == 201, profiled.text
+
+    stored = test.stored().document["coverage_manifest"]
+    assert stored["attested_by"] == _ATTESTER, stored
+
+
+def test_a_manifest_naming_no_attester_is_refused_at_the_route() -> None:
+    """A blank attribution is refused where it is submitted, not later.
+
+    `_require_attester` already refuses a blank value, but it runs at storage
+    time; an operator meets the refusal only after the upload has been read.
+    Pinned here so the wire model carries the requirement too, and the field
+    cannot quietly become optional and fall back to the shared literal.
+    """
+    test = ready()
+
+    refused = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(attested_by="   ")),
+    )
+
+    assert refused.status_code in {400, 422}, refused.text
