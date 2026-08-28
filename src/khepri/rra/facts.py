@@ -562,6 +562,7 @@ def _totals(
     basis: BasisDeclaration,
     *,
     repeated_row_signature: bool = False,
+    repeated_sale_signature: bool = False,
 ) -> _Totals:
     """Every package total, with the monetary ones gated on one proven currency.
 
@@ -582,7 +583,7 @@ def _totals(
     the only figure anybody reads: honouring it on `AdmittedEvent` alone leaves
     the refusal true of an intermediate object and false of the report.
     """
-    complete = measures.transaction_identifiers_complete
+    complete = measures.transaction_identifiers_complete and not repeated_sale_signature
     if repeated_row_signature:
         # `RRA-003`: a repeated canonical row signature "refuses every additive
         # or distinct-transaction result that could include it", and the
@@ -592,8 +593,18 @@ def _totals(
         return _Totals(
             revenue=None,
             units=None,
-            transactions=None,
-            transactions_reason=REASON_REPEATED_ROW_SIGNATURE,
+            # A duplicated return leaves the sale-only populations whole, so
+            # they are counted rather than blanked with the financial ones.
+            transactions=(
+                None
+                if repeated_sale_signature or not complete
+                else _distinct(_sale_only(measures.transactions, measures))
+            ),
+            transactions_reason=(
+                REASON_REPEATED_ROW_SIGNATURE
+                if repeated_sale_signature
+                else REASON_INPUT_UNAVAILABLE
+            ),
             cost=None,
             discount=None,
             returns=None,
@@ -684,20 +695,50 @@ def _margin_inputs(
     return revenue, revenue - cost
 
 
-def _signed_columns(mapping: RetailMapping) -> list[int]:
-    """The positions `RRA-003` signs: every semantic the mapping admitted."""
-    positions = {
-        mapping.for_semantic(semantic).column.position
-        for semantic in SIGNED_SEMANTICS
-        if mapping.for_semantic(semantic).column is not None
-    }
-    return sorted(positions)
+def _signed_rows(
+    frame: pl.DataFrame, mapping: RetailMapping, measures: _Measures
+) -> list[tuple[object, ...]]:
+    """Each admitted row as the fields `RRA-003` signs, in governed form.
+
+    "All admitted identity, dimension, and measure fields" -- the values
+    admission produced, not the characters the file spelled them with.
+    `materialize` keeps every column as text, so comparing the frame directly
+    made `250` and `250.00` two different rows though `_decimal_values` gives
+    both the same governed value.
+
+    Measures come from `_measures`, already parsed. Dimensions come through
+    `_raw_values`, the same normalizer the comparisons use, so a value is
+    trimmed and an empty cell is absent rather than blank. Columns no semantic
+    claims are excluded outright: a free-text note or an export timestamp is not
+    an admitted field and cannot make two identical sales distinct.
+    """
+    dimensions = [
+        _raw_values(frame, column.position)
+        for semantic in COMPARISON_DIMENSIONS
+        if (column := mapping.for_semantic(semantic).column) is not None
+    ]
+    return [
+        (
+            measures.dates[index],
+            measures.transactions[index],
+            measures.revenue[index],
+            measures.units[index],
+            measures.cost[index],
+            measures.discount[index],
+            measures.returns[index],
+            *(values[index] for values in dimensions),
+        )
+        for index in range(frame.height)
+    ]
 
 
-def _repeated_row_signature(
-    frame: pl.DataFrame, mapping: RetailMapping, identity: IdentityDeclaration
-) -> bool:
-    """Whether any admitted row repeats another across every signed field.
+def _repeated_signature_kinds(
+    frame: pl.DataFrame,
+    mapping: RetailMapping,
+    measures: _Measures,
+    identity: IdentityDeclaration,
+) -> frozenset[str]:
+    """The event kinds whose own rows contain a repeated canonical signature.
 
     **Only when the contract proved identity that way.** `RRA-003` proves
     source-event identity "in exactly one of these ways": a stable event or line
@@ -709,25 +750,27 @@ def _repeated_row_signature(
     admits: "Repeated products or categories in one transaction remain valid when
     their event identities differ."
 
+    **Per kind, because the refusal is per population.** `RRA-003` refuses "every
+    additive or distinct-transaction result that *could include* it", and a
+    duplicated return is in no sale-only population: refusing transactions, AOV
+    and ASP over one reports a defect the reader's sales data does not have.
+    Grouped by event kind so each population asks only about the rows it reads.
+
     A repeated *event key* refuses too, and is detected nowhere in this package.
-    That gap is recorded rather than closed here: it needs the key column read at
-    admission, and no fixture in this suite declares one.
-
-    `RRA-003` signs "all admitted identity, dimension, and measure fields" -- not
-    the source row. Comparing whole rows lets a column no semantic claims, such as
-    a free-text note, an export timestamp or a row id, make two identical sales
-    look distinct, and the refusal then fails *open* on exactly the input it
-    exists for.
-
-    An extract mapping nothing has no signature to repeat, so it cannot be
-    duplicated into one.
+    That gap is recorded rather than closed here: it needs the declared key
+    columns read at admission, and no fixture in this suite declares one.
     """
-    if identity.event_key_columns:
-        return False
-    signed = _signed_columns(mapping)
-    if not frame.height or not signed:
-        return False
-    return bool(int(frame[:, signed].is_duplicated().sum()))
+    if identity.event_key_columns or not frame.height:
+        return frozenset()
+    rows = _signed_rows(frame, mapping, measures)
+    seen: dict[str, set[tuple[object, ...]]] = {}
+    repeated: set[str] = set()
+    for kind, row in zip(measures.event_kinds, rows, strict=True):
+        signatures = seen.setdefault(kind, set())
+        if row in signatures:
+            repeated.add(kind)
+        signatures.add(row)
+    return frozenset(repeated)
 
 
 def _admitted_frame(frame: pl.DataFrame, admitted_events: AdmittedEvents) -> pl.DataFrame:
@@ -837,12 +880,20 @@ def _build(
     # `RRA-003`: an attestation of unique line grain is falsified by a repeated
     # canonical row signature, so this is read from the admitted frame before
     # any total is formed rather than disclosed after they are all published.
-    repeated_rows = _repeated_row_signature(frame, mapping, admitted.contract.identity)
+    repeated_kinds = _repeated_signature_kinds(
+        frame, mapping, measures, admitted.contract.identity
+    )
+    # Revenue, units, cost, discount and the margin pair read the financial
+    # population, so any repeated kind reaches them. Transactions, AOV and ASP
+    # read posted sales only.
+    repeated_rows = bool(repeated_kinds)
+    repeated_sales = EVENT_SALE in repeated_kinds
     totals = _totals(
         measures,
         admitted_events,
         admitted.contract.basis,
         repeated_row_signature=repeated_rows,
+        repeated_sale_signature=repeated_sales,
     )
     revenue_total = totals.revenue
     units_total = totals.units
@@ -951,12 +1002,12 @@ def _build(
         metric=METRIC_AVERAGE_ORDER_VALUE,
         numerator=(
             _monetary(admitted_events, orders.left)
-            if measures.transaction_identifiers_complete and not repeated_rows
+            if measures.transaction_identifiers_complete and not repeated_sales
             else None
         ),
         denominator=(
             _distinct(orders.right)
-            if measures.transaction_identifiers_complete and not repeated_rows
+            if measures.transaction_identifiers_complete and not repeated_sales
             else None
         ),
         unit_kind=UNIT_MONETARY,
@@ -969,10 +1020,10 @@ def _build(
         metric=METRIC_AVERAGE_SELLING_PRICE,
         numerator=(
             _monetary(admitted_events, selling.left)
-            if complete_selling and not repeated_rows
+            if complete_selling and not repeated_sales
             else None
         ),
-        denominator=None if repeated_rows else _sum_integer(selling.right),
+        denominator=None if repeated_sales else _sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),

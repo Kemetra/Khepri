@@ -1848,3 +1848,81 @@ def test_a_keyed_contract_is_not_judged_by_the_row_signature() -> None:
 
     assert result.value(METRIC_REVENUE) == "500.00"
     assert result.value(METRIC_UNITS) == "10"
+
+
+def _oracle_package(content: bytes) -> FactPackage:
+    """A package under the oracle contract, for signature cases needing dimensions."""
+    from tests.rra003_contract_fixtures import oracle_contract
+
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+_SIGNATURE_HEADER = (
+    b"date,event_kind,status,revenue,units,invoice_no,store,product,"
+    b"category,cost,discount_amount\n"
+)
+
+
+def test_the_signature_compares_governed_values_not_source_text() -> None:
+    """`250` and `250.00` are one admitted value, so they are one signature.
+
+    `materialize` keeps every column as text, and `RRA-003` signs "admitted
+    identity, dimension, and measure fields" -- the values admission produced,
+    not the characters the file spelled them with. Comparing the text let a
+    trailing `.00`, a padded field or any other equivalent spelling hide a real
+    duplicate, so the refusal failed *open* on a file that differs from the
+    caught one only in formatting.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,250,5,INV-1,S1,P1,C1,140.00,0.00\n"
+        + b"2026-03-04,sale,posted,250.00,5,INV-1,S1,P1,C1,140.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.fact(METRIC_REVENUE) is None, "a formatting difference hid a duplicate"
+    refused = result.refusal(METRIC_REVENUE)
+    assert refused is not None
+    assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_duplicated_returns_do_not_refuse_the_sale_only_results() -> None:
+    """`RRA-003` refuses the results a collision "could include", and no others.
+
+    Transactions, AOV and ASP read posted *sales*. A duplicated return is not in
+    any of those populations, so it cannot make them ambiguous -- refusing them
+    reports a defect the reader's own sales data does not have. Revenue and units
+    do include returns, so they refuse.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    # The sale-only populations are untouched: two distinct posted sales.
+    assert result.value(METRIC_TRANSACTIONS) == "2"
+    assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "150.00"
+    # Revenue includes posted returns, so the collision does reach it.
+    assert result.fact(METRIC_REVENUE) is None

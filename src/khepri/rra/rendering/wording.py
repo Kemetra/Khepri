@@ -653,7 +653,8 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "The figures are shown as supplied and have not been converted."
         ),
         "duplicate_rows_present": (
-            "Some rows in your file are exact duplicates of each other. "
+            "Some rows in your file record the same sale twice — every field "
+            "this review reads is identical, whatever else may differ. "
             "A genuine repeat sale and the same sale exported twice look "
             "identical here, so the totals that would have counted them are "
             "not shown rather than stated as one of those two readings."
@@ -723,7 +724,8 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "من دون تحويل."
         ),
         "duplicate_rows_present": (
-            "بعض صفوف ملفك مكررة بالكامل. عملية البيع المتكررة فعلاً والعملية "
+            "بعض صفوف ملفك تسجل عملية البيع نفسها مرتين — كل حقل يقرأه هذا "
+            "التقرير متطابق، مهما اختلف ما عداه. عملية البيع المتكررة فعلاً والعملية "
             "التي صُدِّرت مرتين تبدوان متطابقتين هنا، ولذلك لا تُعرض الإجماليات "
             "التي كانت ستحتسبها بدلاً من ذكرها وفق أحد هذين التفسيرين."
         ),
