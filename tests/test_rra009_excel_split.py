@@ -95,6 +95,11 @@ def test_the_rich_fixture_presents_every_section_that_has_landed() -> None:
     landed = landed_sections(bundle.identity.formula_version)
     states = {section.section_id: section.state for section in bundle.sections}
 
+    # Growth presents again. It briefly did not: the returns refusal was first
+    # written package-wide, and this fixture carries one posted return so the
+    # returns metric has something to state. `RRA-008` makes that a *window*
+    # precondition, and the return is in no compared window -- so refusing here
+    # was the guard being too broad, not the specification being honoured.
     for section_id in _FAMILIES:
         assert states[section_id] == (
             "present" if section_id in landed else "refused"

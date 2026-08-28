@@ -5,7 +5,8 @@ count, and the two are easy to confuse because both are integers that look right
 Four line items in three invoices is 1.3333 rows per transaction and 3.6667 items
 per transaction, and only the second answers the question.
 
-This module counts nothing itself. Items per transaction divides `METRIC_UNITS` by
+This module counts nothing itself. Items per transaction divides
+`FactPackage.sale_units_total` by
 `METRIC_TRANSACTIONS`, both governed facts, and `METRIC_TRANSACTIONS` is already a
 distinct count that the package refuses outright when the identifier column has
 gaps. Attach rate divides `Bucket.transactions` by `Comparison.distinct_transactions`,
@@ -13,9 +14,13 @@ both retained by `APP-014` as distinct counts and both unioned rather than summe
 Reading governed aggregates rather than recounting is what satisfies the
 requirement -- there is no place here for a row count to creep in.
 
-**Items, not lines.** An earlier plan revision had items per transaction dividing
-row count by transaction count. Row count *is* line-item count; `RRA-008` says
-items, and the governed items measure is `METRIC_UNITS`.
+**Items, not lines, and sales only.** An earlier plan revision had items per
+transaction dividing row count by transaction count. Row count *is* line-item
+count; `RRA-008` says items. The governed measure is
+`FactPackage.sale_units_total` rather than `METRIC_UNITS`: the latter's
+population is `financial_posted` and includes
+posted return units, while the denominator is sale-only, so a dataset with
+returns published a basket understated by the returned units.
 
 **One attach-rate fact per published value, and none for `other`.** Attach rate is
 inherently per value, and each rate is a separate claim a reader can act on, so
@@ -71,6 +76,7 @@ from khepri.rra.aggregates import (
 )
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
+    EVENT_SALE,
     METRIC_REVENUE,
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
@@ -166,20 +172,49 @@ def attached_value_of(fact: Fact, package: FactPackage) -> str | None:
     The label lives in the identity's hashed scope, so it is recomputed against
     the package's own buckets rather than read off the fact. That also proves two
     values cannot collide on one identifier.
+
+    **Searched across every dimension the family published**, not just the first.
+    `_attach_facts` states product and category rates independently, and a
+    category fact's identity is hashed over the category scope -- so looking only
+    at `_dimension()` matched no bucket and returned `None` for a fact the
+    package had published. Found in review.
     """
-    found = _dimension(package)
-    if found is None:
-        return None
-    dimension, entry = found
     return next(
         (
             bucket.label
+            for dimension, entry in _dimensions(package)
             for bucket in _attachable(entry)
             if _identity(fact.metric, (dimension, bucket.label))[0] == fact.fact_id
         ),
         None,
     )
 
+
+def attached_label_of(fact: Fact, package: FactPackage) -> str | None:
+    """The display label for an attach rate, naming the dimension it belongs to.
+
+    Distinct from `attached_value_of`, which answers *which value* a rate is
+    about and is what a caller resolving a bucket needs. This is what a surface
+    shows: once product and category families both publish, two buckets can carry
+    the same source value -- a product `Water` and a category `Water` -- and a
+    bare label renders them as indistinguishable rows and bars.
+
+    Qualified rather than deduplicated, because both rates are real and a reader
+    needs to see which is which.
+    """
+    found = next(
+        (
+            (dimension, bucket.label)
+            for dimension, entry in _dimensions(package)
+            for bucket in _attachable(entry)
+            if _identity(fact.metric, (dimension, bucket.label))[0] == fact.fact_id
+        ),
+        None,
+    )
+    if found is None:
+        return None
+    dimension, label = found
+    return f"{label} ({dimension})"
 
 def _facts(package: FactPackage) -> tuple[Fact, ...]:
     """Each metric stands or falls on its own inputs.
@@ -213,15 +248,25 @@ def _refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
                 reason=REASON_INPUT_UNAVAILABLE,
             )
         )
-    found = _dimension(package)
-    if found is None:
+    found = _dimensions(package)
+    if not found:
         refused.append(
             RefusedResult(
                 metric=METRIC_ATTACH_RATE,
                 reason=REASON_DIMENSION_ABSENT,
             )
         )
-    elif _incomplete(found[1]):
+    elif any(_incomplete(entry) for _, entry in found):
+        # One refusal per incomplete dimension, because `RRA-008` admits the
+        # families independently: a complete category publishes its rates
+        # while an incomplete product refuses, and both are stated. Refusing
+        # only when *every* dimension was incomplete published the surviving
+        # family and left the affected one silently absent -- a customer saw
+        # no product rates and no reason for their absence.
+        #
+        # Stated once rather than per dimension: `RefusedResult` carries no
+        # scope, and adding one would widen the governed document for a
+        # disclosure the reason already makes.
         refused.append(
             RefusedResult(
                 metric=METRIC_ATTACH_RATE,
@@ -261,16 +306,45 @@ def _summary(package: FactPackage) -> RefusedResult:
     )
 
 
+def _sale_units(package: FactPackage) -> int | None:
+    """The basket numerator, from the package or from a package that predates it.
+
+    `sale_units_total` reads back as `None` for a package stored before the field
+    existed. Refusing there would take items per transaction away from every
+    historical package -- including ones that published the correct figure,
+    because their extract admitted no returns and the sale-only sum equals the
+    headline units total.
+
+    So a package that proves it admitted sales alone falls back to `METRIC_UNITS`.
+    One that admitted returns cannot: for it the two totals genuinely differ, and
+    the older figure was the defective `23 / 2` this slice corrected. Absence of
+    the field is not evidence the difference is nil.
+    """
+    if package.sale_units_total is not None:
+        return package.sale_units_total
+    if any(kind != EVENT_SALE for kind in package.event_kind_filters):
+        return None
+    headline = package.fact(METRIC_UNITS)
+    return None if headline is None else int(Decimal(headline.value))
+
 def _counts(package: FactPackage) -> _Basket | None:
-    """Units and transactions as governed facts, or nothing divisible."""
-    units = package.fact(METRIC_UNITS)
+    """Units and transactions as governed facts, or nothing divisible.
+
+    The numerator is `FactPackage.sale_units_total`, not `METRIC_UNITS`. The latter is
+    `financial_posted` and includes posted return units, while the denominator
+    counts sale transactions only -- so a dataset with returns published a
+    basket understated by the returned units, and no reader could detect it
+    from the figures beside it. `RRA-008` puts returns in "neither numerator
+    nor denominator".
+    """
+    units = _sale_units(package)
     transactions = package.fact(METRIC_TRANSACTIONS)
     if units is None or transactions is None:
         return None
     counted = Decimal(transactions.value)
     if counted == 0:
         return None
-    return _Basket(units=Decimal(units.value), transactions=counted)
+    return _Basket(units=Decimal(units), transactions=counted)
 
 
 def _identifier_reason(package: FactPackage) -> str:
@@ -300,11 +374,27 @@ def _dimension(package: FactPackage) -> tuple[str, FactComparison] | None:
     without any revenue column, and the package then publishes a units comparison
     carrying the counts.
     """
+    found = _dimensions(package)
+    return found[0] if found else None
+
+
+def _dimensions(package: FactPackage) -> tuple[tuple[str, FactComparison], ...]:
+    """Every governed dimension the package ranked, in governed order.
+
+    `RRA-008`: product and category attach families "are admitted
+    independently and neither suppresses the other."
+
+    `_dimension` returned the first admissible dimension and the caller then
+    refused the whole family if it was incomplete -- so a missing product
+    value suppressed category rates whose own population was provably
+    complete. Enumerating them lets each be judged on its own completeness.
+    """
+    found = []
     for dimension in GOVERNED_DIMENSIONS:
         entry = _ranked(package, dimension)
         if entry is not None:
-            return (dimension, entry)
-    return None
+            found.append((dimension, entry))
+    return tuple(found)
 
 
 def _ranked(package: FactPackage, dimension: str) -> FactComparison | None:
@@ -335,50 +425,69 @@ def _attachable(entry: FactComparison) -> tuple[Bucket, ...]:
     A source value literally spelled `other` or `unlabelled` is unaffected:
     `build_comparison` disambiguates any label that would shadow a reserved
     synthetic bucket, so these two labels only ever mean the synthetic ones.
+    A value carried only by a *return* is excluded too. `RRA-008` puts attach
+    rate on `dimension_complete_sales:<dimension>`, so a product no sale ever
+    carried is outside the population -- and because return transaction keys
+    are masked it published a plausible `0.0000`, which reads as "never bought
+    alongside anything" for something never bought at all.
     """
     return tuple(
         bucket
         for bucket in entry.comparison.buckets
-        if bucket.label not in _SYNTHETIC_LABELS and bucket.transactions is not None
+        if bucket.label not in _SYNTHETIC_LABELS
+        and bucket.transactions is not None
+        and bucket.sold
     )
 
 
 def _incomplete(entry: FactComparison) -> bool:
     """Whether some eligible row did not carry this dimension's value.
 
-    Read off the synthetic `unlabelled` bucket, which is exactly where
-    `build_comparison` puts a null key -- so this asks the aggregate what it
+    Read off `Comparison.incomplete_values`, which `build_comparison` records
+    when it accumulates a null key -- so this asks the aggregate what it
     already recorded rather than re-deriving completeness from the rows.
+
+    **Not a scan of the published buckets.** That is where this looked before,
+    and it self-disarmed: a dimension with more than `MAX_COMPARISON_BUCKETS`
+    values whose `unlabelled` bucket ranks below the limit has that bucket
+    folded into `other`, and the scan then found nothing and let every rate
+    publish against an unproven population. The flag is set before any
+    truncation decision, so display cannot change what completeness the
+    package claims.
 
     The redacted buckets are deliberately *not* treated as incomplete: a redacted
     value is present and known, withheld only from display, so it counts in both
     numerator and denominator without making any rate unknowable.
     """
-    return any(
-        bucket.label == UNLABELLED_BUCKET_LABEL
-        for bucket in entry.comparison.buckets
-    )
+    return entry.comparison.incomplete_values
 
 
 def _attach_facts(package: FactPackage) -> tuple[Fact, ...]:
-    found = _dimension(package)
-    if found is None:
-        return ()
-    dimension, entry = found
-    if _incomplete(entry):
-        # The whole family, not the unlabelled value alone: every other rate
-        # divides by a denominator this transaction inflates.
-        return ()
-    total = Decimal(entry.comparison.distinct_transactions or 0)
-    return tuple(
-        _fact(
-            METRIC_ATTACH_RATE,
-            (dimension, bucket.label),
-            Decimal(bucket.transactions or 0) / total,
-            entry.caveats,
+    """Every dimension whose own population is complete, judged separately.
+
+    An incomplete dimension still refuses its *whole* family rather than its
+    unlabelled value alone: every other rate in it divides by a denominator
+    that transaction inflates. What changed is the scope of that refusal --
+    `RRA-008` admits the families independently, so one incomplete dimension
+    no longer takes a complete one with it.
+    """
+    stated: list[Fact] = []
+    for dimension, entry in _dimensions(package):
+        if _incomplete(entry):
+            continue
+        total = Decimal(entry.comparison.distinct_transactions or 0)
+        if total <= 0:
+            continue
+        stated.extend(
+            _fact(
+                METRIC_ATTACH_RATE,
+                (dimension, bucket.label),
+                Decimal(bucket.transactions or 0) / total,
+                entry.caveats,
+            )
+            for bucket in _attachable(entry)
         )
-        for bucket in _attachable(entry)
-    )
+    return tuple(stated)
 
 
 def _identity(metric: str, scope: tuple[str, ...]) -> tuple[str, str]:

@@ -47,6 +47,17 @@ class Bucket:
     rows: int
     days: int | None = None
     transactions: int | None = None
+    #: Whether a posted *sale* row landed in this bucket.
+    #:
+    #: `RRA-008` puts attach rate on `dimension_complete_sales:<dimension>`, so
+    #: a value carried only by a return is outside that population. Without
+    #: this the bucket still published, and because return transaction keys are
+    #: masked it published a plausible `0.0000` -- a value that reads as "never
+    #: bought with anything" for something never sold at all.
+    #:
+    #: Defaults `True` so a time bucket, and any caller with no event kinds to
+    #: offer, is unaffected.
+    sold: bool = True
 
     def as_document(self, *, precision: int) -> dict[str, object]:
         return {
@@ -54,6 +65,10 @@ class Bucket:
             "value": None if self.value is None else _text(self.value, precision),
             "rows": self.rows,
             "days": self.days,
+            # Absence serializes as absence: a bucket a sale landed in is
+            # the ordinary case, so only the exception is recorded and a
+            # legacy document round-trips unchanged.
+            **({} if self.sold else {"sold": False}),
             "transactions": self.transactions,
         }
 
@@ -110,6 +125,17 @@ class Comparison:
     redacted_values: int = 0
     distinct_transactions: int | None = None
     curve: ConcentrationCurve | None = None
+    #: Whether any grouped row carried no dimension value.
+    #:
+    #: Recorded when the rows are accumulated, before the display limit is
+    #: applied, because truncation is not reversible: a consumer scanning the
+    #: published buckets for the synthetic `unlabelled` label stops seeing it
+    #: the moment it ranks below the limit and is folded into `other`, and
+    #: then reports a dimension complete that never was.
+    #:
+    #: A *redacted* value is not incomplete. It is present and known, withheld
+    #: only from display, so it never sets this.
+    incomplete_values: bool = False
 
     def as_document(self, *, precision: int) -> dict[str, object]:
         return {
@@ -118,6 +144,17 @@ class Comparison:
             "truncated_values": self.truncated_values,
             "redacted_values": self.redacted_values,
             "distinct_transactions": self.distinct_transactions,
+            # Absence serializes as absence. `package_source` compares the
+            # rebuilt digest against the stored one, so emitting a key a legacy
+            # comparison does not carry makes that document re-digest
+            # differently and a validly stored package is refused as corrupt.
+            # `False` is the value a legacy document means, so omitting it
+            # loses nothing.
+            **(
+                {}
+                if not self.incomplete_values
+                else {"incomplete_values": self.incomplete_values}
+            ),
             "curve": None if self.curve is None else self.curve.as_document(),
             "buckets": [bucket.as_document(precision=precision) for bucket in self.buckets],
         }
@@ -129,12 +166,34 @@ class _Accumulator:
     rows: int = 0
     present: bool = False
     keys: set[str] = field(default_factory=set)
+    #: The same total over posted sales alone, which is what the
+    #: concentration curve ranks. `RRA-008` ranks "posted-sale revenue", while
+    #: the published buckets stay `financial_posted` because `RRA-004` assigns
+    #: the revenue comparison that population deliberately. Kept beside
+    #: `total` rather than replacing it so one accumulation serves both.
+    sale_total: Decimal = Decimal(0)
+    sale_present: bool = False
+    #: Whether any posted *sale* row carried this key at all, measure or not.
+    #: Distinct from `sale_present`, which needs a value: a sale with no revenue
+    #: is in the dimension set and not in the revenue ranking.
+    sale_row: bool = False
 
-    def add(self, value: Decimal | None, key: str | None = None) -> None:
+    def add(
+        self,
+        value: Decimal | None,
+        key: str | None = None,
+        *,
+        sale: bool = True,
+    ) -> None:
         self.rows += 1
+        if sale:
+            self.sale_row = True
         if value is not None:
             self.total += value
             self.present = True
+            if sale:
+                self.sale_total += value
+                self.sale_present = True
         if key is not None:
             self.keys.add(key)
 
@@ -142,6 +201,9 @@ class _Accumulator:
         self.total += other.total
         self.rows += other.rows
         self.present = self.present or other.present
+        self.sale_total += other.sale_total
+        self.sale_present = self.sale_present or other.sale_present
+        self.sale_row = self.sale_row or other.sale_row
         # Unioned, never summed. Every dropped value may share one transaction,
         # and adding their counts would report five where the truth is one --
         # the row-count substitution `RRA-008` forbids, one level up.
@@ -161,6 +223,7 @@ class _Accumulator:
             value=self.total if self.present else None,
             rows=self.rows,
             transactions=len(self.keys) if counted else None,
+            sold=self.sale_row,
         )
 
 
@@ -204,6 +267,7 @@ def build_comparison(
     values: list[Decimal | None],
     display: Callable[[str], str] | None = None,
     transactions: list[str | None] | None = None,
+    sales: list[bool] | None = None,
     limit: int = MAX_COMPARISON_BUCKETS,
 ) -> Comparison:
     """Group by the source value; sanitize only the label that is displayed.
@@ -217,19 +281,43 @@ def build_comparison(
     truncation is not reversible: the dropped values and their revenues are gone
     once they have been folded into `other`.
 
+    `sales` says which rows are posted sales, for the concentration curve, which
+    `RRA-008` ranks over posted-sale revenue while the published buckets stay
+    `financial_posted`. Absent, every row counts as a sale.
+
     `transactions` is the mapped transaction identifier per row, or `None` when
     no identifier is mapped. Absent, every transaction count stays `None` -- a
     row count never stands in for one.
     """
     accumulators: dict[str | None, _Accumulator] = {}
     members = transactions if transactions is not None else [None] * len(keys)
-    for key, value, member in zip(keys, values, members, strict=True):
-        accumulators.setdefault(key, _Accumulator()).add(value, member)
+    # Absent, every row counts as a sale: a caller with no event kinds to
+    # offer has admitted no returns to exclude.
+    kinds = sales if sales is not None else [True] * len(keys)
+    for key, value, member, is_sale in zip(
+        keys, values, members, kinds, strict=True
+    ):
+        accumulators.setdefault(key, _Accumulator()).add(
+            value, member, sale=is_sale
+        )
 
     labels = _labels(list(accumulators), display)
+    # Display order ranks the published `financial_posted` total, which is what
+    # the buckets show. `_curve` re-ranks on sale revenue for the same reason it
+    # sums it: `RRA-008` ranks posted-sale revenue, and a value with heavy
+    # returns must not be placed below its true sale contribution.
     ordered = sorted(
         accumulators,
         key=lambda key: (-accumulators[key].total, labels[key]),
+    )
+    # Return-only values are not in the posted-sale set at all: `RRA-008` ranks
+    # "the full, non-null, admissible product or category set with complete sale
+    # revenue", and a value no sale ever carried is none of those. Left in, it
+    # inflated `distinct_values`, which a reader takes as the size of the set the
+    # curve speaks for.
+    ranked_order = sorted(
+        (key for key in accumulators if accumulators[key].sale_row),
+        key=lambda key: (-accumulators[key].sale_total, labels[key]),
     )
     counted = transactions is not None
     kept, dropped = ordered[:limit], ordered[limit:]
@@ -250,7 +338,16 @@ def build_comparison(
             if key is not None and display is not None and display(key) == REDACTION_SENTINEL
         ),
         distinct_transactions=_distinct_members(accumulators) if counted else None,
-        curve=_curve([accumulators[key] for key in ordered]),
+        # Asked of the accumulator keys, which are the source values, rather
+        # than of the buckets, which are what display kept -- and only of the
+        # keys a *sale* landed on. `RRA-008` puts attach rate and concentration
+        # on posted-sale populations, so a return carrying no product said
+        # nothing about whether the sale dimension is complete, and refused a
+        # provably complete one.
+        incomplete_values=any(
+            key is None and accumulators[key].sale_row for key in accumulators
+        ),
+        curve=_curve([accumulators[key] for key in ranked_order]),
     )
 
 
@@ -276,7 +373,11 @@ def _curve(ordered: list[_Accumulator]) -> ConcentrationCurve | None:
     governed refusal to the analysis family rather than publishing a curve whose
     shape contradicts its name.
     """
-    ranked = [entry.total for entry in ordered if entry.present]
+    # `RRA-008` ranks posted-sale revenue. Reading `total` here ranked
+    # return-inclusive financial revenue, so a value with heavy returns was
+    # placed below its true sale contribution -- and the top-decile and
+    # top-quartile shares read off this curve inherited the same base.
+    ranked = [entry.sale_total for entry in ordered if entry.sale_present]
     total = sum(ranked, Decimal(0))
     if total <= 0 or any(value < 0 for value in ranked):
         return None

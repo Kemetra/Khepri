@@ -45,11 +45,46 @@ from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
     attesting_manifest,
+    oracle_contract,
     published_mapping_identity,
 )
 
 HEADER = b"date,revenue,units,invoice_no\n"
 START = date(2026, 1, 5)
+
+
+def _package_with_returns(content: bytes, days: tuple = ()) -> FactPackage:
+    """A package over an extract naming its event kinds, coverage attested.
+
+    `TEST_CONTRACT` declares no event-kind column, so a return cannot be
+    expressed through it at all; `oracle_contract` can. Coverage is attested
+    so the refusal under test comes from the returns rather than from an
+    unproven window.
+    """
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract(status_column=None)
+    manifest = (
+        attesting_manifest(content=content, contract=contract, days=days)
+        if days
+        else None
+    )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest,
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            ),
+        )
 
 
 def package_for(
@@ -201,7 +236,7 @@ def test_refuses_when_no_units_are_mapped() -> None:
     # Coverage attested, so the refusal comes from the measure rather than from
     # an unproven window. Without it this refuses as `prior_window_absent` and
     # the case would prove nothing about units at all.
-    days = tuple(START + timedelta(days=index) for index in range(4))
+    days = tuple(START + timedelta(days=index) for index in range(5))
     result = growth.derive(package_for(content, days=days))
     assert isinstance(result, RefusedResult)
     assert result.reason == REASON_UNITS_ABSENT
@@ -426,3 +461,134 @@ def test_a_dataset_with_no_prior_period_still_says_so() -> None:
     refused = growth.derive(package_for(HEADER + body, days=days))
     assert isinstance(refused, RefusedResult)
     assert refused.reason == REASON_PRIOR_WINDOW_ABSENT
+def test_a_return_in_a_compared_window_refuses_growth() -> None:
+    """`RRA-008`: both aligned windows must be "return-free posted-sale
+    populations over `sales_complete_revenue_units`", and "a return \u2026
+    refuses growth."
+
+    `_periods` reads the revenue and units trends, whose totals are
+    `financial_posted` and therefore include posted returns. A window
+    containing a return published a decomposition without proving a
+    return-free basis -- and the specification does not ask for the returns to
+    be netted out, it asks for the decomposition to be refused.
+    """
+    # The return must land inside a *compared* window. `windows.settled` drops
+    # the first and last buckets, so with five days the compared pair is the
+    # 7th against the 6th -- an earlier draft of this test put the return on
+    # the 8th, outside both, and passed only because the refusal was
+    # package-wide. Review caught it.
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,10,INV-1\n"
+        b"2026-01-06,sale,200.00,20,INV-2\n"
+        b"2026-01-07,sale,300.00,25,INV-3\n"
+        b"2026-01-07,return,-50.00,-5,INV-4\n"
+        b"2026-01-09,sale,120.00,8,INV-5\n"
+    )
+    days = tuple(START + timedelta(days=index) for index in range(4))
+
+    package = _package_with_returns(content, days=days)
+    # Proved first: a return really was admitted, or this shows nothing.
+    assert package.event_kind_filters == ("return", "sale")
+
+    result = growth.derive(package)
+
+    assert isinstance(result, RefusedResult), result
+    assert result.reason == growth.REASON_RETURNS_PRESENT, result
+def test_a_return_outside_both_windows_does_not_refuse_growth() -> None:
+    """`RRA-008` makes returns a *window-level* precondition, not a package one.
+
+    "Both aligned windows must be return-free posted-sale populations" -- so a
+    return in some period neither compared window covers says nothing about
+    either. The first version of this guard read a package-wide caveat and
+    refused a decomposition that was perfectly valid. Found in review.
+
+    Paired with the case above so a guard that simply never refuses fails there,
+    and one that always refuses fails here.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,10,INV-1\n"
+        b"2026-01-06,sale,200.00,20,INV-2\n"
+        b"2026-01-07,sale,300.00,25,INV-3\n"
+        b"2026-01-09,sale,120.00,8,INV-5\n"
+        b"2026-01-09,return,-50.00,-5,INV-6\n"
+    )
+    days = tuple(START + timedelta(days=index) for index in range(5))
+
+    package = _package_with_returns(content, days=days)
+    assert package.event_kind_filters == ("return", "sale")
+    # The premise: the return is in a period neither compared window covers.
+    window = comparison.accepted_window(package, MODE_PERIOD_OVER_PERIOD)
+    assert window is not None
+    compared = {window.current.label, window.prior.label}
+    assert not compared & set(package.returning_periods), (
+        f'the return landed inside a compared window: {compared} vs '
+        f'{package.returning_periods}'
+    )
+
+    result = growth.derive(package)
+
+    assert not isinstance(result, RefusedResult), result
+def test_a_package_with_no_return_evidence_refuses_rather_than_assuming() -> None:
+    """Absence of evidence is not evidence of absence.
+
+    A package stored before `returning_periods` existed reads it back as an empty
+    tuple. Taken at face value that says "neither window holds a return", so a
+    legacy package whose `event_kind_filters` include `return` would publish a
+    decomposition over return-inclusive trends -- the exact figure `RRA-008`
+    refuses. Found in review.
+
+    `RRA-003` states the rule for event kinds: "absence of event-kind evidence
+    cannot establish zero". The same applies to return-period evidence.
+    """
+    from dataclasses import replace
+
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,10,INV-1\n"
+        b"2026-01-06,sale,200.00,20,INV-2\n"
+        b"2026-01-07,sale,300.00,25,INV-3\n"
+        b"2026-01-09,sale,120.00,8,INV-5\n"
+        b"2026-01-09,return,-50.00,-5,INV-6\n"
+    )
+    days = tuple(START + timedelta(days=index) for index in range(5))
+    package = _package_with_returns(content, days=days)
+    # This package publishes today, because its return is outside both windows.
+    assert not isinstance(growth.derive(package), RefusedResult)
+
+    # Aged into a document written before the evidence was retained.
+    legacy = replace(package, returning_periods=())
+    assert "return" in legacy.event_kind_filters
+
+    result = growth.derive(legacy)
+
+    assert isinstance(result, RefusedResult), result
+    assert result.reason == growth.REASON_RETURNS_PRESENT
+def test_an_undated_return_refuses_growth_however_the_dated_ones_fall() -> None:
+    """A return with no date belongs to no period, so no window excludes it.
+
+    `_returning_periods` first dropped undated rows, which left a *non-empty*
+    tuple naming the dated returns -- evidence that reads as complete. Growth then
+    checked the compared labels against it, found no overlap, and published over a
+    return it could not place. Found in review.
+
+    Recorded as a sentinel period instead. The dated return here is deliberately
+    outside both compared windows, so the case fails if the sentinel is ignored.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,10,INV-1\n"
+        b"2026-01-06,sale,200.00,20,INV-2\n"
+        b"2026-01-07,sale,300.00,25,INV-3\n"
+        b"2026-01-09,sale,120.00,8,INV-5\n"
+        b"2026-01-09,return,-50.00,-5,INV-6\n"
+        b",return,-20.00,-1,INV-7\n"
+    )
+    days = tuple(START + timedelta(days=index) for index in range(5))
+
+    package = _package_with_returns(content, days=days)
+    result = growth.derive(package)
+
+    assert isinstance(result, RefusedResult), result
+    assert result.reason == growth.REASON_RETURNS_PRESENT

@@ -63,7 +63,18 @@ def package_for(
     rows: list[tuple[date | None, str]],
     *,
     attested: bool = True,
+    attested_days: tuple[date, ...] | None = None,
 ) -> FactPackage:
+    """One package through the real pipeline, attested unless told otherwise.
+
+    `attested_days` narrows the attestation to fewer days than the rows carry,
+    which is what an export ending mid-period looks like: the signature spans
+    the *data*, so the attested days form a contiguous prefix of it and
+    `build_coverage_signature` records `COVERAGE_MODE_PREFIX`. Folded in here
+    rather than given its own builder, because a second copy of this
+    assembly differing in one argument is what drives a test module's
+    cohesion down.
+    """
     body = b"".join(
         f"{'' if when is None else when.isoformat()},"
         f"{amount},1,INV-{index},Beverages,Cairo\n".encode()
@@ -83,7 +94,13 @@ def package_for(
     # manifest", so a module whose subject is comparison arithmetic has to
     # attest its own coverage or every case refuses before reaching the
     # arithmetic it was written to prove.
-    dated = () if not attested else tuple(when for when, _ in rows if when is not None)
+    dated = (
+        ()
+        if not attested
+        else attested_days
+        if attested_days is not None
+        else tuple(when for when, _ in rows if when is not None)
+    )
     manifest = (
         None
         if not dated
@@ -808,5 +825,3 @@ def test_a_genuinely_absent_prior_window_still_says_so() -> None:
         comparison.REASON_PRIOR_WINDOW_ABSENT,
         REASON_INPUT_UNAVAILABLE,
     }, refused.reason
-
-

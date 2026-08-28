@@ -58,8 +58,10 @@ from khepri.rra.analysis.comparison import accepted_window, window_refusal
 from khepri.rra.analysis.windows import MODE_PERIOD_OVER_PERIOD
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
+    EVENT_SALE,
     METRIC_UNITS,
     REASON_INPUT_UNAVAILABLE,
+    UNDATED_RETURN_PERIOD,
     UNIT_MONETARY,
     Fact,
     FactPackage,
@@ -84,6 +86,14 @@ REASON_NOT_ADDITIVE = "decomposition_not_additive"
 # Shared wording with the comparison family, because it is the same finding about
 # the same window: there was no prior period to compare against.
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+#: A posted return in the package the compared windows are drawn from.
+#:
+#: `RRA-008` requires both aligned windows to be "return-free posted-sale
+#: populations over `sales_complete_revenue_units`" and says plainly that "a
+#: return ... refuses growth". It does not ask for the returns to be netted
+#: out: a decomposition of a window whose revenue and units include returns
+#: describes a population the specification does not admit for this family.
+REASON_RETURNS_PRESENT = "returns_present"
 
 # Where the price-times-volume cross term was placed. A governed disclosure rather
 # than a fact, because a fact states a number.
@@ -183,6 +193,37 @@ def _derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
             reason=window_refusal(package, MODE_PERIOD_OVER_PERIOD),
         )
     labels = (window.current.label, window.prior.label)
+    # A package that admitted returns and retains no period evidence cannot
+    # prove either window return-free. That is a package stored before
+    # `returning_periods` existed: reading its absence as an empty set would
+    # read "no evidence" as "no returns" and publish the decomposition
+    # `RRA-008` refuses. Absence of evidence is not evidence of absence, which
+    # is the rule `RRA-003` states for event kinds and applies here too.
+    admitted_returns = any(kind != EVENT_SALE for kind in package.event_kind_filters)
+    if admitted_returns and not package.returning_periods:
+        return RefusedResult(
+            metric=METRIC_REVENUE_CHANGE,
+            reason=REASON_RETURNS_PRESENT,
+        )
+    # An undated return is in no period, so no window can be proven free of it.
+    if UNDATED_RETURN_PERIOD in package.returning_periods:
+        return RefusedResult(
+            metric=METRIC_REVENUE_CHANGE,
+            reason=REASON_RETURNS_PRESENT,
+        )
+    if set(labels) & set(package.returning_periods):
+        # `_periods` reads the revenue and units trends, whose population is
+        # `financial_posted` and therefore includes posted returns. Refused
+        # rather than recomputed, because that is what `RRA-008` asks for.
+        #
+        # Asked of the *compared windows*, not the package: `RRA-008` makes
+        # this a window-level precondition -- "both aligned windows must be
+        # return-free" -- so a return in some period neither window covers
+        # refused a decomposition that was perfectly valid.
+        return RefusedResult(
+            metric=METRIC_REVENUE_CHANGE,
+            reason=REASON_RETURNS_PRESENT,
+        )
     periods = _periods(package, labels)
     if periods is None:
         return RefusedResult(metric=METRIC_REVENUE_CHANGE, reason=REASON_UNITS_ABSENT)

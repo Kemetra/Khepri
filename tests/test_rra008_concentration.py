@@ -39,12 +39,39 @@ from khepri.rra.mapping import SEMANTIC_CATEGORY, SEMANTIC_PRODUCT, build_mappin
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    oracle_contract,
     published_mapping_identity,
 )
 
 PRODUCT_HEADER = b"date,revenue,units,invoice_no,product\n"
 CATEGORY_HEADER = b"date,revenue,units,invoice_no,category\n"
 BARE_HEADER = b"date,revenue,units,invoice_no\n"
+
+
+def _package_with_returns(content: bytes) -> FactPackage:
+    """A package over an extract naming its event kinds.
+
+    The module contract declares no event-kind column, so a return cannot be
+    expressed through it; `oracle_contract` does.
+    """
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract(status_column=None)
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            ),
+        )
 
 
 def package_for(content: bytes) -> FactPackage:
@@ -223,3 +250,120 @@ def test_both_refusal_reasons_are_governed_section_reasons() -> None:
     """A section that cannot state its reason fails misleadingly, not closed."""
     assert REASON_AGGREGATE_UNAVAILABLE in SECTION_REASONS[SECTION_CONCENTRATION]
     assert REASON_DISTINCT_SET_UNCOMPUTABLE in SECTION_REASONS[SECTION_CONCENTRATION]
+#: One eligible posted sale carrying no product value. `build_comparison`
+#: retains it as the synthetic `unlabelled` accumulator.
+_MISSING_PRODUCT_VALUE = (
+    b"date,revenue,units,invoice_no,product\n"
+    b"2026-01-05,100.00,3,INV-1,Water\n"
+    b"2026-01-06,200.00,5,INV-2,\n"
+    b"2026-01-07,60.00,1,INV-3,Juice\n"
+)
+
+def test_a_missing_dimension_value_refuses_the_curve() -> None:
+    """`RRA-008`: "A missing dimension on any eligible posted sale, including a
+    zero-revenue row, refuses that dimension. `None` and synthetic
+    `unlabelled` are never ranked."
+
+    `_found` checked only that a comparison existed. An eligible sale with no
+    product is retained by `build_comparison` as a synthetic `unlabelled`
+    accumulator and entered the curve, so the published shares -- and the
+    top-decile and top-quartile figures read off them -- described a
+    distribution containing an unnamed accumulator.
+    """
+    package = package_for(_MISSING_PRODUCT_VALUE)
+
+    result = concentration.derive(package)
+
+    assert isinstance(result, RefusedResult), result
+    assert concentration.curve_series(package) is None, (
+        'the curve still publishes the distribution containing the unnamed value'
+    )
+def test_concentration_ranks_posted_sale_revenue_not_net_revenue() -> None:
+    """`RRA-008`: concentration "ranks posted-sale revenue over the full,
+    non-null, admissible product or category set with complete sale revenue".
+
+    The family read the ordinary revenue comparison, built from
+    return-inclusive financial revenue, so a value with heavy returns ranked
+    below its true sale contribution -- and the top-decile and top-quartile
+    shares beside the curve inherited the same base.
+
+    Water sells 1000 and is returned 900; Juice sells 600. On sale revenue
+    Water leads with 1000 of 1600; on net revenue it trails with 100 of 700,
+    so the leading share is 0.6250 rather than 0.8571.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,1000.00,10,INV-1,Water\n"
+        b"2026-02-02,sale,600.00,6,INV-2,Juice\n"
+        b"2026-02-03,return,-900.00,-9,INV-3,Water\n"
+    )
+
+    package = _package_with_returns(content)
+    assert package.event_kind_filters == ("return", "sale")
+
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+    curve = published.comparison.curve
+    assert curve is not None, 'no curve was retained, so nothing is ranked'
+
+    leading = curve.shares[0]
+    assert str(leading) == '0.6250', (
+        'the curve ranks net financial revenue: Water is placed by 100 rather '
+        'than by the 1000 it sold'
+    )
+def test_a_return_only_value_is_not_in_the_ranked_sale_set() -> None:
+    """`RRA-008` ranks "the full, non-null, admissible product or category set
+    with complete sale revenue". A value no sale ever carried is none of those.
+
+    `build_comparison` accumulated a return's product like any other, so a value
+    appearing only on a return entered the curve's distinct count -- which a
+    reader takes as the size of the set the curve speaks for. Found in review.
+
+    The published buckets keep it: `RRA-004` assigns the revenue comparison
+    `financial_posted`, so the financial breakdown still shows the return.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,400.00,10,INV-1,Water\n"
+        b"2026-02-02,return,-90.00,-2,INV-2,GhostItem\n"
+    )
+
+    package = _package_with_returns(content)
+    assert package.event_kind_filters == ("return", "sale")
+
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+    curve = published.comparison.curve
+    assert curve is not None
+
+    assert curve.distinct_values == 1, (
+        'GhostItem was never sold, so it is not in the posted-sale set the '
+        'curve describes'
+    )
+    # The financial breakdown is unchanged and still carries both values.
+    assert published.comparison.distinct_values == 2
+
+
+def test_a_null_dimension_on_a_return_does_not_refuse_a_complete_sale_set() -> None:
+    """Completeness is a question about the posted-sale population.
+
+    The incomplete-dimension flag scanned every accumulator, so a return
+    carrying no product refused a dimension whose every *sale* value was
+    present -- losing a curve and an attach family the package could prove.
+    Found in review.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,400.00,10,INV-1,Water\n"
+        b"2026-02-02,sale,600.00,15,INV-2,Juice\n"
+        b"2026-02-03,return,-90.00,-2,INV-3,\n"
+    )
+
+    package = _package_with_returns(content)
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+
+    assert not published.comparison.incomplete_values, (
+        'every sale carries a product, so the sale dimension is complete'
+    )
+    assert not isinstance(concentration.derive(package), RefusedResult)

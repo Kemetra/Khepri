@@ -56,7 +56,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -67,6 +67,7 @@ from khepri.rra.datasets import (
     CoverageUnproven,
     DatasetProfileRecord,
     ProfilingService,
+    document_digest,
     session_completeness,
 )
 from khepri.rra.deletion import DeletionService
@@ -74,6 +75,7 @@ from khepri.rra.intake import IntakeService, StoredObject
 from khepri.rra.packages import FactPackageService
 from khepri.rra.persistence import (
     Base,
+    DatasetProfileRow,
     SqlDeletionRepository,
     SqlFactPackageRepository,
     SqlProfileRepository,
@@ -97,6 +99,16 @@ COVERAGE_CSV = (
     b"2026-03-04,INV-2,sale,posted,150.00,3,Cairo,EGP\n"
     b"2026-03-05,INV-3,sale,posted,220.00,4,Giza,EGP\n"
 )
+
+#: One posted return, for the case where the package admits a kind the
+#: manifest does not attest. Kept beside the extract it extends.
+_RETURN_ROW = b"2026-03-05,INV-4,return,posted,-90.00,-2,Giza,EGP\n"
+
+
+#: Who attested, as an operator would name themselves. Not the shared
+#: literal "operator attestation", which is what every manifest recorded
+#: before the field was collected.
+_ATTESTER = "Mona Farouk, branch manager"
 
 
 def contract_body() -> dict[str, object]:
@@ -131,6 +143,7 @@ def manifest_body(**overrides: object) -> dict[str, object]:
     """
     body = CoverageManifestBody(
         timezone="Africa/Cairo",
+        attested_by=_ATTESTER,
         covered_start=_START,
         covered_end=_END,
         aggregate_scope=_SCOPE,
@@ -184,6 +197,11 @@ class Harness:
     client: TestClient
     invitations: InvitationService
     profiles: SqlProfileRepository
+    #: Exposed so a test can rewrite a stored profile row directly. Simulating a
+    #: document persisted before a field existed is not something any route can
+    #: do -- the write path always emits the current shape -- so the row has to
+    #: be edited behind the repository.
+    factory: sessionmaker
 
     @property
     def session_id(self) -> str:
@@ -251,6 +269,7 @@ def harness() -> Harness:
         client=TestClient(app, base_url="https://testserver"),
         invitations=invitations,
         profiles=profiles,
+        factory=factory,
     )
 
 
@@ -733,4 +752,182 @@ def test_an_attested_profile_builds_a_package_that_carries_its_coverage() -> Non
     assert document["coverage_signatures"], (
         "the package retained no coverage signature, so comparison and growth "
         "refuse every report this session produces"
+    )
+
+
+def test_a_profile_stored_before_attribution_still_builds_its_package() -> None:
+    """Reading a legacy document leniently is only half the fix; it must re-emit.
+
+    `attested_by` was added to the manifest shape without moving
+    `COVERAGE_MANIFEST_VERSION`, so documents persisted before it exists carry no
+    such key. `manifest_from_document` was made lenient -- absent reads back as
+    `UNRECORDED_ATTESTER` -- which stopped the `KeyError`. But `as_document()`
+    then emitted the sentinel as a real value, and `packages._readmit` rebuilds
+    the profile document from the stored manifest and compares its digest
+    against the one persisted. The rebuilt document carried a key the stored one
+    did not, so the digests differed and the profile refused its own package.
+
+    **Neither half produced a package.** The crash became a refusal, which is
+    why a test asserting only that the read succeeds passes while production
+    stays broken. This drives the route so the digest comparison is really run.
+    """
+    test = ready()
+    profiled = test.client.post("/api/v1/beta/profile", json=profile_with(manifest_body()))
+    assert profiled.status_code == 201, profiled.text
+
+    # Age the stored row into a pre-`attested_by` document, digest included, so
+    # it is indistinguishable from one written before the field existed.
+    with test.factory.begin() as database:
+        stored = database.scalar(select(DatasetProfileRow))
+        document = dict(stored.document)
+        manifest = {
+            key: value
+            for key, value in dict(document["coverage_manifest"]).items()
+            if key != "attested_by"
+        }
+        assert "attested_by" not in manifest
+        document["coverage_manifest"] = manifest
+        stored.document = document
+        stored.profile_digest = document_digest(document)
+
+    built = test.client.post("/api/v1/beta/facts")
+
+    assert built.status_code == 201, built.text
+    assert built.json()["document"]["coverage_manifest_identity"], (
+        "the rebuilt package saw no attestation, so the legacy manifest was "
+        "read but not carried through"
+    )
+
+
+def test_a_manifest_attesting_less_than_the_package_admitted_signs_nothing() -> None:
+    """The attested filters are checked against the population really admitted.
+
+    `facts._signatures_of` retained `event_kinds` verbatim off the manifest, so a
+    manifest attesting `sale` over an extract the package admitted *returns*
+    from produced a signature reporting a window proven while the returns in it
+    had no completeness proof at all.
+
+    `comparison._structurally_compatible` compares these filters *between*
+    windows, so the mismatch is invisible there: both windows carry the same
+    declaration and agree. It has to be refused where the signature is built,
+    against the data, or it is never detected.
+
+    The relation is subset, not equality -- an attestation naming more kinds
+    than the package admitted is a strictly stronger claim and is accepted, as
+    the sale-only case below shows. This is the direction that loses proof.
+    """
+    with_return = COVERAGE_CSV + _RETURN_ROW
+    test = ready(with_return)
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(event_kinds=["sale"])),
+    )
+    assert profiled.status_code == 201, profiled.text
+
+    built = test.client.post("/api/v1/beta/facts")
+    assert built.status_code == 201, built.text
+    document = built.json()["document"]
+
+    # Proved first: without this the case passes vacuously if the return row is
+    # dropped, and it would be asserting nothing about attestation at all.
+    assert document["event_kind_filters"] == ["return", "sale"], (
+        "the package admitted no return, so this case cannot show an "
+        "attestation that omits one"
+    )
+    assert not document["coverage_signatures"], (
+        "a window was reported proven while the returns the package computed "
+        "over were never attested"
+    )
+
+
+def test_a_manifest_matching_the_admitted_population_still_signs() -> None:
+    """The guard refuses a mismatch, not every attestation.
+
+    Paired with the refusal above so a check that simply returned no signature
+    would fail here: the sale-only attestation over the sale-only extract is
+    exactly the ordinary case, and it must keep proving its window.
+    """
+    test = ready()
+    profiled = test.client.post("/api/v1/beta/profile", json=profile_with(manifest_body()))
+    assert profiled.status_code == 201, profiled.text
+
+    built = test.client.post("/api/v1/beta/facts")
+    assert built.status_code == 201, built.text
+
+    assert built.json()["document"]["coverage_signatures"], (
+        "the attested population matches the admitted one, so the window is proven"
+    )
+def test_the_operator_attester_reaches_the_stored_manifest() -> None:
+    """`RRA-003` requires the attestation to record who made it.
+
+    `CoverageManifest.attested_by` was required and refused blank, and neither
+    production construction supplied one -- so every submitted manifest was
+    persisted as the shared literal "operator attestation". The field named a
+    constant rather than a person, which is not an attribution at all.
+
+    Collected the way the timezone is, and for the reason `manifest_binding`
+    already records for it: a retail day boundary is not a property of the
+    bytes, and neither is who attested them. There is nothing in the admission
+    to derive either from.
+    """
+    test = ready()
+
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(attested_by=_ATTESTER)),
+    )
+    assert profiled.status_code == 201, profiled.text
+
+    stored = test.stored().document["coverage_manifest"]
+    assert stored["attested_by"] == _ATTESTER, stored
+
+
+def test_a_manifest_naming_no_attester_is_refused_at_the_route() -> None:
+    """A blank attribution is refused where it is submitted, not later.
+
+    `_require_attester` already refuses a blank value, but it runs at storage
+    time; an operator meets the refusal only after the upload has been read.
+    Pinned here so the wire model carries the requirement too, and the field
+    cannot quietly become optional and fall back to the shared literal.
+    """
+    test = ready()
+
+    refused = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(attested_by="   ")),
+    )
+
+    assert refused.status_code in {400, 422}, refused.text
+def test_a_manifest_attesting_no_posted_status_signs_nothing() -> None:
+    """The status half of the population check the event kinds already get.
+
+    `build_coverage_manifest` accepts any non-empty status list, and `admission`
+    admits only `posted` -- so a manifest attesting some other status entirely
+    describes a population the package did not compute over, while the signature
+    reported its window proven.
+
+    The event-kind half of this check was written first, and its docstring
+    argued statuses could not diverge because admission refuses every other
+    status. That reasoning was about the *package*; the gap is in the
+    *attestation*, which is free to name a status the package never admitted.
+    Found in review.
+    """
+    test = ready()
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(statuses=["voided"])),
+    )
+    assert profiled.status_code == 201, profiled.text
+
+    built = test.client.post("/api/v1/beta/facts")
+    assert built.status_code == 201, built.text
+    document = built.json()["document"]
+
+    assert document["status_filters"] == ["posted"], (
+        "the package admitted posted rows, so the attestation named another "
+        "population entirely"
+    )
+    assert not document["coverage_signatures"], (
+        "a window was reported proven by an attestation covering no status the "
+        "package admitted"
     )

@@ -806,3 +806,103 @@ def test_the_pipeline_runs_one_leased_job_against_the_stored_ports() -> None:
     assert repeated.delivered is False
     assert repeated.record == outcome.record
     assert len(test.rows()) == 1
+def test_a_package_stored_before_the_basket_input_still_rebuilds() -> None:
+    """`sale_units_total` was added without moving `PACKAGE_VERSION`.
+
+    Documents persisted before it exists carry no such key, and
+    `package_source._required` refuses a missing key even in optional mode --
+    so a reader that only tolerated a null value would strand every package
+    published before the field. An absent basket input rebuilds as `None`,
+    which is what it means: not counted, rather than counted and zero.
+    """
+    built = package()
+    stored = json.loads(json.dumps(built.as_document()))
+    legacy = {
+        key: value for key, value in stored.items() if key != 'sale_units_total'
+    }
+    assert 'sale_units_total' not in legacy
+
+    rebuilt = rebuild_fact_package(legacy)
+
+    assert rebuilt.sale_units_total is None
+    # And everything else about the stored package is unchanged.
+    assert rebuilt.facts == built.facts
+    assert rebuilt.row_count == built.row_count
+def test_a_legacy_package_document_still_matches_its_stored_digest() -> None:
+    """The readback is only half: the rebuilt package must re-digest the same.
+
+    `SessionFactPackageSource.load` compares `package.digest` against the stored
+    `package_digest`. A document written before `sale_units_total` existed omits
+    the key; if `as_document()` then emits it, the rebuilt digest differs and a
+    validly stored package is refused as corrupt -- the same shape as the
+    coverage-manifest round trip this branch opened with. Raised in review.
+    """
+    built = package()
+    stored = json.loads(json.dumps(built.as_document()))
+    legacy = {
+        key: value for key, value in stored.items() if key != 'sale_units_total'
+    }
+    assert 'sale_units_total' not in legacy
+
+    rebuilt = rebuild_fact_package(legacy)
+
+    assert rebuilt.sale_units_total is None
+    # `digest` hashes `as_document()`, so this is the round trip the digest
+    # comparison in `SessionFactPackageSource.load` actually performs.
+    assert rebuilt.as_document() == legacy, (
+        'the rebuilt package does not serialize back to the document it came '
+        'from, so its digest differs and a stored legacy package is refused '
+        'as corrupt'
+    )
+def test_an_incomplete_dimension_survives_the_package_round_trip() -> None:
+    """`incomplete_values` was serialized and never read back.
+
+    `package_source._comparison` constructed `Comparison` without it, so every
+    package holding an incomplete dimension rebuilt with the dataclass default
+    `False` and re-digested differently -- and `SessionFactPackageSource.load`
+    refused exactly the packages the flag was added to handle. Found in review.
+    """
+    content = (
+        b"date,revenue,units,invoice_no,product\n"
+        b"2026-01-05,100.00,3,INV-1,Water\n"
+        b"2026-01-06,200.00,5,INV-2,\n"
+    )
+    built = package(content)
+    published = built.comparison('product')
+    assert published is not None
+    # The premise: this package really does carry an incomplete dimension.
+    assert published.comparison.incomplete_values
+
+    rebuilt = rebuild_fact_package(json.loads(json.dumps(built.as_document())))
+
+    assert rebuilt.comparison('product').comparison.incomplete_values
+    assert rebuilt.digest == built.digest, (
+        'the rebuilt package re-digests differently, so delivery refuses it'
+    )
+def test_a_comparison_stored_before_the_flag_round_trips_unchanged() -> None:
+    """Reading the field back was half; `as_document` must not add it either.
+
+    `_comparison` now reads `incomplete_values`, so a legacy comparison rebuilds
+    as `False` -- and then the serializer emitted the key anyway, widening a
+    document that never carried it and refusing the package on its digest. The
+    fourth occurrence of this shape on this branch. Found in review.
+    """
+    # A package that really carries the key, so removing it is a change.
+    content = (
+        b"date,revenue,units,invoice_no,product\n"
+        b"2026-01-05,100.00,3,INV-1,Water\n"
+        b"2026-01-06,200.00,5,INV-2,\n"
+    )
+    built = package(content)
+    stored = json.loads(json.dumps(built.as_document()))
+    legacy = json.loads(json.dumps(stored))
+    for entry in legacy['comparisons']:
+        entry.pop('incomplete_values', None)
+    assert legacy != stored, 'no comparison carried the flag, so nothing is proved'
+
+    rebuilt = rebuild_fact_package(legacy)
+
+    assert rebuilt.as_document() == legacy, (
+        'the rebuilt package widens a legacy comparison, so its digest differs '
+        'and delivery refuses it'
+    )

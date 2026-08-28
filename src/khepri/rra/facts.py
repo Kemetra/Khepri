@@ -29,6 +29,7 @@ from khepri.rra.aggregates import (
     build_comparison,
     build_series,
     granularity_for,
+    period_label,
     reconciles,
 )
 from khepri.rra.bases import BasisBinding, RetainedBasis, retain_bases
@@ -38,7 +39,7 @@ from khepri.rra.coverage_signature import (
     SignatureRefused,
     build_coverage_signature,
 )
-from khepri.rra.daily_bases import AlignedDailyBasis
+from khepri.rra.daily_bases import AlignedDailyBasis, DailyValue
 from khepri.rra.mapping import (
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
@@ -108,6 +109,13 @@ METRIC_GROSS_PROFIT = "gross_profit"
 METRIC_GROSS_MARGIN = "gross_margin"
 METRIC_DISCOUNT = "discount"
 METRIC_RETURNS = "returns"
+#: What `returning_periods` records for a posted return carrying no date.
+#:
+#: It belongs to no period, so no window can be proven free of it. A label no
+#: trend can produce, so it never collides with a real period and never
+#: matches a compared label -- growth refuses on it through the
+#: unknown-evidence branch rather than through a false period match.
+UNDATED_RETURN_PERIOD = "undated"
 
 REASON_INPUT_UNAVAILABLE = "required_input_unavailable"
 REASON_ZERO_DENOMINATOR = "zero_denominator"
@@ -274,6 +282,30 @@ class FactPackage:
     # `rra008.growth.v2`" and does not widen this document.
     #: One uppercase ISO 4217 code when the package carries monetary facts.
     currency: str | None = None
+    #: `sum(positive posted-sale units)` -- the basket numerator `RRA-008`
+    #: names, or `None` where no sale carries positive units.
+    #:
+    #: A package field and not a `Fact`, deliberately. `RRA-004`'s metric
+    #: assignments are exact and name no such metric, and a package holds
+    #: "every numerical claim that may appear on any report surface" -- so
+    #: publishing it as a fact both authorizes a number the specification
+    #: does not, and puts two near-identical unit counts in front of a reader
+    #: with nothing to tell them apart. It is an input to items per
+    #: transaction, which is the governed metric.
+    #:
+    #: Distinct from the `units` fact, whose population is `financial_posted`
+    #: and therefore includes posted return units.
+    sale_units_total: int | None = None
+    #: The period labels, at the trend's own granularity, that contain a
+    #: posted return.
+    #:
+    #: `RRA-008` makes a return a *window-level* precondition for growth --
+    #: "both aligned windows must be return-free" -- and a package-wide
+    #: caveat cannot answer that: it refused a valid decomposition because
+    #: some unrelated period held a return. A package field and not a `Fact`,
+    #: for the reason `sale_units_total` records: `RRA-004`'s metric
+    #: assignments are exact and name no such metric.
+    returning_periods: tuple[str, ...] = ()
     #: The event kinds and statuses every population here was filtered to.
     event_kind_filters: tuple[str, ...] = ()
     status_filters: tuple[str, ...] = ()
@@ -327,6 +359,24 @@ class FactPackage:
             "profile_digest": self.profile_digest,
             "source_sha256_hex": self.source_sha256_hex,
             "row_count": self.row_count,
+            # Absence serializes as absence, for the reason
+            # `CoverageManifest.as_document` records: `package_source` compares
+            # the rebuilt digest against the stored one, so emitting a key a
+            # legacy document does not carry makes that document re-digest
+            # differently and a validly stored package is refused as corrupt.
+            # `PACKAGE_VERSION` does not move for this: a package without a
+            # basket numerator is the same package, not a new shape.
+            **(
+                {}
+                if self.sale_units_total is None
+                else {"sale_units_total": self.sale_units_total}
+            ),
+            # Absence serializes as absence, for the same reason.
+            **(
+                {}
+                if not self.returning_periods
+                else {"returning_periods": sorted(self.returning_periods)}
+            ),
             "monetary_precision": self.monetary_precision,
             "comparison_window_periods": self.comparison_window_periods,
             "facts": [fact.as_document() for fact in self.facts],
@@ -841,6 +891,7 @@ def _build(
         row_count=row_count,
         formula_version=formula_version,
         transactions=_countable_transactions(measures),
+        event_kinds=measures.event_kinds,
         refusals=refusals,
         caveats=caveats,
     )
@@ -866,6 +917,11 @@ def _build(
     if row_count and int(frame.is_duplicated().sum()):
         caveats.append(CAVEAT_DUPLICATE_ROWS)
 
+    # Bound once and used for both the recorded filter and the signature gate,
+    # so the population the package publishes and the one the attestation is
+    # checked against cannot drift apart.
+    admitted_kinds = _admitted_kinds(admitted_events)
+
     return FactPackage(
         package_version=PACKAGE_VERSION,
         formula_version=formula_version,
@@ -874,6 +930,8 @@ def _build(
         source_sha256_hex=profile.source_sha256_hex,
         row_count=row_count,
         monetary_precision=money,
+        sale_units_total=_sum_integer(_positive_units(measures)),
+        returning_periods=_returning_periods(measures, series),
         facts=tuple(facts),
         series=tuple(series),
         comparisons=tuple(comparisons),
@@ -884,12 +942,15 @@ def _build(
         # compatible basis" -- so a v3 package retaining none would leave every
         # derived fact citing nothing.
         currency=admitted_events.currency,
-        event_kind_filters=_admitted_kinds(admitted_events),
+        event_kind_filters=admitted_kinds,
         status_filters=(STATUS_POSTED,),
         coverage_manifest_identity=(
             None if admitted.manifest is None else admitted.manifest.input_digest
         ),
-        coverage_signatures=_signatures_of(admitted, measures),
+        coverage_signatures=_signatures_of(admitted, measures, admitted_kinds),
+        daily_bases=_daily_bases_of(
+            admitted, measures, admitted_kinds, admitted_events.currency
+        ),
         retained_bases=retain_bases(
             events=admitted_events.events,
             binding=BasisBinding(
@@ -899,6 +960,7 @@ def _build(
                 precision=money,
             ),
             counts=_population_counts(measures),
+            transaction_counts=_population_transaction_counts(measures),
         ),
     )
 
@@ -948,9 +1010,215 @@ def _population_counts(measures: _Measures) -> dict[str, int]:
     }
 
 
+def _population_transaction_counts(measures: _Measures) -> dict[str, int | None]:
+    """How many distinct canonical transactions each population contains.
+
+    The companion to `_population_counts`, and needed separately because a
+    transaction count is a *distinct key* count rather than a row count: two
+    rows of one invoice are two events and one transaction.
+
+    `retain_bases` previously took one count across all sales and gave it to
+    every basis recording transactions, so `sales_complete_transactions`,
+    `sales_complete_revenue_transactions` and
+    `sales_complete_units_transactions` reported the same number while naming
+    three different populations -- a keyed sale with revenue but no units is
+    in the first two and not the third.
+
+    `None` rather than zero where no eligible row carries a key, for the
+    reason `bases._sale_keys` records: zero asserts the population was counted
+    and found empty, which is a different claim from having no key to count.
+    """
+    sale_keys = _sale_only(measures.transactions, measures)
+    revenue_keys = _matched(_sale_only(measures.revenue, measures), sale_keys)
+    units_keys = _matched(_positive_units(measures), sale_keys)
+    # Whether there is any transaction identity to count at all. With one
+    # mapped, an empty matched population is *counted and empty*; `_distinct`
+    # alone reports `None` there, which `RetainedBasis` reserves for having no
+    # identity to count -- a different finding, inside the package digest.
+    identified = _distinct(sale_keys) is not None
+
+    def matched(keys: list) -> int | None:
+        if not identified:
+            return None
+        return _distinct(keys) or 0
+
+    return {
+        POPULATION_SALES_COMPLETE_TRANSACTIONS: _distinct(sale_keys),
+        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS: matched(revenue_keys.right),
+        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS: matched(units_keys.right),
+    }
+
+def _daily_bases_of(
+    admitted: AdmittedInput,
+    measures: _Measures,
+    admitted_kinds: tuple[str, ...],
+    currency: str | None,
+) -> tuple[AlignedDailyBasis, ...]:
+    """One aligned daily basis per attested scope, or none.
+
+    `RRA-004:120` requires the package to retain "aligned daily revenue and
+    unit bases bound to each accepted comparison window", recording "exact
+    start and end dates, store or aggregate scope, event and status filters,
+    population identity, currency and precision where applicable, and daily
+    revenue and unit values, including attested zero-activity days".
+
+    **The days come from the manifest, the values from the data.** A day the
+    operator attested and no row landed on is a covered day stating no
+    revenue -- not a hole, and not a zero. A day the manifest does not attest
+    is simply not in the basis, because `RRA-004` says observed bounds "are
+    evidence but are not coverage-manifest completeness proof": a basis built
+    from the rows alone would be exactly that proof-by-observation.
+
+    Empty where nothing is attested, for the same reason `_signatures_of` is:
+    this is coverage evidence, and a package with no manifest has none to
+    give. The population is `financial_posted`, which is what these daily
+    values sum: `RRA-008` narrows to a sale-only population when it consumes
+    them, and recording a narrower code here would name a population these
+    values are not.
+    """
+    manifest = admitted.manifest
+    if manifest is None:
+        return ()
+    # The same gate the signatures get, and for the same reason: a basis
+    # labelled with kinds the manifest does not attest presents an unattested
+    # population as retained coverage evidence. Refusing the signature while
+    # retaining the basis left the weaker half of the same proof standing.
+    if not _attests_the_admitted_population(
+        manifest, admitted_kinds, (STATUS_POSTED,)
+    ):
+        return ()
+    # A per-store roster gets no daily basis yet. `_daily_values` sums the
+    # admitted rows without consulting any row's store, so one basis per store
+    # would record the all-store totals under each store's identity -- evidence
+    # that reconciles against the wrong population, which is worse than none.
+    # `RRA-004` requires these bases; it does not require them to be wrong.
+    if manifest.aggregate_scope is None:
+        return ()
+    # Monetary values the admission refused are not retained either. `RRA-003`
+    # refuses monetary facts "and their derived results" on a missing, malformed
+    # or mixed currency, and a basis is derived evidence: persisting the raw
+    # frame amounts under a `None` currency would retain an authoritative
+    # aggregate the package's own admission rejected.
+    monetary = currency is not None
+    return tuple(
+        AlignedDailyBasis(
+            scope=scope,
+            start=min(days),
+            end=max(days),
+            population=POPULATION_FINANCIAL_POSTED,
+            event_kinds=admitted_kinds,
+            statuses=(STATUS_POSTED,),
+            values=_daily_values(measures, days, monetary=monetary),
+            precision=measures.monetary_precision,
+            currency=currency,
+        )
+        for scope, days in _attested_days(manifest)
+    )
+
+
+def _attested_days(
+    manifest: CoverageManifest,
+) -> tuple[tuple[str, tuple[date, ...]], ...]:
+    """Each attested scope with the days it covers, in a stable order.
+
+    An extraction gap is excluded for the reason `coverage_signature._covered`
+    excludes it: `RRA-003` separates a gap, whose size is unknown, from an
+    attested closure, which proves complete zero activity and is covered.
+    """
+    covered: dict[str, list[date]] = {}
+    for scope, day in sorted(manifest.covered_pairs):
+        if (scope, day) in manifest.extraction_gaps:
+            continue
+        covered.setdefault(scope, []).append(day)
+    return tuple(
+        (scope, tuple(days)) for scope, days in sorted(covered.items()) if days
+    )
+
+
+def _daily_values(
+    measures: _Measures,
+    days: tuple[date, ...],
+    *,
+    monetary: bool = True,
+) -> tuple[DailyValue, ...]:
+    """What each attested day measured, `None` where it carried no row.
+
+    `None` and not zero: an attested day with no admitted row proves the
+    operator saw no activity, which is a different statement from a day whose
+    rows summed to nothing, and `DailyValue` keeps the two apart.
+    """
+    revenue: dict[date, Decimal] = {}
+    units: dict[date, int] = {}
+    for index, day in enumerate(measures.dates):
+        if day is None:
+            continue
+        value = measures.revenue[index]
+        if value is not None:
+            revenue[day] = revenue.get(day, Decimal(0)) + value
+        count = measures.units[index]
+        if count is not None:
+            units[day] = units.get(day, 0) + count
+    # An attested day carrying no row states zero, not nothing: the operator
+    # proved there was no activity, which is what `RRA-004` calls an "attested
+    # zero-activity day". `None` is kept for a measure the package does not have
+    # at all -- an unmapped column, or revenue the currency refused.
+    def measured(mapping: dict, day: date, available: bool):
+        if not available:
+            return None
+        return mapping.get(day, 0)
+
+    # A measure is available only when *every* admitted row carries it. `any`
+    # marked a column available while the accumulation above silently skipped
+    # its invalid rows, so the basis recorded partial totals as complete
+    # evidence -- `RRA-004` calls a basis the thing a figure is reconciled
+    # against, and a partial total reconciles against nothing.
+    has_revenue = monetary and all(value is not None for value in measures.revenue)
+    has_units = all(value is not None for value in measures.units)
+    return tuple(
+        DailyValue(
+            day=day,
+            revenue=measured(revenue, day, has_revenue),
+            units=measured(units, day, has_units),
+        )
+        for day in days
+    )
+
+def _returning_periods(
+    measures: _Measures,
+    series: list[FactSeries],
+) -> tuple[str, ...]:
+    """Which trend periods contain a posted return.
+
+    Labelled at the trend's own granularity, because that is the vocabulary
+    the comparison and growth families select windows in -- a date range
+    would have to be re-bucketed by every consumer, and the two could disagree
+    about which period a day belongs to.
+
+    Empty where no return was admitted, which is the ordinary case.
+    """
+    trend = next((entry for entry in series if entry.measure == SEMANTIC_REVENUE), None)
+    if trend is None:
+        return ()
+    granularity = trend.series.granularity
+    returns = [
+        day
+        for day, kind in zip(measures.dates, measures.event_kinds, strict=True)
+        if kind != EVENT_SALE
+    ]
+    # An undated return belongs to no period, so no window can be proven free of
+    # it. Recorded as the sentinel rather than dropped: dropping it left a
+    # non-empty tuple naming the *dated* returns, which reads as complete
+    # evidence and let growth publish over a return it could not place.
+    labels = {
+        UNDATED_RETURN_PERIOD if day is None else period_label(day, granularity)
+        for day in returns
+    }
+    return tuple(sorted(labels))
+
 def _signatures_of(
     admitted: AdmittedInput,
     measures: _Measures,
+    admitted_kinds: tuple[str, ...],
 ) -> tuple[CoverageSignature, ...]:
     """One structural signature per attested scope, over the dates admitted.
 
@@ -972,12 +1240,20 @@ def _signatures_of(
     days = [day for day in measures.dates if day is not None]
     if not days:
         return ()
+    if not _attests_the_admitted_population(
+        manifest, admitted_kinds, (STATUS_POSTED,)
+    ):
+        return ()
     signatures = []
     for scope in sorted(manifest.scopes):
         try:
             signatures.append(
                 build_coverage_signature(
-                    manifest, scope=scope, start=min(days), end=max(days)
+                    manifest,
+                    scope=scope,
+                    start=min(days),
+                    end=max(days),
+                    admitted_kinds=admitted_kinds,
                 )
             )
         except SignatureRefused:
@@ -985,6 +1261,45 @@ def _signatures_of(
             # it, and a partial list would read as a complete one.
             return ()
     return tuple(signatures)
+
+
+def _attests_the_admitted_population(
+    manifest: CoverageManifest,
+    admitted_kinds: tuple[str, ...],
+    admitted_statuses: tuple[str, ...],
+) -> bool:
+    """Whether the attestation describes the population the package computed over.
+
+    `RRA-004` binds a coverage signature to the filters it was attested under,
+    and `comparison._structurally_compatible` compares those filters *between
+    windows* -- so an attestation naming a wider population than the package
+    admitted is not caught by that comparison: both windows carry the same wrong
+    declaration and agree. The mismatch has to be refused where the signature is
+    built, against the data, or it is never detected at all.
+
+    Compared as sets, and the relation is **subset, not equality**: every kind
+    the package admitted must be attested, while an attestation naming more is
+    accepted. An operator attesting that sales *and* returns are complete for a
+    window makes a strictly stronger claim than the sale-only package needs, and
+    the sales it computed over are covered by it. Requiring equality would
+    refuse that ordinary, generic attestation.
+
+    The defect runs the other way: a manifest attesting sales alone over an
+    extract the package admitted returns from leaves the returns with no
+    completeness proof, while the signature would report the window proven.
+
+    **Statuses are checked the same way**, and the first version of this
+    function did not check them. Its reasoning was that `admission` refuses
+    every status but `posted`, so the package has no status population that
+    could diverge -- true of the *package*, and beside the point. The gap is
+    in the *attestation*: `build_coverage_manifest` accepts any non-empty
+    status list, so an operator may attest a window for `voided` alone while
+    the package computed over posted rows, and the signature would report
+    that window proven. Found in review.
+    """
+    return set(admitted_kinds) <= set(manifest.event_kinds) and set(
+        admitted_statuses
+    ) <= set(manifest.statuses)
 
 
 def _admitted_kinds(admitted_events: AdmittedEvents) -> tuple[str, ...]:
@@ -1222,12 +1537,23 @@ def _countable_transactions(measures: _Measures) -> list[str | None] | None:
     `METRIC_TRANSACTIONS` already refuses with `incomplete_transaction_identifiers`
     for the same input, and a per-bucket count may not be more confident than the
     total it belongs to.
+
+    **Sale keys only.** These become `Comparison.distinct_transactions` and every
+    bucket's transaction count, which attach rate divides by. `RRA-008` names
+    that denominator as "the exact distinct canonical transaction set in
+    `dimension_complete_sales:<product|category>`" and puts returns in "neither
+    numerator nor denominator" -- so counting every posted transaction divided
+    by a set larger than the population the rate claims, and published every
+    rate too low.
+
+    A return's key is masked rather than dropped, so the list stays in frame
+    order and keeps aligning with the values it is zipped against.
     """
     if not measures.transaction_identifiers_complete:
         return None
     if all(value is None for value in measures.transactions):
         return None
-    return measures.transactions
+    return _sale_only(measures.transactions, measures)
 
 
 def _comparisons(
@@ -1238,10 +1564,12 @@ def _comparisons(
     row_count: int,
     formula_version: str,
     transactions: list[str | None] | None,
+    event_kinds: list[str],
     refusals: list[RefusedResult],
     caveats: list[str],
 ) -> list[FactComparison]:
     results: list[FactComparison] = []
+    sales = [kind == EVENT_SALE for kind in event_kinds]
     for dimension in COMPARISON_DIMENSIONS:
         column = mapping.for_semantic(dimension).column
         keys = None if column is None else _raw_values(frame, column.position)
@@ -1258,6 +1586,7 @@ def _comparisons(
                 values=entry.values,
                 display=_display_label,
                 transactions=transactions,
+                sales=sales,
             )
             if not reconciles(
                 comparison.buckets,

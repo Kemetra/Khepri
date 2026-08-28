@@ -191,6 +191,8 @@ GOVERNED_SECTION_STATES = frozenset({SECTION_PRESENT, SECTION_REFUSED})
 # Adding a code is deliberate: a family that needs a new one adds it here in the
 # slice that introduces it, rather than passing a string through.
 SECTION_REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+#: Growth alone: `RRA-008` admits only return-free windows for this family.
+SECTION_REASON_RETURNS_PRESENT = "returns_present"
 # Distinct from the row above, and the distinction is what a reader acts on:
 # `prior_window_absent` means there is no earlier period in the file, while this
 # means there is one and the manifest does not prove the two comparable. Telling
@@ -307,6 +309,9 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             # refuses growth with the cause comparison gave rather than with a
             # measure-shaped reason that would misattribute it.
             SECTION_REASON_COVERAGE_INCOMPATIBLE,
+            # Growth alone among the families: `RRA-008` requires both aligned
+            # windows to be return-free, and refuses rather than netting.
+            SECTION_REASON_RETURNS_PRESENT,
         }
     ),
     SECTION_BASKET: frozenset(
@@ -1553,7 +1558,7 @@ _FAMILIES = {
         derive=basket.derive,
         version=lambda: basket.BASKET_FORMULA_VERSION,
         refusals=basket.refusals,
-        names=basket.attached_value_of,
+        names=basket.attached_label_of,
         # The attach rates, one bar per value. Items per transaction is a different
         # statement about the whole dataset and is not one of the bars.
         plots=frozenset({basket.METRIC_ATTACH_RATE}),

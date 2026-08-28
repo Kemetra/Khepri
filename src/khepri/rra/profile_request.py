@@ -93,23 +93,31 @@ def declared_attestation(payload: ProfileRequestBody) -> CoverageManifestBody | 
     if attestation is None:
         return None
     try:
-        attestation.to_manifest(binding=_unbound(attestation.timezone))
+        attestation.to_manifest(
+            binding=_unbound(attestation.timezone, attestation.attested_by)
+        )
     except ManifestRefused as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return attestation
 
 
-def _unbound(timezone: str) -> ManifestBinding:
+def _unbound(timezone: str, attested_by: str) -> ManifestBinding:
     """A binding for the structural questions only, never stored.
 
     The two digests are empty because they are not known yet and no structural
     rule reads them. The operator's timezone is carried through even here, so
     this function cannot become the place a declared boundary is quietly lost.
+
+    The attester is carried for the same reason. Nothing structural reads it
+    and this manifest is discarded, so the value cannot be lost *here* -- but a
+    signature that dropped it would make this the obvious place to forget it
+    the day a structural rule does read it.
     """
     return ManifestBinding(
         input_digest="",
         source_contract_digest="",
         timezone=timezone,
+        attested_by=attested_by,
     )
 
 

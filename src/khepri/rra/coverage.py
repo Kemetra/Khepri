@@ -136,7 +136,18 @@ class CoverageManifest:
             "manifest_version": self.manifest_version,
             "input_digest": self.input_digest,
             "source_contract_digest": self.source_contract_digest,
-            "attested_by": self.attested_by,
+            # Absence serializes as absence. A document stored before this field
+            # existed reads back as `UNRECORDED_ATTESTER`, and `_readmit`
+            # re-serializes the manifest to compare the stored profile digest --
+            # so emitting the key here would make every legacy profile digest
+            # differently and refuse its package. The manifest version does not
+            # move for this: an unattributed document is the same document, not
+            # a new shape.
+            **(
+                {}
+                if self.attested_by == UNRECORDED_ATTESTER
+                else {"attested_by": self.attested_by}
+            ),
             "timezone": self.timezone,
             "covered_start": self.covered_start.isoformat(),
             "covered_end": self.covered_end.isoformat(),
@@ -342,6 +353,17 @@ def assert_bound(manifest: CoverageManifest) -> None:
     if not manifest.attested_by.strip():
         raise ManifestRefused(
             "A coverage manifest must record who attested it."
+        )
+    if manifest.attested_by.strip() == UNRECORDED_ATTESTER:
+        # The sentinel is what *absence* reads back as, and `as_document()`
+        # re-emits it as absence. Left admissible here, a caller could submit
+        # the literal string and have a manifest attested now persist as one
+        # written before attribution existed -- forging the very provenance gap
+        # `UNRECORDED_ATTESTER` exists to mark. It is a read-back value, never
+        # an attestation, so it is refused where attestations are stored.
+        raise ManifestRefused(
+            "A coverage manifest must record a real attester, not the marker "
+            "reserved for documents stored before attribution."
         )
 
 

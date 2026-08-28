@@ -137,6 +137,7 @@ def build_coverage_signature(
     scope: str,
     start: date,
     end: date,
+    admitted_kinds: tuple[str, ...] | None = None,
 ) -> CoverageSignature:
     """The attested structure of one window, or a refusal naming what is unproven.
 
@@ -145,6 +146,18 @@ def build_coverage_signature(
     than being inferred present. An extraction gap is likewise absent: `RRA-003`
     separates a gap, whose size is unknown, from an attested closure, which
     proves complete zero activity and is therefore covered.
+
+    `admitted_kinds` is the population the caller actually computed over. It is
+    recorded in preference to the manifest's declaration because
+    `comparison._structurally_compatible` compares this field *between* windows:
+    recording the declaration let a sale-only window and a sale-and-return
+    window, both attested generically as covering sales and returns, present
+    identical filters and compare as though they described one population.
+    Recording what was admitted makes that comparison ask about the data.
+
+    It defaults to the declaration for a caller with no admitted set to offer --
+    a signature built directly from a manifest, as `RRA-003` coverage checks do,
+    is still describing exactly what the manifest attests.
     """
     if end < start:
         raise SignatureRefused("A coverage signature cannot end before it starts.")
@@ -167,7 +180,11 @@ def build_coverage_signature(
         manifest_input_digest=manifest.input_digest,
         source_contract_digest=manifest.source_contract_digest,
         scope=scope,
-        event_kinds=tuple(manifest.event_kinds),
+        event_kinds=(
+            tuple(manifest.event_kinds)
+            if admitted_kinds is None
+            else tuple(sorted(admitted_kinds))
+        ),
         statuses=tuple(manifest.statuses),
         mode=_mode_of(ordinals, span),
         covered_ordinals=ordinals,

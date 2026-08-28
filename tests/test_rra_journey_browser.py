@@ -11,6 +11,7 @@ from tests.test_rra_journey_api import client
 
 _ATTESTED = {
     "timezone": "Africa/Cairo",
+    "attested_by": "Mona Farouk, branch manager",
     "covered_start": "2026-01-01",
     "covered_end": "2026-01-02",
     "aggregate_scope": "All stores",
@@ -68,6 +69,9 @@ def test_the_upload_page_sends_a_manifest_only_when_one_is_attested(
             )
             sent = json.loads(attested)["coverage_manifest"]
             assert sent["timezone"] == "Africa/Cairo"
+            assert sent["attested_by"] == "Mona Farouk, branch manager", (
+                "the page collects an attester the request does not carry"
+            )
             assert sent["covered_days"] == ["2026-01-01", "2026-01-02"]
             assert sent["event_kinds"] == ["sale"]
             assert sent["closed_days"] == ["2026-01-02"]

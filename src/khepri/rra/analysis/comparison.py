@@ -94,7 +94,7 @@ constant is public for that reason and for no other.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Context, Decimal, localcontext
 
 from khepri.rra.aggregates import Bucket
@@ -104,7 +104,6 @@ from khepri.rra.analysis.windows import (
     MODE_YEAR_OVER_YEAR,
     compared_labels,
 )
-from khepri.rra.coverage_signature import COVERAGE_MODE_PREFIX
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
     RATIO_PRECISION,
@@ -472,16 +471,23 @@ def _window_for(package: FactPackage, mode: str) -> _Window | None:
         return None
     if not _structurally_compatible(package, labels):
         return None
-    window = _against_counterpart(labels, trend)
-    if window is None:
-        return None
-    if not _is_partial(package):
-        return window
     # `RRA-008`: a partial-prefix comparison "carries the bilingual
-    # partial-window caveat required by `RRA-009`". Carried on the window so
-    # every fact derived from it inherits the disclosure, rather than being
-    # attached per metric where one could be missed.
-    return replace(window, inherited=(*window.inherited, CAVEAT_PARTIAL_WINDOW))
+    # partial-window caveat required by `RRA-009`" -- but this is not where that
+    # is decided, and deriving it here was wrong on every firing.
+    #
+    # `_signatures_of` builds one signature per attested *scope* over the whole
+    # admitted span, never per bucket, so `COVERAGE_MODE_PREFIX` says the
+    # manifest attests a contiguous prefix of the dataset and says nothing about
+    # either compared month. Meanwhile `windows.settled` returns `buckets[1:-1]`,
+    # so the compared labels are always *interior* months, whole by
+    # construction. The caveat therefore told a customer that a complete
+    # comparison was partial, whenever any prefix signature existed.
+    #
+    # The caveat belongs to the day-`1..k` selection `RRA-004:141` describes,
+    # which chooses the terminal bucket and projects the prior window to the
+    # same days over the retained daily bases. That selection does not exist
+    # yet; until it does, no window here is partial and none says it is.
+    return _against_counterpart(labels, trend)
 
 
 def _structurally_compatible(package: FactPackage, labels: tuple[str, str]) -> bool:
@@ -529,21 +535,6 @@ def _structurally_compatible(package: FactPackage, labels: tuple[str, str]) -> b
         for signature in signatures
     }
     return len(filters) == 1 and len(coverage) == 1
-
-
-def _is_partial(package: FactPackage) -> bool:
-    """Whether the accepted coverage is a prefix rather than a whole period.
-
-    `RRA-008` admits "an incomplete current month" against the prior period's
-    day-`1..k` projection, and requires the result to say so. The signature
-    already records which shape was attested, so this reads the recorded
-    structure rather than re-deciding it from dates -- the same division that
-    keeps `_structurally_compatible` off the data.
-    """
-    return any(
-        signature.mode == COVERAGE_MODE_PREFIX
-        for signature in package.coverage_signatures
-    )
 
 
 def _against_counterpart(
