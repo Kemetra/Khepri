@@ -28,6 +28,7 @@ from khepri.rra.analysis.comparison import (
     REASON_PRIOR_WINDOW_ABSENT,
 )
 from khepri.rra.bundle import SECTION_COMPARISON, SECTION_REASONS
+from khepri.rra.coverage_signature import COVERAGE_MODE_PREFIX
 from khepri.rra.facts import (
     CAVEAT_UNDATED_ROWS_EXCLUDED,
     REASON_INPUT_UNAVAILABLE,
@@ -696,6 +697,48 @@ def test_a_package_comparison_refuses_offers_no_window_to_consume() -> None:
     assert comparison.accepted_window(monthly(1)) is None
 
 
+def _prefix_attested_monthly() -> FactPackage:
+    """Monthly rows whose manifest attests a contiguous prefix of the span.
+
+    The last day is left unattested, which is what an export ending mid-period
+    looks like: `build_coverage_signature` records `COVERAGE_MODE_PREFIX`,
+    while the two months `compared_labels` names remain interior and whole.
+    """
+    rows = [(month_start(offset), '100.00') for offset in range(-1, 4)]
+    body = b''.join(
+        f"{when.isoformat()},{amount},1,INV-{index},Beverages,Cairo\n".encode()
+        for index, (when, amount) in enumerate(rows)
+    )
+    content = HEADER + body
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    days = tuple(when for when, _ in rows)
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                # The manifest window stops before the data does, which is what
+                # an export ending mid-period looks like: the signature spans
+                # `min(days)..max(days)` off the *data*, so the attested days
+                # form a contiguous prefix of it and the mode is PREFIX.
+                manifest=attesting_manifest(
+                    content=content,
+                    contract=TEST_CONTRACT,
+                    days=days[:-1],
+                ),
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
+
+
 def test_the_partial_window_caveat_is_governed_and_bilingual() -> None:
     """`RRA-008` requires a partial-prefix comparison to carry "the bilingual
     partial-window caveat required by `RRA-009`".
@@ -808,5 +851,75 @@ def test_a_genuinely_absent_prior_window_still_says_so() -> None:
         comparison.REASON_PRIOR_WINDOW_ABSENT,
         REASON_INPUT_UNAVAILABLE,
     }, refused.reason
+def test_a_complete_comparison_is_not_labelled_partial() -> None:
+    """The caveat attached to a window that is complete by construction.
 
+    `_is_partial` asked whether **any** retained signature has prefix mode.
+    A signature is built per attested *scope* over the whole admitted span,
+    never per bucket -- so prefix mode says the manifest attests a contiguous
+    prefix of the dataset, and says nothing about either compared month.
 
+    Meanwhile `windows.settled` returns `buckets[1:-1]`, so `compared_labels`
+    can only ever name *interior* months, which are whole by construction. The
+    terminal partial bucket is never the compared window.
+
+    The two together mean the caveat was wrong on every firing, not merely on
+    some: a customer was told a complete comparison was partial. Deleting the
+    derivation is the fix, not refining it -- the signature set carries no
+    per-window answer to refine against.
+    """
+    package = _prefix_attested_monthly()
+
+    # The premise: the package really does retain a prefix-mode signature, or
+    # this case cannot show the caveat being derived from one.
+    assert any(
+        signature.mode == COVERAGE_MODE_PREFIX
+        for signature in package.coverage_signatures
+    ), 'no prefix signature was retained, so this proves nothing'
+
+    facts = facts_of(package)
+    assert facts, 'the comparison refused, so no caveat can be judged'
+    assert not any(
+        comparison.CAVEAT_PARTIAL_WINDOW in fact.caveats for fact in facts
+    ), (
+        'a complete interior month was published as a partial-window comparison'
+    )
+def test_no_code_path_yet_attaches_the_partial_window_caveat() -> None:
+    """The gap this leaves is deliberate, and this test is what makes it loud.
+
+    `RRA-008` requires a partial-prefix comparison to carry the bilingual
+    partial-window caveat, and `RRA-004:141` says where such a comparison comes
+    from: a day-`1..k` selection that chooses the terminal bucket and projects
+    the prior window to the same days over the retained daily bases. **That
+    selection is not implemented** -- `windows.settled` drops the terminal
+    bucket, so no partial window is ever selected to caveat.
+
+    Deleting the old derivation removed a caveat that was wrong on every firing.
+    It did not build the right one. Left silent, `CAVEAT_PARTIAL_WINDOW` would
+    be a governed caveat with prose in both languages reaching no code path --
+    the failure mode where nothing fails and no one notices.
+
+    So this asserts the absence on purpose. It fails the day the selection is
+    wired, which is exactly when someone must come back and decide what the
+    caveat now attaches to rather than letting it quietly reappear.
+    """
+    package = _prefix_attested_monthly()
+    assert any(
+        signature.mode == COVERAGE_MODE_PREFIX
+        for signature in package.coverage_signatures
+    ), 'no prefix signature was retained, so this proves nothing'
+
+    every_caveat = {
+        caveat for fact in facts_of(package) for caveat in fact.caveats
+    }
+
+    assert comparison.CAVEAT_PARTIAL_WINDOW not in every_caveat, (
+        'the partial-window caveat has a producer again -- if that is the day-1..k '
+        'selection landing, delete this test; if it is the whole-span prefix mode '
+        'coming back, it is the defect this slice removed'
+    )
+    # And the caveat itself stays governed and worded, because `RRA-008` still
+    # requires it to exist for the selection that will produce it.
+    from khepri.rra.rendering.wording import _GOVERNED_CAVEAT_CODES
+
+    assert comparison.CAVEAT_PARTIAL_WINDOW in _GOVERNED_CAVEAT_CODES
