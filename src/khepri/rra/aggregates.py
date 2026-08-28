@@ -110,6 +110,17 @@ class Comparison:
     redacted_values: int = 0
     distinct_transactions: int | None = None
     curve: ConcentrationCurve | None = None
+    #: Whether any grouped row carried no dimension value.
+    #:
+    #: Recorded when the rows are accumulated, before the display limit is
+    #: applied, because truncation is not reversible: a consumer scanning the
+    #: published buckets for the synthetic `unlabelled` label stops seeing it
+    #: the moment it ranks below the limit and is folded into `other`, and
+    #: then reports a dimension complete that never was.
+    #:
+    #: A *redacted* value is not incomplete. It is present and known, withheld
+    #: only from display, so it never sets this.
+    incomplete_values: bool = False
 
     def as_document(self, *, precision: int) -> dict[str, object]:
         return {
@@ -118,6 +129,7 @@ class Comparison:
             "truncated_values": self.truncated_values,
             "redacted_values": self.redacted_values,
             "distinct_transactions": self.distinct_transactions,
+            "incomplete_values": self.incomplete_values,
             "curve": None if self.curve is None else self.curve.as_document(),
             "buckets": [bucket.as_document(precision=precision) for bucket in self.buckets],
         }
@@ -250,6 +262,9 @@ def build_comparison(
             if key is not None and display is not None and display(key) == REDACTION_SENTINEL
         ),
         distinct_transactions=_distinct_members(accumulators) if counted else None,
+        # Asked of the accumulator keys, which are the source values, rather
+        # than of the buckets, which are what display kept.
+        incomplete_values=any(key is None for key in accumulators),
         curve=_curve([accumulators[key] for key in ordered]),
     )
 

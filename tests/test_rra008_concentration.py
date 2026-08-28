@@ -223,3 +223,31 @@ def test_both_refusal_reasons_are_governed_section_reasons() -> None:
     """A section that cannot state its reason fails misleadingly, not closed."""
     assert REASON_AGGREGATE_UNAVAILABLE in SECTION_REASONS[SECTION_CONCENTRATION]
     assert REASON_DISTINCT_SET_UNCOMPUTABLE in SECTION_REASONS[SECTION_CONCENTRATION]
+#: One eligible posted sale carrying no product value. `build_comparison`
+#: retains it as the synthetic `unlabelled` accumulator.
+_MISSING_PRODUCT_VALUE = (
+    b"date,revenue,units,invoice_no,product\n"
+    b"2026-01-05,100.00,3,INV-1,Water\n"
+    b"2026-01-06,200.00,5,INV-2,\n"
+    b"2026-01-07,60.00,1,INV-3,Juice\n"
+)
+
+def test_a_missing_dimension_value_refuses_the_curve() -> None:
+    """`RRA-008`: "A missing dimension on any eligible posted sale, including a
+    zero-revenue row, refuses that dimension. `None` and synthetic
+    `unlabelled` are never ranked."
+
+    `_found` checked only that a comparison existed. An eligible sale with no
+    product is retained by `build_comparison` as a synthetic `unlabelled`
+    accumulator and entered the curve, so the published shares -- and the
+    top-decile and top-quartile figures read off them -- described a
+    distribution containing an unnamed accumulator.
+    """
+    package = package_for(_MISSING_PRODUCT_VALUE)
+
+    result = concentration.derive(package)
+
+    assert isinstance(result, RefusedResult), result
+    assert concentration.curve_series(package) is None, (
+        'the curve still publishes the distribution containing the unnamed value'
+    )

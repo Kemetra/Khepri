@@ -242,10 +242,26 @@ def dimension_of(fact: Fact) -> str | None:
 
 
 def _found(package: FactPackage) -> tuple[str, FactComparison] | None:
-    """The first governed dimension the package published, with its comparison."""
+    """The first governed dimension the package published *completely*.
+
+    `RRA-008`: "A missing dimension on any eligible posted sale, including a
+    zero-revenue row, refuses that dimension. `None` and synthetic
+    `unlabelled` are never ranked."
+
+    This checked only that a comparison existed. An eligible sale with no
+    product is retained by `build_comparison` as a synthetic `unlabelled`
+    accumulator and entered the curve, so the published shares -- and the
+    top-decile and top-quartile figures read off them -- described a
+    distribution containing an unnamed accumulator.
+
+    An incomplete dimension is skipped rather than refusing outright, because
+    `RRA-008` refuses *that dimension*: a complete category beside an
+    incomplete product is still rankable, and suppressing it would lose a
+    curve the package can prove.
+    """
     for dimension in GOVERNED_DIMENSIONS:
         entry = package.comparison(dimension)
-        if entry is not None:
+        if entry is not None and not entry.comparison.incomplete_values:
             return (dimension, entry)
     return None
 

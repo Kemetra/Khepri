@@ -37,7 +37,11 @@ from khepri.rra.facts import (
     build_fact_package,
 )
 from khepri.rra.intake import CSV_MEDIA_TYPE
-from khepri.rra.mapping import SEMANTIC_PRODUCT, build_mapping
+from khepri.rra.mapping import (
+    SEMANTIC_CATEGORY,
+    SEMANTIC_PRODUCT,
+    build_mapping,
+)
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
@@ -54,6 +58,48 @@ GOLDEN = (
     b"2026-01-05,50.00,2,INV-1,Juice\n"
     b"2026-01-06,200.00,5,INV-2,Water\n"
     b"2026-01-07,60.00,1,INV-3,Water\n"
+)
+
+
+#: More products than `MAX_COMPARISON_BUCKETS`, with the row carrying no
+#: product value ranked last on revenue -- so display truncation folds the
+#: synthetic `unlabelled` bucket into `other` and hides it from a scan of the
+#: published buckets.
+TRUNCATED_INCOMPLETE_DIMENSION = (
+    b"date,revenue,units,invoice_no,product\n"
+    b"2026-01-01,990.00,2,INV-1,P01\n"
+    b"2026-01-02,980.00,2,INV-2,P02\n"
+    b"2026-01-03,970.00,2,INV-3,P03\n"
+    b"2026-01-04,960.00,2,INV-4,P04\n"
+    b"2026-01-05,950.00,2,INV-5,P05\n"
+    b"2026-01-06,940.00,2,INV-6,P06\n"
+    b"2026-01-07,930.00,2,INV-7,P07\n"
+    b"2026-01-08,920.00,2,INV-8,P08\n"
+    b"2026-01-09,910.00,2,INV-9,P09\n"
+    b"2026-01-10,900.00,2,INV-10,P10\n"
+    b"2026-01-11,890.00,2,INV-11,P11\n"
+    b"2026-01-12,880.00,2,INV-12,P12\n"
+    b"2026-01-13,870.00,2,INV-13,P13\n"
+    b"2026-01-14,860.00,2,INV-14,P14\n"
+    b"2026-01-15,850.00,2,INV-15,P15\n"
+    b"2026-01-16,840.00,2,INV-16,P16\n"
+    b"2026-01-17,830.00,2,INV-17,P17\n"
+    b"2026-01-18,820.00,2,INV-18,P18\n"
+    b"2026-01-19,810.00,2,INV-19,P19\n"
+    b"2026-01-20,800.00,2,INV-20,P20\n"
+    b"2026-01-21,790.00,2,INV-21,P21\n"
+    b"2026-01-22,780.00,2,INV-22,P22\n"
+    b"2026-01-28,1.00,1,INV-99,\n"
+)
+
+
+#: Every category present; one product missing. `RRA-008` admits the two
+#: attach families independently, so the category rates must survive.
+PRODUCT_GAP_CATEGORY_COMPLETE = (
+    b"date,revenue,units,invoice_no,product,category\n"
+    b"2026-01-05,100.00,3,INV-1,Water,Drinks\n"
+    b"2026-01-06,200.00,5,INV-2,,Drinks\n"
+    b"2026-01-07,60.00,1,INV-3,Juice,Snacks\n"
 )
 
 
@@ -416,4 +462,83 @@ def test_items_per_transaction_excludes_posted_return_units() -> None:
     )
     assert stated.value == "12.5000", (
         "the return units were netted into the numerator: 23 / 2 = 11.5000"
+    )
+def test_display_truncation_does_not_hide_an_incomplete_dimension() -> None:
+    """The refusal above, defeated by the display limit.
+
+    `_incomplete` detected the missing value by scanning the published buckets
+    for the synthetic `unlabelled` label. When a dimension carries more than
+    `MAX_COMPARISON_BUCKETS` values and that bucket ranks below the limit,
+    `build_comparison` folds it into `other` and the scan no longer sees it --
+    so attach rates publish against an unproven dimension-complete population,
+    the exact case `rra008.basket.v2`'s refusal exists for.
+
+    A guard that cannot see the surface the risky input moved to has disarmed
+    itself. The signal is now taken where the null key is *accumulated*,
+    before any truncation decision, so display cannot change what completeness
+    the package claims.
+    """
+    package = package_for(TRUNCATED_INCOMPLETE_DIMENSION)
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+
+    # The premise: the null value really is hidden from the published buckets.
+    assert UNLABELLED_BUCKET_LABEL not in {
+        bucket.label for bucket in published.comparison.buckets
+    }, 'the unlabelled bucket is still visible, so this proves nothing'
+    assert published.comparison.truncated_values, (
+        'nothing was truncated, so the hiding this case is about never happened'
+    )
+
+    attach = [
+        fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
+    ]
+    assert not attach, [fact.value for fact in attach]
+
+    refused = basket.refusals(package)
+    assert any(
+        entry.reason == basket.REASON_DIMENSION_INCOMPLETE
+        and entry.metric == METRIC_ATTACH_RATE
+        for entry in refused
+    ), refused
+
+
+def test_a_redacted_value_is_not_an_incomplete_dimension() -> None:
+    """Redaction withholds a value from display; it does not make it unknown.
+
+    Pinned beside the truncation case because both are display concerns and
+    only one is a completeness concern. A flag keyed off the redaction
+    sentinel rather than off a null source value would refuse every rate over
+    a personal dimension, which `_incomplete` deliberately does not do.
+    """
+    package = package_for(GOLDEN)
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+
+    attach = [
+        fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
+    ]
+    assert attach, 'a complete dimension must still publish its rates'
+def test_an_incomplete_product_does_not_suppress_category_attach() -> None:
+    """`RRA-008`: product and category attach families "are admitted
+    independently and neither suppresses the other."
+
+    `_dimension` preferred product and returned the *first* admissible
+    dimension, so the incomplete-dimension refusal took the whole attach
+    family -- including a category whose every value is present and whose own
+    population is provably complete. The customer lost a rate the package
+    could prove, because a different dimension could not be proven.
+    """
+    package = package_for(PRODUCT_GAP_CATEGORY_COMPLETE)
+
+    attach = [
+        fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
+    ]
+    scopes = {input_name for fact in attach for input_name in fact.inputs}
+
+    assert SEMANTIC_CATEGORY in scopes, (
+        'category is complete and was suppressed by the product gap'
+    )
+    assert SEMANTIC_PRODUCT not in scopes, (
+        'the product dimension has a missing value and must still refuse'
     )
