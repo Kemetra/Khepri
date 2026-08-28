@@ -856,6 +856,7 @@ def _build(
         row_count=row_count,
         formula_version=formula_version,
         transactions=_countable_transactions(measures),
+        event_kinds=measures.event_kinds,
         refusals=refusals,
         caveats=caveats,
     )
@@ -1310,12 +1311,23 @@ def _countable_transactions(measures: _Measures) -> list[str | None] | None:
     `METRIC_TRANSACTIONS` already refuses with `incomplete_transaction_identifiers`
     for the same input, and a per-bucket count may not be more confident than the
     total it belongs to.
+
+    **Sale keys only.** These become `Comparison.distinct_transactions` and every
+    bucket's transaction count, which attach rate divides by. `RRA-008` names
+    that denominator as "the exact distinct canonical transaction set in
+    `dimension_complete_sales:<product|category>`" and puts returns in "neither
+    numerator nor denominator" -- so counting every posted transaction divided
+    by a set larger than the population the rate claims, and published every
+    rate too low.
+
+    A return's key is masked rather than dropped, so the list stays in frame
+    order and keeps aligning with the values it is zipped against.
     """
     if not measures.transaction_identifiers_complete:
         return None
     if all(value is None for value in measures.transactions):
         return None
-    return measures.transactions
+    return _sale_only(measures.transactions, measures)
 
 
 def _comparisons(
@@ -1326,10 +1338,12 @@ def _comparisons(
     row_count: int,
     formula_version: str,
     transactions: list[str | None] | None,
+    event_kinds: list[str],
     refusals: list[RefusedResult],
     caveats: list[str],
 ) -> list[FactComparison]:
     results: list[FactComparison] = []
+    sales = [kind == EVENT_SALE for kind in event_kinds]
     for dimension in COMPARISON_DIMENSIONS:
         column = mapping.for_semantic(dimension).column
         keys = None if column is None else _raw_values(frame, column.position)
@@ -1346,6 +1360,7 @@ def _comparisons(
                 values=entry.values,
                 display=_display_label,
                 transactions=transactions,
+                sales=sales,
             )
             if not reconciles(
                 comparison.buckets,

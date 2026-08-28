@@ -141,12 +141,28 @@ class _Accumulator:
     rows: int = 0
     present: bool = False
     keys: set[str] = field(default_factory=set)
+    #: The same total over posted sales alone, which is what the
+    #: concentration curve ranks. `RRA-008` ranks "posted-sale revenue", while
+    #: the published buckets stay `financial_posted` because `RRA-004` assigns
+    #: the revenue comparison that population deliberately. Kept beside
+    #: `total` rather than replacing it so one accumulation serves both.
+    sale_total: Decimal = Decimal(0)
+    sale_present: bool = False
 
-    def add(self, value: Decimal | None, key: str | None = None) -> None:
+    def add(
+        self,
+        value: Decimal | None,
+        key: str | None = None,
+        *,
+        sale: bool = True,
+    ) -> None:
         self.rows += 1
         if value is not None:
             self.total += value
             self.present = True
+            if sale:
+                self.sale_total += value
+                self.sale_present = True
         if key is not None:
             self.keys.add(key)
 
@@ -154,6 +170,8 @@ class _Accumulator:
         self.total += other.total
         self.rows += other.rows
         self.present = self.present or other.present
+        self.sale_total += other.sale_total
+        self.sale_present = self.sale_present or other.sale_present
         # Unioned, never summed. Every dropped value may share one transaction,
         # and adding their counts would report five where the truth is one --
         # the row-count substitution `RRA-008` forbids, one level up.
@@ -216,6 +234,7 @@ def build_comparison(
     values: list[Decimal | None],
     display: Callable[[str], str] | None = None,
     transactions: list[str | None] | None = None,
+    sales: list[bool] | None = None,
     limit: int = MAX_COMPARISON_BUCKETS,
 ) -> Comparison:
     """Group by the source value; sanitize only the label that is displayed.
@@ -229,19 +248,38 @@ def build_comparison(
     truncation is not reversible: the dropped values and their revenues are gone
     once they have been folded into `other`.
 
+    `sales` says which rows are posted sales, for the concentration curve, which
+    `RRA-008` ranks over posted-sale revenue while the published buckets stay
+    `financial_posted`. Absent, every row counts as a sale.
+
     `transactions` is the mapped transaction identifier per row, or `None` when
     no identifier is mapped. Absent, every transaction count stays `None` -- a
     row count never stands in for one.
     """
     accumulators: dict[str | None, _Accumulator] = {}
     members = transactions if transactions is not None else [None] * len(keys)
-    for key, value, member in zip(keys, values, members, strict=True):
-        accumulators.setdefault(key, _Accumulator()).add(value, member)
+    # Absent, every row counts as a sale: a caller with no event kinds to
+    # offer has admitted no returns to exclude.
+    kinds = sales if sales is not None else [True] * len(keys)
+    for key, value, member, is_sale in zip(
+        keys, values, members, kinds, strict=True
+    ):
+        accumulators.setdefault(key, _Accumulator()).add(
+            value, member, sale=is_sale
+        )
 
     labels = _labels(list(accumulators), display)
+    # Display order ranks the published `financial_posted` total, which is what
+    # the buckets show. `_curve` re-ranks on sale revenue for the same reason it
+    # sums it: `RRA-008` ranks posted-sale revenue, and a value with heavy
+    # returns must not be placed below its true sale contribution.
     ordered = sorted(
         accumulators,
         key=lambda key: (-accumulators[key].total, labels[key]),
+    )
+    ranked_order = sorted(
+        accumulators,
+        key=lambda key: (-accumulators[key].sale_total, labels[key]),
     )
     counted = transactions is not None
     kept, dropped = ordered[:limit], ordered[limit:]
@@ -265,7 +303,7 @@ def build_comparison(
         # Asked of the accumulator keys, which are the source values, rather
         # than of the buckets, which are what display kept.
         incomplete_values=any(key is None for key in accumulators),
-        curve=_curve([accumulators[key] for key in ordered]),
+        curve=_curve([accumulators[key] for key in ranked_order]),
     )
 
 
@@ -291,7 +329,11 @@ def _curve(ordered: list[_Accumulator]) -> ConcentrationCurve | None:
     governed refusal to the analysis family rather than publishing a curve whose
     shape contradicts its name.
     """
-    ranked = [entry.total for entry in ordered if entry.present]
+    # `RRA-008` ranks posted-sale revenue. Reading `total` here ranked
+    # return-inclusive financial revenue, so a value with heavy returns was
+    # placed below its true sale contribution -- and the top-decile and
+    # top-quartile shares read off this curve inherited the same base.
+    ranked = [entry.sale_total for entry in ordered if entry.sale_present]
     total = sum(ranked, Decimal(0))
     if total <= 0 or any(value < 0 for value in ranked):
         return None

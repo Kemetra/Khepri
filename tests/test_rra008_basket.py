@@ -542,3 +542,34 @@ def test_an_incomplete_product_does_not_suppress_category_attach() -> None:
     assert SEMANTIC_PRODUCT not in scopes, (
         'the product dimension has a missing value and must still refuse'
     )
+def test_attach_rate_divides_by_sale_transactions_only() -> None:
+    """`RRA-008` names the denominator as "the exact distinct canonical
+    transaction set in `dimension_complete_sales:<product|category>`" -- which
+    is sale-only. Returns enter "neither numerator nor denominator".
+
+    `_attach_facts` reads `FactComparison.distinct_transactions`, which counted
+    every posted transaction rather than every posted *sale* transaction. A
+    dataset with returns therefore divided by a set larger than the population
+    the rate claims, and every published rate came out too low.
+
+    Two sale transactions, one of which contains Water, plus a return in its
+    own transaction: the rate is 1/2, not 1/3.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,400.00,10,INV-1,Water\n"
+        b"2026-02-02,sale,600.00,15,INV-2,Juice\n"
+        b"2026-02-03,return,-90.00,-2,INV-3,Water\n"
+    )
+
+    package = _package_with_returns(content)
+
+    # Proved first: a return really was admitted, or this shows nothing.
+    assert package.event_kind_filters == ("return", "sale")
+
+    rates = {
+        basket.attached_value_of(fact, package): fact.value
+        for fact in facts_of(package)
+        if fact.metric == METRIC_ATTACH_RATE
+    }
+    assert rates.get("Water") == "0.5000", rates

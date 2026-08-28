@@ -39,12 +39,39 @@ from khepri.rra.mapping import SEMANTIC_CATEGORY, SEMANTIC_PRODUCT, build_mappin
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
+    oracle_contract,
     published_mapping_identity,
 )
 
 PRODUCT_HEADER = b"date,revenue,units,invoice_no,product\n"
 CATEGORY_HEADER = b"date,revenue,units,invoice_no,category\n"
 BARE_HEADER = b"date,revenue,units,invoice_no\n"
+
+
+def _package_with_returns(content: bytes) -> FactPackage:
+    """A package over an extract naming its event kinds.
+
+    The module contract declares no event-kind column, so a return cannot be
+    expressed through it; `oracle_contract` does.
+    """
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract(status_column=None)
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            ),
+        )
 
 
 def package_for(content: bytes) -> FactPackage:
@@ -250,4 +277,37 @@ def test_a_missing_dimension_value_refuses_the_curve() -> None:
     assert isinstance(result, RefusedResult), result
     assert concentration.curve_series(package) is None, (
         'the curve still publishes the distribution containing the unnamed value'
+    )
+def test_concentration_ranks_posted_sale_revenue_not_net_revenue() -> None:
+    """`RRA-008`: concentration "ranks posted-sale revenue over the full,
+    non-null, admissible product or category set with complete sale revenue".
+
+    The family read the ordinary revenue comparison, built from
+    return-inclusive financial revenue, so a value with heavy returns ranked
+    below its true sale contribution -- and the top-decile and top-quartile
+    shares beside the curve inherited the same base.
+
+    Water sells 1000 and is returned 900; Juice sells 600. On sale revenue
+    Water leads with 1000 of 1600; on net revenue it trails with 100 of 700,
+    so the leading share is 0.6250 rather than 0.8571.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,1000.00,10,INV-1,Water\n"
+        b"2026-02-02,sale,600.00,6,INV-2,Juice\n"
+        b"2026-02-03,return,-900.00,-9,INV-3,Water\n"
+    )
+
+    package = _package_with_returns(content)
+    assert package.event_kind_filters == ("return", "sale")
+
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+    curve = published.comparison.curve
+    assert curve is not None, 'no curve was retained, so nothing is ranked'
+
+    leading = curve.shares[0]
+    assert str(leading) == '0.6250', (
+        'the curve ranks net financial revenue: Water is placed by 100 rather '
+        'than by the 1000 it sold'
     )
