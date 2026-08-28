@@ -299,6 +299,13 @@ def _comparison(entry: Mapping[str, Any]) -> FactComparison:
             truncated_values=_count(entry, "truncated_values"),
             redacted_values=_count(entry, "redacted_values"),
             distinct_transactions=_optional_count(entry, "distinct_transactions"),
+            # Read back, not defaulted. Left to the dataclass default, every
+            # package holding an incomplete dimension rebuilt with `False` and
+            # re-digested differently -- so exactly the packages this flag was
+            # added to handle were refused as corrupt on delivery.
+            incomplete_values=(
+                bool(entry.get("incomplete_values", False))
+            ),
             curve=_curve(entry),
         ),
         caveats=_labels(entry, "caveats"),

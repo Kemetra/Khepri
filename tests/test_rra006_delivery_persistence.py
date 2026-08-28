@@ -854,3 +854,28 @@ def test_a_legacy_package_document_still_matches_its_stored_digest() -> None:
         'from, so its digest differs and a stored legacy package is refused '
         'as corrupt'
     )
+def test_an_incomplete_dimension_survives_the_package_round_trip() -> None:
+    """`incomplete_values` was serialized and never read back.
+
+    `package_source._comparison` constructed `Comparison` without it, so every
+    package holding an incomplete dimension rebuilt with the dataclass default
+    `False` and re-digested differently -- and `SessionFactPackageSource.load`
+    refused exactly the packages the flag was added to handle. Found in review.
+    """
+    content = (
+        b"date,revenue,units,invoice_no,product\n"
+        b"2026-01-05,100.00,3,INV-1,Water\n"
+        b"2026-01-06,200.00,5,INV-2,\n"
+    )
+    built = package(content)
+    published = built.comparison('product')
+    assert published is not None
+    # The premise: this package really does carry an incomplete dimension.
+    assert published.comparison.incomplete_values
+
+    rebuilt = rebuild_fact_package(json.loads(json.dumps(built.as_document())))
+
+    assert rebuilt.comparison('product').comparison.incomplete_values
+    assert rebuilt.digest == built.digest, (
+        'the rebuilt package re-digests differently, so delivery refuses it'
+    )

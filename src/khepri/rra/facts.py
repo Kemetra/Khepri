@@ -1072,6 +1072,27 @@ def _daily_bases_of(
     manifest = admitted.manifest
     if manifest is None:
         return ()
+    # The same gate the signatures get, and for the same reason: a basis
+    # labelled with kinds the manifest does not attest presents an unattested
+    # population as retained coverage evidence. Refusing the signature while
+    # retaining the basis left the weaker half of the same proof standing.
+    if not _attests_the_admitted_population(
+        manifest, admitted_kinds, (STATUS_POSTED,)
+    ):
+        return ()
+    # A per-store roster gets no daily basis yet. `_daily_values` sums the
+    # admitted rows without consulting any row's store, so one basis per store
+    # would record the all-store totals under each store's identity -- evidence
+    # that reconciles against the wrong population, which is worse than none.
+    # `RRA-004` requires these bases; it does not require them to be wrong.
+    if manifest.aggregate_scope is None:
+        return ()
+    # Monetary values the admission refused are not retained either. `RRA-003`
+    # refuses monetary facts "and their derived results" on a missing, malformed
+    # or mixed currency, and a basis is derived evidence: persisting the raw
+    # frame amounts under a `None` currency would retain an authoritative
+    # aggregate the package's own admission rejected.
+    monetary = currency is not None
     return tuple(
         AlignedDailyBasis(
             scope=scope,
@@ -1080,7 +1101,7 @@ def _daily_bases_of(
             population=POPULATION_FINANCIAL_POSTED,
             event_kinds=admitted_kinds,
             statuses=(STATUS_POSTED,),
-            values=_daily_values(measures, days),
+            values=_daily_values(measures, days, monetary=monetary),
             precision=measures.monetary_precision,
             currency=currency,
         )
@@ -1110,6 +1131,8 @@ def _attested_days(
 def _daily_values(
     measures: _Measures,
     days: tuple[date, ...],
+    *,
+    monetary: bool = True,
 ) -> tuple[DailyValue, ...]:
     """What each attested day measured, `None` where it carried no row.
 
@@ -1128,8 +1151,23 @@ def _daily_values(
         count = measures.units[index]
         if count is not None:
             units[day] = units.get(day, 0) + count
+    # An attested day carrying no row states zero, not nothing: the operator
+    # proved there was no activity, which is what `RRA-004` calls an "attested
+    # zero-activity day". `None` is kept for a measure the package does not have
+    # at all -- an unmapped column, or revenue the currency refused.
+    def measured(mapping: dict, day: date, available: bool):
+        if not available:
+            return None
+        return mapping.get(day, 0)
+
+    has_revenue = monetary and any(value is not None for value in measures.revenue)
+    has_units = any(value is not None for value in measures.units)
     return tuple(
-        DailyValue(day=day, revenue=revenue.get(day), units=units.get(day))
+        DailyValue(
+            day=day,
+            revenue=measured(revenue, day, has_revenue),
+            units=measured(units, day, has_units),
+        )
         for day in days
     )
 

@@ -282,7 +282,7 @@ def test_an_attested_package_retains_its_aligned_daily_bases() -> None:
     describes cannot be built without it.
 
     Retained per attested scope over the window the signature covers, and
-    including "attested zero-activity days", which come from the manifest
+    including "attested zero-activity days", which come from the manifest and
     rather than from the data: a day with no row is covered when the operator
     attested it and simply absent when they did not.
     """
@@ -300,9 +300,9 @@ def test_an_attested_package_retains_its_aligned_daily_bases() -> None:
     stated = {value.day: value.revenue for value in basis.values}
     assert stated[_PRODUCER_DAYS[0]] == Decimal("100.00")
     assert stated[_PRODUCER_DAYS[1]] == Decimal("200.00")
-    assert stated[_PRODUCER_DAYS[2]] is None, (
-        "an attested day carrying no admitted row states no revenue rather "
-        "than a zero it never observed"
+    assert stated[_PRODUCER_DAYS[2]] == Decimal(0), (
+        "an attested day carrying no row is a proven quiet day and states zero; "
+        "`None` is for a measure the package does not have at all"
     )
 
 
@@ -315,3 +315,87 @@ def test_a_package_with_no_attestation_retains_no_daily_basis() -> None:
     alone would be exactly that.
     """
     assert _producer_package(attested=False).daily_bases == ()
+def test_no_daily_basis_is_retained_for_an_unattested_population() -> None:
+    """A basis is coverage evidence, so it answers to the same gate as a signature.
+
+    With a manifest attesting `sale` over an extract the package admitted returns
+    from, `_signatures_of` correctly refused to sign -- and `_daily_bases_of`
+    still stored `financial_posted` values labelled with both admitted kinds.
+    That presented an unattested population as retained coverage evidence, which
+    a later reconciliation or prefix projection would consume. Found in review.
+    """
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.coverage import (
+        ManifestBinding,
+        ManifestExceptions,
+        ManifestWindow,
+        build_coverage_manifest,
+    )
+    from khepri.rra.facts import AdmittedInput, build_fact_package
+    from khepri.rra.intake import CSV_MEDIA_TYPE
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+    from tests.rra003_contract_fixtures import (
+        oracle_contract,
+        published_mapping_identity,
+    )
+
+    days = (date(2026, 2, 1), date(2026, 2, 2), date(2026, 2, 3))
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-02-01,sale,400.00,10,INV-1\n"
+        b"2026-02-02,sale,600.00,15,INV-2\n"
+        b"2026-02-03,return,-90.00,-2,INV-3\n"
+    )
+    contract = oracle_contract(status_column=None)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    manifest = build_coverage_manifest(
+        binding=ManifestBinding(
+            input_digest=profile.source_sha256_hex,
+            source_contract_digest=contract.digest,
+            timezone="Africa/Cairo",
+            attested_by="Test fixture: operator attestation.",
+        ),
+        window=ManifestWindow(
+            covered_start=days[0],
+            covered_end=days[-1],
+            aggregate_scope="all-stores",
+            store_roster=(),
+            covered_pairs=tuple(("all-stores", day) for day in days),
+        ),
+        exceptions=ManifestExceptions(
+            closures=(),
+            extraction_gaps=(),
+            partial_terminal_boundary=None,
+            # Sales only, while the package admits a return.
+            event_kinds=("sale",),
+            statuses=("posted",),
+        ),
+    )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        package = build_fact_package(
+            AdmittedInput(
+                manifest=manifest,
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            ),
+        )
+
+    # The premise: the attestation really does not cover what was admitted.
+    assert package.event_kind_filters == ("return", "sale")
+    assert not package.coverage_signatures
+
+    assert package.daily_bases == (), (
+        'a daily basis was retained over a population the manifest does not attest'
+    )
