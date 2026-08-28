@@ -1773,3 +1773,78 @@ def test_an_unmapped_column_cannot_hide_a_repeated_row_signature() -> None:
     refused = result.refusal(METRIC_REVENUE)
     assert refused is not None
     assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_a_keyed_contract_is_not_judged_by_the_row_signature() -> None:
+    """`RRA-003` proves identity "in exactly one of these ways", and picks one.
+
+    The canonical-row-signature test belongs to the second: "**Without an event
+    key**, a repeated canonical row signature has the same effect." A contract
+    naming `event_key_columns` has already answered the question, and the same
+    paragraph says so from the other side -- "Repeated products or categories in
+    one transaction remain valid when their event identities differ."
+
+    Two lines of one invoice, identical in every mapped semantic and distinct in
+    their event key: a legitimate repeated line, not a duplicated extract.
+    Refusing here would refuse every keyed extract that sells the same product
+    twice on one receipt.
+    """
+    from khepri.rra.source_contract import (
+        BasisDeclaration,
+        ContractAttribution,
+        EventDeclaration,
+        IdentityDeclaration,
+        build_source_contract,
+    )
+
+    contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_keyed", evidence="Test fixture: a keyed extract."
+        ),
+        events=EventDeclaration(
+            event_kind_column=None,
+            sale_only=True,
+            status_column=None,
+            posted_only=True,
+            currency_column=None,
+            currency_code="EGP",
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=("line_id",),
+            unique_line_grain_attested=False,
+            transaction_id_column="invoice_no",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+    content = (
+        b"date,revenue,units,invoice_no,line_id\n"
+        b"2026-03-04,250.00,5,INV-1,L1\n"
+        b"2026-03-04,250.00,5,INV-1,L2\n"
+    )
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    assert result.value(METRIC_REVENUE) == "500.00"
+    assert result.value(METRIC_UNITS) == "10"

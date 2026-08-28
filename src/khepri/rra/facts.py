@@ -76,7 +76,11 @@ from khepri.rra.profiling import (
     parse_date,
     safe_value_label,
 )
-from khepri.rra.source_contract import BasisDeclaration, SourceContract
+from khepri.rra.source_contract import (
+    BasisDeclaration,
+    IdentityDeclaration,
+    SourceContract,
+)
 from khepri.rra.versions import (
     REASON_PACKAGE_VERSION_UNADMITTED,
     admits_package,
@@ -690,18 +694,36 @@ def _signed_columns(mapping: RetailMapping) -> list[int]:
     return sorted(positions)
 
 
-def _repeated_row_signature(frame: pl.DataFrame, mapping: RetailMapping) -> bool:
+def _repeated_row_signature(
+    frame: pl.DataFrame, mapping: RetailMapping, identity: IdentityDeclaration
+) -> bool:
     """Whether any admitted row repeats another across every signed field.
 
-    `RRA-003` signs "all admitted identity, dimension, and measure fields" --
-    not the source row. Comparing whole rows lets a column no semantic claims,
-    such as a free-text note, an export timestamp or a row id, make two
-    identical sales look distinct, and the refusal then fails *open* on exactly
-    the input it exists for.
+    **Only when the contract proved identity that way.** `RRA-003` proves
+    source-event identity "in exactly one of these ways": a stable event or line
+    key, *or* an attestation of unique line grain plus no repeated canonical row
+    signature. The signature test belongs to the second -- "**Without an event
+    key**, a repeated canonical row signature has the same effect" -- and a keyed
+    contract answers the question with its key. Applying it there refuses two
+    legitimate lines that differ only in that key, which the same paragraph
+    admits: "Repeated products or categories in one transaction remain valid when
+    their event identities differ."
+
+    A repeated *event key* refuses too, and is detected nowhere in this package.
+    That gap is recorded rather than closed here: it needs the key column read at
+    admission, and no fixture in this suite declares one.
+
+    `RRA-003` signs "all admitted identity, dimension, and measure fields" -- not
+    the source row. Comparing whole rows lets a column no semantic claims, such as
+    a free-text note, an export timestamp or a row id, make two identical sales
+    look distinct, and the refusal then fails *open* on exactly the input it
+    exists for.
 
     An extract mapping nothing has no signature to repeat, so it cannot be
     duplicated into one.
     """
+    if identity.event_key_columns:
+        return False
     signed = _signed_columns(mapping)
     if not frame.height or not signed:
         return False
@@ -815,7 +837,7 @@ def _build(
     # `RRA-003`: an attestation of unique line grain is falsified by a repeated
     # canonical row signature, so this is read from the admitted frame before
     # any total is formed rather than disclosed after they are all published.
-    repeated_rows = _repeated_row_signature(frame, mapping)
+    repeated_rows = _repeated_row_signature(frame, mapping, admitted.contract.identity)
     totals = _totals(
         measures,
         admitted_events,
