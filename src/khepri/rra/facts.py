@@ -122,6 +122,13 @@ REASON_ZERO_DENOMINATOR = "zero_denominator"
 REASON_RECONCILIATION_FAILED = "reconciliation_failed"
 REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
 REASON_AMBIGUOUS_MAPPING = "ambiguous_mapping"
+#: `RRA-003`: "a repeated canonical row signature" refuses every additive or
+#: distinct-transaction result, "because a legitimate repeated line cannot be
+#: distinguished from a duplicated extract". Distinct from
+#: `REASON_INPUT_UNAVAILABLE`: every input is present and readable. What is
+#: missing is proof of which reading is true, and no column in the extract
+#: carries it.
+REASON_REPEATED_ROW_SIGNATURE = "repeated_row_signature"
 
 CAVEAT_CURRENCY_NOT_DECLARED = "currency_not_declared"
 CAVEAT_DUPLICATE_ROWS = "duplicate_rows_present"
@@ -511,12 +518,17 @@ class _Totals:
     cost: Decimal | None
     discount: Decimal | None
     returns: Decimal | None
+    #: Set when a repeated canonical row signature refused the additive family,
+    #: so every one of them states the same governed reason.
+    additive_reason: str = REASON_INPUT_UNAVAILABLE
 
 
 def _totals(
     measures: _Measures,
     admitted_events: AdmittedEvents,
     basis: BasisDeclaration,
+    *,
+    repeated_row_signature: bool = False,
 ) -> _Totals:
     """Every package total, with the monetary ones gated on one proven currency.
 
@@ -538,6 +550,22 @@ def _totals(
     the refusal true of an intermediate object and false of the report.
     """
     complete = measures.transaction_identifiers_complete
+    if repeated_row_signature:
+        # `RRA-003`: a repeated canonical row signature "refuses every additive
+        # or distinct-transaction result that could include it", and the
+        # repeated row is in every one of those populations. Refused here beside
+        # the currency and basis gates rather than at each `add` call site, for
+        # the reason this function exists.
+        return _Totals(
+            revenue=None,
+            units=None,
+            transactions=None,
+            transactions_reason=REASON_REPEATED_ROW_SIGNATURE,
+            cost=None,
+            discount=None,
+            returns=None,
+            additive_reason=REASON_REPEATED_ROW_SIGNATURE,
+        )
     return _Totals(
         revenue=_monetary(admitted_events, measures.revenue),
         units=_sum_integer(measures.units),
@@ -713,7 +741,16 @@ def _build(
     refusals: list[RefusedResult] = []
     caveats: list[str] = []
 
-    totals = _totals(measures, admitted_events, admitted.contract.basis)
+    # `RRA-003`: an attestation of unique line grain is falsified by a repeated
+    # canonical row signature, so this is read from the admitted frame before
+    # any total is formed rather than disclosed after they are all published.
+    repeated_rows = bool(frame.height and int(frame.is_duplicated().sum()))
+    totals = _totals(
+        measures,
+        admitted_events,
+        admitted.contract.basis,
+        repeated_row_signature=repeated_rows,
+    )
     revenue_total = totals.revenue
     units_total = totals.units
     transactions_total = totals.transactions
@@ -752,6 +789,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE,),
+        reason=totals.additive_reason,
     )
     add(
         METRIC_UNITS,
@@ -759,6 +797,7 @@ def _build(
         unit_kind=UNIT_COUNT,
         precision=0,
         inputs=(SEMANTIC_UNITS,),
+        reason=totals.additive_reason,
     )
     add(
         METRIC_TRANSACTIONS,
@@ -774,6 +813,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_COST,),
+        reason=totals.additive_reason,
     )
     add(
         METRIC_DISCOUNT,
@@ -818,10 +858,14 @@ def _build(
         metric=METRIC_AVERAGE_ORDER_VALUE,
         numerator=(
             _monetary(admitted_events, orders.left)
-            if measures.transaction_identifiers_complete
+            if measures.transaction_identifiers_complete and not repeated_rows
             else None
         ),
-        denominator=_distinct(orders.right) if measures.transaction_identifiers_complete else None,
+        denominator=(
+            _distinct(orders.right)
+            if measures.transaction_identifiers_complete and not repeated_rows
+            else None
+        ),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_ID),
@@ -832,24 +876,31 @@ def _build(
         metric=METRIC_AVERAGE_SELLING_PRICE,
         numerator=(
             _monetary(admitted_events, selling.left)
-            if complete_selling
+            if complete_selling and not repeated_rows
             else None
         ),
-        denominator=_sum_integer(selling.right),
+        denominator=None if repeated_rows else _sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),
+        unavailable_reason=totals.additive_reason,
     )
 
     margin_revenue, gross_profit = _margin_inputs(
         admitted_events, margin, admitted.contract.basis
     )
+    if repeated_rows:
+        # `_margin_inputs` reads the measure lists rather than the refused
+        # totals, so without this the pair published a doubled margin beside the
+        # revenue and cost it was derived from -- both of which had refused.
+        margin_revenue, gross_profit = None, None
     add(
         METRIC_GROSS_PROFIT,
         gross_profit,
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
+        reason=totals.additive_reason,
     )
     _add_ratio(
         add,
@@ -859,6 +910,7 @@ def _build(
         unit_kind=UNIT_RATIO,
         precision=RATIO_PRECISION,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
+        unavailable_reason=totals.additive_reason,
     )
 
     aggregated = (

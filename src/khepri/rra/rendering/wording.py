@@ -136,6 +136,7 @@ _RESULT_REASON_CODES = {
     facts.REASON_RECONCILIATION_FAILED,
     facts.REASON_INCOMPLETE_IDENTIFIERS,
     facts.REASON_AMBIGUOUS_MAPPING,
+    facts.REASON_REPEATED_ROW_SIGNATURE,
     basket.REASON_DIMENSION_ABSENT,
     basket.REASON_DIMENSION_INCOMPLETE,
     comparison.REASON_COVERAGE_INCOMPATIBLE,
@@ -371,6 +372,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "unaffected. Export with a receipt number on every row and "
                 "this becomes available."
             ),
+            "repeated_row_signature": (
+                "Basket size — not available. Your file contains rows that are "
+                "identical in every column, so a sale line that genuinely "
+                "repeats cannot be told apart from one exported twice. Counting "
+                "sales would mean guessing which it is. The rest of the review "
+                "is unaffected. Export with a line or receipt reference that "
+                "differs between real repeats, or without the duplicated rows, "
+                "and this becomes available."
+            ),
         },
         LANGUAGE_ARABIC: {
             "returns_present": (
@@ -444,6 +454,14 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "متأثر. صدِّر الملف مع رقم إيصال في كل صف ليصبح هذا التحليل "
                 "متاحاً."
             ),
+            "repeated_row_signature": (
+                "حجم سلة الشراء — غير متاح. يحتوي ملفك على صفوف متطابقة في كل "
+                "الأعمدة، ولذلك لا يمكن التمييز بين سطر بيع مُتكرر فعلاً وسطر "
+                "صُدِّر مرتين. وعدّ عمليات البيع يعني التخمين بينهما. وما عدا "
+                "ذلك في التقرير غير متأثر. صدِّر الملف مع مرجع للسطر أو الإيصال "
+                "يختلف بين التكرارات الحقيقية، أو بدون الصفوف المكررة، ليصبح هذا "
+                "التحليل متاحاً."
+            ),
         },
     },
     "result": {
@@ -471,6 +489,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "{metric} is not shown — more than one column in the file "
                 "could be the {field} and it is not clear which. Rename or "
                 "remove the duplicate and this becomes available."
+            ),
+            "repeated_row_signature": (
+                "{metric} is not shown — the file contains rows that are "
+                "identical in every column, and there is no way to tell a "
+                "genuinely repeated sale line from the same line exported "
+                "twice. Showing a total would mean choosing one of those "
+                "readings for you. Add a line or receipt reference that "
+                "differs between real repeats, or re-export without the "
+                "duplicates, and this becomes available."
             ),
             "dimension_absent": (
                 "Attach rate is not shown — the file has no product or category "
@@ -527,6 +554,14 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "{metric} غير معروض — قد يكون أكثر من عمود في الملف هو "
                 "{field}، ولا يمكن تحديد العمود الصحيح. أعد تسمية العمود "
                 "المكرر أو احذفه ليصبح هذا الرقم متاحاً."
+            ),
+            "repeated_row_signature": (
+                "{metric} غير معروض — يحتوي الملف على صفوف متطابقة في كل "
+                "الأعمدة، ولا توجد طريقة للتمييز بين سطر بيع مُتكرر فعلاً "
+                "وسطر صُدِّر مرتين. إظهار الإجمالي يعني اختيار أحد "
+                "التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو الإيصال يختلف "
+                "بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
+                "المكررة، ليصبح هذا الرقم متاحاً."
             ),
             "dimension_absent": (
                 "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا "

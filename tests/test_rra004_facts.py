@@ -29,6 +29,7 @@ from khepri.rra.facts import (
     REASON_AMBIGUOUS_MAPPING,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
+    REASON_REPEATED_ROW_SIGNATURE,
     UNIT_COUNT,
     UNIT_MONETARY,
     UNIT_RATIO,
@@ -264,7 +265,16 @@ def test_negative_revenue_is_kept_and_disclosed() -> None:
     assert CAVEAT_NEGATIVE_REVENUE in result.caveats
 
 
-def test_duplicate_rows_are_disclosed_rather_than_silently_removed() -> None:
+def test_duplicate_rows_are_refused_and_still_disclosed() -> None:
+    """Replaces a test that asserted the doubled total was published.
+
+    That test read `RRA-003` as a choice between disclosing `200.00` and
+    silently dropping a row, and chose disclosure. Refusal is the third option
+    the specification actually names: "a repeated canonical row signature"
+    refuses "because a legitimate repeated line cannot be distinguished from a
+    duplicated extract". Nothing is removed and no total is invented, and the
+    caveat still tells the reader the file contains duplicates.
+    """
     content = (
         b"date,revenue,units\n"
         b"2026-01-05,100.00,2\n"
@@ -273,7 +283,7 @@ def test_duplicate_rows_are_disclosed_rather_than_silently_removed() -> None:
 
     result = package(content)
 
-    assert result.value(METRIC_REVENUE) == "200.00"
+    assert result.fact(METRIC_REVENUE) is None
     assert CAVEAT_DUPLICATE_ROWS in result.caveats
 
 
@@ -1456,3 +1466,118 @@ def test_a_transaction_basis_counts_canonical_keys() -> None:
     )
     assert basis.transaction_count == 4
     assert result.value("transactions") == "4"
+
+
+def _duplicate_signature_package() -> FactPackage:
+    """The oracle's byte-identical-duplicate case.
+
+    `RRA-003` proves event identity in exactly one of two ways, and every
+    fixture here takes the second: no event key, plus an attestation that the
+    line grain is unique. A repeated canonical row signature *falsifies that
+    attestation*, which is why the contract cannot make this case admissible --
+    measured under both identity declarations, the published figures are
+    identical, so no declaration makes the doubled total correct.
+    """
+    from tests.rra003_contract_fixtures import oracle_contract
+    from tests.rra_calculation_oracle import DUPLICATE_SIGNATURE_ROWS, to_csv
+
+    content = to_csv(DUPLICATE_SIGNATURE_ROWS)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+def test_a_repeated_row_signature_refuses_every_additive_result() -> None:
+    """`RRA-003`: a repeated canonical row signature refuses, it does not caveat.
+
+    "A repeated event key, whether identical or conflicting, refuses every
+    additive or distinct-transaction result that could include it. Without an
+    event key, a repeated canonical row signature has the same effect because a
+    legitimate repeated line cannot be distinguished from a duplicated extract."
+
+    The distinguishing word is *cannot*. Disclosing a doubled total with a
+    caveat asks the reader to decide which reading is true, and nothing in the
+    extract answers: 250.00 twice is either two real sales or one sale twice,
+    and the manifest says nothing either way. Publishing 800.00 where the
+    un-duplicated data gives 550.00 states one of those readings as fact.
+    """
+    result = _duplicate_signature_package()
+
+    for metric in (
+        METRIC_REVENUE,
+        METRIC_UNITS,
+        METRIC_TRANSACTIONS,
+        METRIC_AVERAGE_ORDER_VALUE,
+        METRIC_AVERAGE_SELLING_PRICE,
+    ):
+        assert result.fact(metric) is None, f"{metric} published over a duplicate"
+        refused = result.refusal(metric)
+        assert refused is not None
+        assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_the_repeated_signature_refusal_reads_from_the_oracle() -> None:
+    """The literals this correction is measured against, stated independently.
+
+    `DUPLICATE_SIGNATURE_EXPECTED` refuses all five, derived without calling any
+    production helper. Reading them here rather than inlining `None` keeps the
+    expectation and the assertion in one place.
+    """
+    from tests.rra_calculation_oracle import DUPLICATE_SIGNATURE_EXPECTED
+
+    result = _duplicate_signature_package()
+
+    for metric, expected in DUPLICATE_SIGNATURE_EXPECTED.items():
+        assert expected is None, f"the oracle expects {metric} to refuse"
+        assert result.value(metric) is None
+
+
+def test_the_duplicate_caveat_still_discloses_what_was_refused() -> None:
+    """The refusal replaces the published number, not the disclosure.
+
+    `RRA-009` renders caveats to customers, and "this file contains duplicated
+    rows" is the reason the figures are absent. Dropping the caveat when the
+    refusal landed would leave a reader with missing metrics and no account of
+    why -- and `RRA-004` is explicit that absence is never the disclosure.
+    """
+    result = _duplicate_signature_package()
+
+    assert CAVEAT_DUPLICATE_ROWS in result.caveats
+
+
+def test_a_repeated_row_signature_refuses_the_margin_family_too() -> None:
+    """The doubled total cannot be refused while its ratio publishes.
+
+    `gross_profit` and `gross_margin` are built from `_margin_inputs`, which
+    reads the measure lists rather than the refused totals -- so over a
+    duplicated extract they published `355.00` and `0.4438` beside a `cost` that
+    had already refused. Both are sums of the repeated row, and `RRA-003`
+    refuses "every additive or distinct-transaction result that could include
+    it".
+
+    The oracle's `DUPLICATE_SIGNATURE` prose names nine metrics where its
+    literals name five, and this is the difference: the prose was right. A page
+    stating a margin while refusing the revenue and cost it came from would be
+    incoherent on its own face.
+    """
+    result = _duplicate_signature_package()
+
+    for metric in (METRIC_COST, METRIC_GROSS_PROFIT, METRIC_GROSS_MARGIN):
+        assert result.fact(metric) is None, f"{metric} published over a duplicate"
+        refused = result.refusal(metric)
+        assert refused is not None
+        assert refused.reason == REASON_REPEATED_ROW_SIGNATURE

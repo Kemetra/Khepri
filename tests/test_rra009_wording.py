@@ -48,6 +48,7 @@ from khepri.rra.facts import (
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
     REASON_RECONCILIATION_FAILED,
+    REASON_REPEATED_ROW_SIGNATURE,
     REASON_ZERO_DENOMINATOR,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
@@ -75,6 +76,7 @@ _RESULT_REFUSAL_CODES = frozenset(
         REASON_RECONCILIATION_FAILED,
         REASON_INCOMPLETE_IDENTIFIERS,
         REASON_AMBIGUOUS_MAPPING,
+        REASON_REPEATED_ROW_SIGNATURE,
         REASON_DIMENSION_ABSENT,
         REASON_DIMENSION_INCOMPLETE,
         REASON_COVERAGE_INCOMPATIBLE,
@@ -130,6 +132,13 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
         "{metric} غير معروض — قد يكون أكثر من عمود في الملف هو {field}، ولا "
         "يمكن تحديد العمود الصحيح. أعد تسمية العمود المكرر أو احذفه ليصبح هذا "
         "الرقم متاحاً."
+    ),
+    REASON_REPEATED_ROW_SIGNATURE: (
+        "{metric} غير معروض — يحتوي الملف على صفوف متطابقة في كل الأعمدة، ولا "
+        "توجد طريقة للتمييز بين سطر بيع مُتكرر فعلاً وسطر صُدِّر مرتين. إظهار "
+        "الإجمالي يعني اختيار أحد التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو "
+        "الإيصال يختلف بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
+        "المكررة، ليصبح هذا الرقم متاحاً."
     ),
     REASON_DIMENSION_ABSENT: (
         "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا يحتوي "
@@ -292,7 +301,7 @@ def test_refusal_message_raises_on_unknown_code() -> None:
         )
 
 
-def test_result_refusal_universe_is_ten_current_codes() -> None:
+def test_result_refusal_universe_is_eleven_current_codes() -> None:
     """A deliberate count, moved deliberately.
 
     Seven until the version compatibility gate landed, which added the unadmitted
@@ -310,11 +319,19 @@ def test_result_refusal_universe_is_ten_current_codes() -> None:
     reader who sees no rates has to be told which of the two dimension failures
     happened.
 
+    The eleventh is `RRA-003`'s repeated canonical row signature. It had no code
+    because the defect published instead of refusing: a doubled extract stated a
+    doubled total and disclosed a caveat beside it, which asked the reader to
+    decide which reading was true when nothing in the file answers. It is
+    distinct from `required_input_unavailable` -- every input is present and
+    readable -- so reusing that code would have told a customer a column was
+    missing when none is.
+
     The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
-    assert len(_RESULT_REFUSAL_CODES) == 10
+    assert len(_RESULT_REFUSAL_CODES) == 11
 
 
 def test_refusal_wording_result_tier_covers_every_code_in_every_language() -> None:

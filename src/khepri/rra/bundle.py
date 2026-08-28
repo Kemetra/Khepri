@@ -65,6 +65,9 @@ from typing import Protocol
 
 from khepri.rra.analysis import basket, comparison, concentration, growth
 from khepri.rra.facts import ARITHMETIC_PRECISION, UNIT_RATIO, Fact, FactPackage, RefusedResult
+from khepri.rra.facts import (
+    REASON_REPEATED_ROW_SIGNATURE as _FACTS_REPEATED_ROW_SIGNATURE,
+)
 from khepri.rra.narrative import (
     LANGUAGE_ARABIC,
     LANGUAGE_ENGLISH,
@@ -213,6 +216,12 @@ SECTION_REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
 # the transaction count with this when the identifier column has gaps, and the
 # basket family reports the cause the package recorded.
 SECTION_REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
+# Also the package's own wording. `RRA-003` refuses the transaction count on a
+# repeated canonical row signature, and `basket._identifier_reason` reports that
+# cause verbatim -- so the whole family refuses with it, and a section that
+# cannot say it would have to borrow "identifier absent" and name a cause that
+# did not occur.
+SECTION_REASON_REPEATED_ROW_SIGNATURE = _FACTS_REPEATED_ROW_SIGNATURE
 
 # Which reasons may refuse an entire section. That is a narrower question than
 # "which reasons can this family produce", and the two come apart wherever a
@@ -326,6 +335,10 @@ SECTION_REASONS: dict[str, frozenset[str]] = {
             # "identifier absent" would name a cause that did not occur.
             #
             SECTION_REASON_INCOMPLETE_IDENTIFIERS,
+            # And the same failure with a third cause: rows repeated byte for
+            # byte, which refuses the transaction count outright rather than
+            # leaving it partial.
+            SECTION_REASON_REPEATED_ROW_SIGNATURE,
             # And one that is per-metric *and* whole-family, depending on what
             # else the dataset has. An absent units measure refuses items per
             # transaction while attach rate stands -- carried on the result, not
