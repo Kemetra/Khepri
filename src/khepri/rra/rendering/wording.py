@@ -136,6 +136,8 @@ _RESULT_REASON_CODES = {
     facts.REASON_RECONCILIATION_FAILED,
     facts.REASON_INCOMPLETE_IDENTIFIERS,
     facts.REASON_AMBIGUOUS_MAPPING,
+    facts.REASON_REPEATED_ROW_SIGNATURE,
+    facts.REASON_INCOMPLETE_COVERAGE,
     basket.REASON_DIMENSION_ABSENT,
     basket.REASON_DIMENSION_INCOMPLETE,
     comparison.REASON_COVERAGE_INCOMPATIBLE,
@@ -371,6 +373,15 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "unaffected. Export with a receipt number on every row and "
                 "this becomes available."
             ),
+            "repeated_row_signature": (
+                "Basket size — not available. Your file contains rows that are "
+                "identical in every column, so a sale line that genuinely "
+                "repeats cannot be told apart from one exported twice. Counting "
+                "sales would mean guessing which it is. The rest of the review "
+                "is unaffected. Export with a line or receipt reference that "
+                "differs between real repeats, or without the duplicated rows, "
+                "and this becomes available."
+            ),
         },
         LANGUAGE_ARABIC: {
             "returns_present": (
@@ -444,6 +455,14 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "متأثر. صدِّر الملف مع رقم إيصال في كل صف ليصبح هذا التحليل "
                 "متاحاً."
             ),
+            "repeated_row_signature": (
+                "حجم سلة الشراء — غير متاح. يحتوي ملفك على صفوف متطابقة في كل "
+                "الأعمدة، ولذلك لا يمكن التمييز بين سطر بيع مُتكرر فعلاً وسطر "
+                "صُدِّر مرتين. وعدّ عمليات البيع يعني التخمين بينهما. وما عدا "
+                "ذلك في التقرير غير متأثر. صدِّر الملف مع مرجع للسطر أو الإيصال "
+                "يختلف بين التكرارات الحقيقية، أو بدون الصفوف المكررة، ليصبح هذا "
+                "التحليل متاحاً."
+            ),
         },
     },
     "result": {
@@ -471,6 +490,22 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "{metric} is not shown — more than one column in the file "
                 "could be the {field} and it is not clear which. Rename or "
                 "remove the duplicate and this becomes available."
+            ),
+            "repeated_row_signature": (
+                "{metric} is not shown — the file contains rows that are "
+                "identical in every column, and there is no way to tell a "
+                "genuinely repeated sale line from the same line exported "
+                "twice. Showing a total would mean choosing one of those "
+                "readings for you. Add a line or receipt reference that "
+                "differs between real repeats, or re-export without the "
+                "duplicates, and this becomes available."
+            ),
+            "incomplete_column_coverage": (
+                "{metric} is not shown — {column} is in your file but some rows "
+                "leave it empty. A total over only the rows that filled it would "
+                "describe part of your business and read as though it described "
+                "all of it. The other figures in this section are unaffected. "
+                "Fill that column on every row and this becomes available."
             ),
             "dimension_absent": (
                 "Attach rate is not shown — the file has no product or category "
@@ -527,6 +562,20 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "{metric} غير معروض — قد يكون أكثر من عمود في الملف هو "
                 "{field}، ولا يمكن تحديد العمود الصحيح. أعد تسمية العمود "
                 "المكرر أو احذفه ليصبح هذا الرقم متاحاً."
+            ),
+            "repeated_row_signature": (
+                "{metric} غير معروض — يحتوي الملف على صفوف متطابقة في كل "
+                "الأعمدة، ولا توجد طريقة للتمييز بين سطر بيع مُتكرر فعلاً "
+                "وسطر صُدِّر مرتين. إظهار الإجمالي يعني اختيار أحد "
+                "التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو الإيصال يختلف "
+                "بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
+                "المكررة، ليصبح هذا الرقم متاحاً."
+            ),
+            "incomplete_column_coverage": (
+                "{metric} غير معروض — {column} موجود في ملفك لكن بعض الصفوف "
+                "تتركه فارغاً. والإجمالي المحسوب من الصفوف التي عبّأته يصف جزءاً "
+                "من نشاطك ويُقرأ كأنه يصفه كله. الأرقام الأخرى في هذا القسم غير "
+                "متأثرة. عبّئ هذا العمود في كل صف ليصبح هذا الرقم متاحاً."
             ),
             "dimension_absent": (
                 "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا "
@@ -618,10 +667,11 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "The figures are shown as supplied and have not been converted."
         ),
         "duplicate_rows_present": (
-            "Some rows in your file are exact duplicates of each other. "
-            "They have been counted as supplied — if they are genuine "
-            "repeat sales this is correct, and if they are an export error "
-            "the totals are overstated."
+            "Some rows in your file record the same sale twice — every field "
+            "this review reads is identical, whatever else may differ. "
+            "A genuine repeat sale and the same sale exported twice look "
+            "identical here, so the totals that would have counted them are "
+            "not shown rather than stated as one of those two readings."
         ),
         "negative_revenue_present": (
             "Some rows carry a negative sale amount. These are included as "
@@ -688,9 +738,10 @@ CAVEAT_WORDING: dict[str, dict[str, str]] = {
             "من دون تحويل."
         ),
         "duplicate_rows_present": (
-            "بعض صفوف ملفك مكررة بالكامل. احتُسبت كما وردت — إذا كانت مبيعات "
-            "متكررة فعلاً فهذا صحيح، وإذا كانت خطأ في التصدير فالإجماليات أعلى "
-            "من الواقع."
+            "بعض صفوف ملفك تسجل عملية البيع نفسها مرتين — كل حقل يقرأه هذا "
+            "التقرير متطابق، مهما اختلف ما عداه. عملية البيع المتكررة فعلاً والعملية "
+            "التي صُدِّرت مرتين تبدوان متطابقتين هنا، ولذلك لا تُعرض الإجماليات "
+            "التي كانت ستحتسبها بدلاً من ذكرها وفق أحد هذين التفسيرين."
         ),
         "negative_revenue_present": (
             "تتضمن بعض الصفوف قيمة بيع سالبة. أُدرجت كما وردت، وهذا صحيح إذا "

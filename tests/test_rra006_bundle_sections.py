@@ -413,6 +413,12 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
         {
             "transaction_identifier_absent",
             "incomplete_transaction_identifiers",
+            # The fourth is the same failure with a third cause: rows repeated
+            # byte for byte, which `RRA-003` refuses outright rather than
+            # leaving the count partial. `basket._identifier_reason` reports the
+            # package's reason verbatim, so the family refuses with it and the
+            # section has to be able to say it.
+            "repeated_row_signature",
             "required_input_unavailable",
             "family_version_pairing_unadmitted",
         }
@@ -505,6 +511,12 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
             "units_absent",
             "decomposition_not_additive",
             "transaction_identifier_absent",
+            # Added by the duplicate-row slice: `RRA-003` refuses every additive
+            # or distinct-transaction result over a repeated canonical row
+            # signature, so the basket family loses its transaction count and
+            # names that cause rather than borrowing "identifier absent", which
+            # did not occur.
+            "repeated_row_signature",
             # Added by the basket slice, which proved it reachable: an identifier
             # column with gaps takes both basket metrics, and the fact package
             # already refuses its transaction count with this rather than with

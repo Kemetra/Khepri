@@ -76,7 +76,11 @@ from khepri.rra.profiling import (
     parse_date,
     safe_value_label,
 )
-from khepri.rra.source_contract import BasisDeclaration, SourceContract
+from khepri.rra.source_contract import (
+    BasisDeclaration,
+    IdentityDeclaration,
+    SourceContract,
+)
 from khepri.rra.versions import (
     REASON_PACKAGE_VERSION_UNADMITTED,
     admits_package,
@@ -122,6 +126,35 @@ REASON_ZERO_DENOMINATOR = "zero_denominator"
 REASON_RECONCILIATION_FAILED = "reconciliation_failed"
 REASON_INCOMPLETE_IDENTIFIERS = "incomplete_transaction_identifiers"
 REASON_AMBIGUOUS_MAPPING = "ambiguous_mapping"
+#: `RRA-003`: "a repeated canonical row signature" refuses every additive or
+#: distinct-transaction result, "because a legitimate repeated line cannot be
+#: distinguished from a duplicated extract". Distinct from
+#: `REASON_INPUT_UNAVAILABLE`: every input is present and readable. What is
+#: missing is proof of which reading is true, and no column in the extract
+#: carries it.
+REASON_REPEATED_ROW_SIGNATURE = "repeated_row_signature"
+#: `RRA-004`:46 refuses a headline when "a required admitted column has gaps".
+#: Distinct from `REASON_INPUT_UNAVAILABLE`, whose customer wording says the file
+#: "does not contain" the column and asks for it to be included: here the column
+#: is present and some of its cells are empty, so that advice cannot work.
+REASON_INCOMPLETE_COVERAGE = "incomplete_column_coverage"
+#: The fields `RRA-003` signs: "all admitted identity, dimension, and measure
+#: fields". Every semantic the mapping can admit is here, because the rule names
+#: all three kinds and lists no exception -- an omission would be a column two
+#: rows could differ in while still counting as the same event.
+SIGNED_SEMANTICS = (
+    SEMANTIC_TRANSACTION_DATE,
+    SEMANTIC_TRANSACTION_ID,
+    SEMANTIC_STORE,
+    SEMANTIC_PRODUCT,
+    SEMANTIC_CATEGORY,
+    SEMANTIC_CHANNEL,
+    SEMANTIC_REVENUE,
+    SEMANTIC_UNITS,
+    SEMANTIC_COST,
+    SEMANTIC_DISCOUNT,
+    SEMANTIC_RETURNS,
+)
 
 CAVEAT_CURRENCY_NOT_DECLARED = "currency_not_declared"
 CAVEAT_DUPLICATE_ROWS = "duplicate_rows_present"
@@ -417,6 +450,11 @@ class _Measures:
     monetary_precision: int
     null_measure_inputs: bool
     transaction_identifiers_complete: bool
+    #: The mapped measure semantics whose own column has gaps. `RRA-004`:46
+    #: refuses a headline when *its* column is incomplete, which is a narrower
+    #: question than `null_measure_inputs` -- a gap in cost leaves revenue
+    #: standing.
+    gapped_semantics: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -511,12 +549,42 @@ class _Totals:
     cost: Decimal | None
     discount: Decimal | None
     returns: Decimal | None
+    #: Set when a repeated canonical row signature refused the additive family,
+    #: so every one of them states the same governed reason.
+    additive_reason: str = REASON_INPUT_UNAVAILABLE
+    #: Which headlines refused because their own column had gaps, so each names
+    #: a cause the reader can act on rather than "the file does not contain" it.
+    gapped_semantics: frozenset[str] = frozenset()
+    #: The revenue and unit sums before the per-column gap gate, used only to
+    #: decide whether a *series or comparison* can be derived. `RRA-004`:46
+    #: refuses the **headline** when its column has gaps, and a monthly bucket is
+    #: not that headline: a gap in January says nothing about February's total,
+    #: so refusing the trend would take periods whose own rows are whole.
+    series_revenue: Decimal | None = None
+    series_units: int | None = None
+
+
+def _identifier_reason(measures: _Measures) -> str:
+    """Why a transaction count is missing when the signature is not the cause.
+
+    Stated in one place so the duplicate-signature path cannot report a weaker
+    cause than the ordinary one: a repeated *return* leaves the identifiers
+    exactly as they were, and an identifier column with gaps is still that.
+    """
+    return (
+        REASON_INPUT_UNAVAILABLE
+        if measures.transaction_identifiers_complete
+        else REASON_INCOMPLETE_IDENTIFIERS
+    )
 
 
 def _totals(
     measures: _Measures,
     admitted_events: AdmittedEvents,
     basis: BasisDeclaration,
+    *,
+    repeated_row_signature: bool = False,
+    repeated_sale_signature: bool = False,
 ) -> _Totals:
     """Every package total, with the monetary ones gated on one proven currency.
 
@@ -537,10 +605,44 @@ def _totals(
     the only figure anybody reads: honouring it on `AdmittedEvent` alone leaves
     the refusal true of an intermediate object and false of the report.
     """
-    complete = measures.transaction_identifiers_complete
+    complete = measures.transaction_identifiers_complete and not repeated_sale_signature
+    if repeated_row_signature:
+        # `RRA-003`: a repeated canonical row signature "refuses every additive
+        # or distinct-transaction result that could include it", and the
+        # repeated row is in every one of those populations. Refused here beside
+        # the currency and basis gates rather than at each `add` call site, for
+        # the reason this function exists.
+        return _Totals(
+            revenue=None,
+            units=None,
+            # A duplicated return leaves the sale-only populations whole, so
+            # they are counted rather than blanked with the financial ones.
+            transactions=(
+                None
+                if repeated_sale_signature or not complete
+                else _distinct(_sale_only(measures.transactions, measures))
+            ),
+            transactions_reason=(
+                REASON_REPEATED_ROW_SIGNATURE
+                if repeated_sale_signature
+                # A duplicated return says nothing about the identifiers, so the
+                # cause the normal path would have given still stands.
+                else _identifier_reason(measures)
+            ),
+            cost=None,
+            discount=None,
+            returns=None,
+            additive_reason=REASON_REPEATED_ROW_SIGNATURE,
+        )
+    # `RRA-004`:46 -- headlines "refuse when a required admitted column has
+    # gaps", per column. `_sum_decimal` refuses only when every value is absent,
+    # so without this a single gap published the partial sum as the headline.
+    def whole(semantic: str, total: object) -> object:
+        return None if semantic in measures.gapped_semantics else total
+
     return _Totals(
-        revenue=_monetary(admitted_events, measures.revenue),
-        units=_sum_integer(measures.units),
+        revenue=whole(SEMANTIC_REVENUE, _monetary(admitted_events, measures.revenue)),
+        units=whole(SEMANTIC_UNITS, _sum_integer(measures.units)),
         # `RRA-004`:92 -- "Transactions count posted sales only." A return
         # is a posted event and belongs in revenue and units; it is not a
         # transaction, and counting it inflates every ratio dividing by one.
@@ -549,21 +651,28 @@ def _totals(
             if complete
             else None
         ),
-        transactions_reason=(
-            REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
+        transactions_reason=_identifier_reason(measures),
+        cost=whole(
+            SEMANTIC_COST,
+            _on_attested_basis(
+                _monetary(admitted_events, measures.cost), basis.cost_is_extended
+            ),
         ),
-        cost=_on_attested_basis(
-            _monetary(admitted_events, measures.cost), basis.cost_is_extended
-        ),
-        discount=_on_attested_basis(
-            _monetary(admitted_events, measures.discount),
-            basis.discount_is_additive,
+        discount=whole(
+            SEMANTIC_DISCOUNT,
+            _on_attested_basis(
+                _monetary(admitted_events, measures.discount),
+                basis.discount_is_additive,
+            ),
         ),
         # `RRA-004`:83 -- `-sum(non-positive return revenue)`. `RRA-003`
         # forbids the alternative outright: "No independently mapped
         # return-amount measure is admitted." A return event states its own
         # magnitude, so a separate column is a second answer to one question.
         returns=_returns_magnitude(admitted_events, measures),
+        gapped_semantics=measures.gapped_semantics,
+        series_revenue=_monetary(admitted_events, measures.revenue),
+        series_units=_sum_integer(measures.units),
     )
 
 
@@ -607,6 +716,84 @@ def _margin_inputs(
     if revenue is None or cost is None:
         return revenue, None
     return revenue, revenue - cost
+
+
+def _signed_rows(
+    frame: pl.DataFrame, mapping: RetailMapping, measures: _Measures
+) -> list[tuple[object, ...]]:
+    """Each admitted row as the fields `RRA-003` signs, in governed form.
+
+    "All admitted identity, dimension, and measure fields" -- the values
+    admission produced, not the characters the file spelled them with.
+    `materialize` keeps every column as text, so comparing the frame directly
+    made `250` and `250.00` two different rows though `_decimal_values` gives
+    both the same governed value.
+
+    Measures come from `_measures`, already parsed. Dimensions come through
+    `_raw_values`, the same normalizer the comparisons use, so a value is
+    trimmed and an empty cell is absent rather than blank. Columns no semantic
+    claims are excluded outright: a free-text note or an export timestamp is not
+    an admitted field and cannot make two identical sales distinct.
+    """
+    dimensions = [
+        _raw_values(frame, column.position)
+        for semantic in COMPARISON_DIMENSIONS
+        if (column := mapping.for_semantic(semantic).column) is not None
+    ]
+    return [
+        (
+            measures.dates[index],
+            measures.transactions[index],
+            measures.revenue[index],
+            measures.units[index],
+            measures.cost[index],
+            measures.discount[index],
+            measures.returns[index],
+            *(values[index] for values in dimensions),
+        )
+        for index in range(frame.height)
+    ]
+
+
+def _repeated_signature_kinds(
+    frame: pl.DataFrame,
+    mapping: RetailMapping,
+    measures: _Measures,
+    identity: IdentityDeclaration,
+) -> frozenset[str]:
+    """The event kinds whose own rows contain a repeated canonical signature.
+
+    **Only when the contract proved identity that way.** `RRA-003` proves
+    source-event identity "in exactly one of these ways": a stable event or line
+    key, *or* an attestation of unique line grain plus no repeated canonical row
+    signature. The signature test belongs to the second -- "**Without an event
+    key**, a repeated canonical row signature has the same effect" -- and a keyed
+    contract answers the question with its key. Applying it there refuses two
+    legitimate lines that differ only in that key, which the same paragraph
+    admits: "Repeated products or categories in one transaction remain valid when
+    their event identities differ."
+
+    **Per kind, because the refusal is per population.** `RRA-003` refuses "every
+    additive or distinct-transaction result that *could include* it", and a
+    duplicated return is in no sale-only population: refusing transactions, AOV
+    and ASP over one reports a defect the reader's sales data does not have.
+    Grouped by event kind so each population asks only about the rows it reads.
+
+    A repeated *event key* refuses too, and is detected nowhere in this package.
+    That gap is recorded rather than closed here: it needs the declared key
+    columns read at admission, and no fixture in this suite declares one.
+    """
+    if identity.event_key_columns or not frame.height:
+        return frozenset()
+    rows = _signed_rows(frame, mapping, measures)
+    seen: dict[str, set[tuple[object, ...]]] = {}
+    repeated: set[str] = set()
+    for kind, row in zip(measures.event_kinds, rows, strict=True):
+        signatures = seen.setdefault(kind, set())
+        if row in signatures:
+            repeated.add(kind)
+        signatures.add(row)
+    return frozenset(repeated)
 
 
 def _admitted_frame(frame: pl.DataFrame, admitted_events: AdmittedEvents) -> pl.DataFrame:
@@ -713,7 +900,24 @@ def _build(
     refusals: list[RefusedResult] = []
     caveats: list[str] = []
 
-    totals = _totals(measures, admitted_events, admitted.contract.basis)
+    # `RRA-003`: an attestation of unique line grain is falsified by a repeated
+    # canonical row signature, so this is read from the admitted frame before
+    # any total is formed rather than disclosed after they are all published.
+    repeated_kinds = _repeated_signature_kinds(
+        frame, mapping, measures, admitted.contract.identity
+    )
+    # Revenue, units, cost, discount and the margin pair read the financial
+    # population, so any repeated kind reaches them. Transactions, AOV and ASP
+    # read posted sales only.
+    repeated_rows = bool(repeated_kinds)
+    repeated_sales = EVENT_SALE in repeated_kinds
+    totals = _totals(
+        measures,
+        admitted_events,
+        admitted.contract.basis,
+        repeated_row_signature=repeated_rows,
+        repeated_sale_signature=repeated_sales,
+    )
     revenue_total = totals.revenue
     units_total = totals.units
     transactions_total = totals.transactions
@@ -746,12 +950,25 @@ def _build(
         )
 
     money = measures.monetary_precision
+
+    def headline_reason(semantic: str) -> str:
+        """The cause this headline actually has.
+
+        A gapped column and an absent one are different findings with different
+        remedies, and `required_input_unavailable` renders as "the file does not
+        contain" the column -- advice that cannot work when it is there.
+        """
+        if semantic in totals.gapped_semantics:
+            return REASON_INCOMPLETE_COVERAGE
+        return totals.additive_reason
+
     add(
         METRIC_REVENUE,
         revenue_total,
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE,),
+        reason=headline_reason(SEMANTIC_REVENUE),
     )
     add(
         METRIC_UNITS,
@@ -759,6 +976,7 @@ def _build(
         unit_kind=UNIT_COUNT,
         precision=0,
         inputs=(SEMANTIC_UNITS,),
+        reason=headline_reason(SEMANTIC_UNITS),
     )
     add(
         METRIC_TRANSACTIONS,
@@ -774,6 +992,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_COST,),
+        reason=headline_reason(SEMANTIC_COST),
     )
     add(
         METRIC_DISCOUNT,
@@ -818,10 +1037,14 @@ def _build(
         metric=METRIC_AVERAGE_ORDER_VALUE,
         numerator=(
             _monetary(admitted_events, orders.left)
-            if measures.transaction_identifiers_complete
+            if measures.transaction_identifiers_complete and not repeated_sales
             else None
         ),
-        denominator=_distinct(orders.right) if measures.transaction_identifiers_complete else None,
+        denominator=(
+            _distinct(orders.right)
+            if measures.transaction_identifiers_complete and not repeated_sales
+            else None
+        ),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_TRANSACTION_ID),
@@ -832,24 +1055,31 @@ def _build(
         metric=METRIC_AVERAGE_SELLING_PRICE,
         numerator=(
             _monetary(admitted_events, selling.left)
-            if complete_selling
+            if complete_selling and not repeated_sales
             else None
         ),
-        denominator=_sum_integer(selling.right),
+        denominator=None if repeated_sales else _sum_integer(selling.right),
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_UNITS),
+        unavailable_reason=totals.additive_reason,
     )
 
     margin_revenue, gross_profit = _margin_inputs(
         admitted_events, margin, admitted.contract.basis
     )
+    if repeated_rows:
+        # `_margin_inputs` reads the measure lists rather than the refused
+        # totals, so without this the pair published a doubled margin beside the
+        # revenue and cost it was derived from -- both of which had refused.
+        margin_revenue, gross_profit = None, None
     add(
         METRIC_GROSS_PROFIT,
         gross_profit,
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
+        reason=totals.additive_reason,
     )
     _add_ratio(
         add,
@@ -859,20 +1089,26 @@ def _build(
         unit_kind=UNIT_RATIO,
         precision=RATIO_PRECISION,
         inputs=(SEMANTIC_REVENUE, SEMANTIC_COST),
+        unavailable_reason=totals.additive_reason,
     )
 
     aggregated = (
         _Aggregated(
             measure=SEMANTIC_REVENUE,
             values=measures.revenue,
-            total=revenue_total,
+            # The ungated sum: a series is per period, and `RRA-004`:46 refuses
+            # the *headline* when its column has gaps. A month whose own rows are
+            # whole still has a total.
+            total=totals.series_revenue,
             precision=money,
             unit_kind=UNIT_MONETARY,
         ),
         _Aggregated(
             measure=SEMANTIC_UNITS,
             values=[None if value is None else Decimal(value) for value in measures.units],
-            total=None if units_total is None else Decimal(units_total),
+            total=(
+                None if totals.series_units is None else Decimal(totals.series_units)
+            ),
             precision=0,
             unit_kind=UNIT_COUNT,
         ),
@@ -1640,20 +1876,46 @@ def _measures(
     height = frame.height
     null_inputs = False
     monetary_scale = MIN_MONETARY_PRECISION
+    # Which *mapped* columns have gaps, not merely whether any does. `RRA-004`:46
+    # gives the headlines "no partial-coverage vocabulary" per column: a gap in
+    # cost refuses cost and leaves revenue standing, so collapsing every column
+    # into one flag cannot express the rule.
+    gapped: set[str] = set()
 
-    def monetary(semantic: str) -> list[Decimal | None]:
+    kinds = [event.event_kind for event in admitted_events.events]
+
+    def monetary(semantic: str, *, sale_only: bool = False) -> list[Decimal | None]:
+        """One mapped measure, recording whether *its own population* has gaps.
+
+        `sale_only` is the discount's, and `RRA-004`:39 is why: its population is
+        "posted sales with complete additive discount coverage", so a return
+        carries no discount and its blank cell is not a gap in that population --
+        the row is not in it. Counting it would refuse a complete sale-only
+        metric over a row it never reads.
+        """
         nonlocal null_inputs, monetary_scale
         column = mapping.for_semantic(semantic).column
         if column is None:
             return [None] * height
         values, scale = _decimal_values(frame, column.position)
         monetary_scale = max(monetary_scale, scale)
-        null_inputs = null_inputs or any(value is None for value in values)
+        eligible = (
+            [
+                value
+                for value, kind in zip(values, kinds, strict=True)
+                if kind == EVENT_SALE
+            ]
+            if sale_only
+            else values
+        )
+        if any(value is None for value in eligible):
+            null_inputs = True
+            gapped.add(semantic)
         return values
 
     revenue = monetary(SEMANTIC_REVENUE)
     cost = monetary(SEMANTIC_COST)
-    discount = monetary(SEMANTIC_DISCOUNT)
+    discount = monetary(SEMANTIC_DISCOUNT, sale_only=True)
     returns = monetary(SEMANTIC_RETURNS)
 
     units_column = mapping.for_semantic(SEMANTIC_UNITS).column
@@ -1662,9 +1924,9 @@ def _measures(
         if units_column is None
         else _integer_values(frame, units_column.position)
     )
-    null_inputs = null_inputs or (
-        units_column is not None and any(value is None for value in units)
-    )
+    if units_column is not None and any(value is None for value in units):
+        null_inputs = True
+        gapped.add(SEMANTIC_UNITS)
 
     date_column = mapping.for_semantic(SEMANTIC_TRANSACTION_DATE).column
     dates: list[date | None] = [None] * height
@@ -1698,12 +1960,13 @@ def _measures(
         units=units,
         dates=dates,
         transactions=transactions,
-        event_kinds=[event.event_kind for event in admitted_events.events],
+        event_kinds=kinds,
         cost=cost,
         discount=discount,
         returns=returns,
         monetary_precision=monetary_scale,
         null_measure_inputs=null_inputs,
+        gapped_semantics=frozenset(gapped),
         transaction_identifiers_complete=(
             transaction_column is None
             or all(value is not None for value in transactions)

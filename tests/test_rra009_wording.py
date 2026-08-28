@@ -45,9 +45,11 @@ from khepri.rra.facts import (
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
     REASON_AMBIGUOUS_MAPPING,
+    REASON_INCOMPLETE_COVERAGE,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
     REASON_RECONCILIATION_FAILED,
+    REASON_REPEATED_ROW_SIGNATURE,
     REASON_ZERO_DENOMINATOR,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
@@ -73,8 +75,10 @@ _RESULT_REFUSAL_CODES = frozenset(
         REASON_INPUT_UNAVAILABLE,
         REASON_ZERO_DENOMINATOR,
         REASON_RECONCILIATION_FAILED,
+        REASON_INCOMPLETE_COVERAGE,
         REASON_INCOMPLETE_IDENTIFIERS,
         REASON_AMBIGUOUS_MAPPING,
+        REASON_REPEATED_ROW_SIGNATURE,
         REASON_DIMENSION_ABSENT,
         REASON_DIMENSION_INCOMPLETE,
         REASON_COVERAGE_INCOMPATIBLE,
@@ -131,6 +135,19 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
         "يمكن تحديد العمود الصحيح. أعد تسمية العمود المكرر أو احذفه ليصبح هذا "
         "الرقم متاحاً."
     ),
+    REASON_REPEATED_ROW_SIGNATURE: (
+        "{metric} غير معروض — يحتوي الملف على صفوف متطابقة في كل الأعمدة، ولا "
+        "توجد طريقة للتمييز بين سطر بيع مُتكرر فعلاً وسطر صُدِّر مرتين. إظهار "
+        "الإجمالي يعني اختيار أحد التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو "
+        "الإيصال يختلف بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
+        "المكررة، ليصبح هذا الرقم متاحاً."
+    ),
+    REASON_INCOMPLETE_COVERAGE: (
+        "{metric} غير معروض — {column} موجود في ملفك لكن بعض الصفوف تتركه "
+        "فارغاً. والإجمالي المحسوب من الصفوف التي عبّأته يصف جزءاً من نشاطك "
+        "ويُقرأ كأنه يصفه كله. الأرقام الأخرى في هذا القسم غير متأثرة. عبّئ هذا "
+        "العمود في كل صف ليصبح هذا الرقم متاحاً."
+    ),
     REASON_DIMENSION_ABSENT: (
         "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا يحتوي "
         "الملف على عمود للمنتج أو الفئة لقياس هذه النسبة. عدد الأصناف لكل "
@@ -164,8 +181,10 @@ _ACCEPTED_ARABIC_CAVEAT_MESSAGES = {
         "لا يحدد ملفك العملة المستخدمة للمبالغ. تُعرض الأرقام كما وردت من دون تحويل."
     ),
     CAVEAT_DUPLICATE_ROWS: (
-        "بعض صفوف ملفك مكررة بالكامل. احتُسبت كما وردت — إذا كانت مبيعات "
-        "متكررة فعلاً فهذا صحيح، وإذا كانت خطأ في التصدير فالإجماليات أعلى من الواقع."
+        "بعض صفوف ملفك تسجل عملية البيع نفسها مرتين — كل حقل يقرأه هذا التقرير "
+        "متطابق، مهما اختلف ما عداه. عملية البيع المتكررة فعلاً والعملية التي "
+        "صُدِّرت مرتين تبدوان متطابقتين هنا، ولذلك لا تُعرض الإجماليات التي كانت "
+        "ستحتسبها بدلاً من ذكرها وفق أحد هذين التفسيرين."
     ),
     CAVEAT_NEGATIVE_REVENUE: (
         "تتضمن بعض الصفوف قيمة بيع سالبة. أُدرجت كما وردت، وهذا صحيح إذا كانت "
@@ -262,8 +281,16 @@ def test_section_refusal_universe_is_eleven_codes() -> None:
     growth" -- so a package recording returns refuses the decomposition rather
     than netting them out. No other family refuses on returns, and the
     comparison beside it is unaffected, which the customer wording says.
+
+    The twelfth is the basket family's, and it arrives from the fact package
+    rather than from `RRA-008`: `RRA-003` refuses every additive or
+    distinct-transaction result over a repeated canonical row signature, so the
+    transaction count is gone and both basket metrics with it.
+    `basket._identifier_reason` reports the package's cause verbatim, and a
+    section that could not say it would have to relabel the refusal as
+    "identifier absent" -- naming a cause that did not occur.
     """
-    assert len(_SECTION_REFUSAL_CODES) == 11
+    assert len(_SECTION_REFUSAL_CODES) == 12
 
 
 def test_refusal_wording_section_tier_covers_every_code_in_every_language() -> None:
@@ -292,7 +319,7 @@ def test_refusal_message_raises_on_unknown_code() -> None:
         )
 
 
-def test_result_refusal_universe_is_ten_current_codes() -> None:
+def test_result_refusal_universe_is_twelve_current_codes() -> None:
     """A deliberate count, moved deliberately.
 
     Seven until the version compatibility gate landed, which added the unadmitted
@@ -310,11 +337,25 @@ def test_result_refusal_universe_is_ten_current_codes() -> None:
     reader who sees no rates has to be told which of the two dimension failures
     happened.
 
+    The eleventh is `RRA-003`'s repeated canonical row signature. It had no code
+    because the defect published instead of refusing: a doubled extract stated a
+    doubled total and disclosed a caveat beside it, which asked the reader to
+    decide which reading was true when nothing in the file answers. It is
+    distinct from `required_input_unavailable` -- every input is present and
+    readable -- so reusing that code would have told a customer a column was
+    missing when none is.
+
+    The twelfth separates a column that is *absent* from one that is present and
+    incomplete. `RRA-004`:46 refuses a headline whose own column has gaps, and
+    `required_input_unavailable` renders as "the file does not contain
+    {column}" with "include the missing column" as its remedy -- a cause that did
+    not occur and advice that cannot work when the column is already there.
+
     The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
-    assert len(_RESULT_REFUSAL_CODES) == 10
+    assert len(_RESULT_REFUSAL_CODES) == 12
 
 
 def test_refusal_wording_result_tier_covers_every_code_in_every_language() -> None:

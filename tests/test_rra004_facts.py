@@ -27,8 +27,10 @@ from khepri.rra.facts import (
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
     REASON_AMBIGUOUS_MAPPING,
+    REASON_INCOMPLETE_COVERAGE,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
+    REASON_REPEATED_ROW_SIGNATURE,
     UNIT_COUNT,
     UNIT_MONETARY,
     UNIT_RATIO,
@@ -171,13 +173,24 @@ def test_conditional_metrics_appear_when_their_inputs_exist() -> None:
 
 
 def test_an_average_never_mixes_two_row_populations() -> None:
-    # The second row has an invoice but no revenue. Dividing all revenue by all
-    # invoices would publish 50.00 for an order that took 100.00.
+    """AOV reads the rows that carry both halves, and says that it did.
+
+    The subject is the *average*, and it is unchanged: the second row has an
+    invoice but no revenue, and dividing all revenue by all invoices would
+    publish 50.00 for an order that took 100.00.
+
+    The headline moved. `RRA-004`:46 gives revenue "no partial-coverage
+    vocabulary" and refuses it when its own column has gaps, so the 100.00 that
+    used to publish beside this average is now a refusal -- while transactions,
+    whose column is whole, still counts two. That split is the point: the
+    refusal is per column, and AOV survives because its population is the
+    matched rows rather than the headline.
+    """
     content = b"date,revenue,invoice_no\n2026-01-05,100.00,INV-1\n2026-01-06,,INV-2\n"
 
     result = package(content)
 
-    assert result.value(METRIC_REVENUE) == "100.00"
+    assert result.fact(METRIC_REVENUE) is None
     assert result.value(METRIC_TRANSACTIONS) == "2"
     assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "100.00"
     assert CAVEAT_DERIVED_OVER_MATCHED_ROWS in result.caveats
@@ -246,11 +259,24 @@ def test_zero_denominator_refuses_the_derived_metric() -> None:
 
 
 def test_null_measure_cells_are_excluded_not_treated_as_zero() -> None:
+    """A missing cell is neither a zero nor a summand, and now nor a headline.
+
+    Treating the empty revenue cell as `0.00` would state that the second sale
+    took nothing, which the file does not say -- that remains the subject, and
+    `units` still publishes 5 because its own column is whole.
+
+    What changed is the revenue headline. Excluding the cell and publishing the
+    remaining 100.00 answers a question nobody asked: the revenue of the rows
+    that happened to carry one, presented as the revenue of the extract.
+    `RRA-004`:46 gives the headlines "no partial-coverage vocabulary and
+    therefore refuse when a required admitted column has gaps", so revenue
+    refuses. The caveat still discloses the gap.
+    """
     content = b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,,3\n"
 
     result = package(content)
 
-    assert result.value(METRIC_REVENUE) == "100.00"
+    assert result.fact(METRIC_REVENUE) is None
     assert result.value(METRIC_UNITS) == "5"
     assert CAVEAT_NULL_MEASURE_INPUTS in result.caveats
 
@@ -264,7 +290,16 @@ def test_negative_revenue_is_kept_and_disclosed() -> None:
     assert CAVEAT_NEGATIVE_REVENUE in result.caveats
 
 
-def test_duplicate_rows_are_disclosed_rather_than_silently_removed() -> None:
+def test_duplicate_rows_are_refused_and_still_disclosed() -> None:
+    """Replaces a test that asserted the doubled total was published.
+
+    That test read `RRA-003` as a choice between disclosing `200.00` and
+    silently dropping a row, and chose disclosure. Refusal is the third option
+    the specification actually names: "a repeated canonical row signature"
+    refuses "because a legitimate repeated line cannot be distinguished from a
+    duplicated extract". Nothing is removed and no total is invented, and the
+    caveat still tells the reader the file contains duplicates.
+    """
     content = (
         b"date,revenue,units\n"
         b"2026-01-05,100.00,2\n"
@@ -273,7 +308,7 @@ def test_duplicate_rows_are_disclosed_rather_than_silently_removed() -> None:
 
     result = package(content)
 
-    assert result.value(METRIC_REVENUE) == "200.00"
+    assert result.fact(METRIC_REVENUE) is None
     assert CAVEAT_DUPLICATE_ROWS in result.caveats
 
 
@@ -1456,3 +1491,479 @@ def test_a_transaction_basis_counts_canonical_keys() -> None:
     )
     assert basis.transaction_count == 4
     assert result.value("transactions") == "4"
+
+
+def _duplicate_signature_package() -> FactPackage:
+    """The oracle's byte-identical-duplicate case.
+
+    `RRA-003` proves event identity in exactly one of two ways, and every
+    fixture here takes the second: no event key, plus an attestation that the
+    line grain is unique. A repeated canonical row signature *falsifies that
+    attestation*, which is why the contract cannot make this case admissible --
+    measured under both identity declarations, the published figures are
+    identical, so no declaration makes the doubled total correct.
+    """
+    from tests.rra003_contract_fixtures import oracle_contract
+    from tests.rra_calculation_oracle import DUPLICATE_SIGNATURE_ROWS, to_csv
+
+    content = to_csv(DUPLICATE_SIGNATURE_ROWS)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+def test_a_repeated_row_signature_refuses_every_additive_result() -> None:
+    """`RRA-003`: a repeated canonical row signature refuses, it does not caveat.
+
+    "A repeated event key, whether identical or conflicting, refuses every
+    additive or distinct-transaction result that could include it. Without an
+    event key, a repeated canonical row signature has the same effect because a
+    legitimate repeated line cannot be distinguished from a duplicated extract."
+
+    The distinguishing word is *cannot*. Disclosing a doubled total with a
+    caveat asks the reader to decide which reading is true, and nothing in the
+    extract answers: 250.00 twice is either two real sales or one sale twice,
+    and the manifest says nothing either way. Publishing 800.00 where the
+    un-duplicated data gives 550.00 states one of those readings as fact.
+    """
+    result = _duplicate_signature_package()
+
+    for metric in (
+        METRIC_REVENUE,
+        METRIC_UNITS,
+        METRIC_TRANSACTIONS,
+        METRIC_AVERAGE_ORDER_VALUE,
+        METRIC_AVERAGE_SELLING_PRICE,
+    ):
+        assert result.fact(metric) is None, f"{metric} published over a duplicate"
+        refused = result.refusal(metric)
+        assert refused is not None
+        assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_the_repeated_signature_refusal_reads_from_the_oracle() -> None:
+    """The literals this correction is measured against, stated independently.
+
+    `DUPLICATE_SIGNATURE_EXPECTED` refuses all five, derived without calling any
+    production helper. Reading them here rather than inlining `None` keeps the
+    expectation and the assertion in one place.
+    """
+    from tests.rra_calculation_oracle import DUPLICATE_SIGNATURE_EXPECTED
+
+    result = _duplicate_signature_package()
+
+    for metric, expected in DUPLICATE_SIGNATURE_EXPECTED.items():
+        assert expected is None, f"the oracle expects {metric} to refuse"
+        assert result.value(metric) is None
+
+
+def test_the_duplicate_caveat_still_discloses_what_was_refused() -> None:
+    """The refusal replaces the published number, not the disclosure.
+
+    `RRA-009` renders caveats to customers, and "this file contains duplicated
+    rows" is the reason the figures are absent. Dropping the caveat when the
+    refusal landed would leave a reader with missing metrics and no account of
+    why -- and `RRA-004` is explicit that absence is never the disclosure.
+    """
+    result = _duplicate_signature_package()
+
+    assert CAVEAT_DUPLICATE_ROWS in result.caveats
+
+
+def test_a_repeated_row_signature_refuses_the_margin_family_too() -> None:
+    """The doubled total cannot be refused while its ratio publishes.
+
+    `gross_profit` and `gross_margin` are built from `_margin_inputs`, which
+    reads the measure lists rather than the refused totals -- so over a
+    duplicated extract they published `355.00` and `0.4438` beside a `cost` that
+    had already refused. Both are sums of the repeated row, and `RRA-003`
+    refuses "every additive or distinct-transaction result that could include
+    it".
+
+    The oracle's `DUPLICATE_SIGNATURE` prose names nine metrics where its
+    literals name five, and this is the difference: the prose was right. A page
+    stating a margin while refusing the revenue and cost it came from would be
+    incoherent on its own face.
+    """
+    result = _duplicate_signature_package()
+
+    for metric in (METRIC_COST, METRIC_GROSS_PROFIT, METRIC_GROSS_MARGIN):
+        assert result.fact(metric) is None, f"{metric} published over a duplicate"
+        refused = result.refusal(metric)
+        assert refused is not None
+        assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def _disjoint_revenue_units_package() -> FactPackage:
+    """The oracle's case where each headline's own column has a gap.
+
+    One row states revenue and no units; the other states units and no revenue.
+    Distinct from `PARTIAL_NULL`, where the gap is in *cost* and revenue is
+    complete over its own column -- that case publishes, and must keep
+    publishing.
+    """
+    from tests.rra003_contract_fixtures import oracle_contract
+    from tests.rra_calculation_oracle import DISJOINT_REVENUE_UNITS_ROWS, to_csv
+
+    content = to_csv(DISJOINT_REVENUE_UNITS_ROWS)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+def test_a_headline_refuses_when_its_own_column_has_a_gap() -> None:
+    """`RRA-004`:46 -- headlines have "no partial-coverage vocabulary".
+
+    "Headline revenue, cost, units, discounts, and returns have no
+    partial-coverage vocabulary and therefore refuse when a required admitted
+    column has gaps."
+
+    `_sum_decimal` skips `None` and sums what is left, so it refused only when
+    *every* value was missing. One gap published the partial sum as the headline:
+    500.00 over a file whose second row states no revenue at all, presented as
+    the revenue of the whole extract.
+    """
+    result = _disjoint_revenue_units_package()
+
+    for metric in (METRIC_REVENUE, METRIC_UNITS):
+        assert result.fact(metric) is None, f"{metric} published a partial sum"
+        refused = result.refusal(metric)
+        assert refused is not None
+        # The column is present and incomplete, which is not the same finding as
+        # an absent one and does not have the same remedy.
+        assert refused.reason == REASON_INCOMPLETE_COVERAGE
+
+
+def test_a_gap_in_one_column_leaves_the_others_publishing() -> None:
+    """The control that proves the refusal is per-column, not package-wide.
+
+    `PARTIAL_NULL` states complete revenue and units with a gap in cost. Cost,
+    gross profit and gross margin refuse there -- `financial_complete_revenue_cost`
+    is not complete -- while revenue publishes 1000.00, because revenue's own
+    column has no gap. A correction that refused every headline whenever any
+    column was gapped would take that 1000.00 with it.
+    """
+    from tests.rra003_contract_fixtures import oracle_contract
+    from tests.rra_calculation_oracle import (
+        PARTIAL_NULL_EXPECTED,
+        PARTIAL_NULL_ROWS,
+        to_csv,
+    )
+
+    content = to_csv(PARTIAL_NULL_ROWS)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    assert result.value(METRIC_REVENUE) == str(PARTIAL_NULL_EXPECTED["revenue"])
+    assert result.value(METRIC_UNITS) == str(PARTIAL_NULL_EXPECTED["units"])
+
+
+def test_a_gapped_headline_does_not_take_the_trend_with_it() -> None:
+    """`RRA-004`:46 refuses the *headline*, and a period bucket is not one.
+
+    The headline answers "what did this extract take", and a gap in its column
+    means no honest answer exists. A monthly bucket answers a narrower question,
+    and a gap in January says nothing about February: refusing the trend would
+    take periods whose own rows are whole, and with them the comparison and
+    growth families that read it.
+
+    The two totals are therefore separate -- the gate applies to what `add`
+    publishes, not to what `_series` and `_comparisons` derive from.
+    """
+    content = (
+        b"date,revenue,units\n"
+        b"2026-01-05,100.00,2\n"
+        b"2026-02-06,,3\n"
+        b"2026-03-07,200.00,4\n"
+    )
+
+    result = package(content)
+
+    assert result.fact(METRIC_REVENUE) is None
+    trend = result.trend()
+    assert trend is not None, "a gapped headline refused the whole revenue trend"
+    # Bucketed at the granularity this span earns, so the labels are asserted by
+    # the days that carry revenue rather than by a month spelling.
+    assert {bucket.label for bucket in trend.series.buckets} >= {
+        "2026-01-05",
+        "2026-03-07",
+    }
+
+
+def test_an_unmapped_column_cannot_hide_a_repeated_row_signature() -> None:
+    """`RRA-003` signs the admitted fields, not the file.
+
+    The signature is "a repeated canonical row signature across all admitted
+    identity, dimension, and measure fields" -- so a column the mapping never
+    admitted has no say in whether two rows are the same event. Comparing whole
+    source rows lets a free-text note, an export timestamp or a row id make two
+    otherwise identical sales look distinct, and the refusal then fails *open*
+    on exactly the input it exists for.
+
+    Both rows here state the same sale in every governed field and differ only
+    in a `note` column no semantic claims.
+    """
+    content = (
+        b"date,event_kind,status,revenue,units,invoice_no,store,product,"
+        b"category,cost,discount_amount,note\n"
+        b"2026-03-04,sale,posted,250.00,5,INV-1,S1,P1,C1,140.00,0.00,alpha\n"
+        b"2026-03-04,sale,posted,250.00,5,INV-1,S1,P1,C1,140.00,0.00,beta\n"
+    )
+    from tests.rra003_contract_fixtures import oracle_contract
+
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    assert result.fact(METRIC_REVENUE) is None, "an unmapped note defeated the refusal"
+    refused = result.refusal(METRIC_REVENUE)
+    assert refused is not None
+    assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_a_keyed_contract_is_not_judged_by_the_row_signature() -> None:
+    """`RRA-003` proves identity "in exactly one of these ways", and picks one.
+
+    The canonical-row-signature test belongs to the second: "**Without an event
+    key**, a repeated canonical row signature has the same effect." A contract
+    naming `event_key_columns` has already answered the question, and the same
+    paragraph says so from the other side -- "Repeated products or categories in
+    one transaction remain valid when their event identities differ."
+
+    Two lines of one invoice, identical in every mapped semantic and distinct in
+    their event key: a legitimate repeated line, not a duplicated extract.
+    Refusing here would refuse every keyed extract that sells the same product
+    twice on one receipt.
+    """
+    from khepri.rra.source_contract import (
+        BasisDeclaration,
+        ContractAttribution,
+        EventDeclaration,
+        IdentityDeclaration,
+        build_source_contract,
+    )
+
+    contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_keyed", evidence="Test fixture: a keyed extract."
+        ),
+        events=EventDeclaration(
+            event_kind_column=None,
+            sale_only=True,
+            status_column=None,
+            posted_only=True,
+            currency_column=None,
+            currency_code="EGP",
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=("line_id",),
+            unique_line_grain_attested=False,
+            transaction_id_column="invoice_no",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+    content = (
+        b"date,revenue,units,invoice_no,line_id\n"
+        b"2026-03-04,250.00,5,INV-1,L1\n"
+        b"2026-03-04,250.00,5,INV-1,L2\n"
+    )
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    assert result.value(METRIC_REVENUE) == "500.00"
+    assert result.value(METRIC_UNITS) == "10"
+
+
+def _oracle_package(content: bytes) -> FactPackage:
+    """A package under the oracle contract, for signature cases needing dimensions."""
+    from tests.rra003_contract_fixtures import oracle_contract
+
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+_SIGNATURE_HEADER = (
+    b"date,event_kind,status,revenue,units,invoice_no,store,product,"
+    b"category,cost,discount_amount\n"
+)
+
+
+def test_the_signature_compares_governed_values_not_source_text() -> None:
+    """`250` and `250.00` are one admitted value, so they are one signature.
+
+    `materialize` keeps every column as text, and `RRA-003` signs "admitted
+    identity, dimension, and measure fields" -- the values admission produced,
+    not the characters the file spelled them with. Comparing the text let a
+    trailing `.00`, a padded field or any other equivalent spelling hide a real
+    duplicate, so the refusal failed *open* on a file that differs from the
+    caught one only in formatting.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,250,5,INV-1,S1,P1,C1,140.00,0.00\n"
+        + b"2026-03-04,sale,posted,250.00,5,INV-1,S1,P1,C1,140.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.fact(METRIC_REVENUE) is None, "a formatting difference hid a duplicate"
+    refused = result.refusal(METRIC_REVENUE)
+    assert refused is not None
+    assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def test_duplicated_returns_do_not_refuse_the_sale_only_results() -> None:
+    """`RRA-003` refuses the results a collision "could include", and no others.
+
+    Transactions, AOV and ASP read posted *sales*. A duplicated return is not in
+    any of those populations, so it cannot make them ambiguous -- refusing them
+    reports a defect the reader's own sales data does not have. Revenue and units
+    do include returns, so they refuse.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,0.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,0.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,0.00\n"
+    )
+
+    result = _oracle_package(content)
+
+    # The sale-only populations are untouched: two distinct posted sales.
+    assert result.value(METRIC_TRANSACTIONS) == "2"
+    assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "150.00"
+    # Revenue includes posted returns, so the collision does reach it.
+    assert result.fact(METRIC_REVENUE) is None
+
+
+def test_a_gapped_column_states_a_cause_the_reader_can_act_on() -> None:
+    """A present column with blank cells is not an absent column.
+
+    `required_input_unavailable` renders as "the file does not contain
+    {column}" and tells the reader to include it in their export. For a headline
+    refused under `RRA-004`:46 the column *is* there — some of its cells are
+    empty — so that message names a cause that did not occur and gives advice
+    that cannot work.
+    """
+    content = b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,,3\n"
+
+    result = package(content)
+
+    refused = result.refusal(METRIC_REVENUE)
+    assert refused is not None
+    assert refused.reason == REASON_INCOMPLETE_COVERAGE
+
+
+def test_a_return_row_does_not_gap_the_sale_only_discount() -> None:
+    """`RRA-004`:39 scopes discounts to "posted **sales** with complete ... coverage".
+
+    A return carries no discount, and its blank cell is not a gap in the sale
+    population -- the row is not in it. Refusing over one reports incomplete
+    coverage of a population that is complete, and `RRA-004`:97 requires a
+    refusal to leave independently proven facts standing.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,5.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,8.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.value(METRIC_DISCOUNT) == "13.00"
