@@ -47,6 +47,17 @@ class Bucket:
     rows: int
     days: int | None = None
     transactions: int | None = None
+    #: Whether a posted *sale* row landed in this bucket.
+    #:
+    #: `RRA-008` puts attach rate on `dimension_complete_sales:<dimension>`, so
+    #: a value carried only by a return is outside that population. Without
+    #: this the bucket still published, and because return transaction keys are
+    #: masked it published a plausible `0.0000` -- a value that reads as "never
+    #: bought with anything" for something never sold at all.
+    #:
+    #: Defaults `True` so a time bucket, and any caller with no event kinds to
+    #: offer, is unaffected.
+    sold: bool = True
 
     def as_document(self, *, precision: int) -> dict[str, object]:
         return {
@@ -54,6 +65,10 @@ class Bucket:
             "value": None if self.value is None else _text(self.value, precision),
             "rows": self.rows,
             "days": self.days,
+            # Absence serializes as absence: a bucket a sale landed in is
+            # the ordinary case, so only the exception is recorded and a
+            # legacy document round-trips unchanged.
+            **({} if self.sold else {"sold": False}),
             "transactions": self.transactions,
         }
 
@@ -208,6 +223,7 @@ class _Accumulator:
             value=self.total if self.present else None,
             rows=self.rows,
             transactions=len(self.keys) if counted else None,
+            sold=self.sale_row,
         )
 
 

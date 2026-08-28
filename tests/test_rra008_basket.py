@@ -639,3 +639,34 @@ def test_an_independently_refused_dimension_still_states_its_reason() -> None:
         'the product family is absent with no stated reason, so its absence '
         f'reads as having nothing to say: {refused}'
     )
+def test_a_return_only_value_receives_no_attach_rate() -> None:
+    """`RRA-008` puts attach rate on `dimension_complete_sales:<dimension>`.
+
+    A product carried only by a return is outside that population. It was
+    published anyway, and because return transaction keys are masked it published
+    `0.0000` -- which reads as "never bought alongside anything" for something
+    never bought at all. The most plausible wrong number on the page.
+
+    The earlier fix filtered the concentration ranking, which is a different
+    consumer: the published buckets still carried the value and
+    `_attachable` turned every one of them into a fact. Found in review.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,400.00,10,INV-1,Water\n"
+        b"2026-02-02,sale,600.00,15,INV-2,Juice\n"
+        b"2026-02-03,return,-90.00,-2,INV-3,GhostItem\n"
+    )
+
+    package = _package_with_returns(content)
+    assert package.event_kind_filters == ("return", "sale")
+
+    rates = {
+        basket.attached_value_of(fact, package): fact.value
+        for fact in facts_of(package)
+        if fact.metric == METRIC_ATTACH_RATE
+    }
+
+    assert 'GhostItem' not in rates, rates
+    # The values that were actually sold are unaffected.
+    assert rates == {'Water': '0.5000', 'Juice': '0.5000'}

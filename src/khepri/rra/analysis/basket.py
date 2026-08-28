@@ -376,11 +376,18 @@ def _attachable(entry: FactComparison) -> tuple[Bucket, ...]:
     A source value literally spelled `other` or `unlabelled` is unaffected:
     `build_comparison` disambiguates any label that would shadow a reserved
     synthetic bucket, so these two labels only ever mean the synthetic ones.
+    A value carried only by a *return* is excluded too. `RRA-008` puts attach
+    rate on `dimension_complete_sales:<dimension>`, so a product no sale ever
+    carried is outside the population -- and because return transaction keys
+    are masked it published a plausible `0.0000`, which reads as "never bought
+    alongside anything" for something never bought at all.
     """
     return tuple(
         bucket
         for bucket in entry.comparison.buckets
-        if bucket.label not in _SYNTHETIC_LABELS and bucket.transactions is not None
+        if bucket.label not in _SYNTHETIC_LABELS
+        and bucket.transactions is not None
+        and bucket.sold
     )
 
 

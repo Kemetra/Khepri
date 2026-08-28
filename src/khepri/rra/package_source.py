@@ -349,6 +349,9 @@ def _bucket(entry: Mapping[str, Any]) -> Bucket:
         rows=_count(entry, "rows"),
         days=_optional_count(entry, "days"),
         transactions=_optional_count(entry, "transactions"),
+        # Absent means a sale landed here, which is the ordinary case and
+        # what every document written before the field means.
+        sold=bool(entry.get("sold", True)),
     )
 
 
