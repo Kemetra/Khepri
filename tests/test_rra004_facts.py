@@ -1999,3 +1999,58 @@ def test_a_complete_bucket_survives_an_incomplete_neighbour() -> None:
     # The rows stay counted, so the refusal is legible as incompleteness rather
     # than as a category that sold nothing.
     assert buckets["Snacks"].rows == 2
+
+
+def test_a_missing_key_component_refuses_only_what_needs_the_key() -> None:
+    """`RRA-004`:97 — a refusal leaves independently proven facts standing.
+
+    `RRA-003` refuses "transactions, AOV, items per transaction, and attach
+    rate" on a missing key component, and names those four. Revenue, units and
+    ASP need no transaction key, so a composite that cannot be built for one row
+    must not take them: `_joined_key` raised, `_admitted_events` turned that into
+    a package-wide `FactsRefused`, and the whole package was gone.
+
+    `AdmittedEvents.monetary_refused` is the existing shape for exactly this and
+    says why in its docstring -- "a field rather than an exception because the
+    specification refuses monetary facts *and leaves count-only facts standing*.
+    Raising would take both."
+    """
+    from tests.rra003_contract_fixtures import oracle_contract
+    from tests.rra_calculation_oracle import (
+        MISSING_TRANSACTION_IDENTITY_EXPECTED,
+        MISSING_TRANSACTION_IDENTITY_ROWS,
+        to_csv,
+    )
+
+    content = to_csv(MISSING_TRANSACTION_IDENTITY_ROWS)
+    contract = oracle_contract(
+        transaction_key_components=("invoice_no", "store", "date")
+    )
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    expected = MISSING_TRANSACTION_IDENTITY_EXPECTED
+    # The four that need the key refuse.
+    for metric in (METRIC_TRANSACTIONS, METRIC_AVERAGE_ORDER_VALUE):
+        assert expected[metric] is None
+        assert result.fact(metric) is None
+    # The three that do not, stand.
+    assert result.value(METRIC_REVENUE) == str(expected["revenue"])
+    assert result.value(METRIC_UNITS) == str(expected["units"])
+    assert result.value(METRIC_AVERAGE_SELLING_PRICE) == str(
+        expected["average_selling_price"]
+    )

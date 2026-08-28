@@ -750,13 +750,27 @@ def test_a_declared_component_column_absent_from_the_file_refuses() -> None:
     assert "store" in str(refused.value)
 
 
-def test_a_blank_component_cell_refuses_rather_than_counting_short() -> None:
-    """A blank cell in a present component column refuses the population.
+def test_a_blank_component_cell_yields_no_key_rather_than_counting_short() -> None:
+    """A blank cell in a present component column proves no identity for that row.
 
     Same reasoning as the absent column, one layer in: a composite with a hole
-    is not a proven identity, and a `None` key would silently drop the row from
-    `transaction_count` -- reporting 1 transaction for 2 rows as a stated fact.
-    `RRA-003` refuses; it does not undercount.
+    is not a proven identity, so no key is built rather than a shorter one being
+    joined.
+
+    **The undercount this guarded against is impossible, and the refusal moved
+    to where it can be narrow.** This asserted `EventsRefused` because "a `None`
+    key would silently drop the row from `transaction_count` -- reporting 1
+    transaction for 2 rows as a stated fact". `transaction_count` does count
+    only the keys it has, but `facts._measures` carries
+    `transaction_identifiers_complete`, and one absent key refuses the
+    *published* count outright -- so no reader is shown the short number.
+
+    Refusing here took the whole package instead: `_admitted_events` turns
+    `EventsRefused` into a package-wide `FactsRefused`, so revenue and units,
+    which need no transaction key, went with it. `RRA-003` names the four
+    results a missing component refuses and those are not among them, and
+    `RRA-004`:97 requires "every refusal leaves facts whose own semantics and
+    population remain independently proven".
     """
     blank_store = (
         b"date,invoice,event_kind,status,amount,qty,currency,store,terminal\n"
@@ -764,16 +778,21 @@ def test_a_blank_component_cell_refuses_rather_than_counting_short() -> None:
         b"2026-03-04,INV-2,sale,posted,200.00,4,EGP,,T1\n"
     )
 
-    with pytest.raises(EventsRefused) as refused:
-        admit(
-            blank_store,
-            mapped_contract(
-                transaction_id_unique_package_wide=False,
-                transaction_key_components=("invoice", "store"),
-            ),
-        )
+    admitted = admit(
+        blank_store,
+        mapped_contract(
+            transaction_id_unique_package_wide=False,
+            transaction_key_components=("invoice", "store"),
+        ),
+    )
 
-    assert "store" in str(refused.value)
+    keys = [event.transaction_key for event in admitted.events]
+    assert keys[1] is None, "a hole in the composite was joined into a short key"
+    assert keys[0] is not None
+    # Counted from the keys that exist, and never published as a total on its
+    # own: `test_a_missing_key_component_refuses_only_what_needs_the_key`
+    # asserts the refusal at the layer a customer reads.
+    assert admitted.transaction_count == 1
 
 
 def test_a_blank_component_on_an_excluded_row_does_not_refuse_the_population() -> None:
