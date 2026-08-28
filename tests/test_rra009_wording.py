@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import pkgutil
 import re
 
 import pytest
@@ -533,3 +534,112 @@ def test_caveat_wording_guard_raises_on_incomplete_table(monkeypatch) -> None:
 
 def test_wording_module_imports_cleanly_with_complete_copy() -> None:
     importlib.reload(wording)
+
+
+# --- CAL1-11 compatibility sweep: registry derivation ---------------------
+#
+# The cross-product tests above prove every code *in* a registry has prose in
+# both languages. They cannot prove the registry holds every code production
+# actually defines, because two of the three registries are hand-listed sets of
+# imported constants: adding `CAVEAT_NEW_THING` to `facts.py` and stating it on a
+# result leaves `_GOVERNED_CAVEAT_CODES` unchanged, every test above green, and a
+# customer reading an untranslated code.
+#
+# The section tier already closes this: `GOVERNED_SECTION_REASONS` is derived
+# from `SECTION_REASONS` (`bundle.py`), and `_SECTION_REFUSAL_CODES` above is
+# derived from *that*, so the chain from definition to prose is unbroken. These
+# two tests give the caveat and result tiers the same property by deriving the
+# expected universe from the production modules rather than restating it.
+#
+# Introspection is the point, not a shortcut. A hand-listed expectation here
+# would be the very thing it is meant to catch -- and so would a hand-listed set
+# of modules to look in. An earlier version of this scan named four modules and
+# a `CAVEAT_*` added to `analysis/basket.py` survived it: a guard that cannot see
+# the surface a new constant appears on disarms itself silently. The package is
+# walked instead, so a new module is covered the day it is added.
+def _rra_module_names() -> tuple[str, ...]:
+    """Every importable module in `khepri.rra`, the package that owns caveats.
+
+    The package root is included explicitly: `walk_packages` yields descendants
+    and never the package itself, so a caveat defined in `khepri/rra/__init__.py`
+    would sit outside a walk that looks complete.
+    """
+    package = importlib.import_module("khepri.rra")
+    return tuple(
+        sorted(
+            {package.__name__}
+            | {
+                info.name
+                for info in pkgutil.walk_packages(
+                    package.__path__, f"{package.__name__}."
+                )
+            }
+        )
+    )
+
+
+def _constants_named(module_name: str, prefix: str) -> frozenset[str]:
+    """Every `str` constant in one module whose name starts with `prefix`.
+
+    An import failure propagates. Swallowing it would let a module that defines
+    an unregistered `CAVEAT_*` and happens to raise on import contribute nothing
+    to the scan -- the other modules keep the comparison non-empty, so the sweep
+    would report success over a module it never read. That is the same
+    self-disarming shape the walk replaced, one level further down.
+    """
+    module = importlib.import_module(module_name)
+    return frozenset(
+        value
+        for name in vars(module)
+        if name.startswith(prefix) and isinstance(value := getattr(module, name), str)
+    )
+
+
+def test_every_caveat_constant_defined_in_production_is_a_governed_caveat() -> None:
+    """A caveat a module can state must be a caveat the wording tables know.
+
+    Derived from the modules rather than listed, so a new `CAVEAT_*` constant
+    fails here until it is added to `_GOVERNED_CAVEAT_CODES` -- which the
+    cross-product tests then force to carry Arabic and English prose.
+    """
+    modules = _rra_module_names()
+    assert modules, "walked no modules; the scan is looking in the wrong place"
+    defined = frozenset().union(
+        *(_constants_named(name, "CAVEAT_") for name in modules)
+    )
+    assert defined, "no CAVEAT_* constants found; the scan is looking in the wrong place"
+    assert defined == frozenset(wording._GOVERNED_CAVEAT_CODES), sorted(
+        defined.symmetric_difference(wording._GOVERNED_CAVEAT_CODES)
+    )
+
+
+#: The five codes both customer tiers state. A shared code is deliberate and
+#: `bundle.py` says why: a family that refuses for one of these hands its own
+#: code straight to the section, because two spellings of one condition would
+#: make the hand-off a translation nobody would remember to keep honest.
+_SHARED_TIER_CODES = frozenset(
+    {
+        "coverage_structurally_incompatible",
+        "family_version_pairing_unadmitted",
+        "incomplete_transaction_identifiers",
+        "repeated_row_signature",
+        "required_input_unavailable",
+    }
+)
+
+
+def test_the_two_customer_tiers_are_the_only_ones_wording_states() -> None:
+    """`section` and `result` are different vocabularies that overlap by design.
+
+    A section refusal says why a whole analysis is absent; a result refusal says
+    why one metric inside a produced package is. They are not two spellings of
+    one set, so a sweep that unioned them would report their difference as drift.
+    Five codes appear in both, deliberately -- pinned here so a sixth is a
+    decision someone makes rather than one that arrives.
+
+    The internal `GOVERNED_REASONS` in `bundle` and `narrative` carry
+    `BundleRefused`/`NarrativeRefused` integrity codes, which reach no customer
+    and are correctly absent from both tiers.
+    """
+    assert set(wording.REFUSAL_WORDING) == {"section", "result"}
+    assert _SECTION_REFUSAL_CODES & _RESULT_REFUSAL_CODES == _SHARED_TIER_CODES
