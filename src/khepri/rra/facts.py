@@ -1174,7 +1174,15 @@ def _build(
         source_sha256_hex=profile.source_sha256_hex,
         row_count=row_count,
         monetary_precision=money,
-        sale_units_total=_sum_integer(_positive_units(measures)),
+        # Withheld under a repeated signature for the reason `RRA-003`:54 gives:
+        # a repeated event key "refuses every additive or distinct-transaction
+        # result that could include it", and this is an additive result over the
+        # rows whose identity was refused. Published, it stated 4 units beside a
+        # revenue that refused as `repeated_row_signature` -- the doubled figure
+        # the headline had just declined to state.
+        sale_units_total=(
+            None if repeated_rows else _sum_integer(_positive_units(measures))
+        ),
         returning_periods=_returning_periods(measures, series),
         facts=tuple(facts),
         series=tuple(series),
@@ -1192,10 +1200,24 @@ def _build(
             None if admitted.manifest is None else admitted.manifest.input_digest
         ),
         coverage_signatures=_signatures_of(admitted, measures, admitted_kinds),
-        daily_bases=_daily_bases_of(
-            admitted, measures, admitted_kinds, admitted_events.currency
+        # The same refusal reaches the aligned daily bases and the retained
+        # bases, which are additive and distinct-transaction evidence over the
+        # very rows in question. Left standing, the package refused its headline
+        # facts for ambiguous identity while offering a consumer the same
+        # unproven rows as authoritative evidence to reconcile against -- nine
+        # bases each carrying `event_count 2` for two rows that may be one event.
+        # `RRA-004`:125 makes the consequence of retaining no basis explicit and
+        # bounded: it "refuses only dependent facts", which have refused already.
+        daily_bases=(
+            ()
+            if repeated_rows
+            else _daily_bases_of(
+                admitted, measures, admitted_kinds, admitted_events.currency
+            )
         ),
-        retained_bases=retain_bases(
+        retained_bases=()
+        if repeated_rows
+        else retain_bases(
             events=admitted_events.events,
             binding=BasisBinding(
                 input_digest=profile.source_sha256_hex,

@@ -1286,3 +1286,58 @@ def test_a_declared_key_column_the_extract_lacks_refuses() -> None:
     """
     with pytest.raises(EventsRefused):
         admit(RETURNS_CSV, mapped_contract(event_key_columns=("line_id",)))
+
+
+DUPLICATE_KEY_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+)
+
+DISTINCT_KEY_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+    b"2026-03-04,INV-2,sale,posted,100.00,2,EGP\n"
+)
+
+
+def test_a_repeated_key_withholds_the_auxiliary_evidence_too() -> None:
+    """`RRA-003`:54 -- a repeated event key "refuses every additive or
+    distinct-transaction result that could include it".
+
+    That sentence is not scoped to headline facts. `sale_units_total` is an
+    additive result and a retained basis's event count is a distinct-transaction
+    one, and both are built from the very rows whose identity was refused.
+
+    Left standing, one package said both things at once: revenue refused as
+    `repeated_row_signature` while `sale_units_total` published `4` -- the
+    doubled figure the headline had just declined to state -- and nine retained
+    bases each carried `event_count 2` for two rows that may be one event. A
+    consumer reconciling against a retained basis would be handed that count as
+    authoritative, with nothing recording that the package had refused the
+    identity it rests on.
+
+    `RRA-004`:125 bounds the cost of withholding them: failing to retain a basis
+    "refuses only dependent facts", and every dependent fact here has refused
+    already.
+    """
+    package = package_from(DUPLICATE_KEY_CSV, mapped_contract())
+
+    reasons = {refusal.metric: refusal.reason for refusal in package.refusals}
+    assert reasons["revenue"] == "repeated_row_signature"
+    assert package.sale_units_total is None
+    assert package.retained_bases == ()
+    assert package.daily_bases == ()
+
+
+def test_distinct_keys_still_publish_the_auxiliary_evidence() -> None:
+    """The control: the withholding above is caused by the repeat, not the shape.
+
+    Without this, gating the three fields on `True` would satisfy every
+    assertion in the test above -- and a package that retains no basis at all
+    leaves every derived fact citing nothing, which `RRA-004`:123 forbids.
+    """
+    package = package_from(DISTINCT_KEY_CSV, mapped_contract())
+
+    assert package.sale_units_total == 4
+    assert package.retained_bases != ()
