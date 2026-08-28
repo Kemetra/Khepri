@@ -103,6 +103,15 @@ PRODUCT_GAP_CATEGORY_COMPLETE = (
 )
 
 
+#: Every product and every category present, so both attach families publish.
+GOLDEN_WITH_CATEGORY = (
+    b"date,revenue,units,invoice_no,product,category\n"
+    b"2026-01-05,100.00,3,INV-1,Water,Drinks\n"
+    b"2026-01-06,200.00,5,INV-2,Juice,Drinks\n"
+    b"2026-01-07,60.00,1,INV-3,Water,Snacks\n"
+)
+
+
 def package_for(content: bytes) -> FactPackage:
     profile = build_profile(
         content=content,
@@ -573,3 +582,31 @@ def test_attach_rate_divides_by_sale_transactions_only() -> None:
         if fact.metric == METRIC_ATTACH_RATE
     }
     assert rates.get("Water") == "0.5000", rates
+def test_every_published_attach_fact_resolves_its_value() -> None:
+    """`attached_value_of` must follow `_attach_facts` across dimensions.
+
+    Once the attach family began publishing product *and* category rates,
+    `attached_value_of` still searched only the first ranked dimension through
+    `_dimension()`. A category fact's identity is hashed over the category
+    scope, so it matched no product bucket and the helper returned `None` for a
+    fact the package had published -- a surface asking which value a rate
+    belongs to would be told nothing. Found in review.
+    """
+    package = package_for(GOLDEN_WITH_CATEGORY)
+    attach = [
+        fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
+    ]
+    dimensions = {
+        name for fact in attach for name in fact.inputs if name != 'transaction_id'
+    }
+
+    # The premise: both families really are published, or this proves nothing.
+    assert dimensions == {SEMANTIC_PRODUCT, SEMANTIC_CATEGORY}, dimensions
+
+    unresolved = [
+        fact for fact in attach if basket.attached_value_of(fact, package) is None
+    ]
+    assert not unresolved, (
+        'these published attach facts name no value: '
+        f'{[fact.fact_id for fact in unresolved]}'
+    )

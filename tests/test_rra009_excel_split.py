@@ -89,24 +89,18 @@ def test_the_rich_fixture_presents_every_section_that_has_landed() -> None:
     *built* under -- pinned to the published predecessor, so the families
     admitted against it are the ones that have not moved.
     """
-    from khepri.rra.bundle import _FAMILIES, SECTION_GROWTH
+    from khepri.rra.bundle import _FAMILIES
 
     bundle = rich_bundle()
     landed = landed_sections(bundle.identity.formula_version)
     states = {section.section_id: section.state for section in bundle.sections}
 
-    # Growth is the one landed family this fixture cannot present, and the
-    # reason is the fixture's own content rather than the gate: it carries one
-    # posted return so the returns metric has something to state, and
-    # `RRA-008` requires growth's two aligned windows to be "return-free
-    # posted-sale populations" -- a return "refuses growth". Refusing here is
-    # the specification being honoured, not a family failing to land.
+    # Growth presents again. It briefly did not: the returns refusal was first
+    # written package-wide, and this fixture carries one posted return so the
+    # returns metric has something to state. `RRA-008` makes that a *window*
+    # precondition, and the return is in no compared window -- so refusing here
+    # was the guard being too broad, not the specification being honoured.
     for section_id in _FAMILIES:
-        if section_id == SECTION_GROWTH:
-            assert states[section_id] == "refused", (
-                "the fixture holds a posted return, so growth must refuse"
-            )
-            continue
         assert states[section_id] == (
             "present" if section_id in landed else "refused"
         ), section_id

@@ -58,7 +58,6 @@ from khepri.rra.analysis.comparison import accepted_window, window_refusal
 from khepri.rra.analysis.windows import MODE_PERIOD_OVER_PERIOD
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
-    CAVEAT_RETURNS_NOT_NETTED,
     METRIC_UNITS,
     REASON_INPUT_UNAVAILABLE,
     UNIT_MONETARY,
@@ -191,15 +190,20 @@ def _derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
             metric=METRIC_REVENUE_CHANGE,
             reason=window_refusal(package, MODE_PERIOD_OVER_PERIOD),
         )
-    if CAVEAT_RETURNS_NOT_NETTED in package.caveats:
+    labels = (window.current.label, window.prior.label)
+    if set(labels) & set(package.returning_periods):
         # `_periods` reads the revenue and units trends, whose population is
         # `financial_posted` and therefore includes posted returns. Refused
         # rather than recomputed, because that is what `RRA-008` asks for.
+        #
+        # Asked of the *compared windows*, not the package: `RRA-008` makes
+        # this a window-level precondition -- "both aligned windows must be
+        # return-free" -- so a return in some period neither window covers
+        # refused a decomposition that was perfectly valid.
         return RefusedResult(
             metric=METRIC_REVENUE_CHANGE,
             reason=REASON_RETURNS_PRESENT,
         )
-    labels = (window.current.label, window.prior.label)
     periods = _periods(package, labels)
     if periods is None:
         return RefusedResult(metric=METRIC_REVENUE_CHANGE, reason=REASON_UNITS_ABSENT)

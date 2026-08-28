@@ -170,14 +170,17 @@ def attached_value_of(fact: Fact, package: FactPackage) -> str | None:
     The label lives in the identity's hashed scope, so it is recomputed against
     the package's own buckets rather than read off the fact. That also proves two
     values cannot collide on one identifier.
+
+    **Searched across every dimension the family published**, not just the first.
+    `_attach_facts` states product and category rates independently, and a
+    category fact's identity is hashed over the category scope -- so looking only
+    at `_dimension()` matched no bucket and returned `None` for a fact the
+    package had published. Found in review.
     """
-    found = _dimension(package)
-    if found is None:
-        return None
-    dimension, entry = found
     return next(
         (
             bucket.label
+            for dimension, entry in _dimensions(package)
             for bucket in _attachable(entry)
             if _identity(fact.metric, (dimension, bucket.label))[0] == fact.fact_id
         ),

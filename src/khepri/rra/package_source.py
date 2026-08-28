@@ -125,6 +125,11 @@ def rebuild_fact_package(document: Mapping[str, Any]) -> FactPackage:
         row_count=_count(document, "row_count"),
         monetary_precision=_count(document, "monetary_precision"),
         sale_units_total=_absent_or_count(document, "sale_units_total"),
+        returning_periods=(
+            ()
+            if "returning_periods" not in document
+            else _labels(document, "returning_periods")
+        ),
         comparison_window_periods=_count(document, "comparison_window_periods"),
         facts=tuple(_fact(entry) for entry in _entries(document, "facts")),
         series=tuple(_series(entry) for entry in _entries(document, "series")),

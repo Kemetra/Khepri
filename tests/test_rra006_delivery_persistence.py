@@ -828,3 +828,29 @@ def test_a_package_stored_before_the_basket_input_still_rebuilds() -> None:
     # And everything else about the stored package is unchanged.
     assert rebuilt.facts == built.facts
     assert rebuilt.row_count == built.row_count
+def test_a_legacy_package_document_still_matches_its_stored_digest() -> None:
+    """The readback is only half: the rebuilt package must re-digest the same.
+
+    `SessionFactPackageSource.load` compares `package.digest` against the stored
+    `package_digest`. A document written before `sale_units_total` existed omits
+    the key; if `as_document()` then emits it, the rebuilt digest differs and a
+    validly stored package is refused as corrupt -- the same shape as the
+    coverage-manifest round trip this branch opened with. Raised in review.
+    """
+    built = package()
+    stored = json.loads(json.dumps(built.as_document()))
+    legacy = {
+        key: value for key, value in stored.items() if key != 'sale_units_total'
+    }
+    assert 'sale_units_total' not in legacy
+
+    rebuilt = rebuild_fact_package(legacy)
+
+    assert rebuilt.sale_units_total is None
+    # `digest` hashes `as_document()`, so this is the round trip the digest
+    # comparison in `SessionFactPackageSource.load` actually performs.
+    assert rebuilt.as_document() == legacy, (
+        'the rebuilt package does not serialize back to the document it came '
+        'from, so its digest differs and a stored legacy package is refused '
+        'as corrupt'
+    )

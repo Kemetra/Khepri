@@ -148,6 +148,10 @@ class _Accumulator:
     #: `total` rather than replacing it so one accumulation serves both.
     sale_total: Decimal = Decimal(0)
     sale_present: bool = False
+    #: Whether any posted *sale* row carried this key at all, measure or not.
+    #: Distinct from `sale_present`, which needs a value: a sale with no revenue
+    #: is in the dimension set and not in the revenue ranking.
+    sale_row: bool = False
 
     def add(
         self,
@@ -157,6 +161,8 @@ class _Accumulator:
         sale: bool = True,
     ) -> None:
         self.rows += 1
+        if sale:
+            self.sale_row = True
         if value is not None:
             self.total += value
             self.present = True
@@ -172,6 +178,7 @@ class _Accumulator:
         self.present = self.present or other.present
         self.sale_total += other.sale_total
         self.sale_present = self.sale_present or other.sale_present
+        self.sale_row = self.sale_row or other.sale_row
         # Unioned, never summed. Every dropped value may share one transaction,
         # and adding their counts would report five where the truth is one --
         # the row-count substitution `RRA-008` forbids, one level up.
@@ -277,8 +284,13 @@ def build_comparison(
         accumulators,
         key=lambda key: (-accumulators[key].total, labels[key]),
     )
+    # Return-only values are not in the posted-sale set at all: `RRA-008` ranks
+    # "the full, non-null, admissible product or category set with complete sale
+    # revenue", and a value no sale ever carried is none of those. Left in, it
+    # inflated `distinct_values`, which a reader takes as the size of the set the
+    # curve speaks for.
     ranked_order = sorted(
-        accumulators,
+        (key for key in accumulators if accumulators[key].sale_row),
         key=lambda key: (-accumulators[key].sale_total, labels[key]),
     )
     counted = transactions is not None
@@ -301,8 +313,14 @@ def build_comparison(
         ),
         distinct_transactions=_distinct_members(accumulators) if counted else None,
         # Asked of the accumulator keys, which are the source values, rather
-        # than of the buckets, which are what display kept.
-        incomplete_values=any(key is None for key in accumulators),
+        # than of the buckets, which are what display kept -- and only of the
+        # keys a *sale* landed on. `RRA-008` puts attach rate and concentration
+        # on posted-sale populations, so a return carrying no product said
+        # nothing about whether the sale dimension is complete, and refused a
+        # provably complete one.
+        incomplete_values=any(
+            key is None and accumulators[key].sale_row for key in accumulators
+        ),
         curve=_curve([accumulators[key] for key in ranked_order]),
     )
 

@@ -29,6 +29,7 @@ from khepri.rra.aggregates import (
     build_comparison,
     build_series,
     granularity_for,
+    period_label,
     reconciles,
 )
 from khepri.rra.bases import BasisBinding, RetainedBasis, retain_bases
@@ -288,6 +289,16 @@ class FactPackage:
     #: Distinct from the `units` fact, whose population is `financial_posted`
     #: and therefore includes posted return units.
     sale_units_total: int | None = None
+    #: The period labels, at the trend's own granularity, that contain a
+    #: posted return.
+    #:
+    #: `RRA-008` makes a return a *window-level* precondition for growth --
+    #: "both aligned windows must be return-free" -- and a package-wide
+    #: caveat cannot answer that: it refused a valid decomposition because
+    #: some unrelated period held a return. A package field and not a `Fact`,
+    #: for the reason `sale_units_total` records: `RRA-004`'s metric
+    #: assignments are exact and name no such metric.
+    returning_periods: tuple[str, ...] = ()
     #: The event kinds and statuses every population here was filtered to.
     event_kind_filters: tuple[str, ...] = ()
     status_filters: tuple[str, ...] = ()
@@ -341,7 +352,24 @@ class FactPackage:
             "profile_digest": self.profile_digest,
             "source_sha256_hex": self.source_sha256_hex,
             "row_count": self.row_count,
-            "sale_units_total": self.sale_units_total,
+            # Absence serializes as absence, for the reason
+            # `CoverageManifest.as_document` records: `package_source` compares
+            # the rebuilt digest against the stored one, so emitting a key a
+            # legacy document does not carry makes that document re-digest
+            # differently and a validly stored package is refused as corrupt.
+            # `PACKAGE_VERSION` does not move for this: a package without a
+            # basket numerator is the same package, not a new shape.
+            **(
+                {}
+                if self.sale_units_total is None
+                else {"sale_units_total": self.sale_units_total}
+            ),
+            # Absence serializes as absence, for the same reason.
+            **(
+                {}
+                if not self.returning_periods
+                else {"returning_periods": sorted(self.returning_periods)}
+            ),
             "monetary_precision": self.monetary_precision,
             "comparison_window_periods": self.comparison_window_periods,
             "facts": [fact.as_document() for fact in self.facts],
@@ -896,6 +924,7 @@ def _build(
         row_count=row_count,
         monetary_precision=money,
         sale_units_total=_sum_integer(_positive_units(measures)),
+        returning_periods=_returning_periods(measures, series),
         facts=tuple(facts),
         series=tuple(series),
         comparisons=tuple(comparisons),
@@ -995,10 +1024,21 @@ def _population_transaction_counts(measures: _Measures) -> dict[str, int | None]
     sale_keys = _sale_only(measures.transactions, measures)
     revenue_keys = _matched(_sale_only(measures.revenue, measures), sale_keys)
     units_keys = _matched(_positive_units(measures), sale_keys)
+    # Whether there is any transaction identity to count at all. With one
+    # mapped, an empty matched population is *counted and empty*; `_distinct`
+    # alone reports `None` there, which `RetainedBasis` reserves for having no
+    # identity to count -- a different finding, inside the package digest.
+    identified = _distinct(sale_keys) is not None
+
+    def matched(keys: list) -> int | None:
+        if not identified:
+            return None
+        return _distinct(keys) or 0
+
     return {
         POPULATION_SALES_COMPLETE_TRANSACTIONS: _distinct(sale_keys),
-        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS: _distinct(revenue_keys.right),
-        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS: _distinct(units_keys.right),
+        POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS: matched(revenue_keys.right),
+        POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS: matched(units_keys.right),
     }
 
 def _daily_bases_of(
@@ -1093,6 +1133,30 @@ def _daily_values(
         for day in days
     )
 
+def _returning_periods(
+    measures: _Measures,
+    series: list[FactSeries],
+) -> tuple[str, ...]:
+    """Which trend periods contain a posted return.
+
+    Labelled at the trend's own granularity, because that is the vocabulary
+    the comparison and growth families select windows in -- a date range
+    would have to be re-bucketed by every consumer, and the two could disagree
+    about which period a day belongs to.
+
+    Empty where no return was admitted, which is the ordinary case.
+    """
+    trend = next((entry for entry in series if entry.measure == SEMANTIC_REVENUE), None)
+    if trend is None:
+        return ()
+    granularity = trend.series.granularity
+    labels = {
+        period_label(day, granularity)
+        for day, kind in zip(measures.dates, measures.event_kinds, strict=True)
+        if day is not None and kind != EVENT_SALE
+    }
+    return tuple(sorted(labels))
+
 def _signatures_of(
     admitted: AdmittedInput,
     measures: _Measures,
@@ -1118,7 +1182,9 @@ def _signatures_of(
     days = [day for day in measures.dates if day is not None]
     if not days:
         return ()
-    if not _attests_the_admitted_population(manifest, admitted_kinds):
+    if not _attests_the_admitted_population(
+        manifest, admitted_kinds, (STATUS_POSTED,)
+    ):
         return ()
     signatures = []
     for scope in sorted(manifest.scopes):
@@ -1142,6 +1208,7 @@ def _signatures_of(
 def _attests_the_admitted_population(
     manifest: CoverageManifest,
     admitted_kinds: tuple[str, ...],
+    admitted_statuses: tuple[str, ...],
 ) -> bool:
     """Whether the attestation describes the population the package computed over.
 
@@ -1163,12 +1230,18 @@ def _attests_the_admitted_population(
     extract the package admitted returns from leaves the returns with no
     completeness proof, while the signature would report the window proven.
 
-    Statuses are not compared here: `facts` admits `STATUS_POSTED` alone and
-    `admission` refuses every other status outright, so the package has no
-    status population that could diverge. When that stops being true this
-    becomes the place the comparison belongs.
+    **Statuses are checked the same way**, and the first version of this
+    function did not check them. Its reasoning was that `admission` refuses
+    every status but `posted`, so the package has no status population that
+    could diverge -- true of the *package*, and beside the point. The gap is
+    in the *attestation*: `build_coverage_manifest` accepts any non-empty
+    status list, so an operator may attest a window for `voided` alone while
+    the package computed over posted rows, and the signature would report
+    that window proven. Found in review.
     """
-    return set(admitted_kinds) <= set(manifest.event_kinds)
+    return set(admitted_kinds) <= set(manifest.event_kinds) and set(
+        admitted_statuses
+    ) <= set(manifest.statuses)
 
 
 def _admitted_kinds(admitted_events: AdmittedEvents) -> tuple[str, ...]:

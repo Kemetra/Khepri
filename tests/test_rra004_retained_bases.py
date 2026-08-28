@@ -400,3 +400,30 @@ def test_each_basis_counts_the_transactions_of_its_own_population() -> None:
     # INV-3 has no units, so it is not in this population and its key is not
     # one of the transactions this basis is evidence for.
     assert counted[BASIS_SALES_UNITS_TRANSACTION] == 2
+def test_a_proven_empty_transaction_population_counts_zero() -> None:
+    """`None` says the identity was unavailable; zero says the population is empty.
+
+    `RetainedBasis` reserves `None` for a basis with no transaction identity to
+    count -- `_sale_keys` records why. When keys *are* mapped and the population
+    they are matched against is empty, the count is provably zero, and
+    `_distinct` returning `None` for an empty set reported the wrong one of the
+    two findings inside `as_document()` and the package digest.
+
+    Here every sale carries an invoice and none carries units, so
+    `sales_complete_units_transactions` is known to hold no transaction rather
+    than being uncountable. Found in review.
+    """
+    keyed_sales_without_units = (
+        b"date,revenue,invoice_no\n"
+        b"2026-01-05,100.00,INV-1\n"
+        b"2026-01-06,50.00,INV-2\n"
+    )
+    package = package_from(keyed_sales_without_units)
+    counted = transaction_counts_of(package)
+
+    # The premise: transaction identity is mapped, so nothing here is
+    # uncountable for want of a key.
+    assert counted[BASIS_SALES_TRANSACTION] == 2
+    assert counted[BASIS_SALES_UNITS_TRANSACTION] == 0, (
+        'an empty matched population is counted and empty, not uncountable'
+    )

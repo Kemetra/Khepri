@@ -311,3 +311,59 @@ def test_concentration_ranks_posted_sale_revenue_not_net_revenue() -> None:
         'the curve ranks net financial revenue: Water is placed by 100 rather '
         'than by the 1000 it sold'
     )
+def test_a_return_only_value_is_not_in_the_ranked_sale_set() -> None:
+    """`RRA-008` ranks "the full, non-null, admissible product or category set
+    with complete sale revenue". A value no sale ever carried is none of those.
+
+    `build_comparison` accumulated a return's product like any other, so a value
+    appearing only on a return entered the curve's distinct count -- which a
+    reader takes as the size of the set the curve speaks for. Found in review.
+
+    The published buckets keep it: `RRA-004` assigns the revenue comparison
+    `financial_posted`, so the financial breakdown still shows the return.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,400.00,10,INV-1,Water\n"
+        b"2026-02-02,return,-90.00,-2,INV-2,GhostItem\n"
+    )
+
+    package = _package_with_returns(content)
+    assert package.event_kind_filters == ("return", "sale")
+
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+    curve = published.comparison.curve
+    assert curve is not None
+
+    assert curve.distinct_values == 1, (
+        'GhostItem was never sold, so it is not in the posted-sale set the '
+        'curve describes'
+    )
+    # The financial breakdown is unchanged and still carries both values.
+    assert published.comparison.distinct_values == 2
+
+
+def test_a_null_dimension_on_a_return_does_not_refuse_a_complete_sale_set() -> None:
+    """Completeness is a question about the posted-sale population.
+
+    The incomplete-dimension flag scanned every accumulator, so a return
+    carrying no product refused a dimension whose every *sale* value was
+    present -- losing a curve and an attach family the package could prove.
+    Found in review.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no,product\n"
+        b"2026-02-01,sale,400.00,10,INV-1,Water\n"
+        b"2026-02-02,sale,600.00,15,INV-2,Juice\n"
+        b"2026-02-03,return,-90.00,-2,INV-3,\n"
+    )
+
+    package = _package_with_returns(content)
+    published = package.comparison(SEMANTIC_PRODUCT)
+    assert published is not None
+
+    assert not published.comparison.incomplete_values, (
+        'every sale carries a product, so the sale dimension is complete'
+    )
+    assert not isinstance(concentration.derive(package), RefusedResult)

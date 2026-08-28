@@ -898,3 +898,36 @@ def test_a_manifest_naming_no_attester_is_refused_at_the_route() -> None:
     )
 
     assert refused.status_code in {400, 422}, refused.text
+def test_a_manifest_attesting_no_posted_status_signs_nothing() -> None:
+    """The status half of the population check the event kinds already get.
+
+    `build_coverage_manifest` accepts any non-empty status list, and `admission`
+    admits only `posted` -- so a manifest attesting some other status entirely
+    describes a population the package did not compute over, while the signature
+    reported its window proven.
+
+    The event-kind half of this check was written first, and its docstring
+    argued statuses could not diverge because admission refuses every other
+    status. That reasoning was about the *package*; the gap is in the
+    *attestation*, which is free to name a status the package never admitted.
+    Found in review.
+    """
+    test = ready()
+    profiled = test.client.post(
+        "/api/v1/beta/profile",
+        json=profile_with(manifest_body(statuses=["voided"])),
+    )
+    assert profiled.status_code == 201, profiled.text
+
+    built = test.client.post("/api/v1/beta/facts")
+    assert built.status_code == 201, built.text
+    document = built.json()["document"]
+
+    assert document["status_filters"] == ["posted"], (
+        "the package admitted posted rows, so the attestation named another "
+        "population entirely"
+    )
+    assert not document["coverage_signatures"], (
+        "a window was reported proven by an attestation covering no status the "
+        "package admitted"
+    )
