@@ -2064,9 +2064,15 @@ def test_a_repeated_event_key_refuses_the_additive_results() -> None:
     proven identity for those rows, and the doubled totals published anyway
     until the flag reached `_totals`.
 
-    Two rows sharing `INV-1`: either two events wrongly given one key, or one
-    event exported twice. The extract does not say which, which is the same
-    ambiguity the row-signature test answers for the other identity proof.
+    Two rows sharing `line_id` `L1`, the declared event key: either two events
+    wrongly given one key, or one event exported twice. The extract does not say
+    which, which is the same ambiguity the row-signature test answers for the
+    other identity proof.
+
+    The invoice numbers differ (`INV-1`, `INV-2`) deliberately -- the collision
+    is on the key alone, and the rows are not identical in every column, so this
+    is the conflicting-key case rather than a repeated row signature. Do not
+    "fix" the differing invoices: that would remove the repeat under test.
     """
     from khepri.rra.source_contract import (
         BasisDeclaration,
