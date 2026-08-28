@@ -203,6 +203,47 @@ def test_a_manifest_without_scope_or_roster_is_refused_at_construction() -> None
         )
 
 
+def test_a_manifest_naming_both_scope_modes_is_refused() -> None:
+    """`RRA-003` makes an aggregate scope and a store roster alternatives.
+
+    The sibling test above proves the *neither* branch. This is the *both*
+    branch, and it is a separate guard: `CoverageManifest.scopes` returns the
+    aggregate when one is set and never consults the roster, so a manifest
+    declaring both silently discards the roster and attests less than it
+    appears to. Nothing tells the operator which reading was kept.
+    """
+    with pytest.raises(ManifestRefused):
+        _manifest(
+            window=ManifestWindow(
+                covered_start=_START,
+                covered_end=_END,
+                aggregate_scope=_SCOPE,
+                store_roster=("store-1",),
+                covered_pairs=_pairs(_SCOPE, [_START, _MIDDLE, _END]),
+            )
+        )
+
+
+def test_a_manifest_attesting_a_day_outside_its_window_is_refused() -> None:
+    """A covered pair beyond `covered_end` attests what the window never claimed.
+
+    Refused on that ground rather than incidentally: without this guard an
+    extra pair past the declared end could satisfy a completeness question by
+    itself, so the manifest would prove a day its own window excludes.
+    """
+    beyond = date(2026, 1, 4)
+    with pytest.raises(ManifestRefused):
+        _manifest(
+            window=ManifestWindow(
+                covered_start=_START,
+                covered_end=_END,
+                aggregate_scope=_SCOPE,
+                store_roster=(),
+                covered_pairs=_pairs(_SCOPE, [_START, _MIDDLE, _END, beyond]),
+            )
+        )
+
+
 def test_a_manifest_missing_a_day_inside_its_own_window_is_refused() -> None:
     """Covered pairs must actually cover the range the manifest claims."""
     with pytest.raises(ManifestRefused):
