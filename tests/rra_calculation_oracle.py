@@ -851,20 +851,49 @@ MISSING_TRANSACTION_IDENTITY_EXPECTED = {
     # ASP does not depend on the transaction key: 300.00 / 6 = 50.00.
     "average_selling_price": Decimal("50.00"),
 }
-"""One refused metric leaving independent metrics standing -- regression proof 9.
+"""Four refusals owed, none made, independent metrics standing -- regression proof 9.
 
-_RED: production returns transactions "2", AOV "150.00", items per transaction
-"3.0000", against an oracle that refuses all three.
+_RED: **all four** transaction-denominated metrics publish where the oracle
+refuses. Re-measured on `9646223` through `ReportBundle.of`, which is
+the customer surface -- `FactPackage.value` answers only for `rra004` facts and
+returns `None` for an `rra008` family metric whether it refused or was never a
+package fact at all, so it cannot be read as a refusal:
 
-Empirically confirmed. `transaction_identifiers_complete` in `_measures` checks
+| metric | published | oracle |
+|---|---|---|
+| `transactions` | `2` | refuses |
+| `average_order_value` | `150.00` | refuses |
+| `basket_items_per_transaction` | `3.0000` | refuses |
+| `basket_attach_rate` | `1.0000`, and `0.5000` twice | refuses |
+
+Attach rate is the sharpest: it asserts that *every* transaction attached, over a
+package whose canonical key cannot be formed -- and it reaches `ReportBundle.figures`
+three times, the headline plus one bar per dimension value, so a fix refuses the
+family and not one figure. The same four mismatch at `7088749`, so no `#310` slice
+caused or corrected any of them.
+
+`basket._identified` is the gate that should stop this, and it passes: it asks only
+whether a `transactions` fact exists, and one does -- with the wrong value. So a
+single fix at the canonical key closes all four.
+
+The `_EXPECTED` literals below reach no assertion -- one of seven such dicts in
+this module with no consumer under `tests/` -- so the oracle's own literals never
+fired on this. `#295` carries both the fix and the obligation to consume them.
+
+`transaction_identifiers_complete` in `_measures` checks
 only whether the mapped *identifier* column has gaps. Both invoice numbers are
 present, so production is satisfied and counts two -- while the store component
 the canonical key needs is missing on one row and no composite can be formed.
 
 The violated rule is `RRA-003`: the canonical key needs "every field required for
-uniqueness", and a missing component refuses. Revenue 300.00, units 6 and
-ASP 50.00 agree, which is the survival half of the proof: the refusal must be
-narrow, and current code's *breadth* is correct even where its trigger is not.
+uniqueness", and a missing component refuses.
+
+Revenue 300.00, units 6 and ASP 50.00 agree, which is the survival half of the
+proof: `RRA-004` requires "every refusal leaves facts whose own semantics and
+population remain independently proven", so a fix must refuse exactly the four and
+leave these three standing. Nothing here establishes that production's breadth is
+right -- on this package it refuses none of the four, so its breadth is untested
+rather than correct.
 """
 
 
