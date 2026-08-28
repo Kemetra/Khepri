@@ -424,6 +424,11 @@ class _Measures:
     monetary_precision: int
     null_measure_inputs: bool
     transaction_identifiers_complete: bool
+    #: The mapped measure semantics whose own column has gaps. `RRA-004`:46
+    #: refuses a headline when *its* column is incomplete, which is a narrower
+    #: question than `null_measure_inputs` -- a gap in cost leaves revenue
+    #: standing.
+    gapped_semantics: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -521,6 +526,13 @@ class _Totals:
     #: Set when a repeated canonical row signature refused the additive family,
     #: so every one of them states the same governed reason.
     additive_reason: str = REASON_INPUT_UNAVAILABLE
+    #: The revenue and unit sums before the per-column gap gate, used only to
+    #: decide whether a *series or comparison* can be derived. `RRA-004`:46
+    #: refuses the **headline** when its column has gaps, and a monthly bucket is
+    #: not that headline: a gap in January says nothing about February's total,
+    #: so refusing the trend would take periods whose own rows are whole.
+    series_revenue: Decimal | None = None
+    series_units: int | None = None
 
 
 def _totals(
@@ -566,9 +578,15 @@ def _totals(
             returns=None,
             additive_reason=REASON_REPEATED_ROW_SIGNATURE,
         )
+    # `RRA-004`:46 -- headlines "refuse when a required admitted column has
+    # gaps", per column. `_sum_decimal` refuses only when every value is absent,
+    # so without this a single gap published the partial sum as the headline.
+    def whole(semantic: str, total: object) -> object:
+        return None if semantic in measures.gapped_semantics else total
+
     return _Totals(
-        revenue=_monetary(admitted_events, measures.revenue),
-        units=_sum_integer(measures.units),
+        revenue=whole(SEMANTIC_REVENUE, _monetary(admitted_events, measures.revenue)),
+        units=whole(SEMANTIC_UNITS, _sum_integer(measures.units)),
         # `RRA-004`:92 -- "Transactions count posted sales only." A return
         # is a posted event and belongs in revenue and units; it is not a
         # transaction, and counting it inflates every ratio dividing by one.
@@ -580,18 +598,26 @@ def _totals(
         transactions_reason=(
             REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
         ),
-        cost=_on_attested_basis(
-            _monetary(admitted_events, measures.cost), basis.cost_is_extended
+        cost=whole(
+            SEMANTIC_COST,
+            _on_attested_basis(
+                _monetary(admitted_events, measures.cost), basis.cost_is_extended
+            ),
         ),
-        discount=_on_attested_basis(
-            _monetary(admitted_events, measures.discount),
-            basis.discount_is_additive,
+        discount=whole(
+            SEMANTIC_DISCOUNT,
+            _on_attested_basis(
+                _monetary(admitted_events, measures.discount),
+                basis.discount_is_additive,
+            ),
         ),
         # `RRA-004`:83 -- `-sum(non-positive return revenue)`. `RRA-003`
         # forbids the alternative outright: "No independently mapped
         # return-amount measure is admitted." A return event states its own
         # magnitude, so a separate column is a second answer to one question.
         returns=_returns_magnitude(admitted_events, measures),
+        series_revenue=_monetary(admitted_events, measures.revenue),
+        series_units=_sum_integer(measures.units),
     )
 
 
@@ -917,14 +943,19 @@ def _build(
         _Aggregated(
             measure=SEMANTIC_REVENUE,
             values=measures.revenue,
-            total=revenue_total,
+            # The ungated sum: a series is per period, and `RRA-004`:46 refuses
+            # the *headline* when its column has gaps. A month whose own rows are
+            # whole still has a total.
+            total=totals.series_revenue,
             precision=money,
             unit_kind=UNIT_MONETARY,
         ),
         _Aggregated(
             measure=SEMANTIC_UNITS,
             values=[None if value is None else Decimal(value) for value in measures.units],
-            total=None if units_total is None else Decimal(units_total),
+            total=(
+                None if totals.series_units is None else Decimal(totals.series_units)
+            ),
             precision=0,
             unit_kind=UNIT_COUNT,
         ),
@@ -1692,6 +1723,11 @@ def _measures(
     height = frame.height
     null_inputs = False
     monetary_scale = MIN_MONETARY_PRECISION
+    # Which *mapped* columns have gaps, not merely whether any does. `RRA-004`:46
+    # gives the headlines "no partial-coverage vocabulary" per column: a gap in
+    # cost refuses cost and leaves revenue standing, so collapsing every column
+    # into one flag cannot express the rule.
+    gapped: set[str] = set()
 
     def monetary(semantic: str) -> list[Decimal | None]:
         nonlocal null_inputs, monetary_scale
@@ -1700,7 +1736,9 @@ def _measures(
             return [None] * height
         values, scale = _decimal_values(frame, column.position)
         monetary_scale = max(monetary_scale, scale)
-        null_inputs = null_inputs or any(value is None for value in values)
+        if any(value is None for value in values):
+            null_inputs = True
+            gapped.add(semantic)
         return values
 
     revenue = monetary(SEMANTIC_REVENUE)
@@ -1714,9 +1752,9 @@ def _measures(
         if units_column is None
         else _integer_values(frame, units_column.position)
     )
-    null_inputs = null_inputs or (
-        units_column is not None and any(value is None for value in units)
-    )
+    if units_column is not None and any(value is None for value in units):
+        null_inputs = True
+        gapped.add(SEMANTIC_UNITS)
 
     date_column = mapping.for_semantic(SEMANTIC_TRANSACTION_DATE).column
     dates: list[date | None] = [None] * height
@@ -1756,6 +1794,7 @@ def _measures(
         returns=returns,
         monetary_precision=monetary_scale,
         null_measure_inputs=null_inputs,
+        gapped_semantics=frozenset(gapped),
         transaction_identifiers_complete=(
             transaction_column is None
             or all(value is not None for value in transactions)

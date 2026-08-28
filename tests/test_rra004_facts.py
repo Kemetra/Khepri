@@ -172,13 +172,24 @@ def test_conditional_metrics_appear_when_their_inputs_exist() -> None:
 
 
 def test_an_average_never_mixes_two_row_populations() -> None:
-    # The second row has an invoice but no revenue. Dividing all revenue by all
-    # invoices would publish 50.00 for an order that took 100.00.
+    """AOV reads the rows that carry both halves, and says that it did.
+
+    The subject is the *average*, and it is unchanged: the second row has an
+    invoice but no revenue, and dividing all revenue by all invoices would
+    publish 50.00 for an order that took 100.00.
+
+    The headline moved. `RRA-004`:46 gives revenue "no partial-coverage
+    vocabulary" and refuses it when its own column has gaps, so the 100.00 that
+    used to publish beside this average is now a refusal -- while transactions,
+    whose column is whole, still counts two. That split is the point: the
+    refusal is per column, and AOV survives because its population is the
+    matched rows rather than the headline.
+    """
     content = b"date,revenue,invoice_no\n2026-01-05,100.00,INV-1\n2026-01-06,,INV-2\n"
 
     result = package(content)
 
-    assert result.value(METRIC_REVENUE) == "100.00"
+    assert result.fact(METRIC_REVENUE) is None
     assert result.value(METRIC_TRANSACTIONS) == "2"
     assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "100.00"
     assert CAVEAT_DERIVED_OVER_MATCHED_ROWS in result.caveats
@@ -247,11 +258,24 @@ def test_zero_denominator_refuses_the_derived_metric() -> None:
 
 
 def test_null_measure_cells_are_excluded_not_treated_as_zero() -> None:
+    """A missing cell is neither a zero nor a summand, and now nor a headline.
+
+    Treating the empty revenue cell as `0.00` would state that the second sale
+    took nothing, which the file does not say -- that remains the subject, and
+    `units` still publishes 5 because its own column is whole.
+
+    What changed is the revenue headline. Excluding the cell and publishing the
+    remaining 100.00 answers a question nobody asked: the revenue of the rows
+    that happened to carry one, presented as the revenue of the extract.
+    `RRA-004`:46 gives the headlines "no partial-coverage vocabulary and
+    therefore refuse when a required admitted column has gaps", so revenue
+    refuses. The caveat still discloses the gap.
+    """
     content = b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,,3\n"
 
     result = package(content)
 
-    assert result.value(METRIC_REVENUE) == "100.00"
+    assert result.fact(METRIC_REVENUE) is None
     assert result.value(METRIC_UNITS) == "5"
     assert CAVEAT_NULL_MEASURE_INPUTS in result.caveats
 
@@ -1581,3 +1605,126 @@ def test_a_repeated_row_signature_refuses_the_margin_family_too() -> None:
         refused = result.refusal(metric)
         assert refused is not None
         assert refused.reason == REASON_REPEATED_ROW_SIGNATURE
+
+
+def _disjoint_revenue_units_package() -> FactPackage:
+    """The oracle's case where each headline's own column has a gap.
+
+    One row states revenue and no units; the other states units and no revenue.
+    Distinct from `PARTIAL_NULL`, where the gap is in *cost* and revenue is
+    complete over its own column -- that case publishes, and must keep
+    publishing.
+    """
+    from tests.rra003_contract_fixtures import oracle_contract
+    from tests.rra_calculation_oracle import DISJOINT_REVENUE_UNITS_ROWS, to_csv
+
+    content = to_csv(DISJOINT_REVENUE_UNITS_ROWS)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    return build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+
+def test_a_headline_refuses_when_its_own_column_has_a_gap() -> None:
+    """`RRA-004`:46 -- headlines have "no partial-coverage vocabulary".
+
+    "Headline revenue, cost, units, discounts, and returns have no
+    partial-coverage vocabulary and therefore refuse when a required admitted
+    column has gaps."
+
+    `_sum_decimal` skips `None` and sums what is left, so it refused only when
+    *every* value was missing. One gap published the partial sum as the headline:
+    500.00 over a file whose second row states no revenue at all, presented as
+    the revenue of the whole extract.
+    """
+    result = _disjoint_revenue_units_package()
+
+    for metric in (METRIC_REVENUE, METRIC_UNITS):
+        assert result.fact(metric) is None, f"{metric} published a partial sum"
+        refused = result.refusal(metric)
+        assert refused is not None
+        assert refused.reason == REASON_INPUT_UNAVAILABLE
+
+
+def test_a_gap_in_one_column_leaves_the_others_publishing() -> None:
+    """The control that proves the refusal is per-column, not package-wide.
+
+    `PARTIAL_NULL` states complete revenue and units with a gap in cost. Cost,
+    gross profit and gross margin refuse there -- `financial_complete_revenue_cost`
+    is not complete -- while revenue publishes 1000.00, because revenue's own
+    column has no gap. A correction that refused every headline whenever any
+    column was gapped would take that 1000.00 with it.
+    """
+    from tests.rra003_contract_fixtures import oracle_contract
+    from tests.rra_calculation_oracle import (
+        PARTIAL_NULL_EXPECTED,
+        PARTIAL_NULL_ROWS,
+        to_csv,
+    )
+
+    content = to_csv(PARTIAL_NULL_ROWS)
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract()
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    assert result.value(METRIC_REVENUE) == str(PARTIAL_NULL_EXPECTED["revenue"])
+    assert result.value(METRIC_UNITS) == str(PARTIAL_NULL_EXPECTED["units"])
+
+
+def test_a_gapped_headline_does_not_take_the_trend_with_it() -> None:
+    """`RRA-004`:46 refuses the *headline*, and a period bucket is not one.
+
+    The headline answers "what did this extract take", and a gap in its column
+    means no honest answer exists. A monthly bucket answers a narrower question,
+    and a gap in January says nothing about February: refusing the trend would
+    take periods whose own rows are whole, and with them the comparison and
+    growth families that read it.
+
+    The two totals are therefore separate -- the gate applies to what `add`
+    publishes, not to what `_series` and `_comparisons` derive from.
+    """
+    content = (
+        b"date,revenue,units\n"
+        b"2026-01-05,100.00,2\n"
+        b"2026-02-06,,3\n"
+        b"2026-03-07,200.00,4\n"
+    )
+
+    result = package(content)
+
+    assert result.fact(METRIC_REVENUE) is None
+    trend = result.trend()
+    assert trend is not None, "a gapped headline refused the whole revenue trend"
+    # Bucketed at the granularity this span earns, so the labels are asserted by
+    # the days that carry revenue rather than by a month spelling.
+    assert {bucket.label for bucket in trend.series.buckets} >= {
+        "2026-01-05",
+        "2026-03-07",
+    }
