@@ -516,30 +516,40 @@ def _transaction_key_column(
         _column(reading.frame, reading.labels, component) for component in components
     ]
     return [
-        _joined_key(columns, components, index) if index in kept else None
+        _joined_key(columns, index) if index in kept else None
         for index in range(reading.frame.height)
     ]
 
 
 def _joined_key(
     columns: list[list[str | None]],
-    components: tuple[str, ...],
     index: int,
-) -> str:
-    """One row's composite key, refusing the population where a component is blank.
+) -> str | None:
+    """One row's composite key, or nothing where a component is blank.
 
     A composite with a hole is not a proven identity -- `RRA-003`: "Missing
-    components or collisions refuse transactions" -- so a gap refuses rather
-    than being joined into a shorter key or reported as a silent zero.
+    components or collisions refuse transactions, AOV, items per transaction,
+    and attach rate" -- so a gap yields no key rather than being joined into a
+    shorter one or reported as a silent zero.
+
+    **Absent rather than raised, and the sentence above is why.** `RRA-003` names
+    the four results a missing component refuses, and revenue, units and ASP are
+    not among them: they need no transaction key, and `RRA-004`:97 requires
+    "every refusal leaves facts whose own semantics and population remain
+    independently proven". Raising took the whole package -- `_admitted_events`
+    turns `EventsRefused` into a package-wide `FactsRefused` -- so a file with one
+    incomplete key published nothing at all.
+
+    This is `AdmittedEvents.monetary_refused`'s shape, chosen there for the same
+    reason: "a field rather than an exception because the specification refuses
+    monetary facts *and leaves count-only facts standing*. Raising would take
+    both."
     """
     values: list[str] = []
-    for column, component in zip(columns, components, strict=True):
+    for column in columns:
         value = column[index]
         if value is None:
-            raise EventsRefused(
-                f"Row {index} states no {component!r}, so its canonical "
-                "transaction key has a missing component."
-            )
+            return None
         values.append(value)
     return KEY_DELIMITER.join(_escaped(value) for value in values)
 
