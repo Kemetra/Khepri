@@ -1230,3 +1230,240 @@ def test_the_composite_key_components_are_read_once_each_not_once_per_row() -> N
         "times for 500 -- the composite key's component reads are inside the "
         "per-row loop"
     )
+
+
+REPEATED_EVENT_KEY_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+    b"2026-03-05,INV-1,sale,posted,200.00,4,EGP\n"
+)
+
+
+def test_a_repeated_event_key_refuses_the_populations_it_could_include() -> None:
+    """`RRA-003`: "A repeated event key, whether identical or conflicting,
+    refuses every additive or distinct-transaction result that could include it."
+
+    Identity is proven "in exactly one of these ways", and a contract naming
+    `event_key_columns` chose the first. Declaring a key is not proof that the
+    values in it are unique -- `source_contract` validates that exactly one proof
+    was *declared*, and nothing read the column to check. So a keyed extract
+    whose key repeats published doubled additive totals, with the branch-2
+    signature test correctly declining to judge it.
+
+    Two rows sharing `INV-1` are either two events wrongly given one key or one
+    event exported twice, and the extract does not say which.
+    """
+    admitted = admit(REPEATED_EVENT_KEY_CSV, mapped_contract())
+
+    assert admitted.repeated_event_key is True
+
+
+def test_distinct_event_keys_are_not_a_repetition() -> None:
+    """The control: the guard must fire on repetition, not on having a key.
+
+    Without this, refusing every keyed extract would pass the case above.
+    """
+    admitted = admit(VOID_AND_POSTED_CSV, mapped_contract())
+
+    assert admitted.repeated_event_key is False
+
+
+def test_a_declared_key_column_the_extract_lacks_refuses() -> None:
+    """A contract and an extract that contradict each other admit nothing.
+
+    `RRA-003` lets a contract prove event identity by declaring key columns, and
+    admission's job is to check that proof. When a declared column is not in the
+    file, the proof cannot be evaluated at all -- and the failure mode is silent:
+    an earlier form of `_repeated_event_key` skipped the absent components and
+    answered `False`, which reads downstream as "checked, no repeats found". Both
+    rows were then admitted with `repeated_event_key=False`, publishing facts
+    under an identity claim nothing had tested.
+
+    Reading every declared component through `_column` lets its existing refusal
+    fire instead. The refusal belongs to the inconsistent *pair*: neither the
+    contract nor the extract is wrong on its own, and no reading of the two
+    together yields the declared identity.
+    """
+    with pytest.raises(EventsRefused):
+        admit(RETURNS_CSV, mapped_contract(event_key_columns=("line_id",)))
+
+
+DUPLICATE_KEY_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+)
+
+DISTINCT_KEY_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+    b"2026-03-04,INV-2,sale,posted,100.00,2,EGP\n"
+)
+
+
+def test_a_repeated_key_withholds_the_auxiliary_evidence_too() -> None:
+    """`RRA-003`:54 -- a repeated event key "refuses every additive or
+    distinct-transaction result that could include it".
+
+    That sentence is not scoped to headline facts. `sale_units_total` is an
+    additive result and a retained basis's event count is a distinct-transaction
+    one, and both are built from the very rows whose identity was refused.
+
+    Left standing, one package said both things at once: revenue refused as
+    `repeated_row_signature` while `sale_units_total` published `4` -- the
+    doubled figure the headline had just declined to state -- and nine retained
+    bases each carried `event_count 2` for two rows that may be one event. A
+    consumer reconciling against a retained basis would be handed that count as
+    authoritative, with nothing recording that the package had refused the
+    identity it rests on.
+
+    `RRA-004`:125 bounds the cost of withholding them: failing to retain a basis
+    "refuses only dependent facts", and every dependent fact here has refused
+    already.
+    """
+    package = package_from(DUPLICATE_KEY_CSV, mapped_contract())
+
+    reasons = {refusal.metric: refusal.reason for refusal in package.refusals}
+    assert reasons["revenue"] == "repeated_row_signature"
+    assert package.sale_units_total is None
+    assert package.retained_bases == ()
+    assert package.daily_bases == ()
+
+
+def test_distinct_keys_still_publish_the_auxiliary_evidence() -> None:
+    """The control: the withholding above is caused by the repeat, not the shape.
+
+    Without this, gating the three fields on `True` would satisfy every
+    assertion in the test above -- and a package that retains no basis at all
+    leaves every derived fact citing nothing, which `RRA-004`:123 forbids.
+    """
+    package = package_from(DISTINCT_KEY_CSV, mapped_contract())
+
+    assert package.sale_units_total == 4
+    assert package.retained_bases != ()
+
+
+def test_a_repeat_confined_to_returns_keeps_the_sale_only_evidence() -> None:
+    """The other half of the rule, and a first fix here got it backwards.
+
+    Withholding the auxiliary evidence under `repeated_rows` was too wide.
+    `sale_units_total`, the retained bases and the daily bases are sale-only
+    artifacts, so a repeat confined to returns must not take them: `RRA-003`
+    refuses "every additive or distinct-transaction result that could include
+    it", and a duplicated return is in none of the sale-only populations.
+
+    Two identical posted returns beside two valid sales. Transactions, AOV and
+    ASP rightly publish -- `repeated_sales` is false -- and stripping the bases
+    left all three citing nothing, which `RRA-004`:123 forbids outright: every
+    derived fact must cite "exactly one compatible basis".
+
+    Refusing too widely here breaks a different rule than publishing too widely
+    did, which is why both directions need a test.
+    """
+    contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_line_grain",
+            evidence="Test fixture: a line-grain-attested extract.",
+        ),
+        events=EventDeclaration(
+            event_kind_column="event_kind",
+            sale_only=False,
+            status_column="status",
+            posted_only=False,
+            currency_column="currency",
+            currency_code=None,
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=(),
+            unique_line_grain_attested=True,
+            transaction_id_column="invoice",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+    content = (
+        b"date,invoice,event_kind,status,amount,qty,currency\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+        b"2026-03-11,INV-2,sale,posted,70.00,1,EGP\n"
+        b"2026-03-18,INV-9,return,posted,-30.00,-1,EGP\n"
+        b"2026-03-18,INV-9,return,posted,-30.00,-1,EGP\n"
+    )
+
+    package = package_from(content, contract)
+
+    published = {fact.metric: fact.value for fact in package.facts}
+    assert published["transactions"] == "2"
+    # The sale-only facts stand, so the evidence they cite must stand with them.
+    assert package.sale_units_total == 3
+
+    # And the split is by population, not one flag for all nine bases. The
+    # `financial_*` populations are "posted sale and return events"
+    # (`RRA-004`:14), so the duplicated return doubles them -- they counted 4
+    # events while revenue and units refused -- while every `sales_*` population
+    # excludes returns and counted 2 beside the published Transactions 2.
+    populations = {basis.population for basis in package.retained_bases}
+    assert populations == {
+        "sales_posted",
+        "sales_complete_transactions",
+        "sales_complete_revenue_units",
+        "sales_complete_revenue_transactions",
+        "sales_complete_units_transactions",
+    }
+    assert all(basis.event_count == 2 for basis in package.retained_bases)
+
+
+def test_a_blank_declared_key_component_refuses_the_additive_results() -> None:
+    """A missing key is not a unique one.
+
+    `RRA-003` admits a keyed contract's identity proof only where the key "is
+    unique within the package". A blank component is not unique -- it is absent,
+    and the row it belongs to has no proven identity at all.
+
+    `_column` maps a blank cell to `None`, and treating `(None,)` as an ordinary
+    tuple made every keyless row unique by default. One row with a blank
+    `line_id` beside one properly keyed row published revenue 170.00, units 3
+    and `sale_units_total 3` over 9 retained bases -- the unproven row's amounts
+    inside every additive total, under a contract whose proof it never met.
+
+    It reports as a repeat because the consequence is the repeat's: the additive
+    and distinct-transaction results that could include the row cannot be
+    stated. What differs is only which side of the proof failed.
+    """
+    content = (
+        b"date,invoice,event_kind,status,amount,qty,currency\n"
+        b"2026-03-04,,sale,posted,100.00,2,EGP\n"
+        b"2026-03-11,INV-2,sale,posted,70.00,1,EGP\n"
+    )
+
+    package = package_from(content, mapped_contract())
+
+    refused = {refusal.metric for refusal in package.refusals}
+    assert {"revenue", "units", "transactions"} <= refused
+    assert package.sale_units_total is None
+    assert package.retained_bases == ()
+
+
+def test_complete_distinct_keys_publish_the_additive_results() -> None:
+    """The control: it is the blank that refuses, not the keyed contract.
+
+    Without this, returning `True` unconditionally from `_repeated_event_key`
+    would satisfy every assertion above while refusing every keyed extract.
+    """
+    content = (
+        b"date,invoice,event_kind,status,amount,qty,currency\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+        b"2026-03-11,INV-2,sale,posted,70.00,1,EGP\n"
+    )
+
+    package = package_from(content, mapped_contract())
+
+    published = {fact.metric: fact.value for fact in package.facts}
+    assert published["revenue"] == "170.00"
+    assert package.retained_bases != ()

@@ -374,9 +374,11 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "this becomes available."
             ),
             "repeated_row_signature": (
-                "Basket size — not available. Your file contains rows that are "
-                "identical in every column, so a sale line that genuinely "
-                "repeats cannot be told apart from one exported twice. Counting "
+                "Basket size — not available. Your file contains sale lines "
+                "that cannot be told apart, either identical in every column or "
+                "sharing the reference that identifies them, so a sale line "
+                "that genuinely repeats cannot be told apart from one exported "
+                "twice. Counting "
                 "sales would mean guessing which it is. The rest of the review "
                 "is unaffected. Export with a line or receipt reference that "
                 "differs between real repeats, or without the duplicated rows, "
@@ -456,8 +458,9 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "متاحاً."
             ),
             "repeated_row_signature": (
-                "حجم سلة الشراء — غير متاح. يحتوي ملفك على صفوف متطابقة في كل "
-                "الأعمدة، ولذلك لا يمكن التمييز بين سطر بيع مُتكرر فعلاً وسطر "
+                "حجم سلة الشراء — غير متاح. يحتوي ملفك على سطور بيع لا يمكن "
+                "التمييز بينها، إما لتطابقها في كل الأعمدة أو لاشتراكها في "
+                "المرجع الذي يُعرِّفها، ولذلك لا يمكن التمييز بين سطر بيع مُتكرر فعلاً وسطر "
                 "صُدِّر مرتين. وعدّ عمليات البيع يعني التخمين بينهما. وما عدا "
                 "ذلك في التقرير غير متأثر. صدِّر الملف مع مرجع للسطر أو الإيصال "
                 "يختلف بين التكرارات الحقيقية، أو بدون الصفوف المكررة، ليصبح هذا "
@@ -492,11 +495,12 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "remove the duplicate and this becomes available."
             ),
             "repeated_row_signature": (
-                "{metric} is not shown — the file contains rows that are "
-                "identical in every column, and there is no way to tell a "
-                "genuinely repeated sale line from the same line exported "
-                "twice. Showing a total would mean choosing one of those "
-                "readings for you. Add a line or receipt reference that "
+                "{metric} is not shown — the file contains sale lines that "
+                "cannot be told apart, either identical in every column or "
+                "sharing the reference that identifies them, and there is no "
+                "way to tell a genuinely repeated sale line from the same line "
+                "exported twice. Showing a total would mean choosing one of "
+                "those readings for you. Add a line or receipt reference that "
                 "differs between real repeats, or re-export without the "
                 "duplicates, and this becomes available."
             ),
@@ -564,8 +568,9 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "المكرر أو احذفه ليصبح هذا الرقم متاحاً."
             ),
             "repeated_row_signature": (
-                "{metric} غير معروض — يحتوي الملف على صفوف متطابقة في كل "
-                "الأعمدة، ولا توجد طريقة للتمييز بين سطر بيع مُتكرر فعلاً "
+                "{metric} غير معروض — يحتوي الملف على سطور بيع لا يمكن "
+                "التمييز بينها، إما لتطابقها في كل الأعمدة أو لاشتراكها في "
+                "المرجع الذي يُعرِّفها، ولا توجد طريقة للتمييز بين سطر بيع مُتكرر فعلاً "
                 "وسطر صُدِّر مرتين. إظهار الإجمالي يعني اختيار أحد "
                 "التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو الإيصال يختلف "
                 "بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
