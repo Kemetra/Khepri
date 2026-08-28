@@ -1558,7 +1558,7 @@ _FAMILIES = {
         derive=basket.derive,
         version=lambda: basket.BASKET_FORMULA_VERSION,
         refusals=basket.refusals,
-        names=basket.attached_value_of,
+        names=basket.attached_label_of,
         # The attach rates, one bar per value. Items per transaction is a different
         # statement about the whole dataset and is not one of the bars.
         plots=frozenset({basket.METRIC_ATTACH_RATE}),

@@ -670,3 +670,95 @@ def test_a_return_only_value_receives_no_attach_rate() -> None:
     assert 'GhostItem' not in rates, rates
     # The values that were actually sold are unaffected.
     assert rates == {'Water': '0.5000', 'Juice': '0.5000'}
+def test_a_sales_only_package_predating_the_field_still_states_the_basket() -> None:
+    """A historical package must not lose a figure it published correctly.
+
+    `sale_units_total` reads back as `None` for a package stored before the field
+    existed. Refusing there took items per transaction from every historical
+    package -- including ones whose extract admitted no returns, where the
+    sale-only sum and the headline units total are the same number and the older
+    figure was right. Found in review.
+    """
+    from dataclasses import replace
+
+    package = package_for(GOLDEN)
+    stated = next(
+        fact for fact in facts_of(package)
+        if fact.metric == METRIC_ITEMS_PER_TRANSACTION
+    )
+
+    legacy = replace(package, sale_units_total=None)
+    recovered = next(
+        fact for fact in facts_of(legacy)
+        if fact.metric == METRIC_ITEMS_PER_TRANSACTION
+    )
+
+    assert recovered.value == stated.value
+
+
+def test_a_package_admitting_returns_cannot_fall_back_to_headline_units() -> None:
+    """The fallback is for packages that prove the two totals agree.
+
+    A package admitting returns is exactly the case where they differ, and where
+    the headline total gives the defective figure this slice corrected. Absence of
+    the field is not evidence the difference is nil.
+
+    Paired with the case above so a fallback that always fires fails here.
+    """
+    from dataclasses import replace
+
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-02-01,sale,400.00,10,INV-1\n"
+        b"2026-02-02,sale,600.00,15,INV-2\n"
+        b"2026-02-03,return,-90.00,-2,INV-3\n"
+    )
+    legacy = replace(_package_with_returns(content), sale_units_total=None)
+    assert "return" in legacy.event_kind_filters
+
+    # Asked of `derive` rather than `facts_of`: with no numerator and no
+    # dimension the family refuses outright, which `facts_of` asserts against.
+    derived = basket.derive(legacy)
+    stated = (
+        ()
+        if isinstance(derived, RefusedResult)
+        else tuple(
+            fact for fact in derived
+            if fact.metric == METRIC_ITEMS_PER_TRANSACTION
+        )
+    )
+
+    assert not stated, (
+        'the headline units total includes the return, so this would republish '
+        f'the 11.5000 the slice corrected: {[f.value for f in stated]}'
+    )
+def test_attach_labels_name_the_dimension_they_belong_to() -> None:
+    """Two families publishing means two buckets can carry the same value.
+
+    A product `Water` and a category `Water` are different rates about different
+    things. `ReportBundle._analysis_figure` stores the resolved name as the sole
+    row and chart label, so a bare bucket label rendered them as indistinguishable
+    bars. Found in review.
+
+    `attached_value_of` is unchanged: it answers *which value* a rate is about,
+    which is what a caller resolving a bucket needs. The qualification belongs at
+    the display boundary.
+    """
+    content = (
+        b"date,revenue,units,invoice_no,product,category\n"
+        b"2026-01-05,100.00,3,INV-1,Water,Water\n"
+        b"2026-01-06,200.00,5,INV-2,Juice,Drinks\n"
+    )
+    package = package_for(content)
+    attach = [
+        fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
+    ]
+
+    labels = {basket.attached_label_of(fact, package) for fact in attach}
+    values = [basket.attached_value_of(fact, package) for fact in attach]
+
+    # The premise: a value really is shared across the two dimensions.
+    assert values.count('Water') == 2, values
+    # And the display labels tell them apart.
+    assert len(labels) == len(attach), labels
+    assert 'Water (product)' in labels and 'Water (category)' in labels, labels

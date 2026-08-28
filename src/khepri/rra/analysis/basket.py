@@ -76,8 +76,10 @@ from khepri.rra.aggregates import (
 )
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
+    EVENT_SALE,
     METRIC_REVENUE,
     METRIC_TRANSACTIONS,
+    METRIC_UNITS,
     RATIO_PRECISION,
     REASON_INPUT_UNAVAILABLE,
     UNIT_RATIO,
@@ -188,6 +190,32 @@ def attached_value_of(fact: Fact, package: FactPackage) -> str | None:
     )
 
 
+def attached_label_of(fact: Fact, package: FactPackage) -> str | None:
+    """The display label for an attach rate, naming the dimension it belongs to.
+
+    Distinct from `attached_value_of`, which answers *which value* a rate is
+    about and is what a caller resolving a bucket needs. This is what a surface
+    shows: once product and category families both publish, two buckets can carry
+    the same source value -- a product `Water` and a category `Water` -- and a
+    bare label renders them as indistinguishable rows and bars.
+
+    Qualified rather than deduplicated, because both rates are real and a reader
+    needs to see which is which.
+    """
+    found = next(
+        (
+            (dimension, bucket.label)
+            for dimension, entry in _dimensions(package)
+            for bucket in _attachable(entry)
+            if _identity(fact.metric, (dimension, bucket.label))[0] == fact.fact_id
+        ),
+        None,
+    )
+    if found is None:
+        return None
+    dimension, label = found
+    return f"{label} ({dimension})"
+
 def _facts(package: FactPackage) -> tuple[Fact, ...]:
     """Each metric stands or falls on its own inputs.
 
@@ -278,6 +306,27 @@ def _summary(package: FactPackage) -> RefusedResult:
     )
 
 
+def _sale_units(package: FactPackage) -> int | None:
+    """The basket numerator, from the package or from a package that predates it.
+
+    `sale_units_total` reads back as `None` for a package stored before the field
+    existed. Refusing there would take items per transaction away from every
+    historical package -- including ones that published the correct figure,
+    because their extract admitted no returns and the sale-only sum equals the
+    headline units total.
+
+    So a package that proves it admitted sales alone falls back to `METRIC_UNITS`.
+    One that admitted returns cannot: for it the two totals genuinely differ, and
+    the older figure was the defective `23 / 2` this slice corrected. Absence of
+    the field is not evidence the difference is nil.
+    """
+    if package.sale_units_total is not None:
+        return package.sale_units_total
+    if any(kind != EVENT_SALE for kind in package.event_kind_filters):
+        return None
+    headline = package.fact(METRIC_UNITS)
+    return None if headline is None else int(Decimal(headline.value))
+
 def _counts(package: FactPackage) -> _Basket | None:
     """Units and transactions as governed facts, or nothing divisible.
 
@@ -288,7 +337,7 @@ def _counts(package: FactPackage) -> _Basket | None:
     from the figures beside it. `RRA-008` puts returns in "neither numerator
     nor denominator".
     """
-    units = package.sale_units_total
+    units = _sale_units(package)
     transactions = package.fact(METRIC_TRANSACTIONS)
     if units is None or transactions is None:
         return None
