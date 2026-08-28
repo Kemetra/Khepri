@@ -863,9 +863,17 @@ MISSING_TRANSACTION_IDENTITY_EXPECTED = {
 so row 2 -- present invoice, absent store -- forms no key and the four
 transaction-denominated metrics refuse. That is what is stated below.
 
-Built under a contract naming those components, production agrees: admission
-refuses at `_joined_key` with "Row 1 states no 'store', so its canonical
-transaction key has a missing component", before any fact exists.
+Built under a contract naming those components, admission refuses at `_joined_key`
+-- "Row 1 states no 'store', so its canonical transaction key has a missing
+component" -- and `facts._admitted_events` turns that into a package-wide
+`FactsRefused` before any `FactPackage` exists.
+
+**That is not agreement, and the difference is the point of this case.** The
+literals below refuse four transaction-denominated metrics and keep three:
+revenue 300.00, units 6 and ASP 50.00, none of which needs a transaction key.
+`RRA-004`:97 requires exactly that -- "every refusal leaves facts whose own
+semantics and population remain independently proven". A package-wide refusal
+takes all seven, so the refusal is too broad rather than absent.
 
 Built under the *bare* `oracle_contract()`, production publishes `transactions 2`
 and `AOV 150.00` -- and is **right** to. That factory sets
@@ -878,9 +886,9 @@ unmerged).
 
 So a slice consuming these literals must pass
 `oracle_contract(transaction_key_components=("invoice_no", "store", "date"))` or
-state its own. Revenue 300.00, units 6 and ASP 50.00 stand under either, which is
-the survival half of the proof: `RRA-004` requires "every refusal leaves facts
-whose own semantics and population remain independently proven".
+state its own -- and must expect the narrow refusal these literals describe, which
+neither contract produces today. The bare one publishes all seven; the composite
+one refuses all seven. The survival half is what the slice has to build.
 """
 
 
