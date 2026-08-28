@@ -1341,3 +1341,65 @@ def test_distinct_keys_still_publish_the_auxiliary_evidence() -> None:
 
     assert package.sale_units_total == 4
     assert package.retained_bases != ()
+
+
+def test_a_repeat_confined_to_returns_keeps_the_sale_only_evidence() -> None:
+    """The other half of the rule, and a first fix here got it backwards.
+
+    Withholding the auxiliary evidence under `repeated_rows` was too wide.
+    `sale_units_total`, the retained bases and the daily bases are sale-only
+    artifacts, so a repeat confined to returns must not take them: `RRA-003`
+    refuses "every additive or distinct-transaction result that could include
+    it", and a duplicated return is in none of the sale-only populations.
+
+    Two identical posted returns beside two valid sales. Transactions, AOV and
+    ASP rightly publish -- `repeated_sales` is false -- and stripping the bases
+    left all three citing nothing, which `RRA-004`:123 forbids outright: every
+    derived fact must cite "exactly one compatible basis".
+
+    Refusing too widely here breaks a different rule than publishing too widely
+    did, which is why both directions need a test.
+    """
+    contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_line_grain",
+            evidence="Test fixture: a line-grain-attested extract.",
+        ),
+        events=EventDeclaration(
+            event_kind_column="event_kind",
+            sale_only=False,
+            status_column="status",
+            posted_only=False,
+            currency_column="currency",
+            currency_code=None,
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=(),
+            unique_line_grain_attested=True,
+            transaction_id_column="invoice",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+    content = (
+        b"date,invoice,event_kind,status,amount,qty,currency\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+        b"2026-03-11,INV-2,sale,posted,70.00,1,EGP\n"
+        b"2026-03-18,INV-9,return,posted,-30.00,-1,EGP\n"
+        b"2026-03-18,INV-9,return,posted,-30.00,-1,EGP\n"
+    )
+
+    package = package_from(content, contract)
+
+    published = {fact.metric: fact.value for fact in package.facts}
+    assert published["transactions"] == "2"
+    # The sale-only facts stand, so the evidence they cite must stand with them.
+    assert package.sale_units_total == 3
+    assert package.retained_bases != ()

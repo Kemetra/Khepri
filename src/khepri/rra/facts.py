@@ -1181,7 +1181,7 @@ def _build(
         # revenue that refused as `repeated_row_signature` -- the doubled figure
         # the headline had just declined to state.
         sale_units_total=(
-            None if repeated_rows else _sum_integer(_positive_units(measures))
+            None if repeated_sales else _sum_integer(_positive_units(measures))
         ),
         returning_periods=_returning_periods(measures, series),
         facts=tuple(facts),
@@ -1206,17 +1206,22 @@ def _build(
         # facts for ambiguous identity while offering a consumer the same
         # unproven rows as authoritative evidence to reconcile against -- nine
         # bases each carrying `event_count 2` for two rows that may be one event.
-        # `RRA-004`:125 makes the consequence of retaining no basis explicit and
-        # bounded: it "refuses only dependent facts", which have refused already.
+        # Gated on `repeated_sales`, not `repeated_rows`. These are sale-only
+        # artifacts, so a repeat confined to returns must not take them: with
+        # two identical returns beside valid sales, Transactions, AOV and ASP
+        # rightly publish (2, 85.00, 56.67), and stripping the bases left all
+        # three citing nothing -- which `RRA-004`:123 forbids outright, since
+        # every derived fact must cite "exactly one compatible basis". Refusing
+        # too widely here breaks a different rule than publishing too widely did.
         daily_bases=(
             ()
-            if repeated_rows
+            if repeated_sales
             else _daily_bases_of(
                 admitted, measures, admitted_kinds, admitted_events.currency
             )
         ),
         retained_bases=()
-        if repeated_rows
+        if repeated_sales
         else retain_bases(
             events=admitted_events.events,
             binding=BasisBinding(
