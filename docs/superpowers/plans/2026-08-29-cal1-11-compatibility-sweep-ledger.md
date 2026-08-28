@@ -1,6 +1,7 @@
 # CAL1-11 — final compatibility sweep ledger
 
-**Baseline:** `origin/main` at `844d51b`, 2026-08-29. Branch `feat/cal1-11-compatibility-sweep`.
+**Baseline:** `origin/main` at `844d51b`, swept 2026-08-28 (UTC). Branch
+`feat/cal1-11-compatibility-sweep`; its commits carry 2026-08-29 local (+0300) timestamps.
 **Authority:** `RRA-003`, `RRA-004`, `RRA-008`, `RRA-009` (all ACTIVE).
 
 `CAL1-11`'s acceptance is *"a catalogue-wide proof that every governed refusal and caveat already
@@ -131,9 +132,26 @@ introspection. That is a distinct piece of work under `RRA-009`, filed rather th
 its own code straight to the section rather than a section-flavoured synonym.
 
 Nothing pinned that set, so a sixth shared code could arrive unnoticed.
-`test_the_two_customer_tiers_are_the_only_ones_wording_states` now pins it. **Mutation-verified:**
-respelling `SECTION_REASON_UNITS_ABSENT` as `zero_denominator` is caught at import by production's
-own completeness guard.
+`test_the_two_customer_tiers_are_the_only_ones_wording_states` now pins it.
+
+**Mutation evidence, and an honest statement of what it does not prove.** Three mutants were run:
+
+| Mutant | Result | Killed by |
+|---|---|---|
+| A code dropped from the pinned `_SHARED_TIER_CODES` set | killed at `:634` | **this test** |
+| `"units_absent"` added to `_RESULT_REASON_CODES` | killed at import | production's wording guard |
+| `"negative_base"` added to `SECTION_REASONS` | killed at import | production's wording guard |
+
+Only the first is killed by this test. A production-side change to the intersection cannot reach the
+assertion, because a code entering a tier needs prose in that tier and
+`_assert_refusal_wording_complete` fires during import — verified by supplying the code and watching
+the guard still refuse.
+
+So the honest scope is narrower than "a sixth shared code cannot arrive": production's own guard
+already refuses one that arrives without prose. What this test adds is a **pinned record of the
+intersection** — a reviewer adding a sixth code with complete prose in both tiers must edit
+`_SHARED_TIER_CODES` deliberately, which makes the widening visible in the diff rather than silent.
+That is a real but modest property, and it is stated here rather than overclaimed.
 
 ### F3 — `JOURNEY_COPY` is not linked to `admissibility.REASON_*` *(FILED — `RRA-003`)*
 
@@ -159,14 +177,14 @@ set for one bundle. `pdf.py` imports no projection directly — it inherits tran
 `bundle._DISCLOSURE` have no import-time parity assertion, unlike `REFUSAL_WORDING`, `CAVEAT_WORDING`,
 and `METRIC_WORDING`.
 
-### F6 — Nine version constants are unpaired *(FILED — owner-decided out of scope)*
+### F6 — Ten version constants are unpaired *(FILED — owner-decided out of scope)*
 
 `versions.py` governs only `(mapping, package, formula)` and `(formula, family)`. Unpaired:
 `BUNDLE_VERSION`, `NARRATIVE_VERSION`, `ADAPTER_VERSION`, `PIPELINE_VERSION`, `PROFILE_VERSION`,
 `COVERAGE_MANIFEST_VERSION`, `SOURCE_CONTRACT_VERSION`, `HTML_SURFACE_VERSION`,
 `EXCEL_SURFACE_VERSION`, `PDF_SURFACE_VERSION`.
 
-Owner decision 2026-08-29: prove the triple only; building new pairing tables is
+Owner decision 2026-08-28: prove the triple only; building new pairing tables is
 catalogue-construction, which line 620 excludes from a sweep.
 
 ### F7 — Stale prose at `versions.py:66-68` *(FILED — docs)*

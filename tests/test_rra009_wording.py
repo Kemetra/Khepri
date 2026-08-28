@@ -571,14 +571,13 @@ def _rra_module_names() -> tuple[str, ...]:
 def _constants_named(module_name: str, prefix: str) -> frozenset[str]:
     """Every `str` constant in one module whose name starts with `prefix`.
 
-    Modules that cannot import (an optional dependency absent) contribute
-    nothing rather than failing the scan, which would turn an environment
-    difference into a wording finding.
+    An import failure propagates. Swallowing it would let a module that defines
+    an unregistered `CAVEAT_*` and happens to raise on import contribute nothing
+    to the scan -- the other modules keep the comparison non-empty, so the sweep
+    would report success over a module it never read. That is the same
+    self-disarming shape the walk replaced, one level further down.
     """
-    try:
-        module = importlib.import_module(module_name)
-    except Exception:  # pragma: no cover - defensive, see docstring
-        return frozenset()
+    module = importlib.import_module(module_name)
     return frozenset(
         value
         for name in vars(module)
