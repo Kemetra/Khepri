@@ -530,3 +530,38 @@ def test_a_return_outside_both_windows_does_not_refuse_growth() -> None:
     result = growth.derive(package)
 
     assert not isinstance(result, RefusedResult), result
+def test_a_package_with_no_return_evidence_refuses_rather_than_assuming() -> None:
+    """Absence of evidence is not evidence of absence.
+
+    A package stored before `returning_periods` existed reads it back as an empty
+    tuple. Taken at face value that says "neither window holds a return", so a
+    legacy package whose `event_kind_filters` include `return` would publish a
+    decomposition over return-inclusive trends -- the exact figure `RRA-008`
+    refuses. Found in review.
+
+    `RRA-003` states the rule for event kinds: "absence of event-kind evidence
+    cannot establish zero". The same applies to return-period evidence.
+    """
+    from dataclasses import replace
+
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,10,INV-1\n"
+        b"2026-01-06,sale,200.00,20,INV-2\n"
+        b"2026-01-07,sale,300.00,25,INV-3\n"
+        b"2026-01-09,sale,120.00,8,INV-5\n"
+        b"2026-01-09,return,-50.00,-5,INV-6\n"
+    )
+    days = tuple(START + timedelta(days=index) for index in range(5))
+    package = _package_with_returns(content, days=days)
+    # This package publishes today, because its return is outside both windows.
+    assert not isinstance(growth.derive(package), RefusedResult)
+
+    # Aged into a document written before the evidence was retained.
+    legacy = replace(package, returning_periods=())
+    assert "return" in legacy.event_kind_filters
+
+    result = growth.derive(legacy)
+
+    assert isinstance(result, RefusedResult), result
+    assert result.reason == growth.REASON_RETURNS_PRESENT

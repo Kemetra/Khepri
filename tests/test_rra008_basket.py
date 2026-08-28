@@ -610,3 +610,32 @@ def test_every_published_attach_fact_resolves_its_value() -> None:
         'these published attach facts name no value: '
         f'{[fact.fact_id for fact in unresolved]}'
     )
+def test_an_independently_refused_dimension_still_states_its_reason() -> None:
+    """A published sibling must not erase the refusal for the affected family.
+
+    When product is incomplete and category is not, the category rates publish --
+    which is `RRA-008` admitting the two families independently. The first version
+    of that change stated the family refusal only when *every* dimension was
+    incomplete, so the product family vanished with no reason beside it: a
+    customer saw category rates, no product rates, and nothing explaining the
+    difference. Found in review.
+    """
+    package = package_for(PRODUCT_GAP_CATEGORY_COMPLETE)
+
+    attach = [
+        fact for fact in facts_of(package) if fact.metric == METRIC_ATTACH_RATE
+    ]
+    scopes = {name for fact in attach for name in fact.inputs}
+    # The premise: one family published and the other did not.
+    assert SEMANTIC_CATEGORY in scopes and SEMANTIC_PRODUCT not in scopes
+
+    refused = basket.refusals(package)
+
+    assert any(
+        entry.metric == METRIC_ATTACH_RATE
+        and entry.reason == basket.REASON_DIMENSION_INCOMPLETE
+        for entry in refused
+    ), (
+        'the product family is absent with no stated reason, so its absence '
+        f'reads as having nothing to say: {refused}'
+    )

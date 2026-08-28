@@ -58,6 +58,7 @@ from khepri.rra.analysis.comparison import accepted_window, window_refusal
 from khepri.rra.analysis.windows import MODE_PERIOD_OVER_PERIOD
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
+    EVENT_SALE,
     METRIC_UNITS,
     REASON_INPUT_UNAVAILABLE,
     UNIT_MONETARY,
@@ -191,6 +192,18 @@ def _derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
             reason=window_refusal(package, MODE_PERIOD_OVER_PERIOD),
         )
     labels = (window.current.label, window.prior.label)
+    # A package that admitted returns and retains no period evidence cannot
+    # prove either window return-free. That is a package stored before
+    # `returning_periods` existed: reading its absence as an empty set would
+    # read "no evidence" as "no returns" and publish the decomposition
+    # `RRA-008` refuses. Absence of evidence is not evidence of absence, which
+    # is the rule `RRA-003` states for event kinds and applies here too.
+    admitted_returns = any(kind != EVENT_SALE for kind in package.event_kind_filters)
+    if admitted_returns and not package.returning_periods:
+        return RefusedResult(
+            metric=METRIC_REVENUE_CHANGE,
+            reason=REASON_RETURNS_PRESENT,
+        )
     if set(labels) & set(package.returning_periods):
         # `_periods` reads the revenue and units trends, whose population is
         # `financial_posted` and therefore includes posted returns. Refused

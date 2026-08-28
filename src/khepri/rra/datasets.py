@@ -147,9 +147,15 @@ class CoverageAttestation(Protocol):
 
     `timezone` is on the Protocol because the day boundary is the operator's to
     declare -- nothing in the admission can supply it. See `manifest_binding`.
+
+    `attested_by` is here for the same reason and by the same rule: this
+    service reads it, so the Protocol must declare it. Left off, an
+    implementation satisfying the Protocol as written would raise
+    `AttributeError` inside `_bound_manifest`.
     """
 
     timezone: str
+    attested_by: str
 
     def to_manifest(self, *, binding: ManifestBinding) -> CoverageManifest: ...
 

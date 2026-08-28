@@ -228,12 +228,17 @@ def _refusals(package: FactPackage) -> tuple[RefusedResult, ...]:
                 reason=REASON_DIMENSION_ABSENT,
             )
         )
-    elif all(_incomplete(entry) for _, entry in found):
-        # Stated once for the family, as before. Only when *every* ranked
-        # dimension is incomplete does the family as a whole refuse --
-        # `RRA-008` admits product and category independently, so a
-        # complete category beside an incomplete product still publishes
-        # and this refusal would contradict the facts beside it.
+    elif any(_incomplete(entry) for _, entry in found):
+        # One refusal per incomplete dimension, because `RRA-008` admits the
+        # families independently: a complete category publishes its rates
+        # while an incomplete product refuses, and both are stated. Refusing
+        # only when *every* dimension was incomplete published the surviving
+        # family and left the affected one silently absent -- a customer saw
+        # no product rates and no reason for their absence.
+        #
+        # Stated once rather than per dimension: `RefusedResult` carries no
+        # scope, and adding one would widen the governed document for a
+        # disclosure the reason already makes.
         refused.append(
             RefusedResult(
                 metric=METRIC_ATTACH_RATE,
