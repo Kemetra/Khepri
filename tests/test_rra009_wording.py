@@ -533,3 +533,86 @@ def test_caveat_wording_guard_raises_on_incomplete_table(monkeypatch) -> None:
 
 def test_wording_module_imports_cleanly_with_complete_copy() -> None:
     importlib.reload(wording)
+
+
+# --- CAL1-11 compatibility sweep: registry derivation ---------------------
+#
+# The cross-product tests above prove every code *in* a registry has prose in
+# both languages. They cannot prove the registry holds every code production
+# actually defines, because two of the three registries are hand-listed sets of
+# imported constants: adding `CAVEAT_NEW_THING` to `facts.py` and stating it on a
+# result leaves `_GOVERNED_CAVEAT_CODES` unchanged, every test above green, and a
+# customer reading an untranslated code.
+#
+# The section tier already closes this: `GOVERNED_SECTION_REASONS` is derived
+# from `SECTION_REASONS` (`bundle.py`), and `_SECTION_REFUSAL_CODES` above is
+# derived from *that*, so the chain from definition to prose is unbroken. These
+# two tests give the caveat and result tiers the same property by deriving the
+# expected universe from the production modules rather than restating it.
+#
+# Introspection is the point, not a shortcut. A hand-listed expectation here
+# would be the very thing it is meant to catch.
+_CAVEAT_SOURCE_MODULES = (
+    "khepri.rra.facts",
+    "khepri.rra.bundle",
+    "khepri.rra.analysis.comparison",
+    "khepri.rra.analysis.growth",
+)
+
+
+def _constants_named(module_name: str, prefix: str) -> frozenset[str]:
+    """Every `str` constant in one module whose name starts with `prefix`."""
+    module = importlib.import_module(module_name)
+    return frozenset(
+        value
+        for name in dir(module)
+        if name.startswith(prefix) and isinstance(value := getattr(module, name), str)
+    )
+
+
+def test_every_caveat_constant_defined_in_production_is_a_governed_caveat() -> None:
+    """A caveat a module can state must be a caveat the wording tables know.
+
+    Derived from the modules rather than listed, so a new `CAVEAT_*` constant
+    fails here until it is added to `_GOVERNED_CAVEAT_CODES` -- which the
+    cross-product tests then force to carry Arabic and English prose.
+    """
+    defined = frozenset().union(
+        *(_constants_named(name, "CAVEAT_") for name in _CAVEAT_SOURCE_MODULES)
+    )
+    assert defined, "no CAVEAT_* constants found; the scan is looking in the wrong place"
+    assert defined == frozenset(wording._GOVERNED_CAVEAT_CODES), sorted(
+        defined.symmetric_difference(wording._GOVERNED_CAVEAT_CODES)
+    )
+
+
+#: The five codes both customer tiers state. A shared code is deliberate and
+#: `bundle.py` says why: a family that refuses for one of these hands its own
+#: code straight to the section, because two spellings of one condition would
+#: make the hand-off a translation nobody would remember to keep honest.
+_SHARED_TIER_CODES = frozenset(
+    {
+        "coverage_structurally_incompatible",
+        "family_version_pairing_unadmitted",
+        "incomplete_transaction_identifiers",
+        "repeated_row_signature",
+        "required_input_unavailable",
+    }
+)
+
+
+def test_the_two_customer_tiers_are_the_only_ones_wording_states() -> None:
+    """`section` and `result` are different vocabularies that overlap by design.
+
+    A section refusal says why a whole analysis is absent; a result refusal says
+    why one metric inside a produced package is. They are not two spellings of
+    one set, so a sweep that unioned them would report their difference as drift.
+    Five codes appear in both, deliberately -- pinned here so a sixth is a
+    decision someone makes rather than one that arrives.
+
+    The internal `GOVERNED_REASONS` in `bundle` and `narrative` carry
+    `BundleRefused`/`NarrativeRefused` integrity codes, which reach no customer
+    and are correctly absent from both tiers.
+    """
+    assert set(wording.REFUSAL_WORDING) == {"section", "result"}
+    assert _SECTION_REFUSAL_CODES & _RESULT_REFUSAL_CODES == _SHARED_TIER_CODES
