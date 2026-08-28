@@ -399,6 +399,9 @@ def test_each_family_carries_the_reasons_rra008_assigns_it() -> None:
             "required_input_unavailable",
             "family_version_pairing_unadmitted",
             "coverage_structurally_incompatible",
+            # Growth alone refuses on returns: `RRA-008` admits only
+            # return-free aligned windows for this family.
+            "returns_present",
         }
     )
     # Basket carries three. RRA-008 requires a transaction identifier for both its
@@ -513,6 +516,13 @@ def test_the_governed_reasons_cover_every_family_the_plan_names() -> None:
             # core formula has moved, and RRA-008 requires that failure to refuse
             # only its own section.
             "family_version_pairing_unadmitted",
+            # Added by the #309 growth-population slice, and belonging to
+            # growth alone: `RRA-008` requires both aligned windows to be
+            # "return-free posted-sale populations" and says a return
+            # "refuses growth", so a package recording returns refuses the
+            # decomposition rather than netting them out. The comparison
+            # beside it is unaffected, which the customer wording states.
+            "returns_present",
         }
     ) == GOVERNED_SECTION_REASONS
 

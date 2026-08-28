@@ -38,7 +38,7 @@ from khepri.rra.coverage_signature import (
     SignatureRefused,
     build_coverage_signature,
 )
-from khepri.rra.daily_bases import AlignedDailyBasis
+from khepri.rra.daily_bases import AlignedDailyBasis, DailyValue
 from khepri.rra.mapping import (
     SEMANTIC_CATEGORY,
     SEMANTIC_CHANNEL,
@@ -912,6 +912,9 @@ def _build(
             None if admitted.manifest is None else admitted.manifest.input_digest
         ),
         coverage_signatures=_signatures_of(admitted, measures, admitted_kinds),
+        daily_bases=_daily_bases_of(
+            admitted, measures, admitted_kinds, admitted_events.currency
+        ),
         retained_bases=retain_bases(
             events=admitted_events.events,
             binding=BasisBinding(
@@ -997,6 +1000,98 @@ def _population_transaction_counts(measures: _Measures) -> dict[str, int | None]
         POPULATION_SALES_COMPLETE_REVENUE_TRANSACTIONS: _distinct(revenue_keys.right),
         POPULATION_SALES_COMPLETE_UNITS_TRANSACTIONS: _distinct(units_keys.right),
     }
+
+def _daily_bases_of(
+    admitted: AdmittedInput,
+    measures: _Measures,
+    admitted_kinds: tuple[str, ...],
+    currency: str | None,
+) -> tuple[AlignedDailyBasis, ...]:
+    """One aligned daily basis per attested scope, or none.
+
+    `RRA-004:120` requires the package to retain "aligned daily revenue and
+    unit bases bound to each accepted comparison window", recording "exact
+    start and end dates, store or aggregate scope, event and status filters,
+    population identity, currency and precision where applicable, and daily
+    revenue and unit values, including attested zero-activity days".
+
+    **The days come from the manifest, the values from the data.** A day the
+    operator attested and no row landed on is a covered day stating no
+    revenue -- not a hole, and not a zero. A day the manifest does not attest
+    is simply not in the basis, because `RRA-004` says observed bounds "are
+    evidence but are not coverage-manifest completeness proof": a basis built
+    from the rows alone would be exactly that proof-by-observation.
+
+    Empty where nothing is attested, for the same reason `_signatures_of` is:
+    this is coverage evidence, and a package with no manifest has none to
+    give. The population is `financial_posted`, which is what these daily
+    values sum: `RRA-008` narrows to a sale-only population when it consumes
+    them, and recording a narrower code here would name a population these
+    values are not.
+    """
+    manifest = admitted.manifest
+    if manifest is None:
+        return ()
+    return tuple(
+        AlignedDailyBasis(
+            scope=scope,
+            start=min(days),
+            end=max(days),
+            population=POPULATION_FINANCIAL_POSTED,
+            event_kinds=admitted_kinds,
+            statuses=(STATUS_POSTED,),
+            values=_daily_values(measures, days),
+            precision=measures.monetary_precision,
+            currency=currency,
+        )
+        for scope, days in _attested_days(manifest)
+    )
+
+
+def _attested_days(
+    manifest: CoverageManifest,
+) -> tuple[tuple[str, tuple[date, ...]], ...]:
+    """Each attested scope with the days it covers, in a stable order.
+
+    An extraction gap is excluded for the reason `coverage_signature._covered`
+    excludes it: `RRA-003` separates a gap, whose size is unknown, from an
+    attested closure, which proves complete zero activity and is covered.
+    """
+    covered: dict[str, list[date]] = {}
+    for scope, day in sorted(manifest.covered_pairs):
+        if (scope, day) in manifest.extraction_gaps:
+            continue
+        covered.setdefault(scope, []).append(day)
+    return tuple(
+        (scope, tuple(days)) for scope, days in sorted(covered.items()) if days
+    )
+
+
+def _daily_values(
+    measures: _Measures,
+    days: tuple[date, ...],
+) -> tuple[DailyValue, ...]:
+    """What each attested day measured, `None` where it carried no row.
+
+    `None` and not zero: an attested day with no admitted row proves the
+    operator saw no activity, which is a different statement from a day whose
+    rows summed to nothing, and `DailyValue` keeps the two apart.
+    """
+    revenue: dict[date, Decimal] = {}
+    units: dict[date, int] = {}
+    for index, day in enumerate(measures.dates):
+        if day is None:
+            continue
+        value = measures.revenue[index]
+        if value is not None:
+            revenue[day] = revenue.get(day, Decimal(0)) + value
+        count = measures.units[index]
+        if count is not None:
+            units[day] = units.get(day, 0) + count
+    return tuple(
+        DailyValue(day=day, revenue=revenue.get(day), units=units.get(day))
+        for day in days
+    )
 
 def _signatures_of(
     admitted: AdmittedInput,

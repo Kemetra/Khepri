@@ -245,7 +245,7 @@ def test_metric_business_name_refuses_an_unknown_code() -> None:
         wording.metric_business_name("not_a_governed_metric", LANGUAGE_ENGLISH)
 
 
-def test_section_refusal_universe_is_ten_codes() -> None:
+def test_section_refusal_universe_is_eleven_codes() -> None:
     """A deliberate count, moved deliberately.
 
     `rra008.comparison.v2` adds the tenth: a window whose structural coverage the
@@ -256,8 +256,14 @@ def test_section_refusal_universe_is_ten_codes() -> None:
     Growth carries the same code: it consumes the window comparison accepted, so
     a window refused on coverage grounds refuses growth with the cause comparison
     gave rather than with a measure-shaped reason that would misattribute it.
+
+    The eleventh is growth's alone: `RRA-008` requires both aligned windows to
+    be "return-free posted-sale populations" and says a return "refuses
+    growth" -- so a package recording returns refuses the decomposition rather
+    than netting them out. No other family refuses on returns, and the
+    comparison beside it is unaffected, which the customer wording says.
     """
-    assert len(_SECTION_REFUSAL_CODES) == 10
+    assert len(_SECTION_REFUSAL_CODES) == 11
 
 
 def test_refusal_wording_section_tier_covers_every_code_in_every_language() -> None:

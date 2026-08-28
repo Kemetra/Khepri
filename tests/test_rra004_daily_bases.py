@@ -213,3 +213,105 @@ def test_a_restriction_is_different_evidence_from_its_parent() -> None:
     parent = _basis()
 
     assert parent.restricted_to(days=2).identity != parent.identity
+# --- the producer: a package retains what RRA-004:120 requires -------------
+
+_PRODUCER_SCOPE = "all-stores"
+_PRODUCER_DAYS = (date(2026, 1, 5), date(2026, 1, 6), date(2026, 1, 7))
+#: Two days carrying a sale and a third the operator attested with no row on
+#: it -- the "attested zero-activity day" `RRA-004` names.
+_PRODUCER_CSV = (
+    b"date,revenue,units,invoice_no\n"
+    b"2026-01-05,100.00,4,INV-1\n"
+    b"2026-01-06,200.00,6,INV-2\n"
+)
+
+
+def _producer_package(attested: bool):
+    """A package through the real pipeline, with or without an attestation."""
+    import hashlib
+
+    from khepri.rra.admissibility import assess_admissibility
+    from khepri.rra.facts import AdmittedInput, build_fact_package
+    from khepri.rra.intake import CSV_MEDIA_TYPE
+    from khepri.rra.mapping import build_mapping
+    from khepri.rra.profiling import build_profile
+    from tests.rra003_contract_fixtures import (
+        TEST_CONTRACT,
+        attesting_manifest,
+        published_mapping_identity,
+    )
+
+    profile = build_profile(
+        content=_PRODUCER_CSV,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(_PRODUCER_CSV).hexdigest(),
+    )
+    manifest = (
+        attesting_manifest(
+            content=_PRODUCER_CSV,
+            contract=TEST_CONTRACT,
+            days=_PRODUCER_DAYS,
+            scope=_PRODUCER_SCOPE,
+        )
+        if attested
+        else None
+    )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=TEST_CONTRACT)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest,
+                content=_PRODUCER_CSV,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=TEST_CONTRACT,
+            ),
+        )
+
+
+def test_an_attested_package_retains_its_aligned_daily_bases() -> None:
+    """`RRA-004:120` requires the package to retain "aligned daily revenue and
+    unit bases bound to each accepted comparison window".
+
+    The type, its serialization and its readback all existed, and
+    `FactPackage.daily_bases` defaulted to `()` -- **nothing ever populated
+    it**. No family read it, so no published figure was wrong; it was an unmet
+    retention obligation, and the partial-window selection `RRA-004:141`
+    describes cannot be built without it.
+
+    Retained per attested scope over the window the signature covers, and
+    including "attested zero-activity days", which come from the manifest
+    rather than from the data: a day with no row is covered when the operator
+    attested it and simply absent when they did not.
+    """
+    package = _producer_package(attested=True)
+
+    assert package.daily_bases, (
+        "RRA-004 requires the aligned daily bases and the package retains none"
+    )
+    basis = package.daily_bases[0]
+    assert basis.scope == _PRODUCER_SCOPE
+    assert basis.start == _PRODUCER_DAYS[0]
+    assert basis.end == _PRODUCER_DAYS[-1]
+    assert [value.day for value in basis.values] == list(_PRODUCER_DAYS)
+
+    stated = {value.day: value.revenue for value in basis.values}
+    assert stated[_PRODUCER_DAYS[0]] == Decimal("100.00")
+    assert stated[_PRODUCER_DAYS[1]] == Decimal("200.00")
+    assert stated[_PRODUCER_DAYS[2]] is None, (
+        "an attested day carrying no admitted row states no revenue rather "
+        "than a zero it never observed"
+    )
+
+
+def test_a_package_with_no_attestation_retains_no_daily_basis() -> None:
+    """A daily basis is coverage evidence, so an unattested package has none.
+
+    Pinned beside the case above so a producer that simply always emits one
+    fails here: `RRA-004` says observed bounds "are evidence but are not
+    coverage-manifest completeness proof", and a basis derived from the rows
+    alone would be exactly that.
+    """
+    assert _producer_package(attested=False).daily_bases == ()

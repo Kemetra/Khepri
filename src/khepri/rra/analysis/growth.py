@@ -58,6 +58,7 @@ from khepri.rra.analysis.comparison import accepted_window, window_refusal
 from khepri.rra.analysis.windows import MODE_PERIOD_OVER_PERIOD
 from khepri.rra.facts import (
     ARITHMETIC_PRECISION,
+    CAVEAT_RETURNS_NOT_NETTED,
     METRIC_UNITS,
     REASON_INPUT_UNAVAILABLE,
     UNIT_MONETARY,
@@ -84,6 +85,14 @@ REASON_NOT_ADDITIVE = "decomposition_not_additive"
 # Shared wording with the comparison family, because it is the same finding about
 # the same window: there was no prior period to compare against.
 REASON_PRIOR_WINDOW_ABSENT = "prior_window_absent"
+#: A posted return in the package the compared windows are drawn from.
+#:
+#: `RRA-008` requires both aligned windows to be "return-free posted-sale
+#: populations over `sales_complete_revenue_units`" and says plainly that "a
+#: return ... refuses growth". It does not ask for the returns to be netted
+#: out: a decomposition of a window whose revenue and units include returns
+#: describes a population the specification does not admit for this family.
+REASON_RETURNS_PRESENT = "returns_present"
 
 # Where the price-times-volume cross term was placed. A governed disclosure rather
 # than a fact, because a fact states a number.
@@ -181,6 +190,14 @@ def _derive(package: FactPackage) -> tuple[Fact, ...] | RefusedResult:
         return RefusedResult(
             metric=METRIC_REVENUE_CHANGE,
             reason=window_refusal(package, MODE_PERIOD_OVER_PERIOD),
+        )
+    if CAVEAT_RETURNS_NOT_NETTED in package.caveats:
+        # `_periods` reads the revenue and units trends, whose population is
+        # `financial_posted` and therefore includes posted returns. Refused
+        # rather than recomputed, because that is what `RRA-008` asks for.
+        return RefusedResult(
+            metric=METRIC_REVENUE_CHANGE,
+            reason=REASON_RETURNS_PRESENT,
         )
     labels = (window.current.label, window.prior.label)
     periods = _periods(package, labels)

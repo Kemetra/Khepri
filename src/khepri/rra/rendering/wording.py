@@ -285,6 +285,14 @@ def kind_qualifier(kind: str, language: str) -> str | None:
 REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
     "section": {
         LANGUAGE_ENGLISH: {
+            "returns_present": (
+                "Growth breakdown — not available. Your file records returns "
+                "inside the periods being compared, and a breakdown into price "
+                "and volume effects only means what it says over sales alone. "
+                "Everything else in this review is unaffected, including the "
+                "revenue comparison itself. To add the breakdown, export a "
+                "file whose compared periods contain no returns."
+            ),
             "prior_window_absent": (
                 "Comparison with an earlier period — not available. Your file "
                 "covers a single period, so there is no earlier period inside it "
@@ -365,6 +373,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
             ),
         },
         LANGUAGE_ARABIC: {
+            "returns_present": (
+                "تحليل النمو — غير متاح. يسجل ملفك مرتجعات داخل الفترتين "
+                "المقارنتين، وتحليل الأثر إلى سعر وكمية لا يحمل معناه إلا على "
+                "المبيعات وحدها. وما عدا ذلك في هذا التقرير غير متأثر، بما في "
+                "ذلك مقارنة الإيرادات نفسها. ولإتاحة التحليل، صدِّر ملفاً لا "
+                "تحتوي فترتاه المقارنتان على مرتجعات."
+            ),
             "prior_window_absent": (
                 "المقارنة بفترة سابقة — غير متاحة. يغطي ملفك فترة واحدة، فلا "
                 "توجد داخله فترة أسبق للمقارنة بها. وما عدا ذلك في هذا التقرير "

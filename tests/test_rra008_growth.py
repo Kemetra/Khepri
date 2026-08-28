@@ -45,11 +45,46 @@ from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
     attesting_manifest,
+    oracle_contract,
     published_mapping_identity,
 )
 
 HEADER = b"date,revenue,units,invoice_no\n"
 START = date(2026, 1, 5)
+
+
+def _package_with_returns(content: bytes, days: tuple = ()) -> FactPackage:
+    """A package over an extract naming its event kinds, coverage attested.
+
+    `TEST_CONTRACT` declares no event-kind column, so a return cannot be
+    expressed through it at all; `oracle_contract` can. Coverage is attested
+    so the refusal under test comes from the returns rather than from an
+    unproven window.
+    """
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    contract = oracle_contract(status_column=None)
+    manifest = (
+        attesting_manifest(content=content, contract=contract, days=days)
+        if days
+        else None
+    )
+    with published_mapping_identity():
+        mapping = build_mapping(profile, contract=contract)
+        return build_fact_package(
+            AdmittedInput(
+                manifest=manifest,
+                content=content,
+                media_type=CSV_MEDIA_TYPE,
+                profile=profile,
+                mapping=mapping,
+                decision=assess_admissibility(profile, mapping),
+                contract=contract,
+            ),
+        )
 
 
 def package_for(
@@ -426,3 +461,31 @@ def test_a_dataset_with_no_prior_period_still_says_so() -> None:
     refused = growth.derive(package_for(HEADER + body, days=days))
     assert isinstance(refused, RefusedResult)
     assert refused.reason == REASON_PRIOR_WINDOW_ABSENT
+def test_a_return_in_a_compared_window_refuses_growth() -> None:
+    """`RRA-008`: both aligned windows must be "return-free posted-sale
+    populations over `sales_complete_revenue_units`", and "a return \u2026
+    refuses growth."
+
+    `_periods` reads the revenue and units trends, whose totals are
+    `financial_posted` and therefore include posted returns. A window
+    containing a return published a decomposition without proving a
+    return-free basis -- and the specification does not ask for the returns to
+    be netted out, it asks for the decomposition to be refused.
+    """
+    content = (
+        b"date,event_kind,revenue,units,invoice_no\n"
+        b"2026-01-05,sale,100.00,10,INV-1\n"
+        b"2026-01-06,sale,200.00,20,INV-2\n"
+        b"2026-01-07,sale,300.00,25,INV-3\n"
+        b"2026-01-08,return,-50.00,-5,INV-4\n"
+    )
+    days = tuple(START + timedelta(days=index) for index in range(4))
+
+    package = _package_with_returns(content, days=days)
+    # Proved first: a return really was admitted, or this shows nothing.
+    assert package.event_kind_filters == ("return", "sale")
+
+    result = growth.derive(package)
+
+    assert isinstance(result, RefusedResult), result
+    assert result.reason == growth.REASON_RETURNS_PRESENT, result
