@@ -279,3 +279,34 @@ def test_a_dimension_bucket_with_a_gapped_row_refuses_too() -> None:
     by_label = {bucket.label: bucket for bucket in comparison.buckets}
     assert by_label["Beverages"].value == Decimal("100.00")
     assert by_label["Snacks"].value is None
+
+
+def test_the_curve_ranks_only_values_with_complete_sale_revenue() -> None:
+    """`RRA-008`:127 -- "the full, non-null, admissible ... set **with complete
+    sale revenue**".
+
+    That clause names the population, not a refusal trigger: the sentences that
+    refuse say so ("A missing dimension on any eligible posted sale ... refuses
+    that dimension", "Any negative ranked value ... refuses the curve"). A value
+    whose sale rows are incomplete is simply not in the set.
+
+    Ranking it on the rows that happened to carry an amount states a share of a
+    base missing an unknown quantity: Snacks at 50.00 gives Beverages 0.6667 of
+    revenue when Snacks' true total could be anything at or above 50.00.
+
+    The same treatment return-only values already get two lines above, and for
+    the reason recorded there -- leaving them in "inflated `distinct_values`,
+    which a reader takes as the size of the set the curve speaks for".
+    """
+    comparison = build_comparison(
+        dimension="category",
+        keys=["Beverages", "Snacks", "Snacks"],
+        values=[Decimal("100.00"), None, Decimal("50.00")],
+    )
+
+    # One value is rankable, so the curve is that value alone at 100%.
+    assert comparison.curve.shares == (Decimal("1.0000"),)
+    assert comparison.curve.ranked_values == 1
+    # And the count says the set is smaller than the keys present, rather than
+    # claiming the curve speaks for a value it never ranked.
+    assert comparison.curve.distinct_values == 1

@@ -183,6 +183,11 @@ class _Accumulator:
     #: Distinct from `sale_present`, which needs a value: a sale with no revenue
     #: is in the dimension set and not in the revenue ranking.
     sale_row: bool = False
+    #: Whether a posted *sale* row on this value carried no revenue. `RRA-008`
+    #: ranks the set "with complete sale revenue", so such a value is outside the
+    #: population -- ranking it on the rows that did carry an amount states a
+    #: share of a base missing an unknown quantity.
+    sale_absent: bool = False
 
     def add(
         self,
@@ -196,6 +201,8 @@ class _Accumulator:
             self.sale_row = True
         if value is None:
             self.absent = True
+            if sale:
+                self.sale_absent = True
         else:
             self.total += value
             self.present = True
@@ -213,6 +220,7 @@ class _Accumulator:
         self.sale_total += other.sale_total
         self.sale_present = self.sale_present or other.sale_present
         self.sale_row = self.sale_row or other.sale_row
+        self.sale_absent = self.sale_absent or other.sale_absent
         # Unioned, never summed. Every dropped value may share one transaction,
         # and adding their counts would report five where the truth is one --
         # the row-count substitution `RRA-008` forbids, one level up.
@@ -330,7 +338,11 @@ def build_comparison(
     # inflated `distinct_values`, which a reader takes as the size of the set the
     # curve speaks for.
     ranked_order = sorted(
-        (key for key in accumulators if accumulators[key].sale_row),
+        (
+            key
+            for key in accumulators
+            if accumulators[key].sale_row and not accumulators[key].sale_absent
+        ),
         key=lambda key: (-accumulators[key].sale_total, labels[key]),
     )
     counted = transactions is not None
