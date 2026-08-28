@@ -489,13 +489,16 @@ def _repeated_event_key(
     components = contract.identity.event_key_columns
     if not components:
         return False
+    # Read through `_column`, which refuses a column the file does not carry.
+    # Skipping the absent ones and answering `False` instead would report "no
+    # repeats" for a contract whose declared identity was never checked at all:
+    # the extract would publish facts under an identity proof that could not be
+    # evaluated, which is the one outcome `RRA-003` does not allow. A contract
+    # naming a column its own extract lacks is an inconsistent pair, and the
+    # refusal belongs to the pair rather than to either half.
     columns = [
-        _column(reading.frame, reading.labels, component)
-        for component in components
-        if component in reading.labels
+        _column(reading.frame, reading.labels, component) for component in components
     ]
-    if len(columns) != len(components):
-        return False
     seen: set[tuple[str | None, ...]] = set()
     for index in sorted(kept):
         key = tuple(column[index] for column in columns)

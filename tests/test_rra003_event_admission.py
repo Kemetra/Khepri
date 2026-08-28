@@ -1266,3 +1266,23 @@ def test_distinct_event_keys_are_not_a_repetition() -> None:
     admitted = admit(VOID_AND_POSTED_CSV, mapped_contract())
 
     assert admitted.repeated_event_key is False
+
+
+def test_a_declared_key_column_the_extract_lacks_refuses() -> None:
+    """A contract and an extract that contradict each other admit nothing.
+
+    `RRA-003` lets a contract prove event identity by declaring key columns, and
+    admission's job is to check that proof. When a declared column is not in the
+    file, the proof cannot be evaluated at all -- and the failure mode is silent:
+    an earlier form of `_repeated_event_key` skipped the absent components and
+    answered `False`, which reads downstream as "checked, no repeats found". Both
+    rows were then admitted with `repeated_event_key=False`, publishing facts
+    under an identity claim nothing had tested.
+
+    Reading every declared component through `_column` lets its existing refusal
+    fire instead. The refusal belongs to the inconsistent *pair*: neither the
+    contract nor the extract is wrong on its own, and no reading of the two
+    together yields the declared identity.
+    """
+    with pytest.raises(EventsRefused):
+        admit(RETURNS_CSV, mapped_contract(event_key_columns=("line_id",)))
