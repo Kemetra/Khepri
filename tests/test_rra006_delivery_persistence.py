@@ -806,3 +806,25 @@ def test_the_pipeline_runs_one_leased_job_against_the_stored_ports() -> None:
     assert repeated.delivered is False
     assert repeated.record == outcome.record
     assert len(test.rows()) == 1
+def test_a_package_stored_before_the_basket_input_still_rebuilds() -> None:
+    """`sale_units_total` was added without moving `PACKAGE_VERSION`.
+
+    Documents persisted before it exists carry no such key, and
+    `package_source._required` refuses a missing key even in optional mode --
+    so a reader that only tolerated a null value would strand every package
+    published before the field. An absent basket input rebuilds as `None`,
+    which is what it means: not counted, rather than counted and zero.
+    """
+    built = package()
+    stored = json.loads(json.dumps(built.as_document()))
+    legacy = {
+        key: value for key, value in stored.items() if key != 'sale_units_total'
+    }
+    assert 'sale_units_total' not in legacy
+
+    rebuilt = rebuild_fact_package(legacy)
+
+    assert rebuilt.sale_units_total is None
+    # And everything else about the stored package is unchanged.
+    assert rebuilt.facts == built.facts
+    assert rebuilt.row_count == built.row_count

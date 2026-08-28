@@ -108,14 +108,6 @@ METRIC_GROSS_PROFIT = "gross_profit"
 METRIC_GROSS_MARGIN = "gross_margin"
 METRIC_DISCOUNT = "discount"
 METRIC_RETURNS = "returns"
-#: The basket numerator `RRA-008` names: `sum(positive posted-sale units)`.
-#:
-#: Distinct from `METRIC_UNITS`, whose population is `financial_posted` and
-#: therefore includes posted *return* units. Items per transaction divides
-#: this by a sale-only transaction count, and `RRA-004` requires a derived
-#: fact to consume one population-certified aggregate rather than two totals
-#: drawn from different populations.
-METRIC_SALE_UNITS = "sale_units"
 
 REASON_INPUT_UNAVAILABLE = "required_input_unavailable"
 REASON_ZERO_DENOMINATOR = "zero_denominator"
@@ -282,6 +274,20 @@ class FactPackage:
     # `rra008.growth.v2`" and does not widen this document.
     #: One uppercase ISO 4217 code when the package carries monetary facts.
     currency: str | None = None
+    #: `sum(positive posted-sale units)` -- the basket numerator `RRA-008`
+    #: names, or `None` where no sale carries positive units.
+    #:
+    #: A package field and not a `Fact`, deliberately. `RRA-004`'s metric
+    #: assignments are exact and name no such metric, and a package holds
+    #: "every numerical claim that may appear on any report surface" -- so
+    #: publishing it as a fact both authorizes a number the specification
+    #: does not, and puts two near-identical unit counts in front of a reader
+    #: with nothing to tell them apart. It is an input to items per
+    #: transaction, which is the governed metric.
+    #:
+    #: Distinct from the `units` fact, whose population is `financial_posted`
+    #: and therefore includes posted return units.
+    sale_units_total: int | None = None
     #: The event kinds and statuses every population here was filtered to.
     event_kind_filters: tuple[str, ...] = ()
     status_filters: tuple[str, ...] = ()
@@ -335,6 +341,7 @@ class FactPackage:
             "profile_digest": self.profile_digest,
             "source_sha256_hex": self.source_sha256_hex,
             "row_count": self.row_count,
+            "sale_units_total": self.sale_units_total,
             "monetary_precision": self.monetary_precision,
             "comparison_window_periods": self.comparison_window_periods,
             "facts": [fact.as_document() for fact in self.facts],
@@ -719,13 +726,6 @@ def _build(
         inputs=(SEMANTIC_UNITS,),
     )
     add(
-        METRIC_SALE_UNITS,
-        _sum_integer(_positive_units(measures)),
-        unit_kind=UNIT_COUNT,
-        precision=0,
-        inputs=(SEMANTIC_UNITS,),
-    )
-    add(
         METRIC_TRANSACTIONS,
         transactions_total,
         unit_kind=UNIT_COUNT,
@@ -894,6 +894,7 @@ def _build(
         source_sha256_hex=profile.source_sha256_hex,
         row_count=row_count,
         monetary_precision=money,
+        sale_units_total=_sum_integer(_positive_units(measures)),
         facts=tuple(facts),
         series=tuple(series),
         comparisons=tuple(comparisons),

@@ -124,6 +124,7 @@ def rebuild_fact_package(document: Mapping[str, Any]) -> FactPackage:
         source_sha256_hex=_text(document, "source_sha256_hex"),
         row_count=_count(document, "row_count"),
         monetary_precision=_count(document, "monetary_precision"),
+        sale_units_total=_absent_or_count(document, "sale_units_total"),
         comparison_window_periods=_count(document, "comparison_window_periods"),
         facts=tuple(_fact(entry) for entry in _entries(document, "facts")),
         series=tuple(_series(entry) for entry in _entries(document, "series")),
@@ -356,6 +357,21 @@ def _count(document: Mapping[str, Any], name: str) -> int:
         raise PackageCorrupted(f"Stored fact package states no {name}.")
     return value
 
+
+def _absent_or_count(document: Mapping[str, Any], name: str) -> int | None:
+    """A count a package may not carry, and a stored document may not mention.
+
+    Distinct from `_optional_count`, which requires the key to be present and
+    only tolerates a null value. This field was added to the package shape
+    without moving `PACKAGE_VERSION`, so documents persisted before it exists
+    carry no such key at all -- and `_required` refuses a missing key even in
+    optional mode. Reading those as `None` is what lets a stored package still
+    rebuild; refusing them would strand every package published before the
+    field, which is a worse answer than an absent basket input.
+    """
+    if name not in document:
+        return None
+    return _optional_count(document, name)
 
 def _optional_count(document: Mapping[str, Any], name: str) -> int | None:
     """A count the aggregate may not have taken at all.
