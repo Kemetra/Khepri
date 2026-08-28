@@ -165,6 +165,12 @@ class _Accumulator:
     total: Decimal = Decimal(0)
     rows: int = 0
     present: bool = False
+    #: Whether any row in this bucket carried no value. `RRA-004`:33 gives period
+    #: and dimension revenue the headline's population, and `:46` gives that
+    #: population "no partial-coverage vocabulary" -- so a bucket holding one row
+    #: with a value and one without has a gap in its *own* population, and the
+    #: sum of what happened to be there is a part published as a whole.
+    absent: bool = False
     keys: set[str] = field(default_factory=set)
     #: The same total over posted sales alone, which is what the
     #: concentration curve ranks. `RRA-008` ranks "posted-sale revenue", while
@@ -188,7 +194,9 @@ class _Accumulator:
         self.rows += 1
         if sale:
             self.sale_row = True
-        if value is not None:
+        if value is None:
+            self.absent = True
+        else:
             self.total += value
             self.present = True
             if sale:
@@ -201,6 +209,7 @@ class _Accumulator:
         self.total += other.total
         self.rows += other.rows
         self.present = self.present or other.present
+        self.absent = self.absent or other.absent
         self.sale_total += other.sale_total
         self.sale_present = self.sale_present or other.sale_present
         self.sale_row = self.sale_row or other.sale_row
@@ -209,10 +218,15 @@ class _Accumulator:
         # the row-count substitution `RRA-008` forbids, one level up.
         self.keys |= other.keys
 
+    @property
+    def whole(self) -> Decimal | None:
+        """The total, or nothing when this bucket's own rows are incomplete."""
+        return self.total if self.present and not self.absent else None
+
     def time_bucket(self, label: str) -> Bucket:
         return Bucket(
             label=label,
-            value=self.total if self.present else None,
+            value=self.whole,
             rows=self.rows,
             days=len(self.keys),
         )
@@ -220,7 +234,7 @@ class _Accumulator:
     def value_bucket(self, label: str, *, counted: bool) -> Bucket:
         return Bucket(
             label=label,
-            value=self.total if self.present else None,
+            value=self.whole,
             rows=self.rows,
             transactions=len(self.keys) if counted else None,
             sold=self.sale_row,
@@ -402,13 +416,38 @@ def reconciles(
     *,
     total: Decimal | None,
     rows_total: int,
+    gapped: bool = False,
 ) -> bool:
+    """Whether the published buckets account for every row and every value.
+
+    **The row count is checked unconditionally, and the sum only against the
+    buckets that published one.** A bucket refuses when its own rows are
+    incomplete (`RRA-004`:33 gives period and dimension revenue the headline's
+    population, and `:46` gives that population no partial-coverage vocabulary),
+    so a package whose headline refuses can still carry complete buckets beside
+    incomplete ones. Requiring every bucket to be absent whenever the headline is
+    would drop the whole comparison and take the buckets that *are* proven with
+    it -- the collateral refusal `RRA-004`:97 forbids.
+
+    `gapped` is that state, and it is passed rather than inferred: a `total` of
+    `None` also means "no measure was mapped at all", where a bucket holding a
+    value is carrying one from nowhere and must still be rejected. The caller
+    knows which of the two it has.
+    """
     if sum(bucket.rows for bucket in buckets) != rows_total:
         return False
-    if total is None:
-        return all(bucket.value is None for bucket in buckets)
     parts = [bucket.value for bucket in buckets if bucket.value is not None]
-    return sum(parts, Decimal(0)) == total
+    if not gapped:
+        if total is None:
+            # No measure to bucket at all, so a bucket holding a value is
+            # carrying one from nowhere.
+            return not parts
+        return sum(parts, Decimal(0)) == total
+    # The measure exists and some row of it does not. Every bucket over an
+    # incomplete row refused, so what published is a strict subset of `total` by
+    # construction and comparing the two proves nothing. The row count above is
+    # what still holds every row to account.
+    return True
 
 
 def _labels(

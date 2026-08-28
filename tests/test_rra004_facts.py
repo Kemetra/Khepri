@@ -1967,3 +1967,35 @@ def test_a_return_row_does_not_gap_the_sale_only_discount() -> None:
     result = _oracle_package(content)
 
     assert result.value(METRIC_DISCOUNT) == "13.00"
+
+
+def test_a_complete_bucket_survives_an_incomplete_neighbour() -> None:
+    """`RRA-004`:97 — a refusal leaves independently proven facts standing.
+
+    Beverages has one row and it carries revenue; Snacks has two and one of them
+    does not. The comparison publishes the bucket that is proven and refuses the
+    one that is not, rather than dropping the whole dimension — and the headline
+    refuses on its own account, because the file as a whole has a gap.
+
+    Publishing `Snacks 50.00` here would state that Beverages outsold Snacks two
+    to one, which the file does not say: the missing amount could be anything.
+    """
+    content = (
+        b"date,revenue,units,invoice_no,category,branch\n"
+        b"2026-01-05,100.00,2,INV-1,Beverages,Cairo\n"
+        b"2026-01-06,,3,INV-2,Snacks,Giza\n"
+        b"2026-01-07,50.00,1,INV-3,Snacks,Giza\n"
+    )
+
+    result = package(content)
+
+    assert result.fact(METRIC_REVENUE) is None
+    comparison = next(
+        entry for entry in result.comparisons if entry.metric == "revenue_by_category"
+    )
+    buckets = {bucket.label: bucket for bucket in comparison.comparison.buckets}
+    assert buckets["Beverages"].value == Decimal("100.00")
+    assert buckets["Snacks"].value is None
+    # The rows stay counted, so the refusal is legible as incompleteness rather
+    # than as a category that sold nothing.
+    assert buckets["Snacks"].rows == 2
