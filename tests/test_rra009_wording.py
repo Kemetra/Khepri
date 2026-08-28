@@ -271,8 +271,16 @@ def test_section_refusal_universe_is_eleven_codes() -> None:
     growth" -- so a package recording returns refuses the decomposition rather
     than netting them out. No other family refuses on returns, and the
     comparison beside it is unaffected, which the customer wording says.
+
+    The twelfth is the basket family's, and it arrives from the fact package
+    rather than from `RRA-008`: `RRA-003` refuses every additive or
+    distinct-transaction result over a repeated canonical row signature, so the
+    transaction count is gone and both basket metrics with it.
+    `basket._identifier_reason` reports the package's cause verbatim, and a
+    section that could not say it would have to relabel the refusal as
+    "identifier absent" -- naming a cause that did not occur.
     """
-    assert len(_SECTION_REFUSAL_CODES) == 11
+    assert len(_SECTION_REFUSAL_CODES) == 12
 
 
 def test_refusal_wording_section_tier_covers_every_code_in_every_language() -> None:
