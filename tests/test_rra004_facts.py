@@ -27,6 +27,7 @@ from khepri.rra.facts import (
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
     REASON_AMBIGUOUS_MAPPING,
+    REASON_INCOMPLETE_COVERAGE,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
     REASON_REPEATED_ROW_SIGNATURE,
@@ -1656,7 +1657,9 @@ def test_a_headline_refuses_when_its_own_column_has_a_gap() -> None:
         assert result.fact(metric) is None, f"{metric} published a partial sum"
         refused = result.refusal(metric)
         assert refused is not None
-        assert refused.reason == REASON_INPUT_UNAVAILABLE
+        # The column is present and incomplete, which is not the same finding as
+        # an absent one and does not have the same remedy.
+        assert refused.reason == REASON_INCOMPLETE_COVERAGE
 
 
 def test_a_gap_in_one_column_leaves_the_others_publishing() -> None:
@@ -1926,3 +1929,21 @@ def test_duplicated_returns_do_not_refuse_the_sale_only_results() -> None:
     assert result.value(METRIC_AVERAGE_ORDER_VALUE) == "150.00"
     # Revenue includes posted returns, so the collision does reach it.
     assert result.fact(METRIC_REVENUE) is None
+
+
+def test_a_gapped_column_states_a_cause_the_reader_can_act_on() -> None:
+    """A present column with blank cells is not an absent column.
+
+    `required_input_unavailable` renders as "the file does not contain
+    {column}" and tells the reader to include it in their export. For a headline
+    refused under `RRA-004`:46 the column *is* there — some of its cells are
+    empty — so that message names a cause that did not occur and gives advice
+    that cannot work.
+    """
+    content = b"date,revenue,units\n2026-01-05,100.00,2\n2026-01-06,,3\n"
+
+    result = package(content)
+
+    refused = result.refusal(METRIC_REVENUE)
+    assert refused is not None
+    assert refused.reason == REASON_INCOMPLETE_COVERAGE

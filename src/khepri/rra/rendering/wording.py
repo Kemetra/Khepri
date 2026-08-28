@@ -137,6 +137,7 @@ _RESULT_REASON_CODES = {
     facts.REASON_INCOMPLETE_IDENTIFIERS,
     facts.REASON_AMBIGUOUS_MAPPING,
     facts.REASON_REPEATED_ROW_SIGNATURE,
+    facts.REASON_INCOMPLETE_COVERAGE,
     basket.REASON_DIMENSION_ABSENT,
     basket.REASON_DIMENSION_INCOMPLETE,
     comparison.REASON_COVERAGE_INCOMPATIBLE,
@@ -499,6 +500,13 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "differs between real repeats, or re-export without the "
                 "duplicates, and this becomes available."
             ),
+            "incomplete_column_coverage": (
+                "{metric} is not shown — {column} is in your file but some rows "
+                "leave it empty. A total over only the rows that filled it would "
+                "describe part of your business and read as though it described "
+                "all of it. The other figures in this section are unaffected. "
+                "Fill that column on every row and this becomes available."
+            ),
             "dimension_absent": (
                 "Attach rate is not shown — the file has no product or category "
                 "column to measure attachment against. Items per sale is unaffected."
@@ -562,6 +570,12 @@ REFUSAL_WORDING: dict[str, dict[str, dict[str, str]]] = {
                 "التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو الإيصال يختلف "
                 "بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
                 "المكررة، ليصبح هذا الرقم متاحاً."
+            ),
+            "incomplete_column_coverage": (
+                "{metric} غير معروض — {column} موجود في ملفك لكن بعض الصفوف "
+                "تتركه فارغاً. والإجمالي المحسوب من الصفوف التي عبّأته يصف جزءاً "
+                "من نشاطك ويُقرأ كأنه يصفه كله. الأرقام الأخرى في هذا القسم غير "
+                "متأثرة. عبّئ هذا العمود في كل صف ليصبح هذا الرقم متاحاً."
             ),
             "dimension_absent": (
                 "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا "

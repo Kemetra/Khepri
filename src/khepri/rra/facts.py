@@ -133,6 +133,11 @@ REASON_AMBIGUOUS_MAPPING = "ambiguous_mapping"
 #: missing is proof of which reading is true, and no column in the extract
 #: carries it.
 REASON_REPEATED_ROW_SIGNATURE = "repeated_row_signature"
+#: `RRA-004`:46 refuses a headline when "a required admitted column has gaps".
+#: Distinct from `REASON_INPUT_UNAVAILABLE`, whose customer wording says the file
+#: "does not contain" the column and asks for it to be included: here the column
+#: is present and some of its cells are empty, so that advice cannot work.
+REASON_INCOMPLETE_COVERAGE = "incomplete_column_coverage"
 #: The fields `RRA-003` signs: "all admitted identity, dimension, and measure
 #: fields". Every semantic the mapping can admit is here, because the rule names
 #: all three kinds and lists no exception -- an omission would be a column two
@@ -547,6 +552,9 @@ class _Totals:
     #: Set when a repeated canonical row signature refused the additive family,
     #: so every one of them states the same governed reason.
     additive_reason: str = REASON_INPUT_UNAVAILABLE
+    #: Which headlines refused because their own column had gaps, so each names
+    #: a cause the reader can act on rather than "the file does not contain" it.
+    gapped_semantics: frozenset[str] = frozenset()
     #: The revenue and unit sums before the per-column gap gate, used only to
     #: decide whether a *series or comparison* can be derived. `RRA-004`:46
     #: refuses the **headline** when its column has gaps, and a monthly bucket is
@@ -554,6 +562,20 @@ class _Totals:
     #: so refusing the trend would take periods whose own rows are whole.
     series_revenue: Decimal | None = None
     series_units: int | None = None
+
+
+def _identifier_reason(measures: _Measures) -> str:
+    """Why a transaction count is missing when the signature is not the cause.
+
+    Stated in one place so the duplicate-signature path cannot report a weaker
+    cause than the ordinary one: a repeated *return* leaves the identifiers
+    exactly as they were, and an identifier column with gaps is still that.
+    """
+    return (
+        REASON_INPUT_UNAVAILABLE
+        if measures.transaction_identifiers_complete
+        else REASON_INCOMPLETE_IDENTIFIERS
+    )
 
 
 def _totals(
@@ -603,7 +625,9 @@ def _totals(
             transactions_reason=(
                 REASON_REPEATED_ROW_SIGNATURE
                 if repeated_sale_signature
-                else REASON_INPUT_UNAVAILABLE
+                # A duplicated return says nothing about the identifiers, so the
+                # cause the normal path would have given still stands.
+                else _identifier_reason(measures)
             ),
             cost=None,
             discount=None,
@@ -627,9 +651,7 @@ def _totals(
             if complete
             else None
         ),
-        transactions_reason=(
-            REASON_INPUT_UNAVAILABLE if complete else REASON_INCOMPLETE_IDENTIFIERS
-        ),
+        transactions_reason=_identifier_reason(measures),
         cost=whole(
             SEMANTIC_COST,
             _on_attested_basis(
@@ -648,6 +670,7 @@ def _totals(
         # return-amount measure is admitted." A return event states its own
         # magnitude, so a separate column is a second answer to one question.
         returns=_returns_magnitude(admitted_events, measures),
+        gapped_semantics=measures.gapped_semantics,
         series_revenue=_monetary(admitted_events, measures.revenue),
         series_units=_sum_integer(measures.units),
     )
@@ -927,13 +950,25 @@ def _build(
         )
 
     money = measures.monetary_precision
+
+    def headline_reason(semantic: str) -> str:
+        """The cause this headline actually has.
+
+        A gapped column and an absent one are different findings with different
+        remedies, and `required_input_unavailable` renders as "the file does not
+        contain" the column -- advice that cannot work when it is there.
+        """
+        if semantic in totals.gapped_semantics:
+            return REASON_INCOMPLETE_COVERAGE
+        return totals.additive_reason
+
     add(
         METRIC_REVENUE,
         revenue_total,
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_REVENUE,),
-        reason=totals.additive_reason,
+        reason=headline_reason(SEMANTIC_REVENUE),
     )
     add(
         METRIC_UNITS,
@@ -941,7 +976,7 @@ def _build(
         unit_kind=UNIT_COUNT,
         precision=0,
         inputs=(SEMANTIC_UNITS,),
-        reason=totals.additive_reason,
+        reason=headline_reason(SEMANTIC_UNITS),
     )
     add(
         METRIC_TRANSACTIONS,
@@ -957,7 +992,7 @@ def _build(
         unit_kind=UNIT_MONETARY,
         precision=money,
         inputs=(SEMANTIC_COST,),
-        reason=totals.additive_reason,
+        reason=headline_reason(SEMANTIC_COST),
     )
     add(
         METRIC_DISCOUNT,

@@ -45,6 +45,7 @@ from khepri.rra.facts import (
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
     REASON_AMBIGUOUS_MAPPING,
+    REASON_INCOMPLETE_COVERAGE,
     REASON_INCOMPLETE_IDENTIFIERS,
     REASON_INPUT_UNAVAILABLE,
     REASON_RECONCILIATION_FAILED,
@@ -74,6 +75,7 @@ _RESULT_REFUSAL_CODES = frozenset(
         REASON_INPUT_UNAVAILABLE,
         REASON_ZERO_DENOMINATOR,
         REASON_RECONCILIATION_FAILED,
+        REASON_INCOMPLETE_COVERAGE,
         REASON_INCOMPLETE_IDENTIFIERS,
         REASON_AMBIGUOUS_MAPPING,
         REASON_REPEATED_ROW_SIGNATURE,
@@ -139,6 +141,12 @@ _ACCEPTED_ARABIC_RESULT_MESSAGES = {
         "الإجمالي يعني اختيار أحد التفسيرين نيابةً عنك. أضف مرجعاً للسطر أو "
         "الإيصال يختلف بين التكرارات الحقيقية، أو أعد التصدير بدون الصفوف "
         "المكررة، ليصبح هذا الرقم متاحاً."
+    ),
+    REASON_INCOMPLETE_COVERAGE: (
+        "{metric} غير معروض — {column} موجود في ملفك لكن بعض الصفوف تتركه "
+        "فارغاً. والإجمالي المحسوب من الصفوف التي عبّأته يصف جزءاً من نشاطك "
+        "ويُقرأ كأنه يصفه كله. الأرقام الأخرى في هذا القسم غير متأثرة. عبّئ هذا "
+        "العمود في كل صف ليصبح هذا الرقم متاحاً."
     ),
     REASON_DIMENSION_ABSENT: (
         "نسبة عمليات البيع التي تتضمن المنتج أو الفئة غير معروضة — لا يحتوي "
@@ -311,7 +319,7 @@ def test_refusal_message_raises_on_unknown_code() -> None:
         )
 
 
-def test_result_refusal_universe_is_eleven_current_codes() -> None:
+def test_result_refusal_universe_is_twelve_current_codes() -> None:
     """A deliberate count, moved deliberately.
 
     Seven until the version compatibility gate landed, which added the unadmitted
@@ -337,11 +345,17 @@ def test_result_refusal_universe_is_eleven_current_codes() -> None:
     readable -- so reusing that code would have told a customer a column was
     missing when none is.
 
+    The twelfth separates a column that is *absent* from one that is present and
+    incomplete. `RRA-004`:46 refuses a headline whose own column has gaps, and
+    `required_input_unavailable` renders as "the file does not contain
+    {column}" with "include the missing column" as its remedy -- a cause that did
+    not occur and advice that cannot work when the column is already there.
+
     The number is asserted rather than derived so that
     a code arriving without its accepted bilingual prose fails here instead of
     reaching a reader as an untranslated identifier.
     """
-    assert len(_RESULT_REFUSAL_CODES) == 11
+    assert len(_RESULT_REFUSAL_CODES) == 12
 
 
 def test_refusal_wording_result_tier_covers_every_code_in_every_language() -> None:
