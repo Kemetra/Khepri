@@ -342,11 +342,7 @@ def build_comparison(
     # inflated `distinct_values`, which a reader takes as the size of the set the
     # curve speaks for.
     ranked_order = sorted(
-        (
-            key
-            for key in accumulators
-            if accumulators[key].sale_row and not accumulators[key].sale_absent
-        ),
+        (key for key in accumulators if accumulators[key].sale_row),
         key=lambda key: (-accumulators[key].sale_total, labels[key]),
     )
     counted = transactions is not None
@@ -407,6 +403,18 @@ def _curve(ordered: list[_Accumulator]) -> ConcentrationCurve | None:
     # return-inclusive financial revenue, so a value with heavy returns was
     # placed below its true sale contribution -- and the top-decile and
     # top-quartile shares read off this curve inherited the same base.
+    # A value whose own sale revenue is incomplete refuses the whole curve, and
+    # this is the one place that can: dropping it from `ranked_order` instead
+    # would publish the survivors' shares over a base missing an unknown
+    # quantity -- on the oracle's disjoint dataset, one product holding 100% of
+    # a total that is itself partial. `RRA-008`:131 refuses "when the full
+    # distinct set cannot be computed", and an admissible value carrying an
+    # unknown amount is exactly that; `RRA-008`:117 sets the same precedent for
+    # attach rate, where "one missing value refuses that dimension" rather than
+    # narrowing it. `RRA-004`:117 defines the basis this reconciles to as
+    # "complete sale revenue by **every** admissible value".
+    if any(entry.sale_absent for entry in ordered):
+        return None
     ranked = [entry.sale_total for entry in ordered if entry.sale_present]
     total = sum(ranked, Decimal(0))
     if total <= 0 or any(value < 0 for value in ranked):
