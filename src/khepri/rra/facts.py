@@ -1882,21 +1882,40 @@ def _measures(
     # into one flag cannot express the rule.
     gapped: set[str] = set()
 
-    def monetary(semantic: str) -> list[Decimal | None]:
+    kinds = [event.event_kind for event in admitted_events.events]
+
+    def monetary(semantic: str, *, sale_only: bool = False) -> list[Decimal | None]:
+        """One mapped measure, recording whether *its own population* has gaps.
+
+        `sale_only` is the discount's, and `RRA-004`:39 is why: its population is
+        "posted sales with complete additive discount coverage", so a return
+        carries no discount and its blank cell is not a gap in that population --
+        the row is not in it. Counting it would refuse a complete sale-only
+        metric over a row it never reads.
+        """
         nonlocal null_inputs, monetary_scale
         column = mapping.for_semantic(semantic).column
         if column is None:
             return [None] * height
         values, scale = _decimal_values(frame, column.position)
         monetary_scale = max(monetary_scale, scale)
-        if any(value is None for value in values):
+        eligible = (
+            [
+                value
+                for value, kind in zip(values, kinds, strict=True)
+                if kind == EVENT_SALE
+            ]
+            if sale_only
+            else values
+        )
+        if any(value is None for value in eligible):
             null_inputs = True
             gapped.add(semantic)
         return values
 
     revenue = monetary(SEMANTIC_REVENUE)
     cost = monetary(SEMANTIC_COST)
-    discount = monetary(SEMANTIC_DISCOUNT)
+    discount = monetary(SEMANTIC_DISCOUNT, sale_only=True)
     returns = monetary(SEMANTIC_RETURNS)
 
     units_column = mapping.for_semantic(SEMANTIC_UNITS).column
@@ -1941,7 +1960,7 @@ def _measures(
         units=units,
         dates=dates,
         transactions=transactions,
-        event_kinds=[event.event_kind for event in admitted_events.events],
+        event_kinds=kinds,
         cost=cost,
         discount=discount,
         returns=returns,

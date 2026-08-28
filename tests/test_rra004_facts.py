@@ -1947,3 +1947,23 @@ def test_a_gapped_column_states_a_cause_the_reader_can_act_on() -> None:
     refused = result.refusal(METRIC_REVENUE)
     assert refused is not None
     assert refused.reason == REASON_INCOMPLETE_COVERAGE
+
+
+def test_a_return_row_does_not_gap_the_sale_only_discount() -> None:
+    """`RRA-004`:39 scopes discounts to "posted **sales** with complete ... coverage".
+
+    A return carries no discount, and its blank cell is not a gap in the sale
+    population -- the row is not in it. Refusing over one reports incomplete
+    coverage of a population that is complete, and `RRA-004`:97 requires a
+    refusal to leave independently proven facts standing.
+    """
+    content = (
+        _SIGNATURE_HEADER
+        + b"2026-03-04,sale,posted,100.00,2,INV-1,S1,P1,C1,50.00,5.00\n"
+        + b"2026-03-05,sale,posted,200.00,4,INV-2,S1,P2,C1,90.00,8.00\n"
+        + b"2026-03-06,return,posted,-30.00,-1,INV-9,S1,P1,C1,0.00,\n"
+    )
+
+    result = _oracle_package(content)
+
+    assert result.value(METRIC_DISCOUNT) == "13.00"
