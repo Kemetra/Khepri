@@ -279,3 +279,61 @@ def test_a_dimension_bucket_with_a_gapped_row_refuses_too() -> None:
     by_label = {bucket.label: bucket for bucket in comparison.buckets}
     assert by_label["Beverages"].value == Decimal("100.00")
     assert by_label["Snacks"].value is None
+
+
+def test_an_incomplete_sale_revenue_value_refuses_the_whole_curve() -> None:
+    """`RRA-008`:131 -- concentration "refuses when the full distinct set cannot
+    be computed".
+
+    An admissible value carrying an unknown amount is exactly that case, and the
+    refusal must be total. Dropping Snacks from the ranking instead would leave
+    Beverages published as 1.0000 -- one product holding 100% of a revenue total
+    that is itself partial, which is a more confident statement than the complete
+    data would have supported, not a more cautious one.
+
+    `RRA-008`:117 sets the precedent on the same kind of hole: for attach rate,
+    "one missing value refuses that dimension" rather than narrowing it. And
+    `RRA-004`:117 defines the basis this reconciles to as "complete sale revenue
+    by **every** admissible value", so a curve over the survivors reconciles to
+    no retained basis at all.
+
+    This is distinct from the return-only exclusion above it. A value no sale
+    ever carried was never in the posted-sale population, so omitting it narrows
+    nothing; a gapped sale row *is* in the population, and its revenue is
+    unknown rather than absent.
+
+    The refusal surfaces as `distinct_set_uncomputable`, which is the reason
+    `RRA-008`:131 names -- so no new vocabulary, and the top-decile and
+    top-quartile shares read off `curve.shares` refuse with it.
+    """
+    comparison = build_comparison(
+        dimension="category",
+        keys=["Beverages", "Snacks", "Snacks"],
+        values=[Decimal("100.00"), None, Decimal("50.00")],
+    )
+
+    assert comparison.curve is None
+    # The buckets still publish: `#321` made each judge its own completeness, so
+    # Beverages stands and Snacks refuses. Only the curve, which needs the whole
+    # set to state a share, is refused here.
+    by_label = {bucket.label: bucket for bucket in comparison.buckets}
+    assert by_label["Beverages"].value == Decimal("100.00")
+    assert by_label["Snacks"].value is None
+
+
+def test_a_complete_two_value_set_still_publishes_its_curve() -> None:
+    """The control: the refusal above is caused by the gap, not by the shape.
+
+    Without this, filling `_curve` with an unconditional `return None` would pass
+    the test above and every other assertion in this module that only ever looks
+    at buckets.
+    """
+    comparison = build_comparison(
+        dimension="category",
+        keys=["Beverages", "Snacks", "Snacks"],
+        values=[Decimal("100.00"), Decimal("30.00"), Decimal("50.00")],
+    )
+
+    assert comparison.curve is not None
+    assert comparison.curve.shares == (Decimal("0.5556"), Decimal("1.0000"))
+    assert comparison.curve.distinct_values == 2

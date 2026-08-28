@@ -8,6 +8,9 @@ from datetime import date
 from decimal import Decimal
 
 MAX_COMPARISON_BUCKETS = 20
+#: The additive identity, so a row carrying no value adds nothing rather than
+#: needing a branch to skip it.
+ZERO = Decimal(0)
 # The same four places `facts.RATIO_PRECISION` uses, for the same reason: a share
 # is a fraction, and four places is what the governed ratio contract states.
 SHARE_PRECISION = 4
@@ -183,6 +186,11 @@ class _Accumulator:
     #: Distinct from `sale_present`, which needs a value: a sale with no revenue
     #: is in the dimension set and not in the revenue ranking.
     sale_row: bool = False
+    #: Whether a posted *sale* row on this value carried no revenue. `RRA-008`
+    #: ranks the set "with complete sale revenue", so such a value is outside the
+    #: population -- ranking it on the rows that did carry an amount states a
+    #: share of a base missing an unknown quantity.
+    sale_absent: bool = False
 
     def add(
         self,
@@ -192,16 +200,19 @@ class _Accumulator:
         sale: bool = True,
     ) -> None:
         self.rows += 1
-        if sale:
-            self.sale_row = True
-        if value is None:
-            self.absent = True
-        else:
-            self.total += value
-            self.present = True
-            if sale:
-                self.sale_total += value
-                self.sale_present = True
+        self.sale_row = self.sale_row or sale
+        # Each measure is recorded twice: once over the financial population and
+        # once over posted sales alone, which is the pair `RRA-004` and `RRA-008`
+        # assign to the published buckets and the concentration curve
+        # respectively. Written flat rather than nested on `sale`, because the
+        # sale-scoped write is the same statement guarded by one more term.
+        absent = value is None
+        self.absent = self.absent or absent
+        self.sale_absent = self.sale_absent or (absent and sale)
+        self.total += value or ZERO
+        self.sale_total += value if value is not None and sale else ZERO
+        self.present = self.present or not absent
+        self.sale_present = self.sale_present or (not absent and sale)
         if key is not None:
             self.keys.add(key)
 
@@ -213,6 +224,7 @@ class _Accumulator:
         self.sale_total += other.sale_total
         self.sale_present = self.sale_present or other.sale_present
         self.sale_row = self.sale_row or other.sale_row
+        self.sale_absent = self.sale_absent or other.sale_absent
         # Unioned, never summed. Every dropped value may share one transaction,
         # and adding their counts would report five where the truth is one --
         # the row-count substitution `RRA-008` forbids, one level up.
@@ -391,6 +403,18 @@ def _curve(ordered: list[_Accumulator]) -> ConcentrationCurve | None:
     # return-inclusive financial revenue, so a value with heavy returns was
     # placed below its true sale contribution -- and the top-decile and
     # top-quartile shares read off this curve inherited the same base.
+    # A value whose own sale revenue is incomplete refuses the whole curve, and
+    # this is the one place that can: dropping it from `ranked_order` instead
+    # would publish the survivors' shares over a base missing an unknown
+    # quantity -- on the oracle's disjoint dataset, one product holding 100% of
+    # a total that is itself partial. `RRA-008`:131 refuses "when the full
+    # distinct set cannot be computed", and an admissible value carrying an
+    # unknown amount is exactly that; `RRA-008`:117 sets the same precedent for
+    # attach rate, where "one missing value refuses that dimension" rather than
+    # narrowing it. `RRA-004`:117 defines the basis this reconciles to as
+    # "complete sale revenue by **every** admissible value".
+    if any(entry.sale_absent for entry in ordered):
+        return None
     ranked = [entry.sale_total for entry in ordered if entry.sale_present]
     total = sum(ranked, Decimal(0))
     if total <= 0 or any(value < 0 for value in ranked):

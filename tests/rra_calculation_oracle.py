@@ -1076,16 +1076,20 @@ The violated rule is `RRA-004`'s partial-coverage prohibition, the same one
 published as the dataset's revenue when the other row's revenue is simply unknown,
 and units 10 likewise. ASP's refusal is correct and must survive the correction.
 
-Production also publishes concentration over this dataset with distinct_values 2
-and ranked_values 1 -- ranking the single product that has revenue and reporting
-its share as 1.0000. Two products exist in these two rows, P1 and P2, and only
-P1 carries revenue; `_curve` ranks the accumulators whose measure is `present`,
-so one of the two distinct values is ranked. `RRA-008` requires "complete sale
-revenue" over the ranked
-set, so the whole curve should refuse; a single product holding 100% of a revenue
-total that is itself incomplete is the most misleading number in the oracle. That
-gap belongs to `V-concentration` and is recorded here rather than given its own
-dataset, because it is caused by the same incomplete revenue column.
+The concentration gap recorded here is **closed** as of `#322`. Production used
+to publish this curve with distinct_values 2 and ranked_values 1 -- ranking the
+one product that carries revenue and reporting its share as 1.0000, a single
+product holding 100% of a revenue total that is itself incomplete, which was the
+most misleading number in the oracle. `_curve` now refuses outright when any
+ranked accumulator's sale revenue is incomplete, so this dataset yields no curve.
+
+The first attempt at that fix dropped the incomplete value from the ranking
+instead, which left the survivor published at 1.0000 -- the same misleading
+figure by a shorter route. Refusing is what `RRA-008`:131 requires ("refuses when
+the full distinct set cannot be computed"), and `RRA-008`:117 sets the precedent
+on the identical hole in attach rate: "one missing value refuses that dimension"
+rather than narrowing it. A partial population is refused, never quietly
+resized.
 """
 
 
