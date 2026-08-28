@@ -83,11 +83,12 @@ def _basis(**overrides: object) -> BasisDeclaration:
 
 def _contract(
     *,
+    contract_id: str = "sc-001",
     evidence: str = "operator attestation 2026-08-25",
     **overrides: object,
 ) -> SourceContract:
     defaults: dict[str, object] = {
-        "attribution": ContractAttribution(contract_id="sc-001", evidence=evidence),
+        "attribution": ContractAttribution(contract_id=contract_id, evidence=evidence),
         "events": _event(),
         "identity": _identity(),
         "basis": _basis(),
@@ -222,6 +223,20 @@ def test_a_contract_without_evidence_is_refused() -> None:
     """An attestation nobody signed is not an attestation."""
     with pytest.raises(ContractRefused):
         _contract(evidence="   ")
+
+
+def test_a_contract_without_an_identifier_is_refused() -> None:
+    """`RRA-003` requires the attestation's own identity, not only its evidence.
+
+    `build_source_contract` checks both halves of `ContractAttribution`, and the
+    identifier is the half nothing here could reach: this module's `_contract`
+    helper accepted an `evidence` override and hardcoded `contract_id`, so the
+    guard at `source_contract.py:164` was proven only through the HTTP and
+    profile layers. A contract attributed to `""` cannot be cited by anything
+    downstream, which is what makes it a refusal rather than a blank field.
+    """
+    with pytest.raises(ContractRefused):
+        _contract(contract_id="   ")
 
 
 def test_a_blank_mapped_column_name_is_refused() -> None:
