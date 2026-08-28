@@ -64,7 +64,18 @@ def package_for(
     rows: list[tuple[date | None, str]],
     *,
     attested: bool = True,
+    attested_days: tuple[date, ...] | None = None,
 ) -> FactPackage:
+    """One package through the real pipeline, attested unless told otherwise.
+
+    `attested_days` narrows the attestation to fewer days than the rows carry,
+    which is what an export ending mid-period looks like: the signature spans
+    the *data*, so the attested days form a contiguous prefix of it and
+    `build_coverage_signature` records `COVERAGE_MODE_PREFIX`. Folded in here
+    rather than given its own builder, because a second copy of this
+    assembly differing in one argument is what drives a test module's
+    cohesion down.
+    """
     body = b"".join(
         f"{'' if when is None else when.isoformat()},"
         f"{amount},1,INV-{index},Beverages,Cairo\n".encode()
@@ -84,7 +95,13 @@ def package_for(
     # manifest", so a module whose subject is comparison arithmetic has to
     # attest its own coverage or every case refuses before reaching the
     # arithmetic it was written to prove.
-    dated = () if not attested else tuple(when for when, _ in rows if when is not None)
+    dated = (
+        ()
+        if not attested
+        else attested_days
+        if attested_days is not None
+        else tuple(when for when, _ in rows if when is not None)
+    )
     manifest = (
         None
         if not dated
@@ -697,47 +714,11 @@ def test_a_package_comparison_refuses_offers_no_window_to_consume() -> None:
     assert comparison.accepted_window(monthly(1)) is None
 
 
-def _prefix_attested_monthly() -> FactPackage:
-    """Monthly rows whose manifest attests a contiguous prefix of the span.
-
-    The last day is left unattested, which is what an export ending mid-period
-    looks like: `build_coverage_signature` records `COVERAGE_MODE_PREFIX`,
-    while the two months `compared_labels` names remain interior and whole.
-    """
-    rows = [(month_start(offset), '100.00') for offset in range(-1, 4)]
-    body = b''.join(
-        f"{when.isoformat()},{amount},1,INV-{index},Beverages,Cairo\n".encode()
-        for index, (when, amount) in enumerate(rows)
-    )
-    content = HEADER + body
-    profile = build_profile(
-        content=content,
-        media_type=CSV_MEDIA_TYPE,
-        source_sha256_hex=hashlib.sha256(content).hexdigest(),
-    )
+def _prefix_attested() -> FactPackage:
+    """Monthly rows whose manifest stops one day short of the data."""
+    rows = [(month_start(offset), "100.00") for offset in range(-1, 4)]
     days = tuple(when for when, _ in rows)
-    with published_mapping_identity():
-        mapping = build_mapping(profile, contract=TEST_CONTRACT)
-        return build_fact_package(
-            AdmittedInput(
-                # The manifest window stops before the data does, which is what
-                # an export ending mid-period looks like: the signature spans
-                # `min(days)..max(days)` off the *data*, so the attested days
-                # form a contiguous prefix of it and the mode is PREFIX.
-                manifest=attesting_manifest(
-                    content=content,
-                    contract=TEST_CONTRACT,
-                    days=days[:-1],
-                ),
-                content=content,
-                media_type=CSV_MEDIA_TYPE,
-                profile=profile,
-                mapping=mapping,
-                decision=assess_admissibility(profile, mapping),
-                contract=TEST_CONTRACT,
-            ),
-        )
-
+    return package_for(rows, attested_days=days[:-1])
 
 def test_the_partial_window_caveat_is_governed_and_bilingual() -> None:
     """`RRA-008` requires a partial-prefix comparison to carry "the bilingual
@@ -868,7 +849,7 @@ def test_a_complete_comparison_is_not_labelled_partial() -> None:
     derivation is the fix, not refining it -- the signature set carries no
     per-window answer to refine against.
     """
-    package = _prefix_attested_monthly()
+    package = _prefix_attested()
 
     # The premise: the package really does retain a prefix-mode signature, or
     # this case cannot show the caveat being derived from one.
@@ -903,7 +884,7 @@ def test_no_code_path_yet_attaches_the_partial_window_caveat() -> None:
     wired, which is exactly when someone must come back and decide what the
     caveat now attaches to rather than letting it quietly reappear.
     """
-    package = _prefix_attested_monthly()
+    package = _prefix_attested()
     assert any(
         signature.mode == COVERAGE_MODE_PREFIX
         for signature in package.coverage_signatures
