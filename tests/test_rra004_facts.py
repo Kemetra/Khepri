@@ -2054,3 +2054,79 @@ def test_a_missing_key_component_refuses_only_what_needs_the_key() -> None:
     assert result.value(METRIC_AVERAGE_SELLING_PRICE) == str(
         expected["average_selling_price"]
     )
+
+
+def test_a_repeated_event_key_refuses_the_additive_results() -> None:
+    """`RRA-003`: a repeated event key "refuses every additive or
+    distinct-transaction result that could include it".
+
+    Detection alone is not the rule. A keyed contract whose key repeats has no
+    proven identity for those rows, and the doubled totals published anyway
+    until the flag reached `_totals`.
+
+    Two rows sharing `INV-1`: either two events wrongly given one key, or one
+    event exported twice. The extract does not say which, which is the same
+    ambiguity the row-signature test answers for the other identity proof.
+    """
+    from khepri.rra.source_contract import (
+        BasisDeclaration,
+        ContractAttribution,
+        EventDeclaration,
+        IdentityDeclaration,
+        build_source_contract,
+    )
+
+    contract = build_source_contract(
+        attribution=ContractAttribution(
+            contract_id="src_keyed", evidence="Test fixture: a keyed extract."
+        ),
+        events=EventDeclaration(
+            event_kind_column=None,
+            sale_only=True,
+            status_column=None,
+            posted_only=True,
+            currency_column=None,
+            currency_code="EGP",
+        ),
+        identity=IdentityDeclaration(
+            event_key_columns=("line_id",),
+            unique_line_grain_attested=False,
+            transaction_id_column="invoice_no",
+            transaction_key_components=(),
+            transaction_id_unique_package_wide=True,
+        ),
+        basis=BasisDeclaration(
+            revenue_vat_exclusive=True,
+            revenue_is_net_of_returns=False,
+            units_are_integral=True,
+            cost_is_extended=True,
+            discount_is_additive=True,
+        ),
+    )
+    content = (
+        b"date,revenue,units,invoice_no,line_id\n"
+        b"2026-03-04,250.00,5,INV-1,L1\n"
+        b"2026-03-05,300.00,6,INV-2,L1\n"
+    )
+    profile = build_profile(
+        content=content,
+        media_type=CSV_MEDIA_TYPE,
+        source_sha256_hex=hashlib.sha256(content).hexdigest(),
+    )
+    mapping = build_mapping(profile, contract=contract)
+    result = build_fact_package(
+        AdmittedInput(
+            content=content,
+            media_type=CSV_MEDIA_TYPE,
+            profile=profile,
+            mapping=mapping,
+            decision=assess_admissibility(profile, mapping),
+            contract=contract,
+        )
+    )
+
+    for metric in (METRIC_REVENUE, METRIC_UNITS, METRIC_TRANSACTIONS):
+        assert result.fact(metric) is None, f"{metric} published over a repeated key"
+        refused = result.refusal(metric)
+        assert refused is not None
+        assert refused.reason == REASON_REPEATED_ROW_SIGNATURE

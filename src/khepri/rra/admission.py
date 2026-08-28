@@ -135,6 +135,14 @@ class AdmittedEvents:
     #: a caller reading the frame directly can narrow it to the same rows rather
     #: than re-deriving the exclusion and risking a different answer.
     kept_positions: tuple[int, ...]
+    #: Whether a declared event key repeats across the admitted rows. `RRA-003`
+    #: proves identity "in exactly one of these ways", and a contract naming
+    #: `event_key_columns` chose the first -- but declaring a key is not proof
+    #: that its values are unique, and `source_contract` validates only that
+    #: exactly one proof was declared. A field rather than an exception for
+    #: `monetary_refused`'s reason: the sentence names the results it refuses,
+    #: and raising would take the ones it does not.
+    repeated_event_key: bool = False
 
     @property
     def revenue_total(self) -> Decimal | None:
@@ -256,6 +264,7 @@ def admit_events(
         monetary_refused=monetary_refused,
         excluded_count=excluded,
         kept_positions=tuple(kept),
+        repeated_event_key=_repeated_event_key(reading, contract, frozenset(kept)),
     )
 
 
@@ -453,6 +462,47 @@ def _transaction_id_column(
         None if raw is None else str(raw).strip() or None
         for raw in _raw_column(frame, labels[declared])
     ]
+
+
+def _repeated_event_key(
+    reading: _Reading,
+    contract: SourceContract,
+    kept: frozenset[int],
+) -> bool:
+    """Whether a declared event key repeats across the rows admission kept.
+
+    `RRA-003`: "A repeated event key, whether identical or conflicting, refuses
+    every additive or distinct-transaction result that could include it." Two
+    rows sharing one key are either two events wrongly given the same identity or
+    one event exported twice, and the extract does not say which -- the same
+    ambiguity the canonical-row-signature test answers for contracts that took
+    the other identity proof.
+
+    Asked only of contracts that took this proof. A contract attesting unique
+    line grain declares no key columns, and its own falsification is the repeated
+    row signature `facts` checks.
+
+    Excluded rows are not consulted: `RRA-003` excludes void and cancelled events
+    "from every population", so a key repeated only on a row already dropped
+    refuses nothing.
+    """
+    components = contract.identity.event_key_columns
+    if not components:
+        return False
+    columns = [
+        _column(reading.frame, reading.labels, component)
+        for component in components
+        if component in reading.labels
+    ]
+    if len(columns) != len(components):
+        return False
+    seen: set[tuple[str | None, ...]] = set()
+    for index in sorted(kept):
+        key = tuple(column[index] for column in columns)
+        if key in seen:
+            return True
+        seen.add(key)
+    return False
 
 
 def _transaction_key_column(

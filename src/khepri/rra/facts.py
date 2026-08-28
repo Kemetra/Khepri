@@ -909,8 +909,16 @@ def _build(
     # Revenue, units, cost, discount and the margin pair read the financial
     # population, so any repeated kind reaches them. Transactions, AOV and ASP
     # read posted sales only.
-    repeated_rows = bool(repeated_kinds)
-    repeated_sales = EVENT_SALE in repeated_kinds
+    #
+    # A repeated *event key* is not scoped that way. The signature test groups by
+    # kind because it compares values, and a duplicated return leaves the
+    # sale-only populations whole. A key is the row's identity: a repeat means
+    # the package cannot say how many events it holds, so `RRA-003`'s "every
+    # additive or distinct-transaction result that could include it" reaches all
+    # of them -- a row whose identity is unproven could be in any population.
+    repeated_key = admitted_events.repeated_event_key
+    repeated_rows = bool(repeated_kinds) or repeated_key
+    repeated_sales = EVENT_SALE in repeated_kinds or repeated_key
     totals = _totals(
         measures,
         admitted_events,

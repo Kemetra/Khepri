@@ -1230,3 +1230,39 @@ def test_the_composite_key_components_are_read_once_each_not_once_per_row() -> N
         "times for 500 -- the composite key's component reads are inside the "
         "per-row loop"
     )
+
+
+REPEATED_EVENT_KEY_CSV = (
+    b"date,invoice,event_kind,status,amount,qty,currency\n"
+    b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+    b"2026-03-05,INV-1,sale,posted,200.00,4,EGP\n"
+)
+
+
+def test_a_repeated_event_key_refuses_the_populations_it_could_include() -> None:
+    """`RRA-003`: "A repeated event key, whether identical or conflicting,
+    refuses every additive or distinct-transaction result that could include it."
+
+    Identity is proven "in exactly one of these ways", and a contract naming
+    `event_key_columns` chose the first. Declaring a key is not proof that the
+    values in it are unique -- `source_contract` validates that exactly one proof
+    was *declared*, and nothing read the column to check. So a keyed extract
+    whose key repeats published doubled additive totals, with the branch-2
+    signature test correctly declining to judge it.
+
+    Two rows sharing `INV-1` are either two events wrongly given one key or one
+    event exported twice, and the extract does not say which.
+    """
+    admitted = admit(REPEATED_EVENT_KEY_CSV, mapped_contract())
+
+    assert admitted.repeated_event_key is True
+
+
+def test_distinct_event_keys_are_not_a_repetition() -> None:
+    """The control: the guard must fire on repetition, not on having a key.
+
+    Without this, refusing every keyed extract would pass the case above.
+    """
+    admitted = admit(VOID_AND_POSTED_CSV, mapped_contract())
+
+    assert admitted.repeated_event_key is False
