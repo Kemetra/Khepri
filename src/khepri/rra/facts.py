@@ -1206,33 +1206,79 @@ def _build(
         # facts for ambiguous identity while offering a consumer the same
         # unproven rows as authoritative evidence to reconcile against -- nine
         # bases each carrying `event_count 2` for two rows that may be one event.
-        # Gated on `repeated_sales`, not `repeated_rows`. These are sale-only
-        # artifacts, so a repeat confined to returns must not take them: with
-        # two identical returns beside valid sales, Transactions, AOV and ASP
-        # rightly publish (2, 85.00, 56.67), and stripping the bases left all
-        # three citing nothing -- which `RRA-004`:123 forbids outright, since
-        # every derived fact must cite "exactly one compatible basis". Refusing
-        # too widely here breaks a different rule than publishing too widely did.
+        # The aligned daily bases carry `financial_posted` values, which
+        # `RRA-004`:14 defines as "posted sale and return events" -- so a repeat
+        # in either kind doubles them, and this follows `repeated_rows`.
         daily_bases=(
             ()
-            if repeated_sales
+            if repeated_rows
             else _daily_bases_of(
                 admitted, measures, admitted_kinds, admitted_events.currency
             )
         ),
-        retained_bases=()
-        if repeated_sales
-        else retain_bases(
-            events=admitted_events.events,
-            binding=BasisBinding(
-                input_digest=profile.source_sha256_hex,
-                mapping_version=mapping.mapping_version,
-                currency=admitted_events.currency,
-                precision=money,
+        # The retained bases split by population rather than taking one flag.
+        # Two identical returns beside valid sales left the `financial_posted`
+        # bases counting 4 events while revenue and units had refused, and the
+        # `sales_posted` bases correctly counting 2 beside a published
+        # Transactions 2 -- one flag cannot be right for both. `_unrepeated`
+        # keeps each family only where its own population is unaffected.
+        retained_bases=_unrepeated(
+            retain_bases(
+                events=admitted_events.events,
+                binding=BasisBinding(
+                    input_digest=profile.source_sha256_hex,
+                    mapping_version=mapping.mapping_version,
+                    currency=admitted_events.currency,
+                    precision=money,
+                ),
+                counts=_population_counts(measures),
+                transaction_counts=_population_transaction_counts(measures),
             ),
-            counts=_population_counts(measures),
-            transaction_counts=_population_transaction_counts(measures),
+            repeated_rows=repeated_rows,
+            repeated_sales=repeated_sales,
         ),
+    )
+
+
+#: `RRA-004`:14 -- `financial_posted` is "posted sale and return events", and the
+#: `financial_*` populations are the ones a duplicated return reaches. Matched by
+#: prefix so a population added later joins the right side by its own name.
+_FINANCIAL_POPULATION_PREFIX = "financial_"
+
+
+def _unrepeated(
+    bases: tuple[RetainedBasis, ...],
+    *,
+    repeated_rows: bool,
+    repeated_sales: bool,
+) -> tuple[RetainedBasis, ...]:
+    """The bases whose own population no repeated signature reaches.
+
+    A retained basis is the evidence a figure is reconciled *against*, so one
+    built over rows of unproven identity is worse than absent: `RRA-004`:123
+    offers it to a consumer as authoritative. But the two populations are
+    reached by different repeats, and one flag for both is wrong either way.
+
+    `financial_posted` is "posted sale and return events" (`RRA-004`:14), so a
+    duplicated return doubles it exactly as a duplicated sale would. The
+    `sales_*` populations exclude returns entirely, so a repeat confined to
+    returns leaves them whole -- and they must stay, because Transactions, AOV
+    and ASP still publish in that case and `RRA-004`:123 requires every derived
+    fact to cite exactly one compatible basis.
+
+    Measured on two identical posted returns beside two valid sales: the
+    `financial_posted` bases counted 4 events while revenue and units had
+    refused, and the `sales_posted` bases counted 2 beside a published
+    Transactions 2. Both readings are correct for their own population.
+    """
+    return tuple(
+        basis
+        for basis in bases
+        if not (
+            repeated_rows
+            if basis.population.startswith(_FINANCIAL_POPULATION_PREFIX)
+            else repeated_sales
+        )
     )
 
 

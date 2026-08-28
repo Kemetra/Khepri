@@ -1402,4 +1402,18 @@ def test_a_repeat_confined_to_returns_keeps_the_sale_only_evidence() -> None:
     assert published["transactions"] == "2"
     # The sale-only facts stand, so the evidence they cite must stand with them.
     assert package.sale_units_total == 3
-    assert package.retained_bases != ()
+
+    # And the split is by population, not one flag for all nine bases. The
+    # `financial_*` populations are "posted sale and return events"
+    # (`RRA-004`:14), so the duplicated return doubles them -- they counted 4
+    # events while revenue and units refused -- while every `sales_*` population
+    # excludes returns and counted 2 beside the published Transactions 2.
+    populations = {basis.population for basis in package.retained_bases}
+    assert populations == {
+        "sales_posted",
+        "sales_complete_transactions",
+        "sales_complete_revenue_units",
+        "sales_complete_revenue_transactions",
+        "sales_complete_units_transactions",
+    }
+    assert all(basis.event_count == 2 for basis in package.retained_bases)
