@@ -499,12 +499,21 @@ def _repeated_event_key(
     columns = [
         _column(reading.frame, reading.labels, component) for component in components
     ]
-    seen: set[tuple[str | None, ...]] = set()
+    seen: set[tuple[str, ...]] = set()
     for index in sorted(kept):
         key = tuple(column[index] for column in columns)
+        # A blank component is no key at all, and it reports here as a repeat
+        # for the reason a repeat does: the row's identity is unproven, so the
+        # additive results that would include it cannot be stated. Treating
+        # `(None,)` as an ordinary value made it unique-by-default, and a row
+        # with a blank `line_id` had its amounts in every total under a keyed
+        # contract whose proof it never satisfied. `RRA-003` requires the key
+        # to be "unique within the package"; absent is not unique.
+        if any(component is None for component in key):
+            return True
         if key in seen:
             return True
-        seen.add(key)
+        seen.add(key)  # type: ignore[arg-type]
     return False
 
 

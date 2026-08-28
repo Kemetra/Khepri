@@ -1417,3 +1417,53 @@ def test_a_repeat_confined_to_returns_keeps_the_sale_only_evidence() -> None:
         "sales_complete_units_transactions",
     }
     assert all(basis.event_count == 2 for basis in package.retained_bases)
+
+
+def test_a_blank_declared_key_component_refuses_the_additive_results() -> None:
+    """A missing key is not a unique one.
+
+    `RRA-003` admits a keyed contract's identity proof only where the key "is
+    unique within the package". A blank component is not unique -- it is absent,
+    and the row it belongs to has no proven identity at all.
+
+    `_column` maps a blank cell to `None`, and treating `(None,)` as an ordinary
+    tuple made every keyless row unique by default. One row with a blank
+    `line_id` beside one properly keyed row published revenue 170.00, units 3
+    and `sale_units_total 3` over 9 retained bases -- the unproven row's amounts
+    inside every additive total, under a contract whose proof it never met.
+
+    It reports as a repeat because the consequence is the repeat's: the additive
+    and distinct-transaction results that could include the row cannot be
+    stated. What differs is only which side of the proof failed.
+    """
+    content = (
+        b"date,invoice,event_kind,status,amount,qty,currency\n"
+        b"2026-03-04,,sale,posted,100.00,2,EGP\n"
+        b"2026-03-11,INV-2,sale,posted,70.00,1,EGP\n"
+    )
+
+    package = package_from(content, mapped_contract())
+
+    refused = {refusal.metric for refusal in package.refusals}
+    assert {"revenue", "units", "transactions"} <= refused
+    assert package.sale_units_total is None
+    assert package.retained_bases == ()
+
+
+def test_complete_distinct_keys_publish_the_additive_results() -> None:
+    """The control: it is the blank that refuses, not the keyed contract.
+
+    Without this, returning `True` unconditionally from `_repeated_event_key`
+    would satisfy every assertion above while refusing every keyed extract.
+    """
+    content = (
+        b"date,invoice,event_kind,status,amount,qty,currency\n"
+        b"2026-03-04,INV-1,sale,posted,100.00,2,EGP\n"
+        b"2026-03-11,INV-2,sale,posted,70.00,1,EGP\n"
+    )
+
+    package = package_from(content, mapped_contract())
+
+    published = {fact.metric: fact.value for fact in package.facts}
+    assert published["revenue"] == "170.00"
+    assert package.retained_bases != ()
