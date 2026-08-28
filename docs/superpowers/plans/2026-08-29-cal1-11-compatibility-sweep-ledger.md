@@ -24,7 +24,7 @@ narrowed the work from "write a sweep" to "close two derivations".
 | Section-tier universe **derived from production** | `:72` — `frozenset(GOVERNED_SECTION_REASONS)`, itself derived from `SECTION_REASONS`, pinned by `test_rra006_bundle_sections.py:487` | ✅ closed chain |
 | Section prose, both languages | `:297` cross-product | ✅ |
 | Result-tier universe pinned | `:323` (`len == 12`) | ✅ |
-| Result-tier universe derived | `:73` — **hand-listed** | ⚠️ see §2 |
+| Result-tier universe derived | `:73` — **hand-listed** | ⚠️ F1b, filed |
 | Result prose, both languages | `:362` cross-product | ✅ |
 | Arabic prose pinned | `:369` | ✅ |
 | Unknown code raises | `:314`, `:398` | ✅ |
@@ -37,7 +37,7 @@ narrowed the work from "write a sweep" to "close two derivations".
 |---|---|---|
 | Caveat prose, both languages | `test_rra009_wording.py:387` | ✅ |
 | Arabic caveat prose pinned | `:392` | ✅ |
-| Caveat universe derived from production | `:89` — **hand-listed** | ⚠️ see §2 |
+| Caveat universe derived from production | `:89` — was hand-listed | ✅ F1a, closed here |
 | Composite `result:reason` form | `:403`, `:412`, `:426` | ✅ |
 
 ### Obligation 3 — no surface recalculates
@@ -70,24 +70,58 @@ wording (`:203`), package refusal proven internal (`:225`). `.v99` sentinels alr
 
 **No refusing family remains:** all four `rra008.*` families pair with `rra004.formula.v2`.
 
+`test_only_the_families_that_have_landed_are_admitted` (`:77`) was written while families were still
+landing one per commit, so it was checked for staleness rather than trusted. It is **not** stale and
+**not** a tautology: deleting the `("rra004.formula.v2", "rra008.concentration.v2")` row from
+`ADMITTED_FAMILY_PAIRS` fails it at `:105`. It compares the table against the family constants, so it
+still discriminates now that the refusing set is empty.
+
 ---
 
 ## 2. Findings
 
-### F1 — Two customer registries are hand-listed, not derived *(the delta; CLOSED in this slice)*
+### F1a — The caveat registry was hand-listed, not derived *(CLOSED in this slice)*
 
-`_RESULT_REFUSAL_CODES` (`test_rra009_wording.py:73`) and `_GOVERNED_CAVEAT_CODES` (`:89`) enumerate
-imported constants by hand. The cross-product tests compare the wording tables *against those sets*,
-so a new `CAVEAT_*` or result-tier `REASON_*` defined in production and stated on a result leaves
-every existing test green while a customer reads an untranslated code.
+`_GOVERNED_CAVEAT_CODES` (`test_rra009_wording.py:89`) enumerated imported constants by hand, and the
+cross-product tests compare the wording tables *against that set*. So a new `CAVEAT_*` defined in
+production and stated on a result left every existing test green while a customer read an
+untranslated code.
 
-The section tier does not have this hazard: its chain from `SECTION_REASONS` → `GOVERNED_SECTION_REASONS`
-→ `_SECTION_REFUSAL_CODES` → wording is fully derived.
+The section tier never had this hazard: its chain from `SECTION_REASONS` → `GOVERNED_SECTION_REASONS`
+→ `_SECTION_REFUSAL_CODES` → wording is derived end to end.
 
-**Closed here** — this is a proof gap, not a surface gap, so it is in scope for a sweep:
-`test_every_caveat_constant_defined_in_production_is_a_governed_caveat` derives the universe from the
-production modules by introspection. **Mutation-verified:** adding `CAVEAT_SWEEP_MUTANT` to
-`facts.py` fails the test; without it the suite stays green.
+**Closed here** — a proof gap, not a surface gap, so it is in scope for a sweep.
+`test_every_caveat_constant_defined_in_production_is_a_governed_caveat` derives the universe by
+walking every module under `khepri.rra` and reading its own `CAVEAT_*` constants.
+
+**Mutation evidence, two rounds — the first guard was defective and the record matters:**
+
+| Mutant | v1 (four named modules) | v2 (walked package) |
+|---|---|---|
+| `CAVEAT_*` added to `facts.py` | killed | killed |
+| `CAVEAT_*` added to `analysis/basket.py` | **SURVIVED** | killed |
+
+The first version named four source modules by hand — the very defect it was written to catch, one
+level up. `basket.py` and `concentration.py` were unscanned, and `concentration.py` already imports
+`CAVEAT_BUCKETS_TRUNCATED`, so a caveat appearing there is not hypothetical. `assert defined` catches
+"the scan found nothing", never "the scan missed a module". The walk closes it; the emptiness
+assertion on the module list guards the walk itself.
+
+Uses `vars(module)` rather than `dir(module)`: `dir()` includes imported names, which would attribute
+a constant to every module that imports it.
+
+### F1b — The result-tier registry is still hand-listed *(FILED — `RRA-009`)*
+
+`_RESULT_REFUSAL_CODES` (`:73`) has the same shape as F1a and is **not** closed here.
+
+It cannot be closed the same way. A result-tier reason is not identifiable by constant name: the
+`REASON_*` constants in `bundle.py` (20) and `narrative.py` (21) are internal
+`BundleRefused`/`NarrativeRefused` integrity codes that reach no customer, and
+`facts.REASON_PACKAGE_VERSION_UNADMITTED` is deliberately internal
+(`test_rra004_version_compatibility.py:225`). A `vars()` scan over-collects all of them.
+
+Closing it needs raise-site analysis — which reasons actually reach a `RefusedResult` — not constant
+introspection. That is a distinct piece of work under `RRA-009`, filed rather than improvised here.
 
 ### F2 — The two tiers overlap by design, and the overlap was unpinned *(CLOSED in this slice)*
 
@@ -151,7 +185,8 @@ docstring enumerates the twelfth. **Not counted as an obligation gap.**
 
 | Finding | Kind | Disposition |
 |---|---|---|
-| F1 | Proof gap | Closed in this slice, mutation-verified |
+| F1a | Proof gap (caveats) | Closed in this slice, mutation-verified over two rounds |
+| F1b | Proof gap (result tier) | Filed — needs raise-site analysis, not introspection |
 | F2 | Proof gap | Closed in this slice, mutation-verified |
 | F3 | Surface guard, `RRA-003` | Filed — separate slice |
 | F4 | Surface guard, `RRA-006` | Filed — separate slice |
@@ -161,9 +196,13 @@ docstring enumerates the twelfth. **Not counted as an obligation gap.**
 | F8 | Stale name | Filed — naming, not a gap |
 
 **No deferred refusal reason, caveat, bilingual wording, or surface representation was found.** Every
-governed code reaching a customer carries prose in both languages and a rendered surface. The two
+governed code reaching a customer carries prose in both languages and a rendered surface. The
 findings closed here are gaps in the *proof*, not in the shipped contract — consistent with line
 620's rule that a slice leaving its refusal unsurfaced for `CAL1-11` had already broken the rule.
+
+**CodeScene pre-flight was not run:** the CodeScene MCP server failed to connect this session. The
+change is 83 lines into an existing test module with no new source file, which is the shape that gate
+is least likely to flag, but the server-side gate remains the authority.
 
 Version compatibility across the assembled contract is closed for the governed triple and all four
 families.

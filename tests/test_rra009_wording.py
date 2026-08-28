@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import pkgutil
 import re
 
 import pytest
@@ -551,21 +552,36 @@ def test_wording_module_imports_cleanly_with_complete_copy() -> None:
 # expected universe from the production modules rather than restating it.
 #
 # Introspection is the point, not a shortcut. A hand-listed expectation here
-# would be the very thing it is meant to catch.
-_CAVEAT_SOURCE_MODULES = (
-    "khepri.rra.facts",
-    "khepri.rra.bundle",
-    "khepri.rra.analysis.comparison",
-    "khepri.rra.analysis.growth",
-)
+# would be the very thing it is meant to catch -- and so would a hand-listed set
+# of modules to look in. An earlier version of this scan named four modules and
+# a `CAVEAT_*` added to `analysis/basket.py` survived it: a guard that cannot see
+# the surface a new constant appears on disarms itself silently. The package is
+# walked instead, so a new module is covered the day it is added.
+def _rra_module_names() -> tuple[str, ...]:
+    """Every importable module under `khepri.rra`, the package that owns caveats."""
+    package = importlib.import_module("khepri.rra")
+    return tuple(
+        sorted(
+            info.name
+            for info in pkgutil.walk_packages(package.__path__, f"{package.__name__}.")
+        )
+    )
 
 
 def _constants_named(module_name: str, prefix: str) -> frozenset[str]:
-    """Every `str` constant in one module whose name starts with `prefix`."""
-    module = importlib.import_module(module_name)
+    """Every `str` constant in one module whose name starts with `prefix`.
+
+    Modules that cannot import (an optional dependency absent) contribute
+    nothing rather than failing the scan, which would turn an environment
+    difference into a wording finding.
+    """
+    try:
+        module = importlib.import_module(module_name)
+    except Exception:  # pragma: no cover - defensive, see docstring
+        return frozenset()
     return frozenset(
         value
-        for name in dir(module)
+        for name in vars(module)
         if name.startswith(prefix) and isinstance(value := getattr(module, name), str)
     )
 
@@ -577,8 +593,10 @@ def test_every_caveat_constant_defined_in_production_is_a_governed_caveat() -> N
     fails here until it is added to `_GOVERNED_CAVEAT_CODES` -- which the
     cross-product tests then force to carry Arabic and English prose.
     """
+    modules = _rra_module_names()
+    assert modules, "walked no modules; the scan is looking in the wrong place"
     defined = frozenset().union(
-        *(_constants_named(name, "CAVEAT_") for name in _CAVEAT_SOURCE_MODULES)
+        *(_constants_named(name, "CAVEAT_") for name in modules)
     )
     assert defined, "no CAVEAT_* constants found; the scan is looking in the wrong place"
     assert defined == frozenset(wording._GOVERNED_CAVEAT_CODES), sorted(
