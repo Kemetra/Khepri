@@ -4,8 +4,9 @@
 
 **Repository:** `Kemetra/Khepri`
 
-**Verified baseline:** `origin/main` at `8acef78` on 2026-08-26; CAL1 state reconciled to `#292`
-(`1813682`) and `#300` (`8acef78`).
+**Verified baseline:** `origin/main` at `aa19ff6` on 2026-08-29; CAL1 state reconciled to `#308`
+(`7088749`), which published all seven successor versions, and the eight correction PRs merged
+after it, through `#325` (`aa19ff6`).
 
 **Audience:** Ahmed Shaaban (owner and merge authority), Claude Code (planning and adversarial review), Codex (bounded implementation), design reviewers, and future operators.
 
@@ -36,15 +37,41 @@ Three corrections applied to the draft as a result of that review, marked in pla
 
 ## Current CAL1 reconciliation
 
-At `origin/main` `8acef78`, CAL1 has started. What the `V-mapping` publication commit still
-carries — the transaction-date refusal and the manifest exception fields — is listed in the
-`CAL1-01` ledger. `#292` (`1813682`) landed the independent oracle, owner
-residual ruling, execution ledger, manifest/source-contract API ingestion, compatibility-gate
-wiring, admission plumbing, and the source-contract journey seam; `#300` (`8acef78`) landed the
-browser coverage-manifest attestation surface. All seven successor constants remain at their
-predecessor values, so no CAL1 successor has yet published. The next action is the owner ruling on
-the delivery unit, then the final `V-mapping` publication as commit 1 of the proposed later
-seven-commit implementation PR.
+At `origin/main` `aa19ff6`, **all seven CAL1 successor versions have published.** `#308`
+(`7088749`) carried the seven ordered publication commits — `rra003.mapping.v3`,
+`rra004.package.v3`, `rra004.formula.v2`, then `rra008.comparison.v2`, `growth.v2`, `basket.v2`
+and `concentration.v2` — each moving one constant and adding its own compatibility row. The
+`xfail(strict=True)` on `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` was
+removed in that PR, as the ledger required.
+
+Prerequisites landed before it: `#292` (`1813682`) the independent oracle, owner residual ruling,
+execution ledger, manifest/source-contract API ingestion, compatibility-gate wiring, admission
+plumbing and the source-contract journey seam; `#300` (`8acef78`) the browser coverage-manifest
+attestation surface; `#303` (`a2be74e`) the manifest exception fields, which §17 previously
+carried as outstanding.
+
+**Publication is not the end of the program.** Nine PRs merged after `#308`, each closing defects
+in the now-governing contracts: `#310` (`9646223`) population corrections, `#314` (`1f535f2`)
+validator guard tests, `#315` (`6288f77`) refusals where `RRA-003`/`RRA-004` require them instead
+of a partial or doubled total, `#321` (`c5bfd44`) per-bucket completeness, `#323` (`604ff4b`) the
+concentration curve refusing rather than narrowing, `#324` (`c24b857`) a missing key component
+refusing four results rather than the package, and `#325` (`aa19ff6`) declared-event-key
+collisions, plus the docs slices `#316` (`9bcbb2e`) and `#319` (`1428d74`).
+
+That these were found *after* publication is the substantive fact for planning: the published
+contracts governed real defects, and the review rounds on `#325` alone surfaced three
+under-refusals — cases where an identity proof that could not be evaluated was reported as one
+that passed. Four findings are deferred on `#326`.
+
+`CAL1-11` through `CAL1-15` — the compatibility sweep, mutation and pharmacy golden evidence, the
+validation gate, local staging, and external review — remain open. No pharmacy golden fixture
+exists in `tests/`.
+
+**The delivery unit was never ruled on.** `#301` recorded the one-PR/seven-commit model as
+explicitly proposed and awaiting an owner ruling; no `KHEPRI-DEC-*` row records one. In practice
+the owner merged `#308` as that single seven-commit PR, and then merged nine further PRs
+individually. This roadmap records what happened; it does not resolve the open question, and
+§17's queue is annotated accordingly.
 
 ## UX reconciliation — merged via #306
 
@@ -128,8 +155,10 @@ Where each task table now lives:
 | `#152` | Apply the RCA construction-boundary stance to `khepri.rra` records | `S1` | `S1-05` closes it only after every classified high-risk record is addressed or explicitly accepted |
 | `#231` | `R7-03` ships live-authorization evidence with no mutation proof that its guards can fail | `S1` triage, then one bounded slice | A green evidence suite is not proof a guard can fail. Rank it in `S1-02`, ahead of comparison work that inherits those guards |
 | `#211` | Deferred minor review findings, batched | Whichever program next touches the named code | Includes consolidating the two boundary scanners `R7-07` left behind. Drain opportunistically; do not let it grow unread |
+| `#326` | Three over-refusals from the `#323`/`#324`/`#325` review round, plus minting `repeated_event_key` as its own reason code | `CAL1` | All four withhold a provable figure rather than publishing a wrong one, so none blocks. The reason-code item needs seven files in lockstep: `wording.py` enforces bilingual completeness at import, so a half-landed code fails the whole suite |
+| `#311` | `RRA-004`:141's partial-window selection has no producer, so its caveat is unreachable | `CAL1` or a later comparison slice | `RRA-004`:141 says the package **may** derive the prefix projection, so no published figure is wrong. Needs a new governed carrier, not a fix |
 
-None of the three blocks `CAL1`.
+None of the five blocks `CAL1`.
 
 ---
 
@@ -550,7 +579,7 @@ publish.
 - **The coverage-manifest ingestion path exists.** The manifest is attested on `POST /api/v1/beta/profile` as an optional `coverage_manifest` field (`coverage_request.CoverageManifestBody`), baked into the content-addressed profile document, and read back at use time through `GET /api/v1/beta/coverage/completeness` (`src/khepri/rra/coverage_api.py`). It rides the profile request rather than its own POST because attaching a manifest to an existing profile would rewrite `profile_digest`, which every already-published package cites. Without this, `rra003.mapping.v3` would ship an identity that can confirm nothing, and every completeness-dependent comparison and growth result would refuse permanently for a reason about the software rather than about the data.
 - **The upload journey collects the source contract.** `journey/assets/upload.js`'s `declaration()` builds the contract from fields tagged `data-contract-field`/`data-contract-required`, and `profileRequest()` sends it as `source_contract` (`upload.js:49`). Before this, the page posted `{requested_semantics: []}` alone, so making the contract required would have returned 422 on every web upload and stranded the customer on the upload page.
 
-`CAL1-03` carried both, and its acceptance said so: a real upload can submit a manifest and a contract. **The contract half is met; the manifest half is met in shape but not in full.** The API accepts an optional `coverage_manifest` on `POST /api/v1/beta/profile` (`#292`, `1813682`), and `#300` (`8acef78`) added the browser surface: `upload.js` collects `[data-manifest-field]` controls and sends `coverage_manifest` only when the customer attests, with `upload.html.j2` carrying the controls and their bilingual wording. A real upload can now submit a manifest and a contract, so a completeness-dependent comparison or growth request from a browser upload no longer refuses merely for want of an attestation. **The exception fields are still uncollected.** `upload.html.j2` collects timezone, covered window, covered days, aggregate scope, event kinds and statuses, while `CoverageManifestBody` also carries `closed_days`, `extraction_gap_days` and `partial_terminal_boundary`, which the browser cannot set and which therefore serialize as absent. An operator who knows of a closure, an extraction gap or a partial terminal boundary cannot attest it from the journey, so a known gap can be recorded as no gap. (`store_roster` is **not** a gap: `RRA-003` treats it and `aggregate_scope` as alternatives and `coverage.py` refuses a manifest carrying both, so the journey collecting the aggregate scope is the complete choice.) Completing those controls stays inside `V-mapping`, since `rra003.mapping.v3` governs manifest confirmation.
+`CAL1-03` carried both, and its acceptance said so: a real upload can submit a manifest and a contract. **Both halves are now met.** The API accepts an optional `coverage_manifest` on `POST /api/v1/beta/profile` (`#292`, `1813682`), and `#300` (`8acef78`) added the browser surface: `upload.js` collects `[data-manifest-field]` controls and sends `coverage_manifest` only when the customer attests, with `upload.html.j2` carrying the controls and their bilingual wording. A real upload can now submit a manifest and a contract, so a completeness-dependent comparison or growth request from a browser upload no longer refuses merely for want of an attestation. **The exception fields are collected as of `#303` (`a2be74e`).** `upload.html.j2` now carries `closed_days`, `extraction_gap_days` and `partial_terminal_boundary` alongside timezone, covered window, covered days, aggregate scope, event kinds and statuses. The defect this paragraph previously recorded — an operator who knows of a closure, an extraction gap or a partial terminal boundary could not attest it from the journey, so a known gap was recorded as no gap — is closed. (`store_roster` is **not** a gap: `RRA-003` treats it and `aggregate_scope` as alternatives and `coverage.py` refuses a manifest carrying both, so the journey collecting the aggregate scope is the complete choice.) Completing those controls stays inside `V-mapping`, since `rra003.mapping.v3` governs manifest confirmation.
 
 With that surface landed, the first ordered commit of the later implementation PR carries the
 remaining admission rules and moves `rra003.mapping.v3`.
@@ -1657,7 +1686,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 
 ---
 
-## 16. Recommended current status at `0216287`
+## 16. Recommended current status at `aa19ff6`
 
 *This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-023` makes `R7-06`'s definition of done include "flipping §16's `R7` row". Like `§15`, it may not be renumbered without amending the decision that cites it.*
 
@@ -1674,7 +1703,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
 | R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
 | R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
-| **CAL1 Calculation correction** | **IN_IMPLEMENTATION** | Both blockers this row previously named are discharged: `docs/superpowers/plans/2026-08-26-cal1-01-v-mapping-execution-ledger.md` is the approved ledger, and `#292` (`1813682`) merged `V-mapping`'s admission, coverage-manifest ingestion, and journey work to `main`. **The slice is not complete and `rra003.mapping.v3` has not published** — `mapping.py:22` still pins `rra003.mapping.v2` and `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` is `xfail(strict=True)` by design, because the ledger makes it a stop condition that no PR moves `MAPPING_VERSION` before the publication commit. All seven successor constants remain unpublished. The constant moves in the first ordered publication commit of the proposed later implementation PR, and the strict marker fails there to force its own removal. **Next: the owner ruling on the delivery unit**, which gates opening that PR |
+| **CAL1 Calculation correction** | **IN_IMPLEMENTATION** | **All seven successor versions published at `#308` (`7088749`)** — `mapping.py:22` pins `rra003.mapping.v3`, `facts.py:92-93` pin `rra004.package.v3` and `rra004.formula.v2`, and the four `rra008.*` families pin their `v2` constants. The strict `xfail` on `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` was removed there, as designed. Nine PRs merged after it correcting defects in the now-governing contracts, through `#325` (`aa19ff6`). **`IN_IMPLEMENTATION`, not `MERGED`, per §15**: merged work exists on `main` and `CAL1-11` through `CAL1-15` are open — the compatibility sweep, mutation and pharmacy golden evidence (no pharmacy fixture exists in `tests/`), the validation gate, local staging, and external review. Carries `#326` and `#311`; neither blocks. **Next: `CAL1-11`**, the catalogue-wide sweep proving no slice deferred a refusal reason, caveat, wording, or surface |
 | **T1 Trust/catalog** | PROPOSED | Needs bounded authority; design can proceed during late CAL1 |
 | **U1 Design system** | READY_FOR_PLAN | Shell primitives exist; data/evidence component work depends on T1 contracts |
 | **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain |
@@ -1705,14 +1734,13 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 ### Critical path
 
 1. ~~**CAL1-01/02:** create the execution ledger, fix the slice sequence, add independent RED fixtures.~~ **Done** — `docs/superpowers/plans/2026-08-26-cal1-01-v-mapping-execution-ledger.md`.
-2. **Obtain the owner ruling on the delivery unit, then open one later CAL1 implementation PR from a fresh `origin/main` carrying `#300` (`8acef78`) or later**, carrying all seven publication commits. The seven-commits-in-one-pull-request model is proposed, not settled, and no implementation pull request opens before that ruling. Intermediate commits are reviewed and tested but never merged separately; only the complete final head may merge.
-3. **Commit 1 — `V-mapping`:** finish `CAL1-03` + `CAL1-05a` + `CAL1-03g` and move only `rra003.mapping.v3`. **Prerequisites merged:** `#292` (`1813682`) landed the admission rules, coverage-manifest API ingestion, the gate wiring, and the journey's source-contract collection; `#300` (`8acef78`) landed the browser manifest attestation surface. **Still open:** the publication step and the admission rules it carries — the transaction-date refusal and the manifest exception fields, both recorded as outstanding in the `CAL1-01` ledger. This commit moves `MAPPING_VERSION`, which is why `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` is `xfail(strict=True)` until then. Completing `V-mapping` without `CAL1-03g` opens the very window the gate exists to close.
-4. **Commit 2 — `V-package`:** publish `rra004.package.v3` once and complete, from `CAL1-04` + `CAL1-06`, with package population, basis, and coverage fields only and no residual field. Do not carry `CAL1-04` alone.
-5. **Commit 3 — `V-formula`:** publish `rra004.formula.v2` once and complete, from `CAL1-05b` + `CAL1-07a` + `CAL1-09a` + `CAL1-10a`. It precedes the derived families, which consume it.
-6. **Commits 4–7:** publish `V-comparison`, then `V-growth`, then `V-basket`, then `V-concentration`, in that order — `V-growth` after `V-comparison` because `RRA-008` makes growth consume comparison's window, and `V-growth` owns all rounding-residual evidence. Concentration is last. Every commit carries its own refusals, bilingual wording, surfaces, RED/GREEN, reconciliation, and owned compatibility row.
-7. **CAL1-11/12:** run the final compatibility sweep; add mutation and pharmacy golden evidence.
-8. **CAL1-13/14/15:** pass the assembled validation gate, local staging, and external review, then
-   merge the one complete seven-commit PR.
+2. ~~**Obtain the owner ruling on the delivery unit, then open one CAL1 implementation PR carrying all seven publication commits.**~~ **Superseded by events.** `#308` (`7088749`) merged as exactly that PR — seven ordered publication commits, one constant each. The ruling itself was never recorded: `#301` left the one-PR model explicitly proposed, and no `KHEPRI-DEC-*` row settles it. **The "never merged separately" rule did not hold afterwards**: nine PRs merged individually between `7088749` and `aa19ff6`, correcting defects in the published contracts. Whether that model governs the remaining `CAL1-11`…`CAL1-15` work is an open owner question; this queue records the practice rather than resolving it.
+3. ~~**Commits 1-7 — publish the seven successor versions in governed order.**~~ **Done at `#308` (`7088749`)**, in the order this queue specified: `V-mapping`, `V-package`, `V-formula`, `V-comparison`, `V-growth`, `V-basket`, `V-concentration`. Each moved one constant and carried its own compatibility row. The prerequisites this queue tracked as open are also closed — `#303` (`a2be74e`) collected the manifest exception fields, and the strict `xfail` on `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` was removed in `#308`.
+4. ~~**The transaction-date refusal and manifest exception fields.**~~ **Done** — `#303` (`a2be74e`).
+5. **Correction work found after publication is not queued here.** Nine PRs through `#325` (`aa19ff6`) closed defects in the now-governing contracts; `#326` and `#311` carry what is deferred. Neither blocks `CAL1-11`.
+6. **`CAL1-11` — the final compatibility sweep.** This is the next actionable CAL1 task. Prove no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and close version compatibility across the assembled contract. The `#325` review round is direct evidence this sweep is needed: it found refusal prose that named a cause untrue of the input reaching it.
+7. **`CAL1-12` — mutation and pharmacy golden evidence.** No pharmacy golden fixture exists in `tests/` today. Named mutants for row-vs-transaction, unequal windows, unmatched populations, full-set concentration, sign/currency rules, and publication gating must be killed.
+8. **`CAL1-13/14/15`:** pass the assembled validation gate, run PostgreSQL/MinIO local staging end to end, and complete external review. `CAL1-15`'s acceptance — "every family sits on its single governed successor version, and no transitional version was published on `main`" — is now a property to *verify against the merged history*, not to achieve: the seven versions published at `#308` and no transitional version was published.
 9. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
 10. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
 11. **OPS1-01:** activate the governance a provisional non-production bootstrap needs, and settle provider, region, residency, and products. No final capacity claim is made here.
