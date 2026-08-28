@@ -3,7 +3,7 @@
 **What changed and why.** This adapter used to prove its storage policy by reading
 five fields off the `PutObject` response: the checksum, `ServerSideEncryption ==
 "aws:kms"`, the exact customer managed key ARN, `BucketKeyEnabled`, and the
-absence of a `VersionId`. `KHEPRI-DEC-008` retires that arrangement, because no
+absence of a `VersionId`. `KHEPRI-DEC-028` retires that arrangement, because no
 S3-compatible store outside AWS can satisfy it -- DigitalOcean Spaces has no
 customer managed key and never returns `BucketKeyEnabled`, and MinIO rewrites the
 key identifier to a form carrying neither region nor account. Asking a provider to

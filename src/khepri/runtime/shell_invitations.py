@@ -32,7 +32,7 @@ from khepri.runtime.shell_frame import organization_frame
 #: `InvitationService.issue` takes `expires_at` with no default, deliberately: `FR-016` requires an
 #: explicit expiry and fixes no lifetime, so a constant in the domain would put a product decision
 #: there. The shell supplies one, and seven days matches the seven-day object expiry and backup
-#: retention `KHEPRI-DEC-008` fixes -- its rule that "no retention horizon is quietly longer than
+#: retention `KHEPRI-DEC-028` fixes -- its rule that "no retention horizon is quietly longer than
 #: another" applies to an invitation as much as to content.
 INVITATION_LIFETIME = timedelta(days=7)
 

@@ -7,7 +7,7 @@ encrypted is fabricated evidence rather than a test double. Local development us
 the production class against a real endpoint instead, so the code exercised here is
 the code that runs in the runtime.
 
-**What `KHEPRI-DEC-008` changed about this module.** It used to provision a
+**What `KHEPRI-DEC-028` changed about this module.** It used to provision a
 LocalStack KMS key and pass its ARN and account to the store, because the store
 proved its policy by reading `ServerSideEncryption`, `SSEKMSKeyId`, and
 `BucketKeyEnabled` off the response. Encryption is now the application's own work,

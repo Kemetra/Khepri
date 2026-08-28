@@ -2,7 +2,7 @@
 
 This module implements the delivery half of RRA-007, which states its obligations as
 properties -- "leases, retry limits, restart recovery, and orphan detection" -- and
-names no provider mechanism. `KHEPRI-DEC-008` replaces the message broker with this
+names no provider mechanism. `KHEPRI-DEC-028` replaces the message broker with this
 implementation because PostgreSQL already owns the canonical job state, and a broker
 in front of it introduces two clocks that can disagree.
 

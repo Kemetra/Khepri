@@ -15,7 +15,7 @@ from dataclasses import dataclass
 DEFAULT_S3_ENDPOINT = "http://127.0.0.1:14566"
 # Any string the S3 client will accept. `us-east-1` is the conventional default
 # for S3-compatible emulators; the retired `me-central-1` was carried over from the
-# AWS-specific model `KHEPRI-DEC-008` replaced and named a region nothing uses.
+# AWS-specific model `KHEPRI-DEC-028` replaced and named a region nothing uses.
 DEFAULT_REGION = "us-east-1"
 DEFAULT_BUCKET = "khepri-local-content"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://khepri:khepri@127.0.0.1:15432/khepri"

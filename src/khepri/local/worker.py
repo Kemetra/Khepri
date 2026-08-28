@@ -1,6 +1,6 @@
 """Drive `ReportWorker` from PostgreSQL, with no queue in front of it.
 
-**This is no longer a local-only shape.** `KHEPRI-DEC-008` replaced the message
+**This is no longer a local-only shape.** `KHEPRI-DEC-028` replaced the message
 broker with PostgreSQL claim-and-redrive everywhere, so the deployed worker now
 claims jobs the same way this one does. What was written as a deliberate local
 simplification turned out to be the design the whole system moved to: the database

@@ -1,6 +1,6 @@
 """Application-side envelope encryption for stored objects.
 
-`KHEPRI-DEC-008` replaces the five provider-header proofs with encryption the
+`KHEPRI-DEC-028` replaces the five provider-header proofs with encryption the
 application performs itself: "a per-object AES-256-GCM data key, wrapped by a
 master key drawn from the secret store, with the ciphertext digest verified on
 read-back". This module is the whole of that construction. Nothing else in the
@@ -11,7 +11,7 @@ callers would make "is the nonce unique?" a question about several files. Here i
 is a question about `seal`, which draws every nonce from `os.urandom` and never
 accepts one from a caller.
 
-**Why AES-256-GCM wraps the data key too.** `KHEPRI-DEC-008` names exactly one
+**Why AES-256-GCM wraps the data key too.** `KHEPRI-DEC-028` names exactly one
 primitive, AES-256-GCM, and says the data key is "wrapped by a master key". It
 does not name a wrapping primitive. Using the primitive it *does* name introduces
 no second algorithm, no second library, and no security property the decision has
@@ -32,7 +32,7 @@ label, and no plaintext digest. A reader who obtains the envelope without the
 master key learns the version, the algorithm, and the ciphertext length.
 
 **Digest semantics.** `seal` returns the ciphertext digest, and the caller stores
-it to satisfy the read-back proof `KHEPRI-DEC-008` requires. The plaintext digest
+it to satisfy the read-back proof `KHEPRI-DEC-028` requires. The plaintext digest
 stays the content address and is verified by `open_envelope` against the decrypted
 bytes. Both are checked; they answer different questions. Encryption is
 randomised, so the same plaintext sealed twice yields different ciphertext and a
@@ -53,7 +53,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # not recognise the version refuses rather than guessing which fields it has.
 ENVELOPE_VERSION = 1
 
-# The one algorithm `KHEPRI-DEC-008` names. Recorded in the envelope and in the
+# The one algorithm `KHEPRI-DEC-028` names. Recorded in the envelope and in the
 # database so a stored object says how it was encrypted rather than relying on the
 # reader's assumption.
 ALGORITHM_AES_256_GCM = "AES-256-GCM"
@@ -149,7 +149,7 @@ def open_envelope(
 
     Both digests are required arguments rather than optional checks. An optional
     verification is one a caller can omit, and the read-back proof
-    `KHEPRI-DEC-008` requires is worth nothing if the storage adapter can skip it.
+    `KHEPRI-DEC-028` requires is worth nothing if the storage adapter can skip it.
 
     The ciphertext digest is checked *before* the cipher runs, so bytes that were
     not the bytes written are rejected without being decrypted.
