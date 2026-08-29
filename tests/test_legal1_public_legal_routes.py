@@ -8,12 +8,20 @@ inputs are present.
 from __future__ import annotations
 
 from html import unescape
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from khepri.runtime.legal_api import LEGAL_PAGES, LEGAL_PREFIX, add_legal_routes
+from khepri.local import wiring as local_wiring
+from khepri.runtime.legal_api import (
+    LEGAL_PAGES,
+    LEGAL_PREFIX,
+    LEGAL_PUBLICATIONS,
+    LegalPublication,
+    add_legal_routes,
+)
 
 PAGES = {
     "privacy-policy": ("Privacy Policy", "سياسة الخصوصية"),
@@ -29,6 +37,58 @@ def _client() -> TestClient:
     app = FastAPI()
     add_legal_routes(app)
     return TestClient(app)
+
+
+def test_local_web_app_registers_the_public_legal_framework(monkeypatch) -> None:
+    """Omitting the public registrar from local wiring leaves browser development at a 404."""
+    monkeypatch.setattr(local_wiring, "create_app", lambda **_: FastAPI())
+    monkeypatch.setattr(local_wiring, "build_report_services", lambda _: object())
+    stack = SimpleNamespace(
+        invitations=object(),
+        clock=lambda: None,
+        factory=object(),
+        services=SimpleNamespace(
+            intake=object(), deletion=object(), profiling=object(), packages=object()
+        ),
+    )
+
+    response = TestClient(local_wiring.build_web_app(stack)).get(
+        f"{LEGAL_PREFIX}/en/about-us"
+    )
+
+    assert response.status_code == 503
+
+
+def test_unresolved_publication_content_is_not_rendered(monkeypatch) -> None:
+    """Publishing a placeholder without verified inputs must fail closed at the route boundary."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "privacy-policy",
+        LegalPublication(
+            content=("[PLACEHOLDER] privacy policy",), verified_inputs=frozenset()
+        ),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/privacy-policy")
+
+    assert response.status_code == 503
+    assert "[PLACEHOLDER]" not in response.text
+
+
+def test_legally_operative_content_without_verified_inputs_is_not_rendered(
+    monkeypatch,
+) -> None:
+    """A plain-looking document cannot bypass the verified-input publication gate."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "privacy-policy",
+        LegalPublication(content=("Unverified legal content",)),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/privacy-policy")
+
+    assert response.status_code == 503
+    assert "Unverified legal content" not in response.text
 
 
 def test_the_legal_inventory_is_limited_to_the_six_authorized_destinations() -> None:

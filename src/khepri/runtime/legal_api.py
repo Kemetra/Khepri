@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from importlib.resources import files
 
 from fastapi import FastAPI, HTTPException, Response
@@ -13,6 +14,35 @@ from khepri.runtime.legal_copy import DIRECTIONS, LEGAL_COPY, LEGAL_PAGE_TITLES
 LEGAL_PREFIX = "/legal"
 LEGAL_ASSETS = f"{LEGAL_PREFIX}/assets"
 LEGAL_PAGES = frozenset(LEGAL_PAGE_TITLES["en"])
+
+
+@dataclass(frozen=True, slots=True)
+class LegalPublication:
+    """A proposed public document and the verified inputs it relies on.
+
+    Keeping publication state next to the public renderer makes the fail-closed
+    boundary durable when later LEGAL1 slices add substantive copy.
+    """
+
+    content: tuple[str, ...] = ()
+    verified_inputs: frozenset[str] = frozenset()
+
+
+LEGAL_PUBLICATIONS = {page: LegalPublication() for page in LEGAL_PAGES}
+_REQUIRED_PUBLICATION_INPUTS = {
+    "privacy-policy": frozenset({"operator_identity", "privacy_contact", "effective_date"}),
+    "terms-and-conditions": frozenset(
+        {
+            "operator_identity",
+            "support_contact",
+            "governing_law",
+            "dispute_process",
+            "effective_date",
+        }
+    ),
+    "contact-us": frozenset({"operator_identity", "support_contact", "effective_date"}),
+}
+_PLACEHOLDER_MARKER = "[PLACEHOLDER]"
 
 _ASSETS = {
     "shell.css": "text/css; charset=utf-8",
@@ -30,8 +60,23 @@ def legal_environment() -> Environment:
     )
 
 
+def _published_content(page: str) -> tuple[str, ...] | None:
+    """Return content only when the route's legally operative inputs are verified."""
+    publication = LEGAL_PUBLICATIONS[page]
+    if not publication.content or any(
+        _PLACEHOLDER_MARKER in paragraph for paragraph in publication.content
+    ):
+        return None
+    if not _REQUIRED_PUBLICATION_INPUTS.get(page, frozenset()).issubset(
+        publication.verified_inputs
+    ):
+        return None
+    return publication.content
+
+
 def _legal_response(environment: Environment, *, language: str, page: str) -> Response:
-    """Render an unpublished legal destination without customer or legally operative content."""
+    """Render only a verified document; unresolved publication remains unavailable."""
+    publication_content = _published_content(page)
     body = environment.get_template("legal_page.html.j2").render(
         language=language,
         direction=DIRECTIONS[language],
@@ -41,10 +86,11 @@ def _legal_response(environment: Environment, *, language: str, page: str) -> Re
         copy=LEGAL_COPY[language],
         assets=LEGAL_ASSETS,
         prefix=LEGAL_PREFIX,
+        publication_content=publication_content,
     )
     return Response(
         content=body,
-        status_code=503,
+        status_code=200 if publication_content is not None else 503,
         media_type="text/html; charset=utf-8",
         headers=dict(_PUBLIC_HEADERS),
     )
@@ -81,6 +127,8 @@ __all__ = [
     "LEGAL_ASSETS",
     "LEGAL_PAGES",
     "LEGAL_PREFIX",
+    "LEGAL_PUBLICATIONS",
+    "LegalPublication",
     "add_legal_routes",
     "legal_environment",
 ]

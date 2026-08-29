@@ -77,6 +77,7 @@ from khepri.rra.report_services import (
 )
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService
+from khepri.runtime.legal_api import add_legal_routes
 
 
 def utc_now() -> datetime:
@@ -270,7 +271,7 @@ def build_report_services(stack: LocalStack) -> ReportServices:
 
 def build_web_app(stack: LocalStack) -> FastAPI:
     """The FastAPI application with every route group supplied."""
-    return create_app(
+    app = create_app(
         service=stack.invitations,
         clock=stack.clock,
         intake_service=stack.services.intake,
@@ -280,6 +281,8 @@ def build_web_app(stack: LocalStack) -> FastAPI:
         report_services=build_report_services(stack),
         journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
+    add_legal_routes(app)
+    return app
 
 
 def build_worker_stack(
