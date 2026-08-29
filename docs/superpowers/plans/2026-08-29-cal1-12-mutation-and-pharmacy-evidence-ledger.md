@@ -142,6 +142,16 @@ Every literal is hand-derived with its arithmetic shown, `Decimal` throughout, h
 rounding applies (`1045.00 / 13 = 80.384615… → 80.38`). No production aggregation helper is imported
 by the oracle.
 
+**Every table is read by a test, and review found the layers where that was not yet true.** Three
+tables shipped in the first commit that nothing asserted — the shape this ledger files as F1 against
+production, reproduced in its own fixture. Two of them were also wrong, and nothing could have said
+so: `returns` carried the row's sign where `RRA-004`:83 governs a positive magnitude, and the
+category table assumed the concentration basis where a dimensional comparison is built over
+`financial_posted`. Review then found a fourth layer: `curve_for` returns the *retained* curve, so
+`top_decile_share` and `top_quartile_share` — the figures a customer actually reads — were still
+unasserted. `concentration.derive` is now driven directly, and the test is verified against a
+floor-for-ceiling mutant on `_leading`, which no other test in the module catches.
+
 ---
 
 ## 5. Disposition
@@ -159,5 +169,5 @@ its proof.
 
 **CodeScene pre-flight was not run:** the CodeScene MCP server failed to connect this session. One
 new test module (`test_cal1_pharmacy_golden.py`) is added and will be scored; it is deliberately flat
-— one package builder, one value reader, seven plain test functions, no helper pyramid — because
+— one package builder, one value reader, eleven plain test functions, no helper pyramid — because
 extracting helpers raises a module's complexity mean. The server-side gate remains the authority.

@@ -18,7 +18,7 @@ reconciliation, deterministic reruns, version checks, and no skipped required be
 |---|---|---|
 | Governance | `khepri-gov validate` | **Governance validation passed.** |
 | Ruff | `ruff check .` | **All checks passed!** |
-| Full tests | `pytest tests/` | **3,630 passed, 72 skipped, 1 xfailed** in 290s |
+| Full tests | `pytest tests/` | **3,631 passed, 72 skipped, 1 xfailed** in 297s |
 | Independent fixtures | `rra_calculation_oracle.py` imports no production aggregation helper; `build_fact_package` and `analysis.*.derive` are never called there | Held |
 | Report reconciliation | `test_cal1_pharmacy_golden.py` asserts `gross_profit == revenue - cost` against the published package, not against a restatement | Held |
 | Deterministic reruns | two full runs, separate `--basetemp`, gave identical `3627 passed, 72 skipped, 1 xfailed`; the count moved to 3,630 only when this slice's three added assertions landed, and the staging digest below is the same property across processes | Held |
@@ -197,7 +197,7 @@ as **pass** in 39 s. That is the authority — local tooling does not reproduce 
 is recorded here from the check result rather than from a local proxy.
 
 One new file was added by CAL1-12 (`tests/test_cal1_pharmacy_golden.py`) and scored under that gate.
-It is deliberately flat — one package builder, one value reader, plain test functions, no helper
+It is deliberately flat — one package builder, one value reader, eleven plain test functions, no helper
 pyramid — because extracting helpers raises a module's complexity mean.
 
 **CAL1-15 is complete.** Every clause is evidenced: no unresolved P0/P1, CodeScene passes, all seven

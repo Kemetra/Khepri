@@ -243,3 +243,43 @@ def test_dimensional_revenue_uses_the_signed_financial_population() -> None:
 
     for dimension, buckets in published.items():
         assert sum(buckets.values()) == PHARMACY_HEADLINE["revenue"], dimension
+
+
+def test_the_published_concentration_facts_carry_the_derived_shares() -> None:
+    """The four facts a customer reads, not the retained curve they are read from.
+
+    `curve_for` above returns the raw curve `rra004.package.v3` retains. These are
+    what `rra008.concentration.v2` *publishes* from it, and the two can disagree:
+    the top-decile and top-quartile shares apply the governed cutoff rule --
+    `ceil(n / fraction)`, at least one -- and a defect in that step leaves the
+    curve intact while moving both published figures.
+
+    Four distinct values make both cutoffs the leading value alone, so both shares
+    are 0.4498. That is a real property of this dataset rather than a coincidence
+    worth hiding: `RRA-008` fixes the ceiling and the at-least-one floor, and a
+    four-value set is the smallest one where a floor-based reading would differ --
+    `4 // 10` is zero, which would publish no value at all.
+    """
+    facts = concentration.derive(_pharmacy_package())
+
+    assert isinstance(facts, tuple), facts
+    published = {fact.metric: Decimal(fact.value) for fact in facts}
+
+    assert published["concentration_distinct_values"] == (
+        PHARMACY_CONCENTRATION["distinct_values"]
+    )
+    assert published["concentration_ranked_values"] == (
+        PHARMACY_CONCENTRATION["ranked_values"]
+    )
+    assert published["concentration_top_decile_share"] == (
+        PHARMACY_CONCENTRATION["top_decile_share"]
+    )
+    assert published["concentration_top_quartile_share"] == (
+        PHARMACY_CONCENTRATION["top_quartile_share"]
+    )
+    # Both cutoffs land on the leading value, so both must equal the curve's own
+    # first cumulative share. Asserted rather than assumed: a published share that
+    # drifted from the curve it was read off would otherwise pass every check above.
+    assert published["concentration_top_decile_share"] == (
+        PHARMACY_CONCENTRATION["shares"][0]
+    )
