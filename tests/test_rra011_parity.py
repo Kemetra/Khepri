@@ -182,7 +182,7 @@ def test_the_quality_summary_states_no_score() -> None:
     forbidden = {"score", "confidence", "quality", "completeness", "percentage", "ratio"}
 
     assert not (fields & forbidden)
-    assert {"answered", "caveated", "refused"} <= fields
+    assert {"answered", "caveated", "refused", "refused_results"} <= fields
 
 
 def test_a_refused_result_is_reported_even_when_its_section_answered() -> None:
@@ -207,8 +207,8 @@ def test_a_refused_result_is_reported_even_when_its_section_answered() -> None:
         ReportBundle.of(package_for(ROWS, published=True))
     )
 
-    assert summary.refused == 2, summary
-    assert dict(summary.refusals) == {
+    assert summary.refused == 0, "no analysis refused outright; only two results did"
+    assert dict(summary.refused_results) == {
         "revenue_delta_absolute.year_over_year": "prior_window_absent",
         "revenue_delta_percent.year_over_year": "prior_window_absent",
     }
@@ -234,6 +234,7 @@ def test_a_refused_result_and_a_refused_section_are_told_apart() -> None:
         reason == "family_version_pairing_unadmitted"
         for _, reason in refused_family.refusals
     )
+    assert not refused_family.refused_results
     assert not any(":" in key for key, _ in refused_family.refusals)
 
 
@@ -253,8 +254,8 @@ def test_a_refused_result_is_not_also_counted_as_a_caveat() -> None:
     )
 
     assert summary.caveats, "fixture states no caveat; the case would be vacuous"
-    assert summary.refusals, "fixture refuses no result; the case would be vacuous"
-    assert not set(summary.caveats) & {result for result, _ in summary.refusals}
+    assert summary.refused_results, "fixture refuses no result; case would be vacuous"
+    assert not set(summary.caveats) & {r for r, _ in summary.refused_results}
     assert not any(":" in code for code in summary.caveats)
 
 
@@ -321,3 +322,47 @@ def test_the_vocabulary_guard_covers_every_authored_table() -> None:
 
     assert authored, "no vocabulary table discovered; the case would be vacuous"
     assert authored == guarded, f"unguarded vocabulary tables: {authored - guarded}"
+
+
+def test_exactly_one_catalogued_metric_has_no_business_name() -> None:
+    """The asymmetry is pinned rather than tolerated, and it is deliberate.
+
+    `concentration_curve` names the retained series a chart reads. `RRA-008` keeps
+    it label-free on purpose: a business name would title something no reader meets
+    as a figure. So it carries a description, an unsupported reading and synonyms
+    -- a reader asking what it means gets an answer -- and no name.
+
+    Stated as an equality over the whole catalog because a surface offering a name
+    field has to decide what to do when there is none. A review round found a
+    withdrawn route publishing `name: None` beside real names; the route is gone
+    and the asymmetry that made it possible is not, so it is written down here for
+    whichever surface serves the catalog next.
+    """
+    unnamed = {
+        code
+        for code in definitions.METRIC_CODES
+        for language in LANGUAGES
+        if wording.business_metric_name(code, language) is None
+    }
+
+    assert unnamed == {"concentration_curve"}
+    assert definitions.describe_metric("concentration_curve", "en")
+    assert definitions.synonyms("concentration_curve", "ar")
+
+
+def test_answered_and_refused_always_partition_the_sections() -> None:
+    """The invariant that keeps `refused` a section count, over both fixtures.
+
+    An earlier form of `summarize` added result refusals into `refused`, which
+    broke this without breaking any case that read the field alone: the number
+    grew, stayed plausible, and no longer meant what its name said. A surface
+    showing "N of M analyses" would have shown more than M.
+
+    Both pins are exercised, because one refuses whole families and the other
+    refuses results inside surviving ones -- and this must hold under each.
+    """
+    for published in (True, False):
+        bundle = ReportBundle.of(package_for(ROWS, published=published))
+        summary = definitions.summarize(bundle)
+
+        assert summary.answered + summary.refused == len(bundle.sections), published

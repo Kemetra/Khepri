@@ -196,11 +196,26 @@ class AnalysisQualitySummary:
 
     answered: int
     caveated: int
+    #: How many *analyses* refused outright. Counts sections, so
+    #: `answered + refused` is always the section count -- an invariant a reader
+    #: and a surface can both rely on, and one that mixing in result refusals
+    #: would quietly break.
     refused: int
     #: `(section_id, reason)` for each refused analysis, so a reader learns which
     #: and why rather than only how many.
     refusals: tuple[tuple[str, str], ...]
-    #: Every caveat code the bundle states, deduplicated and ordered.
+    #: `(result, reason)` for each figure a surviving analysis could not compute.
+    #:
+    #: Separate from `refusals` because they are different units and answer
+    #: different questions: an analysis that refused is unavailable, while a
+    #: refused result is one missing figure inside an analysis the reader still
+    #: gets. Counting them together told a reader two things had been refused
+    #: without saying which kind, and reporting only sections told them nothing
+    #: had been refused at all while two results had.
+    refused_results: tuple[tuple[str, str], ...]
+    #: Every caveat code the bundle states, deduplicated and ordered. Scoped
+    #: result refusals travel in `refused_results` instead, so no code appears in
+    #: both and no surface rendering both shows one refusal twice.
     caveats: tuple[str, ...]
 
 
@@ -212,7 +227,7 @@ def summarize(bundle) -> AnalysisQualitySummary:
     section carrying a reason is refused, and one carrying none is not — so this
     never re-derives what `RRA-009` already decided.
     """
-    # Two kinds of refusal, and both belong here.
+    # Two kinds of refusal, reported as two fields.
     #
     # A family that could state nothing refuses its whole section and carries the
     # reason on the section. A family that stated *something* refuses only the
@@ -220,11 +235,11 @@ def summarize(bundle) -> AnalysisQualitySummary:
     # refuses the percentage -- and `bundle._scoped` carries each of those as a
     # caveat coded `<result>:<reason>` on a section that has no reason of its own.
     #
-    # Counting sections alone reported `refused == 0` for a package where two
-    # results had been refused. The codes were in `caveats` the whole time, so
-    # nothing was lost; the summary's own fields contradicted them, which is worse
-    # than omitting the count -- a consumer reading `refusals` was told the analysis
-    # had refused nothing.
+    # They are kept apart rather than summed. `answered + refused` is the section
+    # count, which a surface relies on, and a refused result is not a refused
+    # analysis: the reader still gets that analysis, minus one figure. Summing them
+    # broke the invariant and told a reader two things were refused without saying
+    # which kind.
     #
     # A scoped refusal is selected by the separator and then split on it, rather
     # than split first and filtered on what falls out. Both partition helpers return
@@ -240,7 +255,8 @@ def summarize(bundle) -> AnalysisQualitySummary:
         (section.section_id, section.reason)
         for section in bundle.sections
         if section.reason is not None
-    ) + tuple(
+    )
+    refused_results = tuple(
         (result, reason)
         for result, _, reason in (caveat.code.rpartition(":") for caveat in scoped)
     )
@@ -267,5 +283,6 @@ def summarize(bundle) -> AnalysisQualitySummary:
         caveated=len({s.section_id for s in answered} & qualified),
         refused=len(refusals),
         refusals=refusals,
+        refused_results=refused_results,
         caveats=tuple(sorted({caveat.code for caveat in qualifying})),
     )
