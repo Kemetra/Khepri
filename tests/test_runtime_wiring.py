@@ -4,6 +4,8 @@ import base64
 import json
 from datetime import UTC, datetime
 
+from fastapi.testclient import TestClient
+
 from khepri.rca.identity import IdentityProvider
 from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
@@ -178,3 +180,16 @@ def test_web_app_exposes_the_complete_approved_beta_route_set() -> None:
         "/beta/{language}/{step}",
         "/beta/assets/{name}",
     } <= paths
+
+
+def test_runtime_app_exposes_public_legal_routes_without_commercial_context() -> None:
+    """The production composition root must retain the public legal registrar."""
+    client = TestClient(build_web_app(runtime_stack()))
+
+    about = client.get("/legal/en/about-us")
+    privacy = client.get("/legal/ar/privacy-policy")
+
+    assert about.status_code == 200
+    assert privacy.status_code == 503
+    assert "organization" not in about.text.lower()
+    assert "organization" not in privacy.text.lower()

@@ -21,5 +21,12 @@
   <main id="main-content" class="shell-main" tabindex="-1">
     {% block content %}{% endblock %}
   </main>
+  <footer class="shell-identity">
+    <nav aria-label="{{ copy.legal_navigation }}">
+      {% for legal_page, legal_title in legal_links %}
+      <a href="{{ prefix }}/{{ language }}/{{ legal_page }}">{{ legal_title }}</a>
+      {% endfor %}
+    </nav>
+  </footer>
 </body>
 </html>

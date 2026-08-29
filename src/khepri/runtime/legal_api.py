@@ -1,7 +1,8 @@
-"""Public legal/trust route framework (`LEGAL1-01`, RCA-003 FR-062--FR-080)."""
+"""Public legal/trust surfaces (`LEGAL1-01` through `LEGAL1-05`, RCA-003)."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from importlib.resources import files
 
@@ -9,7 +10,12 @@ from fastapi import FastAPI, HTTPException, Response
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 
 from khepri.rra.journey.security import SECURITY_HEADERS
-from khepri.runtime.legal_copy import DIRECTIONS, LEGAL_COPY, LEGAL_PAGE_TITLES
+from khepri.runtime.legal_copy import (
+    DIRECTIONS,
+    LEGAL_COPY,
+    LEGAL_DOCUMENTS,
+    LEGAL_PAGE_TITLES,
+)
 
 LEGAL_PREFIX = "/legal"
 LEGAL_ASSETS = f"{LEGAL_PREFIX}/assets"
@@ -26,11 +32,17 @@ class LegalPublication:
 
     content: dict[str, tuple[str, ...]] = field(default_factory=dict)
     verified_inputs: frozenset[str] = frozenset()
+    verified_evidence: frozenset[str] = frozenset()
 
 
-LEGAL_PUBLICATIONS = {page: LegalPublication() for page in LEGAL_PAGES}
+LEGAL_PUBLICATIONS = {
+    page: LegalPublication(content=LEGAL_DOCUMENTS[page]) for page in LEGAL_PAGES
+}
 _REQUIRED_PUBLICATION_INPUTS = {
     "privacy-policy": frozenset({"operator_identity", "privacy_contact", "effective_date"}),
+    "data-protection": frozenset(
+        {"operator_identity", "privacy_contact", "effective_date"}
+    ),
     "terms-and-conditions": frozenset(
         {
             "operator_identity",
@@ -43,6 +55,38 @@ _REQUIRED_PUBLICATION_INPUTS = {
     "contact-us": frozenset({"operator_identity", "support_contact", "effective_date"}),
 }
 _PLACEHOLDER_MARKER = "[PLACEHOLDER]"
+_CLAIM_PATTERNS = {
+    "iso-27001": re.compile(r"\biso[- ]?27001\b", re.IGNORECASE),
+    "soc-2": re.compile(r"\bsoc[- ]?2\b", re.IGNORECASE),
+    "pci-dss": re.compile(r"\bpci[- ]?dss\b", re.IGNORECASE),
+    "gdpr-compliance": re.compile(r"\bgdpr[- ]?(?:compliant|compliance)\b", re.IGNORECASE),
+    "pdpl-compliance": re.compile(r"\bpdpl[- ]?(?:compliant|compliance)\b", re.IGNORECASE),
+}
+_VERIFIED_CLAIM_EVIDENCE: dict[str, frozenset[str]] = {}
+_PROHIBITED_CLAIM_PATTERNS = (
+    re.compile(r"\b(?:sla|service[- ]level agreement|uptime)\b", re.IGNORECASE),
+    re.compile(r"\bself[- ]service (?:deletion|delete|export)\b", re.IGNORECASE),
+    re.compile(r"\b(?:training|train)\b.{0,40}\bcustomer[- ]?(?:uploaded )?data\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:retention period|retain(?:ed|s)?(?: [^.]{0,40})? for)\s+\d+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:hosted|hosting|data residency)\b.{0,40}"
+        r"\b(?:region|cairo|egypt|fra1|germany|europe)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:subscription|payment provider|chargeback|credit|invoice|refund window)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bpharmacy[- ]only\b", re.IGNORECASE),
+    re.compile(
+        r"\bcustomer[- ]?(?:uploaded )?data\b.{0,40}\b(?:training|train)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:اتفاقية مستوى الخدمة|حذف ذاتي|تصدير ذاتي|صيدليات فقط)"),
+)
 
 _ASSETS = {
     "shell.css": "text/css; charset=utf-8",
@@ -60,6 +104,22 @@ def legal_environment() -> Environment:
     )
 
 
+def _publication_has_prohibited_claims(publication: LegalPublication) -> bool:
+    """Keep unverified compliance and out-of-scope commitments out of public copy."""
+    document = "\n".join(
+        paragraph
+        for language_content in publication.content.values()
+        for paragraph in language_content
+    )
+    if any(pattern.search(document) for pattern in _PROHIBITED_CLAIM_PATTERNS):
+        return True
+    return any(
+        pattern.search(document)
+        and not (_VERIFIED_CLAIM_EVIDENCE.get(claim, frozenset()) & publication.verified_evidence)
+        for claim, pattern in _CLAIM_PATTERNS.items()
+    )
+
+
 def _published_content(language: str, page: str) -> tuple[str, ...] | None:
     """Return one verified language variant only when bilingual publication is complete."""
     publication = LEGAL_PUBLICATIONS[page]
@@ -72,11 +132,22 @@ def _published_content(language: str, page: str) -> tuple[str, ...] | None:
         for paragraph in language_content
     ):
         return None
+    if _publication_has_prohibited_claims(publication):
+        return None
     if not _REQUIRED_PUBLICATION_INPUTS.get(page, frozenset()).issubset(
         publication.verified_inputs
     ):
         return None
     return content
+
+
+def _published_pages(language: str) -> tuple[tuple[str, str], ...]:
+    """List only destinations that render in this language, so footer links cannot be dead."""
+    return tuple(
+        (page, LEGAL_PAGE_TITLES[language][page])
+        for page in LEGAL_PAGES
+        if _published_content(language, page) is not None
+    )
 
 
 def _legal_response(environment: Environment, *, language: str, page: str) -> Response:
@@ -92,6 +163,7 @@ def _legal_response(environment: Environment, *, language: str, page: str) -> Re
         assets=LEGAL_ASSETS,
         prefix=LEGAL_PREFIX,
         publication_content=publication_content,
+        legal_links=_published_pages(language),
     )
     return Response(
         content=body,

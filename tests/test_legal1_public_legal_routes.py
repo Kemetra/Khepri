@@ -7,6 +7,7 @@ inputs are present.
 
 from __future__ import annotations
 
+import re
 from html import unescape
 from types import SimpleNamespace
 
@@ -30,6 +31,14 @@ PAGES = {
     "contact-us": ("Contact Us", "اتصل بنا"),
     "about-us": ("About Us", "من نحن"),
     "refund-and-void": ("Refund & Void", "حالة الاسترداد والإلغاء"),
+}
+PUBLICATION_STATUS = {
+    "privacy-policy": 503,
+    "data-protection": 503,
+    "terms-and-conditions": 503,
+    "contact-us": 503,
+    "about-us": 200,
+    "refund-and-void": 200,
 }
 
 
@@ -56,7 +65,7 @@ def test_local_web_app_registers_the_public_legal_framework(monkeypatch) -> None
         f"{LEGAL_PREFIX}/en/about-us"
     )
 
-    assert response.status_code == 503
+    assert response.status_code == 200
 
 
 def test_unresolved_publication_content_is_not_rendered(monkeypatch) -> None:
@@ -117,6 +126,118 @@ def test_publication_requires_both_language_variants(monkeypatch) -> None:
     assert "English policy" not in english.text
 
 
+def test_data_protection_requires_verified_operator_and_privacy_inputs(monkeypatch) -> None:
+    """Bilingual data-protection copy must not bypass its operative publication inputs."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "data-protection",
+        LegalPublication(content={"en": ("Safeguards",), "ar": ("ضمانات",)}),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/data-protection")
+
+    assert response.status_code == 503
+    assert "Safeguards" not in response.text
+
+
+@pytest.mark.parametrize(
+    "claim",
+    ("ISO 27001", "SOC 2", "PCI DSS", "GDPR compliant", "PDPL compliant"),
+)
+def test_unverified_certification_or_compliance_claim_is_not_rendered(
+    monkeypatch, claim: str
+) -> None:
+    """A claimed certification without repository evidence must keep the page unavailable."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "privacy-policy",
+        LegalPublication(
+            content={
+                "en": (f"Khepri is {claim}.",),
+                "ar": (f"خِبري {claim}.",),
+            },
+            verified_inputs=frozenset(
+                {"operator_identity", "privacy_contact", "effective_date"}
+            ),
+        ),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/privacy-policy")
+
+    assert response.status_code == 503
+    assert claim not in response.text
+
+
+def test_neutral_reference_to_an_applicable_legal_framework_is_allowed(monkeypatch) -> None:
+    """Naming a framework without claiming compliance must not be treated as certification."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "about-us",
+        LegalPublication(
+            content={
+                "en": ("GDPR may be an applicable legal framework.",),
+                "ar": ("قد يكون النظام العام لحماية البيانات إطارًا قانونيًا منطبقًا.",),
+            }
+        ),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/about-us")
+
+    assert response.status_code == 200
+    assert "GDPR may be an applicable legal framework" in response.text
+
+
+@pytest.mark.parametrize(
+    "claim",
+    (
+        "We provide a 99.9% uptime SLA.",
+        "We retain customer data for 30 days.",
+        "Khepri is hosted in Egypt.",
+        "Self-service deletion is available.",
+        "We use customer-uploaded data for training.",
+        "A public refund window is available.",
+    ),
+)
+def test_unsupported_operational_or_billing_claim_is_not_rendered(
+    monkeypatch, claim: str
+) -> None:
+    """Legal copy cannot introduce unsupported operational or billing commitments."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "about-us",
+        LegalPublication(
+            content={
+                "en": (claim,),
+                "ar": ("نسخة عربية مطابقة للمعنى.",),
+            }
+        ),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/about-us")
+
+    assert response.status_code == 503
+    assert claim not in response.text
+
+
+def test_about_copy_cannot_narrow_khepri_to_a_pharmacy_only_service(monkeypatch) -> None:
+    """A pharmacy-only position violates RCA-003's retail-platform requirement."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "about-us",
+        LegalPublication(
+            content={
+                "en": ("Khepri is a pharmacy-only service.",),
+                "ar": ("خِبري خدمة صيدليات فقط.",),
+            }
+        ),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/about-us")
+
+    assert response.status_code == 503
+    assert "pharmacy-only" not in response.text
+
+
 def test_the_legal_inventory_is_limited_to_the_six_authorized_destinations() -> None:
     """Publishing a seventh legal destination expands RCA-003's closed public surface set."""
     assert frozenset(
@@ -131,19 +252,20 @@ def test_the_legal_inventory_is_limited_to_the_six_authorized_destinations() -> 
     ) == LEGAL_PAGES
 
 
-@pytest.mark.parametrize("page", PAGES)
+@pytest.mark.parametrize("page, expected_status", PUBLICATION_STATUS.items())
 @pytest.mark.parametrize("language", ("en", "ar"))
-def test_every_authorized_legal_route_is_public_and_fail_closed(
-    page: str, language: str
+def test_every_authorized_legal_route_has_its_authorized_publication_state(
+    page: str, expected_status: int, language: str
 ) -> None:
-    """Removing an authorized address or publishing invented legal copy breaks this test."""
+    """A page may publish only when its RCA-003 state is complete and truthful."""
     response = _client().get(f"{LEGAL_PREFIX}/{language}/{page}")
 
-    assert response.status_code == 503
-    assert (
-        "This page is not currently published." in response.text
-        or "هذه الصفحة غير منشورة حاليًا." in response.text
-    )
+    assert response.status_code == expected_status
+    if expected_status == 503:
+        assert (
+            "This page is not currently published." in response.text
+            or "هذه الصفحة غير منشورة حاليًا." in response.text
+        )
     assert "khepri_session" not in response.text
     assert "organization" not in response.text.lower()
 
@@ -165,6 +287,45 @@ def test_legal_route_keeps_page_identity_and_language_switch_at_parity(
     assert f'href="{LEGAL_PREFIX}/en/{page}"' in arabic.text
 
 
+@pytest.mark.parametrize(
+    ("page", "english_copy", "arabic_copy"),
+    (
+        (
+            "about-us",
+            "Khepri is a governed retail decision platform.",
+            "خِبري منصة محكومة لاتخاذ القرارات في قطاع التجزئة.",
+        ),
+        (
+            "refund-and-void",
+            "No general public self-service refund policy currently applies.",
+            "لا تسري حاليًا سياسة عامة للاسترداد الذاتي للجمهور.",
+        ),
+    ),
+)
+def test_published_pages_have_equivalent_bilingual_content(
+    page: str, english_copy: str, arabic_copy: str
+) -> None:
+    """A published language variant must carry its own approved substantive copy."""
+    client = _client()
+    english = client.get(f"{LEGAL_PREFIX}/en/{page}")
+    arabic = client.get(f"{LEGAL_PREFIX}/ar/{page}")
+
+    assert english.status_code == arabic.status_code == 200
+    assert english_copy in english.text
+    assert arabic_copy in arabic.text
+
+
+@pytest.mark.parametrize("language", ("en", "ar"))
+def test_footer_links_only_to_destinations_that_answer_successfully(language: str) -> None:
+    """A visible legal navigation link must not lead to an unavailable page."""
+    client = _client()
+    response = client.get(f"{LEGAL_PREFIX}/{language}/about-us")
+    destinations = re.findall(rf'href="({LEGAL_PREFIX}/{language}/[^"]+)"', response.text)
+
+    assert destinations
+    assert all(client.get(destination).status_code == 200 for destination in destinations)
+
+
 def test_legal_routes_render_without_or_with_an_authenticated_cookie() -> None:
     """Accidentally applying the commercial session gate changes this public response."""
     client = _client()
@@ -172,7 +333,7 @@ def test_legal_routes_render_without_or_with_an_authenticated_cookie() -> None:
     client.cookies.set("khepri_session", "customer-session-that-must-not-matter")
     cookie_bearing = client.get(f"{LEGAL_PREFIX}/en/about-us")
 
-    assert anonymous.status_code == cookie_bearing.status_code == 503
+    assert anonymous.status_code == cookie_bearing.status_code == 200
     assert anonymous.text == cookie_bearing.text
 
 
@@ -195,10 +356,10 @@ def test_unknown_legal_paths_use_ordinary_public_not_found(path: str) -> None:
 
 @pytest.mark.parametrize("page", PAGES)
 @pytest.mark.parametrize("language", ("en", "ar"))
-def test_legal_framework_preserves_browser_security_without_footer_links(
+def test_legal_framework_preserves_browser_security_and_links_only_to_live_pages(
     page: str, language: str
 ) -> None:
-    """Weakening CSP or rendering LEGAL1-05 navigation in this slice breaks the public boundary."""
+    """The public footer must preserve CSP and exclude unavailable destinations."""
     response = _client().get(f"{LEGAL_PREFIX}/{language}/{page}")
 
     assert response.headers["Content-Security-Policy"] == (
@@ -209,4 +370,13 @@ def test_legal_framework_preserves_browser_security_without_footer_links(
     assert response.headers["Cache-Control"] == "public, max-age=0, must-revalidate"
     assert "<script" not in response.text
     assert "style=" not in response.text
-    assert "<footer" not in response.text
+    assert "<footer" in response.text
+    assert f'href="{LEGAL_PREFIX}/{language}/about-us"' in response.text
+    assert f'href="{LEGAL_PREFIX}/{language}/refund-and-void"' in response.text
+    for unavailable in (
+        "privacy-policy",
+        "data-protection",
+        "terms-and-conditions",
+        "contact-us",
+    ):
+        assert f'href="{LEGAL_PREFIX}/{language}/{unavailable}"' not in response.text
