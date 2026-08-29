@@ -287,5 +287,16 @@ families sit on their single governed successor version, and no transitional ver
 | CAL1-14 | **Passes** — zero failures, restart and determinism verified |
 | CAL1-15 | **Complete** — CodeScene passed on `#330`'s gate; every other clause verified here |
 
-**Merge authority is unchanged.** A branch and a pull request are proposals; this work becomes
-governing only when Ahmed Shaaban merges it to `main`. Nothing here was merged.
+**Merged by the owner at `#330` (`f320c17`), 2026-08-29.** This work was authored as a proposal and
+became governing only on that merge, which is the rule this ledger was written under.
+
+**What the merge approved, and what it left carried.** `AGENTS.md` makes a merge the approval, so
+merging this ledger approved the standing table above — `CAL1-12` and `CAL1-15` complete,
+`CAL1-13`/`CAL1-14` passing — and §16's CAL1 row is `MERGED` on that evidence.
+
+F1 and F3 are **carried, not dissolved**, in the same shape `R7` carries `#231` and `#211`: defects
+against landed work rather than unmet acceptance. F1's disposition here is itself part of what the
+merge approved — the choice between an `RRA-003` admission change and an `RRA-009` withdrawal is "the
+specification's call rather than this slice's" — and F3 likewise awaits an `RRA-006` reading of
+whether deterministic regeneration governs container bytes or governed content. Neither publishes a
+wrong figure.
