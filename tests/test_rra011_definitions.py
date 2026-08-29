@@ -93,3 +93,66 @@ def test_a_definition_carries_only_catalog_scope_attributes() -> None:
     fields = {field.name for field in dataclasses.fields(definitions.MetricDefinition)}
 
     assert {"code", "family"} == fields
+
+
+# --- T1-03: the vocabulary RRA-011 authors -------------------------------
+#
+# `RRA-009` governs what a metric is *called*. `RRA-011` governs what it
+# *means*: a description, safe synonyms a reader may recognize it by, and the
+# interpretations it explicitly does not support. No existing artifact declared
+# any of those, which is why the specification grants this one exception to its
+# own derivation rule — and bounds it: vocabulary attaches only to a code some
+# other module already governs, and never admits one.
+
+
+def test_every_metric_the_catalog_admits_has_a_description_in_both_languages() -> None:
+    """Parity asserted at import, so a one-language description cannot ship."""
+    for language in ("en", "ar"):
+        described = {
+            code
+            for code in definitions.METRIC_CODES
+            if definitions.describe_metric(code, language)
+        }
+        assert described == set(definitions.METRIC_CODES)
+
+
+def test_vocabulary_attaches_only_to_codes_a_governed_module_admits() -> None:
+    """The bound that keeps authored wording from becoming a second truth.
+
+    `RRA-011` grants the authority to *describe* a code and withholds the
+    authority to *introduce* one. A description keyed to a code no family
+    publishes would be exactly the invented vocabulary the derivation test
+    forbids, arriving through the one door the specification left open.
+    """
+    for table in (definitions.METRIC_DESCRIPTIONS, definitions.METRIC_NOT_MEANT):
+        for entries in table.values():
+            assert set(entries) <= set(definitions.METRIC_CODES)
+
+
+def test_a_metric_states_what_it_does_not_mean() -> None:
+    """The half of T1 that stops a reader misreading a figure.
+
+    An unsupported interpretation is not a hedge; it is the specific wrong
+    reading the metric invites. `average_order_value` divides by *sale
+    transactions*, so a reader taking it as revenue per customer is wrong in a
+    way no caveat on the figure would tell them.
+    """
+    english = definitions.not_meant("average_order_value", "en")
+    arabic = definitions.not_meant("average_order_value", "ar")
+
+    assert "customer" in english.lower()
+    assert english and arabic
+
+
+def test_an_unknown_code_has_no_vocabulary_and_refuses() -> None:
+    with pytest.raises(definitions.UnknownCode):
+        definitions.describe_metric("revenues", "en")
+
+    with pytest.raises(definitions.UnknownCode):
+        definitions.not_meant("revenues", "en")
+
+
+def test_an_unknown_language_refuses_rather_than_falling_back() -> None:
+    """No silent English fallback: an Arabic reader gets Arabic or an error."""
+    with pytest.raises(KeyError):
+        definitions.describe_metric("revenue", "fr")
