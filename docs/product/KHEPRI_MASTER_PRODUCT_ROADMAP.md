@@ -128,6 +128,8 @@ Citations in **active** governed artifacts:
 
 | Artifact | Cites | What the identifier must keep meaning |
 |---|---|---|
+| `governance/decisions/KHEPRI-DEC-031-local-only-design-partner-rehearsal.md` | `OPS1-02`…`OPS1-05`, `OPS1-09`, `R8-08`, `R8-11`, `T1-06`, `T1-07`, `T1-01`…`T1-05`, `T1-08` | The deferred-versus-blocked distinction, which the identifiers carry. `OPS1-02`…`OPS1-05`, `OPS1-09` and `R8-11` are **deferred**: authority active, unexercised. `R8-08` and `T1-07` are **blocked** by active `KHEPRI-DEC-015` and resume only by amending it. `T1-01`…`T1-05` and `T1-08` are the `M2` minimum `RRA-011` governs; `T1-06` is excluded to `M3`. A renumbering that moved any of these would silently retarget which of the two dispositions applies. |
+| `governance/specifications/RRA-011.md` | `T1-01`…`T1-05`, `T1-08` | The metric, population, and reason catalog's `M2` minimum. `T1-06` lineage and `T1-07` telemetry are excluded by name. |
 | `governance/decisions/KHEPRI-DEC-030-fra1-provisional-bootstrap-authority.md` | `OPS1-02` | Retires `KHEPRI-DEC-027`, whose blanket "`OPS1-02` remains blocked" clause is re-scoped: the provisional non-production bootstrap at the §4 measurement shape is authorized; final capacity, expansion, and external traffic remain blocked. `OPS1-02` is CI-only provisioning of the non-production environment, and nothing else. |
 | `governance/specifications/RCA-002.md` | `R5-02`, `R5-04`, `R8-01` | `R8-01`'s surface map and its open browser-security-policy question; the two deferred `R5` credential tasks. |
 | `governance/decisions/KHEPRI-DEC-025-clerk-private-beta-implementation-authorization.md` | `R3-11`, `R5-02`…`R5-06` | The Clerk credential-ownership dispositions. |
@@ -404,7 +406,7 @@ These are permissions and route groups inside the current architecture. A separa
 |---|---|---|
 | **M0** | Secure private-beta baseline | Existing analysis journey, governed RRA reports, and runtime baseline on `main` |
 | **M1** | Commercial identity and authorization spine | Membership, sessions, invitations, canonical authorization, and commercial RRA bridge merged and concurrency-safe |
-| **M2** | Calculation-validated design-partner alpha | CAL1 complete; shell and approved browser/assisted auth work; analysis quality and evidence are visible; activation telemetry exists; full journey passes in production-like local staging and an owner-approved non-production hosted environment before external use |
+| **M2** | Calculation-validated design-partner alpha | CAL1 complete; shell and approved browser/assisted auth work; analysis quality and evidence are visible; activation telemetry exists; full journey passes in production-like local staging and an owner-approved non-production hosted environment before external use. **Two clauses are unmet by owner decision, and `KHEPRI-DEC-031` records both rather than waiving them silently.** *Activation telemetry* is not merely unbuilt: `R8-08` conflicts with active `KHEPRI-DEC-015`, which forbids product-analytics use of retained commercial identity data, and with `RRA-010`'s and `RCA-003`'s exclusions of new telemetry events — it needs an owner-authored amendment, not an implementation slice. *The hosted environment* is deferred: `KHEPRI-DEC-030`'s provisioning authority stays active and unexercised. The staging clause therefore **splits** — its local half is met by `CAL1-14`'s merged evidence (`#330`, `f320c17`), so `M2` is reachable in a **local-only form**: internal rehearsal, no external participant. "Before external use" is the operative bound; the hosted half governs again the moment anyone outside the project is involved |
 | **M3** | Durable trust workspace beta | Active retention/workspace authority; multiple dataset versions and analyses retained; history, report reopen, deletion, evidence, and metric catalog work |
 | **M4** | Sellable decision workspace | Governed multi-period comparison, curated semantic views, executive overview, branch/product/basket/concentration modules, evidence drawer, and deterministic guided drill-down work |
 | **M5** | Paid self-serve candidate | Successor commercial identity authority replacing the provisional Clerk admission; public or assisted onboarding under active authority; plans, billing, entitlements, quotas, usage, invoices, and supportable operations work |
@@ -423,17 +425,23 @@ MERGED COMMERCIAL SPINE
 R0 -> R1 -> R2/R3 -> R6 -> R7 -> R8 shell base
 
 CURRENT CRITICAL PROGRAM
-CAL1 Deterministic calculation correction
+CAL1 Deterministic calculation correction  [MERGED: #330 f320c17, #332 f7bf2d3]
   |
   +--> T1 Trust foundation and metric catalog minimum
+  |      [authority active: RRA-011 -- the next actionable work]
   |
-  +--> R8-08 Activation telemetry scope and implementation
+  +--> R8-08 Activation telemetry  [AUTHORITY-BLOCKED: conflicts with active
+  |                                 KHEPRI-DEC-015; needs an owner-authored
+  |                                 amendment, not a slice. KHEPRI-DEC-031 §5]
   |
   +--> approved browser/assisted identity handoff if required
   |
   +--> OPS1 hosted non-production readiness
+  |      [DEFERRED past M2 by KHEPRI-DEC-031 §4 -- authority active, unexercised]
   |
   M2 CALCULATION-VALIDATED DESIGN-PARTNER ALPHA
+     [reachable in a LOCAL-ONLY form: internal rehearsal, no external
+      participant. The telemetry and hosted branches above stay unmet]
 
 M2
   |
@@ -705,16 +713,26 @@ CAL1 is complete only when ordinary imperfect pharmacy exports either produce co
 
 Expose the meaning, availability, population, version, provenance, caveats, and evidence of every customer-visible metric without creating a second calculation source.
 
-## Governance prerequisite
+## Governance prerequisite — **satisfied for the M2 minimum by `RRA-011`**
 
-Before T1 product code, activate a bounded contract allocating:
+Before T1 product code, a bounded contract had to allocate `MetricDefinition` ownership, the
+analysis-quality summary vocabulary, evidence and lineage surfaces, Arabic/English labels,
+descriptions, synonyms and unsupported interpretations, content-free trust telemetry, and the rule
+that definitions are generated from or validated against active governed contracts.
 
-- `MetricDefinition` ownership;
-- the analysis-quality summary vocabulary;
-- evidence and lineage surfaces;
-- Arabic/English labels, descriptions, synonyms, and unsupported interpretations;
-- content-free trust telemetry;
-- the rule that definitions are generated from or validated against active governed contracts.
+Active `RRA-011` allocates all of those **except two**, and the exceptions are deliberate:
+
+- **Lineage surfaces** are excluded from `RRA-011` and belong to `T1-06`, which this section already
+  permits to complete during early `M3`.
+- **Content-free trust telemetry** is excluded and remains **blocked**, not merely unallocated.
+  `T1-07` hits the same active `KHEPRI-DEC-015` prohibition as `R8-08` — see `KHEPRI-DEC-031` §5 —
+  and needs an owner-authored amendment before any slice for it exists. `RRA-011` authorizes no
+  exception to it.
+
+`RRA-011` is therefore the governing authority for `T1-01` through `T1-05` and `T1-08`. Its central
+requirement is the one this program exists to honour: the catalog is **derived** from the governed
+constants that already declare each code, never retyped beside them, and a slice under it must
+*reduce* the repository's count of hand-maintained code lists rather than add the fourth.
 
 ## Tasks
 
@@ -724,9 +742,9 @@ Before T1 product code, activate a bounded contract allocating:
 | T1-02 | Generate or validate the registry from governed RRA sources | T1-01, CAL1 merged | no | No hand-maintained parallel metric truth |
 | T1-03 | Add bilingual vocabulary and safe synonyms | T1-01 | U1 | Arabic/English names, descriptions, supported and explicitly unsupported interpretations |
 | T1-04 | Build `AnalysisQualitySummary`, **and the underlying pre-analysis capability-availability contract an Analysis Impact Preview would read from** — availability only, never a confidence score or invented certainty. **Journey placement of that preview as a new pre-analysis step is a separate, currently unauthorized concern** — see the Analysis Impact Preview note below | T1-02 | T1-03 | Counts and lists of verified, caveated, refused, unavailable, and unsupported results; pre-analysis capability-availability contract |
-| T1-05 | Build metric detail and evidence routes | T1-02 | U1 evidence drawer | Definition, formula version, population, inputs, coverage, filters, citations, reconciliation, caveats, and refusal alternatives |
+| T1-05 | Build metric detail and evidence routes. **Two of the outputs below are not derivable from what governed records carry, and `RRA-011` narrows them rather than inventing them** — see its Requirements | T1-02 | U1 evidence drawer | Definition, formula version, inputs, coverage, filters, citations, reconciliation, and caveats. **Population is package-level, not per figure**: a `Fact` carries no population or basis identifier while a package retains several bases, so the catalog reports what the package reconciled against and never selects one for a figure. **Refusal alternatives are prose, not fields**: a `RefusedResult` carries a metric and a reason only, and the remedy exists inside `RRA-009`'s accepted wording, which the catalog surfaces rather than parses. Recording either as data is an `RRA-004` change |
 | T1-06 | Build source-to-surface lineage, **with its own parity and fail-closed tests in the same slice** | T1-02, CAL1 evidence bases | T1-05 | Source semantic -> basis -> fact -> claim/chart/report lineage |
-| T1-07 | Add content-free trust telemetry, **with its own content-free and fail-closed tests in the same slice** | approved scope, T1-04/T1-05 | R8-08 | Evidence opens, refusal views, mapping review, quality-summary use; never customer content |
+| T1-07 | Add content-free trust telemetry, **with its own content-free and fail-closed tests in the same slice**. **AUTHORITY-BLOCKED on the same active `KHEPRI-DEC-015` prohibition as `R8-08`** — see `KHEPRI-DEC-031` §5. Excluded from `RRA-011`, which authorizes no exception to it | **an owner-authored amendment to `KHEPRI-DEC-015`**, T1-04/T1-05 | R8-08 | Evidence opens, refusal views, mapping review, quality-summary use; never customer content |
 | T1-08 | Add parity, fail-closed, and no-duplicate-truth tests over the customer-visible metric, definition, quality, and evidence surfaces | T1-01 through T1-05 | no | Unknown metric/reason/version refuses; every displayed figure has one definition and evidence path |
 
 ## M2 minimum
@@ -801,7 +819,7 @@ The merged R8 shell remains the base. The remaining work is:
 
 | ID | Task | Depends on | Output |
 |---|---|---|---|
-| R8-08 | Govern and implement content-free product activation telemetry | approved scope | Invite/auth -> org selected -> analysis started -> admission reviewed -> report ready -> evidence opened -> report downloaded |
+| R8-08 | Govern and implement content-free product activation telemetry. **AUTHORITY-BLOCKED — see `KHEPRI-DEC-031` §5.** Its "approved scope" dependency is not an unwritten specification but a *conflict with an active decision*: `KHEPRI-DEC-015` forbids product-analytics use of retained commercial identity data, and this task's event chain begins at invite and authentication. Active `RRA-010` and `RCA-003` each exclude new telemetry events, and the only active telemetry authority — `RRA-007` under `KHEPRI-DEC-028` — is an eleven-stage operational pipeline vocabulary that structurally cannot carry an activation event. **This resumes by amending `KHEPRI-DEC-015`, not by scheduling an implementation slice**; no specification may authorize an exception without that amendment | **an owner-authored amendment to `KHEPRI-DEC-015`** | Invite/auth -> org selected -> analysis started -> admission reviewed -> report ready -> evidence opened -> report downloaded |
 | R8-09 | If a real design partner requires browser sign-in, approve and implement one browser-shaped invite-only provider handoff. **This is `R8-03` reopened**, not new work | amending or successor identity authority over `KHEPRI-DEC-025` §2 | No public signup; identity only; organization and authority remain Khepri-owned |
 | R8-10 | Add analysis quality and evidence entry points to the journey and shell | T1 minimum | User understands what was computed, caveated, and refused before downloading |
 | R8-11 | Run design-partner browser and mobile acceptance | CAL1, T1, OPS1 staging | Complete bilingual journey under live authorization |
@@ -1494,6 +1512,26 @@ No UI component may recompute the value it explains.
 
 All telemetry is content-free and requires approved scope.
 
+**For `R8-08` and `T1-07`, "approved scope" is a prohibition rather than a gap.** Both are blocked by
+**active** governance rather than merely unwritten: `KHEPRI-DEC-015` forbids product-analytics use of
+retained commercial identity data and `R8-08`'s event chain begins at invite and authentication;
+active `RRA-010` and `RCA-003` each exclude new telemetry events; and the only active telemetry
+authority, `RRA-007` under `KHEPRI-DEC-028`, is an eleven-stage *operational pipeline* vocabulary
+whose validator rejects any stage outside it, so it structurally cannot carry a product event.
+
+Approving that scope means **amending an active decision**, which is the owner's to author. No
+specification may authorize an exception without it, and no task may close a measurement clause by
+building an event meanwhile. `KHEPRI-DEC-031` §5 records this.
+
+**Whether the same prohibition reaches `W1-11` and `D1-11` is unresolved and unexamined.** Their
+events — second analysis, report reopen, workspace return, compare use — have not been checked
+against `KHEPRI-DEC-015`'s subject, which is retained *commercial identity* data specifically. The
+question arises for them; this section does not answer it, and their programs must answer it before
+scheduling either.
+
+The measurements below are the design of what would be measured once scope exists — for `R8-08` and
+`T1-07`, not a backlog awaiting scheduling.
+
 ### Activation
 
 - identity handoff succeeded;
@@ -1719,11 +1757,11 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R5 Recovery | BLOCKED | **`BLOCKED`, not `READY_FOR_PLAN`, because §15 reserves `READY_FOR_PLAN` for programs whose design work may start now, and `R5`'s cannot.** `KHEPRI-DEC-025` defers `R5-02`/`R5-03`/`R5-04` while Clerk owns credentials, and the named dependency that reopens them is `G6-00`'s successor credential-ownership decision at M5. The local consequence is **merged and composed** at `1e3b63c` (`#242`) — do not plan another composition slice. `R5-02`…`R5-06` are preserved above because `KHEPRI-DEC-025` and `RCA-002` cite them |
 | R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
 | R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
-| R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
+| R8 Commercial shell | READY_FOR_PLAN | **`R8-08` is AUTHORITY-BLOCKED, not merely unscoped** — it conflicts with active `KHEPRI-DEC-015` and resumes only by amending it (`KHEPRI-DEC-031` §5), so it is not R8's next actionable task. `R8-10`'s entry points are actionable once `RRA-011`'s surfaces land, under existing `RRA-010` and `RCA-002` authority. Browser handoff may require successor authority for external partner use; `R8-11` is deferred with the hosted environment |
 | **CAL1 Calculation correction** | **MERGED** | **All seven successor versions published at `#308` (`7088749`)** — `mapping.py:22` pins `rra003.mapping.v3`, `facts.py:92-93` pin `rra004.package.v3` and `rra004.formula.v2`, and the four `rra008.*` families pin their `v2` constants. The strict `xfail` on `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` was removed there, as designed. Nine PRs merged after it correcting defects in the now-governing contracts, then `CAL1-11`'s catalogue-wide compatibility sweep at `9e7a886` (`#328`). **`MERGED` with a `main` SHA, per §15**: every CAL1 task has landed — `CAL1-12` through `CAL1-15` at `#330` (`f320c17`), after `CAL1-11` at `#328` (`9e7a886`). The closure evidence is the CAL1-15 ledger's own standing table, which records `CAL1-12` and `CAL1-15` complete and `CAL1-13`/`CAL1-14` passing; the owner merged that assessment, and `AGENTS.md` makes a merge the approval. **Two P2 findings are carried, not gates** — the same shape as `R7` carrying `#231` and `#211`: defects against landed work rather than unmet acceptance. `CAL1-12` killed five of six named mutants with existing tests and closed the sixth (publication-gating over `versions.py`'s `ADMITTED_PACKAGE_PAIRS`/`ADMITTED_FAMILY_PAIRS`, previously a P1 proof gap, now mutation-verified per table) with two new exact-extent tests, added a pharmacy golden fixture, and filed two P2 findings open: `CAVEAT_CURRENCY_NOT_DECLARED` is unreachable under `rra003.mapping.v3` (needs an `RRA-003` or `RRA-009` ruling), and the Excel container is not byte-identical across regenerations — one of 46 ZIP members, `docProps/core.xml`, carries a `dcterms:created`/`modified` wall-clock stamp (needs an `RRA-006` reading of whether deterministic regeneration governs container bytes or governed content). `CAL1-13`'s validation gate passes — governance and Ruff clean, 3,631 passed/72 skipped/1 xfailed whole-repo, the calculation-contract scope alone (`test_rra00*`, `test_rra_calculation_*`, `test_cal1_*`, `test_bmk001_*`) at 1,832 passed and zero skipped, deterministic across two runs. `CAL1-14`'s staging journey passed with zero failures end to end, bilingual, restart/recovery verified, `package_digest` byte-identical across four runs. `CAL1-15` is complete: its CodeScene clause could not be checked from the authoring session (CodeScene MCP `CONNECTION_CLOSED`, `github` MCP `401`) and was **settled by the required server-side gate on `#330`, which reported pass**. No unresolved P0/P1 finding remains open. Carries `#326` and `#311`; neither blocks. **Carries two P2 follow-ups; neither blocks** — (1) `CAVEAT_CURRENCY_NOT_DECLARED` is unreachable under `rra003.mapping.v3`, awaiting an `RRA-003` admission change or an `RRA-009` withdrawal; and (2) the Excel container is not byte-identical across regenerations, one of 46 ZIP members carrying a `dcterms` wall-clock stamp, awaiting an `RRA-006` reading of whether deterministic regeneration governs container bytes or governed content. Neither publishes a wrong figure. **Next: `T1`** |
-| **T1 Trust/catalog** | PROPOSED | Needs bounded authority; design can proceed during late CAL1 |
+| **T1 Trust/catalog** | READY_FOR_PLAN | **Bounded authority now exists**: active `RRA-011` allocates the metric, population, and reason catalog, its bilingual vocabulary, and its evidence surfaces, governing `T1-01` through `T1-05` and `T1-08`. `T1-06` lineage is excluded and may complete during early `M3`; `T1-07` trust telemetry is excluded and **blocked** on the same `KHEPRI-DEC-015` prohibition as `R8-08` (`KHEPRI-DEC-031` §5). `READY_FOR_PLAN` rather than `IN_IMPLEMENTATION` per §15: authority exists and no slice has merged |
 | **U1 Design system** | READY_FOR_PLAN | Shell primitives exist; data/evidence component work depends on T1 contracts |
-| **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain |
+| **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain. **`OPS1-01` is done and `OPS1-02` is unblocked** by `KHEPRI-DEC-030` §3–4 for the provisional bootstrap shape — but `KHEPRI-DEC-031` §4 **defers `OPS1-02` through `OPS1-05` and `OPS1-09` past `M2`** by owner decision. Deferred, not blocked: the authority is active and unexercised, so this resumes by scheduling it |
 | S1 RRA hardening | READY_FOR_PLAN | Triage only; avoid CAL1 hotspots. Owns `#152` through `S1-05`, and ranks `#231` in `S1-02` |
 | G2/G3 Workspace authority | PROPOSED | Needs M2 learnings and retention decisions |
 | W1 Workspace/history | BLOCKED | No active G2/G3 authority |
@@ -1758,13 +1796,13 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 6. ~~**`CAL1-11` — the final compatibility sweep.**~~ **Done** — `9e7a886` (`#328`). Proved no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and closed version compatibility across the assembled contract, directly answering the gap the `#325` review round exposed.
 7. ~~**`CAL1-12` — mutation and pharmacy golden evidence.**~~ **Done** — `#330` (`f320c17`). It applied all six named mutants to merged source: row-vs-transaction, unequal windows, unmatched populations, and full-set concentration and sign rules were each killed by an existing test; publication gating over `versions.py`'s `ADMITTED_PACKAGE_PAIRS`/`ADMITTED_FAMILY_PAIRS` survived as a real P1 proof gap and is now closed by two new exact-extent tests, mutation-verified per table. A pharmacy golden fixture (`tests/test_cal1_pharmacy_golden.py`, `PHARMACY_ROWS` in `tests/rra_calculation_oracle.py`) now exists, mutation-verified against `facts._sale_only`. **The sign/currency acceptance clause is met, and the distinction is worth stating because it decides whether this slice is complete.** The clause requires the named mutants to be *killed*. The sign mutant is killed. The currency mutant is not a surviving guard — it is an unreachable branch: `facts.py:1143` fires only when the package has no admitted currency *and* still publishes a monetary fact, and the only path to the first (`admission._currency` returning `(None, True)`) sets `monetary_refused`, which nulls every monetary measure before the caveat can attach. Verified empirically. No test can kill a mutant in code no input reaches, so the clause cannot be discharged by test work in this slice, and a test forcing the branch by internal construction would assert a state production cannot produce. Filed as P2 rather than deferred silently: `CAVEAT_CURRENCY_NOT_DECLARED` carries bilingual prose, a wording registration and two narrative branches, so it is a *defined but never attached* catalogue defect. Its fix is an `RRA-003` admission change or an `RRA-009` withdrawal — a family ruling, not evidence — and it publishes no wrong figure meanwhile, because where mixed currency occurs every monetary fact is already refused. **That reading was put to the owner and answered by the merge**: `#330` carried this conditional in its own body and was merged with the slice recorded complete, so the clause is met and the unreachable caveat is a carried P2 follow-up rather than an open gate. It blocks nothing below it. Ledger: `docs/superpowers/plans/2026-08-29-cal1-12-mutation-and-pharmacy-evidence-ledger.md`.
 8. ~~**`CAL1-13/14/15` — the gate, staging, and external review.**~~ **Done** — `#330` (`f320c17`), which also carried `CAL1-12`. `CAL1-13`'s validation gate passes: governance and Ruff clean, 3,631 passed/72 skipped/1 xfailed whole-repo (the 72 skips are all outside the calculation contract — Postgres-only and WSL-loopback tests — and the calculation-contract scope alone runs 1,832 passed, zero skipped), deterministic across two full reruns. `CAL1-14`'s local staging journey (upload → admission → facts → worker → HTML/PDF/Excel/evidence) passed with zero failures, bilingual artifacts confirmed, containers restarted cleanly between journeys, a job queued with no worker alive was claimed and completed by the next worker (`attempt_count=1`), a first attempt failed against a stopped object store and was **retried after the governed 60s `RETRY_DELAY` to succeed on attempt 2** (`rra_report_job_attempts` records attempt 1 as `retry_scheduled`), and `package_digest` was byte-identical across all four runs. One property is filed rather than closed: the Excel *container* is not byte-identical across regenerations, because `docProps/core.xml` carries a wall-clock stamp — every worksheet and both digests are identical, and whether `RRA-006`'s one-line deterministic-regeneration clause governs container bytes is an owner reading. `CAL1-15`'s acceptance — "every family sits on its single governed successor version, and no transitional version was published on `main`" — is verified against the merged history: the seven versions published at `#308` and `versions.py`'s two tables (three package triples, eight family pairs, both now extent-tested) hold no fourth identity. No unresolved P0/P1 finding remains open. **CodeScene passed on `#330`'s required server-side gate**, which is the authority; it was not checkable from the authoring session (MCP `CONNECTION_CLOSED`, `github` MCP `401`), so it is recorded from the check result. Ledger: `docs/superpowers/plans/2026-08-29-cal1-13-14-15-gate-staging-and-review-evidence.md`.
-9. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
-10. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
-11. **OPS1-01:** activate the governance a provisional non-production bootstrap needs, and settle provider, region, residency, and products. No final capacity claim is made here.
+9. ~~**T1 governance**~~ **Done** — active `RRA-011` allocates the metric, population, and reason catalog, its bilingual vocabulary, and its evidence surfaces. **`T1-01` through `T1-05` and `T1-08` are the next actionable work in this queue**: metric definitions, quality summary, and evidence minimum, built as a catalog *derived* from the governed constants rather than retyped beside them. `T1-06` lineage may complete during early `M3`; `T1-07` is blocked with item 10.
+10. **`R8-08` — AUTHORITY-BLOCKED, and not this queue's to unblock.** It conflicts with active `KHEPRI-DEC-015`, which forbids product-analytics use of retained commercial identity data, and its event chain begins at invite and authentication. It resumes only by an owner-authored amendment to that decision — not by scheduling an implementation slice — and `T1-07` waits on the same amendment. See `KHEPRI-DEC-031` §5. `R8-09` remains conditional on a design partner requiring browser sign-in, which is external use and deferred with item 11.
+11. ~~**OPS1-01**~~ **Done** — `KHEPRI-DEC-028`, `KHEPRI-DEC-029`, and `KHEPRI-DEC-030` are active and `KHEPRI-DEC-027` is retired. **Items 11 through 14 below are deferred past `M2` by `KHEPRI-DEC-031` §4**, which records the owner's decision to stay on the local stack for now. Deferred, not blocked: `OPS1-02` is unblocked for the provisional bootstrap shape and resumes by scheduling it.
 12. **OPS1-02, then OPS1-03:** provision the provisional non-production environment through CI, then configure its managed services and capture the live PostgreSQL minor and Spaces compatibility evidence.
 13. **OPS1-09:** run the governed hosted benchmark against that measured target and reissue the sizing authority. It cannot precede `OPS1-03`, which produces the target it measures.
 14. **OPS1-04 through OPS1-07:** recovery and capacity evidence, observability, and the pilot runbook.
-15. **M2 acceptance:** run one complete bilingual design-partner rehearsal and explicitly authorize or refuse external alpha.
+15. **M2 acceptance, in its local-only form:** run one complete bilingual rehearsal **on the local stack**, against the merged `RRA-011` catalog surfaces, per `KHEPRI-DEC-031` §7. The rehearsal is **internal** — "before external use" is `M2`'s operative bound, and authorizing external alpha is not available here: it needs the hosted environment (item 11) and, separately, the amendment item 10 names. Record `M2` as reached in its local-only form with its two unmet clauses named, or record what failed.
 16. **G2/G3:** activate retention and workspace authority.
 17. **W1-01 onward:** begin durable workspace/history implementation.
 

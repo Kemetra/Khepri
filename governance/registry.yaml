@@ -189,6 +189,16 @@ artifacts:
     depends_on:
       - KHEPRI-DEC-028
       - KHEPRI-DEC-029
+  - type: decision
+    id: KHEPRI-DEC-031
+    state: active
+    document: governance/decisions/KHEPRI-DEC-031-local-only-design-partner-rehearsal.md
+    depends_on:
+      - KHEPRI-DEC-015
+      - KHEPRI-DEC-028
+      - KHEPRI-DEC-029
+      - KHEPRI-DEC-030
+      - RRA-011
 
   - type: specification
     id: FND-001
@@ -285,6 +295,15 @@ artifacts:
     depends_on:
       - RRA
       - RRA-006
+  - type: specification
+    id: RRA-011
+    state: active
+    document: governance/specifications/RRA-011.md
+    depends_on:
+      - RRA
+      - RRA-004
+      - RRA-008
+      - RRA-009
   - type: specification
     id: RCA-001
     state: active
