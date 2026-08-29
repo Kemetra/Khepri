@@ -83,6 +83,41 @@ LABEL_WORDING: dict[str, dict[str, str]] = {
     },
 }
 
+#: What `category_of` can emit as a localizable code, derived from the two sources
+#: that govern its branches rather than restated. A governed comparison mode
+#: becomes `label.{mode}`, and a chart figure with no label of its own becomes
+#: `metric.{metric}` -- which for charted figures is the growth family, the only
+#: metrics reaching a mark without a label.
+_LOCALIZABLE_CHART_CODES = frozenset(
+    {f"label.{mode}" for mode in GOVERNED_FIGURE_LABELS}
+    | {f"metric.{metric}" for metric in growth.GOVERNED_METRICS}
+)
+
+
+def _assert_label_wording_complete() -> None:
+    """`worded` raises on a code this table lacks, and it raises mid-render.
+
+    Not part of `CAL1-11`'s filed `F5`, which named five other tables. Found
+    while closing them: this one has the same shape and the same consequence.
+    `worded` deliberately refuses to fall back to the raw code -- an identifier
+    on a customer axis is the failure it exists to prevent -- so a missing entry
+    is an exception during chart rendering rather than a cosmetic gap, and the
+    import is where that should surface.
+    """
+    if set(LABEL_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("chart labels must cover every governed language")
+    for language, entries in LABEL_WORDING.items():
+        if set(entries) != _LOCALIZABLE_CHART_CODES:
+            message = (
+                "every localizable chart code needs wording in every language "
+                f"(language={language!r})"
+            )
+            raise RuntimeError(message)
+
+
+_assert_label_wording_complete()
+
+
 # Business names for the governed metric codes. These are separate from
 # `LABEL_WORDING`: a metric name is report prose, while a label names a chart mark
 # or comparison mode. The renderers consume these strings without touching the
@@ -120,19 +155,13 @@ METRIC_WORDING: dict[str, dict[str, str]] = {
     },
 }
 
-_FACT_METRIC_CODES = {
-    facts.METRIC_REVENUE,
-    facts.METRIC_UNITS,
-    facts.METRIC_TRANSACTIONS,
-    facts.METRIC_AVERAGE_ORDER_VALUE,
-    facts.METRIC_AVERAGE_SELLING_PRICE,
-    facts.METRIC_COST,
-    facts.METRIC_GROSS_PROFIT,
-    facts.METRIC_GROSS_MARGIN,
-    facts.METRIC_DISCOUNT,
-    facts.METRIC_RETURNS,
-}
-_GOVERNED_METRIC_CODES = _FACT_METRIC_CODES | set(growth.GOVERNED_METRICS)
+# Imported rather than retyped. This was a hand-listed copy of the ten core metric
+# constants, and a metric added to `facts.py` left it unchanged: `METRIC_WORDING`
+# would then have no entry for the new code, the guard below would still pass, and
+# the first reader to meet that metric would meet its raw identifier. `RRA-011`
+# requires a slice to reduce the count of hand-maintained code lists rather than
+# add one, and this is that reduction.
+_GOVERNED_METRIC_CODES = facts.GOVERNED_METRICS | set(growth.GOVERNED_METRICS)
 _RESULT_REASON_CODES = {
     facts.REASON_INPUT_UNAVAILABLE,
     facts.REASON_ZERO_DENOMINATOR,

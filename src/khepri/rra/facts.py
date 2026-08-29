@@ -113,6 +113,43 @@ METRIC_GROSS_PROFIT = "gross_profit"
 METRIC_GROSS_MARGIN = "gross_margin"
 METRIC_DISCOUNT = "discount"
 METRIC_RETURNS = "returns"
+
+#: Every headline metric code `RRA-004` names, as one governed set.
+#:
+#: Stated here, beside the constants, because this is where a metric is added: a
+#: consumer that needs "every core metric" reads this instead of retyping the ten
+#: names, and a metric added above without being added here fails a test rather
+#: than silently narrowing whatever that consumer governs. `wording.py` kept such
+#: a retyped copy until `RRA-011` replaced it with this import.
+#:
+#: Core metrics only. Each `RRA-008` family exports its own `GOVERNED_METRICS`,
+#: and unioning them here would put the analysis families' vocabulary inside
+#: `rra004.formula`'s identity, which is not what the version means.
+GOVERNED_METRICS: frozenset[str] = frozenset(
+    {
+        METRIC_REVENUE,
+        METRIC_UNITS,
+        METRIC_TRANSACTIONS,
+        METRIC_AVERAGE_ORDER_VALUE,
+        METRIC_AVERAGE_SELLING_PRICE,
+        METRIC_COST,
+        METRIC_GROSS_PROFIT,
+        METRIC_GROSS_MARGIN,
+        METRIC_DISCOUNT,
+        METRIC_RETURNS,
+    }
+)
+
+
+def is_governed_metric(code: str) -> bool:
+    """Whether this code names a core metric `RRA-004` defines.
+
+    A predicate rather than bare set membership, matching
+    `populations.is_governed_population`: the two answer the same shape of
+    question, and a caller reading one should not have to check whether the
+    other happens to expose a set or a function.
+    """
+    return code in GOVERNED_METRICS
 #: What `returning_periods` records for a posted return carrying no date.
 #:
 #: It belongs to no period, so no window can be proven free of it. A label no

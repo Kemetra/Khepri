@@ -760,3 +760,43 @@ def test_section_headings_were_already_guarded_when_f5_filed_them() -> None:
     """
     for headings in wording.SECTION_HEADINGS.values():
         assert set(headings) == set(bundle.ORDERED_SECTIONS)
+
+
+def test_label_wording_guard_raises_when_a_localizable_code_lacks_wording(
+    monkeypatch,
+) -> None:
+    """Beyond F5, and found while closing it: the same shape, the same cost.
+
+    `worded` deliberately refuses to fall back to the raw code, because an
+    identifier on a customer axis is the failure that function exists to
+    prevent. So a missing entry here is an exception during chart rendering
+    rather than a cosmetic gap, and the import is where it should surface.
+
+    The governed set is derived from the two branches `category_of` can take: a
+    governed comparison mode becomes `label.{mode}`, and a charted figure with no
+    label of its own becomes `metric.{metric}`, which for marks is the growth
+    family.
+    """
+    broken = {
+        language: dict(entries) for language, entries in wording.LABEL_WORDING.items()
+    }
+    del broken[LANGUAGE_ENGLISH]["label.year_over_year"]
+    monkeypatch.setattr(wording, "LABEL_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="chart code"):
+        wording._assert_label_wording_complete()
+
+
+def test_label_wording_covers_every_mode_and_growth_metric_category_of_emits() -> None:
+    """The table's key set equals what `category_of` can localize, exactly.
+
+    Asserted against the governed sources rather than against the table's own
+    derived constant: importing `_LOCALIZABLE_CHART_CODES` to check the table it
+    built would compare a restatement with itself.
+    """
+    expected = {f"label.{mode}" for mode in bundle.GOVERNED_FIGURE_LABELS} | {
+        f"metric.{metric}" for metric in GOVERNED_METRICS
+    }
+
+    for entries in wording.LABEL_WORDING.values():
+        assert set(entries) == expected
