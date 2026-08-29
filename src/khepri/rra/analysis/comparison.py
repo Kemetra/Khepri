@@ -192,7 +192,16 @@ _REASON_PRECEDENCE = (
 # version string as source provenance and leave the facts declaring no measure.
 # The date is an input as much as the revenue: it decides which period a row
 # lands in, and therefore which two periods are compared.
-_INPUTS = (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE)
+REQUIRED_INPUTS = (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE)
+
+#: What each governed metric needs from the mapping, as
+#: `(required, alternatives)`. Every metric this family states decomposes from
+#: the same inputs, so they share one requirement -- and that sharing is the
+#: point: missing any one of them leaves this family publishing nothing, which
+#: is `unavailable` rather than partial.
+RESULT_REQUIREMENTS = {
+    metric: (REQUIRED_INPUTS, ()) for metric in GOVERNED_METRICS
+}
 
 # Which unit each governed metric is stated in. A table rather than an argument,
 # so a metric cannot be emitted in the wrong unit by a caller passing one.
@@ -589,7 +598,7 @@ def _fact(derivation: _Derivation, metric: str, value: Decimal) -> Fact:
         value=str(value.quantize(Decimal(1).scaleb(-precision))),
         precision=precision,
         unit_kind=unit_kind,
-        inputs=_INPUTS,
+        inputs=REQUIRED_INPUTS,
         caveats=derivation.caveats,
         formula_version=COMPARISON_FORMULA_VERSION,
     )

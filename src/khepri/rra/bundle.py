@@ -1550,12 +1550,24 @@ class _Family:
     # version is a module constant and capturing it here would freeze the
     # pairing at import time -- exactly what the gate exists to detect.
     version: object
+    # What each of the family's metrics needs from the mapping, read through a
+    # callable for the same reason `version` is: the family declares it, this
+    # table points at the declaration, and `T1-04`'s availability contract reads
+    # it from here. A dict captured here would be a second truth that agrees at
+    # import and drifts the first time a family changes what it derives from.
+    #
+    # Per metric rather than per family, because availability is a claim about
+    # results. A family whose metrics share one requirement publishes all or
+    # none; one whose metrics differ can publish some -- and only per-metric
+    # requirements tell those two apart.
+    result_requirements: object
 
 
 _FAMILIES = {
     SECTION_COMPARISON: _Family(
         derive=comparison.derive,
         version=lambda: comparison.COMPARISON_FORMULA_VERSION,
+        result_requirements=lambda: comparison.RESULT_REQUIREMENTS,
         refusals=comparison.refusals,
         names=lambda fact, package: comparison.mode_of(fact),
         # The absolute deltas, one bar per mode. The percentage deltas are the same
@@ -1566,6 +1578,7 @@ _FAMILIES = {
     SECTION_CONCENTRATION: _Family(
         derive=concentration.derive,
         version=lambda: concentration.CONCENTRATION_FORMULA_VERSION,
+        result_requirements=lambda: concentration.RESULT_REQUIREMENTS,
         refusals=lambda package: (),
         # No label. Every concentration fact shares one dimension, so naming it per
         # row distinguishes nothing, and the curve's own points are labelled by rank.
@@ -1578,6 +1591,7 @@ _FAMILIES = {
     SECTION_GROWTH: _Family(
         derive=growth.derive,
         version=lambda: growth.GROWTH_FORMULA_VERSION,
+        result_requirements=lambda: growth.RESULT_REQUIREMENTS,
         refusals=growth.refusals,
         # No label, for the same reason: all three effects share one mode. The
         # metric is what says which effect a row or a bar is, and a chart resolves it
@@ -1590,6 +1604,7 @@ _FAMILIES = {
     SECTION_BASKET: _Family(
         derive=basket.derive,
         version=lambda: basket.BASKET_FORMULA_VERSION,
+        result_requirements=lambda: basket.RESULT_REQUIREMENTS,
         refusals=basket.refusals,
         names=basket.attached_label_of,
         # The attach rates, one bar per value. Items per transaction is a different

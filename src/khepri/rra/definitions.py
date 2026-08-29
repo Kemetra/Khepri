@@ -35,6 +35,7 @@ from dataclasses import dataclass
 
 from khepri.rra import facts, populations
 from khepri.rra.analysis import basket, comparison, concentration, growth
+from khepri.rra.mapping import STATE_MAPPED
 from khepri.rra.rendering import wording
 
 
@@ -536,4 +537,196 @@ def summarize(bundle) -> AnalysisQualitySummary:
         answered_sections=answered_sections,
         caveated_sections=caveated_sections,
         caveat_sections=_associate_caveats(qualifying),
+    )
+
+
+#: Every declared input this analysis needs is resolved in the mapping.
+AVAILABLE = "available"
+#: Some are resolved and some are not. The analysis may still publish part of
+#: what it states, and `missing` names what stands between it and the rest.
+PARTIAL = "partial"
+#: None of what it needs is resolved.
+UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityAvailability:
+    """Whether one analysis is supportable on the admitted data, before it runs.
+
+    **Availability, never certainty.** `RRA-011`:188-192 excludes a confidence
+    score, a quality score, a likelihood, and a completeness percentage by name.
+    This answers set membership -- are the semantics this family declares
+    resolved in the mapping -- and computes nothing, so there is no arithmetic
+    here for a score to hide in. A reader learns what the system will be able to
+    answer, not how good the answer will be.
+
+    **Pre-analysis by construction.** `KHEPRI_PRODUCT_UX_BLUEPRINT.md`:201 places
+    the Impact Preview at `Review -> Impact Preview -> Analyze`, so no
+    `ReportBundle` exists when this is read. It takes a `RetailMapping` and
+    nothing else, which is what lets it be honest before the analysis step.
+
+    **Not a promise.** An analysis reported available can still refuse once it
+    runs -- on a zero denominator, a reconciliation failure, or a repeated row
+    signature, none of which a mapping can foresee. This states that the
+    *inputs* are present, which is the only thing knowable at this point.
+    """
+
+    section: str
+    state: str
+    #: What this mapping has not resolved, as one group per gap, in the family's
+    #: own order. A bare state tells a customer an analysis will not run and not
+    #: what to fix; this names the gap, which is the half they can act on.
+    #:
+    #: **Groups rather than names**, because some gaps are choices. Basket's
+    #: attach rate needs a governed dimension *and* a core measure, so
+    #: `('units',), ('product', 'category'), ('revenue', 'units')` is three
+    #: pieces of work while the flattened four names read as four required
+    #: fields -- misstating the work by two. A one-member group is a plain
+    #: requirement and a longer one is a disjunction, so a surface renders
+    #: "product or category" from the same shape it renders "units" from.
+    missing: tuple[tuple[str, ...], ...]
+
+
+def _is_resolved(mapping, semantic: str) -> bool:
+    """Whether the mapping resolved this semantic to a column.
+
+    A semantic counts as resolved only at `STATE_MAPPED`. `RRA-003` leaves a
+    column stating no measure kind ambiguous, and `facts._unavailable_reason`
+    already treats that as unavailable with a reason of its own: the data is
+    present and the *label* falls short. Counting it as resolved would promise
+    an analysis that refuses the moment it runs.
+
+    A semantic absent from the mapping raises `KeyError` from `state_of`. A
+    mapping built for a narrower contract legitimately omits one, so absence
+    reads as unresolved rather than as an error.
+    """
+    try:
+        return mapping.state_of(semantic) == STATE_MAPPED
+    except KeyError:
+        return False
+
+
+def _unmet(mapping, requirement) -> tuple[tuple[str, ...], ...]:
+    """What stands between this mapping and one result, in the family's order.
+
+    `requirement` is `(required, groups)`: every semantic in `required` must be
+    resolved, and at least one member of each group in `groups`.
+
+    Groups rather than one alternative set, because a metric can face two
+    independent choices -- basket's attach rate needs a governed dimension *and*
+    a core measure to rank by, and a dimension does not substitute for a
+    measure. Collapsing them into one set would report the metric supportable on
+    two dimensions and no measure.
+
+    Each gap is returned as a group: a required semantic as a one-member group
+    and an unsatisfied choice as all of its members, so a caller can say "product
+    or category" and tell it apart from two separate requirements.
+    """
+    required, groups = requirement
+    missing = tuple(
+        (code,) for code in required if not _is_resolved(mapping, code)
+    )
+    for group in groups:
+        if not any(_is_resolved(mapping, code) for code in group):
+            missing = (*missing, tuple(group))
+    return missing
+
+
+def _assert_mapping_admitted(mapping) -> None:
+    """Refuse a mapping this build cannot pair with its own versions.
+
+    `facts.assert_versions_admitted` refuses such a mapping before `_build`
+    produces anything, so every analysis is unavailable in the strongest sense:
+    not "this data does not support it" but "no package can be built at all".
+    Reading only semantic states would report every family available and promise
+    a reader analyses that cannot run.
+
+    Checked against **this build's** `PACKAGE_VERSION` and `FORMULA_VERSION`,
+    not against membership in any historical triple. `ADMITTED_PACKAGE_PAIRS`
+    retains superseded rows, and during a version migration those name mapping
+    versions the builder no longer accepts -- `rra003.mapping.v2` sits only
+    beside `package.v2`/`formula.v1`. Asking the weaker question would admit a
+    mapping `_build` refuses, which is the promise this guard exists to prevent.
+
+    Derived from the constants rather than naming a version, so a version move
+    carries this with it instead of needing an edit here.
+
+    Fail-closed on the mapping argument, as `availability_for` already is on the
+    section argument.
+    """
+    if not facts.admits_package(
+        mapping_version=mapping.mapping_version,
+        package_version=facts.PACKAGE_VERSION,
+        formula_version=facts.FORMULA_VERSION,
+    ):
+        raise UnknownCode(mapping.mapping_version)
+
+
+def availability(mapping) -> tuple[CapabilityAvailability, ...]:
+    """What each governed analysis can be answered on this mapping, before it runs.
+
+    One entry per family in `bundle._FAMILIES`, so a surface renders the report
+    without keeping a second list of which analyses exist. Each family's
+    requirement is read from the family itself through that table, never
+    restated here: `RRA-011` requires a slice to *reduce* the repository's
+    hand-maintained code lists, and a copy of four input tuples would be the
+    fourth.
+    """
+    from khepri.rra.bundle import _FAMILIES
+
+    _assert_mapping_admitted(mapping)
+    return tuple(
+        _availability_of(mapping, section, family)
+        for section, family in _FAMILIES.items()
+    )
+
+
+def availability_for(mapping, section: str) -> CapabilityAvailability:
+    """One analysis's availability, or `UnknownCode`.
+
+    Fail-closed like every other lookup here: an unrecognized section returning
+    `UNAVAILABLE` would be indistinguishable from a real analysis that cannot
+    run, and a surface would render a capability the product does not have.
+    """
+    from khepri.rra.bundle import _FAMILIES
+
+    _assert_mapping_admitted(mapping)
+    family = _FAMILIES.get(section)
+    if family is None:
+        raise UnknownCode(section)
+    return _availability_of(mapping, section, family)
+
+
+def _availability_of(mapping, section: str, family) -> CapabilityAvailability:
+    """One family's availability, from what its metrics can actually publish.
+
+    The state is a claim about **results**, not about inputs. Counting resolved
+    inputs cannot tell "half of this publishes" from "none of it does": every
+    growth metric decomposes from the same date, revenue and units, so a mapping
+    holding two of the three publishes nothing, while basket states items per
+    transaction on units and an identifier and its attach rate on a dimension
+    besides, so the same arithmetic there leaves one metric standing.
+
+    So each metric is checked against its own requirement and the states follow:
+    every metric publishable is `available`, none is `unavailable`, and some is
+    `partial` -- which is the only reading under which `partial` promises a
+    reader something they will actually receive.
+
+    `missing` is the union of what the unpublishable metrics lack, deduplicated
+    on the group so a choice two metrics share is stated once, in first-seen
+    order -- one list of work rather than one per metric.
+    """
+    requirements = family.result_requirements()
+    unmet = {
+        metric: _unmet(mapping, requirement)
+        for metric, requirement in requirements.items()
+    }
+    blocked = [gap for gap in unmet.values() if gap]
+    if not blocked:
+        return CapabilityAvailability(section=section, state=AVAILABLE, missing=())
+    state = UNAVAILABLE if len(blocked) == len(requirements) else PARTIAL
+    return CapabilityAvailability(
+        section=section,
+        state=state,
+        missing=tuple(dict.fromkeys(group for gap in blocked for group in gap)),
     )

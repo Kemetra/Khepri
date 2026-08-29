@@ -90,6 +90,7 @@ from khepri.rra.facts import (
     fact_identity,
 )
 from khepri.rra.mapping import (
+    CORE_MEASURES,
     SEMANTIC_CATEGORY,
     SEMANTIC_PRODUCT,
     SEMANTIC_TRANSACTION_ID,
@@ -136,7 +137,31 @@ REASON_DIMENSION_INCOMPLETE = "dimension_values_incomplete"
 # Which dimensions `RRA-008` allows attach rate over, in the order preferred.
 GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 
-_ITEMS_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
+REQUIRED_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
+
+#: What each governed metric needs from the mapping, as `(required, groups)`:
+#: every semantic in `required` must be resolved, and at least one member of
+#: each group in `groups`.
+#:
+#: Per metric, because `_facts` states each on its own inputs -- its docstring:
+#: "Attach rate needs no units and items per transaction needs no dimension, so
+#: neither may be suppressed by the other's missing input."
+#:
+#: Attach rate therefore needs the identifier it counts transactions with, a
+#: governed dimension to state a rate over, and *a* core measure to rank by --
+#: `_ranked` takes the revenue comparison first and falls back to any counted
+#: one, so either measure serves. Two groups rather than one, since the two
+#: choices are independent: a dimension does not substitute for a measure.
+#:
+#: `CORE_MEASURES` is read from `mapping` rather than retyped, so the pair stays
+#: one declaration.
+RESULT_REQUIREMENTS = {
+    METRIC_ITEMS_PER_TRANSACTION: ((SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID), ()),
+    METRIC_ATTACH_RATE: (
+        (SEMANTIC_TRANSACTION_ID,),
+        (GOVERNED_DIMENSIONS, CORE_MEASURES),
+    ),
+}
 
 # The two buckets `build_comparison` synthesizes rather than reads from a source
 # value. Neither is an admissible dimension value, so neither gets an attach rate.
@@ -518,7 +543,7 @@ def _fact(
         value=str(value.quantize(Decimal(1).scaleb(-RATIO_PRECISION))),
         precision=RATIO_PRECISION,
         unit_kind=UNIT_RATIO,
-        inputs=_ITEMS_INPUTS if not scope else (scope[0], SEMANTIC_TRANSACTION_ID),
+        inputs=REQUIRED_INPUTS if not scope else (scope[0], SEMANTIC_TRANSACTION_ID),
         caveats=caveats,
         formula_version=BASKET_FORMULA_VERSION,
     )

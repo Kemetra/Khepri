@@ -100,6 +100,20 @@ REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
 # Which dimensions `RRA-008` names, in the order this family prefers them.
 GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 
+#: What each governed metric needs from the mapping, as
+#: `(required, alternatives)`. Every concentration metric is stated over one
+#: dimension against revenue, so they share a requirement -- but it is declared
+#: per metric like every other family's, so a metric that later needs something
+#: else has somewhere to say so.
+#:
+#: The dimension is an alternative rather than a requirement: `_found` selects
+#: whichever the mapping resolved, and demanding both would report unavailable
+#: an analysis the calculation publishes.
+RESULT_REQUIREMENTS = {
+    metric: ((SEMANTIC_REVENUE,), (GOVERNED_DIMENSIONS,))
+    for metric in GOVERNED_METRICS
+}
+
 # The axis a concentration curve is stated over. `Series.granularity` names the unit
 # of a bucket's position, and for this series that unit is rank rather than time.
 GRANULARITY_RANK = "rank"
