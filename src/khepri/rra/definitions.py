@@ -161,6 +161,18 @@ def not_meant(code: str, language: str) -> str:
     return wording.metric_not_meant(code, language)
 
 
+def synonyms(code: str, language: str) -> tuple[str, ...]:
+    """Names a reader may recognize this metric by, or `UnknownCode`.
+
+    The third of the three things `RRA-011` names as the catalog's vocabulary,
+    beside the description and the unsupported reading. A synonym maps a phrase a
+    reader arrives with onto the one governed metric; it never defines a second.
+    """
+    if not admits_metric(code):
+        raise UnknownCode(code)
+    return wording.metric_synonyms(code, language)
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisQualitySummary:
     """What one package answered, answered with a qualification, and refused.
@@ -200,10 +212,37 @@ def summarize(bundle) -> AnalysisQualitySummary:
     section carrying a reason is refused, and one carrying none is not — so this
     never re-derives what `RRA-009` already decided.
     """
+    # Two kinds of refusal, and both belong here.
+    #
+    # A family that could state nothing refuses its whole section and carries the
+    # reason on the section. A family that stated *something* refuses only the
+    # results it could not compute -- comparison publishes an absolute delta and
+    # refuses the percentage -- and `bundle._scoped` carries each of those as a
+    # caveat coded `<result>:<reason>` on a section that has no reason of its own.
+    #
+    # Counting sections alone reported `refused == 0` for a package where two
+    # results had been refused. The codes were in `caveats` the whole time, so
+    # nothing was lost; the summary's own fields contradicted them, which is worse
+    # than omitting the count -- a consumer reading `refusals` was told the analysis
+    # had refused nothing.
+    #
+    # A scoped refusal is selected by the separator and then split on it, rather
+    # than split first and filtered on what falls out. Both partition helpers return
+    # a three-tuple for a code with no colon, so a filter reading one of its slots
+    # depends on which helper was used and silently admits every caveat when that
+    # changes -- the selection is the load-bearing half and it is stated here.
+    #
+    # `rpartition` because a result identity is mode-qualified with a dot and the
+    # reason never contains a colon, so the last one is the boundary even if a
+    # future identity carries its own.
+    scoped = tuple(caveat for caveat in bundle.caveats if ":" in caveat.code)
     refusals = tuple(
         (section.section_id, section.reason)
         for section in bundle.sections
         if section.reason is not None
+    ) + tuple(
+        (result, reason)
+        for result, _, reason in (caveat.code.rpartition(":") for caveat in scoped)
     )
     answered = tuple(
         section for section in bundle.sections if section.reason is None
@@ -215,13 +254,18 @@ def summarize(bundle) -> AnalysisQualitySummary:
     # either way. Kept because the set is named `qualified` and a reader should
     # not have to work out that a report-level caveat is silently excluded by
     # arithmetic rather than by intent.
+    # A refusal code is not also a caveat. Both fields read `bundle.caveats`, which
+    # is one channel carrying two things, so partitioning here is what stops the
+    # same refused result being counted as a qualification, listed under `caveats`,
+    # and rendered twice to a reader who shows both.
+    qualifying = tuple(caveat for caveat in bundle.caveats if ":" not in caveat.code)
     qualified = {
-        caveat.section for caveat in bundle.caveats if caveat.section is not None
+        caveat.section for caveat in qualifying if caveat.section is not None
     }
     return AnalysisQualitySummary(
         answered=len(answered),
         caveated=len({s.section_id for s in answered} & qualified),
         refused=len(refusals),
         refusals=refusals,
-        caveats=tuple(sorted({caveat.code for caveat in bundle.caveats})),
+        caveats=tuple(sorted({caveat.code for caveat in qualifying})),
     )

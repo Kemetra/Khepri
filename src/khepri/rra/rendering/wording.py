@@ -1342,8 +1342,83 @@ _CATALOGUED_METRIC_CODES = frozenset(
 )
 
 
+#: Names a reader may already know each metric by, in each language. `RRA-011`
+#: names synonyms as one of three things the catalog's vocabulary carries, beside
+#: the description and the unsupported reading.
+#:
+#: A synonym is a *recognition* aid and never a second definition: it is a phrase
+#: a reader might arrive with, mapped onto the one governed metric. Where a
+#: familiar phrase is used loosely in the trade for something this metric is not,
+#: it belongs in `METRIC_NOT_MEANT` instead -- listing it here would import the
+#: looser meaning through the back door, which is the reading the unsupported
+#: table exists to close.
+#:
+#: A tuple rather than a set: the order is the order a surface offers them in, and
+#: a set would reorder between runs and break a reconciling document.
+METRIC_SYNONYMS: dict[str, dict[str, tuple[str, ...]]] = {
+    LANGUAGE_ENGLISH: {
+        "revenue": ("sales", "turnover", "gross sales"),
+        "units": ("quantity", "volume", "pieces sold"),
+        "transactions": ("orders", "sales count", "receipts"),
+        "cost": ("COGS", "purchase cost"),
+        "discount": ("markdown", "price reduction"),
+        "returns": ("refunds", "returned goods"),
+        "gross_profit": ("margin value", "gross margin value"),
+        "gross_margin": ("margin percentage", "gross margin rate"),
+        "average_order_value": ("AOV", "average basket value", "average ticket"),
+        "average_selling_price": ("ASP", "average unit price"),
+        "revenue_delta_absolute": ("sales change", "absolute change"),
+        "revenue_delta_percent": ("growth rate", "percentage change"),
+        "growth_revenue_change": ("total sales movement",),
+        "growth_price_effect": ("price contribution", "rate effect"),
+        "growth_volume_effect": ("volume contribution", "quantity effect"),
+        "basket_items_per_transaction": ("units per basket", "items per order"),
+        "basket_attach_rate": ("penetration", "attachment", "presence rate"),
+        "concentration_top_decile_share": ("top 10% share",),
+        "concentration_top_quartile_share": ("top 25% share",),
+        "concentration_distinct_values": ("count of contributors",),
+        "concentration_ranked_values": ("contribution ranking",),
+        "concentration_curve": ("concentration distribution",),
+    },
+    LANGUAGE_ARABIC: {
+        "revenue": ("المبيعات", "إجمالي المبيعات", "قيمة المبيعات"),
+        "units": ("الكمية", "الحجم", "القطع المباعة"),
+        "transactions": ("الطلبات", "عدد عمليات البيع", "الفواتير"),
+        "cost": ("تكلفة البضاعة المباعة",),
+        "discount": ("التخفيض", "خفض السعر"),
+        "returns": ("البضاعة المرتجعة", "المردودات"),
+        "gross_profit": ("قيمة الهامش", "قيمة الربح الإجمالي"),
+        "gross_margin": ("نسبة الهامش", "معدل الربح الإجمالي"),
+        "average_order_value": ("متوسط قيمة الطلب", "متوسط قيمة السلة"),
+        "average_selling_price": ("متوسط سعر الوحدة",),
+        "revenue_delta_absolute": ("تغير المبيعات", "التغير المطلق"),
+        "revenue_delta_percent": ("معدل النمو", "نسبة التغير"),
+        "growth_revenue_change": ("إجمالي حركة المبيعات",),
+        "growth_price_effect": ("مساهمة السعر", "أثر السعر"),
+        "growth_volume_effect": ("مساهمة الكمية", "أثر الحجم"),
+        "basket_items_per_transaction": ("الأصناف لكل سلة", "الأصناف لكل طلب"),
+        "basket_attach_rate": ("نسبة الانتشار", "نسبة الحضور"),
+        "concentration_top_decile_share": ("حصة أعلى ١٠٪",),
+        "concentration_top_quartile_share": ("حصة أعلى ٢٥٪",),
+        "concentration_distinct_values": ("عدد المساهمين",),
+        "concentration_ranked_values": ("ترتيب المساهمة",),
+        "concentration_curve": ("توزيع التركز",),
+    },
+}
+
+
+#: The tables the guard below covers, named once. Listing them at each of the
+#: two loops let a table be added to one and forgotten in the other -- which is
+#: how a table reaches customers covering one language.
+_VOCABULARY_TABLES = (
+    ("descriptions", METRIC_DESCRIPTIONS),
+    ("not_meant", METRIC_NOT_MEANT),
+    ("synonyms", METRIC_SYNONYMS),
+)
+
+
 def _assert_vocabulary_complete() -> None:
-    """Both tables cover every catalogued metric, in both languages, and no others.
+    """Every table covers every catalogued metric, in both languages, and no others.
 
     The language set is asserted first, and separately. Checking only the
     languages a table happens to contain cannot see one removed: a table with
@@ -1351,19 +1426,13 @@ def _assert_vocabulary_complete() -> None:
     while every Arabic lookup raises `KeyError` at render time. Every other
     guard in this module opens the same way for the same reason.
     """
-    for table_name, table in (
-        ("descriptions", METRIC_DESCRIPTIONS),
-        ("not_meant", METRIC_NOT_MEANT),
-    ):
+    for table_name, table in _VOCABULARY_TABLES:
         if set(table) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
             message = f"{table_name} must cover every governed language"
             raise RuntimeError(message)
     wrong = [
         f"{table_name}/{language}"
-        for table_name, table in (
-            ("descriptions", METRIC_DESCRIPTIONS),
-            ("not_meant", METRIC_NOT_MEANT),
-        )
+        for table_name, table in _VOCABULARY_TABLES
         for language, entries in table.items()
         if set(entries) != _CATALOGUED_METRIC_CODES
     ]
@@ -1375,10 +1444,6 @@ def _assert_vocabulary_complete() -> None:
 _assert_vocabulary_complete()
 
 
-_assert_vocabulary_complete()
-
-
-
 def metric_description(metric: str, language: str) -> str:
     """What this metric means, refusing an unknown code or language."""
     return METRIC_DESCRIPTIONS[language][metric]
@@ -1387,3 +1452,8 @@ def metric_description(metric: str, language: str) -> str:
 def metric_not_meant(metric: str, language: str) -> str:
     """The reading this metric invites and does not support."""
     return METRIC_NOT_MEANT[language][metric]
+
+
+def metric_synonyms(metric: str, language: str) -> tuple[str, ...]:
+    """Names a reader may recognize this metric by, refusing an unknown code."""
+    return METRIC_SYNONYMS[language][metric]

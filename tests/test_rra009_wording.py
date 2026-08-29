@@ -733,9 +733,11 @@ def test_every_governed_chart_kind_has_a_description_code() -> None:
     the reverse leak: wording for a chart no surface can draw. This states the
     extent; the reload case above states the derivation.
     """
-    assert wording._CHART_DESCRIPTION_CODES == frozenset(
+    derived = frozenset(
         f"chart_description.{kind}" for kind in bundle.GOVERNED_CHART_KINDS
     )
+
+    assert derived == wording._CHART_DESCRIPTION_CODES
 
 
 def test_derived_metric_guard_raises_when_one_language_names_a_metric(

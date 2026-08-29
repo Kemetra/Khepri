@@ -21,7 +21,9 @@ import pytest
 
 from khepri.rra import definitions, facts, populations
 from khepri.rra.analysis import basket, comparison, concentration, growth
+from khepri.rra.bundle import ReportBundle
 from khepri.rra.rendering import wording
+from tests.test_rra006_html_sections import ROWS, package_for
 
 LANGUAGES = ("en", "ar")
 
@@ -111,6 +113,7 @@ def test_every_catalogued_metric_has_vocabulary_in_every_language(
     for code in definitions.METRIC_CODES:
         assert definitions.describe_metric(code, language)
         assert definitions.not_meant(code, language)
+        assert definitions.synonyms(code, language)
 
 
 def test_the_two_languages_describe_the_same_codes_differently() -> None:
@@ -125,6 +128,7 @@ def test_the_two_languages_describe_the_same_codes_differently() -> None:
             code, "ar"
         )
         assert definitions.not_meant(code, "en") != definitions.not_meant(code, "ar")
+        assert definitions.synonyms(code, "en") != definitions.synonyms(code, "ar")
 
 
 # --- fail closed -----------------------------------------------------------
@@ -138,6 +142,7 @@ def test_the_two_languages_describe_the_same_codes_differently() -> None:
             lambda code: definitions.describe_metric(code, "en"), id="describe_metric"
         ),
         pytest.param(lambda code: definitions.not_meant(code, "en"), id="not_meant"),
+        pytest.param(lambda code: definitions.synonyms(code, "en"), id="synonyms"),
     ],
 )
 def test_an_unknown_metric_refuses_at_every_entry_point(lookup) -> None:
@@ -178,3 +183,141 @@ def test_the_quality_summary_states_no_score() -> None:
 
     assert not (fields & forbidden)
     assert {"answered", "caveated", "refused"} <= fields
+
+
+def test_a_refused_result_is_reported_even_when_its_section_answered() -> None:
+    """A partial refusal is a refusal, and the summary must say so.
+
+    `RRA-008` refuses a *result* rather than a family where it can: comparison
+    publishes `revenue_delta_absolute` and refuses `revenue_delta_percent` when the
+    prior window is absent. `bundle._scoped` carries that as a caveat coded
+    `<result>:<reason>` on a section that states something and therefore has no
+    reason of its own.
+
+    Classifying whole sections alone reported `refused == 0` and `refusals == ()`
+    for exactly that package -- a consumer was told nothing had been refused while
+    two results had been. The information was never lost, it sat in `caveats`; the
+    summary's own fields disagreed with it.
+
+    Driven from the shared published fixture rather than a hand-built bundle,
+    because the subject is the code shape `_scoped` writes: a stand-in asserting
+    `<result>:<reason>` would keep passing if that convention moved.
+    """
+    summary = definitions.summarize(
+        ReportBundle.of(package_for(ROWS, published=True))
+    )
+
+    assert summary.refused == 2, summary
+    assert dict(summary.refusals) == {
+        "revenue_delta_absolute.year_over_year": "prior_window_absent",
+        "revenue_delta_percent.year_over_year": "prior_window_absent",
+    }
+
+
+def test_a_refused_result_and_a_refused_section_are_told_apart() -> None:
+    """Both kinds are counted, and each names what it refused.
+
+    Counting them together without distinguishing them would be the same defect
+    inverted: a reader learns two things were refused and cannot tell whether an
+    analysis was unavailable or one figure inside it was. The section case keys on
+    the section id, the result case on the result's own mode-qualified metric, and
+    no governed reason or caveat code contains a colon -- so the two never collide.
+    """
+    refused_family = definitions.summarize(
+        ReportBundle.of(package_for(ROWS, published=False))
+    )
+
+    # Under the predecessor pin every family sits unadmitted, so all four sections
+    # refuse outright and no result-level refusal is recorded.
+    assert refused_family.refused == 4
+    assert all(
+        reason == "family_version_pairing_unadmitted"
+        for _, reason in refused_family.refusals
+    )
+    assert not any(":" in key for key, _ in refused_family.refusals)
+
+
+def test_a_refused_result_is_not_also_counted_as_a_caveat() -> None:
+    """`refusals` and `caveats` partition one channel; they do not overlap.
+
+    `bundle.caveats` carries both qualifications and scoped result refusals, so a
+    summary reading it twice without partitioning reports the same refused result
+    under both fields -- and a surface rendering both shows the reader one refusal
+    twice, once as a reason and once as a caveat about the figure it refused.
+
+    Asserted as a disjointness over the codes rather than as a count, because a
+    count agrees by coincidence whenever the two totals happen to match.
+    """
+    summary = definitions.summarize(
+        ReportBundle.of(package_for(ROWS, published=True))
+    )
+
+    assert summary.caveats, "fixture states no caveat; the case would be vacuous"
+    assert summary.refusals, "fixture refuses no result; the case would be vacuous"
+    assert not set(summary.caveats) & {result for result, _ in summary.refusals}
+    assert not any(":" in code for code in summary.caveats)
+
+
+def test_a_synonym_never_introduces_a_code() -> None:
+    """`RRA-011`'s bound on authored wording, stated over the table itself.
+
+    Vocabulary attaches only to a code some other module already governs. A
+    synonym keyed to a code the governed sets do not contain would be this
+    specification admitting one through the wording layer, which is exactly the
+    hole the single-truth test closes -- and the guard would not see it, because
+    the guard checks that every *catalogued* code has an entry, not that every
+    entry has a catalogued code.
+    """
+    for language in LANGUAGES:
+        keyed = set(wording.METRIC_SYNONYMS[language])
+
+        assert keyed == set(definitions.METRIC_CODES), language
+
+
+def test_a_synonym_is_never_the_business_name_it_stands_beside() -> None:
+    """A synonym is an alternative, not a restatement.
+
+    Offering a reader the name they are already looking at is noise, and it is the
+    shape a table gets when it is filled by copying the name column. Compared
+    case-insensitively so a differently-capitalized copy is caught too.
+    """
+    for language in LANGUAGES:
+        for code in definitions.METRIC_CODES:
+            name = wording.business_metric_name(code, language)
+            if name is None:
+                continue
+            offered = {synonym.casefold() for synonym in definitions.synonyms(code, language)}
+
+            assert name.casefold() not in offered, f"{language}/{code}"
+
+
+def test_the_vocabulary_guard_covers_every_authored_table() -> None:
+    """The guard's scope is asserted, because the guard cannot assert its own.
+
+    `_assert_vocabulary_complete` iterates `_VOCABULARY_TABLES`, a tuple naming
+    the tables it checks. Removing an entry from that tuple removes the table from
+    the guard and breaks nothing: every case above still passes, because they read
+    the tables directly and the guard simply stops looking. A fourth table authored
+    later and not added to the tuple is the same hole on the first day it exists.
+
+    So this compares the guard's scope against every module-level table keyed by
+    language and metric code -- discovered, not listed -- which is the one form
+    that cannot be satisfied by editing this test's own expectation.
+    """
+    authored = {
+        name
+        for name, value in vars(wording).items()
+        if name.startswith("METRIC_")
+        and isinstance(value, dict)
+        and set(value) == {"en", "ar"}
+        and set(value["en"]) == set(definitions.METRIC_CODES)
+    }
+    guarded = {
+        name
+        for name, value in vars(wording).items()
+        if name.startswith("METRIC_")
+        and any(value is table for _, table in wording._VOCABULARY_TABLES)
+    }
+
+    assert authored, "no vocabulary table discovered; the case would be vacuous"
+    assert authored == guarded, f"unguarded vocabulary tables: {authored - guarded}"
