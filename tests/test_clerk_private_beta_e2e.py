@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -126,15 +127,24 @@ def build_private_beta_journey(tmp_path) -> PrivateBetaJourney:
         clock=lambda: NOW,
     )
     engine = stack.factory.kw["bind"]
-    RcaBase.metadata.create_all(engine)
-    RraBase.metadata.create_all(engine)
-    client = TestClient(build_web_app(stack), base_url=PARTY)
-    return PrivateBetaJourney(
-        stack=stack,
-        engine=engine,
-        factory=stack.factory,
-        client=client,
-    )
+    client = None
+    try:
+        RcaBase.metadata.create_all(engine)
+        RraBase.metadata.create_all(engine)
+        client = TestClient(build_web_app(stack), base_url=PARTY)
+        return PrivateBetaJourney(
+            stack=stack,
+            engine=engine,
+            factory=stack.factory,
+            client=client,
+        )
+    except Exception:  # noqa: BLE001 -- this factory owns every partial resource
+        try:
+            if client is not None:
+                client.close()
+        finally:
+            engine.dispose()
+        raise
 
 
 @pytest.fixture(name="journey")
@@ -153,6 +163,37 @@ def test_closing_the_private_beta_journey_releases_its_sqlite_database(tmp_path)
 
     journey.close()
     database_path.rename(tmp_path / "private-beta-released.db")
+
+
+def test_failed_journey_factory_disposes_its_engine(tmp_path, monkeypatch) -> None:
+    """A client-construction failure must not strand the factory-owned SQLite engine."""
+    module = sys.modules[__name__]
+    original_build_stack = build_stack
+    disposed = False
+
+    def build_stack_with_dispose_spy(*args, **kwargs):
+        stack = original_build_stack(*args, **kwargs)
+        engine = stack.factory.kw["bind"]
+        original_dispose = engine.dispose
+
+        def dispose() -> None:
+            nonlocal disposed
+            disposed = True
+            original_dispose()
+
+        monkeypatch.setattr(engine, "dispose", dispose)
+        return stack
+
+    def fail_client(*args, **kwargs):
+        raise RuntimeError("client construction failed")
+
+    monkeypatch.setattr(module, "build_stack", build_stack_with_dispose_spy)
+    monkeypatch.setattr(module, "TestClient", fail_client)
+
+    with pytest.raises(RuntimeError, match="client construction failed"):
+        build_private_beta_journey(tmp_path)
+
+    assert disposed
 
 
 def _answer(response) -> tuple[int, bytes, str | None]:

@@ -32,6 +32,7 @@ class LegalPublication:
 
     content: dict[str, tuple[str, ...]] = field(default_factory=dict)
     verified_inputs: frozenset[str] = frozenset()
+    verified_values: dict[str, dict[str, str]] = field(default_factory=dict)
     verified_evidence: frozenset[str] = frozenset()
 
 
@@ -61,6 +62,10 @@ _CLAIM_PATTERNS = {
     "pci-dss": re.compile(r"\bpci[- ]?dss\b", re.IGNORECASE),
     "gdpr-compliance": re.compile(r"\bgdpr[- ]?(?:compliant|compliance)\b", re.IGNORECASE),
     "pdpl-compliance": re.compile(r"\bpdpl[- ]?(?:compliant|compliance)\b", re.IGNORECASE),
+    "generic-certification": re.compile(r"\bcertified\b", re.IGNORECASE),
+    "generic-compliance": re.compile(r"\bcompliant\b", re.IGNORECASE),
+    "arabic-certification": re.compile(r"حاصل\s+على\s+شهادة"),
+    "arabic-compliance": re.compile(r"(?:متوافق(?:ة)?\s+مع|امتثال(?:\s|$))"),
 }
 _VERIFIED_CLAIM_EVIDENCE: dict[str, frozenset[str]] = {}
 _PROHIBITED_CLAIM_PATTERNS = (
@@ -116,6 +121,21 @@ def _publication_has_prohibited_claims(publication: LegalPublication) -> bool:
     )
 
 
+def _has_verified_required_values(publication: LegalPublication, page: str) -> bool:
+    """Require each operative value in both approved language variants before publication."""
+    required_inputs = _REQUIRED_PUBLICATION_INPUTS.get(page, frozenset())
+    if not required_inputs.issubset(publication.verified_inputs):
+        return False
+    for field_name in required_inputs:
+        values = publication.verified_values.get(field_name, {})
+        if set(values) != set(DIRECTIONS):
+            return False
+        for language, value in values.items():
+            if not value or value not in "\n".join(publication.content[language]):
+                return False
+    return True
+
+
 def _published_content(language: str, page: str) -> tuple[str, ...] | None:
     """Return one verified language variant only when bilingual publication is complete."""
     publication = LEGAL_PUBLICATIONS[page]
@@ -130,9 +150,7 @@ def _published_content(language: str, page: str) -> tuple[str, ...] | None:
         return None
     if _publication_has_prohibited_claims(publication):
         return None
-    if not _REQUIRED_PUBLICATION_INPUTS.get(page, frozenset()).issubset(
-        publication.verified_inputs
-    ):
+    if not _has_verified_required_values(publication, page):
         return None
     return content
 

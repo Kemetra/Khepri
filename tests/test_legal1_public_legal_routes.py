@@ -140,6 +140,57 @@ def test_data_protection_requires_verified_operator_and_privacy_inputs(monkeypat
     assert "Safeguards" not in response.text
 
 
+def test_required_input_flags_do_not_publish_copy_without_the_verified_values(
+    monkeypatch,
+) -> None:
+    """Privacy cannot publish when asserted input names are absent from both documents."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "privacy-policy",
+        LegalPublication(
+            content={"en": ("Approved",), "ar": ("معتمد",)},
+            verified_inputs=frozenset(
+                {"operator_identity", "privacy_contact", "effective_date"}
+            ),
+        ),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/privacy-policy")
+
+    assert response.status_code == 503
+    assert "Approved" not in response.text
+
+
+def test_verified_required_values_must_appear_in_each_language_variant(monkeypatch) -> None:
+    """A complete operative publication renders only values bound into both documents."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "privacy-policy",
+        LegalPublication(
+            content={
+                "en": ("Operator Example; privacy@example.test; effective 2026-01-01",),
+                "ar": ("مشغل المثال؛ privacy@example.test؛ تاريخ السريان 2026-01-01",),
+            },
+            verified_inputs=frozenset(
+                {"operator_identity", "privacy_contact", "effective_date"}
+            ),
+            verified_values={
+                "operator_identity": {"en": "Operator Example", "ar": "مشغل المثال"},
+                "privacy_contact": {
+                    "en": "privacy@example.test",
+                    "ar": "privacy@example.test",
+                },
+                "effective_date": {"en": "2026-01-01", "ar": "2026-01-01"},
+            },
+        ),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/privacy-policy")
+
+    assert response.status_code == 200
+    assert "Operator Example" in response.text
+
+
 @pytest.mark.parametrize(
     "claim",
     ("ISO 27001", "SOC 2", "PCI DSS", "GDPR compliant", "PDPL compliant"),
@@ -166,6 +217,31 @@ def test_unverified_certification_or_compliance_claim_is_not_rendered(
 
     assert response.status_code == 503
     assert claim not in response.text
+
+
+@pytest.mark.parametrize(
+    ("english_claim", "arabic_claim"),
+    (
+        ("Khepri is HIPAA compliant.", "نسخة عربية مطابقة للمعنى."),
+        ("Khepri is certified.", "نسخة عربية مطابقة للمعنى."),
+        ("Approved informational copy.", "خِبري متوافق مع HIPAA."),
+        ("Approved informational copy.", "خِبري حاصل على شهادة."),
+    ),
+)
+def test_unknown_certification_or_compliance_claim_is_not_rendered(
+    monkeypatch, english_claim: str, arabic_claim: str
+) -> None:
+    """A claim outside the named examples must also require repository evidence."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "about-us",
+        LegalPublication(content={"en": (english_claim,), "ar": (arabic_claim,)}),
+    )
+
+    response = _client().get(f"{LEGAL_PREFIX}/en/about-us")
+
+    assert response.status_code == 503
+    assert english_claim not in response.text
 
 
 def test_neutral_reference_to_an_applicable_legal_framework_is_allowed(monkeypatch) -> None:
