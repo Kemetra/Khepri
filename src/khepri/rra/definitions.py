@@ -328,3 +328,69 @@ def not_meant(code: str, language: str) -> str:
     if not admits_metric(code):
         raise UnknownCode(code)
     return METRIC_NOT_MEANT[language][code]
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisQualitySummary:
+    """What one package answered, answered with a qualification, and refused.
+
+    **An aggregation, never a measurement.** Every number here counts outcomes
+    the bundle already carries. Nothing is computed, scored, or weighted, and
+    `RRA-011` excludes a confidence score, a quality score, and a completeness
+    percentage by name — a reader learns what the system could and could not
+    answer, not how much to trust an answer it gave.
+
+    **No Internal-tier field.** `Section.state` is Internal and `RRA-009` renders
+    an Internal field on no customer surface, so this classifies a section by
+    whether it carries a refusal reason. That reaches the same answer from
+    Audit-tier evidence: `RRA-008` refuses the affected analysis rather than the
+    report, and a refused section is the one that states why.
+
+    `refusals` and `caveats` carry codes rather than prose. What a code *says* to
+    a customer is `RRA-009`'s, and restating it here would put the same sentence
+    in two places to drift apart.
+    """
+
+    answered: int
+    caveated: int
+    refused: int
+    #: `(section_id, reason)` for each refused analysis, so a reader learns which
+    #: and why rather than only how many.
+    refusals: tuple[tuple[str, str], ...]
+    #: Every caveat code the bundle states, deduplicated and ordered.
+    caveats: tuple[str, ...]
+
+
+def summarize(bundle) -> AnalysisQualitySummary:
+    """Group one bundle's outcomes without recomputing any of them.
+
+    Flat by construction: three comprehensions over `bundle.sections` and
+    `bundle.caveats`, no branch nesting. The tiering is the bundle's own — a
+    section carrying a reason is refused, and one carrying none is not — so this
+    never re-derives what `RRA-009` already decided.
+    """
+    refusals = tuple(
+        (section.section_id, section.reason)
+        for section in bundle.sections
+        if section.reason is not None
+    )
+    answered = tuple(
+        section for section in bundle.sections if section.reason is None
+    )
+    # `section is None` is a report-level caveat -- `currency_not_declared`
+    # qualifies the dataset, not one analysis -- so it qualifies no section and
+    # is filtered out. The filter is belt-and-braces rather than load-bearing:
+    # `None` matches no `section_id`, so the intersection below is the same
+    # either way. Kept because the set is named `qualified` and a reader should
+    # not have to work out that a report-level caveat is silently excluded by
+    # arithmetic rather than by intent.
+    qualified = {
+        caveat.section for caveat in bundle.caveats if caveat.section is not None
+    }
+    return AnalysisQualitySummary(
+        answered=len(answered),
+        caveated=len({s.section_id for s in answered} & qualified),
+        refused=len(refusals),
+        refusals=refusals,
+        caveats=tuple(sorted({caveat.code for caveat in bundle.caveats})),
+    )
