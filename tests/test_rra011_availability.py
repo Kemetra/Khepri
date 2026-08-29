@@ -103,14 +103,16 @@ def test_a_family_with_no_input_resolved_is_unavailable() -> None:
     entry = _for(definitions.availability(_mapping()), SECTION_GROWTH)
 
     assert entry.state == definitions.UNAVAILABLE
-    assert set(entry.missing) == set(growth.REQUIRED_INPUTS)
+    required, _ = growth.RESULT_REQUIREMENTS[growth.GOVERNED_METRICS[0]]
+    assert set(entry.missing) == set(required)
 
 
-def test_a_family_missing_one_input_is_partial_and_names_it() -> None:
-    """"Margin: Unavailable -- cost basis not established" needs the *which*.
+def test_a_family_missing_one_conjunctive_input_publishes_nothing() -> None:
+    """Every growth metric decomposes from the same three inputs.
 
-    A bare state tells a customer an analysis will not run and not what to fix.
-    `missing` names the unresolved semantics, which is the actionable half.
+    Two of three resolved is not two thirds of an analysis: `_periods` returns
+    `None` without the units trend and the whole section refuses. `missing`
+    still names the gap, which is what a customer acts on.
     """
     mapping = _mapping(
         **{SEMANTIC_TRANSACTION_DATE: STATE_MAPPED, SEMANTIC_REVENUE: STATE_MAPPED}
@@ -118,7 +120,7 @@ def test_a_family_missing_one_input_is_partial_and_names_it() -> None:
 
     entry = _for(definitions.availability(mapping), SECTION_GROWTH)
 
-    assert entry.state == definitions.PARTIAL
+    assert entry.state == definitions.UNAVAILABLE
     assert entry.missing == (SEMANTIC_UNITS,)
 
 
@@ -140,7 +142,11 @@ def test_an_ambiguous_column_does_not_resolve_an_input() -> None:
 
     entry = _for(definitions.availability(mapping), SECTION_GROWTH)
 
-    assert entry.state == definitions.PARTIAL
+    # `unavailable`, not `partial`: every growth metric decomposes from the same
+    # three inputs, so an unresolved units column leaves the family publishing
+    # nothing. What this test fixes is that the column is *not counted as
+    # resolved* -- the state follows from that.
+    assert entry.state == definitions.UNAVAILABLE
     assert entry.missing == (SEMANTIC_UNITS,)
 
 
@@ -202,8 +208,10 @@ def test_each_family_declares_the_inputs_availability_reads() -> None:
     list agreeing with itself always passes.
     """
     for family in (comparison, growth, basket, concentration):
-        assert family.REQUIRED_INPUTS
-        assert set(family.REQUIRED_INPUTS) <= set(_ALL_SEMANTICS)
+        assert family.RESULT_REQUIREMENTS
+        assert set(family.RESULT_REQUIREMENTS) == set(family.GOVERNED_METRICS)
+        for required, alternatives in family.RESULT_REQUIREMENTS.values():
+            assert set(required) | set(alternatives) <= set(_ALL_SEMANTICS)
 
 
 def test_an_unknown_section_has_no_availability_to_report() -> None:
@@ -227,11 +235,10 @@ def test_a_family_needing_a_dimension_is_not_available_without_one() -> None:
     )
 
     assert entry.state != definitions.AVAILABLE
-    assert entry.missing
-    # One name, not every dimension the customer could have supplied: listing
-    # both reads as though both were required.
-    assert set(entry.missing) <= set(concentration.ALTERNATIVE_INPUTS)
-    assert len(entry.missing) == 1
+    # The whole group, not one of them chosen by tuple order: a customer who
+    # could satisfy this with either needs to be told both, and naming only
+    # `product` would conceal that a category alone would do.
+    assert set(entry.missing) == set(concentration.GOVERNED_DIMENSIONS)
 
 
 def test_basket_without_a_dimension_is_partial_rather_than_available() -> None:
@@ -255,8 +262,7 @@ def test_basket_without_a_dimension_is_partial_rather_than_available() -> None:
     entry = _for(definitions.availability(mapping), SECTION_BASKET)
 
     assert entry.state == definitions.PARTIAL
-    assert set(entry.missing) <= set(basket.GOVERNED_DIMENSIONS)
-    assert len(entry.missing) == 1
+    assert set(entry.missing) == set(basket.GOVERNED_DIMENSIONS)
 
 
 def test_basket_with_a_dimension_is_available() -> None:
@@ -292,4 +298,62 @@ def test_a_family_with_governed_dimensions_declares_them_as_an_alternative() -> 
         dimensions = getattr(family, "GOVERNED_DIMENSIONS", None)
         if dimensions is None:
             continue
-        assert dimensions == family.ALTERNATIVE_INPUTS, family.__name__
+        stated = {
+            alternatives
+            for _, alternatives in family.RESULT_REQUIREMENTS.values()
+            if alternatives
+        }
+        assert stated == {dimensions}, family.__name__
+
+
+def test_partial_means_a_result_is_publishable_not_an_input_is_present() -> None:
+    """`growth` needs all three inputs for every metric it states.
+
+    `_periods` returns `None` without the units trend, and all three growth
+    metrics decompose from that pair, so a mapping with a date and revenue but
+    no units publishes *nothing* -- the whole section refuses. Counting resolved
+    inputs called that `partial`, which tells a customer some of the analysis
+    survives when none of it does.
+
+    `partial` is a claim about outcomes, not about inputs.
+    """
+    mapping = _mapping(
+        **{SEMANTIC_TRANSACTION_DATE: STATE_MAPPED, SEMANTIC_REVENUE: STATE_MAPPED}
+    )
+
+    entry = _for(definitions.availability(mapping), SECTION_GROWTH)
+
+    assert entry.state == definitions.UNAVAILABLE
+    assert entry.missing == (SEMANTIC_UNITS,)
+
+
+def test_a_family_publishing_nothing_is_unavailable_however_much_is_mapped() -> None:
+    """`basket` on a transaction id alone states neither of its metrics.
+
+    Items per transaction needs units beside the identifier; the attach rate
+    needs a dimension as well. One input of four resolved is not a partial
+    result, it is no result.
+    """
+    entry = _for(
+        definitions.availability(_mapping(**{SEMANTIC_TRANSACTION_ID: STATE_MAPPED})),
+        SECTION_BASKET,
+    )
+
+    assert entry.state == definitions.UNAVAILABLE
+
+
+def test_partial_survives_where_one_metric_of_two_can_publish() -> None:
+    """The case that is genuinely partial, kept distinct from the two above.
+
+    `basket` states two metrics over *different* requirements: items per
+    transaction on units and an identifier, the attach rate on those plus a
+    dimension. Units and an identifier without a dimension publishes the first
+    and refuses the second, which is what `partial` means.
+    """
+    mapping = _mapping(
+        **{SEMANTIC_UNITS: STATE_MAPPED, SEMANTIC_TRANSACTION_ID: STATE_MAPPED}
+    )
+
+    entry = _for(definitions.availability(mapping), SECTION_BASKET)
+
+    assert entry.state == definitions.PARTIAL

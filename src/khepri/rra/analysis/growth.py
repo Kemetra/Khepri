@@ -109,6 +109,15 @@ CAVEAT_ROUNDING_RESIDUAL = "growth_rounding_residual"
 # is an input as much as the measures: it decides which two periods are compared.
 REQUIRED_INPUTS = (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE, SEMANTIC_UNITS)
 
+#: What each governed metric needs from the mapping, as
+#: `(required, alternatives)`. Every metric this family states decomposes from
+#: the same inputs, so they share one requirement -- and that sharing is the
+#: point: missing any one of them leaves this family publishing nothing, which
+#: is `unavailable` rather than partial.
+RESULT_REQUIREMENTS = {
+    metric: (REQUIRED_INPUTS, ()) for metric in GOVERNED_METRICS
+}
+
 
 @dataclass(frozen=True, slots=True)
 class _Period:

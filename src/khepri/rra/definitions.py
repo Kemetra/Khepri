@@ -579,32 +579,38 @@ class CapabilityAvailability:
     missing: tuple[str, ...]
 
 
-def _resolve(mapping, semantics) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """`(resolved, missing)` for one family's declared semantics.
+def _is_resolved(mapping, semantic: str) -> bool:
+    """Whether the mapping resolved this semantic to a column.
 
     A semantic counts as resolved only at `STATE_MAPPED`. `RRA-003` leaves a
     column stating no measure kind ambiguous, and `facts._unavailable_reason`
     already treats that as unavailable with a reason of its own: the data is
     present and the *label* falls short. Counting it as resolved would promise
     an analysis that refuses the moment it runs.
-    """
-    resolved = tuple(code for code in semantics if _is_resolved(mapping, code))
-    missing = tuple(code for code in semantics if code not in resolved)
-    return resolved, missing
 
-
-def _is_resolved(mapping, semantic: str) -> bool:
-    """Whether the mapping resolved this semantic to a column.
-
-    A semantic absent from the mapping entirely raises `KeyError` from
-    `state_of`, which is not a refusal this contract should convert into an
-    answer -- but a mapping built for a narrower contract legitimately omits
-    one, so absence reads as unresolved rather than as an error.
+    A semantic absent from the mapping raises `KeyError` from `state_of`. A
+    mapping built for a narrower contract legitimately omits one, so absence
+    reads as unresolved rather than as an error.
     """
     try:
         return mapping.state_of(semantic) == STATE_MAPPED
     except KeyError:
         return False
+
+
+def _unmet(mapping, requirement) -> tuple[str, ...]:
+    """What stands between this mapping and one result, in the family's order.
+
+    `requirement` is `(required, alternatives)`: every semantic in the first must
+    be resolved, and one of the second if it is non-empty. An unsatisfied
+    alternative contributes the whole group, so a caller can say "product or
+    category" rather than naming one of them as though it were the requirement.
+    """
+    required, alternatives = requirement
+    missing = tuple(code for code in required if not _is_resolved(mapping, code))
+    if alternatives and not any(_is_resolved(mapping, code) for code in alternatives):
+        missing = (*missing, *alternatives)
+    return missing
 
 
 def availability(mapping) -> tuple[CapabilityAvailability, ...]:
@@ -641,30 +647,35 @@ def availability_for(mapping, section: str) -> CapabilityAvailability:
 
 
 def _availability_of(mapping, section: str, family) -> CapabilityAvailability:
-    """One family's availability, from its own declared requirement.
+    """One family's availability, from what its metrics can actually publish.
 
-    Two kinds of requirement, because `RRA-008` states two. Most inputs are
-    required outright. A family may also need any *one* of a set --
-    concentration distributes over products or categories, and `_found` selects
-    whichever the mapping resolved -- so demanding both would report unavailable
-    an analysis the calculation publishes.
+    The state is a claim about **results**, not about inputs. Counting resolved
+    inputs cannot tell "half of this publishes" from "none of it does": every
+    growth metric decomposes from the same date, revenue and units, so a mapping
+    holding two of the three publishes nothing, while basket states items per
+    transaction on units and an identifier and its attach rate on a dimension
+    besides, so the same arithmetic there leaves one metric standing.
 
-    The alternative contributes one name to `missing` when none of its members
-    resolved, rather than all of them: a customer needs to know a dimension is
-    missing, and listing every dimension they *could* supply reads as though all
-    were required.
+    So each metric is checked against its own requirement and the states follow:
+    every metric publishable is `available`, none is `unavailable`, and some is
+    `partial` -- which is the only reading under which `partial` promises a
+    reader something they will actually receive.
+
+    `missing` is the union of what the unpublishable metrics lack, in first-seen
+    order, so a customer reads one list of what to supply rather than one per
+    metric.
     """
-    _, missing = _resolve(mapping, family.required_inputs())
-    alternatives = family.alternative_inputs()
-    satisfied = not alternatives or any(
-        _is_resolved(mapping, code) for code in alternatives
-    )
-    if not satisfied:
-        missing = (*missing, alternatives[0])
-    required = len(family.required_inputs()) + (1 if alternatives else 0)
-    state = UNAVAILABLE if len(missing) == required else PARTIAL
+    requirements = family.result_requirements()
+    unmet = {
+        metric: _unmet(mapping, requirement)
+        for metric, requirement in requirements.items()
+    }
+    blocked = [gap for gap in unmet.values() if gap]
+    if not blocked:
+        return CapabilityAvailability(section=section, state=AVAILABLE, missing=())
+    state = UNAVAILABLE if len(blocked) == len(requirements) else PARTIAL
     return CapabilityAvailability(
         section=section,
-        state=AVAILABLE if not missing else state,
-        missing=missing,
+        state=state,
+        missing=tuple(dict.fromkeys(code for gap in blocked for code in gap)),
     )

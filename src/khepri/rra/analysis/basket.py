@@ -138,15 +138,23 @@ GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 
 REQUIRED_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
 
-#: The dimensions that satisfy the attach rate's requirement. Any one is enough,
-#: since `_found` states a rate over whichever the mapping resolved.
+#: What each governed metric needs from the mapping, as
+#: `(required, alternatives)`: every semantic in `required` must be resolved, and
+#: one of `alternatives` if it is non-empty.
 #:
-#: Stated apart from `REQUIRED_INPUTS` because the two metrics need different
-#: things: items per transaction publishes on units and an identifier alone,
-#: while the attach rate refuses with `dimension_absent` when no governed
-#: dimension was mapped. A mapping carrying neither supports half this family,
-#: which is `partial` rather than available -- found in review on #340.
-ALTERNATIVE_INPUTS = GOVERNED_DIMENSIONS
+#: Per metric rather than per family, because these two need different things.
+#: Items per transaction publishes on units and an identifier; the attach rate
+#: needs a governed dimension as well and refuses with `dimension_absent`
+#: without one. A family-wide input list cannot tell "half of it publishes" from
+#: "none of it does", and `T1-04`'s availability contract has to state exactly
+#: that difference.
+RESULT_REQUIREMENTS = {
+    METRIC_ITEMS_PER_TRANSACTION: ((SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID), ()),
+    METRIC_ATTACH_RATE: (
+        (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID),
+        GOVERNED_DIMENSIONS,
+    ),
+}
 
 # The two buckets `build_comparison` synthesizes rather than reads from a source
 # value. Neither is an admissible dimension value, so neither gets an attach rate.
