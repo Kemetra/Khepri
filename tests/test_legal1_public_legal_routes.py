@@ -65,7 +65,11 @@ def test_unresolved_publication_content_is_not_rendered(monkeypatch) -> None:
         LEGAL_PUBLICATIONS,
         "privacy-policy",
         LegalPublication(
-            content=("[PLACEHOLDER] privacy policy",), verified_inputs=frozenset()
+            content={
+                "en": ("[PLACEHOLDER] privacy policy",),
+                "ar": ("سياسة خصوصية",),
+            },
+            verified_inputs=frozenset(),
         ),
     )
 
@@ -82,13 +86,35 @@ def test_legally_operative_content_without_verified_inputs_is_not_rendered(
     monkeypatch.setitem(
         LEGAL_PUBLICATIONS,
         "privacy-policy",
-        LegalPublication(content=("Unverified legal content",)),
+        LegalPublication(
+            content={"en": ("Unverified legal content",), "ar": ("محتوى غير موثق",)}
+        ),
     )
 
     response = _client().get(f"{LEGAL_PREFIX}/en/privacy-policy")
 
     assert response.status_code == 503
     assert "Unverified legal content" not in response.text
+
+
+def test_publication_requires_both_language_variants(monkeypatch) -> None:
+    """A single-language document cannot cause bilingual routes to drift."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "privacy-policy",
+        LegalPublication(
+            content={"en": ("English policy",)},
+            verified_inputs=frozenset(
+                {"operator_identity", "privacy_contact", "effective_date"}
+            ),
+        ),
+    )
+
+    english = _client().get(f"{LEGAL_PREFIX}/en/privacy-policy")
+    arabic = _client().get(f"{LEGAL_PREFIX}/ar/privacy-policy")
+
+    assert english.status_code == arabic.status_code == 503
+    assert "English policy" not in english.text
 
 
 def test_the_legal_inventory_is_limited_to_the_six_authorized_destinations() -> None:

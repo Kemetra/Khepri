@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.resources import files
 
 from fastapi import FastAPI, HTTPException, Response
@@ -24,7 +24,7 @@ class LegalPublication:
     boundary durable when later LEGAL1 slices add substantive copy.
     """
 
-    content: tuple[str, ...] = ()
+    content: dict[str, tuple[str, ...]] = field(default_factory=dict)
     verified_inputs: frozenset[str] = frozenset()
 
 
@@ -60,23 +60,28 @@ def legal_environment() -> Environment:
     )
 
 
-def _published_content(page: str) -> tuple[str, ...] | None:
-    """Return content only when the route's legally operative inputs are verified."""
+def _published_content(language: str, page: str) -> tuple[str, ...] | None:
+    """Return one verified language variant only when bilingual publication is complete."""
     publication = LEGAL_PUBLICATIONS[page]
-    if not publication.content or any(
-        _PLACEHOLDER_MARKER in paragraph for paragraph in publication.content
+    if set(publication.content) != set(DIRECTIONS):
+        return None
+    content = publication.content[language]
+    if not content or any(
+        _PLACEHOLDER_MARKER in paragraph
+        for language_content in publication.content.values()
+        for paragraph in language_content
     ):
         return None
     if not _REQUIRED_PUBLICATION_INPUTS.get(page, frozenset()).issubset(
         publication.verified_inputs
     ):
         return None
-    return publication.content
+    return content
 
 
 def _legal_response(environment: Environment, *, language: str, page: str) -> Response:
     """Render only a verified document; unresolved publication remains unavailable."""
-    publication_content = _published_content(page)
+    publication_content = _published_content(language, page)
     body = environment.get_template("legal_page.html.j2").render(
         language=language,
         direction=DIRECTIONS[language],
