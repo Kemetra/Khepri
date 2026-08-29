@@ -44,6 +44,15 @@
         "value": "border-inline-start: 4px solid var(--withheld)",
         "createdAt": "2026-08-29T12:45:55.754Z",
         "reason": "The governed refusal treatment, carried into the new marketing world. KHEPRI_DESIGN_LANGUAGE.md 4.6 mandates a 4px inline-start rule plus italic for a governed refusal and 4.4 explains why 4px rather than a hairline (report.print.css drops the tint, so the border alone carries the state onto paper). The same value is already ignored for journey.css and the v1 concept in this config. The rule and the italic each carry the meaning independently, and the border was raised from 1.09-1.90:1 to 5.28-5.86:1 specifically so it clears WCAG 1.4.11 as a state carrier - removing or thinning it would break the one product law that survived the world change."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/khepri/runtime/landing_assets/landing.css"
+        ],
+        "createdAt": "2026-08-29T19:47:19.112Z",
+        "reason": "user confirmed 2026-08-29: the four side-tab hits are the governed refusal state carrier (border-inline-start 4px solid var(--withheld)) required by KHEPRI_DESIGN_LANGUAGE.md 4.6 and RCA-004 FR-089, not card accents. The colour was deliberately raised to 5.04-5.86:1 so the border clears WCAG 1.4.11 as a state carrier; thinning it to satisfy the detector would break the refusal shape and the contrast floor. Prior finish reviewer ruled them earned on the merits."
       }
     ]
   }

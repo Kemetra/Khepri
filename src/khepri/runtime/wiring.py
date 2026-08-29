@@ -72,6 +72,7 @@ from khepri.runtime.external_auth_api import (
     ExternalAuthenticationServices,
     add_external_authentication_routes,
 )
+from khepri.runtime.landing_api import add_landing_routes
 from khepri.runtime.legal_api import add_legal_routes
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
 
@@ -335,6 +336,7 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
         clock=stack.clock,
     )
     add_legal_routes(app)
+    add_landing_routes(app)
     add_shell_routes(app, services=build_shell_services(stack), clock=stack.clock)
     return app
 
