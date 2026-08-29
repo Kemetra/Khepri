@@ -71,11 +71,7 @@ _PROHIBITED_CLAIM_PATTERNS = (
         r"\b(?:retention period|retain(?:ed|s)?(?: [^.]{0,40})? for)\s+\d+",
         re.IGNORECASE,
     ),
-    re.compile(
-        r"\b(?:hosted|hosting|data residency)\b.{0,40}"
-        r"\b(?:region|cairo|egypt|fra1|germany|europe)\b",
-        re.IGNORECASE,
-    ),
+    re.compile(r"\b(?:hosted|hosting|data residency)\b", re.IGNORECASE),
     re.compile(
         r"\b(?:subscription|payment provider|chargeback|credit|invoice|refund window)\b",
         re.IGNORECASE,
@@ -85,7 +81,7 @@ _PROHIBITED_CLAIM_PATTERNS = (
         r"\bcustomer[- ]?(?:uploaded )?data\b.{0,40}\b(?:training|train)\b",
         re.IGNORECASE,
     ),
-    re.compile(r"(?:اتفاقية مستوى الخدمة|حذف ذاتي|تصدير ذاتي|صيدليات فقط)"),
+    re.compile(r"(?:اتفاقية مستوى الخدمة|حذف ذاتي|تصدير ذاتي|استضافة|صيدليات فقط)"),
 )
 
 _ASSETS = {

@@ -193,6 +193,7 @@ def test_neutral_reference_to_an_applicable_legal_framework_is_allowed(monkeypat
         "We provide a 99.9% uptime SLA.",
         "We retain customer data for 30 days.",
         "Khepri is hosted in Egypt.",
+        "Khepri is hosted in the United States.",
         "Self-service deletion is available.",
         "We use customer-uploaded data for training.",
         "A public refund window is available.",
@@ -313,6 +314,13 @@ def test_published_pages_have_equivalent_bilingual_content(
     assert english.status_code == arabic.status_code == 200
     assert english_copy in english.text
     assert arabic_copy in arabic.text
+
+
+def test_refund_status_does_not_introduce_future_billing_mechanics() -> None:
+    """The status page may not publish a third billing assertion before billing authority exists."""
+    response = _client().get(f"{LEGAL_PREFIX}/en/refund-and-void")
+
+    assert "Detailed refund or void mechanics" not in response.text
 
 
 @pytest.mark.parametrize("language", ("en", "ar"))
