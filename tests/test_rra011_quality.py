@@ -150,7 +150,18 @@ def test_caveated_answers_are_counted_apart_from_clean_ones() -> None:
     # report every answered section as caveated, and `caveated <= answered` alone
     # cannot see that -- it holds when they are equal. A mutation check found
     # exactly that hole.
-    qualified = {c.section for c in bundle.caveats if c.section is not None}
+    # `":" not in c.code` matters even though this fixture reads the same either
+    # way: a scoped result refusal travels on the caveat channel as
+    # `<result>:<reason>`, and `summarize` partitions it out before deriving the
+    # qualified set. A section carrying *only* a scoped refusal is qualified by
+    # nothing, and an expectation that skipped this filter would demand it be
+    # listed as caveated. Filtered here so the test states the rule rather than
+    # agreeing with the code by coincidence of the fixture.
+    qualified = {
+        c.section
+        for c in bundle.caveats
+        if c.section is not None and ":" not in c.code
+    }
     expected = len({s.section_id for s in bundle.sections if s.reason is None} & qualified)
 
     assert summary.caveated == expected
@@ -181,7 +192,18 @@ def test_the_summary_lists_which_sections_carried_a_caveat() -> None:
     bundle = rich_bundle()
     summary = definitions.summarize(bundle)
 
-    qualified = {c.section for c in bundle.caveats if c.section is not None}
+    # `":" not in c.code` matters even though this fixture reads the same either
+    # way: a scoped result refusal travels on the caveat channel as
+    # `<result>:<reason>`, and `summarize` partitions it out before deriving the
+    # qualified set. A section carrying *only* a scoped refusal is qualified by
+    # nothing, and an expectation that skipped this filter would demand it be
+    # listed as caveated. Filtered here so the test states the rule rather than
+    # agreeing with the code by coincidence of the fixture.
+    qualified = {
+        c.section
+        for c in bundle.caveats
+        if c.section is not None and ":" not in c.code
+    }
     expected = tuple(
         s.section_id
         for s in bundle.sections
@@ -247,3 +269,33 @@ def test_a_report_level_caveat_is_associated_with_no_section() -> None:
 
     assert not (report_level & {code for code, _ in summary.caveat_sections})
     assert report_level <= set(summary.caveats)
+
+
+def test_a_section_refusing_only_a_result_is_not_reported_as_qualified() -> None:
+    """A refused figure is not a qualification of the analysis that survived it.
+
+    A scoped result refusal travels on the caveat channel coded
+    `<result>:<reason>`. If it counted as a qualification, an analysis whose only
+    caveat is a refused figure would be listed as caveated *and* have that same
+    refusal reported in `refused_results` -- one outcome rendered twice, which is
+    the double-reporting `_partition_caveats` exists to prevent.
+
+    The standard fixture cannot show this: every section carrying a scoped
+    refusal also carries a real caveat, so filtered and unfiltered expectations
+    agree there. This bundle strips the real ones, leaving `comparison` qualified
+    by nothing but a refusal.
+    """
+    bundle = rich_bundle()
+    scoped_only = dataclasses.replace(
+        bundle,
+        caveats=tuple(c for c in bundle.caveats if ":" in c.code),
+    )
+
+    summary = definitions.summarize(scoped_only)
+
+    assert summary.refused_results
+    assert summary.caveated == 0
+    assert summary.caveated_sections == ()
+    assert summary.caveat_sections == ()
+    # The analyses still answered -- a refused figure does not refuse its section.
+    assert summary.answered == len(bundle.sections)
