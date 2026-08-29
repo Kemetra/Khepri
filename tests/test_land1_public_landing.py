@@ -24,6 +24,10 @@ from khepri.rra.rendering.wording import (
 from khepri.runtime.landing_api import (
     LANDING_PAGES,
     LANDING_PREFIX,
+    SPECIMEN_AVERAGE_ORDER_VALUE,
+    SPECIMEN_REVENUE,
+    SPECIMEN_ROWS,
+    SPECIMEN_TRANSACTIONS,
     add_landing_routes,
     legal_links,
     specimen,
@@ -159,6 +163,65 @@ def test_the_specimen_is_labelled_synthetic(client: TestClient, language: str) -
     """`FR-084`: demonstration data must never read as customer evidence."""
     response = client.get(f"{LANDING_PREFIX}/{language}")
     assert LANDING_COPY[language]["specimen_caption"] in response.text
+
+
+def test_the_specimen_satisfies_the_products_own_arithmetic() -> None:
+    """A synthetic specimen must be producible, not merely plausible.
+
+    `facts` counts transactions distinct over eligible rows, so the count cannot exceed the row
+    count, and average order value is revenue over that count. An earlier draft showed 61,244
+    sales from a 41,905-row export: every figure was individually believable and the set was
+    arithmetically impossible. No vocabulary guard could catch it, because each value is only
+    wrong in relation to the others.
+    """
+    assert SPECIMEN_TRANSACTIONS <= SPECIMEN_ROWS
+    assert pytest.approx(SPECIMEN_AVERAGE_ORDER_VALUE, abs=0.01) == (
+        SPECIMEN_REVENUE / SPECIMEN_TRANSACTIONS
+    )
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_rendered_specimen_shows_those_numbers(client: TestClient, language: str) -> None:
+    """The checked constants are the ones the page prints, not a parallel set beside them."""
+    response = client.get(f"{LANDING_PREFIX}/{language}")
+    digits = "٠١٢٣٤٥٦٧٨٩" if language == "ar" else "0123456789"
+
+    def localized(value: int) -> str:
+        grouping = "٬" if language == "ar" else ","
+        return f"{value:,}".replace(",", grouping).translate(
+            str.maketrans("0123456789", digits)
+        )
+
+    assert localized(SPECIMEN_TRANSACTIONS) in response.text
+    assert localized(SPECIMEN_ROWS) in response.text
+
+
+def test_the_print_ground_resets_every_ink_it_inverts() -> None:
+    """Flipping to a white ground inverts every contrast, so every ink must be re-stated.
+
+    `--papyrus-dim` computes to about 2.65:1 on white and gold to about 2.22:1. Resetting only
+    the brightest three left the caveat detail, the verdict names and the synthetic note below
+    the floor on paper while they looked correct on screen.
+    """
+    body = _without_comments(_stylesheet())
+    start = body.index("@media print")
+    depth, index = 0, body.index("{", start)
+    open_at = index
+    while index < len(body):
+        depth += (body[index] == "{") - (body[index] == "}")
+        index += 1
+        if depth == 0:
+            break
+    block = body[open_at + 1 : index - 1]
+
+    # Every ink is redefined at the token, so no selector can be forgotten and none can be
+    # outranked. Listing selectors by hand left seventeen failures behind: a print block gets no
+    # specificity bonus, so `.verdict--withheld .verdict-claim` beat a flat `.verdict-claim`.
+    for token in ("--papyrus", "--papyrus-dim", "--withheld", "--gold", "--egyptian-blue"):
+        assert re.search(rf"{token}\s*:", block), f"{token} keeps its screen value on paper"
+
+    # And every painted ground is cleared, including the header's literal colour.
+    assert ".site-header" in block
 
 
 # ---- FR-085: one source for governed vocabulary --------------------------------------------

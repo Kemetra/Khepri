@@ -1260,10 +1260,49 @@ h1 {
 
 /* ---- Print -------------------------------------------------------------------------------------- */
 
+/* Flipping the ground to white inverts every contrast on the page, so every ink has to be
+ * re-stated — not the three that happened to be brightest on screen. `--papyrus-dim` computes to
+ * about 2.65:1 on white and gold to about 2.22:1, so the caveat detail, the verdict names and the
+ * synthetic note all fell below the floor on paper while looking correct on screen.
+ *
+ * The state distinctions survive the flip because they were never carried by colour alone: the
+ * withheld and caveated rules keep their inline-start borders and their italic, and the ink is
+ * darkened rather than dropped. Redundant encoding is what makes a palette printable. */
 @media print {
   html { background: #fff; color: #111; }
   .site-header { position: static; }
   .register--claim::before, .register--close::before { display: none; }
   .register { break-inside: avoid; }
-  .course-value--proven, .script-figure, .claim-mark { color: #111; }
+  /* Every painted ground is cleared, including the header's literal `rgba(18, 16, 14, .86)`,
+   * which is written as a colour rather than a token and so survives the token override below.
+   * A dark bar behind darkened text is the one way this block can still fail. */
+  .register--deep, .register--close, .specimen, .site-header { background: transparent; }
+
+  /* The inks are redefined at the token, not chased selector by selector.
+   *
+   * A print block gets no specificity bonus: `.verdict--withheld .verdict-claim` (0,2,0) beats a
+   * flat `.verdict-claim` (0,1,0) whatever the media query or source order. An earlier attempt
+   * listed the selectors it could remember and left seventeen failures behind — the enumeration
+   * was both incomplete and outranked. Redefining the tokens reaches every consumer at once,
+   * including the ones nobody thought to name.
+   *
+   * The semantic ROLES survive the flip. Gold still marks a proven figure, ochre still marks a
+   * caveat and the withheld ink is still its own step — each darkened until it clears 4.5:1 on
+   * white, rather than flattened to one black. The distinctions were never carried by colour
+   * alone (rule and italic carry them too), so nothing is lost when the hues compress. */
+  :root {
+    --stone-900: #ffffff;
+    --stone-800: #ffffff;
+    --stone-700: #ffffff;
+    --stone-600: #8f8676;
+    --stone-500: #8f8676;
+    --papyrus: #111111;
+    --papyrus-dim: #3a3a3a;
+    --withheld: #52493f;
+    --gold: #6b5210;
+    --gold-dim: #6b5210;
+    --egyptian-blue: #1c556e;
+    --egyptian-blue-dim: #1c556e;
+    --ochre: #8a3d1f;
+  }
 }

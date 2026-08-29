@@ -109,8 +109,8 @@ _EN: dict[str, str] = {
     ),
     "scripts_heading": "One result, two first-class languages",
     "scripts_note": (
-        "Figures shown are illustrative, not customer data. Both panels carry the same facts, the "
-        "same caveats and the same refusals."
+        "Figures shown are illustrative, not customer data. Each panel names the metric from the "
+        "same governed catalog, in its own script."
     ),
     "close_headline": "Bring your retail data. Get decisions you can defend.",
     "close_body": (
@@ -209,8 +209,8 @@ _AR: dict[str, str] = {
     ),
     "scripts_heading": "نتيجة واحدة، لغتان أصيلتان",
     "scripts_note": (
-        "الأرقام المعروضة توضيحية، وليست بيانات عميل. وتحمل اللوحتان الحقائق والتحفّظات "
-        "والامتناع ذاتها."
+        "الأرقام المعروضة توضيحية، وليست بيانات عميل. وتسمّي كل لوحة المقياس من الفهرس المعتمد "
+        "نفسه، بحروفها هي."
     ),
     "close_headline": "أحضِر بيانات تجزئتك. واحصل على قرارات تستطيع الدفاع عنها.",
     "close_body": (

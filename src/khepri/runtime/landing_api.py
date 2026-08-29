@@ -59,11 +59,22 @@ _SPECIMEN_REASON_SCOPE = "section"
 #: An earlier draft narrated a missing-category caveat in marketing prose. The runtime cannot
 #: produce that outcome — `basket` refuses an incomplete dimension with
 #: `dimension_values_incomplete` rather than caveating it, and no missing-category caveat code
-#: exists — so the page advertised
-#: behavior the product does not have and defined a caveat meaning of its own, which is exactly
-#: what `FR-085` excludes. This code is a real caveat with the right shape: the figure is reported,
-#: and the qualification travels with it.
+#: exists — so the page advertised behavior the product does not have and defined a caveat
+#: meaning of its own, which is exactly what `FR-085` excludes. This code is a real caveat with
+#: the right shape: the figure is reported, and the qualification travels with it.
 _SPECIMEN_CAVEAT = "rows_without_time_field_excluded"
+
+#: The specimen's numbers, as numbers, so the invariants between them can be checked.
+#:
+#: A synthetic specimen must satisfy the product's own arithmetic, not merely look plausible. An
+#: earlier draft showed 61,244 sales from a 41,905-row export: every figure was individually
+#: believable and the set was impossible, because `facts` counts transactions distinct over rows
+#: and the count therefore cannot exceed the row count. Nothing caught it — each value is only
+#: wrong in relation to the others — so the relationships are asserted in `tests` from these.
+SPECIMEN_ROWS = 41905
+SPECIMEN_TRANSACTIONS = 30600
+SPECIMEN_REVENUE = 4182600.0
+SPECIMEN_AVERAGE_ORDER_VALUE = 136.69
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,14 +94,14 @@ class SpecimenCourse:
 #: metric codes are governed and resolve to governed names at render time.
 _SPECIMEN_COURSES = (
     SpecimenCourse(metric="revenue", value="4,182,600 EGP", state="proven"),
-    SpecimenCourse(metric="transactions", value="61,244", state="proven"),
-    SpecimenCourse(metric="average_order_value", value="68.29 EGP", state="proven"),
+    SpecimenCourse(metric="transactions", value="30,600", state="proven"),
+    SpecimenCourse(metric="average_order_value", value="136.69 EGP", state="proven"),
 )
 
 _ARABIC_SPECIMEN_VALUES = {
     "revenue": "٤٬١٨٢٬٦٠٠ ج.م",
-    "transactions": "٦١٬٢٤٤",
-    "average_order_value": "٦٨٫٢٩ ج.م",
+    "transactions": "٣٠٬٦٠٠",
+    "average_order_value": "١٣٦٫٦٩ ج.م",
 }
 
 
@@ -222,6 +233,10 @@ __all__ = [
     "LANDING_ASSETS",
     "LANDING_PAGES",
     "LANDING_PREFIX",
+    "SPECIMEN_AVERAGE_ORDER_VALUE",
+    "SPECIMEN_REVENUE",
+    "SPECIMEN_ROWS",
+    "SPECIMEN_TRANSACTIONS",
     "SpecimenCourse",
     "add_landing_routes",
     "landing_environment",
