@@ -150,9 +150,152 @@ def test_caveated_answers_are_counted_apart_from_clean_ones() -> None:
     # report every answered section as caveated, and `caveated <= answered` alone
     # cannot see that -- it holds when they are equal. A mutation check found
     # exactly that hole.
-    qualified = {c.section for c in bundle.caveats if c.section is not None}
+    # `":" not in c.code` matters even though this fixture reads the same either
+    # way: a scoped result refusal travels on the caveat channel as
+    # `<result>:<reason>`, and `summarize` partitions it out before deriving the
+    # qualified set. A section carrying *only* a scoped refusal is qualified by
+    # nothing, and an expectation that skipped this filter would demand it be
+    # listed as caveated. Filtered here so the test states the rule rather than
+    # agreeing with the code by coincidence of the fixture.
+    qualified = {
+        c.section
+        for c in bundle.caveats
+        if c.section is not None and ":" not in c.code
+    }
     expected = len({s.section_id for s in bundle.sections if s.reason is None} & qualified)
 
     assert summary.caveated == expected
     assert summary.caveated < summary.answered
     assert summary.caveats
+
+
+def test_the_summary_lists_which_sections_it_answered() -> None:
+    """`RRA-011`:184-187 asks *which*, not only how many.
+
+    Two bundles differing in which section answered produced identical summaries
+    while `answered` was a bare count, so a reader could not tell a report that
+    published the comparison from one that published the basket. The list is
+    derived from the bundle here rather than read back from the summary, so a
+    summary listing a section the bundle never answered fails on one side only.
+    """
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    expected = tuple(s.section_id for s in bundle.sections if s.reason is None)
+
+    assert summary.answered_sections == expected
+    assert len(summary.answered_sections) == summary.answered
+
+
+def test_the_summary_lists_which_sections_carried_a_caveat() -> None:
+    """A count of qualifications cannot say which analysis was qualified."""
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    # `":" not in c.code` matters even though this fixture reads the same either
+    # way: a scoped result refusal travels on the caveat channel as
+    # `<result>:<reason>`, and `summarize` partitions it out before deriving the
+    # qualified set. A section carrying *only* a scoped refusal is qualified by
+    # nothing, and an expectation that skipped this filter would demand it be
+    # listed as caveated. Filtered here so the test states the rule rather than
+    # agreeing with the code by coincidence of the fixture.
+    qualified = {
+        c.section
+        for c in bundle.caveats
+        if c.section is not None and ":" not in c.code
+    }
+    expected = tuple(
+        s.section_id
+        for s in bundle.sections
+        if s.reason is None and s.section_id in qualified
+    )
+
+    assert summary.caveated_sections == expected
+    assert len(summary.caveated_sections) == summary.caveated
+
+
+def test_a_caveated_section_is_also_an_answered_one() -> None:
+    """The two lists mirror the two counts, which overlap by construction.
+
+    A caveated analysis was still answered -- the reader gets it, qualified --
+    so `caveated_sections` is a subset rather than a disjoint set, exactly as
+    `caveated` is counted within `answered`. Stated as a test because a surface
+    rendering both lists must know it rather than infer it, and a later change
+    making them disjoint would silently break `len(list) == count`.
+    """
+    summary = definitions.summarize(rich_bundle())
+
+    assert set(summary.caveated_sections) <= set(summary.answered_sections)
+    assert summary.answered + summary.refused == len(rich_bundle().sections)
+
+
+def test_the_summary_says_which_caveat_qualified_which_section() -> None:
+    """A code and a section list cannot be recombined into the association.
+
+    `chart_not_drawn` qualifies two different sections in this bundle, so a
+    reader given the codes and the sections separately cannot tell whether one
+    code hit both or two codes hit one each. The pairs are the only thing that
+    answers it.
+    """
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    expected = tuple(
+        sorted(
+            (c.code, c.section)
+            for c in bundle.caveats
+            if c.section is not None and ":" not in c.code
+        )
+    )
+
+    assert summary.caveat_sections == expected
+    # The duplicated code is the case that proves pairs rather than two lists.
+    assert ("chart_not_drawn", "overview") in summary.caveat_sections
+    assert ("chart_not_drawn", "comparison") in summary.caveat_sections
+
+
+def test_a_report_level_caveat_is_associated_with_no_section() -> None:
+    """`section=None` qualifies the dataset, not one analysis.
+
+    `currency_not_declared` and `negative_revenue_present` qualify the whole
+    package, so pairing them with a section would state a scope the bundle never
+    claimed. They stay in `caveats`, which is report-wide already.
+    """
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    report_level = {c.code for c in bundle.caveats if c.section is None}
+    assert report_level
+
+    assert not (report_level & {code for code, _ in summary.caveat_sections})
+    assert report_level <= set(summary.caveats)
+
+
+def test_a_section_refusing_only_a_result_is_not_reported_as_qualified() -> None:
+    """A refused figure is not a qualification of the analysis that survived it.
+
+    A scoped result refusal travels on the caveat channel coded
+    `<result>:<reason>`. If it counted as a qualification, an analysis whose only
+    caveat is a refused figure would be listed as caveated *and* have that same
+    refusal reported in `refused_results` -- one outcome rendered twice, which is
+    the double-reporting `_partition_caveats` exists to prevent.
+
+    The standard fixture cannot show this: every section carrying a scoped
+    refusal also carries a real caveat, so filtered and unfiltered expectations
+    agree there. This bundle strips the real ones, leaving `comparison` qualified
+    by nothing but a refusal.
+    """
+    bundle = rich_bundle()
+    scoped_only = dataclasses.replace(
+        bundle,
+        caveats=tuple(c for c in bundle.caveats if ":" in c.code),
+    )
+
+    summary = definitions.summarize(scoped_only)
+
+    assert summary.refused_results
+    assert summary.caveated == 0
+    assert summary.caveated_sections == ()
+    assert summary.caveat_sections == ()
+    # The analyses still answered -- a refused figure does not refuse its section.
+    assert summary.answered == len(bundle.sections)

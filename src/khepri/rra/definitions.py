@@ -383,6 +383,34 @@ class AnalysisQualitySummary:
     #: result refusals travel in `refused_results` instead, so no code appears in
     #: both and no surface rendering both shows one refusal twice.
     caveats: tuple[str, ...]
+    #: Which analyses answered, in the order the bundle carries them, so the
+    #: summary reads in the order the report renders. `RRA-011`:184-187 asks
+    #: *which* results were published rather than only how many: two packages
+    #: publishing different analyses produced identical summaries while this was
+    #: a bare count.
+    #:
+    #: `section_id` rather than `Section`: the identity is Audit-tier and already
+    #: travels in `refusals`, while `Section.state` is Internal and appears on no
+    #: customer surface.
+    answered_sections: tuple[str, ...]
+    #: Which of those analyses carried a qualification. **A subset of
+    #: `answered_sections`, not a disjoint set** -- a caveated analysis was still
+    #: answered, and the reader still gets it. That mirrors the counts, where
+    #: `caveated` is counted within `answered`, and keeps `len(list) == count`
+    #: true of both pairs. A surface rendering both lists must not add them.
+    caveated_sections: tuple[str, ...]
+    #: `(code, section_id)` for each caveat that qualifies one analysis, sorted.
+    #:
+    #: The pairs rather than two lists, because one code can qualify several
+    #: sections -- `chart_not_drawn` routinely does -- and a reader given the
+    #: codes and the sections separately cannot tell one code hitting two
+    #: sections from two codes hitting one each.
+    #:
+    #: A report-level caveat qualifies the dataset and no single analysis, so it
+    #: is absent here and travels in `caveats`. Scoped result refusals are absent
+    #: too: they travel in `refused_results`, and pairing them here would render
+    #: one refusal as a qualification as well.
+    caveat_sections: tuple[tuple[str, str], ...]
 
 
 def _partition_caveats(caveats) -> tuple[tuple, tuple]:
@@ -399,6 +427,48 @@ def _partition_caveats(caveats) -> tuple[tuple, tuple]:
     scoped = tuple(caveat for caveat in caveats if ":" in caveat.code)
     qualifying = tuple(caveat for caveat in caveats if ":" not in caveat.code)
     return scoped, qualifying
+
+
+def _group_answered(sections, qualified) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`(answered_sections, caveated_sections)` — the identities behind two counts.
+
+    Both walk `sections` in the bundle's own order, so the summary lists analyses
+    in the order the report renders them rather than in an order this module
+    chose. The second is filtered from the first rather than built separately,
+    which is what makes it a subset by construction: `caveated` is counted within
+    `answered`, and a caveated analysis the reader still receives cannot be
+    missing from the answered list.
+
+    Grouped here rather than inline because `summarize` sits one branch under
+    CodeScene's complexity threshold, and these are one concept -- the sections
+    that answered, and which of them were qualified.
+    """
+    answered = tuple(
+        section.section_id for section in sections if section.reason is None
+    )
+    caveated = tuple(code for code in answered if code in qualified)
+    return answered, caveated
+
+
+def _associate_caveats(qualifying) -> tuple[tuple[str, str], ...]:
+    """`(code, section_id)` for every caveat that qualifies one analysis.
+
+    Sorted for determinism, matching `caveats`. A report-level caveat carries
+    `section=None` and is dropped: it qualifies the dataset rather than an
+    analysis, and pairing it with a section would state a scope the bundle never
+    claimed.
+
+    `qualifying` is already partitioned, so scoped result refusals never reach
+    here -- pairing one would report a refusal as a qualification on top of
+    `refused_results`.
+    """
+    return tuple(
+        sorted(
+            (caveat.code, caveat.section)
+            for caveat in qualifying
+            if caveat.section is not None
+        )
+    )
 
 
 def summarize(bundle) -> AnalysisQualitySummary:
@@ -442,9 +512,6 @@ def summarize(bundle) -> AnalysisQualitySummary:
         (result, reason)
         for result, _, reason in (caveat.code.rpartition(":") for caveat in scoped)
     )
-    answered = tuple(
-        section for section in bundle.sections if section.reason is None
-    )
     # `section is None` is a report-level caveat -- `currency_not_declared`
     # qualifies the dataset, not one analysis -- so it qualifies no section and
     # is filtered out. The filter is belt-and-braces rather than load-bearing:
@@ -455,11 +522,18 @@ def summarize(bundle) -> AnalysisQualitySummary:
     qualified = {
         caveat.section for caveat in qualifying if caveat.section is not None
     }
+    answered_sections, caveated_sections = _group_answered(bundle.sections, qualified)
     return AnalysisQualitySummary(
-        answered=len(answered),
-        caveated=len({s.section_id for s in answered} & qualified),
+        # Counted from the identity lists rather than beside them. A count and a
+        # list derived separately are two readings that can disagree; taken this
+        # way `len(list) == count` holds by construction rather than by test.
+        answered=len(answered_sections),
+        caveated=len(caveated_sections),
         refused=len(refusals),
         refusals=refusals,
         refused_results=refused_results,
         caveats=tuple(sorted({caveat.code for caveat in qualifying})),
+        answered_sections=answered_sections,
+        caveated_sections=caveated_sections,
+        caveat_sections=_associate_caveats(qualifying),
     )
