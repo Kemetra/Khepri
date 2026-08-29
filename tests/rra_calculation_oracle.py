@@ -1696,3 +1696,190 @@ def leading_count(distinct_values: int, fraction: int) -> int:
 
 
 ORACLE_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
+
+
+# ---------------------------------------------------------------------------
+# Case: a pharmacy dispensing extract.
+# ---------------------------------------------------------------------------
+
+PHARMACY_ROWS: tuple[OracleRow, ...] = (
+    # Two products dispensed on one prescription. `RRA-003` admits repeated
+    # products in one transaction when event identities differ; here they are
+    # different drugs, which is the ordinary case rather than the edge one.
+    OracleRow(date(2026, 3, 2), EVENT_SALE, STATUS_POSTED, Decimal("180.00"), 2,
+              "RX-5001", "PH1", "AMOX-500", "ANTIBIOTIC", Decimal("104.00"),
+              Decimal("0.00"), "T1"),
+    OracleRow(date(2026, 3, 2), EVENT_SALE, STATUS_POSTED, Decimal("45.00"), 1,
+              "RX-5001", "PH1", "PARA-500", "ANALGESIC", Decimal("26.00"),
+              Decimal("0.00"), "T1"),
+    # An insurance co-pay carried as an additive discount. `RRA-003` admits a
+    # discount only as additive under the contract's basis declaration, which is
+    # what a co-pay is: the payer's share subtracted from a stated retail price,
+    # not a separate negative line.
+    OracleRow(date(2026, 3, 9), EVENT_SALE, STATUS_POSTED, Decimal("320.00"), 4,
+              "RX-5002", "PH1", "INSU-PEN", "ANTIDIABETIC", Decimal("210.00"),
+              Decimal("48.00"), "T1"),
+    OracleRow(date(2026, 3, 16), EVENT_SALE, STATUS_POSTED, Decimal("90.00"), 3,
+              "RX-5003", "PH2", "PARA-500", "ANALGESIC", Decimal("52.00"),
+              Decimal("0.00"), "T2"),
+    OracleRow(date(2026, 3, 23), EVENT_SALE, STATUS_POSTED, Decimal("260.00"), 2,
+              "RX-5004", "PH2", "ATOR-20", "CARDIO", Decimal("150.00"),
+              Decimal("26.00"), "T2"),
+    OracleRow(date(2026, 3, 30), EVENT_SALE, STATUS_POSTED, Decimal("150.00"), 1,
+              "RX-5005", "PH2", "INSU-PEN", "ANTIDIABETIC", Decimal("98.00"),
+              Decimal("0.00"), "T2"),
+    # The same item returned on the same prescription the same day -- a cold-chain
+    # refusal at the counter, which is why it shares `RX-5005` rather than opening
+    # a transaction of its own. This is the row that makes the case load-bearing:
+    # it moves revenue and units between the financial and sale-only populations
+    # while leaving the transaction count identical at five, so an implementation
+    # that ignored event kind would still report the right number of transactions
+    # and the wrong AOV. A dataset whose every population differed would not
+    # isolate that.
+    OracleRow(date(2026, 3, 30), EVENT_RETURN, STATUS_POSTED, Decimal("-90.00"), -1,
+              "RX-5005", "PH2", "INSU-PEN", "ANTIDIABETIC", Decimal("-58.00"),
+              Decimal("0.00"), "T2"),
+)
+"""One month of dispensing across two pharmacy branches.
+
+Pharmacy-focused in its **values**, not in its schema. `RRA-003` governs which
+columns exist, and batch, expiry, and payer are not among them -- adding one
+would be a mapping change and a different family's slice. What makes this a
+pharmacy case is what the admitted columns carry: drug codes as products,
+therapeutic classes as categories, an insurance co-pay as an additive discount,
+and a same-day dispensing reversal as a posted return.
+"""
+
+PHARMACY_MANIFEST_SCOPES = ("PH1", "PH2")
+PHARMACY_MANIFEST_EVENT_KINDS = (EVENT_SALE, EVENT_RETURN)
+PHARMACY_MANIFEST_STATUSES = (STATUS_POSTED,)
+PHARMACY_MANIFEST_WINDOWS = ((date(2026, 3, 1), date(2026, 3, 31)),)
+"""One complete calendar month, both branches, posted sales and returns.
+
+The event-kind filter names both kinds because the extract contains both. A
+manifest attesting sales alone would not cover the return row, and `RRA-008`
+refuses a window no manifest proves rather than silently narrowing it.
+"""
+
+PHARMACY_HEADLINE = {
+    # revenue = 180.00 + 45.00 + 320.00 + 90.00 + 260.00 + 150.00 + (-90.00)
+    #         = 1045.00 - 90.00 = 955.00
+    # `RRA-004`: sum(financial signed revenue) over `financial_posted`, which
+    # includes the posted return as a signed row.
+    "revenue": Decimal("955.00"),
+    # units = 2 + 1 + 4 + 3 + 2 + 1 + (-1) = 13 - 1 = 12
+    "units": Decimal("12"),
+    # transactions = count_distinct(canonical sale transaction key). The five
+    # keys are RX-5001|PH1|2026-03-02|T1, RX-5002|PH1|2026-03-09|T1,
+    # RX-5003|PH2|2026-03-16|T2, RX-5004|PH2|2026-03-23|T2, and
+    # RX-5005|PH2|2026-03-30|T2. The return shares the fifth key, so it opens
+    # no transaction of its own and the count is five either way.
+    "transactions": Decimal("5"),
+    # cost = 104 + 26 + 210 + 52 + 150 + 98 + (-58) = 640.00 - 58.00 = 582.00
+    "cost": Decimal("582.00"),
+    # gross_profit = 955.00 - 582.00
+    "gross_profit": Decimal("373.00"),
+    # gross_margin = 373.00 / 955.00 = 0.390575916... -> half-even 4dp -> 0.3906
+    "gross_margin": Decimal("0.3906"),
+    # discounts = sum(non-negative sale discount) = 48.00 + 26.00 = 74.00.
+    # The two co-pays; every other row carries an explicit zero, which
+    # `RRA-003` reads as proven absence rather than a missing value.
+    "discount": Decimal("74.00"),
+    # returns = the positive MAGNITUDE of admitted return revenue, which is what
+    # `RRA-004`:83 governs and `facts._returns_magnitude` publishes: it selects
+    # non-positive return rows and negates them. The row carries -90.00 and the
+    # published figure is therefore 90.00, not -90.00. Recorded with its sign
+    # stated explicitly because the two readings differ only by a minus sign and
+    # the headline revenue beside it *is* signed -- 955.00 is return-reduced.
+    "returns": Decimal("90.00"),
+}
+
+PHARMACY_SALE_ONLY = {
+    # This is the pair the return exists to separate, and the reason the case is
+    # here. Both figures below are over `sales_posted` only.
+    #
+    # sale revenue = 180 + 45 + 320 + 90 + 260 + 150 = 1045.00
+    "revenue": Decimal("1045.00"),
+    # sale units = 2 + 1 + 4 + 3 + 2 + 1 = 13
+    "units": Decimal("13"),
+    # AOV over `sales_complete_revenue_transactions` = 1045.00 / 5 = 209.00
+    #
+    # The return-inclusive mistake gives 955.00 / 5 = 191.00. Both are exact to
+    # the cent, so neither figure looks wrong on its face and no rounding
+    # artifact betrays the substitution -- which is why the population, not the
+    # arithmetic, is what a test here must assert.
+    "average_order_value": Decimal("209.00"),
+    # ASP over `sales_complete_revenue_units` = 1045.00 / 13
+    #   = 80.384615384... -> half-even at 2dp -> 80.38
+    #
+    # The return-inclusive mistake gives 955.00 / 12 = 79.5833... -> 79.58.
+    "average_selling_price": Decimal("80.38"),
+}
+
+PHARMACY_CONCENTRATION = {
+    # Ranked over complete sale revenue by product, which `RRA-004`:117 defines
+    # as the basis: "complete sale revenue by every admissible value".
+    #
+    # INSU-PEN = 320.00 + 150.00 = 470.00   (the return is excluded: sale-only)
+    # ATOR-20  = 260.00
+    # AMOX-500 = 180.00
+    # PARA-500 = 45.00 + 90.00 = 135.00
+    # total    = 1045.00, which reconciles to PHARMACY_SALE_ONLY["revenue"].
+    "distinct_values": 4,
+    "ranked_values": 4,
+    # cumulative shares, half-even at 4dp:
+    #   470.00 / 1045.00                 = 0.449760... -> 0.4498
+    #   730.00 / 1045.00                 = 0.698564... -> 0.6986
+    #   910.00 / 1045.00                 = 0.870813... -> 0.8708
+    #  1045.00 / 1045.00                 = 1.0000
+    "shares": (
+        Decimal("0.4498"),
+        Decimal("0.6986"),
+        Decimal("0.8708"),
+        Decimal("1.0000"),
+    ),
+    # A four-value set: ceil(4/10) = 1 and ceil(4/4) = 1, so the top decile and
+    # the top quartile are both the leading value alone. `leading_count` states
+    # the same rule independently.
+    "top_decile_share": Decimal("0.4498"),
+    "top_quartile_share": Decimal("0.4498"),
+}
+
+PHARMACY_DIMENSIONAL_REVENUE = {
+    # **Signed revenue, not the sale-only basis above.** A dimensional comparison
+    # is built over `financial_posted` -- the same population as the headline --
+    # so the return subtracts from the class that carries it. Concentration is
+    # the one that ranks sale-only, which is why the two disagree on exactly one
+    # value and agree on every other:
+    #
+    #   ANTIDIABETIC = 320.00 + 150.00 - 90.00 = 380.00   (470.00 sale-only)
+    #   CARDIO       = 260.00
+    #   ANTIBIOTIC   = 180.00
+    #   ANALGESIC    = 45.00 + 90.00 = 135.00
+    #   total        = 955.00, which reconciles to PHARMACY_HEADLINE["revenue"].
+    #
+    # Recorded as its own table rather than folded into the concentration one
+    # because the difference is the governed distinction, not an inconsistency:
+    # `RRA-004` puts dimensional comparison on the financial population and
+    # `RRA-008` puts the concentration curve on complete sale revenue.
+    "category": {
+        "ANTIDIABETIC": Decimal("380.00"),
+        "CARDIO": Decimal("260.00"),
+        "ANTIBIOTIC": Decimal("180.00"),
+        "ANALGESIC": Decimal("135.00"),
+    },
+    # Product is the finer grain and rolls up to the same total.
+    "product": {
+        "INSU-PEN": Decimal("380.00"),
+        "ATOR-20": Decimal("260.00"),
+        "AMOX-500": Decimal("180.00"),
+        "PARA-500": Decimal("135.00"),
+    },
+    # Two branches, and the split is a pure partition of the signed total:
+    #   PH1 = 180.00 + 45.00 + 320.00 = 545.00
+    #   PH2 = 90.00 + 260.00 + 150.00 - 90.00 = 410.00
+    "store": {
+        "PH1": Decimal("545.00"),
+        "PH2": Decimal("410.00"),
+    },
+}

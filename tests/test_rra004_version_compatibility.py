@@ -240,3 +240,69 @@ def test_the_package_refusal_is_internal_and_carries_no_customer_wording() -> No
             context="result",
             language=LANGUAGE_ENGLISH,
         )
+
+
+def test_the_admitted_package_table_holds_exactly_the_published_triples() -> None:
+    """The extent of the table, not merely what it contains.
+
+    Every other assertion in this module tests membership: a named triple is
+    admitted, or a named triple is refused. A row *added* to
+    `ADMITTED_PACKAGE_PAIRS` is invisible to all of them -- it breaks no
+    inclusion, and it is not one of the finitely many exclusions anyone thought
+    to name. `CAL1-12` established that empirically: adding
+    `("rra003.mapping.v2", "rra004.package.v3", "rra004.formula.v2")` -- a
+    skew pairing legacy admission with the successor package and formula, the
+    precise defect this module exists to forbid -- left the entire suite green.
+
+    Nor could a sentinel catch it. `rra003.mapping.v9` and its siblings above
+    are refused because they are *unrecognised*; a widening mutant builds its
+    row from real, recognised version strings, so no `.v9` case touches it.
+    Extent is the only assertion that does.
+
+    This is deliberately a test that must be updated by hand when a row lands,
+    because `versions.py` says a row is exactly that kind of fact: "A slice adds
+    its own row when it lands; it never edits a row another slice put here,
+    because that row names a combination already published under a stable
+    identity." A change here should be a conscious act with an owner, which is
+    what makes updating it evidence rather than friction. The module already
+    uses this idiom -- `test_the_published_predecessor_triple_stays_admitted`
+    hardcodes its literals for the same reason.
+
+    Three triples, one per publication state: the predecessor, `V-package`'s
+    row, and `V-formula`'s row.
+    """
+    published = {
+        ("rra003.mapping.v2", "rra004.package.v2", "rra004.formula.v1"),
+        ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v1"),
+        ("rra003.mapping.v3", "rra004.package.v3", "rra004.formula.v2"),
+    }
+
+    assert published == ADMITTED_PACKAGE_PAIRS
+
+
+def test_the_admitted_family_table_holds_exactly_the_published_pairs() -> None:
+    """The same extent guarantee for the `(formula, family)` seam.
+
+    A row added here is worse than its package-scope sibling rather than better:
+    the family seam refuses only the affected family and leaves the rest of the
+    report standing, so a widened pair publishes a successor family identity
+    over an unmoved formula inside an otherwise ordinary report. Nothing about
+    the delivered artifact would look wrong.
+
+    Eight pairs: four predecessor families on `rra004.formula.v1`, and the four
+    successors each added by its own publication commit. With all four landed
+    the refusing set is empty, which is the state `V-concentration` reached and
+    the state this pins.
+    """
+    published = {
+        ("rra004.formula.v1", "rra008.comparison.v1"),
+        ("rra004.formula.v1", "rra008.growth.v1"),
+        ("rra004.formula.v1", "rra008.basket.v1"),
+        ("rra004.formula.v1", "rra008.concentration.v1"),
+        ("rra004.formula.v2", "rra008.comparison.v2"),
+        ("rra004.formula.v2", "rra008.growth.v2"),
+        ("rra004.formula.v2", "rra008.basket.v2"),
+        ("rra004.formula.v2", "rra008.concentration.v2"),
+    }
+
+    assert published == ADMITTED_FAMILY_PAIRS
