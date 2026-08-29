@@ -156,3 +156,94 @@ def test_caveated_answers_are_counted_apart_from_clean_ones() -> None:
     assert summary.caveated == expected
     assert summary.caveated < summary.answered
     assert summary.caveats
+
+
+def test_the_summary_lists_which_sections_it_answered() -> None:
+    """`RRA-011`:184-187 asks *which*, not only how many.
+
+    Two bundles differing in which section answered produced identical summaries
+    while `answered` was a bare count, so a reader could not tell a report that
+    published the comparison from one that published the basket. The list is
+    derived from the bundle here rather than read back from the summary, so a
+    summary listing a section the bundle never answered fails on one side only.
+    """
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    expected = tuple(s.section_id for s in bundle.sections if s.reason is None)
+
+    assert summary.answered_sections == expected
+    assert len(summary.answered_sections) == summary.answered
+
+
+def test_the_summary_lists_which_sections_carried_a_caveat() -> None:
+    """A count of qualifications cannot say which analysis was qualified."""
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    qualified = {c.section for c in bundle.caveats if c.section is not None}
+    expected = tuple(
+        s.section_id
+        for s in bundle.sections
+        if s.reason is None and s.section_id in qualified
+    )
+
+    assert summary.caveated_sections == expected
+    assert len(summary.caveated_sections) == summary.caveated
+
+
+def test_a_caveated_section_is_also_an_answered_one() -> None:
+    """The two lists mirror the two counts, which overlap by construction.
+
+    A caveated analysis was still answered -- the reader gets it, qualified --
+    so `caveated_sections` is a subset rather than a disjoint set, exactly as
+    `caveated` is counted within `answered`. Stated as a test because a surface
+    rendering both lists must know it rather than infer it, and a later change
+    making them disjoint would silently break `len(list) == count`.
+    """
+    summary = definitions.summarize(rich_bundle())
+
+    assert set(summary.caveated_sections) <= set(summary.answered_sections)
+    assert summary.answered + summary.refused == len(rich_bundle().sections)
+
+
+def test_the_summary_says_which_caveat_qualified_which_section() -> None:
+    """A code and a section list cannot be recombined into the association.
+
+    `chart_not_drawn` qualifies two different sections in this bundle, so a
+    reader given the codes and the sections separately cannot tell whether one
+    code hit both or two codes hit one each. The pairs are the only thing that
+    answers it.
+    """
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    expected = tuple(
+        sorted(
+            (c.code, c.section)
+            for c in bundle.caveats
+            if c.section is not None and ":" not in c.code
+        )
+    )
+
+    assert summary.caveat_sections == expected
+    # The duplicated code is the case that proves pairs rather than two lists.
+    assert ("chart_not_drawn", "overview") in summary.caveat_sections
+    assert ("chart_not_drawn", "comparison") in summary.caveat_sections
+
+
+def test_a_report_level_caveat_is_associated_with_no_section() -> None:
+    """`section=None` qualifies the dataset, not one analysis.
+
+    `currency_not_declared` and `negative_revenue_present` qualify the whole
+    package, so pairing them with a section would state a scope the bundle never
+    claimed. They stay in `caveats`, which is report-wide already.
+    """
+    bundle = rich_bundle()
+    summary = definitions.summarize(bundle)
+
+    report_level = {c.code for c in bundle.caveats if c.section is None}
+    assert report_level
+
+    assert not (report_level & {code for code, _ in summary.caveat_sections})
+    assert report_level <= set(summary.caveats)
