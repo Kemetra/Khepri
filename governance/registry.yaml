@@ -328,3 +328,12 @@ artifacts:
     depends_on:
       - RCA
       - RCA-002
+  - type: specification
+    id: RCA-004
+    state: active
+    document: governance/specifications/RCA-004.md
+    depends_on:
+      - RCA
+      - RCA-003
+      - RRA-009
+      - RRA-011
