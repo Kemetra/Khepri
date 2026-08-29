@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khepri — Retail decisions you can prove</title>
+<meta name="description" content="Khepri turns imperfect retail exports into reproducible, evidence-backed analysis — and refuses unsupported conclusions when the data cannot justify them.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#12100e">
+<link rel="stylesheet" href="landing.css">
+</head>
+<body>
+<!--
+THESIS: Egyptian register composition was a data-graphics system before it was art — horizontal
+bands, strict shared baselines, fixed reading order, scale encoding significance rather than
+distance. That is structurally what a governed report is. The page is built of registers cut into
+one stone wall, and it refuses the category's arrangement: dark-navy gradient, floating dashboard
+screenshot, three icon-topped feature cards, logo wall, testimonial.
+
+OWN-WORLD: Quarried stone ground in four warm steps from #12100e, deliberately amber rather than the
+cool near-black of generic dark-mode SaaS. Gold leaf (#d4a83a) is scarce BY RULE — it marks a proven
+figure, the sun mark, and the primary action, never decoration. Egyptian blue (#4a9fc4), the first
+synthetic pigment, made in Egypt c.2500 BCE, carries structure and admission. Red ochre (#c97b5a)
+marks a caveat, following the scribe's palette where red meant headings and corrections. Papyrus
+#ede4d3 for text. One face, Noto Sans Arabic, both scripts; monumental weight comes from scale and
+tracking, never an imported display face, which would give English a designed face and Arabic a
+fallback. Registers separated by incised rules — an inset shadow pair, so the line reads as cut
+stone under raking light. Zero physical directional properties.
+
+STORY: The visitor sees a claim cut at monumental scale, then immediately watches one real export
+pass through admission — including a figure Khepri withholds, set into its own course where the
+answer would have been. They understand the mechanism, believe it because refusal is demonstrated
+rather than promised, and request access.
+
+FIRST VIEWPORT: Near-black stone. A warm radial sun low behind the headline. "Retail decisions you
+can prove." at clamp(2.6rem, 7.2vw, 6.5rem), with "prove" in gold so the colour rule is stated by
+the headline before it is explained. Beneath: a gold-bordered primary, a ghost secondary, and the
+specimen — q3-sales-export.csv with an ADMITTED mark in Egyptian blue, four courses with proven
+figures in gold, and a withheld course in the disclosure shape naming its reason.
+
+FORM: The Register Wall — candidate 4 of 7 grounded directions, assigned by the roll. Raised by the
+declined phosphor-terminal challenger, which donated one discipline: state prints itself into the
+register as content, never as a floating badge. Seed key a56e97f5.
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the
+verdict, DESIGN.md, and every shipping raster carrying its provenance.
+-->
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <a class="brand" href="#"><span class="brand-sun" aria-hidden="true"></span>KHEPRI</a>
+  <nav class="site-nav" aria-label="Primary">
+    <ul>
+      <li><a href="#passage">Product</a></li>
+      <li><a href="#method">How it works</a></li>
+      <li><a href="#why">Why Khepri</a></li>
+      <li><a href="#about">About</a></li>
+    </ul>
+  </nav>
+  <div class="header-actions">
+    <a class="language-link" href="#" lang="ar" hreflang="ar">العربية</a>
+    <a class="button" href="#request">Request access</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ══ REGISTER I — the claim ══════════════════════════════════════════════════════════════ -->
+  <section class="register register--claim">
+    <div class="wall">
+
+      <h1>Retail decisions you can <span class="claim-mark">prove</span>.</h1>
+
+      <p class="claim-lede">
+        Khepri turns imperfect retail exports into reproducible, evidence-backed analysis — and
+        refuses unsupported conclusions when the data cannot justify them.
+      </p>
+
+      <div class="claim-actions">
+        <a class="button" href="#request">Request access</a>
+        <a class="button button--ghost" href="#method">See how it works</a>
+      </div>
+
+      <figure class="specimen" aria-labelledby="specimen-title">
+        <div class="specimen-head">
+          <span class="specimen-file" id="specimen-title" dir="auto">q3-sales-export.csv</span>
+          <span class="state-mark state-mark--admitted">Admitted</span>
+        </div>
+
+        <dl class="courses">
+          <div class="course">
+            <dt class="course-term">Population</dt>
+            <dd class="course-value course-value--plain tabular">18 stores · 1 quarter</dd>
+          </div>
+          <div class="course">
+            <dt class="course-term">Net revenue</dt>
+            <dd class="course-value course-value--proven tabular">4,182,600 EGP</dd>
+          </div>
+          <div class="course">
+            <dt class="course-term">Transactions</dt>
+            <dd class="course-value course-value--proven tabular">61,244</dd>
+          </div>
+          <div class="course">
+            <dt class="course-term">Category coverage</dt>
+            <dd class="course-value course-value--proven tabular">94% of rows</dd>
+          </div>
+
+          <!-- The withheld course. Set into the register where the figure would have been. -->
+          <div class="course course--withheld">
+            <dt class="course-term">Average basket size was not reported for this period.</dt>
+            <dd>
+              Coverage of the item-line column falls below the threshold this figure requires.
+              <span class="withheld-reason">Reason: coverage · Evidence reachable</span>
+            </dd>
+          </div>
+        </dl>
+
+        <figcaption class="synthetic-note">Illustrative export. Not customer data.</figcaption>
+      </figure>
+
+    </div>
+  </section>
+
+  <!-- ══ REGISTER II — the passage ═══════════════════════════════════════════════════════════ -->
+  <section class="register register--deep" id="passage">
+    <div class="wall">
+      <h2 class="register-mark">
+        <span>Register II · The passage</span>
+        <span class="register-subject" dir="auto">q3-sales-export.csv</span>
+      </h2>
+
+      <ol class="passage">
+        <li class="passage-step">
+          <span class="passage-index">I</span>
+          <span class="passage-term">Operational export</span>
+          <span class="passage-detail">The file the retailer already produces, imperfect as it is.</span>
+          <span class="passage-state tabular">41,905 rows · 22 columns</span>
+        </li>
+        <li class="passage-step">
+          <span class="passage-index">II</span>
+          <span class="passage-term">Semantic admission</span>
+          <span class="passage-detail">Meaning, population and coverage established before any claim is made.</span>
+          <span class="passage-state tabular">18 stores · 1 quarter admitted</span>
+        </li>
+        <li class="passage-step">
+          <span class="passage-index">III</span>
+          <span class="passage-term">Deterministic facts</span>
+          <span class="passage-detail">Versioned retail calculations. The same admissible inputs give the same result.</span>
+          <span class="passage-state tabular">6 facts · formula v4</span>
+        </li>
+        <li class="passage-step passage-step--withheld">
+          <span class="passage-index">IV</span>
+          <span class="passage-term">Evidence, caveats, refusals</span>
+          <span class="passage-detail">Each figure reconciles with its evidence. What cannot be supported is named, and stays named.</span>
+          <span class="passage-state tabular">4 proven · 1 caveated · 1 withheld</span>
+        </li>
+        <li class="passage-step">
+          <span class="passage-index">V</span>
+          <span class="passage-term">Decision-ready output</span>
+          <span class="passage-detail">A bilingual result you can act on, and defend afterwards.</span>
+          <span class="passage-state">EN · العربية</span>
+        </li>
+      </ol>
+
+      <p class="passage-figure">
+        Refusal is a capability. We would rather refuse an unsupported answer
+        <em>than manufacture confidence.</em>
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ REGISTER III — what an answer is worth ══════════════════════════════════════════════ -->
+  <section class="register">
+    <div class="wall">
+      <h2 class="register-mark"><span>Register III · What an answer is worth</span></h2>
+
+      <div class="contrast">
+        <div>
+          <span class="contrast-label">Typical analytics</span>
+          <p class="contrast-quote contrast-quote--theirs">“Here is your answer.”</p>
+        </div>
+        <div>
+          <span class="contrast-label">Khepri</span>
+          <p class="contrast-quote contrast-quote--ours">“Here is the answer we can <span class="claim-mark">prove</span> — and here is what we cannot.”</p>
+        </div>
+      </div>
+
+      <div class="verdicts">
+        <article class="verdict verdict--proven">
+          <span class="verdict-name">Proven</span>
+          <p class="verdict-claim">Net revenue reconciles across all 18 stores.</p>
+          <p class="verdict-detail">Population and coverage established; the figure matches its source rows.</p>
+          <a class="verdict-evidence" href="#">View evidence</a>
+        </article>
+
+        <article class="verdict verdict--caveated">
+          <span class="verdict-name">Caveated</span>
+          <p class="verdict-claim">Category performance is reported for 16 of 18 stores.</p>
+          <p class="verdict-detail">Two stores did not report category codes for the period. The caveat travels with the figure.</p>
+          <a class="verdict-evidence" href="#">View evidence</a>
+        </article>
+
+        <article class="verdict verdict--withheld">
+          <span class="verdict-name">Withheld</span>
+          <p class="verdict-claim">Average basket size is not reported for this period.</p>
+          <p class="verdict-detail">Item-line coverage falls below the threshold this figure requires. The reason and its evidence remain reachable.</p>
+          <a class="verdict-evidence" href="#">View reason</a>
+        </article>
+      </div>
+
+      <p class="synthetic-note">
+        The three examples above are illustrative, not customer data. The state names are provisional
+        design vocabulary, not shipped product labels.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ REGISTER IV — why, and how ══════════════════════════════════════════════════════════ -->
+  <section class="register register--deep" id="why">
+    <div class="wall">
+      <h2 class="register-mark"><span>Register IV · Why Khepri</span></h2>
+
+      <div class="pillars">
+        <article class="pillar">
+          <h3>Provable figures</h3>
+          <p>Every important figure reconciles with the evidence behind it, reachable from the claim it supports.</p>
+        </article>
+        <article class="pillar">
+          <h3>Explicit uncertainty</h3>
+          <p>Caveats and unavailable conclusions stay visible, in the place the answer would have appeared.</p>
+        </article>
+        <article class="pillar">
+          <h3>Bilingual parity</h3>
+          <p>Arabic and English receive equivalent facts, caveats and warnings. Neither is a translation of the other.</p>
+        </article>
+        <article class="pillar">
+          <h3>Reproducible analysis</h3>
+          <p>The same admissible inputs produce the same governed result, under a stated calculation version.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="register" id="method">
+    <div class="wall">
+      <h2 class="register-mark"><span>Register V · How it works</span></h2>
+
+      <ol class="method">
+        <li class="method-step">
+          <span class="method-index">I</span>
+          <span class="method-term">Send an export</span>
+          <span class="method-detail">Upload the operational file you already have. No integration, no schema to match first.</span>
+        </li>
+        <li class="method-step">
+          <span class="method-index">II</span>
+          <span class="method-term">Khepri establishes meaning</span>
+          <span class="method-detail">Columns, population and coverage are resolved and shown back to you before anything is calculated.</span>
+        </li>
+        <li class="method-step">
+          <span class="method-index">III</span>
+          <span class="method-term">Facts reconcile against evidence</span>
+          <span class="method-detail">Retail calculations run deterministically. Figures that do not reconcile are not published.</span>
+        </li>
+        <li class="method-step">
+          <span class="method-index">IV</span>
+          <span class="method-term">Review a decision-ready result</span>
+          <span class="method-detail">A bilingual report carrying its figures, its caveats and its refusals together.</span>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="register register--deep">
+    <div class="wall">
+      <h2 class="register-mark"><span>Register VI · Built for retail operations</span></h2>
+
+      <!-- Each use carries the question it answers and the decision it feeds. Four bare noun
+           phrases named an audience without telling anyone what the product does for them. -->
+      <ul class="uses">
+        <li class="use">
+          <h3 class="use-name">Multi-location retail</h3>
+          <p class="use-question">“Which stores actually moved, and which look like they moved because coverage changed?”</p>
+        </li>
+        <li class="use">
+          <h3 class="use-name">Commercial performance review</h3>
+          <p class="use-question">“Can every figure in this pack survive being questioned in the room?”</p>
+        </li>
+        <li class="use">
+          <h3 class="use-name">Store and category analysis</h3>
+          <p class="use-question">“Is this category genuinely down, or is it missing from two stores' exports?”</p>
+        </li>
+        <li class="use">
+          <h3 class="use-name">Operating decision teams</h3>
+          <p class="use-question">“What did we know, and when, the last time we made this call?”</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══ REGISTER VII — the two scripts ══════════════════════════════════════════════════════ -->
+  <section class="register">
+    <div class="wall">
+      <h2 class="register-mark"><span>Register VII · One result, two first-class languages</span></h2>
+
+      <div class="scripts">
+        <div class="script-panel" lang="en" dir="ltr">
+          <p class="script-name"><span>EN</span><span>English</span></p>
+          <p class="script-claim">Net revenue, Q3</p>
+          <p class="script-figure tabular">4,182,600 EGP</p>
+          <p class="script-note">Reconciled across 18 stores.</p>
+          <div class="script-withheld">
+            Average basket size was not reported for this period.
+            <span class="withheld-reason">Reason: coverage</span>
+          </div>
+        </div>
+
+        <div class="script-panel" lang="ar" dir="rtl">
+          <p class="script-name"><span>ع</span><span>العربية</span></p>
+          <p class="script-claim">صافي الإيرادات، الربع الثالث</p>
+          <p class="script-figure tabular">٤٬١٨٢٬٦٠٠ ج.م</p>
+          <p class="script-note">تمت المطابقة عبر ١٨ متجرًا.</p>
+          <div class="script-withheld">
+            لم يُصدر متوسط قيمة السلة لهذه الفترة.
+            <span class="withheld-reason">السبب: التغطية</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="synthetic-note">
+        Figures shown are illustrative, not customer data. Arabic copy is a design specimen and is not
+        the product's governed copy.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══ Close ═══════════════════════════════════════════════════════════════════════════════ -->
+  <section class="register register--close" id="request">
+    <div class="wall">
+      <h2 class="close-headline">Bring your retail data. Get decisions you can defend.</h2>
+      <div class="close-actions">
+        <a class="button" href="#">Request access</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="colophon" id="about">
+  <div class="wall colophon-row">
+    <ul>
+      <li><a href="#about">About</a></li>
+      <li><a href="#">Legal</a></li>
+      <li><a href="#">Trust</a></li>
+      <li><a href="#" lang="ar" hreflang="ar">العربية</a></li>
+    </ul>
+    <span class="colophon-mark"><span class="brand-sun" aria-hidden="true"></span>KHEPRI</span>
+  </div>
+</footer>
+
+</body>
+</html>
