@@ -50,8 +50,10 @@ So a test count is the wrong evidence for this condition, and offering one here 
 failure: a module's own tests passing while nothing calls it. Four merges and 3,797 passing tests do
 not make a catalog a customer can reach.
 
-**Condition 1 does not hold.** The remedy is a `T1-05` slice adding the metric-detail read route to
-`report_api.py`, session-scoped like its siblings. It is deliberately not built here: this is a
+**Condition 1 does not hold.** The remedy is a `T1-05` slice adding the two missing read routes to
+`report_api.py` -- the registry and the package summary -- session-scoped like their siblings. Both,
+not one: `summarize` is as unreachable as `define_metric`, and a slice that landed only the first
+would leave this condition failing for a smaller reason. It is deliberately not built here: this is a
 docs-only ledger, and building the thing whose absence it records would be self-certifying the
 condition it failed.
 
@@ -216,9 +218,18 @@ pair and the MinIO material. Recorded because the failure looks like a build def
 | 4 — full journey, both languages | **Holds**, with the channel limitation stated |
 
 **`M2` is not reachable on this tree.** Condition 1 fails, so three of four holding is not a partial
-pass -- §7 requires all four. What remains is one slice: the `T1-05` metric-detail read route in
-`report_api.py`, session-scoped like its siblings, after which condition 1 can be re-measured against
-a catalog something calls.
+pass -- §7 requires all four. What remains is **two** read routes in `report_api.py`, both
+session-scoped like their siblings, because `RRA-011`:53-54 names three and only the evidence route
+is merged:
+
+| Route | Consumer it gives | State |
+|---|---|---|
+| the registry | `define_metric`, `describe_metric` | absent -- withdrawn by `cc042e3` |
+| the package summary | `summarize` | absent -- never built |
+| a fact's evidence | the rendered projection | **merged**, exercised in condition 4 |
+
+Condition 1 can be re-measured once both exist. Adding only the metric-detail route would leave
+`summarize` with no production consumer and the condition still failing, for a smaller reason.
 
 **`R8-10` is downstream of that, not separate work.** Its journey and shell entry points for analysis
 quality and evidence depend on the "T1 minimum", and they are unbuilt -- no document claims
