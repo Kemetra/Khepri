@@ -110,7 +110,7 @@ GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 #: whichever the mapping resolved, and demanding both would report unavailable
 #: an analysis the calculation publishes.
 RESULT_REQUIREMENTS = {
-    metric: ((SEMANTIC_REVENUE,), GOVERNED_DIMENSIONS)
+    metric: ((SEMANTIC_REVENUE,), (GOVERNED_DIMENSIONS,))
     for metric in GOVERNED_METRICS
 }
 

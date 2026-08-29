@@ -210,8 +210,11 @@ def test_each_family_declares_the_inputs_availability_reads() -> None:
     for family in (comparison, growth, basket, concentration):
         assert family.RESULT_REQUIREMENTS
         assert set(family.RESULT_REQUIREMENTS) == set(family.GOVERNED_METRICS)
-        for required, alternatives in family.RESULT_REQUIREMENTS.values():
-            assert set(required) | set(alternatives) <= set(_ALL_SEMANTICS)
+        for required, groups in family.RESULT_REQUIREMENTS.values():
+            named = set(required).union(*(set(g) for g in groups)) if groups else set(
+                required
+            )
+            assert named <= set(_ALL_SEMANTICS)
 
 
 def test_an_unknown_section_has_no_availability_to_report() -> None:
@@ -299,11 +302,11 @@ def test_a_family_with_governed_dimensions_declares_them_as_an_alternative() -> 
         if dimensions is None:
             continue
         stated = {
-            alternatives
-            for _, alternatives in family.RESULT_REQUIREMENTS.values()
-            if alternatives
+            group
+            for _, groups in family.RESULT_REQUIREMENTS.values()
+            for group in groups
         }
-        assert stated == {dimensions}, family.__name__
+        assert dimensions in stated, family.__name__
 
 
 def test_partial_means_a_result_is_publishable_not_an_input_is_present() -> None:
@@ -357,3 +360,31 @@ def test_partial_survives_where_one_metric_of_two_can_publish() -> None:
     entry = _for(definitions.availability(mapping), SECTION_BASKET)
 
     assert entry.state == definitions.PARTIAL
+
+
+def test_basket_attach_rate_does_not_need_units() -> None:
+    """`_facts` states each basket metric on its own inputs.
+
+    Its docstring is explicit: *"Attach rate needs no units and items per
+    transaction needs no dimension, so neither may be suppressed by the other's
+    missing input."* `_ranked` takes the revenue comparison first and falls back
+    to any counted one, so a mapping with revenue, an identifier and a dimension
+    publishes attach rates while items per transaction refuses.
+
+    Reporting that `unavailable` hides a result the analysis will state. The
+    requirement this corrects was inherited from `_ITEMS_INPUTS`, which named
+    what *one* metric needs and was applied to both.
+    """
+    mapping = _mapping(
+        **{
+            SEMANTIC_TRANSACTION_DATE: STATE_MAPPED,
+            SEMANTIC_REVENUE: STATE_MAPPED,
+            SEMANTIC_TRANSACTION_ID: STATE_MAPPED,
+            SEMANTIC_PRODUCT: STATE_MAPPED,
+        }
+    )
+
+    entry = _for(definitions.availability(mapping), SECTION_BASKET)
+
+    assert entry.state == definitions.PARTIAL
+    assert entry.missing == (SEMANTIC_UNITS,)

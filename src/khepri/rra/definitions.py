@@ -601,15 +601,24 @@ def _is_resolved(mapping, semantic: str) -> bool:
 def _unmet(mapping, requirement) -> tuple[str, ...]:
     """What stands between this mapping and one result, in the family's order.
 
-    `requirement` is `(required, alternatives)`: every semantic in the first must
-    be resolved, and one of the second if it is non-empty. An unsatisfied
-    alternative contributes the whole group, so a caller can say "product or
-    category" rather than naming one of them as though it were the requirement.
+    `requirement` is `(required, groups)`: every semantic in `required` must be
+    resolved, and at least one member of each group in `groups`.
+
+    Groups rather than one alternative set, because a metric can face two
+    independent choices -- basket's attach rate needs a governed dimension *and*
+    a core measure to rank by, and a dimension does not substitute for a
+    measure. Collapsing them into one set would report the metric supportable on
+    two dimensions and no measure.
+
+    An unsatisfied group contributes all of its members, so a caller can say
+    "product or category" rather than naming one as though it were the
+    requirement.
     """
-    required, alternatives = requirement
+    required, groups = requirement
     missing = tuple(code for code in required if not _is_resolved(mapping, code))
-    if alternatives and not any(_is_resolved(mapping, code) for code in alternatives):
-        missing = (*missing, *alternatives)
+    for group in groups:
+        if not any(_is_resolved(mapping, code) for code in group):
+            missing = (*missing, *group)
     return missing
 
 
