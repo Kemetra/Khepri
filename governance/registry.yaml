@@ -198,6 +198,7 @@ artifacts:
       - KHEPRI-DEC-028
       - KHEPRI-DEC-029
       - KHEPRI-DEC-030
+      - RRA-011
 
   - type: specification
     id: FND-001
