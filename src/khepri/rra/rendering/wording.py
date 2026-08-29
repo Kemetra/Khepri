@@ -1457,3 +1457,97 @@ def metric_not_meant(metric: str, language: str) -> str:
 def metric_synonyms(metric: str, language: str) -> tuple[str, ...]:
     """Names a reader may recognize this metric by, refusing an unknown code."""
     return METRIC_SYNONYMS[language][metric]
+
+
+#: The scopes `RRA-009` states a refusal at, in the order a catalog reports them.
+#: A tuple rather than `REFUSAL_WORDING`'s keys so the order is stated rather than
+#: inherited from a dict literal that a later edit could reorder.
+GOVERNED_REASON_SCOPES = ("section", "result")
+
+
+def reason_codes(scope: str) -> frozenset[str]:
+    """Every refusal reason stated at one scope, refusing an unknown scope.
+
+    Read from the English table. The import-time guard already proves both
+    languages carry the same codes at every scope, so reading one is reading the
+    registry -- and reading the union of both would hide a language that lost a
+    code behind the other still having it.
+    """
+    if scope not in GOVERNED_REASON_SCOPES:
+        raise KeyError(scope)
+    return frozenset(REFUSAL_WORDING[scope][LANGUAGE_ENGLISH])
+
+
+def reason_wording(code: str, language: str, scope: str) -> str:
+    """What one refusal says, as authored, placeholders intact."""
+    return REFUSAL_WORDING[scope][language][code]
+
+
+def caveat_codes() -> frozenset[str]:
+    """Every caveat code the governed calculation can state."""
+    return frozenset(CAVEAT_WORDING[LANGUAGE_ENGLISH])
+
+
+def caveat_wording_for(code: str, language: str) -> str:
+    """What one caveat says to a customer."""
+    return CAVEAT_WORDING[language][code]
+
+
+#: What each dimension a series is keyed by is called, in each language. Five
+#: entries rather than one per composed metric: a series metric's meaning is its
+#: measure's meaning resolved over one of these, so this is the only part of it
+#: that is not already authored.
+DIMENSION_NAMES: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "period": "each period",
+        "product": "each product",
+        "category": "each category",
+        "store": "each branch",
+        "channel": "each channel",
+    },
+    LANGUAGE_ARABIC: {
+        "period": "كل فترة",
+        "product": "كل منتج",
+        "category": "كل فئة",
+        "store": "كل فرع",
+        "channel": "كل قناة",
+    },
+}
+
+#: How a series description is composed from its measure's and its dimension's.
+#: A format string per language, because the two put the parts in opposite orders
+#: and concatenating them in one order would read as translated English.
+_SERIES_DESCRIPTION = {
+    LANGUAGE_ENGLISH: "{measure} Broken down by {dimension}.",
+    LANGUAGE_ARABIC: "{measure} موزعة على {dimension}.",
+}
+
+
+def _assert_dimension_names_complete() -> None:
+    """Every governed series dimension is named in every language.
+
+    Read from `facts.SERIES_DIMENSIONS` rather than from this table's own keys: a
+    guard comparing the table to itself passes whatever the table says, and the
+    failure this exists to catch is a dimension admitted there and not named here,
+    which would compose a description with a `KeyError` in it.
+    """
+    if set(DIMENSION_NAMES) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("dimension names must cover every governed language")
+    wrong = [
+        language
+        for language, entries in DIMENSION_NAMES.items()
+        if set(entries) != set(facts.SERIES_DIMENSIONS)
+    ]
+    if wrong:
+        message = f"every governed series dimension needs a name: {sorted(wrong)}"
+        raise RuntimeError(message)
+
+
+_assert_dimension_names_complete()
+
+
+def series_description(measure: str, dimension: str, language: str) -> str:
+    """One series' meaning, composed from its measure's and its dimension's."""
+    return _SERIES_DESCRIPTION[language].format(
+        measure=measure, dimension=DIMENSION_NAMES[language][dimension]
+    )

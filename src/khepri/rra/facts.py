@@ -218,6 +218,18 @@ COMPARISON_DIMENSIONS = (
     SEMANTIC_CHANNEL,
 )
 
+#: The dimension a period series is keyed by. A series metric's code is composed
+#: as `<measure>_by_<dimension>`, and `period` is the one dimension that is not a
+#: column in the file -- it comes from the date. Named here rather than spelled in
+#: the f-string that builds it, because `definitions` derives the catalog's series
+#: codes from the same constants the builders compose them from: a literal in one
+#: place and a literal in the other is two truths, and the catalog would silently
+#: stop covering a series whose name moved.
+PERIOD_DIMENSION = "period"
+
+#: Every dimension a series or comparison metric can be keyed by.
+SERIES_DIMENSIONS: tuple[str, ...] = (PERIOD_DIMENSION, *COMPARISON_DIMENSIONS)
+
 
 class FactsRefused(ValueError):
     pass
@@ -1842,7 +1854,7 @@ def _series(
     granularity = granularity_for(dated)
     results: list[FactSeries] = []
     for entry in aggregated:
-        metric = f"{entry.measure}_by_period"
+        metric = f"{entry.measure}_by_{PERIOD_DIMENSION}"
         if not dated or entry.total is None:
             refusals.append(
                 RefusedResult(metric=metric, reason=REASON_INPUT_UNAVAILABLE)

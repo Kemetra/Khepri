@@ -14,6 +14,7 @@ counts them, mechanically, rather than asserting the intent.
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import pathlib
 import re
 
@@ -98,8 +99,17 @@ def test_every_catalogued_metric_is_declared_by_the_module_that_computes_it() ->
         | set(basket.GOVERNED_METRICS)
         | set(concentration.GOVERNED_METRICS)
     )
+    # A series metric is composed, not declared: `facts.py` builds
+    # `<measure>_by_<dimension>` from two governed constants, so the expectation is
+    # composed here the same way rather than listed. Both operands are read from
+    # `facts`, so a code the catalog invented still appears on one side only.
+    composed = {
+        f"{measure}_by_{dimension}"
+        for measure in facts.GOVERNED_METRICS
+        for dimension in facts.SERIES_DIMENSIONS
+    }
 
-    assert declared == set(definitions.METRIC_CODES)
+    assert declared | composed == set(definitions.METRIC_CODES)
 
 
 # --- parity ----------------------------------------------------------------
@@ -272,7 +282,21 @@ def test_a_synonym_never_introduces_a_code() -> None:
     for language in LANGUAGES:
         keyed = set(wording.METRIC_SYNONYMS[language])
 
-        assert keyed == set(definitions.METRIC_CODES), language
+        # The authored tables key the base metrics. A series metric offers its
+        # measure's synonyms rather than its own entry, so the table is a subset of
+        # the catalog by design -- but nothing in it may be outside the catalog,
+        # which is the direction this rule is about.
+        assert keyed <= set(definitions.METRIC_CODES), language
+        assert keyed == set(facts.GOVERNED_METRICS) | {
+            code
+            for codes in (
+                comparison.GOVERNED_METRICS,
+                growth.GOVERNED_METRICS,
+                basket.GOVERNED_METRICS,
+                concentration.GOVERNED_METRICS,
+            )
+            for code in codes
+        }, language
 
 
 def test_a_synonym_is_never_the_business_name_it_stands_beside() -> None:
@@ -311,7 +335,7 @@ def test_the_vocabulary_guard_covers_every_authored_table() -> None:
         if name.startswith("METRIC_")
         and isinstance(value, dict)
         and set(value) == {"en", "ar"}
-        and set(value["en"]) == set(definitions.METRIC_CODES)
+        and set(value["en"]) == set(wording._CATALOGUED_METRIC_CODES)
     }
     guarded = {
         name
@@ -338,9 +362,13 @@ def test_exactly_one_catalogued_metric_has_no_business_name() -> None:
     and the asymmetry that made it possible is not, so it is written down here for
     whichever surface serves the catalog next.
     """
+    # Over the authored base metrics. A series metric's name is governed by the
+    # same table for the eight that publish, and the rest of the cross-product is
+    # catalogued for its meaning rather than named -- a name for a series no run
+    # produces would title nothing.
     unnamed = {
         code
-        for code in definitions.METRIC_CODES
+        for code in wording._CATALOGUED_METRIC_CODES
         for language in LANGUAGES
         if wording.business_metric_name(code, language) is None
     }
@@ -366,3 +394,172 @@ def test_answered_and_refused_always_partition_the_sections() -> None:
         summary = definitions.summarize(bundle)
 
         assert summary.answered + summary.refused == len(bundle.sections), published
+
+
+# --- reasons and caveats ---------------------------------------------------
+
+
+def test_the_reason_and_caveat_registries_derive_from_the_wording_tables() -> None:
+    """No third and fourth hand-maintained list, asserted rather than intended.
+
+    `RRA-009`'s two registries already declare which reasons and caveats exist,
+    and both already carry bilingual prose. The catalog exposes them; it does not
+    restate them. Compared against the tables directly so a catalog that grew its
+    own copy would disagree here on the day the copy drifted.
+    """
+    stated_caveats = frozenset(wording.CAVEAT_WORDING["en"])
+    stated_reasons = frozenset(
+        code
+        for scope in wording.GOVERNED_REASON_SCOPES
+        for code in wording.REFUSAL_WORDING[scope]["en"]
+    )
+
+    assert stated_caveats == definitions.CAVEAT_CODES
+    assert stated_reasons == definitions.REASON_CODES
+
+
+def test_a_reason_reports_every_scope_it_is_stated_at() -> None:
+    """Scope is part of the answer, and a reason may be governed at both.
+
+    `RRA-009` words a section refusal and a result refusal differently -- one says
+    an analysis is unavailable, the other that one figure inside a surviving
+    analysis is -- so a reader asking about a code needs to know which applies.
+
+    Both directions are pinned: a code stated at one scope reports one, and a code
+    stated at both reports both in the governed order. Asserting only the second
+    would pass for an implementation that returned every scope unconditionally.
+    """
+    both = definitions.define_reason("family_version_pairing_unadmitted")
+    assert both.scopes == ("section", "result")
+
+    for code in definitions.REASON_CODES:
+        for scope in definitions.define_reason(code).scopes:
+            assert code in wording.reason_codes(scope), (code, scope)
+
+
+def test_a_reason_or_caveat_explains_itself_in_both_languages() -> None:
+    """Parity over the two registries the catalog exposes, not only over metrics."""
+    for language in LANGUAGES:
+        for code in definitions.CAVEAT_CODES:
+            assert definitions.explain_caveat(code, language)
+        for code in definitions.REASON_CODES:
+            for scope in definitions.define_reason(code).scopes:
+                assert definitions.explain_reason(code, language, scope)
+
+
+def test_an_unknown_reason_or_caveat_refuses() -> None:
+    """Fail-closed, at the two entry points this slice added.
+
+    `RRA-011` states the rule about entry points rather than about functions, so
+    a lookup added later with no refusal is the hole -- and these are the ones
+    added later.
+    """
+    with pytest.raises(definitions.UnknownCode):
+        definitions.define_reason("zero_denominatr")
+    with pytest.raises(definitions.UnknownCode):
+        definitions.define_caveat("currency_not_declard")
+    with pytest.raises(definitions.UnknownCode):
+        definitions.explain_reason("zero_denominator", "en", "section")
+    # An unrecognized *scope* is the third way in, and it escaped as `KeyError`
+    # until this was written: a caller catching the catalog's own refusal saw an
+    # unhandled exception from one entry point and a governed refusal everywhere
+    # else. `RRA-011` states fail-closed about entry points, not about codes.
+    with pytest.raises(definitions.UnknownCode):
+        definitions.explain_reason("zero_denominator", "en", "footnote")
+
+
+def test_a_reason_refuses_at_a_scope_it_is_not_stated_at() -> None:
+    """Scope is checked, not decoration.
+
+    `zero_denominator` is a result refusal and `RRA-009` states no section wording
+    for it. Returning the result sentence for a section query would put "the other
+    figures in this section are unaffected" under a heading where every figure was
+    withheld. Asserted over every single-scope reason, so this holds for the set
+    rather than for the one code that prompted it.
+    """
+    for code in definitions.REASON_CODES:
+        scopes = definitions.define_reason(code).scopes
+        if len(scopes) != 1:
+            continue
+        absent = next(
+            s for s in wording.GOVERNED_REASON_SCOPES if s != scopes[0]
+        )
+        with pytest.raises(definitions.UnknownCode):
+            definitions.explain_reason(code, "en", absent)
+
+
+def test_a_refusal_sentence_keeps_the_placeholder_it_was_authored_with() -> None:
+    """The catalog hands back `RRA-009`'s sentence, it does not fill it in.
+
+    A result refusal names the metric it withheld -- `{metric} is not shown` --
+    and only a surface rendering one knows which. Substituting the code would put
+    a raw identifier into a customer's sentence, which the wording layer refuses
+    everywhere else; substituting nothing would state a sentence about no metric.
+    So the placeholder survives, and this says so rather than leaving a caller to
+    discover it.
+    """
+    sentence = definitions.explain_reason("zero_denominator", "en", "result")
+
+    assert "{metric}" in sentence
+
+
+def test_every_metric_on_a_published_figure_has_a_definition() -> None:
+    """The gap this closed, asserted against what a reader actually sees.
+
+    `revenue_by_period` and `units_by_product` sit on published figures, and
+    `describe_metric` raised `UnknownCode` for them: a reader looking at one of
+    those charts could not ask what it meant. The catalog's whole outcome clause
+    is that every code the calculation *already emits* has a definition, so the
+    check that matters is driven from a rendered bundle rather than from a list.
+
+    Both pins, because they publish different families, and the series metrics
+    appear under each.
+    """
+    seen: set[str] = set()
+    for published in (True, False):
+        bundle = ReportBundle.of(package_for(ROWS, published=published))
+        for figure in bundle.figures:
+            seen.add(figure.metric)
+            for language in LANGUAGES:
+                assert definitions.describe_metric(figure.metric, language)
+
+    assert {"revenue_by_period", "units_by_product"} <= seen, seen
+
+
+def test_a_series_metric_says_what_it_is_broken_down_by() -> None:
+    """Composed vocabulary, and the composition is visible in the answer.
+
+    A series description that returned only its measure's sentence would pass a
+    "has a definition" check while telling a reader nothing about the dimension --
+    which is the only thing distinguishing `revenue_by_product` from `revenue`.
+    """
+    base = definitions.describe_metric("revenue", "en")
+    series = definitions.describe_metric("revenue_by_product", "en")
+
+    assert series.startswith(base)
+    assert series != base
+    assert "product" in series
+
+    # And the same holds in Arabic, which orders the two parts differently.
+    arabic = definitions.describe_metric("revenue_by_product", "ar")
+    assert arabic != definitions.describe_metric("revenue", "ar")
+    assert "منتج" in arabic
+
+
+def test_a_dimension_admitted_without_a_name_refuses_at_import(monkeypatch) -> None:
+    """The dimension table's guard, mutated outside the scope it names.
+
+    Deleting an entry proves the guard notices a table that shrank. The failure
+    that matters is the reverse: a dimension added to `facts.SERIES_DIMENSIONS`
+    with no name here composes a description with a `KeyError` in it, and a guard
+    reading its own keys would never see it.
+    """
+    monkeypatch.setattr(
+        facts, "SERIES_DIMENSIONS", (*facts.SERIES_DIMENSIONS, "supplier")
+    )
+    try:
+        with pytest.raises(RuntimeError, match="dimension"):
+            importlib.reload(wording)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(wording)

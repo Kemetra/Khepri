@@ -88,10 +88,32 @@ FAMILY_METRICS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-#: Every metric code any governed family publishes.
+#: The series and comparison metrics `facts.py` composes, as
+#: `<measure>_by_<dimension>` over the two governed constants the builders
+#: themselves iterate. `revenue_by_period` and `units_by_product` reach published
+#: figures, so a reader looking at one of those charts must be able to ask what it
+#: means -- and before this they got `UnknownCode`.
+#:
+#: Derived from the cross-product rather than listed, which is what makes this a
+#: reading of a governed declaration rather than a set of codes this module coined.
+#: A dimension added to `SERIES_DIMENSIONS` or a measure to `GOVERNED_METRICS`
+#: reaches the catalog with no edit here.
+#:
+#: The cross-product is complete rather than per-package on purpose. Which of these
+#: a given run publishes depends on the columns its mapping resolved, and that is
+#: package scope; what each *means* does not vary by run, which is why the catalog
+#: can answer it without one.
+SERIES_METRICS: frozenset[str] = frozenset(
+    f"{measure}_by_{dimension}"
+    for measure in facts.GOVERNED_METRICS
+    for dimension in facts.SERIES_DIMENSIONS
+)
+
+#: Every metric code any governed family publishes, plus the series and comparison
+#: metrics composed from them.
 METRIC_CODES: frozenset[str] = frozenset(
     code for codes in FAMILY_METRICS.values() for code in codes
-)
+) | SERIES_METRICS
 
 #: Every population code that is a constant. Family members are admitted by
 #: `admits_population` instead, which is `populations`' own rule.
@@ -99,6 +121,14 @@ POPULATION_CODES: frozenset[str] = frozenset(populations.GOVERNED_POPULATIONS)
 
 _METRIC_VERSIONS: dict[str, str] = {
     code: version for version, codes in FAMILY_METRICS.items() for code in codes
+} | {
+    # A series metric is the same measure resolved over a dimension, so it is
+    # computed by the same contract and reports that contract's version. Reading
+    # `facts.FORMULA_VERSION` rather than looking the measure up keeps this true
+    # for a measure that has none of its own.
+    f"{measure}_by_{dimension}": facts.FORMULA_VERSION
+    for measure in facts.GOVERNED_METRICS
+    for dimension in facts.SERIES_DIMENSIONS
 }
 
 
@@ -137,6 +167,20 @@ def define_population(code: str) -> PopulationDefinition:
     return PopulationDefinition(code=code, is_family=code not in POPULATION_CODES)
 
 
+def _series_parts(code: str) -> tuple[str, str] | None:
+    """`(measure, dimension)` if this code is a composed series, else `None`.
+
+    Split against the governed dimensions rather than on the last `_by_`, because
+    a measure could contain that substring and a positional split would then read
+    a real metric as a series over a dimension that does not exist.
+    """
+    for dimension in facts.SERIES_DIMENSIONS:
+        measure = code.removesuffix(f"_by_{dimension}")
+        if measure != code and measure in facts.GOVERNED_METRICS:
+            return measure, dimension
+    return None
+
+
 def describe_metric(code: str, language: str) -> str:
     """What this metric means, or `UnknownCode`.
 
@@ -151,13 +195,26 @@ def describe_metric(code: str, language: str) -> str:
     """
     if not admits_metric(code):
         raise UnknownCode(code)
-    return wording.metric_description(code, language)
+    parts = _series_parts(code)
+    if parts is None:
+        return wording.metric_description(code, language)
+    # A series is its measure resolved over a dimension, so its meaning is composed
+    # the way its code is. Authoring fifty independent sentences would restate each
+    # measure's meaning once per dimension and let the copies drift -- and it would
+    # be authored vocabulary for codes no run may publish, since which series exist
+    # depends on the columns a mapping resolved.
+    measure, dimension = parts
+    return wording.series_description(
+        wording.metric_description(measure, language), dimension, language
+    )
 
 
 def not_meant(code: str, language: str) -> str:
     """The reading this metric invites and does not support, or `UnknownCode`."""
     if not admits_metric(code):
         raise UnknownCode(code)
+    parts = _series_parts(code)
+    code = code if parts is None else parts[0]
     return wording.metric_not_meant(code, language)
 
 
@@ -170,7 +227,105 @@ def synonyms(code: str, language: str) -> tuple[str, ...]:
     """
     if not admits_metric(code):
         raise UnknownCode(code)
+    parts = _series_parts(code)
+    # A series offers its measure's synonyms: a reader who knows revenue as "sales"
+    # recognizes the by-product series by the same word.
+    code = code if parts is None else parts[0]
     return wording.metric_synonyms(code, language)
+
+
+@dataclass(frozen=True, slots=True)
+class ReasonDefinition:
+    """A refusal reason code, and the scope at which it is stated.
+
+    `RRA-009` states a section reason and a result reason in different words --
+    one says an analysis is unavailable, the other that a figure inside a
+    surviving analysis is -- so the scope is part of what a reader is asking
+    about, not an implementation detail. A code governed at both scopes reports
+    both.
+    """
+
+    code: str
+    #: `("section",)`, `("result",)`, or both, in `RRA-009`'s own order.
+    scopes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CaveatDefinition:
+    """A caveat code. Unscoped: a caveat qualifies whatever states it."""
+
+    code: str
+
+
+#: Every refusal reason `RRA-009` renders, and the scopes each is rendered at.
+#: Read from the wording registries rather than listed again -- those sets are the
+#: repository's existing declaration of which reasons exist, and a second list here
+#: is the duplicate truth this specification's third scope test forbids.
+REASON_SCOPES: dict[str, tuple[str, ...]] = {
+    code: tuple(
+        scope for scope in wording.GOVERNED_REASON_SCOPES if code in wording.reason_codes(scope)
+    )
+    for scope in wording.GOVERNED_REASON_SCOPES
+    for code in wording.reason_codes(scope)
+}
+
+#: Every refusal reason code, at any scope.
+REASON_CODES: frozenset[str] = frozenset(REASON_SCOPES)
+
+#: Every caveat code the governed calculation can state.
+CAVEAT_CODES: frozenset[str] = frozenset(wording.caveat_codes())
+
+
+def admits_reason(code: str) -> bool:
+    """Whether `RRA-009` states this refusal reason at any scope."""
+    return code in REASON_CODES
+
+
+def admits_caveat(code: str) -> bool:
+    """Whether `RRA-009` states this caveat."""
+    return code in CAVEAT_CODES
+
+
+def define_reason(code: str) -> ReasonDefinition:
+    """The definition for one refusal reason, or `UnknownCode`."""
+    scopes = REASON_SCOPES.get(code)
+    if scopes is None:
+        raise UnknownCode(code)
+    return ReasonDefinition(code=code, scopes=scopes)
+
+
+def define_caveat(code: str) -> CaveatDefinition:
+    """The definition for one caveat code, or `UnknownCode`."""
+    if not admits_caveat(code):
+        raise UnknownCode(code)
+    return CaveatDefinition(code=code)
+
+
+def explain_reason(code: str, language: str, scope: str) -> str:
+    """What this refusal tells a customer, or `UnknownCode`.
+
+    Returned as `RRA-009` authored it, placeholders included. The sentence for a
+    result refusal names the metric it withheld -- `{metric} is not shown` -- and
+    only the surface rendering one knows which. Filling it here would need a fact
+    the catalog does not have, and substituting the code would put a raw
+    identifier in a customer's sentence, which the wording layer already refuses.
+    """
+    if scope not in wording.GOVERNED_REASON_SCOPES:
+        # An unrecognized scope refuses the same way an unrecognized code does.
+        # Left to `reason_codes` it escaped as `KeyError`, so a caller catching the
+        # catalog's own refusal saw an unhandled exception from one entry point and
+        # a governed refusal from every other.
+        raise UnknownCode(scope)
+    if code not in wording.reason_codes(scope):
+        raise UnknownCode(code)
+    return wording.reason_wording(code, language, scope)
+
+
+def explain_caveat(code: str, language: str) -> str:
+    """What this caveat tells a customer, or `UnknownCode`."""
+    if not admits_caveat(code):
+        raise UnknownCode(code)
+    return wording.caveat_wording_for(code, language)
 
 
 @dataclass(frozen=True, slots=True)
