@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khepri — Retail decisions you can prove</title>
+<meta name="description" content="Khepri turns imperfect retail exports into reproducible, evidence-backed analysis — and refuses unsupported conclusions when the data cannot justify them.">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="landing.css">
+</head>
+<body>
+<!--
+THESIS: A landing page that performs admission instead of describing it — the visitor watches one
+export become governed facts, and watches Khepri withhold what it cannot support. It refuses the
+category's arrangement: hero screenshot of a dashboard, three icon-topped feature cards, logo wall,
+testimonial, pricing.
+
+OWN-WORLD: The shipped Khepri world, unchanged. Paper #fbfcfd and surface #fbfcfd are the same
+value; --shadow: none; radius 0 on the primary button. Containment from hairline rules (--line
+decorative, --muted where a border encodes state) and type alone. One face, Noto Sans Arabic, both
+scripts, weights 400/600/650. Monospace is a semantic — wordmark, region labels, state names,
+machine-adjacent values — never prose. One accent #1e5b96. Zero physical directional properties.
+
+STORY: The visitor understands that Khepri converts operational exports into evidence-backed retail
+facts; believes it because the page shows a refusal in the same shape the product uses, with its
+reason and evidence reachable; and requests access.
+
+FIRST VIEWPORT: Sticky hairline header, monospace KHEPRI at 0.28em tracking. Left column: "Retail
+decisions you can prove." at --text-display over a 54ch lede, then a transparent 46px primary and a
+text secondary. Right column: one export mid-admission — file name in mono, a neutral ADMITTED chip,
+four governed rows, and below them a 4px --muted disclosure rule with italic text withholding one
+figure and naming its reason. The refusal is visible in the first viewport, not saved for section 6.
+
+FORM: The Submission Trace — candidate 7 of 7 grounded structures, dealt by the roll. Seed key
+ecaaa3de.
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the
+verdict, DESIGN.md, and every shipping raster carrying its provenance.
+-->
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header bleed">
+  <a class="brand" href="#">KHEPRI</a>
+  <nav class="site-nav" aria-label="Primary">
+    <ul>
+      <li><a href="#trace">Product</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#why">Why Khepri</a></li>
+      <li><a href="#about">About</a></li>
+    </ul>
+  </nav>
+  <div class="header-actions">
+    <a class="language-link" href="#" lang="ar" hreflang="ar">العربية</a>
+    <a class="button" href="#request">Request access</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ==== Hero ================================================================================ -->
+  <section class="hero bleed">
+    <div class="shell hero-grid">
+
+      <div>
+        <h1>Retail decisions you can prove.</h1>
+        <p class="hero-lede">
+          Khepri turns imperfect retail exports into reproducible, evidence-backed analysis — and
+          refuses unsupported conclusions when the data cannot justify them.
+        </p>
+        <div class="hero-actions">
+          <a class="button" href="#request">Request access</a>
+          <a class="button button--text" href="#how">See how it works</a>
+        </div>
+      </div>
+
+      <!-- The specimen. Not a dashboard screenshot: a governed document fragment, mid-admission.
+           Every value is synthetic and marked as such below. -->
+      <figure class="specimen" aria-labelledby="specimen-caption">
+        <figcaption id="specimen-caption" class="region-label">One export, mid-admission</figcaption>
+
+        <div class="specimen-head">
+          <span class="specimen-file" dir="auto">q3-sales-export.csv</span>
+          <span class="chip chip--state">Admitted</span>
+        </div>
+
+        <dl class="specimen-rows">
+          <div class="specimen-row">
+            <dt class="specimen-term">Population</dt>
+            <dd class="specimen-value tabular">18 stores · 1 quarter</dd>
+          </div>
+          <div class="specimen-row">
+            <dt class="specimen-term">Net revenue</dt>
+            <dd class="specimen-value">Reconciled</dd>
+          </div>
+          <div class="specimen-row">
+            <dt class="specimen-term">Transactions</dt>
+            <dd class="specimen-value">Reconciled</dd>
+          </div>
+          <div class="specimen-row">
+            <dt class="specimen-term">Category coverage</dt>
+            <dd class="specimen-value tabular">94% of rows</dd>
+          </div>
+        </dl>
+
+        <!-- The disclosure shape, in the first viewport. 4px --muted rule plus italic; the rule and
+             the italic each carry the meaning independently. Never the danger palette: nothing
+             broke here. -->
+        <div class="disclosure">
+          <p>
+            Average basket size was not reported for this period. Coverage of the item-line column
+            falls below the threshold the figure requires.
+          </p>
+          <span class="disclosure-reason">Reason: coverage · Evidence available</span>
+        </div>
+
+        <p class="synthetic">Illustrative export. Not customer data.</p>
+      </figure>
+
+    </div>
+  </section>
+
+  <!-- ==== The trace =========================================================================== -->
+  <section class="trace bleed" id="trace">
+    <div class="shell">
+      <h2 class="region-label">
+        From export to decision
+        <span class="region-subject" dir="auto">q3-sales-export.csv</span>
+      </h2>
+
+      <ol class="trace-list">
+        <li class="trace-step">
+          <span class="trace-index">01</span>
+          <span class="trace-term">Operational export</span>
+          <span class="trace-detail">The file the retailer already produces, imperfect as it is.</span>
+          <span class="trace-state tabular">41,905 rows · 22 columns</span>
+        </li>
+        <li class="trace-step">
+          <span class="trace-index">02</span>
+          <span class="trace-term">Semantic admission</span>
+          <span class="trace-detail">Meaning, population and coverage established before any claim is made.</span>
+          <span class="trace-state tabular">18 stores · 1 quarter admitted</span>
+        </li>
+        <li class="trace-step">
+          <span class="trace-index">03</span>
+          <span class="trace-term">Deterministic facts</span>
+          <span class="trace-detail">Versioned retail calculations. The same admissible inputs give the same result.</span>
+          <span class="trace-state tabular">6 facts · formula v4</span>
+        </li>
+        <li class="trace-step trace-step--refusal">
+          <span class="trace-index">04</span>
+          <span class="trace-term">Evidence, caveats, refusals</span>
+          <span class="trace-detail">Each figure reconciles with its evidence. What cannot be supported is named, and stays named.</span>
+          <span class="trace-state tabular">4 proven · 1 caveated · 1 refused</span>
+        </li>
+        <li class="trace-step">
+          <span class="trace-index">05</span>
+          <span class="trace-term">Decision-ready output</span>
+          <span class="trace-detail">A bilingual result you can act on, and defend afterwards.</span>
+          <span class="trace-state tabular">EN · العربية</span>
+        </li>
+      </ol>
+
+      <p class="trace-figure">
+        Refusal is a capability. We would rather refuse an unsupported answer
+        <em>than manufacture confidence.</em>
+      </p>
+    </div>
+  </section>
+
+  <!-- ==== Why Khepri ========================================================================== -->
+  <section class="pillars bleed" id="why">
+    <div class="shell">
+      <h2 class="region-label">Why Khepri</h2>
+
+      <div class="pillar-list">
+        <article class="pillar">
+          <h3>Provable figures</h3>
+          <p>Every important figure reconciles with the evidence behind it, reachable from the claim it supports.</p>
+        </article>
+        <article class="pillar">
+          <h3>Explicit uncertainty</h3>
+          <p>Caveats and unavailable conclusions stay visible, in the place the answer would have appeared.</p>
+        </article>
+        <article class="pillar">
+          <h3>Bilingual parity</h3>
+          <p>Arabic and English receive equivalent facts, caveats and warnings. Neither is a translation of the other.</p>
+        </article>
+        <article class="pillar">
+          <h3>Reproducible analysis</h3>
+          <p>The same admissible inputs produce the same governed result, under a stated calculation version.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==== How it works ======================================================================== -->
+  <section class="how bleed" id="how">
+    <div class="shell">
+      <h2 class="region-label">How it works</h2>
+
+      <ol class="how-list">
+        <li class="how-step">
+          <span class="how-index">01</span>
+          <span class="how-term">Send an export</span>
+          <span class="how-detail">Upload the operational file you already have. No integration, no schema to match first.</span>
+        </li>
+        <li class="how-step">
+          <span class="how-index">02</span>
+          <span class="how-term">Khepri establishes meaning</span>
+          <span class="how-detail">Columns, population and coverage are resolved and shown back to you before anything is calculated.</span>
+        </li>
+        <li class="how-step">
+          <span class="how-index">03</span>
+          <span class="how-term">Facts reconcile against evidence</span>
+          <span class="how-detail">Retail calculations run deterministically. Figures that do not reconcile are not published.</span>
+        </li>
+        <li class="how-step">
+          <span class="how-index">04</span>
+          <span class="how-term">Review a decision-ready result</span>
+          <span class="how-detail">A bilingual report carrying its figures, its caveats and its refusals together.</span>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ==== Trust and refusal =================================================================== -->
+  <section class="states bleed">
+    <div class="shell">
+      <h2 class="region-label">What an answer is worth</h2>
+
+      <div class="state-contrast">
+        <div>
+          <h3>Typical analytics</h3>
+          <p class="state-quote state-quote--theirs">“Here is your answer.”</p>
+        </div>
+        <div>
+          <h3>Khepri</h3>
+          <p class="state-quote state-quote--ours">“Here is the answer we can prove — and here is what we cannot.”</p>
+        </div>
+      </div>
+
+      <div class="state-list">
+        <article class="state state--proven">
+          <span class="state-name">Proven</span>
+          <p class="state-claim">Net revenue reconciles across all 18 stores.</p>
+          <p class="state-detail">Population and coverage established; the figure matches its source rows.</p>
+          <a class="state-evidence" href="#">View evidence</a>
+        </article>
+
+        <article class="state state--caveated">
+          <span class="state-name">Caveated</span>
+          <p class="state-claim">Category performance is reported for 16 of 18 stores.</p>
+          <p class="state-detail">Two stores did not report category codes for the period. The caveat travels with the figure.</p>
+          <a class="state-evidence" href="#">View evidence</a>
+        </article>
+
+        <article class="state state--refused">
+          <span class="state-name">Refused</span>
+          <p class="state-claim">Average basket size is not reported for this period.</p>
+          <p class="state-detail">Item-line coverage falls below the threshold this figure requires. The reason and its evidence remain reachable.</p>
+          <a class="state-evidence" href="#">View reason</a>
+        </article>
+      </div>
+
+      <p class="synthetic">
+        The three examples above are illustrative, not customer data. The state names are provisional
+        design vocabulary, not shipped product labels.
+      </p>
+    </div>
+  </section>
+
+  <!-- ==== Use cases =========================================================================== -->
+  <section class="uses bleed">
+    <div class="shell">
+      <h2 class="region-label">Built for retail operations</h2>
+      <ul class="use-list">
+        <li class="use">Multi-location retail</li>
+        <li class="use">Commercial performance review</li>
+        <li class="use">Store and category analysis</li>
+        <li class="use">Operating decision teams</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ==== Bilingual parity ====================================================================
+       Not a picture of a translation. The Arabic panel is a real RTL subtree with its own lang and
+       dir, so the browser mirrors it natively, renders Arabic-Indic digits, and the stylesheet drops
+       the Latin negative tracking that damages Arabic joins. -->
+  <section class="parity bleed">
+    <div class="shell">
+      <h2 class="region-label">One result, two first-class languages</h2>
+
+      <div class="parity-pair">
+        <div class="parity-panel" lang="en" dir="ltr">
+          <p class="parity-lang"><span>EN</span><span>English</span></p>
+          <p class="parity-claim">Net revenue, Q3</p>
+          <p class="parity-figure tabular">4,182,600 EGP</p>
+          <p class="parity-note">Reconciled across 18 stores.</p>
+          <div class="disclosure">
+            <p>Average basket size was not reported for this period.</p>
+            <span class="disclosure-reason">Reason: coverage</span>
+          </div>
+        </div>
+
+        <div class="parity-panel" lang="ar" dir="rtl">
+          <p class="parity-lang"><span>ع</span><span>العربية</span></p>
+          <p class="parity-claim">صافي الإيرادات، الربع الثالث</p>
+          <p class="parity-figure tabular">٤٬١٨٢٬٦٠٠ ج.م</p>
+          <p class="parity-note">تمت المطابقة عبر ١٨ متجرًا.</p>
+          <div class="disclosure">
+            <p>لم يُصدر متوسط قيمة السلة لهذه الفترة.</p>
+            <span class="disclosure-reason">السبب: التغطية</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="synthetic">
+        Figures shown are illustrative, not customer data. Arabic copy is a design specimen and is
+        not the product's governed copy.
+      </p>
+    </div>
+  </section>
+
+  <!-- ==== Close =============================================================================== -->
+  <section class="close bleed" id="request">
+    <div class="shell">
+      <h2 class="close-headline">Bring your retail data.<br>Get decisions you can defend.</h2>
+      <div class="close-actions">
+        <a class="button" href="#">Request access</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer bleed" id="about">
+  <div class="shell footer-row">
+    <ul>
+      <li><a href="#about">About</a></li>
+      <li><a href="#">Legal</a></li>
+      <li><a href="#">Trust</a></li>
+      <li><a href="#" lang="ar" hreflang="ar">العربية</a></li>
+    </ul>
+    <span class="footer-mark">KHEPRI</span>
+  </div>
+</footer>
+
+</body>
+</html>

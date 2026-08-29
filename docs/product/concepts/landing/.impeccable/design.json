@@ -1,0 +1,259 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-29T00:00:00Z",
+  "title": "Design System: Khepri — The Register Wall",
+  "extensions": {
+    "colorMeta": {
+      "gold": {
+        "role": "primary",
+        "displayName": "Gold Leaf",
+        "canonical": "#d4a83a",
+        "tonalRamp": ["#2a2008", "#4a3a10", "#6a5318", "#8a6d24", "#ab8a2e", "#d4a83a", "#e5c672", "#f4e3b4"]
+      },
+      "egyptian-blue": {
+        "role": "secondary",
+        "displayName": "Egyptian Blue",
+        "canonical": "#4a9fc4",
+        "tonalRamp": ["#0c2029", "#143543", "#1e4f63", "#2c6a87", "#3a85a6", "#4a9fc4", "#84c1da", "#c3e0ec"]
+      },
+      "egyptian-blue-dim": {
+        "role": "secondary",
+        "displayName": "Egyptian Blue at Rest",
+        "canonical": "#2c6a87",
+        "tonalRamp": ["#0a1a21", "#122c37", "#1c4353", "#2c6a87", "#3a85a6", "#63a8c6", "#98c8dd", "#cde5ef"]
+      },
+      "ochre": {
+        "role": "tertiary",
+        "displayName": "Red Ochre",
+        "canonical": "#c97b5a",
+        "tonalRamp": ["#2b160f", "#46251a", "#623426", "#7d4a36", "#a15f45", "#c97b5a", "#dda58c", "#f0d5c6"]
+      },
+      "stone-900": {
+        "role": "neutral",
+        "displayName": "Deepest Cut",
+        "canonical": "#12100e",
+        "tonalRamp": ["#12100e", "#1a1714", "#241f1a", "#352e26", "#4a4139", "#6b5f52", "#9a8d7e", "#ede4d3"]
+      },
+      "stone-800": {
+        "role": "neutral",
+        "displayName": "Lifted Band",
+        "canonical": "#1a1714",
+        "tonalRamp": ["#12100e", "#1a1714", "#241f1a", "#352e26", "#4a4139", "#6b5f52", "#9a8d7e", "#ede4d3"]
+      },
+      "stone-700": {
+        "role": "neutral",
+        "displayName": "Register Field",
+        "canonical": "#241f1a",
+        "tonalRamp": ["#12100e", "#1a1714", "#241f1a", "#352e26", "#4a4139", "#6b5f52", "#9a8d7e", "#ede4d3"]
+      },
+      "stone-600": {
+        "role": "neutral",
+        "displayName": "Incised Rule",
+        "canonical": "#352e26",
+        "tonalRamp": ["#12100e", "#1a1714", "#241f1a", "#352e26", "#4a4139", "#6b5f52", "#9a8d7e", "#ede4d3"]
+      },
+      "withheld": {
+        "role": "neutral",
+        "displayName": "Weathered Stone",
+        "canonical": "#9a8d7e",
+        "tonalRamp": ["#12100e", "#1a1714", "#241f1a", "#352e26", "#4a4139", "#6b5f52", "#9a8d7e", "#ede4d3"]
+      },
+      "papyrus": {
+        "role": "neutral",
+        "displayName": "Papyrus",
+        "canonical": "#ede4d3",
+        "tonalRamp": ["#2a251d", "#433b30", "#5d5243", "#786b58", "#a89e8c", "#c6bda9", "#ede4d3", "#f8f3e9"]
+      },
+      "papyrus-dim": {
+        "role": "neutral",
+        "displayName": "Papyrus Dim",
+        "canonical": "#a89e8c",
+        "tonalRamp": ["#2a251d", "#433b30", "#5d5243", "#786b58", "#a89e8c", "#c6bda9", "#ede4d3", "#f8f3e9"]
+      }
+    },
+    "typographyMeta": {
+      "monument": { "displayName": "Monument", "purpose": "The page's voice. The claim headline only, 15ch measure, balanced." },
+      "register": { "displayName": "Register", "purpose": "The passage figure and the closing headline — the thesis cut at register scale." },
+      "statement": { "displayName": "Statement", "purpose": "The script panels' headline figures, tabular numerals." },
+      "quote": { "displayName": "Quote", "purpose": "The two contrast quotes in Register III, 22ch measure." },
+      "lede": { "displayName": "Lede", "purpose": "The claim's supporting paragraph, 46ch measure." },
+      "title": { "displayName": "Title", "purpose": "Passage terms, verdict claims, pillar and method headings." },
+      "body": { "displayName": "Body", "purpose": "The base size, and the withheld course's term." },
+      "detail": { "displayName": "Detail", "purpose": "Secondary prose, course terms and values, notes; 40-52ch." },
+      "label": { "displayName": "Label", "purpose": "Mono, uppercase, heavily tracked. Machine-adjacent values only — register marks, state marks, verdict names, withheld reasons. Never prose, never a control label." }
+    },
+    "shadows": [
+      {
+        "name": "incised-rule",
+        "value": "inset 0 1px 0 rgba(237,228,211,0.17), inset 0 6px 12px -6px rgba(0,0,0,0.55)",
+        "purpose": "The cut between two registers, paired with a 1px --stone-600 top border. A three-part cut: shadow line, lit lip, falloff. The only structural depth on the page; the lip is ~4x its first draft, which measured an imperceptible 8/255 lift."
+      },
+      {
+        "name": "sun-mark-glow",
+        "value": "0 0 14px rgba(212,168,58,0.55)",
+        "purpose": "The single outer glow in the system, belonging to the 11px wordmark disc alone."
+      },
+      {
+        "name": "header-veil",
+        "value": "background: rgba(18,16,14,0.86); backdrop-filter: blur(14px)",
+        "purpose": "The sticky header reads as a translucent stone face rather than a floating bar."
+      }
+    ],
+    "motion": [
+      { "name": "ease-sun", "value": "cubic-bezier(0.16, 0.84, 0.28, 1)", "purpose": "The only ease. The sun's passage is slow and inevitable, so nothing overshoots." },
+      { "name": "dur-slow", "value": "1100ms", "purpose": "Scroll-driven register entrances and rule opening." },
+      { "name": "dur-mid", "value": "620ms", "purpose": "Colour and background transitions on links, buttons and evidence controls." },
+      { "name": "figure-resolves", "value": "1500ms; opacity 0 -> 1, translateY(6px) -> 0, color papyrus-dim -> gold", "purpose": "A proven figure arriving dim and taking gold as it reconciles with its evidence." },
+      { "name": "value-arrives", "value": "620ms; opacity 0 -> 1, translateY(6px) -> 0", "purpose": "A plain value arriving without ever taking gold, because it was never a proven figure." },
+      { "name": "admission-stagger", "value": "420ms / 700ms / 980ms / 1260ms", "purpose": "The specimen's four courses resolve in turn, so the reader watches admission proceed course by course." },
+      { "name": "mark-stamps", "value": "520ms at 260ms delay; opacity 0 -> 1, scale 1.4 -> 0.97 -> 1", "purpose": "The ADMITTED mark stamping onto the file." },
+      { "name": "withheld-settles", "value": "900ms at 1700ms delay; opacity 0 -> 1, translateY(10px) -> 0", "purpose": "The refusal arrives last and slowest — a withheld figure is the considered outcome, not the quick one." },
+      { "name": "withheld-rule-cuts", "value": "700ms at 1900ms delay; scaleY(0) -> scaleY(1) from top", "purpose": "The withheld rule cutting downward into the register, where the answer would have stood. Drawn on an ::after so the static 4px space never changes and nothing reflows." },
+      { "name": "sun-breathes", "value": "24s ease-in-out infinite; opacity 1 -> .72 -> 1", "purpose": "The one ambient loop. A stone wall lit by a moving sun is never quite still. Opacity only, no transform." },
+      { "name": "claim-underlines", "value": "900ms at 900ms delay; scaleX(0) -> scaleX(1)", "purpose": "The gold rule drawn under 'prove' — the page marking its own claim the way it marks a proven figure. Transform origin flips under [dir=rtl]." },
+      { "name": "rise-into-light", "value": "1100ms; opacity .55 -> 1, translateY(1.5rem) -> 0; animation-timeline: view(); animation-range: entry 4% cover 26%", "purpose": "Each register's contents rise as the light reaches them. Starts from a VISIBLE state, so an unsupporting client sees the finished page." },
+      { "name": "rule-open", "value": "1100ms; scaleX(0) -> scaleX(1); animation-timeline: view(); animation-range: entry 4% cover 22%", "purpose": "The incised rule draws itself open across the wall as its register arrives." },
+      { "name": "reduced-motion-collapse", "value": "animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important", "purpose": "Durations collapse to near-zero rather than to `none`: a cancelled animation can strand an element at its `from` state, one that completes instantly cannot." }
+    ],
+    "breakpoints": [
+      { "name": "narrow", "value": "660px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The page's one proven-value action. A gold hairline box that fills solid on hover — it fills, it does not glow.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#request\">Request access</a>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; min-block-size: 52px; padding-inline: 2rem; border: 1px solid #d4a83a; border-radius: 0; background: transparent; color: #d4a83a; font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; font-size: 0.82rem; font-weight: 400; letter-spacing: .14em; text-transform: uppercase; text-decoration: none; cursor: pointer; transition: background-color 620ms cubic-bezier(0.16,0.84,0.28,1), color 620ms cubic-bezier(0.16,0.84,0.28,1); } .ds-btn-primary:hover { background: #d4a83a; color: #12100e; } .ds-btn-primary:focus-visible { outline: 2px solid #d4a83a; outline-offset: 4px; }"
+    },
+    {
+      "name": "Ghost Action",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "The secondary action. No border, no fill — an underlined dim label that lifts to full papyrus on hover.",
+      "html": "<a class=\"ds-btn-ghost\" href=\"#method\">See how it works</a>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; min-block-size: 44px; padding-inline: 0; border: 0; border-radius: 0; background: transparent; color: #a89e8c; font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; font-size: 0.82rem; font-weight: 400; letter-spacing: .1em; text-decoration: underline; text-underline-offset: .22em; cursor: pointer; transition: color 620ms cubic-bezier(0.16,0.84,0.28,1); } .ds-btn-ghost:hover { color: #ede4d3; } .ds-btn-ghost:focus-visible { outline: 2px solid #d4a83a; outline-offset: 4px; }"
+    },
+    {
+      "name": "Admitted State Mark",
+      "kind": "chip",
+      "refersTo": "state-mark-admitted",
+      "description": "A hairline box and a word — no fill, no pill. The build ships only the admitted variant. Its border takes the FULL Egyptian blue, not the dim step, because the border encodes state and must clear 3:1 on the specimen ground (5.02:1 full vs 2.87:1 dim). Never draw this box in a decorative stone step.",
+      "html": "<span class=\"ds-state-mark ds-state-mark-admitted\">Admitted</span>",
+      "css": ".ds-state-mark { display: inline-flex; align-items: center; padding: 3px 0.75rem; border: 1px solid #4a9fc4; border-radius: 0; color: #a89e8c; font-family: ui-monospace, \"Cascadia Mono\", \"Segoe UI Mono\", Consolas, monospace; font-size: 0.7rem; font-weight: 400; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap; } .ds-state-mark-admitted { border-color: #4a9fc4; color: #4a9fc4; }"
+    },
+    {
+      "name": "Withheld Course",
+      "kind": "custom",
+      "refersTo": "course-withheld",
+      "description": "The signature component. A refusal is set INTO the register where the figure would have been, on the same baseline as the proven courses — never a badge, toast or pill. A 4px weathered-stone rule, italic, and the word each carry the state independently, so it survives greyscale and print.",
+      "html": "<div class=\"ds-course-withheld\"><span class=\"ds-course-withheld-term\">Basket affinity, Q3 — withheld</span><span class=\"ds-withheld-reason\">Reason: source coverage below threshold</span></div>",
+      "css": ".ds-course-withheld { display: block; position: relative; padding-inline-start: 1.5rem; border-inline-start: 4px solid #9a8d7e; margin-block: 0.5rem 1.5rem; color: #a89e8c; font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; font-weight: 400; font-style: italic; } .ds-course-withheld-term { display: block; color: #a89e8c; font-style: italic; font-size: 1.0625rem; line-height: 1.6; } .ds-withheld-reason { display: block; margin-block-start: 0.75rem; color: #a89e8c; font-family: ui-monospace, \"Cascadia Mono\", \"Segoe UI Mono\", Consolas, monospace; font-size: 0.7rem; font-style: normal; letter-spacing: .12em; text-transform: uppercase; }"
+    },
+    {
+      "name": "Verdict Trio",
+      "kind": "card",
+      "refersTo": "verdict-proven",
+      "description": "Three verdicts sharing one 4px inline-start rule, differing only in ink and face: proven in gold, caveated in ochre, withheld in weathered stone and italic. The evidence link is body face, not mono — a control label in mono is a costume.",
+      "html": "<div class=\"ds-verdicts\"><div class=\"ds-verdict ds-verdict-proven\"><span class=\"ds-verdict-name\">Proven</span><p class=\"ds-verdict-claim\">Margin recovered on 812 SKUs.</p><a class=\"ds-verdict-evidence\" href=\"#\">View evidence</a></div><div class=\"ds-verdict ds-verdict-caveated\"><span class=\"ds-verdict-name\">Caveated</span><p class=\"ds-verdict-claim\">Basket lift holds, two stores excluded.</p><a class=\"ds-verdict-evidence\" href=\"#\">View evidence</a></div><div class=\"ds-verdict ds-verdict-withheld\"><span class=\"ds-verdict-name\">Withheld</span><p class=\"ds-verdict-claim\">Supplier terms comparison.</p></div></div>",
+      "css": ".ds-verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 2rem; font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; } .ds-verdict { padding-inline-start: 1.5rem; border-inline-start: 4px solid #9a8d7e; } .ds-verdict-proven { border-inline-start-color: #d4a83a; } .ds-verdict-caveated { border-inline-start-color: #c97b5a; } .ds-verdict-withheld { border-inline-start-color: #9a8d7e; font-style: italic; } .ds-verdict-name { display: block; margin-block-end: 0.75rem; font-family: ui-monospace, \"Cascadia Mono\", \"Segoe UI Mono\", Consolas, monospace; font-size: 0.7rem; font-style: normal; font-weight: 400; letter-spacing: .28em; text-transform: uppercase; } .ds-verdict-proven .ds-verdict-name { color: #d4a83a; } .ds-verdict-caveated .ds-verdict-name { color: #c97b5a; } .ds-verdict-withheld .ds-verdict-name { color: #a89e8c; } .ds-verdict-claim { margin: 0 0 0.75rem; font-size: 1.25rem; font-weight: 400; line-height: 1.12; color: #ede4d3; } .ds-verdict-withheld .ds-verdict-claim { color: #a89e8c; } .ds-verdict-evidence { display: inline-flex; align-items: center; min-block-size: 44px; color: #4a9fc4; font-size: 0.82rem; font-style: normal; letter-spacing: .02em; text-decoration: underline; text-underline-offset: .22em; transition: color 620ms cubic-bezier(0.16,0.84,0.28,1); } .ds-verdict-evidence:hover { color: #d4a83a; } .ds-verdict-evidence:focus-visible { outline: 2px solid #d4a83a; outline-offset: 4px; }"
+    },
+    {
+      "name": "Specimen Course",
+      "kind": "custom",
+      "refersTo": "course-value-proven",
+      "description": "One banded row of the governed document fragment. Term and value share a baseline; a proven figure takes gold, a plain value stays dim, and both are tabular mono.",
+      "html": "<div class=\"ds-course\"><span class=\"ds-course-term\">Gross margin, corrected</span><span class=\"ds-course-value ds-course-value-proven\">18.42%</span></div><div class=\"ds-course\"><span class=\"ds-course-term\">Rows evaluated</span><span class=\"ds-course-value ds-course-value-plain\">1,204,880</span></div>",
+      "css": ".ds-course { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.75rem 2rem; min-block-size: 44px; padding-block: 1rem; border-block-end: 1px solid #241f1a; font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; } .ds-course:last-of-type { border-block-end: 0; } .ds-course-term { color: #ede4d3; font-size: 0.82rem; font-weight: 400; } .ds-course-value { font-family: ui-monospace, \"Cascadia Mono\", \"Segoe UI Mono\", Consolas, monospace; font-size: 0.82rem; letter-spacing: .04em; font-variant-numeric: tabular-nums; } .ds-course-value-proven { color: #d4a83a; } .ds-course-value-plain { color: #a89e8c; }"
+    },
+    {
+      "name": "Method Index",
+      "kind": "custom",
+      "refersTo": "method-index",
+      "description": "The procedural spine's numbered disc. A continuous 1px vertical rule runs through the indices so the steps read as one descent; the disc is filled with the register's own ground so the spine appears to pass behind it.",
+      "html": "<div class=\"ds-method-step\"><span class=\"ds-method-index\">02</span><span class=\"ds-method-term\">Reconcile against evidence</span><span class=\"ds-method-detail\">Every figure is matched to the rows that produced it, or it is withheld.</span></div>",
+      "css": ".ds-method-step { position: relative; display: grid; grid-template-columns: 4.5rem minmax(0, 22ch) minmax(0, 1fr); gap: 1.5rem; align-items: baseline; padding-block: 2rem; border-block-end: 1px solid #241f1a; font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; } .ds-method-step::before { content: \"\"; position: absolute; inset-block: 0; inset-inline-start: 1.55rem; inline-size: 1px; background: #241f1a; } .ds-method-index { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; inline-size: 3.1rem; block-size: 3.1rem; border: 1px solid #352e26; border-radius: 50%; background: #12100e; color: #4a9fc4; font-family: ui-monospace, \"Cascadia Mono\", \"Segoe UI Mono\", Consolas, monospace; font-size: 0.7rem; letter-spacing: .1em; } .ds-method-term { font-size: 1.25rem; font-weight: 400; line-height: 1.12; color: #ede4d3; } .ds-method-detail { max-width: 52ch; color: #a89e8c; font-size: 0.82rem; }"
+    },
+    {
+      "name": "Wall Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "A sticky translucent stone header. The wordmark pairs the 11px gold sun disc — the page's only iconography — with real text, so speech input can operate the control.",
+      "html": "<header class=\"ds-header\"><a class=\"ds-brand\" href=\"#top\"><span class=\"ds-brand-sun\"></span>KHEPRI</a><nav class=\"ds-nav\"><a href=\"#passage\">The passage</a><a href=\"#method\">How it works</a></nav><a class=\"ds-lang\" href=\"#ar\">العربية</a></header>",
+      "css": ".ds-header { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem; min-block-size: 72px; padding-inline: 2rem; background: rgba(18,16,14,0.86); backdrop-filter: blur(14px); border-block-end: 1px solid #352e26; font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; } .ds-brand { display: inline-flex; align-items: center; gap: 0.75rem; min-block-size: 44px; margin-inline-end: auto; color: #ede4d3; font-family: ui-monospace, \"Cascadia Mono\", \"Segoe UI Mono\", Consolas, monospace; font-size: 0.82rem; letter-spacing: .34em; text-decoration: none; } .ds-brand-sun { inline-size: 11px; block-size: 11px; border-radius: 50%; background: #d4a83a; box-shadow: 0 0 14px rgba(212,168,58,0.55); flex: none; } .ds-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 2rem; } .ds-nav a { display: inline-flex; align-items: center; min-block-size: 44px; color: #a89e8c; font-size: 0.82rem; text-decoration: none; transition: color 620ms cubic-bezier(0.16,0.84,0.28,1); } .ds-nav a:hover { color: #ede4d3; } .ds-lang { display: inline-flex; align-items: center; min-block-size: 44px; padding-inline: 0.5rem; color: #a89e8c; font-size: 0.82rem; text-decoration: none; transition: color 620ms cubic-bezier(0.16,0.84,0.28,1); } .ds-lang:hover { color: #d4a83a; } .ds-header a:focus-visible { outline: 2px solid #d4a83a; outline-offset: 4px; }"
+    },
+    {
+      "name": "Register Band",
+      "kind": "card",
+      "refersTo": null,
+      "description": "The system's container primitive. Not a card: a full-bleed horizontal band cut from the wall by a three-part incised rule at its top edge — shadow line, lit lip, falloff — with a mono roman-numbered mark opening it.",
+      "html": "<section class=\"ds-register\"><div class=\"ds-wall\"><h2 class=\"ds-register-mark\"><span>Register III · What an answer is worth</span></h2><p class=\"ds-register-body\">Three states, each encoded three ways at once.</p></div></section>",
+      "css": ".ds-register { position: relative; padding-block: 4rem; background: #12100e; border-block-start: 1px solid #352e26; box-shadow: inset 0 1px 0 rgba(237,228,211,0.17), inset 0 6px 12px -6px rgba(0,0,0,0.55); font-family: \"Noto Sans Arabic\", \"Segoe UI\", Tahoma, sans-serif; } .ds-wall { width: min(100% - 2.5rem, 1240px); margin-inline: auto; } .ds-register-mark { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1rem; margin: 0 0 2rem; color: #a89e8c; font-family: ui-monospace, \"Cascadia Mono\", \"Segoe UI Mono\", Consolas, monospace; font-size: 0.7rem; font-weight: 400; letter-spacing: .32em; text-transform: uppercase; } .ds-register-mark::before { content: \"\"; inline-size: 3rem; block-size: 1px; background: #2c6a87; } .ds-register-body { margin: 0; max-width: 46ch; color: #a89e8c; font-size: 1.0625rem; line-height: 1.6; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Register Wall",
+    "overview": "Egyptian register composition was a data-graphics system before it was art. Content is organised into horizontal bands with strict shared baselines, read in a fixed order, and figures are scaled by significance rather than by perspective distance. That is structurally what a governed report is: banded facts, ordered, each on its baseline, sized by importance. The page is therefore built as eight registers cut into one stone wall — a claim register, six numbered courses (II through VII), and a closing register — sharing one measure and one gutter so they read as courses of a single wall rather than as stacked boxes.\n\nThe reference is taken as composition, never as ornament. There is not one hieroglyph, papyrus texture, or pyramid silhouette in the build. The sole iconographic element on the page is an 11px gold disc — the sun mark on the wordmark — drawn as pure geometry. The palette is likewise derived from material rather than picked: granite and limestone for the ground, gold leaf for a proven figure, Egyptian blue (the first synthetic pigment, made in Egypt c. 2500 BCE) for structure and admission, red ochre for a caveat because red marked headings and corrections in the scribe's palette. The stone ramp is deliberately warm — a measurable amber cast at 30° hue — because a cool near-black would read as generic dark-mode SaaS, which is the rut this direction refuses.\n\nThe system's single most transferable idea was donated by a declined phosphor-terminal challenger: state prints itself into the register as content, never as chrome. A refusal or a caveat is set into the band where the figure would have been, on the same baseline as the proven figures, with a 4px inline-start rule and italic carrying it. It is never a floating badge, toast, pill, or overlay. This agrees exactly with the product's own §4.6, which requires a refusal to stay where the answer would have been: the marketing world changed, the product's law about refusal did not.\n\nScope: this records the public marketing surface only. It has no authority over src/khepri/, over /app, or over /beta, which remain governed by KHEPRI_DESIGN_LANGUAGE.md and its Law 1.",
+    "keyCharacteristics": [
+      "Eight horizontal registers on one shared measure (1240px max), cut apart by incised rules",
+      "A warm four-step stone ramp on a dark ground, #12100e through #352e26",
+      "Gold reserved semantically for proven value; blue for structure and admission; ochre for a caveat",
+      "One typeface, Regular 400 only; monumental weight from scale and tracking, never from a weight axis",
+      "Every state encoded three ways at once — the word, the rule colour, and roman-versus-italic",
+      "Zero physical directional properties; lang/dir as real subtrees, mirrored natively",
+      "One authored motion grammar (\"the sun's passage\") in nine keyframes, all double-gated",
+      "Zero radius on every surface except the sun mark and the method spine's indices",
+      "Contrast computed against each element's own ground, never asserted against the page ground"
+    ],
+    "rules": [
+      { "name": "The Scarcity Rule", "body": "Gold means proven, and interactive confirmation. It marks a figure that reconciled with its evidence, the sun mark, the primary action, and the focus/skip/hover affordances — nothing else. It never colours prose and never carries a structural rule. When gold leaked into a prose emphasis it both broke scarcity and inverted the meaning, marking a refused act as proven; the italic carried that turn on its own instead.", "section": "colors" },
+      { "name": "The Derived Border Rule", "body": "A border that encodes state must clear 3:1 against the ground it actually sits on, not against the page ground. Derive the token by lifting the ramp's own hue and saturation until it clears against the lightest ground it can ever appear on; then one token is correct everywhere. The first draft's border was tuned against the page ground alone and measured as low as 1.72:1 where it was actually used.", "section": "colors" },
+      { "name": "The Not-Red Rule", "body": "A refusal never borrows the error palette. Withheld is weathered stone; a caveat is red ochre, and even ochre is not an error colour. Nothing broke — Khepri declined to answer, which is a governed result.", "section": "colors" },
+      { "name": "The Three-Carrier Rule", "body": "Every state is encoded three ways at once — the word, the rule colour, and the roman-versus-italic face. Any one alone identifies the state, so it survives greyscale, a colour-blind reader, and print. Colour never carries a distinction alone.", "section": "colors" },
+      { "name": "The Machine-Adjacent Rule", "body": "Monospace marks machine-adjacent values only — data, measurements, state tokens, file names, register numbers. It never sets prose and never sets a control label. \"View evidence\" is prose naming an action, so it is set in the body face; a control label in mono is a costume.", "section": "typography" },
+      { "name": "The Tracking Parity Rule", "body": "Negative tracking is a Latin display convention that damages Arabic joins, and it matters far more at monumental scale than at app scale. Every negatively-tracked element resets to letter-spacing: 0 under [dir=\"rtl\"], and heavily-tracked mono labels drop from .28-.34em to .1em.", "section": "typography" },
+      { "name": "The Weight-Free Rule", "body": "Declare font-weight: 400 on every heading. The family ships one weight; an undeclared heading inherits the UA's bold and renders synthesised. Hierarchy is carried by scale, colour role, tracking, and register position instead.", "section": "typography" },
+      { "name": "The Logical-Properties Rule", "body": "Zero physical directional properties. Every inset, margin, padding, border and size is logical, and lang/dir are real subtrees so the browser mirrors natively and renders Arabic-Indic digits from the markup. The only surviving width is the wall's own min() measure, which is direction-neutral.", "section": "layout" },
+      { "name": "The Intrinsic Reflow Rule", "body": "A grid earns its columns from auto-fit and a min()-wrapped floor. Reach for a media query only for a genuine narrow-width adjustment, never to build a layout.", "section": "layout" },
+      { "name": "The Incision Rule", "body": "Depth is cut, not stacked. A boundary is a three-part cut — shadow line, lit lip, falloff — and a surface is never raised off the wall by an outer shadow. If a lip is not perceptible against the band below it, it is not a cut; measure it.", "section": "elevation" },
+      { "name": "The One Glow Rule", "body": "The only outer glow on the page belongs to the sun mark. Actions fill on hover rather than glowing: this world is cut stone and leaf, not neon.", "section": "elevation" },
+      { "name": "The Square Cut Rule", "body": "Radius is zero on every surface. Only the sun mark and the method indices are discs, and their circularity is the signal.", "section": "shapes" },
+      { "name": "The Two Rules Rule", "body": "1px in a stone step separates; 4px in a semantic ink means. Never draw a state at 1px and never draw a divider at 4px.", "section": "shapes" },
+      { "name": "The Frame-Zero Rule", "body": "Content is visible and correct at frame zero. Every animation runs from a visible state to a visible state, and the un-animated default is the finished page. A client with no view-timeline support, no JS, reduced motion, or a print stylesheet sees the resolved figures immediately. Nothing is ever hidden waiting for an event that may never fire.", "section": "components" },
+      { "name": "The Double-Gate Rule", "body": "Scroll-driven motion sits behind both @supports (animation-timeline: view()) and prefers-reduced-motion: no-preference. Under reduced motion, durations collapse to .001ms rather than to none — an animation cancelled outright can strand an element at its from state, while one that completes instantly cannot.", "section": "components" },
+      { "name": "The Cheap-Property Rule", "body": "Animate transform, opacity and color only. No layout property is ever animated, so nothing on this page reflows. Where an animation replaces a static border, the border becomes transparent rather than being removed, so the space it occupies never changes.", "section": "components" }
+    ],
+    "dos": [
+      "Do reserve gold (#d4a83a) for a proven figure, the sun mark, the primary action, and interactive confirmation. Its scarcity is the mechanism that makes it mean anything.",
+      "Do set a refusal or caveat into the band where the answer would have been, with a 4px inline-start rule and italic, on the same baseline as the resolved figures.",
+      "Do encode every state three ways at once — the word, the rule colour, and roman-versus-italic.",
+      "Do measure a state border against the ground it actually sits on, and derive the token by lifting the ramp's own hue and saturation until it clears 3:1 on the lightest such ground.",
+      "Do declare font-weight: 400 on every heading; the family ships one weight.",
+      "Do build multi-column regions from auto-fit with a min()-wrapped floor, so they reflow without a media query and cannot overflow at 320px.",
+      "Do use logical properties exclusively and give each script a real lang/dir subtree.",
+      "Do reset negative tracking to 0 under [dir=\"rtl\"], and drop mono label tracking to .1em.",
+      "Do keep every interactive target at 44px or above.",
+      "Do animate transform, opacity and color only, from a visible state to a visible state.",
+      "Do pace registers by treatment — a grid, a procedural spine, a question register — not only by height.",
+      "Do label demonstration data as illustrative wherever it appears."
+    ],
+    "donts": [
+      "Don't let gold reach prose or a structural rule. Marking a refused act in gold both breaks scarcity and inverts the meaning.",
+      "Don't render a refusal as a badge, toast, pill, or any floating chrome.",
+      "Don't give a refusal the error palette. Withheld is weathered stone; a caveat is ochre; and ochre is not an error colour either.",
+      "Don't set prose or a control label in the monospace face — it is scoped to machine-adjacent values.",
+      "Don't use a decorative stone step (--stone-600, --stone-500) for a border that encodes state, or a dim pigment step where the full pigment is needed to clear 3:1.",
+      "Don't draw a state at 1px or a divider at 4px; the two thicknesses are not interchangeable.",
+      "Don't add radius to any surface. Only the sun mark and the method indices are discs.",
+      "Don't raise a surface off the wall with an outer shadow, or add a glow to anything but the sun mark. Actions fill on hover; they do not glow.",
+      "Don't import a second typeface. A Latin display face would apply to English and not to Arabic, making one script designed and the other a fallback on a page whose thesis is parity.",
+      "Don't introduce a hieroglyph, papyrus texture, pyramid silhouette, or any pictorial Egyptian ornament. The composition is the reference; ornament would make it pastiche.",
+      "Don't add a physical directional property.",
+      "Don't hide content at a from state waiting for a scroll event, or cancel an animation with animation: none under reduced motion.",
+      "Don't reach for a media query to build a layout; the single 660px breakpoint does narrow-width adjustment only.",
+      "Don't import any token here into /app or /beta, or read this file as authority over src/khepri/. The application's design language is a separate, governed document."
+    ]
+  }
+}

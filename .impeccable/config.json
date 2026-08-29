@@ -11,6 +11,39 @@
         ],
         "createdAt": "2026-08-26T16:34:21.621Z",
         "reason": "KHEPRI_DESIGN_LANGUAGE.md §4.6 mandates this exact disclosure-shape treatment for the refusal state; §4.4 documents the identical shape as shipped precedent"
+      },
+      {
+        "rule": "side-tab",
+        "value": "border-inline-start-width: 4px",
+        "files": [
+          "docs/product/concepts/landing/landing.css"
+        ],
+        "createdAt": "2026-08-29T11:58:17.475Z",
+        "reason": "Narrow-width re-assertion of the governed disclosure shape mandated by KHEPRI_DESIGN_LANGUAGE.md 4.6; the 4px rule IS the state, not a divider, so it must survive the single-column reflow"
+      },
+      {
+        "rule": "side-tab",
+        "value": "border-inline-start-width: 4px",
+        "createdAt": "2026-08-29T12:18:17.445Z",
+        "reason": "Third instance of the same governed disclosure shape: KHEPRI_DESIGN_LANGUAGE.md 4.6 mandates border-inline-start 4px --muted plus italic for a governed refusal, and 4.4 documents it as shipped precedent. This declaration sets the width on .trace-step--refusal, whose colour is set on the adjacent line from the same --muted token. The finish reviewer examined all three instances and agreed on the merits; the only unsanctioned instance it found was a --ready tint on .state--proven, which was removed."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(212, 168, 58, 0.55)",
+        "createdAt": "2026-08-29T12:43:03.630Z",
+        "reason": "New visual world approved by the owner (direction round, seed a56e97f5). This is --gold at 55% as the sun mark's halo on the wordmark, the single piece of iconography on the page. The DESIGN.md it is being checked against describes the ARCHIVED v1 palette (light, app-inherited) which this world deliberately replaces; the documenter regenerates DESIGN.md and the sidecar at finish."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(36, 31, 26, 0.72)",
+        "createdAt": "2026-08-29T12:43:13.688Z",
+        "reason": "New visual world approved by the owner (direction round, seed a56e97f5). This is --stone-700 at 72% as the specimen's field, translucent so the sun's radial field reads through it and the specimen sits IN the wall rather than on top of it. Checked against the archived v1 DESIGN.md; the documenter regenerates it at finish."
+      },
+      {
+        "rule": "side-tab",
+        "value": "border-inline-start: 4px solid var(--withheld)",
+        "createdAt": "2026-08-29T12:45:55.754Z",
+        "reason": "The governed refusal treatment, carried into the new marketing world. KHEPRI_DESIGN_LANGUAGE.md 4.6 mandates a 4px inline-start rule plus italic for a governed refusal and 4.4 explains why 4px rather than a hairline (report.print.css drops the tint, so the border alone carries the state onto paper). The same value is already ignored for journey.css and the v1 concept in this config. The rule and the italic each carry the meaning independently, and the border was raised from 1.09-1.90:1 to 5.28-5.86:1 specifically so it clears WCAG 1.4.11 as a state carrier - removing or thinning it would break the one product law that survived the world change."
       }
     ]
   }
