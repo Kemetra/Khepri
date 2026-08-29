@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="{{ language }}" dir="{{ direction }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ copy.product }} — {{ copy.tagline }}</title>
+  <meta name="description" content="{{ copy.claim_lede }}">
+  <link rel="stylesheet" href="{{ assets }}/landing.css">
+  <link rel="alternate" hreflang="{{ alternate }}" href="{{ alternate_href }}">
+</head>
+<body>
+<a class="skip-link" href="#main">{{ copy.skip }}</a>
+
+<header class="site-header">
+  <span class="brand"><span class="brand-sun" aria-hidden="true"></span>{{ copy.product }}</span>
+  <nav class="header-actions" aria-label="{{ copy.language_navigation }}">
+    <a class="language-link"
+       href="{{ alternate_href }}"
+       lang="{{ copy.language_code }}"
+       hreflang="{{ copy.language_code }}"
+       dir="auto">{{ copy.language }}</a>
+  </nav>
+</header>
+
+<main id="main">
+
+  {# ══ REGISTER I — arrival. The claim, then the specimen that proves it. ══════════════════ #}
+  <section class="register register--claim" aria-labelledby="claim-title">
+    <div class="wall">
+
+      <h1 id="claim-title">
+        {%- set parts = copy.tagline.split(copy.claim_prove) -%}
+        {{ parts[0] }}<span class="claim-mark">{{ copy.claim_prove }}</span>{{ parts[1] if parts|length > 1 else "" }}
+      </h1>
+
+      <p class="claim-lede">{{ copy.claim_lede }}</p>
+
+      <figure class="specimen" aria-labelledby="specimen-title">
+        <div class="specimen-head">
+          <span class="specimen-file" id="specimen-title" dir="auto">{{ copy.specimen_file }}</span>
+          <span class="state-mark state-mark--admitted">{{ copy.specimen_admitted }}</span>
+        </div>
+
+        <dl class="courses">
+          <div class="course">
+            <dt class="course-term">{{ copy.specimen_population_term }}</dt>
+            <dd class="course-value course-value--plain tabular">{{ copy.specimen_population_value }}</dd>
+          </div>
+          {% for course in courses %}
+          <div class="course">
+            <dt class="course-term">{{ course.term }}</dt>
+            <dd class="course-value course-value--proven tabular">{{ course.value }}</dd>
+          </div>
+          {% endfor %}
+
+          {# The withheld course, set into the register where the figure would have stood.
+             Its text is the product's own governed refusal wording, not a paraphrase. #}
+          <div class="course course--withheld">
+            <dt class="course-term">{{ copy.specimen_withheld_term }}</dt>
+            <dd class="course-refusal">{{ refusal }}</dd>
+          </div>
+        </dl>
+
+        <figcaption class="synthetic-note">{{ copy.specimen_caption }}</figcaption>
+      </figure>
+
+    </div>
+  </section>
+
+  {# ══ REGISTERS II–IV — the passage of one file through admission ═════════════════════════ #}
+  <section class="register register--deep" aria-labelledby="passage-title">
+    <div class="wall">
+      <h2 class="register-mark" id="passage-title">
+        <span>{{ copy.register_ii }}</span>
+        <span class="register-subject" dir="auto">{{ copy.specimen_file }}</span>
+      </h2>
+
+      <ol class="passage">
+        <li class="passage-step">
+          <span class="passage-index" aria-hidden="true">I</span>
+          <span class="passage-term">{{ copy.passage_1_term }}</span>
+          <span class="passage-detail">{{ copy.passage_1_detail }}</span>
+          <span class="passage-state tabular">{{ copy.passage_1_state }}</span>
+        </li>
+        <li class="passage-step">
+          <span class="passage-index" aria-hidden="true">II</span>
+          <span class="passage-term">{{ copy.passage_2_term }}</span>
+          <span class="passage-detail">{{ copy.passage_2_detail }}</span>
+          <span class="passage-state tabular">{{ copy.passage_2_state }}</span>
+        </li>
+        <li class="passage-step">
+          <span class="passage-index" aria-hidden="true">III</span>
+          <span class="passage-term">{{ copy.passage_3_term }}</span>
+          <span class="passage-detail">{{ copy.passage_3_detail }}</span>
+        </li>
+        <li class="passage-step passage-step--withheld">
+          <span class="passage-index" aria-hidden="true">IV</span>
+          <span class="passage-term">{{ copy.passage_4_term }}</span>
+          <span class="passage-detail">{{ copy.passage_4_detail }}</span>
+        </li>
+        <li class="passage-step">
+          <span class="passage-index" aria-hidden="true">V</span>
+          <span class="passage-term">{{ copy.passage_5_term }}</span>
+          <span class="passage-detail">{{ copy.passage_5_detail }}</span>
+        </li>
+      </ol>
+
+      <p class="passage-figure">
+        {{ copy.passage_figure }} <em>{{ copy.passage_figure_em }}</em>
+      </p>
+    </div>
+  </section>
+
+  {# ══ REGISTER V — proof. The three outcomes, named in governed vocabulary. ═══════════════ #}
+  <section class="register" aria-labelledby="verdicts-title">
+    <div class="wall">
+      <h2 class="register-mark" id="verdicts-title"><span>{{ copy.register_v }}</span></h2>
+
+      <div class="contrast">
+        <div>
+          <span class="contrast-label">{{ copy.contrast_theirs_label }}</span>
+          <p class="contrast-quote contrast-quote--theirs">{{ copy.contrast_theirs }}</p>
+        </div>
+        <div>
+          <span class="contrast-label">{{ copy.contrast_ours_label }}</span>
+          <p class="contrast-quote contrast-quote--ours">{{ copy.contrast_ours_before }}<span class="claim-mark">{{ copy.claim_prove }}</span>{{ copy.contrast_ours_after }}</p>
+        </div>
+      </div>
+
+      <div class="verdicts">
+        <article class="verdict verdict--proven">
+          <span class="verdict-name">{{ copy.verdict_proven_name }}</span>
+          <p class="verdict-claim">{{ copy.verdict_proven_claim }}</p>
+          <p class="verdict-detail">{{ copy.verdict_proven_detail }}</p>
+        </article>
+
+        <article class="verdict verdict--caveated">
+          <span class="verdict-name">{{ copy.verdict_caveated_name }}</span>
+          <p class="verdict-claim">{{ copy.verdict_caveated_claim }}</p>
+          <p class="verdict-detail">{{ copy.verdict_caveated_detail }}</p>
+        </article>
+
+        <article class="verdict verdict--withheld">
+          <span class="verdict-name">{{ copy.verdict_withheld_name }}</span>
+          <p class="verdict-claim">{{ copy.verdict_withheld_claim }}</p>
+          <p class="verdict-detail">{{ copy.verdict_withheld_detail }}</p>
+          <p class="verdict-refusal">{{ refusal }}</p>
+        </article>
+      </div>
+
+      <p class="synthetic-note">{{ copy.verdicts_note }}</p>
+    </div>
+  </section>
+
+  {# ══ Why Khepri ═════════════════════════════════════════════════════════════════════════ #}
+  <section class="register register--deep" aria-labelledby="pillars-title">
+    <div class="wall">
+      <h2 class="register-mark" id="pillars-title"><span>{{ copy.pillars_heading }}</span></h2>
+
+      <div class="pillars">
+        <article class="pillar">
+          <h3>{{ copy.pillar_1_name }}</h3>
+          <p>{{ copy.pillar_1_body }}</p>
+        </article>
+        <article class="pillar">
+          <h3>{{ copy.pillar_2_name }}</h3>
+          <p>{{ copy.pillar_2_body }}</p>
+        </article>
+        <article class="pillar">
+          <h3>{{ copy.pillar_3_name }}</h3>
+          <p>{{ copy.pillar_3_body }}</p>
+        </article>
+        <article class="pillar">
+          <h3>{{ copy.pillar_4_name }}</h3>
+          <p>{{ copy.pillar_4_body }}</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  {# ══ The two scripts, as equal courses ══════════════════════════════════════════════════ #}
+  <section class="register" aria-labelledby="scripts-title">
+    <div class="wall">
+      <h2 class="register-mark" id="scripts-title"><span>{{ copy.scripts_heading }}</span></h2>
+
+      <div class="scripts">
+        <div class="script-panel" lang="en" dir="ltr">
+          <p class="script-name"><span>EN</span><span>English</span></p>
+          <p class="script-claim">Revenue, Q3</p>
+          <p class="script-figure tabular">4,182,600 EGP</p>
+          <p class="script-note">Reconciled across 18 stores.</p>
+        </div>
+
+        <div class="script-panel" lang="ar" dir="rtl">
+          <p class="script-name"><span>ع</span><span>العربية</span></p>
+          <p class="script-claim">الإيرادات، الربع الثالث</p>
+          <p class="script-figure tabular">٤٬١٨٢٬٦٠٠ ج.م</p>
+          <p class="script-note">تمت المطابقة عبر ١٨ متجرًا.</p>
+        </div>
+      </div>
+
+      <p class="synthetic-note">{{ copy.scripts_note }}</p>
+    </div>
+  </section>
+
+  {# ══ REGISTER VI — decision. No CTA: FR-087 permits one only where the destination
+       already exists, and no active specification authorizes a public one. ═══════════════ #}
+  <section class="register register--close" aria-labelledby="close-title">
+    <div class="wall">
+      <h2 class="close-headline" id="close-title">{{ copy.close_headline }}</h2>
+      <p class="close-body">{{ copy.close_body }}</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="colophon">
+  <div class="wall colophon-row">
+    <nav aria-label="{{ copy.legal_navigation }}">
+      <ul>
+        {% for link in legal_links %}
+        <li><a href="{{ link.href }}">{{ link.title }}</a></li>
+        {% endfor %}
+        <li><a href="{{ alternate_href }}" lang="{{ copy.language_code }}" hreflang="{{ copy.language_code }}" dir="auto">{{ copy.language }}</a></li>
+      </ul>
+    </nav>
+    <span class="colophon-mark"><span class="brand-sun" aria-hidden="true"></span>{{ copy.product }}</span>
+  </div>
+</footer>
+
+</body>
+</html>

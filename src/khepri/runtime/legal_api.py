@@ -194,8 +194,13 @@ def _published_content(language: str, page: str) -> tuple[str, ...] | None:
     return publication.content[language] if _is_publishable(publication, page) else None
 
 
-def _published_pages(language: str) -> tuple[tuple[str, str], ...]:
-    """List only destinations that render in this language, so footer links cannot be dead."""
+def published_pages(language: str) -> tuple[tuple[str, str], ...]:
+    """List only destinations that render in this language, so footer links cannot be dead.
+
+    Public because the RCA-004 landing links to legal destinations under `FR-086` and must reach
+    the same publication decision this module renders from. A second list would drift, and the
+    drift would show as a public dead link.
+    """
     return tuple(
         (page, LEGAL_PAGE_TITLES[language][page])
         for page in LEGAL_PAGES
@@ -216,7 +221,7 @@ def _legal_response(environment: Environment, *, language: str, page: str) -> Re
         assets=LEGAL_ASSETS,
         prefix=LEGAL_PREFIX,
         publication_content=publication_content,
-        legal_links=_published_pages(language),
+        legal_links=published_pages(language),
     )
     return Response(
         content=body,
@@ -261,4 +266,5 @@ __all__ = [
     "LegalPublication",
     "add_legal_routes",
     "legal_environment",
+    "published_pages",
 ]
