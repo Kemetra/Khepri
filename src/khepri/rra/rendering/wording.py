@@ -106,13 +106,17 @@ def _assert_label_wording_complete() -> None:
     """
     if set(LABEL_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
         raise RuntimeError("chart labels must cover every governed language")
-    for language, entries in LABEL_WORDING.items():
-        if set(entries) != _LOCALIZABLE_CHART_CODES:
-            message = (
-                "every localizable chart code needs wording in every language "
-                f"(language={language!r})"
-            )
-            raise RuntimeError(message)
+    incomplete = [
+        language
+        for language, entries in LABEL_WORDING.items()
+        if set(entries) != _LOCALIZABLE_CHART_CODES
+    ]
+    if incomplete:
+        message = (
+            "every localizable chart code needs wording in every language "
+            f"(languages={sorted(incomplete)})"
+        )
+        raise RuntimeError(message)
 
 
 _assert_label_wording_complete()
@@ -344,10 +348,14 @@ def _assert_kind_qualifiers_complete() -> None:
     """
     if set(KIND_QUALIFIERS) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
         raise RuntimeError("kind qualifiers must cover every governed language")
-    for language, entries in KIND_QUALIFIERS.items():
-        if set(entries) != {KIND_ROWS}:
-            message = f"every qualifying kind needs wording (language={language!r})"
-            raise RuntimeError(message)
+    incomplete = [
+        language
+        for language, entries in KIND_QUALIFIERS.items()
+        if set(entries) != {KIND_ROWS}
+    ]
+    if incomplete:
+        message = f"every qualifying kind needs wording (languages={sorted(incomplete)})"
+        raise RuntimeError(message)
 
 
 _assert_kind_qualifiers_complete()
@@ -1105,15 +1113,23 @@ _CHART_DESCRIPTION_CODES = frozenset(
 
 
 def _assert_chart_descriptions_complete() -> None:
+    # Flat rather than a loop wrapping a conditional: the nested form is the
+    # shape CodeScene names "Bumpy Road", and this module's health is already
+    # near the gate. The comprehension does the searching and the two guard
+    # clauses do the raising, so neither nests inside the other.
     if set(CHART_DESCRIPTIONS) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
         raise RuntimeError("chart descriptions must cover every governed language")
-    for language, entries in CHART_DESCRIPTIONS.items():
-        if set(entries) != _CHART_DESCRIPTION_CODES:
-            message = (
-                "every governed chart kind needs a description in every language "
-                f"(language={language!r})"
-            )
-            raise RuntimeError(message)
+    incomplete = [
+        language
+        for language, entries in CHART_DESCRIPTIONS.items()
+        if set(entries) != _CHART_DESCRIPTION_CODES
+    ]
+    if incomplete:
+        message = (
+            "every governed chart kind needs a description in every language "
+            f"(languages={sorted(incomplete)})"
+        )
+        raise RuntimeError(message)
 
 
 _assert_chart_descriptions_complete()
