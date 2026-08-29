@@ -25,12 +25,21 @@ from tests.test_rra006_html_sections import ROWS, package_for
 
 Rows = list[tuple[str, int, str]]
 
+#: The exact Arabic a customer reads, written out here rather than imported from
+#: `wording`: a table that reads the module it checks passes whatever that module
+#: says. Changing an entry is therefore a deliberate claim that the *old* string
+#: was wrong, not a way to clear a red test.
+#:
+#: `concentration_distinct_values` was corrected from "المنتجات أو الفروع"
+#: (products or branches). `analysis/concentration.py` admits only
+#: `SEMANTIC_PRODUCT` and `SEMANTIC_CATEGORY` and excludes store/branch by name,
+#: so a category-dimension report told the reader branches had been counted.
 _DERIVED_ARABIC_NAMES = {
     "basket_items_per_transaction": "عدد الأصناف لكل عملية بيع",
     "basket_attach_rate": "نسبة عمليات البيع التي تتضمن المنتج أو الفئة",
     "concentration_top_decile_share": "حصة أعلى عُشر من المبيعات",
     "concentration_top_quartile_share": "حصة أعلى ربع من المبيعات",
-    "concentration_distinct_values": "عدد المنتجات أو الفروع المحتسبة",
+    "concentration_distinct_values": "عدد المنتجات أو الفئات المحتسبة",
     "concentration_ranked_values": "المساهمة حسب الترتيب",
 }
 
