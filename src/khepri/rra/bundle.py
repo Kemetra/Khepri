@@ -487,6 +487,26 @@ _DISCLOSURE: dict[str, dict[str, str]] = {
     },
 }
 
+
+def _assert_disclosure_complete() -> None:
+    """Every governed narrative state discloses itself, in both languages.
+
+    `disclosure()` indexes this table by `self.narrative_state`, so a state added
+    to `GOVERNED_NARRATIVE_STATES` without prose here raises `KeyError` while a
+    report renders -- after the analysis succeeded, on the one paragraph that
+    tells a reader the commentary was machine-generated. Checked at import
+    instead, where the failure names the missing state.
+    """
+    if set(_DISCLOSURE) != GOVERNED_NARRATIVE_STATES:
+        raise RuntimeError("every governed narrative state needs a disclosure")
+    for state, entries in _DISCLOSURE.items():
+        if set(entries) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+            message = f"disclosure must cover every language (state={state!r})"
+            raise RuntimeError(message)
+
+
+_assert_disclosure_complete()
+
 # Arabic-Indic digits and the separators that accompany them.
 _ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
 _ARABIC_DECIMAL = "٫"

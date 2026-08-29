@@ -32,6 +32,9 @@ from khepri.rra.analysis import basket, comparison, growth
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
     CAVEAT_CURVE_SAMPLED,
+    CHART_BAR,
+    CHART_GROUPED_BAR,
+    CHART_LINE,
     GOVERNED_FIGURE_LABELS,
     GOVERNED_SECTION_REASONS,
     KIND_ROWS,
@@ -258,6 +261,37 @@ KIND_QUALIFIERS: dict[str, dict[str, str]] = {
 }
 
 
+def _assert_derived_metric_wording_complete() -> None:
+    """Both languages name the same derived metrics, and none of them twice.
+
+    Deliberately not asserted against a hardcoded set of codes. This table is a
+    *complement* rather than a governed vocabulary: it names the metrics that
+    have no `METRIC_WORDING` entry, and which those are follows from the other
+    table rather than from a list anyone maintains. Restating its sixteen keys
+    here would create exactly the hand-maintained second truth this table's own
+    comment warns about.
+
+    So two properties are checked, and they are the two that can break. Parity,
+    because `business_metric_name` falls back here per language and an entry
+    added in one language only would name a figure in English and leave it
+    unnamed in Arabic. And disjointness, because a code in both tables makes
+    `METRIC_WORDING` win silently -- the derived entry would sit there looking
+    authoritative and never render.
+    """
+    if set(DERIVED_METRIC_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("derived metric names must cover every governed language")
+    languages = list(DERIVED_METRIC_WORDING.values())
+    if set(languages[0]) != set(languages[1]):
+        raise RuntimeError("every derived metric needs a name in every language")
+    overlap = set(languages[0]) & _GOVERNED_METRIC_CODES
+    if overlap:
+        message = f"a metric is named in two tables: {sorted(overlap)}"
+        raise RuntimeError(message)
+
+
+_assert_derived_metric_wording_complete()
+
+
 def business_metric_name(metric: str, language: str) -> str | None:
     """Return a business name, or `None` when the row's label names it.
 
@@ -268,6 +302,26 @@ def business_metric_name(metric: str, language: str) -> str | None:
     if governed is not None:
         return governed
     return DERIVED_METRIC_WORDING[language].get(metric)
+
+
+def _assert_kind_qualifiers_complete() -> None:
+    """`KIND_ROWS` is the one kind that qualifies a name, in both languages.
+
+    `KIND_VALUE` is deliberately absent: a plain value adds nothing to its own
+    name, which is why `kind_qualifier` returns `None` rather than an empty
+    string. So the governed set here is `KIND_ROWS` alone, and a kind added to
+    `bundle` without wording must fail at import rather than reach a reader as a
+    silently unqualified name on one surface and a qualified one on another.
+    """
+    if set(KIND_QUALIFIERS) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("kind qualifiers must cover every governed language")
+    for language, entries in KIND_QUALIFIERS.items():
+        if set(entries) != {KIND_ROWS}:
+            message = f"every qualifying kind needs wording (language={language!r})"
+            raise RuntimeError(message)
+
+
+_assert_kind_qualifiers_complete()
 
 
 def kind_qualifier(kind: str, language: str) -> str | None:
@@ -1009,6 +1063,31 @@ CHART_DESCRIPTIONS: dict[str, dict[str, str]] = {
 for _language, _headings in SECTION_HEADINGS.items():
     if set(_headings) != set(ORDERED_SECTIONS):
         raise RuntimeError("every governed section needs a heading in every language")
+
+
+#: The description code each chart kind resolves to. Spelled from the governed kind
+#: constants rather than as literals, because `charts.py` composes the same string
+#: as `f"chart_description.{spec.kind}"` and `excel.py` reads it back the same way:
+#: a kind added there with no description here is a `KeyError` on the Excel surface
+#: and a chart with no accessible description on the web one.
+_CHART_DESCRIPTION_CODES = frozenset(
+    f"chart_description.{kind}" for kind in (CHART_BAR, CHART_GROUPED_BAR, CHART_LINE)
+)
+
+
+def _assert_chart_descriptions_complete() -> None:
+    if set(CHART_DESCRIPTIONS) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("chart descriptions must cover every governed language")
+    for language, entries in CHART_DESCRIPTIONS.items():
+        if set(entries) != _CHART_DESCRIPTION_CODES:
+            message = (
+                "every governed chart kind needs a description in every language "
+                f"(language={language!r})"
+            )
+            raise RuntimeError(message)
+
+
+_assert_chart_descriptions_complete()
 
 
 def category_of(figure: CitedFigure) -> ChartCategory:

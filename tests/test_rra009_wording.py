@@ -6,6 +6,7 @@ import re
 
 import pytest
 
+from khepri.rra import bundle
 from khepri.rra.analysis.basket import (
     REASON_DIMENSION_ABSENT,
     REASON_DIMENSION_INCOMPLETE,
@@ -643,3 +644,119 @@ def test_the_two_customer_tiers_are_the_only_ones_wording_states() -> None:
     """
     assert set(wording.REFUSAL_WORDING) == {"section", "result"}
     assert _SECTION_REFUSAL_CODES & _RESULT_REFUSAL_CODES == _SHARED_TIER_CODES
+
+
+# --- CAL1-11 finding F5: tables without a completeness guard ---------------
+#
+# F5 filed five tables as unguarded. One of the five, `SECTION_HEADINGS`, was
+# already guarded at `wording.py` by a bare import-time loop -- the finding was
+# wrong about it, and that is recorded here rather than silently skipped. The
+# other four are guarded now, and each test below drives its guard directly with
+# a broken table, because a guard is only evidence if it can fail.
+
+
+def test_kind_qualifier_guard_raises_when_a_language_loses_its_only_kind(
+    monkeypatch,
+) -> None:
+    broken = {
+        language: dict(entries)
+        for language, entries in wording.KIND_QUALIFIERS.items()
+    }
+    broken[LANGUAGE_ENGLISH].clear()
+    monkeypatch.setattr(wording, "KIND_QUALIFIERS", broken)
+
+    with pytest.raises(RuntimeError, match="kind"):
+        wording._assert_kind_qualifiers_complete()
+
+
+def test_chart_description_guard_raises_when_a_governed_kind_has_no_description(
+    monkeypatch,
+) -> None:
+    """The guard's set is derived from the chart-kind constants, not retyped.
+
+    `charts.py` composes `chart_description.{spec.kind}` and `excel.py` reads it
+    back the same way, so a kind added there with no description here is a
+    `KeyError` on one surface and a chart with no accessible description on the
+    other.
+    """
+    broken = {
+        language: dict(entries)
+        for language, entries in wording.CHART_DESCRIPTIONS.items()
+    }
+    del broken[LANGUAGE_ARABIC]["chart_description.line"]
+    monkeypatch.setattr(wording, "CHART_DESCRIPTIONS", broken)
+
+    with pytest.raises(RuntimeError, match="chart"):
+        wording._assert_chart_descriptions_complete()
+
+
+def test_derived_metric_guard_raises_when_one_language_names_a_metric(
+    monkeypatch,
+) -> None:
+    """`business_metric_name` falls back here per language.
+
+    An entry present in English alone names a figure on the English surface and
+    leaves the same figure unnamed in Arabic, which is the parity obligation
+    `RRA-006` states and the one this table could break quietly.
+    """
+    broken = {
+        language: dict(entries)
+        for language, entries in wording.DERIVED_METRIC_WORDING.items()
+    }
+    del broken[LANGUAGE_ARABIC]["basket_attach_rate"]
+    monkeypatch.setattr(wording, "DERIVED_METRIC_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="language"):
+        wording._assert_derived_metric_wording_complete()
+
+
+def test_derived_metric_guard_raises_when_a_metric_is_named_in_two_tables(
+    monkeypatch,
+) -> None:
+    """A code in both tables makes `METRIC_WORDING` win silently.
+
+    `business_metric_name` consults `METRIC_WORDING` first, so a derived entry
+    for the same code sits there looking authoritative and never renders. The
+    duplicate is added in *both* languages, so the parity check above passes and
+    this test proves the disjointness check rather than re-proving parity.
+    """
+    broken = {
+        language: {**entries, "revenue": "Revenue"}
+        for language, entries in wording.DERIVED_METRIC_WORDING.items()
+    }
+    monkeypatch.setattr(wording, "DERIVED_METRIC_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="two tables"):
+        wording._assert_derived_metric_wording_complete()
+
+
+def test_disclosure_guard_raises_when_a_governed_narrative_state_has_no_prose(
+    monkeypatch,
+) -> None:
+    """`disclosure()` indexes `_DISCLOSURE` by the package's narrative state.
+
+    A state added to `GOVERNED_NARRATIVE_STATES` without prose here raises
+    `KeyError` mid-render, after the analysis succeeded, on the one paragraph
+    that tells a reader the commentary was generated automatically.
+    """
+    broken = {
+        state: dict(entries) for state, entries in bundle._DISCLOSURE.items()
+    }
+    del broken[bundle.NARRATIVE_OMITTED]
+    monkeypatch.setattr(bundle, "_DISCLOSURE", broken)
+
+    with pytest.raises(RuntimeError, match="narrative state"):
+        bundle._assert_disclosure_complete()
+
+
+def test_section_headings_were_already_guarded_when_f5_filed_them() -> None:
+    """F5 named `SECTION_HEADINGS`, and F5 was wrong about that one.
+
+    Recorded rather than dropped: a later reader comparing the finding against
+    this slice would otherwise see four of five tables addressed and reasonably
+    conclude one was missed. The guard is a bare import-time loop rather than a
+    named `_assert_*` function, which is why a reader scanning for the naming
+    convention could miss it -- so the property is asserted here directly.
+    """
+    for headings in wording.SECTION_HEADINGS.values():
+        assert set(headings) == set(bundle.ORDERED_SECTIONS)
