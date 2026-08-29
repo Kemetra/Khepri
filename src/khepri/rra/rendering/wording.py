@@ -1220,7 +1220,9 @@ METRIC_DESCRIPTIONS: dict[str, dict[str, str]] = {
         "revenue_delta_percent": "ذلك الفرق كنسبة مئوية من الفترة الأسبق.",
         "basket_items_per_transaction": "عدد الأصناف التي تتضمنها عملية البيع الوسطية.",
         "basket_attach_rate": "نسبة عمليات البيع التي تضمنت هذا المنتج أو الفئة.",
-        "concentration_curve": "كيف تتوزع المبيعات على المنتجات، من الأكبر إلى الأصغر.",
+        "concentration_curve": (
+            "كيف تتوزع المبيعات على المنتجات أو الفئات، من الأكبر إلى الأصغر."
+        ),
         "concentration_distinct_values": "عدد المنتجات أو الفئات التي جرى احتسابها.",
         "concentration_ranked_values": "عدد ما أمكن ترتيبه منها.",
         "concentration_top_decile_share": "حصة أعلى عُشر من المبيعات.",
