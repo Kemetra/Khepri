@@ -626,7 +626,11 @@ h1 {
 
 .passage-step {
   position: relative;
-  padding: clamp(var(--space-6), 4vw, var(--space-7)) var(--space-5) clamp(var(--space-6), 4vw, var(--space-7)) 0;
+  /* Block and inline stated separately. A four-value `padding` shorthand assigns physical
+   * top/right/bottom/left, and the `padding-inline` that followed it overrode the inline halves —
+   * so the physical values were masked at runtime AND from the guard, which matches only
+   * explicitly named `*-left`/`*-right`. The declaration looked logical and was not. */
+  padding-block: clamp(var(--space-6), 4vw, var(--space-7));
   padding-inline: 0 var(--space-5);
   border-block-end: 1px solid var(--stone-700);
 }
@@ -1000,8 +1004,8 @@ h1 {
  *   3. It is gated twice — behind `@supports` and behind `prefers-reduced-motion: no-preference`. */
 
 @keyframes rise-into-light {
-  from { opacity: .55; transform: translateY(1.5rem); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateY(1.5rem); }
+  to { transform: none; }
 }
 
 @keyframes rule-open {
@@ -1036,16 +1040,35 @@ h1 {
  * travels, and still takes gold — while the text is READABLE in every frame, not merely
  * present in the DOM. .18 satisfied the letter of frame-zero correctness and failed its
  * intent: at a glance the specimen still looked empty. */
+/* NO KEYFRAME THAT MOVES TEXT ANIMATES `opacity`. This is a contrast rule, not a taste one.
+ *
+ * These animations carry delays of up to 1.7s and `animation-fill-mode: both` pins an element to
+ * its opening keyframe for the whole delay, so whatever the opening step says is what a visitor
+ * reads for over a second. Opening at `opacity: 0` blanked the specimen (caught by a screenshot);
+ * raising it to .45 made the text present but not legible — composited on the specimen ground
+ * that is 2.59:1 for gold, 2.36:1 for `--papyrus-dim`, 2.09:1 for `--withheld`, all under the
+ * 4.5:1 floor.
+ *
+ * There is no safe partial value to pick. Measured on the specimen's own ground, `--withheld`
+ * fails at EVERY opacity below 1.0 (0.85 gives 4.20:1) and `--egyptian-blue` at every value up to
+ * and including 0.85. Fading text is simply not available in this palette.
+ *
+ * So the motion carries no opacity at all: the figures travel and take gold, the mark stamps, the
+ * refusal settles — all through `transform` and `color`, which cost nothing in contrast because
+ * the ink is fully painted in every frame. The sequence reads exactly as designed and every
+ * character clears the floor from frame zero.
+ *
+ * The decorative pseudo-elements below may still animate opacity: they carry no text. */
 @keyframes figure-resolves {
-  0% { opacity: .45; transform: translateY(6px); color: var(--papyrus-dim); }
-  55% { opacity: 1; transform: none; color: var(--papyrus-dim); }
-  100% { opacity: 1; transform: none; color: var(--gold); }
+  0% { transform: translateY(6px); color: var(--papyrus-dim); }
+  55% { transform: none; color: var(--papyrus-dim); }
+  100% { transform: none; color: var(--gold); }
 }
 
 /* A plain value: it arrives, but never takes gold, because it was never a proven figure. */
 @keyframes value-arrives {
-  from { opacity: .45; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateY(6px); }
+  to { transform: none; }
 }
 
 /* The withheld course settling in. It arrives LAST and slowest — the refusal is the considered
@@ -1056,8 +1079,8 @@ h1 {
  * the frame-zero defect, not the mildest: the governed refusal text, which is the one thing this
  * page exists to demonstrate, would be blank for the first 1.7 seconds. */
 @keyframes withheld-settles {
-  from { opacity: .45; transform: translateY(10px); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateY(10px); }
+  to { transform: none; }
 }
 
 /* This rule IS the disclosure shape, not decoration, so it opens partly cut rather than absent.
@@ -1076,9 +1099,9 @@ h1 {
 
 /* The admitted mark stamping onto the file. */
 @keyframes mark-stamps {
-  0% { opacity: .45; transform: scale(1.4); }
-  70% { opacity: 1; transform: scale(0.97); }
-  100% { opacity: 1; transform: scale(1); }
+  0% { transform: scale(1.4); }
+  70% { transform: scale(0.97); }
+  100% { transform: scale(1); }
 }
 
 /* The sun's slow breath behind the claim. Extremely slow and extremely subtle — this is the one

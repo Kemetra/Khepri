@@ -147,12 +147,35 @@ def test_the_stylesheet_uses_no_physical_directional_property(language: str) -> 
     css = build_client().get(f"{LANDING_PREFIX}/assets/landing.css").text
     body = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     physical = re.findall(
-        r"(?<![-\w])(?:margin|padding|border)-(?:left|right)\b"
+        r"(?<![-\w])(?:margin|padding|border|inset)-(?:left|right)\b"
         r"|(?<![-\w])text-align\s*:\s*(?:left|right)\b"
         r"|(?<![-\w])float\s*:\s*(?:left|right)\b",
         body,
     )
     assert physical == []
+
+    # A four-value `margin`/`padding` shorthand assigns physical top/right/bottom/left even when
+    # every token in it looks logical, and a `*-inline` declaration after it masks the inline
+    # halves at runtime. Naming only `*-left`/`*-right` above missed exactly that, so the
+    # shorthand's arity is checked as well: more than two values is a physical declaration.
+    def top_level_values(declaration: str) -> int:
+        """Count values, treating a whole `clamp(a, b, c)` as one — it splits on spaces."""
+        depth, count, in_value = 0, 0, False
+        for character in declaration.strip():
+            depth += (character == "(") - (character == ")")
+            if character.isspace() and depth == 0:
+                in_value = False
+            elif not in_value:
+                in_value = True
+                count += 1
+        return count
+
+    shorthands = [
+        declaration.strip()
+        for declaration in re.findall(r"(?:^|[;{])\s*(?:margin|padding)\s*:([^;{}]+)", body)
+        if top_level_values(declaration) > 2
+    ]
+    assert shorthands == []
 
 
 # ---- FR-084: synthetic data, labelled ------------------------------------------------------
@@ -434,8 +457,10 @@ def test_the_keyframe_reader_sees_whole_blocks() -> None:
     """
     blocks = _keyframes(_without_comments(_stylesheet()))
     assert blocks, "no keyframes parsed at all"
-    assert "opacity" in blocks["value-arrives"]
+    assert "transform" in blocks["value-arrives"]
     assert re.search(r"(?:from|0%)\s*\{[^}]*\}", blocks["value-arrives"])
+    # A decorative pseudo-element still fades, so the reader can still see an `opacity` step.
+    assert "opacity" in blocks["sun-breathes"]
 
 
 def _relative_luminance(value: str) -> float:
@@ -567,8 +592,8 @@ def test_no_animation_starts_from_invisible_content() -> None:
     """
     offenders = []
     for name, frames in _keyframes(_without_comments(_stylesheet())).items():
-        if name in {"rule-open", "claim-underlines"}:
-            continue  # decorative rules that draw themselves open; they carry no state
+        if name in {"rule-open", "claim-underlines", "sun-breathes"}:
+            continue  # decorative pseudo-elements; they carry no text and no state
         # A transform-only keyframe that carries a STATE shape is checked too. The withheld
         # rule replaces a border the motion block sets transparent, so opening it at zero
         # removes the disclosure shape entirely for the length of its delay.
@@ -582,9 +607,8 @@ def test_no_animation_starts_from_invisible_content() -> None:
             continue
         opening = re.search(r"(?:from|0%)\s*\{([^}]*)\}", frames)
         assert opening, f"{name}: no opening step parsed — the guard would be vacuous"
-        opacity = re.search(r"opacity\s*:\s*([\d.]+)", opening.group(1))
-        if opacity and float(opacity.group(1)) < 0.4:
-            offenders.append(f"{name} opens at opacity {opacity.group(1)}")
+        if "opacity" in frames:
+            offenders.append(f"{name} fades text")
     assert offenders == []
 
 
