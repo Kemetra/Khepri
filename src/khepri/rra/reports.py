@@ -49,6 +49,7 @@ from khepri.rra.jobs import (
     ReportJob,
     UnknownJobState,
 )
+from khepri.rra.package_source import SessionPackageReader
 from khepri.rra.pipeline import (
     GOVERNED_REASONS,
     REASON_STAGE_FAILED,
@@ -337,6 +338,10 @@ class ReportServices:
     jobs: ReportRequestService
     bundles: DeliveredBundleReader
     artifacts: ReportArtifactReader | None = None
+    #: The catalog routes read a package to rebuild the bundle they answer from.
+    #: Optional for the same reason `artifacts` is: a deployment that supplies no
+    #: reader declares no catalog group rather than declaring one that refuses.
+    packages: SessionPackageReader | None = None
 
 
 __all__ = [
