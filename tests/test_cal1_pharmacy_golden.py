@@ -25,6 +25,7 @@ import hashlib
 from decimal import Decimal
 
 from khepri.rra.admissibility import assess_admissibility
+from khepri.rra.analysis import concentration
 from khepri.rra.facts import (
     METRIC_AVERAGE_ORDER_VALUE,
     METRIC_AVERAGE_SELLING_PRICE,
@@ -32,6 +33,7 @@ from khepri.rra.facts import (
     METRIC_DISCOUNT,
     METRIC_GROSS_MARGIN,
     METRIC_GROSS_PROFIT,
+    METRIC_RETURNS,
     METRIC_REVENUE,
     METRIC_TRANSACTIONS,
     METRIC_UNITS,
@@ -43,6 +45,8 @@ from khepri.rra.mapping import build_mapping
 from khepri.rra.profiling import build_profile
 from tests.rra003_contract_fixtures import oracle_contract
 from tests.rra_calculation_oracle import (
+    PHARMACY_CONCENTRATION,
+    PHARMACY_DIMENSIONAL_REVENUE,
     PHARMACY_HEADLINE,
     PHARMACY_ROWS,
     PHARMACY_SALE_ONLY,
@@ -182,3 +186,60 @@ def test_the_package_reruns_byte_equivalent() -> None:
     second = _pharmacy_package()
 
     assert first.as_document() == second.as_document()
+
+
+def test_returns_publish_as_a_positive_magnitude() -> None:
+    """`RRA-004`:83 governs a magnitude, and the headline beside it is signed.
+
+    The two readings differ by exactly a minus sign, which is why this needs its
+    own assertion: the row carries -90.00, revenue is return-reduced to 955.00,
+    and the published returns figure is nonetheless 90.00. An oracle literal
+    carrying the row's sign would look plausible, contradict production, and --
+    if nothing read it -- say so to no one.
+    """
+    package = _pharmacy_package()
+
+    assert _value(package, METRIC_RETURNS) == PHARMACY_HEADLINE["returns"]
+    assert _value(package, METRIC_RETURNS) > 0
+
+
+def test_the_concentration_curve_ranks_the_sale_only_basis() -> None:
+    """Four drugs, ranked over complete sale revenue by `RRA-008`.
+
+    The cumulative shares are the property, not the ordering alone: a curve that
+    ranked the right products over the wrong base would still be monotonic and
+    still end at 1.0000. These four literals pin the base as well as the order,
+    and the leading share is 470.00 / 1045.00 -- the sale-only total, which the
+    dimensional comparison below deliberately does not use.
+    """
+    curve = concentration.curve_for(_pharmacy_package())
+
+    assert curve is not None
+    assert curve.distinct_values == PHARMACY_CONCENTRATION["distinct_values"]
+    assert curve.ranked_values == PHARMACY_CONCENTRATION["ranked_values"]
+    assert curve.shares == PHARMACY_CONCENTRATION["shares"]
+
+
+def test_dimensional_revenue_uses_the_signed_financial_population() -> None:
+    """The distinction concentration and comparison are governed to make differently.
+
+    `RRA-004` builds a dimensional comparison over `financial_posted`, so the
+    return subtracts from the therapeutic class that carries it: ANTIDIABETIC is
+    380.00 here and 470.00 in the curve above. Every other value is identical in
+    both, which is what makes this a governed distinction rather than a
+    discrepancy -- and asserting all three dimensions together is what proves the
+    return landed in exactly one class and one branch.
+    """
+    package = _pharmacy_package()
+
+    published = {}
+    for entry in package.comparisons:
+        if entry.metric.startswith("revenue_by_"):
+            published[entry.comparison.dimension] = {
+                bucket.label: bucket.value for bucket in entry.comparison.buckets
+            }
+
+    assert published == PHARMACY_DIMENSIONAL_REVENUE
+
+    for dimension, buckets in published.items():
+        assert sum(buckets.values()) == PHARMACY_HEADLINE["revenue"], dimension

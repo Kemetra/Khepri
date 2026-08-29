@@ -18,10 +18,10 @@ reconciliation, deterministic reruns, version checks, and no skipped required be
 |---|---|---|
 | Governance | `khepri-gov validate` | **Governance validation passed.** |
 | Ruff | `ruff check .` | **All checks passed!** |
-| Full tests | `pytest tests/` | **3,627 passed, 72 skipped, 1 xfailed** in 300s |
+| Full tests | `pytest tests/` | **3,630 passed, 72 skipped, 1 xfailed** in 290s |
 | Independent fixtures | `rra_calculation_oracle.py` imports no production aggregation helper; `build_fact_package` and `analysis.*.derive` are never called there | Held |
 | Report reconciliation | `test_cal1_pharmacy_golden.py` asserts `gross_profit == revenue - cost` against the published package, not against a restatement | Held |
-| Deterministic reruns | two full runs, separate `--basetemp`: `3627 passed, 72 skipped, 1 xfailed` both times; and see the staging digest below | Held |
+| Deterministic reruns | two full runs, separate `--basetemp`, gave identical `3627 passed, 72 skipped, 1 xfailed`; the count moved to 3,630 only when this slice's three added assertions landed, and the staging digest below is the same property across processes | Held |
 | Version checks | the two extent tests added by CAL1-12 pin both `versions.py` tables exactly | Held |
 | No skipped required behavior | see below | Held |
 
@@ -97,11 +97,35 @@ reproduces it.
 
 ### Restart / retry / recovery
 
-Worker and web were restarted mid-sequence with `docker restart`, then a fresh journey was run:
+Two separate properties, tested separately, because the first does not establish the second.
 
-- both containers returned to `running` with `RestartCount=0` — a clean restart, not a crash loop;
-- the web container accepted work again after 1 second;
-- the post-restart journey completed with **zero failures** across every stage above.
+**Containers restart cleanly.** Worker and web were restarted with `docker restart` between
+journeys. Both returned to `running` with `RestartCount=0` — a clean restart, not a crash loop — the
+web container accepted work again after 1 second, and the following journey completed with **zero
+failures** across every stage above.
+
+**A queued job survives a worker lifetime boundary and is claimed by the next worker.** The first
+attempt at this raced and proved nothing: the worker completes a job in about one second, so a
+"queue then immediately restart" sequence had already finished — `job_f8f633fd04dd7c85d2d65b7b`
+queued at `07:20:56.977` and succeeded at `07:20:57.985`, six minutes before the restart at
+`07:27:17` landed. Recorded because that run *reported* a failure, and the failure was in the test
+rather than in the product.
+
+The valid form removes the race by stopping the worker first:
+
+| Step | Observed in `rra_report_jobs` |
+|---|---|
+| worker stopped | container `exited` |
+| job queued with no worker alive | `state=queued`, `attempt_count=0`, `lease_owner=(none)` |
+| worker started | reached `succeeded` after 4 s, `attempt_count=1` |
+
+That is the claim path across a worker lifetime boundary, with the unclaimed interval read directly
+from the job row rather than inferred, and `attempt_count=1` showing it was claimed exactly once.
+
+**Two `OperationalError` classes in the worker log are environmental, not defects.** They read
+`connection to server at "172.22.0.3" … FATAL: the database system is shutting down`, and they occur
+because WSL tears down between tool invocations, taking PostgreSQL with it while the worker is
+mid-poll. `RestartCount=0` on every container throughout confirms nothing crash-looped.
 
 ### Determinism across processes
 
@@ -109,8 +133,8 @@ Worker and web were restarted mid-sequence with `docker restart`, then a fresh j
 four** independent runs — including runs separated by a container restart. `RRA-004` requires reruns
 to be byte-equivalent, and this is that property observed across process boundaries rather than
 inside one interpreter. Artifact sizes were byte-identical across restart except Excel (37,236 →
-37,235 B), which carries a workbook timestamp; the bundle digest, which is the governed identity, did
-not move.
+37,235 B); that one-byte difference was not investigated. The bundle digest, which is the governed
+identity, did not move.
 
 **CAL1-14 passes.**
 

@@ -4,9 +4,10 @@
 
 **Repository:** `Kemetra/Khepri`
 
-**Verified baseline:** `origin/main` at `aa19ff6` on 2026-08-28; CAL1 state reconciled to `#308`
-(`7088749`), which published all seven successor versions, and the nine PRs merged after it — seven
-corrections and two documentation slices — through `#325` (`aa19ff6`).
+**Verified baseline:** `origin/main` at `9e7a886` on 2026-08-29; CAL1 state reconciled to `#308`
+(`7088749`), which published all seven successor versions, the nine PRs merged after it — seven
+corrections and two documentation slices — through `#325` (`aa19ff6`), and `CAL1-11`'s compatibility
+sweep at `#328` (`9e7a886`).
 
 **Audience:** Ahmed Shaaban (owner and merge authority), Claude Code (planning and adversarial review), Codex (bounded implementation), design reviewers, and future operators.
 
@@ -37,7 +38,7 @@ Three corrections applied to the draft as a result of that review, marked in pla
 
 ## Current CAL1 reconciliation
 
-At `origin/main` `aa19ff6`, **all seven CAL1 successor versions have published.** `#308`
+At `origin/main` `9e7a886`, **all seven CAL1 successor versions have published.** `#308`
 (`7088749`) carried the seven ordered publication commits — `rra003.mapping.v3`,
 `rra004.package.v3`, `rra004.formula.v2`, then `rra008.comparison.v2`, `growth.v2`, `basket.v2`
 and `concentration.v2` — each moving one constant and adding its own compatibility row. The
@@ -63,9 +64,12 @@ contracts governed real defects, and the review rounds on `#325` alone surfaced 
 under-refusals — cases where an identity proof that could not be evaluated was reported as one
 that passed. Four findings are deferred on `#326`.
 
-`CAL1-11` through `CAL1-15` — the compatibility sweep, mutation and pharmacy golden evidence, the
-validation gate, local staging, and external review — remain open. No pharmacy golden fixture
-exists in `tests/`.
+`CAL1-11` merged at `9e7a886` (`#328`). `CAL1-12` through `CAL1-15` — mutation and pharmacy golden
+evidence, the validation gate, local staging, and external review — are complete on branch
+`cal1-12-mutation-pharmacy-evidence` (`7b19650`, `5cf2666`), a proposal awaiting the owner's merge,
+not work on `main`. A pharmacy golden fixture (`tests/test_cal1_pharmacy_golden.py`) exists on that
+branch; CodeScene is unverified this session (MCP `CONNECTION_CLOSED`) and remains a clause the pull
+request itself must settle.
 
 **The delivery unit was never ruled on.** `#301` recorded the one-PR/seven-commit model as
 explicitly proposed and awaiting an owner ruling; no `KHEPRI-DEC-*` row records one. In practice
@@ -1695,7 +1699,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 
 ---
 
-## 16. Recommended current status at `aa19ff6`
+## 16. Recommended current status at `9e7a886`
 
 *This section keeps the number it held in the archived roadmap, because active `KHEPRI-DEC-023` makes `R7-06`'s definition of done include "flipping §16's `R7` row". Like `§15`, it may not be renumbered without amending the decision that cites it.*
 
@@ -1712,7 +1716,7 @@ Never mark a task complete because it exists on a branch. Use `MERGED` only with
 | R6 Canonical authorization | MERGED | Canonical resolver and evidence merged |
 | R7 Commercial RRA bridge | MERGED | Commercial analysis bridge, routes, and consent surface merged. **Carries `#231`** — `R7-03`'s live-authorization evidence records no mutation proof that its guards can fail — and part of `#211`. See section 0.2 |
 | R8 Commercial shell | READY_FOR_PLAN | R8-08 telemetry scope remains; browser handoff may require successor authority for external partner use |
-| **CAL1 Calculation correction** | **IN_IMPLEMENTATION** | **All seven successor versions published at `#308` (`7088749`)** — `mapping.py:22` pins `rra003.mapping.v3`, `facts.py:92-93` pin `rra004.package.v3` and `rra004.formula.v2`, and the four `rra008.*` families pin their `v2` constants. The strict `xfail` on `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` was removed there, as designed. Nine PRs merged after it correcting defects in the now-governing contracts, through `#325` (`aa19ff6`). **`IN_IMPLEMENTATION`, not `MERGED`, per §15**: merged work exists on `main` and `CAL1-11` through `CAL1-15` are open — the compatibility sweep, mutation and pharmacy golden evidence (no pharmacy fixture exists in `tests/`), the validation gate, local staging, and external review. Carries `#326` and `#311`; neither blocks. **Next: `CAL1-11`**, the catalogue-wide sweep proving no slice deferred a refusal reason, caveat, wording, or surface |
+| **CAL1 Calculation correction** | **IN_IMPLEMENTATION** | **All seven successor versions published at `#308` (`7088749`)** — `mapping.py:22` pins `rra003.mapping.v3`, `facts.py:92-93` pin `rra004.package.v3` and `rra004.formula.v2`, and the four `rra008.*` families pin their `v2` constants. The strict `xfail` on `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` was removed there, as designed. Nine PRs merged after it correcting defects in the now-governing contracts, then `CAL1-11`'s catalogue-wide compatibility sweep at `9e7a886` (`#328`). **`IN_IMPLEMENTATION`, not `MERGED`, per §15**: `CAL1-12` through `CAL1-15` are complete on branch `cal1-12-mutation-pharmacy-evidence` (`7b19650`, `5cf2666`) — a proposal awaiting the owner's merge, not work on `main`. `CAL1-12` killed five of six named mutants with existing tests and closed the sixth (publication-gating over `versions.py`'s `ADMITTED_PACKAGE_PAIRS`/`ADMITTED_FAMILY_PAIRS`, previously a P1 proof gap, now mutation-verified per table) with two new exact-extent tests, added a pharmacy golden fixture, and filed one P2 finding open (`CAVEAT_CURRENCY_NOT_DECLARED` is unreachable under `rra003.mapping.v3`, needs an `RRA-003` or `RRA-009` ruling). `CAL1-13`'s validation gate passes — governance and Ruff clean, 3,630 passed/72 skipped/1 xfailed whole-repo, the calculation-contract scope alone (`test_rra00*`, `test_rra_calculation_*`, `test_cal1_*`, `test_bmk001_*`) at 1,832 passed and zero skipped, deterministic across two runs. `CAL1-14`'s staging journey passed with zero failures end to end, bilingual, restart/recovery verified, `package_digest` byte-identical across four runs. `CAL1-15` is complete except its CodeScene clause, **unverified this session** (CodeScene MCP `CONNECTION_CLOSED`, `github` MCP `401`) and left to the pull request's own gate — do not treat CodeScene as passed. No unresolved P0/P1 finding remains open. Carries `#326` and `#311`; neither blocks. **Next: the owner's merge decision on `cal1-12-mutation-pharmacy-evidence`**, plus an `RRA-003`/`RRA-009` ruling on the filed P2 currency-caveat finding |
 | **T1 Trust/catalog** | PROPOSED | Needs bounded authority; design can proceed during late CAL1 |
 | **U1 Design system** | READY_FOR_PLAN | Shell primitives exist; data/evidence component work depends on T1 contracts |
 | **OPS1 Hosted operations** | READY_FOR_PLAN | Local staging exists; environment descriptor, sizing, RTO/RPO, secrets, hosted provisioning, recovery and capacity evidence remain |
@@ -1746,10 +1750,10 @@ This is the no-hesitation queue. Do not begin a later item merely because it is 
 2. ~~**Obtain the owner ruling on the delivery unit, then open one CAL1 implementation PR carrying all seven publication commits.**~~ **Superseded by events.** `#308` (`7088749`) merged as exactly that PR — seven ordered publication commits, one constant each. The ruling itself was never recorded: `#301` left the one-PR model explicitly proposed, and no `KHEPRI-DEC-*` row settles it. **The "never merged separately" rule did not hold afterwards**: nine PRs merged individually between `7088749` and `aa19ff6`, correcting defects in the published contracts. Whether that model governs the remaining `CAL1-11`…`CAL1-15` work is an open owner question; this queue records the practice rather than resolving it.
 3. ~~**Commits 1-7 — publish the seven successor versions in governed order.**~~ **Done at `#308` (`7088749`)**, in the order this queue specified: `V-mapping`, `V-package`, `V-formula`, `V-comparison`, `V-growth`, `V-basket`, `V-concentration`. Each moved one constant and carried its own compatibility row. The prerequisites this queue tracked as open are also closed — `#303` (`a2be74e`) collected the manifest exception fields, and the strict `xfail` on `test_profile_accepts_a_complete_contract_and_stamps_mapping_v3` was removed in `#308`.
 4. ~~**The transaction-date refusal and manifest exception fields.**~~ **Done** — `#303` (`a2be74e`).
-5. **Correction work found after publication is not queued here.** Nine PRs through `#325` (`aa19ff6`) closed defects in the now-governing contracts; `#326` and `#311` carry what is deferred. Neither blocks `CAL1-11`.
-6. **`CAL1-11` — the final compatibility sweep.** This is the next actionable CAL1 task. Prove no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and close version compatibility across the assembled contract. The `#325` review round is direct evidence this sweep is needed: it found refusal prose that named a cause untrue of the input reaching it.
-7. **`CAL1-12` — mutation and pharmacy golden evidence.** No pharmacy golden fixture exists in `tests/` today. Named mutants for row-vs-transaction, unequal windows, unmatched populations, full-set concentration, sign/currency rules, and publication gating must be killed.
-8. **`CAL1-13/14/15`:** pass the assembled validation gate, run PostgreSQL/MinIO local staging end to end, and complete external review. `CAL1-15`'s acceptance — "every family sits on its single governed successor version, and no transitional version was published on `main`" — is now a property to *verify against the merged history*, not to achieve: the seven versions published at `#308` and no transitional version was published.
+5. **Correction work found after publication is not queued here.** Nine PRs through `#325` (`aa19ff6`) closed defects in the now-governing contracts; `#326` and `#311` carry what is deferred. Neither blocks `CAL1-11` or the slices after it.
+6. ~~**`CAL1-11` — the final compatibility sweep.**~~ **Done** — `9e7a886` (`#328`). Proved no slice deferred a refusal reason, caveat, bilingual wording, or surface representation, and closed version compatibility across the assembled contract, directly answering the gap the `#325` review round exposed.
+7. **`CAL1-12` — mutation and pharmacy golden evidence. Complete on a proposal branch, not on `main`.** `cal1-12-mutation-pharmacy-evidence` (`7b19650`) applied all six named mutants to merged source: row-vs-transaction, unequal windows, unmatched populations, and full-set concentration and sign rules were each killed by an existing test; publication gating over `versions.py`'s `ADMITTED_PACKAGE_PAIRS`/`ADMITTED_FAMILY_PAIRS` survived as a real P1 proof gap and is now closed by two new exact-extent tests, mutation-verified per table. A pharmacy golden fixture (`tests/test_cal1_pharmacy_golden.py`, `PHARMACY_ROWS` in `tests/rra_calculation_oracle.py`) now exists, mutation-verified against `facts._sale_only`. One P2 finding was filed open: `CAVEAT_CURRENCY_NOT_DECLARED` is unreachable under `rra003.mapping.v3` (`facts.py:1143` cannot fire without also nulling every monetary fact) — needs an `RRA-003` or `RRA-009` ruling, not more test work. Ledger: `docs/superpowers/plans/2026-08-29-cal1-12-mutation-and-pharmacy-evidence-ledger.md`.
+8. **`CAL1-13/14/15` — complete on the same proposal branch, awaiting the owner's merge; the CodeScene clause is still open.** `CAL1-13`'s validation gate passes: governance and Ruff clean, 3,630 passed/72 skipped/1 xfailed whole-repo (the 72 skips are all outside the calculation contract — Postgres-only and WSL-loopback tests — and the calculation-contract scope alone runs 1,832 passed, zero skipped), deterministic across two full reruns. `CAL1-14`'s local staging journey (upload → admission → facts → worker → HTML/PDF/Excel/evidence) passed with zero failures, bilingual artifacts confirmed, containers restarted cleanly between journeys, a job queued with no worker alive was claimed and completed by the next worker (`attempt_count=1`), and `package_digest` was byte-identical across all four runs. `CAL1-15`'s acceptance — "every family sits on its single governed successor version, and no transitional version was published on `main`" — is verified against the merged history: the seven versions published at `#308` and `versions.py`'s two tables (three package triples, eight family pairs, both now extent-tested) hold no fourth identity. No unresolved P0/P1 finding remains open. **CodeScene was not verified**: the MCP server failed to connect (`CONNECTION_CLOSED`) and `github`'s MCP returned `401`, so this is a required clause the pull request's own server-side gate must still settle — do not treat it as passed. Ledger: `docs/superpowers/plans/2026-08-29-cal1-13-14-15-gate-staging-and-review-evidence.md`.
 9. **T1 governance and T1-01 through T1-05:** metric definitions, quality summary, and evidence minimum.
 10. **R8-08 and, if required, R8-09:** activation telemetry and supported design-partner authentication.
 11. **OPS1-01:** activate the governance a provisional non-production bootstrap needs, and settle provider, region, residency, and products. No final capacity claim is made here.

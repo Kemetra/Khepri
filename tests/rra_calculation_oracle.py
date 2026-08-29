@@ -1785,8 +1785,13 @@ PHARMACY_HEADLINE = {
     # The two co-pays; every other row carries an explicit zero, which
     # `RRA-003` reads as proven absence rather than a missing value.
     "discount": Decimal("74.00"),
-    # returns = the one posted return's signed revenue.
-    "returns": Decimal("-90.00"),
+    # returns = the positive MAGNITUDE of admitted return revenue, which is what
+    # `RRA-004`:83 governs and `facts._returns_magnitude` publishes: it selects
+    # non-positive return rows and negates them. The row carries -90.00 and the
+    # published figure is therefore 90.00, not -90.00. Recorded with its sign
+    # stated explicitly because the two readings differ only by a minus sign and
+    # the headline revenue beside it *is* signed -- 955.00 is return-reduced.
+    "returns": Decimal("90.00"),
 }
 
 PHARMACY_SALE_ONLY = {
@@ -1840,12 +1845,41 @@ PHARMACY_CONCENTRATION = {
     "top_quartile_share": Decimal("0.4498"),
 }
 
-PHARMACY_CATEGORY_REVENUE = {
-    # The same sale-only basis rolled to therapeutic class. Category is derivable
-    # from product, so these must sum to the identical 1045.00 total; a pair that
-    # did not would mean one of the two rankings read a different population.
-    "ANTIDIABETIC": Decimal("470.00"),
-    "CARDIO": Decimal("260.00"),
-    "ANTIBIOTIC": Decimal("180.00"),
-    "ANALGESIC": Decimal("135.00"),
+PHARMACY_DIMENSIONAL_REVENUE = {
+    # **Signed revenue, not the sale-only basis above.** A dimensional comparison
+    # is built over `financial_posted` -- the same population as the headline --
+    # so the return subtracts from the class that carries it. Concentration is
+    # the one that ranks sale-only, which is why the two disagree on exactly one
+    # value and agree on every other:
+    #
+    #   ANTIDIABETIC = 320.00 + 150.00 - 90.00 = 380.00   (470.00 sale-only)
+    #   CARDIO       = 260.00
+    #   ANTIBIOTIC   = 180.00
+    #   ANALGESIC    = 45.00 + 90.00 = 135.00
+    #   total        = 955.00, which reconciles to PHARMACY_HEADLINE["revenue"].
+    #
+    # Recorded as its own table rather than folded into the concentration one
+    # because the difference is the governed distinction, not an inconsistency:
+    # `RRA-004` puts dimensional comparison on the financial population and
+    # `RRA-008` puts the concentration curve on complete sale revenue.
+    "category": {
+        "ANTIDIABETIC": Decimal("380.00"),
+        "CARDIO": Decimal("260.00"),
+        "ANTIBIOTIC": Decimal("180.00"),
+        "ANALGESIC": Decimal("135.00"),
+    },
+    # Product is the finer grain and rolls up to the same total.
+    "product": {
+        "INSU-PEN": Decimal("380.00"),
+        "ATOR-20": Decimal("260.00"),
+        "AMOX-500": Decimal("180.00"),
+        "PARA-500": Decimal("135.00"),
+    },
+    # Two branches, and the split is a pure partition of the signed total:
+    #   PH1 = 180.00 + 45.00 + 320.00 = 545.00
+    #   PH2 = 90.00 + 260.00 + 150.00 - 90.00 = 410.00
+    "store": {
+        "PH1": Decimal("545.00"),
+        "PH2": Decimal("410.00"),
+    },
 }
