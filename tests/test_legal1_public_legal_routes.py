@@ -399,6 +399,27 @@ def test_refund_status_does_not_introduce_future_billing_mechanics() -> None:
     assert "Detailed refund or void mechanics" not in response.text
 
 
+def test_refund_status_requires_both_authorized_bilingual_statements(monkeypatch) -> None:
+    """A partial refund status cannot publish without the private-fees statement."""
+    monkeypatch.setitem(
+        LEGAL_PUBLICATIONS,
+        "refund-and-void",
+        LegalPublication(
+            content={
+                "en": ("No general public self-service refund policy currently applies.",),
+                "ar": ("لا تسري حاليًا سياسة عامة للاسترداد الذاتي للجمهور.",),
+            }
+        ),
+    )
+
+    english = _client().get(f"{LEGAL_PREFIX}/en/refund-and-void")
+    arabic = _client().get(f"{LEGAL_PREFIX}/ar/refund-and-void")
+
+    assert english.status_code == arabic.status_code == 503
+    assert "No general public self-service refund policy" not in english.text
+    assert "لا تسري حاليًا سياسة عامة للاسترداد الذاتي للجمهور." not in arabic.text
+
+
 @pytest.mark.parametrize("language", ("en", "ar"))
 def test_footer_links_only_to_destinations_that_answer_successfully(language: str) -> None:
     """A visible legal navigation link must not lead to an unavailable page."""

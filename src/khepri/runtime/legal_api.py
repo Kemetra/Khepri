@@ -55,6 +55,18 @@ _REQUIRED_PUBLICATION_INPUTS = {
     ),
     "contact-us": frozenset({"operator_identity", "support_contact", "effective_date"}),
 }
+_REQUIRED_PAGE_CONTENT = {
+    "refund-and-void": {
+        "en": (
+            "No general public self-service refund policy currently applies.",
+            "Private commercial fees are governed by the applicable agreement and law.",
+        ),
+        "ar": (
+            "لا تسري حاليًا سياسة عامة للاسترداد الذاتي للجمهور.",
+            "تخضع الرسوم التجارية الخاصة للاتفاق والقانون المنطبقين.",
+        ),
+    },
+}
 _PLACEHOLDER_MARKER = "[PLACEHOLDER]"
 _CLAIM_PATTERNS = {
     "iso-27001": re.compile(r"\biso[- ]?27001\b", re.IGNORECASE),
@@ -161,12 +173,18 @@ def _has_complete_bilingual_content(publication: LegalPublication) -> bool:
     )
 
 
+def _has_required_page_content(publication: LegalPublication, page: str) -> bool:
+    """Keep the Refund & Void surface limited to its two authorized status statements."""
+    return publication.content == _REQUIRED_PAGE_CONTENT.get(page, publication.content)
+
+
 def _is_publishable(publication: LegalPublication, page: str) -> bool:
     """Apply every fail-closed condition for one public legal document."""
     return (
         _has_complete_bilingual_content(publication)
         and not _publication_has_prohibited_claims(publication)
         and _has_verified_required_values(publication, page)
+        and _has_required_page_content(publication, page)
     )
 
 
