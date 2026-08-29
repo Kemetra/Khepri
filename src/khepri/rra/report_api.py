@@ -33,12 +33,10 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from khepri.rra import definitions
 from khepri.rra.artifact_publication import ArtifactDocument
 from khepri.rra.datasets import ProfileCorrupted
 from khepri.rra.jobs import UnknownJobState
 from khepri.rra.packages import PackageCorrupted, PackageRefused
-from khepri.rra.rendering import wording
 from khepri.rra.reports import (
     DeliveredBundle,
     DeliveryWithheld,
@@ -153,25 +151,6 @@ def add_report_routes(
             session_id=_require_session(session_id),
             now=clock(),
         )
-
-    @app.get("/api/v1/beta/catalog/{language}")
-    def read_metric_catalog(
-        language: ArtifactLanguage,
-        session_id: BetaSessionCookie = None,
-    ) -> dict[str, object]:
-        """Every governed metric, with what it means and what it does not.
-
-        Session-scoped like its siblings even though it carries no customer
-        data: `RCA-002` keeps the authenticated surface set closed, and a route
-        that answered without a session would be a new public surface rather
-        than a new view of an existing one.
-
-        A thin delegator on purpose. `definitions` assembles the answer, and
-        inlining that here would put a second projection of the catalog beside
-        the one `RRA-011` requires be single.
-        """
-        _require_session(session_id)
-        return _metric_catalog(language)
 
     @app.get(
         "/api/v1/beta/reports/{job_id}",
@@ -412,35 +391,6 @@ def _require_session(session_id: str | None) -> str:
     if session_id is None:
         raise HTTPException(status_code=401, detail=SESSION_UNAVAILABLE)
     return session_id
-
-
-def _metric_catalog(language: str) -> dict[str, object]:
-    """The catalog as one JSON body, in the asked language.
-
-    Business and Audit tiers only. No precision, no population and no section
-    state: the first two are properties of a run rather than of a metric, and
-    the third is Internal tier, which `RRA-009` renders on no customer surface.
-    """
-    return {
-        "metrics": [
-            {
-                "code": code,
-                # The governed contract that computes it, read from that
-                # contract's own version constant. A family *label* would be a
-                # code this catalog coined, which `RRA-011` admits none of.
-                "formula_version": definitions.define_metric(code).formula_version,
-                # `None` where the metric has no customer-facing name, which is
-                # a real distinction rather than a gap: `concentration_curve`
-                # names the retained series a chart reads and is deliberately
-                # label-free, so inventing a name for it would put a heading on
-                # something no reader is ever shown as a figure.
-                "name": wording.business_metric_name(code, language),
-                "description": definitions.describe_metric(code, language),
-                "not_meant": definitions.not_meant(code, language),
-            }
-            for code in sorted(definitions.METRIC_CODES)
-        ],
-    }
 
 
 __all__ = [

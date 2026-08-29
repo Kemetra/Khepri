@@ -20,6 +20,7 @@ import pytest
 
 from khepri.rra import definitions, facts, populations
 from khepri.rra.analysis import basket, comparison, concentration, growth
+from khepri.rra.rendering import wording
 
 
 def test_each_analysis_family_states_the_metrics_it_publishes() -> None:
@@ -155,7 +156,10 @@ def test_vocabulary_attaches_only_to_codes_a_governed_module_admits() -> None:
     publishes would be exactly the invented vocabulary the derivation test
     forbids, arriving through the one door the specification left open.
     """
-    for table in (definitions.METRIC_DESCRIPTIONS, definitions.METRIC_NOT_MEANT):
+    # The tables live in `wording`, which `RRA-011`'s Scope names as their home:
+    # a description sits beside the business name `RRA-009` governs because they
+    # are one rendering surface. The bound is unchanged by where they live.
+    for table in (wording.METRIC_DESCRIPTIONS, wording.METRIC_NOT_MEANT):
         for entries in table.values():
             assert set(entries) <= set(definitions.METRIC_CODES)
 

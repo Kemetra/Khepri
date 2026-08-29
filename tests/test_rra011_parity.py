@@ -13,6 +13,7 @@ counts them, mechanically, rather than asserting the intent.
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import re
 
@@ -21,7 +22,6 @@ import pytest
 from khepri.rra import definitions, facts, populations
 from khepri.rra.analysis import basket, comparison, concentration, growth
 from khepri.rra.rendering import wording
-from tests.rra009_fixtures import rich_bundle
 
 LANGUAGES = ("en", "ar")
 
@@ -165,18 +165,16 @@ def test_an_unknown_population_refuses_and_a_family_member_does_not() -> None:
     assert definitions.define_population(concrete).is_family
 
 
-def test_the_quality_summary_states_no_score_on_any_surface() -> None:
+def test_the_quality_summary_states_no_score() -> None:
     """`RRA-011` excludes a confidence, quality or completeness measure by name.
 
-    Asserted over the rendered mapping rather than the dataclass, because a
-    score could be added to what a surface emits without touching the type.
+    Read from the dataclass rather than from a dict this test builds. An earlier
+    form assembled three hardcoded keys and then asserted those keys were not
+    forbidden ones, which could not fail: it compared a literal against itself
+    and would have passed with a `score` field sitting beside it.
     """
-    summary = definitions.summarize(rich_bundle())
-    emitted = {
-        "answered": summary.answered,
-        "caveated": summary.caveated,
-        "refused": summary.refused,
-    }
+    fields = {field.name for field in dataclasses.fields(definitions.AnalysisQualitySummary)}
+    forbidden = {"score", "confidence", "quality", "completeness", "percentage", "ratio"}
 
-    assert all(isinstance(value, int) for value in emitted.values())
-    assert not {"score", "confidence", "completeness"} & set(emitted)
+    assert not (fields & forbidden)
+    assert {"answered", "caveated", "refused"} <= fields

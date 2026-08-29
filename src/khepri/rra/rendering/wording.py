@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from khepri.rra import facts, versions
-from khepri.rra.analysis import basket, comparison, growth
+from khepri.rra.analysis import basket, comparison, concentration, growth
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
     CAVEAT_CURVE_SAMPLED,
@@ -1162,3 +1162,221 @@ def worded(category: ChartCategory, language: str) -> str:
     if not category.localize:
         return category.value
     return LABEL_WORDING[language][category.value]
+
+#: What each metric means, in a sentence a reader who is not an analyst can use.
+#:
+#: `RRA-011` authors this rather than deriving it, because no other artifact
+#: declares it: `RRA-009` governs what a metric is *called* and this governs what
+#: it *means*. The one exception the specification grants to its own derivation
+#: rule, and bounded by it -- every key here is a code some governed family
+#: already publishes, asserted at import below.
+METRIC_DESCRIPTIONS: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "revenue": "Money from sales, after returns are subtracted.",
+        "units": "How many items were sold, after returned items are subtracted.",
+        "transactions": "How many separate sales happened.",
+        "average_order_value": "Money from sales divided by the number of sales.",
+        "average_selling_price": "Money from sales divided by items sold.",
+        "cost": "What the goods sold cost you to buy.",
+        "gross_profit": "Money from sales minus what those goods cost.",
+        "gross_margin": "Gross profit as a share of sales.",
+        "discount": "Money taken off the stated price.",
+        "returns": "Money refunded on returned goods.",
+        "growth_revenue_change": "How much sales money changed between the two periods.",
+        "growth_price_effect": "The part of that change explained by prices and product mix.",
+        "growth_volume_effect": "The part of that change explained by selling more or fewer items.",
+        "revenue_delta_absolute": "The difference in sales money between the two periods.",
+        "revenue_delta_percent": "That difference as a percentage of the earlier period.",
+        "basket_items_per_transaction": "How many items an average sale contains.",
+        "basket_attach_rate": "The share of sales that included this product or category.",
+        "concentration_curve": "How sales are spread across products, largest to smallest.",
+        "concentration_distinct_values": "How many products or branches were counted.",
+        "concentration_ranked_values": "How many of those could be ranked.",
+        "concentration_top_decile_share": "The share of sales held by the top tenth.",
+        "concentration_top_quartile_share": "The share of sales held by the top quarter.",
+    },
+    LANGUAGE_ARABIC: {
+        "revenue": "الأموال الناتجة عن المبيعات بعد خصم المرتجعات.",
+        "units": "عدد الأصناف المبيعة بعد خصم الأصناف المرتجعة.",
+        "transactions": "عدد عمليات البيع المنفصلة.",
+        "average_order_value": "أموال المبيعات مقسومة على عدد عمليات البيع.",
+        "average_selling_price": "أموال المبيعات مقسومة على عدد الأصناف المبيعة.",
+        "cost": "تكلفة شراء البضاعة التي بيعت.",
+        "gross_profit": "أموال المبيعات ناقص تكلفة تلك البضاعة.",
+        "gross_margin": "إجمالي الربح كنسبة من المبيعات.",
+        "discount": "المبالغ المخصومة من السعر المعلن.",
+        "returns": "المبالغ المستردة عن البضاعة المرتجعة.",
+        "growth_revenue_change": "مقدار تغير أموال المبيعات بين الفترتين.",
+        "growth_price_effect": "الجزء من ذلك التغير الذي تفسره الأسعار ومزيج المنتجات.",
+        "growth_volume_effect": "الجزء من ذلك التغير الذي يفسره بيع أصناف أكثر أو أقل.",
+        "revenue_delta_absolute": "الفرق في أموال المبيعات بين الفترتين.",
+        "revenue_delta_percent": "ذلك الفرق كنسبة مئوية من الفترة الأسبق.",
+        "basket_items_per_transaction": "عدد الأصناف التي تتضمنها عملية البيع الوسطية.",
+        "basket_attach_rate": "نسبة عمليات البيع التي تضمنت هذا المنتج أو الفئة.",
+        "concentration_curve": "كيف تتوزع المبيعات على المنتجات، من الأكبر إلى الأصغر.",
+        "concentration_distinct_values": "عدد المنتجات أو الفروع التي جرى احتسابها.",
+        "concentration_ranked_values": "عدد ما أمكن ترتيبه منها.",
+        "concentration_top_decile_share": "حصة أعلى عُشر من المبيعات.",
+        "concentration_top_quartile_share": "حصة أعلى ربع من المبيعات.",
+    },
+}
+
+#: What each metric is *not*, stated because the wrong reading is the likely one.
+#:
+#: An unsupported interpretation names the specific mistake a metric invites,
+#: not a general hedge. `average_order_value` divides by sale transactions, so a
+#: reader taking it as revenue per customer is wrong in a way no caveat on the
+#: figure would tell them -- one customer buying three times is three sales.
+#:
+#: `RRA-011` bounds this: it states what a metric does not mean and never
+#: redefines what it does. Where wording and computation could be read as
+#: disagreeing, `RRA-004` and `RRA-008` govern and the wording is wrong.
+METRIC_NOT_MEANT: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "revenue": "Not money received. A sale recorded today counts today, whenever it is paid.",
+        "units": "Not stock on hand. This counts what was sold, not what remains.",
+        "transactions": "Not customers. One customer buying three times is three sales.",
+        "average_order_value": (
+            "Not revenue per customer. It divides by sales, and one customer can make several."
+        ),
+        "average_selling_price": (
+            "Not a price list. It averages everything sold, so product mix moves it as much as "
+            "pricing."
+        ),
+        "cost": "Not total spending. Only the cost of goods that sold is counted here.",
+        "gross_profit": "Not profit. Rent, salaries and other running costs are not subtracted.",
+        "gross_margin": "Not net margin, for the same reason: running costs are not in it.",
+        "discount": "Not lost revenue. A discount may have been what made the sale happen.",
+        "returns": (
+            "Not a quality measure on its own. A return can follow a policy rather than a fault."
+        ),
+        "growth_revenue_change": "Not a forecast. It compares two periods that already happened.",
+        "growth_price_effect": (
+            "Not a pricing result. Selling more of an expensive product moves this with no price "
+            "change."
+        ),
+        "growth_volume_effect": "Not customer count. It follows items sold, not who bought them.",
+        "revenue_delta_absolute": "Not a trend. Two periods are two points, not a direction.",
+        "revenue_delta_percent": (
+            "Not comparable across different-sized periods. A small base makes a small change look "
+            "large."
+        ),
+        "basket_items_per_transaction": (
+            "Not distinct products. Three of one item is three items here."
+        ),
+        "basket_attach_rate": (
+            "Not a cross-sell result. It counts sales containing the value, not sales it was added "
+            "to."
+        ),
+        "concentration_curve": (
+            "Not a ranking of importance. It ranks by sales money and nothing else."
+        ),
+        "concentration_distinct_values": (
+            "Not your catalogue. Only values that appear in sales are counted."
+        ),
+        "concentration_ranked_values": (
+            "Not equal to the count above when some values could not be ranked."
+        ),
+        "concentration_top_decile_share": (
+            "Not a health measure. Whether concentration is good depends on your business."
+        ),
+        "concentration_top_quartile_share": "Not a health measure, for the same reason.",
+    },
+    LANGUAGE_ARABIC: {
+        "revenue": "ليست الأموال المحصلة. عملية البيع المسجلة اليوم تُحتسب اليوم مهما تأخر سدادها.",
+        "units": "ليست المخزون المتاح. هذا عدد ما بيع لا ما تبقى.",
+        "transactions": "ليست عدد العملاء. العميل الذي يشتري ثلاث مرات هو ثلاث عمليات بيع.",
+        "average_order_value": (
+            "ليس الإيراد لكل عميل. القسمة على عمليات البيع، والعميل الواحد قد يجري عدة عمليات."
+        ),
+        "average_selling_price": (
+            "ليس قائمة أسعار. هو متوسط عبر كل ما بيع، فمزيج المنتجات يحركه بقدر التسعير."
+        ),
+        "cost": "ليست إجمالي المصروفات. تُحتسب هنا تكلفة البضاعة التي بيعت فقط.",
+        "gross_profit": "ليس صافي الربح. الإيجار والرواتب وبقية مصاريف التشغيل غير مخصومة.",
+        "gross_margin": "ليس هامش الربح الصافي، للسبب نفسه: مصاريف التشغيل ليست ضمنه.",
+        "discount": "ليس إيراداً ضائعاً. قد يكون الخصم هو ما جعل عملية البيع تحدث.",
+        "returns": "ليست مقياس جودة بمفردها. قد يكون الإرجاع اتباعاً لسياسة لا نتيجة عيب.",
+        "growth_revenue_change": "ليس تنبؤاً. هو مقارنة بين فترتين وقعتا بالفعل.",
+        "growth_price_effect": (
+            "ليس نتيجة قرار تسعير. بيع كمية أكبر من منتج مرتفع السعر يحركه دون تغير الأسعار."
+        ),
+        "growth_volume_effect": "ليس عدد العملاء. يتبع الأصناف المبيعة لا من اشتراها.",
+        "revenue_delta_absolute": "ليس اتجاهاً. الفترتان نقطتان لا مسار.",
+        "revenue_delta_percent": (
+            "غير قابل للمقارنة بين فترات مختلفة الحجم. القاعدة الصغيرة تجعل التغير الصغير نسبة "
+            "كبيرة."
+        ),
+        "basket_items_per_transaction": (
+            "ليست منتجات مختلفة. ثلاث قطع من صنف واحد هي ثلاثة أصناف هنا."
+        ),
+        "basket_attach_rate": (
+            "ليست نتيجة بيع متقاطع. تحتسب عمليات البيع التي تضمنت القيمة لا التي أُضيفت فيها."
+        ),
+        "concentration_curve": "ليس ترتيباً حسب الأهمية. يرتب حسب أموال المبيعات فقط.",
+        "concentration_distinct_values": "ليس كتالوجك. تُحتسب القيم التي تظهر في المبيعات فقط.",
+        "concentration_ranked_values": "لا يساوي العدد أعلاه حين يتعذر ترتيب بعض القيم.",
+        "concentration_top_decile_share": "ليست مقياس صحة. كون التركز جيداً يعتمد على نشاطك.",
+        "concentration_top_quartile_share": "ليست مقياس صحة، للسبب نفسه.",
+    },
+}
+
+
+#: Every metric any governed contract publishes, which is what the two tables
+#: above must cover. Derived here rather than imported from `definitions`, which
+#: imports this module: the union is the same one that module computes, read
+#: from the same five governed exports.
+_CATALOGUED_METRIC_CODES = frozenset(
+    set(facts.GOVERNED_METRICS)
+    | set(comparison.GOVERNED_METRICS)
+    | set(growth.GOVERNED_METRICS)
+    | set(basket.GOVERNED_METRICS)
+    | set(concentration.GOVERNED_METRICS)
+)
+
+
+def _assert_vocabulary_complete() -> None:
+    """Both tables cover every catalogued metric, in both languages, and no others.
+
+    The language set is asserted first, and separately. Checking only the
+    languages a table happens to contain cannot see one removed: a table with
+    Arabic deleted iterates once, finds English complete, and imports cleanly
+    while every Arabic lookup raises `KeyError` at render time. Every other
+    guard in this module opens the same way for the same reason.
+    """
+    for table_name, table in (
+        ("descriptions", METRIC_DESCRIPTIONS),
+        ("not_meant", METRIC_NOT_MEANT),
+    ):
+        if set(table) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+            message = f"{table_name} must cover every governed language"
+            raise RuntimeError(message)
+    wrong = [
+        f"{table_name}/{language}"
+        for table_name, table in (
+            ("descriptions", METRIC_DESCRIPTIONS),
+            ("not_meant", METRIC_NOT_MEANT),
+        )
+        for language, entries in table.items()
+        if set(entries) != _CATALOGUED_METRIC_CODES
+    ]
+    if wrong:
+        message = f"every catalogued metric needs vocabulary in every language: {wrong}"
+        raise RuntimeError(message)
+
+
+_assert_vocabulary_complete()
+
+
+_assert_vocabulary_complete()
+
+
+
+def metric_description(metric: str, language: str) -> str:
+    """What this metric means, refusing an unknown code or language."""
+    return METRIC_DESCRIPTIONS[language][metric]
+
+
+def metric_not_meant(metric: str, language: str) -> str:
+    """The reading this metric invites and does not support."""
+    return METRIC_NOT_MEANT[language][metric]
