@@ -9,24 +9,51 @@ merge of this assessment the approval.
 
 ---
 
-## Condition 1 — catalog merged and `T1-08`'s proofs pass
+## Condition 1 — catalog merged and `T1-08`'s proofs pass — **DOES NOT HOLD**
 
 > *"`RRA-011`'s catalog and evidence surfaces are merged to `main` and pass `T1-08`'s parity,
 > fail-closed, and no-duplicate-truth tests."*
 
-Measured on the merged tree at `46b2d56`, not on a branch.
+The proofs pass. The catalog is not reachable.
 
-| Gate | Result |
+| Gate on `46b2d56` | Result |
 |---|---|
 | `khepri-gov validate` | Governance validation passed |
 | `ruff check .` | All checks passed |
 | `pytest` | **3,797 passed**, 72 skipped, 1 xfailed |
 
-`T1`'s five merges are `#334` (`a91fa63`), `#337` (`f97193d`), `#338` (`4e448ed`) and `#340`
-(`46b2d56`). `T1-08`'s three properties live in `tests/test_rra011_parity.py` and ran inside that
-suite.
+`T1`'s four merges are `#334` (`a91fa63`), `#337` (`f97193d`), `#338` (`4e448ed`) and `#340`
+(`46b2d56`). `T1-08`'s three properties live in `tests/test_rra011_parity.py` and ran in that suite.
 
-**Condition 1 holds.**
+**But `definitions.py` has no production consumer.** Verified two ways, because attribute-access grep
+alone would miss a bare from-import:
+
+```bash
+grep -rn "definitions\." src/khepri/ | grep -v src/khepri/rra/definitions.py
+grep -rn "definitions import\|import definitions" src/khepri/
+```
+
+Neither returns a hit outside `infra/compute.py`, where the word means an ECS task definition.
+`define_metric`, `describe_metric`, `summarize` and `availability` are called by nothing that ships.
+
+`RRA-011`:53-54 places three read routes in scope — *"read routes exposing the registry, the summary,
+and a fact's evidence, session scoped exactly as their existing siblings are."* The third is merged
+and was exercised in condition 4 below. The first two have no route, because `cc042e3` withdrew the
+catalog route inside `#334`.
+
+**That withdrawal was not a governance violation**: lines 50-58 sit under `RRA-011`'s **Scope**
+heading, which names the files a slice may touch, not a requirement it must satisfy. What it means is
+narrower and still decisive — **`T1-05` is incomplete against its own roadmap output**, *"Build metric
+detail and evidence routes"*. The evidence route exists; metric detail does not.
+
+So a test count is the wrong evidence for this condition, and offering one here repeated a known
+failure: a module's own tests passing while nothing calls it. Four merges and 3,797 passing tests do
+not make a catalog a customer can reach.
+
+**Condition 1 does not hold.** The remedy is a `T1-05` slice adding the metric-detail read route to
+`report_api.py`, session-scoped like its siblings. It is deliberately not built here: this is a
+docs-only ledger, and building the thing whose absence it records would be self-certifying the
+condition it failed.
 
 ---
 
@@ -34,20 +61,42 @@ suite.
 
 > *"The journey and shell entry points render without widening `RRA-010` or `RCA-002`."*
 
-A static check, and the strongest available: not "the widening was reviewed" but "no journey surface
-changed at all since the last staging evidence".
+**The first form of this check was invalid, and the correction changed the answer.** It ran
+`git diff` over `src/khepri/rra/routes/`, `templates/` and `static/` — three paths that **do not
+exist**. Git returns an empty diff and exit 0 for an absent pathspec, so the result was
+indistinguishable from "nothing changed" while measuring nothing at all. Found in review on `#342`.
 
+The governed paths are named by the specifications themselves: `RRA-010`:21-25 names
+`src/khepri/rra/journey/templates/`, `journey/assets/journey.css`, `journey/assets/*.js` and the
+presentation-only copy keys in `journey/copy.py`; the shell lives under `src/khepri/runtime/`.
+
+Every path below was confirmed to exist before the diff was read.
+
+```bash
+git diff --stat f320c17...46b2d56 -- \
+  src/khepri/rra/journey/templates/ \
+  src/khepri/rra/journey/assets/ \
+  src/khepri/rra/journey/copy.py \
+  src/khepri/rra/journey/routes.py
 ```
-git diff --stat f320c17...46b2d56 -- src/khepri/rra/routes/ \
-                                     src/khepri/rra/templates/ \
-                                     src/khepri/rra/static/
-```
 
-Empty. `T1`'s four merges touched `definitions.py`, `wording.py`, `facts.py`, `bundle.py` and the
-four `analysis/` families, plus the `RCA-003` legal surfaces under `runtime/`. No route, template or
-static asset of the beta journey moved.
+Empty. **`RRA-010`'s named scope is byte-unchanged.**
 
-**Condition 3 holds.**
+The shell is not. `src/khepri/runtime/` gained 472 lines across five files:
+
+| File | Origin |
+|---|---|
+| `legal_api.py`, `legal_copy.py` | `#331` (`9161b50`) |
+| `legal_templates/legal.html.j2`, `legal_page.html.j2` | `#331` |
+| `wiring.py` (+2) | `#331`, mounting the above |
+
+Those are the public legal and trust pages, authorized by **active `RCA-003`** — FR-062 closes the
+surface set, FR-063 requires both languages, FR-064 forbids authentication. They are a separate
+authorized surface, not a widening of `RRA-010`, whose scope is the beta journey's presentation, and
+not of `RCA-002`, which excludes changes to *the beta journey's* routes, templates and assets
+(`RCA-002`:134).
+
+**Condition 3 holds** — now on evidence that could have failed.
 
 ---
 
@@ -123,10 +172,11 @@ symmetric-removal test — which ran in condition 1's suite.
 surfaces" is therefore the rendered evidence HTML that carries governed vocabulary, not an endpoint,
 and that is what the table above exercises.
 
-`AnalysisQualitySummary`'s new identity lists (`#338`) and `availability()` (`#340`) render on **no**
-surface: the Impact Preview journey step is AUTHORITY-BLOCKED under `RRA-010`, which excludes new
-journey phases. They are data contracts, held by their own tests, and are correctly absent from this
-run.
+`AnalysisQualitySummary`'s identity lists (`#338`) and `availability()` (`#340`) are absent from this
+run for **two** reasons, and only one of them is by design. The Impact Preview journey step is
+AUTHORITY-BLOCKED under `RRA-010`, so nothing may render the availability contract yet -- that is the
+designed one. The other is condition 1's finding: neither has a read route or any other production
+caller, so there is no surface that *could* carry them even where governance permits it.
 
 **Condition 4 holds for what it can hold**, with the channel limitation stated above rather than
 absorbed.
@@ -160,10 +210,19 @@ pair and the MinIO material. Recorded because the failure looks like a build def
 
 | Condition | Status |
 |---|---|
-| 1 — catalog merged, `T1-08` proofs pass | **Holds** — measured on `46b2d56` |
+| 1 — catalog merged, `T1-08` proofs pass | **Does not hold** — proofs pass, catalog has no consumer |
 | 2 — `CAL1` complete, two `P2`s non-blocking | **Unchanged**, and cross-checked by the oracle |
-| 3 — no widening of `RRA-010` / `RCA-002` | **Holds** — journey surfaces byte-unchanged |
+| 3 — no widening of `RRA-010` / `RCA-002` | **Holds** — `RRA-010`'s named scope byte-unchanged |
 | 4 — full journey, both languages | **Holds**, with the channel limitation stated |
 
-Whether these four suffice to record `M2` as reached in its local-only form is the owner's call, and
-merging this ledger is that decision.
+**`M2` is not reachable on this tree.** Condition 1 fails, so three of four holding is not a partial
+pass -- §7 requires all four. What remains is one slice: the `T1-05` metric-detail read route in
+`report_api.py`, session-scoped like its siblings, after which condition 1 can be re-measured against
+a catalog something calls.
+
+Two of this ledger's own findings came from review rather than from the run, and both were checks
+that reported success while measuring nothing -- an empty `git diff` over paths that do not exist,
+and a passing test count for a module with no caller. They are recorded rather than quietly
+corrected, because the failure mode is the interesting part.
+
+Whether this assessment is accepted is the owner's call, and merging it is that decision.
