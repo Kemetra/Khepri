@@ -17,11 +17,20 @@ described at all is decided in `reports`, which owns the governed vocabularies
 and the fail-closed guards. Nothing here reads a store, builds a pipeline, or
 renders a surface.
 
-**Responses carry no customer content.** Not a figure, a caveat, a safe label, a
-filename, a storage location, or a credential. The bundle route in particular
-serves a *manifest* of what was published rather than the report: a download
-location would be both a storage location and a credential, and RRA-007 excludes
-both from anything this surface emits.
+**The report routes carry no customer content.** Not a figure, a caveat, a safe
+label, a filename, a storage location, or a credential. The bundle route in
+particular serves a *manifest* of what was published rather than the report: a
+download location would be both a storage location and a credential, and RRA-007
+excludes both from anything this surface emits.
+
+**The catalog routes are the deliberate exception, and a narrow one.** RRA-011
+governs them, and they do serve reason and caveat codes, the bilingual wording
+those codes carry, and the evidence path behind one citation -- that is the
+point of a catalog. What they still never serve is a figure: no value, no
+rendered number, no storage location, and no Internal-tier field. They answer
+what a code *means* and what a package reconciled against, never what it
+measured. A route here that returned a figure would be an RRA-006 surface
+wearing this one's name.
 """
 
 from __future__ import annotations
@@ -516,6 +525,11 @@ _REPORT_REFUSALS: tuple[tuple[type[Exception], int, str | None], ...] = (
     (CrossSessionAccessDenied, 401, SESSION_UNAVAILABLE),
     (ConsentRequired, 403, None),
     (ReportPackageMissing, 404, None),
+    # A code the catalog does not admit is absent, not forbidden. `UnknownCode`
+    # is its fail-closed refusal -- it never degrades to the code string and
+    # never returns `None` -- so it belongs in this table rather than in a
+    # per-route `except`, for the reason stated above it.
+    (definitions.UnknownCode, 404, None),
     (PackageRefused, 409, None),
     (PackageCorrupted, 503, "Stored fact package is unavailable."),
     (ProfileCorrupted, 503, "Stored fact package is unavailable."),
@@ -820,16 +834,21 @@ def _package_evidence(package: FactPackage) -> dict[str, object]:
 
 
 def _defined[Definition](read: Callable[[], Definition]) -> Definition:
-    """A governed definition, or a 404 where the catalog admits no such code.
+    """A governed definition, or the status its refusal maps to.
 
-    `UnknownCode` is the catalog's fail-closed refusal -- it never degrades to the
-    code string or returns `None` -- and a code the registry does not admit is
-    absent rather than forbidden.
+    Routed through `_refusal_for` rather than catching `UnknownCode` here, so the
+    catalog's refusal is mapped in the one table this module maps every other
+    governed refusal in. A second `except` beside that table is how the two come
+    to disagree about a status.
+
+    Distinct from `_found` only in that a definition lookup raises rather than
+    returning `None`: the catalog refuses an unadmitted code and never degrades
+    it to a `None` a caller might read as "no such thing yet".
     """
     try:
         return read()
-    except definitions.UnknownCode as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _refusal_for(error) from error
 
 
 __all__ = [

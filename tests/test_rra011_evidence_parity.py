@@ -406,3 +406,26 @@ def test_the_catalog_routes_are_absent_without_a_package_reader() -> None:
     answer = client.get("/api/v1/beta/catalog/metrics/revenue/en")
 
     assert answer.status_code == 404
+
+
+def test_no_catalog_response_carries_a_figure_value() -> None:
+    """The catalog says what a code means, never what it measured.
+
+    `FigureCell` carries the rendered `text` of a figure, and the evidence route
+    holds a list of those cells while it works. Only `figure_id` is taken from
+    them. A response carrying `text` would be an `RRA-006` report surface wearing
+    the catalog's name -- and it would be a second place a number is published,
+    formatted by something other than the renderer that owns formatting.
+    """
+    client, _ = _harness()
+    bundle = ReportBundle.of(package_for(ROWS, published=True))
+    cells = build_cells(bundle, "en")
+
+    body = client.get(f"{EVIDENCE}/{cells[0].citation_id}/evidence/en").json()
+
+    # Compared field by field rather than as a substring of the whole document:
+    # a rendered figure may be "2", which occurs inside a digest by coincidence
+    # and would make a substring test fail on a response carrying no figure.
+    assert "text" not in body
+    assert not any(isinstance(value, str) and value in {c.text for c in cells}
+                   for value in body.values())
