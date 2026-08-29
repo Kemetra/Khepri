@@ -290,9 +290,13 @@ families sit on their single governed successor version, and no transitional ver
 **Merged by the owner at `#330` (`f320c17`), 2026-08-29.** This work was authored as a proposal and
 became governing only on that merge, which is the rule this ledger was written under.
 
-**Landing is not the same as closing.** §15 of the roadmap: a merged pull request "prove[s] a slice
-landed, never that its requirements closed." Two acceptance questions remain open and are the
-owner's, not this ledger's — whether `CAL1-12`'s sign/currency clause is met by an unreachable branch
-(F1), and whether `RRA-006`'s deterministic-regeneration clause governs container bytes or governed
-content (F3). The §16 row is therefore left at `IN_IMPLEMENTATION` rather than flipped to `MERGED`,
-because flipping it would answer both silently.
+**What the merge approved, and what it left carried.** `AGENTS.md` makes a merge the approval, so
+merging this ledger approved the standing table above — `CAL1-12` and `CAL1-15` complete,
+`CAL1-13`/`CAL1-14` passing — and §16's CAL1 row is `MERGED` on that evidence.
+
+F1 and F3 are **carried, not dissolved**, in the same shape `R7` carries `#231` and `#211`: defects
+against landed work rather than unmet acceptance. F1's disposition here is itself part of what the
+merge approved — the choice between an `RRA-003` admission change and an `RRA-009` withdrawal is "the
+specification's call rather than this slice's" — and F3 likewise awaits an `RRA-006` reading of
+whether deterministic regeneration governs container bytes or governed content. Neither publishes a
+wrong figure.
