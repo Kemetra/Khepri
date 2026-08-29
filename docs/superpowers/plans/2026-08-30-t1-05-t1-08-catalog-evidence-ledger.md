@@ -7,7 +7,7 @@ that wires it, which is why every guard below drives the HTTP boundary or an ext
 than calling the catalog functions directly.
 
 **Run date:** 2026-08-30. **Tree:** `feat/t1-05-catalog-evidence-routes`, `main` (`46b2d56`) plus
-five commits.
+seven commits.
 
 **Authority:** `RRA-011`, active. Its Scope names three files —`definitions.py`, `report_api.py`,
 `rendering/wording.py` — and excludes `src/khepri/rra/journey/` as `RRA-010`'s and the shell surface
@@ -48,7 +48,7 @@ pairing them. `test_the_audit_region_names_no_fact_identifier` pins the reasonin
 cannot add the field back as a convenience.
 
 **F2 — the routes are session scoped, not job scoped, and no governed record could make them
-otherwise.** *(CLOSED for this slice; the underlying gap is filed as F5)*
+otherwise.** *(CLOSED for this slice; the underlying gap is filed as F6)*
 
 The plan keyed these on `{job_id}` by analogy to `report_api.py`'s siblings and reconciled the
 rebuilt package against `DeliveryRecord.package_version`. That check cannot discriminate: two
@@ -247,11 +247,11 @@ serve the delivered artifact.
 |---|---|
 | `uv run khepri-gov validate` | **Governance validation passed.** |
 | `uv run ruff check .` | **All checks passed!** |
-| `uv run pytest` | **3812 passed, 72 skipped, 1 xfailed** |
+| `uv run pytest` | **3813 passed, 72 skipped, 1 xfailed** |
 
 The baseline on `main` at `46b2d56` is **3797 passed, 72 skipped, 1 xfailed**, measured this session
 rather than quoted: `CAL1-13`'s recorded 3,631 predates `#334`, `#338` and `#340`. The delta is
-15 — 14 in the new evidence module and one new scan-reach test — and **skips are unchanged at 72**,
+16 — 15 in the new evidence module and one new scan-reach test — and **skips are unchanged at 72**,
 which is the half that matters, since a rise would mean a test stopped running rather than started
 passing.
 
@@ -261,6 +261,17 @@ passing.
 |---|---|
 | `tests/test_rra011_evidence_parity.py` (new) | **10.00** |
 | `src/khepri/rra/report_api.py` (modified) | **9.37**, its baseline unchanged |
+
+**The server gate caught a file the local pre-flight had not scored.** `test_rra011_parity.py` fell
+10.00 → 9.39 on "Deep, Nested Complexity": widening the scan put a second pattern loop inside the
+file loop, taking `_hand_listed_sets` to nesting depth 4, one past Python's threshold. The local
+check had scored `report_api.py` and the new test module — the two files the slice was *about* — and
+not the third file the same commit edited. Fixed by splitting `_listed_in` from the walk, which is
+the honest decomposition anyway: one function asks what a module declares, the other which modules
+exist. Back to 10.00, and the nested-list mutant is still killed after the split. Recorded because
+the lesson is about *what was measured* rather than about the metric: the gate scores every changed
+file, and all seven are now scored — `api.py` 7.52 and unchanged (two lines, neither adding a
+branch), `reports.py` and both `wiring.py` at 10.00.
 
 The first draft of the routes scored **8.64** — a decline, which the gate forbids. Two findings were
 mine and both were fixed by splits the design already wanted: `_package_evidence` separates
