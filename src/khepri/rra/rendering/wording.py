@@ -250,6 +250,13 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "units_by_category": "Units sold",
         "revenue_by_store": "Revenue",
         "units_by_store": "Units sold",
+        # `channel` is the fourth `COMPARISON_DIMENSIONS` entry and was missed
+        # the same way the two above were. The parity guard could not catch it:
+        # it compares the two language tables to each other, so an entry absent
+        # from both is symmetric and passes. The completeness guard below closes
+        # that by checking against the emitted set instead.
+        "revenue_by_channel": "Revenue",
+        "units_by_channel": "Units sold",
     },
     LANGUAGE_ARABIC: {
         "basket_items_per_transaction": "عدد الأصناف لكل عملية بيع",
@@ -268,6 +275,8 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "units_by_category": "الوحدات المبيعة",
         "revenue_by_store": "الإيرادات",
         "units_by_store": "الوحدات المبيعة",
+        "revenue_by_channel": "الإيرادات",
+        "units_by_channel": "الوحدات المبيعة",
     },
 }
 
@@ -302,12 +311,26 @@ def _assert_derived_metric_wording_complete() -> None:
     here would create exactly the hand-maintained second truth this table's own
     comment warns about.
 
-    So two properties are checked, and they are the two that can break. Parity,
-    because `business_metric_name` falls back here per language and an entry
-    added in one language only would name a figure in English and leave it
-    unnamed in Arabic. And disjointness, because a code in both tables makes
+    So three properties are checked, and they are the ones that can break.
+    Parity, because `business_metric_name` falls back here per language and an
+    entry added in one language only would name a figure in English and leave it
+    unnamed in Arabic. Disjointness, because a code in both tables makes
     `METRIC_WORDING` win silently -- the derived entry would sit there looking
     authoritative and never render.
+
+    And coverage of the composed series codes, because parity is symmetric: a
+    code absent from *both* language tables passes it. `revenue_by_channel` and
+    `units_by_channel` were missing exactly that way -- emitted by
+    `_comparisons` whenever a mapping resolves a channel, and rendered as
+    `None`, so a channel row stated its label twice with no word saying which
+    number was money and which was a count. That is the same ambiguity the
+    by-category and by-store omission caused before it.
+
+    The expectation is still not a hardcoded list: it is composed from
+    `SERIES_MEASURES` and `SERIES_DIMENSIONS`, the constants the builders
+    themselves iterate, so a new dimension fails here rather than rendering
+    nameless. Only the composed codes are required -- the rest of the table is
+    still the complement this docstring describes, with no list to restate.
     """
     if set(DERIVED_METRIC_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
         raise RuntimeError("derived metric names must cover every governed language")
@@ -317,6 +340,35 @@ def _assert_derived_metric_wording_complete() -> None:
     overlap = set(languages[0]) & _GOVERNED_METRIC_CODES
     if overlap:
         message = f"a metric is named in two tables: {sorted(overlap)}"
+        raise RuntimeError(message)
+    composed = {
+        f"{measure}_by_{dimension}"
+        for measure in facts.SERIES_MEASURES
+        for dimension in facts.SERIES_DIMENSIONS
+    }
+    unnamed = composed - set(languages[0])
+    if unnamed:
+        # A dimension admitted to `SERIES_DIMENSIONS` and named nowhere makes
+        # every measure over it unnamed at once, and `_assert_dimension_names_complete`
+        # states that root cause precisely. This guard runs first only because of
+        # where the tables sit, so it names the dimension when one explains the
+        # whole set rather than reporting the composed codes as separate omissions.
+        dimensions = {code.rpartition("_by_")[2] for code in unnamed}
+        undimensioned = {
+            dimension
+            for dimension in dimensions
+            if all(
+                f"{measure}_by_{dimension}" in unnamed
+                for measure in facts.SERIES_MEASURES
+            )
+        }
+        if undimensioned:
+            message = (
+                "every governed series dimension needs a named metric: "
+                f"{sorted(undimensioned)}"
+            )
+            raise RuntimeError(message)
+        message = f"a composed series metric has no business name: {sorted(unnamed)}"
         raise RuntimeError(message)
 
 

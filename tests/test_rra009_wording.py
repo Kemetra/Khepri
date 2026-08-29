@@ -53,6 +53,8 @@ from khepri.rra.facts import (
     REASON_RECONCILIATION_FAILED,
     REASON_REPEATED_ROW_SIGNATURE,
     REASON_ZERO_DENOMINATOR,
+    SERIES_DIMENSIONS,
+    SERIES_MEASURES,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.rendering import wording
@@ -777,6 +779,58 @@ def test_derived_metric_guard_raises_when_a_metric_is_named_in_two_tables(
     monkeypatch.setattr(wording, "DERIVED_METRIC_WORDING", broken)
 
     with pytest.raises(RuntimeError, match="two tables"):
+        wording._assert_derived_metric_wording_complete()
+
+
+def test_every_composed_series_metric_is_named_in_both_languages() -> None:
+    """A series code the builders emit must render a name, not `None`.
+
+    `revenue_by_channel` and `units_by_channel` were missing from both language
+    tables. `_comparisons` emits them whenever a mapping resolves a channel, so
+    `business_metric_name` returned `None` and the HTML and Excel renderers
+    showed the same channel label for both measures -- a reader saw one heading
+    twice, a currency amount beside one and a count beside the other, with
+    nothing saying which was which.
+
+    Asserted over the composed set rather than a list of codes, so a dimension
+    added to `SERIES_DIMENSIONS` fails here rather than rendering nameless.
+    """
+    composed = {
+        f"{measure}_by_{dimension}"
+        for measure in SERIES_MEASURES
+        for dimension in SERIES_DIMENSIONS
+    }
+
+    unnamed = {
+        code
+        for code in composed
+        for language in REQUIRED_LANGUAGES
+        if wording.business_metric_name(code, language) is None
+    }
+
+    assert unnamed == set()
+
+
+def test_derived_metric_guard_raises_when_a_series_metric_is_unnamed(
+    monkeypatch,
+) -> None:
+    """The omission parity cannot see, because it is symmetric.
+
+    Removed from *both* languages, so the parity check above passes and this
+    proves the coverage check rather than re-proving parity. That symmetric
+    absence is exactly the state the channel names shipped in.
+    """
+    broken = {
+        language: {
+            code: name
+            for code, name in entries.items()
+            if code != "revenue_by_channel"
+        }
+        for language, entries in wording.DERIVED_METRIC_WORDING.items()
+    }
+    monkeypatch.setattr(wording, "DERIVED_METRIC_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="no business name"):
         wording._assert_derived_metric_wording_complete()
 
 
