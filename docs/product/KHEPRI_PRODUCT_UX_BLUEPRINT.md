@@ -882,7 +882,7 @@ anti-reference for these surfaces. No high-fidelity mockups are produced here.
 | Tombstones | history survives content | `W1-07`; fields undefined | `G2` / `G3` | **AUTHORITY-BLOCKED** |
 | Deletion action | owner-only | `W1-07` | a **registered** artifact (future active `G3`) | **AUTHORITY-BLOCKED** |
 | Activity context | contextual only | `W1-09` | `G3` | **CONTRACT-BLOCKED** |
-| Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **partly SHIPPED**; metric detail **CONTRACT-BLOCKED** |
+| Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **SHIPPED**. `RRA-011` is active and `T1-05` merged the catalog read routes, so metric detail is no longer contract-blocked: `/api/v1/beta/catalog/metrics/{code}/{language}` serves the definition and `/api/v1/beta/catalog/citations/{citation_id}/evidence/{language}` the evidence path. Rendering either in the journey is an `RRA-010` slice, which this row does not claim |
 | Journey organization identity | make scope legible in `/beta` | — | authority permitting identity to cross the boundary | **AUTHORITY-BLOCKED** |
 
 `W1` is blocked on active `G2`/`G3` authority; `T1` is `PROPOSED`. **Both `G2` and `G3` gate M3** —
@@ -979,7 +979,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Whether an analysis outlives its deleted data entry | PROVISIONAL | `G2`/`G3` retention contract |
 | Metrics as a dedicated destination | PROVISIONAL | `T1` + demonstrated customer need |
 | Remember My Data / reusable source-mapping profile | CONTRACT-BLOCKED | `W1-01` profile contract; active `G3`; must re-attest on material source change (Article V) |
-| Analysis Impact Preview | CONTRACT-BLOCKED (data) / AUTHORITY-BLOCKED (journey step) | `T1-04` availability vocabulary needs active `T1`; the journey step itself needs an active RRA specification, since `RRA-010` excludes new journey phases |
+| Analysis Impact Preview | AUTHORITY-BLOCKED (journey step) | **The data half is no longer blocked**: `RRA-011` is active and `T1-04` merged the availability vocabulary, so `definitions.availability(mapping)` states what the admitted data supports. The journey step itself is unchanged -- it needs an active RRA specification naming that phase, since `RRA-010` excludes new journey phases |
 | Analysis Passport fields | CONTRACT-BLOCKED | `W1-06` provenance record; active `G3` |
 | Run Again / Run New Period compatibility rule | CONTRACT-BLOCKED | `W1-04`; underlying `RRA-003`/`RRA-004` compatibility contracts |
 | Try Sample Analysis (pre-authentication) | AUTHORITY-BLOCKED | a new or amended RCA/RRA specification — `RCA-002` excludes public self-serve signup and any change to the beta journey's routes; active `RRA-010` is presentation-only and excludes new routes/phases; `G5-01` |
