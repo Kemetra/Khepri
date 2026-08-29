@@ -155,11 +155,55 @@ mid-poll. `RestartCount=0` on every container throughout confirms nothing crash-
 `package_digest` was `5d5aadbc6dd930ec492b76e02a090f707c8a0c2f524e81cfb963aae1cbcdc0b2` on **all
 four** independent runs — including runs separated by a container restart. `RRA-004` requires reruns
 to be byte-equivalent, and this is that property observed across process boundaries rather than
-inside one interpreter. Artifact sizes were byte-identical across restart except Excel (37,236 →
-37,235 B); that one-byte difference was not investigated. The bundle digest, which is the governed
-identity, did not move.
+inside one interpreter. Artifact sizes were byte-identical across restart except Excel, and that difference **is now
+investigated rather than deferred** — see F3 below.
 
-**CAL1-14 passes.**
+### F3 — the Excel container is not byte-identical; its governed content is *(FILED)*
+
+Review declined to accept "not investigated" for the differing Excel bytes, correctly: `RRA-006`:32
+lists deterministic regeneration among the properties its tests must cover, and a package digest
+covers the governed logical content rather than the generated workbook bytes. Diagnosed at the byte
+level instead, by regenerating the same report twice in one process and comparing the two `.xlsx`
+containers member by member.
+
+| Observation | Result |
+|---|---|
+| `package_digest` | identical |
+| `bundle_id` | identical |
+| `.xlsx` size | identical (37,235 B both runs) |
+| `.xlsx` SHA-256 | **differs** |
+| ZIP member set | identical, 46 members |
+| Members whose content differs | **exactly one — `docProps/core.xml`** |
+
+Every worksheet, every shared string, every chart part and every relationship part is byte-identical.
+The sole difference is the OOXML metadata part, and within it exactly two fields:
+
+```
+A: dcterms:created 2026-08-29T08:15:01Z   dcterms:modified 2026-08-29T08:15:01Z
+B: dcterms:created 2026-08-29T08:15:03Z   dcterms:modified 2026-08-29T08:15:03Z
+```
+
+A wall-clock stamp the workbook writer emits, two seconds apart because the runs were two seconds
+apart. It is document metadata, not report content: no figure, label, caveat or citation depends on
+it, and the earlier size difference (37,236 → 37,235 B) was this same field rendering one byte
+shorter, not a content change.
+
+**Filed, not closed, and not silently accepted.** `RRA-006`:32 names "deterministic regeneration" in
+a one-line verification clause and does not define whether it means byte-identical containers or
+byte-identical governed content. `RRA-004` is explicit about byte-equivalence for the *package*, and
+that property holds exactly. Reading the `RRA-006` clause to cover a workbook writer's metadata stamp
+is a specification decision, and the two readings imply different work — pin the timestamp in the
+writer, or state that the clause governs content and add a test asserting member-wise equality
+excluding `docProps/core.xml`. Nothing asserts Excel byte-determinism today either way.
+
+**What this does not do:** it publishes no wrong figure. Two regenerations of the same report differ
+only in when they were generated.
+
+---
+
+**CAL1-14 passes on its own acceptance clause** — upload through evidence, bilingual artifacts, and
+restart/retry/recovery are all verified above. F3 is filed against `RRA-006`'s verification clause,
+which is a different specification's property and an owner reading rather than a CAL1 defect.
 
 ---
 
@@ -198,9 +242,14 @@ CAL1-11 and CAL1-12 and their disposition:
 | CAL1-11 F1a, F2 (proof gaps) | P2 | Closed in `#328`, mutation-verified |
 | CAL1-12 F2 — version tables had no extent guard | **P1** | **Closed** in CAL1-12, mutation-verified per table |
 | CAL1-12 F1 — `CAVEAT_CURRENCY_NOT_DECLARED` unreachable | P2 | **Filed, open** — see below |
+| CAL1-14 F3 — Excel container not byte-identical (`docProps/core.xml` timestamp) | P2 | **Filed, open** — needs an `RRA-006` reading |
 | CAL1-11 F1b, F3, F4, F5 | P2 | Filed for their own slices |
 | CAL1-11 F6 | — | Owner-decided out of scope, 2026-08-28 |
 | CAL1-11 F7, F8 | P3 | Docs / naming |
+
+**Both are P2, and for the same kind of reason: neither publishes a wrong number.** F3's
+regenerations differ only in when they were generated; F1's unreachable caveat publishes nothing at
+all.
 
 **F1 is P2, not P1, and the reasoning matters.** An unreachable caveat cannot publish a wrong
 number — it publishes nothing. The customer-visible consequence is a disclosure that never appears
@@ -233,7 +282,7 @@ families sit on their single governed successor version, and no transitional ver
 
 | Slice | State |
 |---|---|
-| CAL1-12 | Complete — committed at `7b19650` |
+| CAL1-12 | Complete — opened at `7b19650`; the completion evidence is `#330`'s final reviewed tree, which adds the `concentration.derive` assertions |
 | CAL1-13 | **Passes** — every clause evidenced |
 | CAL1-14 | **Passes** — zero failures, restart and determinism verified |
 | CAL1-15 | **Complete** — CodeScene passed on `#330`'s gate; every other clause verified here |
