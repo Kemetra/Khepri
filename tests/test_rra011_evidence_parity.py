@@ -34,6 +34,7 @@ from khepri.rra.facts import FactPackage
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted
 from khepri.rra.persistence import Base, SqlSessionStore
 from khepri.rra.rendering.html import build_cells, build_context
+from khepri.rra.rendering.wording import business_metric_name
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService, SessionExpired
 from tests.test_rra006_html_sections import ROWS, package_for
@@ -545,3 +546,57 @@ def test_the_quality_summary_says_its_refusals_in_the_readers_language() -> None
             english["refused_results"], arabic["refused_results"], strict=True
         )
     )
+
+
+def test_every_governed_record_shape_answers_its_evidence_link() -> None:
+    """A citation may name a scalar fact, a series entry, or a comparison.
+
+    All three state a unit kind and a precision; only a scalar `Fact` states
+    `inputs`, because a series and a comparison are derived over a dimension
+    rather than from named measures. An unconditional `fact.inputs` turned every
+    series and comparison evidence link into a 500 -- and the earlier tests
+    missed it because each read `cells[0]`, which is a scalar every time.
+    """
+    client, _ = _harness()
+    package = package_for(ROWS, published=True)
+    citations = [
+        package.facts[0].citation_id,
+        package.series[0].citation_id,
+        package.comparisons[0].citation_id,
+    ]
+
+    answers = [client.get(f"{EVIDENCE}/{cit}/evidence/en") for cit in citations]
+
+    assert [answer.status_code for answer in answers] == [200, 200, 200]
+    assert all(answer.json()["unit_kind"] for answer in answers)
+    assert answers[0].json()["inputs"] and answers[1].json()["inputs"] == []
+
+
+def test_a_metric_states_the_business_name_a_reader_sees() -> None:
+    """`RRA-011` places the governed business name at catalog scope.
+
+    `None` where the row's own label names the figure -- the raw code is never a
+    fallback, because that puts an internal identifier on a customer surface.
+    """
+    client, _ = _harness()
+
+    body = client.get("/api/v1/beta/catalog/metrics/revenue/en").json()
+
+    assert body["name"] == business_metric_name("revenue", "en")
+    assert body["name"] != body["code"]
+
+
+def test_a_section_scoped_caveat_keeps_the_analysis_it_qualified() -> None:
+    """Flattening scope would report one qualified analysis as a qualified report.
+
+    `summarize` retains the `(code, section_id)` associations, and a caveat
+    qualifying several sections is stated once per section.
+    """
+    client, _ = _harness()
+
+    caveats = client.get(f"{QUALITY}/en").json()["caveats"]
+
+    scoped = [entry for entry in caveats if entry["section"] is not None]
+    assert scoped
+    assert all(entry["wording"] for entry in scoped)
+    assert len({(e["code"], e["section"]) for e in caveats}) == len(caveats)

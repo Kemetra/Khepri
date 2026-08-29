@@ -877,12 +877,12 @@ anti-reference for these surfaces. No high-fidelity mockups are produced here.
 | Data detail | lineage + audit behind disclosure | `W1-01`, `W1-04`, `W1-06` provenance | `G2` → `G3` | **CONTRACT-BLOCKED** |
 | Analyses | durable history spine | `W1-04` | `G2` → `G3` | **CONTRACT-BLOCKED** |
 | Analysis detail | artifacts discovered here | `W1-04`, `W1-06`, report bundle | `G2` → `G3` | **CONTRACT-BLOCKED** |
-| Quality summary | trust state, no fixed counts | `T1` metric/quality contracts | `T1` (**active `RRA-011`**) | **SHIPPED**. `T1-04` merged `AnalysisQualitySummary` and `T1-05` serves it at `/api/v1/beta/catalog/quality/{language}`, which counts and groups outcomes and states no score. Rendering it in the journey is an `RRA-010` slice |
+| Quality summary | trust state, no fixed counts | `T1` metric/quality contracts | `T1` (**active `RRA-011`**) | **CONTRACT-READY, UNRENDERED**. `T1-04` merged `AnalysisQualitySummary` and `T1-05` serves it at `/api/v1/beta/catalog/quality/{language}`, which counts and groups outcomes and states no score. **No consumer reads it yet**; rendering it is an `RRA-010` slice |
 | Retention display | one clock, absolute time | `W1-07` lifecycle + deletion evidence | `G2` | **AUTHORITY-BLOCKED** |
 | Tombstones | history survives content | `W1-07`; fields undefined | `G2` / `G3` | **AUTHORITY-BLOCKED** |
 | Deletion action | owner-only | `W1-07` | a **registered** artifact (future active `G3`) | **AUTHORITY-BLOCKED** |
 | Activity context | contextual only | `W1-09` | `G3` | **CONTRACT-BLOCKED** |
-| Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **SHIPPED**. `RRA-011` is active and `T1-05` merged the catalog read routes, so metric detail is no longer contract-blocked: `/api/v1/beta/catalog/metrics/{code}/{language}` serves the definition and `/api/v1/beta/catalog/citations/{citation_id}/evidence/{language}` the evidence path. Rendering either in the journey is an `RRA-010` slice, which this row does not claim |
+| Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **partly SHIPPED**; metric detail **CONTRACT-READY, UNRENDERED**. `RRA-011` is active and `T1-05` merged the read routes, so the contract is no longer blocked: `/api/v1/beta/catalog/metrics/{code}/{language}` and `/api/v1/beta/catalog/citations/{citation_id}/evidence/{language}`. **No journey or front-end consumer reads them yet** -- rendering either is an `RRA-010` slice, so this is a contract in place rather than delivered UX |
 | Journey organization identity | make scope legible in `/beta` | — | authority permitting identity to cross the boundary | **AUTHORITY-BLOCKED** |
 
 `W1` is blocked on active `G2`/`G3` authority; `T1` is governed by active `RRA-011` and in implementation. **Both `G2` and `G3` gate M3** —
@@ -963,7 +963,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 |---|---|---|
 | Exact M3 route shapes | PROVISIONAL | a specification carrying them; no route is authoritative here |
 | Exact `W1` read models | CONTRACT-BLOCKED | `W1-01`, `W1-04` |
-| Quality-summary aggregation contract, and the customer trust labels | RESOLVED | `T1` (**active `RRA-011`**); merged at `T1-04` and served by `T1-05` |
+| Quality-summary aggregation contract, and the customer trust labels | CONTRACT RESOLVED; presentation still `RRA-010`'s | `T1` (**active `RRA-011`**); merged at `T1-04` and served by `T1-05`, unrendered |
 | Exact tombstone fields | CONTRACT-BLOCKED | `G2`/`G3`, `W1-07` |
 | Deletion authority | AUTHORITY-BLOCKED | a **registered** artifact (future active `G3`); the `R6-01` note is evidence, not authority |
 | Workspace role cells (list, read, reopen artifacts) | AUTHORITY-BLOCKED | `G3-03` reserves authorization for every workspace action (`roadmap:727`) |

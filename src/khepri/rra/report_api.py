@@ -51,7 +51,11 @@ from khepri.rra.jobs import UnknownJobState
 from khepri.rra.package_source import SessionPackageReader, rebuild_fact_package
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted, PackageRefused
 from khepri.rra.rendering.html import build_cells, build_context
-from khepri.rra.rendering.wording import RESULT_CAVEAT_SEPARATOR, caveat_prose
+from khepri.rra.rendering.wording import (
+    RESULT_CAVEAT_SEPARATOR,
+    business_metric_name,
+    caveat_prose,
+)
 from khepri.rra.reports import (
     DeliveredBundle,
     DeliveryWithheld,
@@ -163,6 +167,9 @@ class MetricDefinitionResponse(BaseModel):
     """
 
     code: str
+    #: The governed business name, or `None` where the row's own label names the
+    #: figure. `RRA-009` holds it and `RRA-011` places it at catalog scope.
+    name: str | None
     formula_version: str
     description: str
     not_meant: str
@@ -287,6 +294,7 @@ class FactEvidenceResponse(BaseModel):
 
     citation_id: str
     metric: str
+    name: str | None
     formula_version: str
     definition: str
     #: Package scope, from the `Fact` the citation names -- `RRA-011` places a
@@ -817,6 +825,7 @@ def _metric_definition_response(code: str, language: str) -> MetricDefinitionRes
     definition = _defined(lambda: definitions.define_metric(code))
     return MetricDefinitionResponse(
         code=definition.code,
+        name=business_metric_name(code, language),
         formula_version=definition.formula_version,
         description=definitions.describe_metric(code, language),
         not_meant=definitions.not_meant(code, language),
@@ -874,13 +883,38 @@ def _quality_response(bundle: ReportBundle, language: str) -> AnalysisQualityRes
             _section_statement(entry, reason, language, "result")
             for entry, reason in summary.refused_results
         ],
-        caveats=[
-            CaveatStatement(code=code, section=None, wording=_caveat_prose(code, language))
-            for code in summary.caveats
-        ],
+        caveats=_quality_caveats(summary, language),
         answered_sections=list(summary.answered_sections),
         caveated_sections=list(summary.caveated_sections),
     )
+
+
+def _quality_caveats(
+    summary: definitions.AnalysisQualitySummary,
+    language: str,
+) -> list[CaveatStatement]:
+    """Every caveat the package carried, keeping the analysis each qualified.
+
+    `summarize` retains the `(code, section_id)` associations separately from the
+    flat code list, and flattening to `section=None` would report a section-scoped
+    qualification as a report-level one -- telling a reader the whole dataset is
+    qualified when one analysis is. A code qualifying several sections is stated
+    once per section, which is what the associations record.
+    """
+    scoped = [
+        CaveatStatement(
+            code=code,
+            section=section,
+            wording=_caveat_prose(code, language),
+        )
+        for code, section in summary.caveat_sections
+    ]
+    qualified = {code for code, _ in summary.caveat_sections}
+    return scoped + [
+        CaveatStatement(code=code, section=None, wording=_caveat_prose(code, language))
+        for code in summary.caveats
+        if code not in qualified
+    ]
 
 
 def _section_statement(
@@ -951,21 +985,32 @@ def _evidence_response(
     )
 
 
-def _cited_fact(fact: Fact, metric: str, language: str) -> dict[str, object]:
-    """What the catalog and the `Fact` together say about one cited figure.
+def _cited_fact(fact: object, metric: str, language: str) -> dict[str, object]:
+    """What the catalog and the cited record together say about one figure.
 
-    The fact's `value` is deliberately absent. This surface says what a figure is
-    made of -- its unit kind, its precision, the inputs it was derived from --
-    and never what it measured, which is `RRA-006`'s to publish.
+    Three governed record shapes can carry a citation. All three state a unit
+    kind and a precision; only a scalar `Fact` states `inputs`, because a series
+    and a comparison are derived over a dimension rather than from named
+    measures. Read from each shape for what it declares -- an unconditional
+    `fact.inputs` turned every series and comparison evidence link into a 500.
+
+    `name` is the governed business name `RRA-009` holds, which `RRA-011` places
+    at catalog scope. It is `None` where the row's own label names the figure;
+    the raw code is never a fallback, because that would put an internal
+    identifier on a customer surface.
+
+    The record's `value` is deliberately absent. This surface says what a figure
+    is made of and never what it measured.
     """
     return {
         "citation_id": fact.citation_id,
         "metric": metric,
+        "name": business_metric_name(metric, language),
         "formula_version": definitions.define_metric(metric).formula_version,
         "definition": definitions.describe_metric(metric, language),
         "unit_kind": fact.unit_kind,
         "precision": fact.precision,
-        "inputs": list(fact.inputs),
+        "inputs": list(getattr(fact, "inputs", ())),
     }
 
 
