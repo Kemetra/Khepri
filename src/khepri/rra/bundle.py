@@ -1550,12 +1550,25 @@ class _Family:
     # version is a module constant and capturing it here would freeze the
     # pairing at import time -- exactly what the gate exists to detect.
     version: object
+    # What the family needs from the mapping, read through a callable for the
+    # same reason `version` is: the family declares it, this table points at the
+    # declaration, and `T1-04`'s availability contract reads it from here. A
+    # tuple captured here would be a second truth that agrees at import and
+    # drifts the first time a family changes what it derives from.
+    required_inputs: object
+    # The semantics that satisfy a requirement any *one* of which is enough --
+    # concentration distributes over products or categories, and demanding both
+    # would report unavailable an analysis the calculation publishes. Empty for a
+    # family whose inputs are all required outright.
+    alternative_inputs: object
 
 
 _FAMILIES = {
     SECTION_COMPARISON: _Family(
         derive=comparison.derive,
         version=lambda: comparison.COMPARISON_FORMULA_VERSION,
+        required_inputs=lambda: comparison.REQUIRED_INPUTS,
+        alternative_inputs=lambda: (),
         refusals=comparison.refusals,
         names=lambda fact, package: comparison.mode_of(fact),
         # The absolute deltas, one bar per mode. The percentage deltas are the same
@@ -1566,6 +1579,8 @@ _FAMILIES = {
     SECTION_CONCENTRATION: _Family(
         derive=concentration.derive,
         version=lambda: concentration.CONCENTRATION_FORMULA_VERSION,
+        required_inputs=lambda: concentration.REQUIRED_INPUTS,
+        alternative_inputs=lambda: concentration.ALTERNATIVE_INPUTS,
         refusals=lambda package: (),
         # No label. Every concentration fact shares one dimension, so naming it per
         # row distinguishes nothing, and the curve's own points are labelled by rank.
@@ -1578,6 +1593,8 @@ _FAMILIES = {
     SECTION_GROWTH: _Family(
         derive=growth.derive,
         version=lambda: growth.GROWTH_FORMULA_VERSION,
+        required_inputs=lambda: growth.REQUIRED_INPUTS,
+        alternative_inputs=lambda: (),
         refusals=growth.refusals,
         # No label, for the same reason: all three effects share one mode. The
         # metric is what says which effect a row or a bar is, and a chart resolves it
@@ -1590,6 +1607,8 @@ _FAMILIES = {
     SECTION_BASKET: _Family(
         derive=basket.derive,
         version=lambda: basket.BASKET_FORMULA_VERSION,
+        required_inputs=lambda: basket.REQUIRED_INPUTS,
+        alternative_inputs=lambda: (),
         refusals=basket.refusals,
         names=basket.attached_label_of,
         # The attach rates, one bar per value. Items per transaction is a different

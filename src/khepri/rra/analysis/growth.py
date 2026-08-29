@@ -107,7 +107,7 @@ CAVEAT_ROUNDING_RESIDUAL = "growth_rounding_residual"
 
 # What these facts are derived from, in the governed mapping vocabulary. The date
 # is an input as much as the measures: it decides which two periods are compared.
-_INPUTS = (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE, SEMANTIC_UNITS)
+REQUIRED_INPUTS = (SEMANTIC_TRANSACTION_DATE, SEMANTIC_REVENUE, SEMANTIC_UNITS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -381,7 +381,7 @@ def _fact(split: _Split, metric: str, precision: int) -> Fact:
         value=str(split.value_of(metric)),
         precision=precision,
         unit_kind=UNIT_MONETARY,
-        inputs=_INPUTS,
+        inputs=REQUIRED_INPUTS,
         caveats=split.caveats_of(metric),
         formula_version=GROWTH_FORMULA_VERSION,
     )

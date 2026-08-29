@@ -35,6 +35,7 @@ from dataclasses import dataclass
 
 from khepri.rra import facts, populations
 from khepri.rra.analysis import basket, comparison, concentration, growth
+from khepri.rra.mapping import STATE_MAPPED
 from khepri.rra.rendering import wording
 
 
@@ -536,4 +537,134 @@ def summarize(bundle) -> AnalysisQualitySummary:
         answered_sections=answered_sections,
         caveated_sections=caveated_sections,
         caveat_sections=_associate_caveats(qualifying),
+    )
+
+
+#: Every declared input this analysis needs is resolved in the mapping.
+AVAILABLE = "available"
+#: Some are resolved and some are not. The analysis may still publish part of
+#: what it states, and `missing` names what stands between it and the rest.
+PARTIAL = "partial"
+#: None of what it needs is resolved.
+UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityAvailability:
+    """Whether one analysis is supportable on the admitted data, before it runs.
+
+    **Availability, never certainty.** `RRA-011`:188-192 excludes a confidence
+    score, a quality score, a likelihood, and a completeness percentage by name.
+    This answers set membership -- are the semantics this family declares
+    resolved in the mapping -- and computes nothing, so there is no arithmetic
+    here for a score to hide in. A reader learns what the system will be able to
+    answer, not how good the answer will be.
+
+    **Pre-analysis by construction.** `KHEPRI_PRODUCT_UX_BLUEPRINT.md`:201 places
+    the Impact Preview at `Review -> Impact Preview -> Analyze`, so no
+    `ReportBundle` exists when this is read. It takes a `RetailMapping` and
+    nothing else, which is what lets it be honest before the analysis step.
+
+    **Not a promise.** An analysis reported available can still refuse once it
+    runs -- on a zero denominator, a reconciliation failure, or a repeated row
+    signature, none of which a mapping can foresee. This states that the
+    *inputs* are present, which is the only thing knowable at this point.
+    """
+
+    section: str
+    state: str
+    #: The declared semantics this mapping has not resolved, in the family's own
+    #: order. A bare state tells a customer an analysis will not run and not what
+    #: to fix; this names the gap, which is the half they can act on.
+    missing: tuple[str, ...]
+
+
+def _resolve(mapping, semantics) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`(resolved, missing)` for one family's declared semantics.
+
+    A semantic counts as resolved only at `STATE_MAPPED`. `RRA-003` leaves a
+    column stating no measure kind ambiguous, and `facts._unavailable_reason`
+    already treats that as unavailable with a reason of its own: the data is
+    present and the *label* falls short. Counting it as resolved would promise
+    an analysis that refuses the moment it runs.
+    """
+    resolved = tuple(code for code in semantics if _is_resolved(mapping, code))
+    missing = tuple(code for code in semantics if code not in resolved)
+    return resolved, missing
+
+
+def _is_resolved(mapping, semantic: str) -> bool:
+    """Whether the mapping resolved this semantic to a column.
+
+    A semantic absent from the mapping entirely raises `KeyError` from
+    `state_of`, which is not a refusal this contract should convert into an
+    answer -- but a mapping built for a narrower contract legitimately omits
+    one, so absence reads as unresolved rather than as an error.
+    """
+    try:
+        return mapping.state_of(semantic) == STATE_MAPPED
+    except KeyError:
+        return False
+
+
+def availability(mapping) -> tuple[CapabilityAvailability, ...]:
+    """What each governed analysis can be answered on this mapping, before it runs.
+
+    One entry per family in `bundle._FAMILIES`, so a surface renders the report
+    without keeping a second list of which analyses exist. Each family's
+    requirement is read from the family itself through that table, never
+    restated here: `RRA-011` requires a slice to *reduce* the repository's
+    hand-maintained code lists, and a copy of four input tuples would be the
+    fourth.
+    """
+    from khepri.rra.bundle import _FAMILIES
+
+    return tuple(
+        _availability_of(mapping, section, family)
+        for section, family in _FAMILIES.items()
+    )
+
+
+def availability_for(mapping, section: str) -> CapabilityAvailability:
+    """One analysis's availability, or `UnknownCode`.
+
+    Fail-closed like every other lookup here: an unrecognized section returning
+    `UNAVAILABLE` would be indistinguishable from a real analysis that cannot
+    run, and a surface would render a capability the product does not have.
+    """
+    from khepri.rra.bundle import _FAMILIES
+
+    family = _FAMILIES.get(section)
+    if family is None:
+        raise UnknownCode(section)
+    return _availability_of(mapping, section, family)
+
+
+def _availability_of(mapping, section: str, family) -> CapabilityAvailability:
+    """One family's availability, from its own declared requirement.
+
+    Two kinds of requirement, because `RRA-008` states two. Most inputs are
+    required outright. A family may also need any *one* of a set --
+    concentration distributes over products or categories, and `_found` selects
+    whichever the mapping resolved -- so demanding both would report unavailable
+    an analysis the calculation publishes.
+
+    The alternative contributes one name to `missing` when none of its members
+    resolved, rather than all of them: a customer needs to know a dimension is
+    missing, and listing every dimension they *could* supply reads as though all
+    were required.
+    """
+    _, missing = _resolve(mapping, family.required_inputs())
+    alternatives = family.alternative_inputs()
+    satisfied = not alternatives or any(
+        _is_resolved(mapping, code) for code in alternatives
+    )
+    if not satisfied:
+        missing = (*missing, alternatives[0])
+    required = len(family.required_inputs()) + (1 if alternatives else 0)
+    state = UNAVAILABLE if len(missing) == required else PARTIAL
+    return CapabilityAvailability(
+        section=section,
+        state=AVAILABLE if not missing else state,
+        missing=missing,
     )

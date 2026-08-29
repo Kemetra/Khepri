@@ -100,6 +100,21 @@ REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"
 # Which dimensions `RRA-008` names, in the order this family prefers them.
 GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 
+#: What every concentration fact is derived from, in the governed mapping
+#: vocabulary. Revenue is required outright; the dimension is required as
+#: *either* of `GOVERNED_DIMENSIONS`, since `_found` selects whichever the
+#: mapping resolved and the curve is stated over that one.
+#:
+#: Declared beside the dimensions rather than only spelled inline at the fact,
+#: so a reader asking what this family needs -- the availability contract among
+#: them -- reads the family's own answer instead of a second list restating it.
+REQUIRED_INPUTS = (SEMANTIC_REVENUE,)
+
+#: The dimensions that satisfy this family's dimension requirement. Any one of
+#: them is enough, which is why they are stated apart from `REQUIRED_INPUTS`:
+#: demanding both would report unavailable an analysis the calculation publishes.
+ALTERNATIVE_INPUTS = GOVERNED_DIMENSIONS
+
 # The axis a concentration curve is stated over. `Series.granularity` names the unit
 # of a bucket's position, and for this series that unit is rank rather than time.
 GRANULARITY_RANK = "rank"

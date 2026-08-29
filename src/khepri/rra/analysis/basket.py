@@ -136,7 +136,7 @@ REASON_DIMENSION_INCOMPLETE = "dimension_values_incomplete"
 # Which dimensions `RRA-008` allows attach rate over, in the order preferred.
 GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 
-_ITEMS_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
+REQUIRED_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
 
 # The two buckets `build_comparison` synthesizes rather than reads from a source
 # value. Neither is an admissible dimension value, so neither gets an attach rate.
@@ -518,7 +518,7 @@ def _fact(
         value=str(value.quantize(Decimal(1).scaleb(-RATIO_PRECISION))),
         precision=RATIO_PRECISION,
         unit_kind=UNIT_RATIO,
-        inputs=_ITEMS_INPUTS if not scope else (scope[0], SEMANTIC_TRANSACTION_ID),
+        inputs=REQUIRED_INPUTS if not scope else (scope[0], SEMANTIC_TRANSACTION_ID),
         caveats=caveats,
         formula_version=BASKET_FORMULA_VERSION,
     )
