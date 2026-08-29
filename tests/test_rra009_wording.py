@@ -6,6 +6,7 @@ import re
 
 import pytest
 
+from khepri.rra import bundle
 from khepri.rra.analysis.basket import (
     REASON_DIMENSION_ABSENT,
     REASON_DIMENSION_INCOMPLETE,
@@ -643,3 +644,209 @@ def test_the_two_customer_tiers_are_the_only_ones_wording_states() -> None:
     """
     assert set(wording.REFUSAL_WORDING) == {"section", "result"}
     assert _SECTION_REFUSAL_CODES & _RESULT_REFUSAL_CODES == _SHARED_TIER_CODES
+
+
+# --- CAL1-11 finding F5: tables without a completeness guard ---------------
+#
+# F5 filed five tables as unguarded. One of the five, `SECTION_HEADINGS`, was
+# already guarded at `wording.py` by a bare import-time loop -- the finding was
+# wrong about it, and that is recorded here rather than silently skipped. The
+# other four are guarded now, and each test below drives its guard directly with
+# a broken table, because a guard is only evidence if it can fail.
+
+
+def test_kind_qualifier_guard_raises_when_a_language_loses_its_only_kind(
+    monkeypatch,
+) -> None:
+    broken = {
+        language: dict(entries)
+        for language, entries in wording.KIND_QUALIFIERS.items()
+    }
+    broken[LANGUAGE_ENGLISH].clear()
+    monkeypatch.setattr(wording, "KIND_QUALIFIERS", broken)
+
+    with pytest.raises(RuntimeError, match="kind"):
+        wording._assert_kind_qualifiers_complete()
+
+
+def test_chart_description_guard_raises_when_a_governed_kind_has_no_description(
+    monkeypatch,
+) -> None:
+    """The guard's set is derived from the chart-kind constants, not retyped.
+
+    `charts.py` composes `chart_description.{spec.kind}` and `excel.py` reads it
+    back the same way, so a kind added there with no description here is a
+    `KeyError` on one surface and a chart with no accessible description on the
+    other.
+    """
+    broken = {
+        language: dict(entries)
+        for language, entries in wording.CHART_DESCRIPTIONS.items()
+    }
+    del broken[LANGUAGE_ARABIC]["chart_description.line"]
+    monkeypatch.setattr(wording, "CHART_DESCRIPTIONS", broken)
+
+    with pytest.raises(RuntimeError, match="chart"):
+        wording._assert_chart_descriptions_complete()
+
+
+def test_chart_description_codes_follow_a_kind_added_to_the_governed_set(
+    monkeypatch,
+) -> None:
+    """The direction the deletion case above cannot see: the scope grows.
+
+    Removing a description proves the guard notices a table that shrank, and it
+    passes just as well when `_CHART_DESCRIPTION_CODES` hand-lists the three kinds
+    it knows -- the deletion is *inside* the scope it named. A fourth kind admitted
+    in `bundle` is outside it: an enumerated set stays at three, compares equal to
+    a three-entry table, and the chart reaches Excel with a `KeyError` on a
+    description nobody wrote.
+
+    The codes are computed once at import, so patching `GOVERNED_CHART_KINDS` alone
+    changes nothing a test can observe -- the module already holds the value it
+    derived. Re-importing is what makes the derivation run against the widened set,
+    which is why this reloads rather than calling the guard directly. Derived, the
+    codes become four against a three-entry table and the import-time call raises;
+    hand-listed, nothing raises and this fails.
+
+    `monkeypatch.undo()` precedes the restoring reload deliberately: reloading first
+    would re-derive from the patched set and leave the widened codes installed for
+    every test after this one.
+    """
+    monkeypatch.setattr(
+        bundle,
+        "GOVERNED_CHART_KINDS",
+        frozenset(bundle.GOVERNED_CHART_KINDS | {"stacked_bar"}),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="chart"):
+            importlib.reload(wording)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(wording)
+
+
+def test_every_governed_chart_kind_has_a_description_code() -> None:
+    """An equality, so neither side may drift from the other.
+
+    A subset assertion would admit a code for a kind `bundle` does not govern --
+    the reverse leak: wording for a chart no surface can draw. This states the
+    extent; the reload case above states the derivation.
+    """
+    derived = frozenset(
+        f"chart_description.{kind}" for kind in bundle.GOVERNED_CHART_KINDS
+    )
+
+    assert derived == wording._CHART_DESCRIPTION_CODES
+
+
+def test_derived_metric_guard_raises_when_one_language_names_a_metric(
+    monkeypatch,
+) -> None:
+    """`business_metric_name` falls back here per language.
+
+    An entry present in English alone names a figure on the English surface and
+    leaves the same figure unnamed in Arabic, which is the parity obligation
+    `RRA-006` states and the one this table could break quietly.
+    """
+    broken = {
+        language: dict(entries)
+        for language, entries in wording.DERIVED_METRIC_WORDING.items()
+    }
+    del broken[LANGUAGE_ARABIC]["basket_attach_rate"]
+    monkeypatch.setattr(wording, "DERIVED_METRIC_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="language"):
+        wording._assert_derived_metric_wording_complete()
+
+
+def test_derived_metric_guard_raises_when_a_metric_is_named_in_two_tables(
+    monkeypatch,
+) -> None:
+    """A code in both tables makes `METRIC_WORDING` win silently.
+
+    `business_metric_name` consults `METRIC_WORDING` first, so a derived entry
+    for the same code sits there looking authoritative and never renders. The
+    duplicate is added in *both* languages, so the parity check above passes and
+    this test proves the disjointness check rather than re-proving parity.
+    """
+    broken = {
+        language: {**entries, "revenue": "Revenue"}
+        for language, entries in wording.DERIVED_METRIC_WORDING.items()
+    }
+    monkeypatch.setattr(wording, "DERIVED_METRIC_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="two tables"):
+        wording._assert_derived_metric_wording_complete()
+
+
+def test_disclosure_guard_raises_when_a_governed_narrative_state_has_no_prose(
+    monkeypatch,
+) -> None:
+    """`disclosure()` indexes `_DISCLOSURE` by the package's narrative state.
+
+    A state added to `GOVERNED_NARRATIVE_STATES` without prose here raises
+    `KeyError` mid-render, after the analysis succeeded, on the one paragraph
+    that tells a reader the commentary was generated automatically.
+    """
+    broken = {
+        state: dict(entries) for state, entries in bundle._DISCLOSURE.items()
+    }
+    del broken[bundle.NARRATIVE_OMITTED]
+    monkeypatch.setattr(bundle, "_DISCLOSURE", broken)
+
+    with pytest.raises(RuntimeError, match="narrative state"):
+        bundle._assert_disclosure_complete()
+
+
+def test_section_headings_were_already_guarded_when_f5_filed_them() -> None:
+    """F5 named `SECTION_HEADINGS`, and F5 was wrong about that one.
+
+    Recorded rather than dropped: a later reader comparing the finding against
+    this slice would otherwise see four of five tables addressed and reasonably
+    conclude one was missed. The guard is a bare import-time loop rather than a
+    named `_assert_*` function, which is why a reader scanning for the naming
+    convention could miss it -- so the property is asserted here directly.
+    """
+    for headings in wording.SECTION_HEADINGS.values():
+        assert set(headings) == set(bundle.ORDERED_SECTIONS)
+
+
+def test_label_wording_guard_raises_when_a_localizable_code_lacks_wording(
+    monkeypatch,
+) -> None:
+    """Beyond F5, and found while closing it: the same shape, the same cost.
+
+    `worded` deliberately refuses to fall back to the raw code, because an
+    identifier on a customer axis is the failure that function exists to
+    prevent. So a missing entry here is an exception during chart rendering
+    rather than a cosmetic gap, and the import is where it should surface.
+
+    The governed set is derived from the two branches `category_of` can take: a
+    governed comparison mode becomes `label.{mode}`, and a charted figure with no
+    label of its own becomes `metric.{metric}`, which for marks is the growth
+    family.
+    """
+    broken = {
+        language: dict(entries) for language, entries in wording.LABEL_WORDING.items()
+    }
+    del broken[LANGUAGE_ENGLISH]["label.year_over_year"]
+    monkeypatch.setattr(wording, "LABEL_WORDING", broken)
+
+    with pytest.raises(RuntimeError, match="chart code"):
+        wording._assert_label_wording_complete()
+
+
+def test_label_wording_covers_every_mode_and_growth_metric_category_of_emits() -> None:
+    """The table's key set equals what `category_of` can localize, exactly.
+
+    Asserted against the governed sources rather than against the table's own
+    derived constant: importing `_LOCALIZABLE_CHART_CODES` to check the table it
+    built would compare a restatement with itself.
+    """
+    expected = {f"label.{mode}" for mode in bundle.GOVERNED_FIGURE_LABELS} | {
+        f"metric.{metric}" for metric in GOVERNED_METRICS
+    }
+
+    for entries in wording.LABEL_WORDING.values():
+        assert set(entries) == expected

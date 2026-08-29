@@ -82,6 +82,17 @@ METRIC_DISTINCT_VALUES = "concentration_distinct_values"
 METRIC_RANKED_VALUES = "concentration_ranked_values"
 METRIC_TOP_DECILE_SHARE = "concentration_top_decile_share"
 METRIC_TOP_QUARTILE_SHARE = "concentration_top_quartile_share"
+#: The metrics this family publishes, in the shape `comparison` and `growth`
+#: already use. `METRIC_CURVE` is included: it names the retained curve series
+#: rather than a ranked figure, but it is this family's vocabulary and a catalog
+#: that omitted it would answer "no such metric" for a code the family states.
+GOVERNED_METRICS = (
+    METRIC_CURVE,
+    METRIC_DISTINCT_VALUES,
+    METRIC_RANKED_VALUES,
+    METRIC_TOP_DECILE_SHARE,
+    METRIC_TOP_QUARTILE_SHARE,
+)
 
 REASON_AGGREGATE_UNAVAILABLE = "aggregate_unavailable"
 REASON_DISTINCT_SET_UNCOMPUTABLE = "distinct_set_uncomputable"

@@ -28,10 +28,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from khepri.rra import facts, versions
-from khepri.rra.analysis import basket, comparison, growth
+from khepri.rra.analysis import basket, comparison, concentration, growth
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
     CAVEAT_CURVE_SAMPLED,
+    GOVERNED_CHART_KINDS,
     GOVERNED_FIGURE_LABELS,
     GOVERNED_SECTION_REASONS,
     KIND_ROWS,
@@ -80,6 +81,45 @@ LABEL_WORDING: dict[str, dict[str, str]] = {
     },
 }
 
+#: What `category_of` can emit as a localizable code, derived from the two sources
+#: that govern its branches rather than restated. A governed comparison mode
+#: becomes `label.{mode}`, and a chart figure with no label of its own becomes
+#: `metric.{metric}` -- which for charted figures is the growth family, the only
+#: metrics reaching a mark without a label.
+_LOCALIZABLE_CHART_CODES = frozenset(
+    {f"label.{mode}" for mode in GOVERNED_FIGURE_LABELS}
+    | {f"metric.{metric}" for metric in growth.GOVERNED_METRICS}
+)
+
+
+def _assert_label_wording_complete() -> None:
+    """`worded` raises on a code this table lacks, and it raises mid-render.
+
+    Not part of `CAL1-11`'s filed `F5`, which named five other tables. Found
+    while closing them: this one has the same shape and the same consequence.
+    `worded` deliberately refuses to fall back to the raw code -- an identifier
+    on a customer axis is the failure it exists to prevent -- so a missing entry
+    is an exception during chart rendering rather than a cosmetic gap, and the
+    import is where that should surface.
+    """
+    if set(LABEL_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("chart labels must cover every governed language")
+    incomplete = [
+        language
+        for language, entries in LABEL_WORDING.items()
+        if set(entries) != _LOCALIZABLE_CHART_CODES
+    ]
+    if incomplete:
+        message = (
+            "every localizable chart code needs wording in every language "
+            f"(languages={sorted(incomplete)})"
+        )
+        raise RuntimeError(message)
+
+
+_assert_label_wording_complete()
+
+
 # Business names for the governed metric codes. These are separate from
 # `LABEL_WORDING`: a metric name is report prose, while a label names a chart mark
 # or comparison mode. The renderers consume these strings without touching the
@@ -117,19 +157,13 @@ METRIC_WORDING: dict[str, dict[str, str]] = {
     },
 }
 
-_FACT_METRIC_CODES = {
-    facts.METRIC_REVENUE,
-    facts.METRIC_UNITS,
-    facts.METRIC_TRANSACTIONS,
-    facts.METRIC_AVERAGE_ORDER_VALUE,
-    facts.METRIC_AVERAGE_SELLING_PRICE,
-    facts.METRIC_COST,
-    facts.METRIC_GROSS_PROFIT,
-    facts.METRIC_GROSS_MARGIN,
-    facts.METRIC_DISCOUNT,
-    facts.METRIC_RETURNS,
-}
-_GOVERNED_METRIC_CODES = _FACT_METRIC_CODES | set(growth.GOVERNED_METRICS)
+# Imported rather than retyped. This was a hand-listed copy of the ten core metric
+# constants, and a metric added to `facts.py` left it unchanged: `METRIC_WORDING`
+# would then have no entry for the new code, the guard below would still pass, and
+# the first reader to meet that metric would meet its raw identifier. `RRA-011`
+# requires a slice to reduce the count of hand-maintained code lists rather than
+# add one, and this is that reduction.
+_GOVERNED_METRIC_CODES = facts.GOVERNED_METRICS | set(growth.GOVERNED_METRICS)
 _RESULT_REASON_CODES = {
     facts.REASON_INPUT_UNAVAILABLE,
     facts.REASON_ZERO_DENOMINATOR,
@@ -191,7 +225,7 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "basket_attach_rate": "Attach rate",
         "concentration_top_decile_share": "Share of sales, top tenth",
         "concentration_top_quartile_share": "Share of sales, top quarter",
-        "concentration_distinct_values": "Products or branches counted",
+        "concentration_distinct_values": "Products or categories counted",
         "concentration_ranked_values": "Ranked contribution",
         "revenue_delta_absolute": "Revenue change",
         "revenue_delta_percent": "Revenue percentage change",
@@ -222,7 +256,7 @@ DERIVED_METRIC_WORDING: dict[str, dict[str, str]] = {
         "basket_attach_rate": "نسبة عمليات البيع التي تتضمن المنتج أو الفئة",
         "concentration_top_decile_share": "حصة أعلى عُشر من المبيعات",
         "concentration_top_quartile_share": "حصة أعلى ربع من المبيعات",
-        "concentration_distinct_values": "عدد المنتجات أو الفروع المحتسبة",
+        "concentration_distinct_values": "عدد المنتجات أو الفئات المحتسبة",
         "concentration_ranked_values": "المساهمة حسب الترتيب",
         "revenue_delta_absolute": "تغير الإيرادات",
         "revenue_delta_percent": "نسبة تغير الإيرادات",
@@ -258,6 +292,37 @@ KIND_QUALIFIERS: dict[str, dict[str, str]] = {
 }
 
 
+def _assert_derived_metric_wording_complete() -> None:
+    """Both languages name the same derived metrics, and none of them twice.
+
+    Deliberately not asserted against a hardcoded set of codes. This table is a
+    *complement* rather than a governed vocabulary: it names the metrics that
+    have no `METRIC_WORDING` entry, and which those are follows from the other
+    table rather than from a list anyone maintains. Restating its sixteen keys
+    here would create exactly the hand-maintained second truth this table's own
+    comment warns about.
+
+    So two properties are checked, and they are the two that can break. Parity,
+    because `business_metric_name` falls back here per language and an entry
+    added in one language only would name a figure in English and leave it
+    unnamed in Arabic. And disjointness, because a code in both tables makes
+    `METRIC_WORDING` win silently -- the derived entry would sit there looking
+    authoritative and never render.
+    """
+    if set(DERIVED_METRIC_WORDING) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("derived metric names must cover every governed language")
+    languages = list(DERIVED_METRIC_WORDING.values())
+    if set(languages[0]) != set(languages[1]):
+        raise RuntimeError("every derived metric needs a name in every language")
+    overlap = set(languages[0]) & _GOVERNED_METRIC_CODES
+    if overlap:
+        message = f"a metric is named in two tables: {sorted(overlap)}"
+        raise RuntimeError(message)
+
+
+_assert_derived_metric_wording_complete()
+
+
 def business_metric_name(metric: str, language: str) -> str | None:
     """Return a business name, or `None` when the row's label names it.
 
@@ -268,6 +333,30 @@ def business_metric_name(metric: str, language: str) -> str | None:
     if governed is not None:
         return governed
     return DERIVED_METRIC_WORDING[language].get(metric)
+
+
+def _assert_kind_qualifiers_complete() -> None:
+    """`KIND_ROWS` is the one kind that qualifies a name, in both languages.
+
+    `KIND_VALUE` is deliberately absent: a plain value adds nothing to its own
+    name, which is why `kind_qualifier` returns `None` rather than an empty
+    string. So the governed set here is `KIND_ROWS` alone, and a kind added to
+    `bundle` without wording must fail at import rather than reach a reader as a
+    silently unqualified name on one surface and a qualified one on another.
+    """
+    if set(KIND_QUALIFIERS) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("kind qualifiers must cover every governed language")
+    incomplete = [
+        language
+        for language, entries in KIND_QUALIFIERS.items()
+        if set(entries) != {KIND_ROWS}
+    ]
+    if incomplete:
+        message = f"every qualifying kind needs wording (languages={sorted(incomplete)})"
+        raise RuntimeError(message)
+
+
+_assert_kind_qualifiers_complete()
 
 
 def kind_qualifier(kind: str, language: str) -> str | None:
@@ -1011,6 +1100,45 @@ for _language, _headings in SECTION_HEADINGS.items():
         raise RuntimeError("every governed section needs a heading in every language")
 
 
+#: The description code each chart kind resolves to, derived from the governed kind
+#: set rather than enumerated. `charts.py` composes the same string as
+#: `f"chart_description.{spec.kind}"` and `excel.py` reads it back the same way, so a
+#: kind with no description here is a `KeyError` on the Excel surface and a chart with
+#: no accessible text on the web one.
+#:
+#: Iterating `GOVERNED_CHART_KINDS` is the load-bearing part. An earlier form listed
+#: the three constants by hand, which spelled them from governed names but fixed the
+#: *membership* here: a fourth kind admitted in `bundle` would leave this set at three,
+#: the guard below would still pass, and the missing description would surface as that
+#: `KeyError` at render time -- a guard naming its own scope cannot see the scope grow.
+_CHART_DESCRIPTION_CODES = frozenset(
+    f"chart_description.{kind}" for kind in GOVERNED_CHART_KINDS
+)
+
+
+def _assert_chart_descriptions_complete() -> None:
+    # Flat rather than a loop wrapping a conditional: the nested form is the
+    # shape CodeScene names "Bumpy Road", and this module's health is already
+    # near the gate. The comprehension does the searching and the two guard
+    # clauses do the raising, so neither nests inside the other.
+    if set(CHART_DESCRIPTIONS) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("chart descriptions must cover every governed language")
+    incomplete = [
+        language
+        for language, entries in CHART_DESCRIPTIONS.items()
+        if set(entries) != _CHART_DESCRIPTION_CODES
+    ]
+    if incomplete:
+        message = (
+            "every governed chart kind needs a description in every language "
+            f"(languages={sorted(incomplete)})"
+        )
+        raise RuntimeError(message)
+
+
+_assert_chart_descriptions_complete()
+
+
 def category_of(figure: CitedFigure) -> ChartCategory:
     """A mark's category if the figure has one, otherwise the code for its metric.
 
@@ -1038,3 +1166,390 @@ def worded(category: ChartCategory, language: str) -> str:
     if not category.localize:
         return category.value
     return LABEL_WORDING[language][category.value]
+
+#: What each metric means, in a sentence a reader who is not an analyst can use.
+#:
+#: `RRA-011` authors this rather than deriving it, because no other artifact
+#: declares it: `RRA-009` governs what a metric is *called* and this governs what
+#: it *means*. The one exception the specification grants to its own derivation
+#: rule, and bounded by it -- every key here is a code some governed family
+#: already publishes, asserted at import below.
+METRIC_DESCRIPTIONS: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "revenue": "Money from sales, after returns are subtracted.",
+        "units": "How many items were sold, after returned items are subtracted.",
+        "transactions": "How many separate sales happened.",
+        "average_order_value": "Money from sales divided by the number of sales.",
+        "average_selling_price": "Money from sales divided by items sold.",
+        "cost": "What the goods sold cost you to buy.",
+        "gross_profit": "Money from sales minus what those goods cost.",
+        "gross_margin": "Gross profit as a share of sales.",
+        "discount": "Money taken off the stated price.",
+        "returns": "Money refunded on returned goods.",
+        "growth_revenue_change": "How much sales money changed between the two periods.",
+        "growth_price_effect": "The part of that change explained by prices and product mix.",
+        "growth_volume_effect": "The part of that change explained by selling more or fewer items.",
+        "revenue_delta_absolute": "The difference in sales money between the two periods.",
+        "revenue_delta_percent": "That difference as a percentage of the earlier period.",
+        "basket_items_per_transaction": "How many items an average sale contains.",
+        "basket_attach_rate": "The share of sales that included this product or category.",
+        "concentration_curve": (
+            "How sales are spread across products or categories, "
+            "largest to smallest."
+        ),
+        "concentration_distinct_values": "How many products or categories were counted.",
+        "concentration_ranked_values": "How many of those could be ranked.",
+        "concentration_top_decile_share": "The share of sales held by the top tenth.",
+        "concentration_top_quartile_share": "The share of sales held by the top quarter.",
+    },
+    LANGUAGE_ARABIC: {
+        "revenue": "الأموال الناتجة عن المبيعات بعد خصم المرتجعات.",
+        "units": "عدد الأصناف المبيعة بعد خصم الأصناف المرتجعة.",
+        "transactions": "عدد عمليات البيع المنفصلة.",
+        "average_order_value": "أموال المبيعات مقسومة على عدد عمليات البيع.",
+        "average_selling_price": "أموال المبيعات مقسومة على عدد الأصناف المبيعة.",
+        "cost": "تكلفة شراء البضاعة التي بيعت.",
+        "gross_profit": "أموال المبيعات ناقص تكلفة تلك البضاعة.",
+        "gross_margin": "إجمالي الربح كنسبة من المبيعات.",
+        "discount": "المبالغ المخصومة من السعر المعلن.",
+        "returns": "المبالغ المستردة عن البضاعة المرتجعة.",
+        "growth_revenue_change": "مقدار تغير أموال المبيعات بين الفترتين.",
+        "growth_price_effect": "الجزء من ذلك التغير الذي تفسره الأسعار ومزيج المنتجات.",
+        "growth_volume_effect": "الجزء من ذلك التغير الذي يفسره بيع أصناف أكثر أو أقل.",
+        "revenue_delta_absolute": "الفرق في أموال المبيعات بين الفترتين.",
+        "revenue_delta_percent": "ذلك الفرق كنسبة مئوية من الفترة الأسبق.",
+        "basket_items_per_transaction": "عدد الأصناف التي تتضمنها عملية البيع الوسطية.",
+        "basket_attach_rate": "نسبة عمليات البيع التي تضمنت هذا المنتج أو الفئة.",
+        "concentration_curve": (
+            "كيف تتوزع المبيعات على المنتجات أو الفئات، من الأكبر إلى الأصغر."
+        ),
+        "concentration_distinct_values": "عدد المنتجات أو الفئات التي جرى احتسابها.",
+        "concentration_ranked_values": "عدد ما أمكن ترتيبه منها.",
+        "concentration_top_decile_share": "حصة أعلى عُشر من المبيعات.",
+        "concentration_top_quartile_share": "حصة أعلى ربع من المبيعات.",
+    },
+}
+
+#: What each metric is *not*, stated because the wrong reading is the likely one.
+#:
+#: An unsupported interpretation names the specific mistake a metric invites,
+#: not a general hedge. `average_order_value` divides by sale transactions, so a
+#: reader taking it as revenue per customer is wrong in a way no caveat on the
+#: figure would tell them -- one customer buying three times is three sales.
+#:
+#: `RRA-011` bounds this: it states what a metric does not mean and never
+#: redefines what it does. Where wording and computation could be read as
+#: disagreeing, `RRA-004` and `RRA-008` govern and the wording is wrong.
+METRIC_NOT_MEANT: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "revenue": "Not money received. A sale recorded today counts today, whenever it is paid.",
+        "units": "Not stock on hand. This counts what was sold, not what remains.",
+        "transactions": "Not customers. One customer buying three times is three sales.",
+        "average_order_value": (
+            "Not revenue per customer. It divides by sales, and one customer can make several."
+        ),
+        "average_selling_price": (
+            "Not a price list. It averages everything sold, so product mix moves it as much as "
+            "pricing."
+        ),
+        "cost": "Not total spending. Only the cost of goods that sold is counted here.",
+        "gross_profit": "Not profit. Rent, salaries and other running costs are not subtracted.",
+        "gross_margin": "Not net margin, for the same reason: running costs are not in it.",
+        "discount": "Not lost revenue. A discount may have been what made the sale happen.",
+        "returns": (
+            "Not a quality measure on its own. A return can follow a policy rather than a fault."
+        ),
+        "growth_revenue_change": "Not a forecast. It compares two periods that already happened.",
+        "growth_price_effect": (
+            "Not a pricing result. Selling more of an expensive product moves this with no price "
+            "change."
+        ),
+        "growth_volume_effect": "Not customer count. It follows items sold, not who bought them.",
+        "revenue_delta_absolute": "Not a trend. Two periods are two points, not a direction.",
+        "revenue_delta_percent": (
+            "Not comparable across different-sized periods. A small base makes a small change look "
+            "large."
+        ),
+        "basket_items_per_transaction": (
+            "Not distinct products. Three of one item is three items here."
+        ),
+        "basket_attach_rate": (
+            "Not a cross-sell result. It counts sales containing the value, not sales it was added "
+            "to."
+        ),
+        "concentration_curve": (
+            "Not a ranking of importance. It ranks by sales money and nothing else."
+        ),
+        "concentration_distinct_values": (
+            "Not your catalogue. Only values that appear in sales are counted."
+        ),
+        "concentration_ranked_values": (
+            "Not equal to the count above when some values could not be ranked."
+        ),
+        "concentration_top_decile_share": (
+            "Not a health measure. Whether concentration is good depends on your business."
+        ),
+        "concentration_top_quartile_share": "Not a health measure, for the same reason.",
+    },
+    LANGUAGE_ARABIC: {
+        "revenue": "ليست الأموال المحصلة. عملية البيع المسجلة اليوم تُحتسب اليوم مهما تأخر سدادها.",
+        "units": "ليست المخزون المتاح. هذا عدد ما بيع لا ما تبقى.",
+        "transactions": "ليست عدد العملاء. العميل الذي يشتري ثلاث مرات هو ثلاث عمليات بيع.",
+        "average_order_value": (
+            "ليس الإيراد لكل عميل. القسمة على عمليات البيع، والعميل الواحد قد يجري عدة عمليات."
+        ),
+        "average_selling_price": (
+            "ليس قائمة أسعار. هو متوسط عبر كل ما بيع، فمزيج المنتجات يحركه بقدر التسعير."
+        ),
+        "cost": "ليست إجمالي المصروفات. تُحتسب هنا تكلفة البضاعة التي بيعت فقط.",
+        "gross_profit": "ليس صافي الربح. الإيجار والرواتب وبقية مصاريف التشغيل غير مخصومة.",
+        "gross_margin": "ليس هامش الربح الصافي، للسبب نفسه: مصاريف التشغيل ليست ضمنه.",
+        "discount": "ليس إيراداً ضائعاً. قد يكون الخصم هو ما جعل عملية البيع تحدث.",
+        "returns": "ليست مقياس جودة بمفردها. قد يكون الإرجاع اتباعاً لسياسة لا نتيجة عيب.",
+        "growth_revenue_change": "ليس تنبؤاً. هو مقارنة بين فترتين وقعتا بالفعل.",
+        "growth_price_effect": (
+            "ليس نتيجة قرار تسعير. بيع كمية أكبر من منتج مرتفع السعر يحركه دون تغير الأسعار."
+        ),
+        "growth_volume_effect": "ليس عدد العملاء. يتبع الأصناف المبيعة لا من اشتراها.",
+        "revenue_delta_absolute": "ليس اتجاهاً. الفترتان نقطتان لا مسار.",
+        "revenue_delta_percent": (
+            "غير قابل للمقارنة بين فترات مختلفة الحجم. القاعدة الصغيرة تجعل التغير الصغير نسبة "
+            "كبيرة."
+        ),
+        "basket_items_per_transaction": (
+            "ليست منتجات مختلفة. ثلاث قطع من صنف واحد هي ثلاثة أصناف هنا."
+        ),
+        "basket_attach_rate": (
+            "ليست نتيجة بيع متقاطع. تحتسب عمليات البيع التي تضمنت القيمة لا التي أُضيفت فيها."
+        ),
+        "concentration_curve": "ليس ترتيباً حسب الأهمية. يرتب حسب أموال المبيعات فقط.",
+        "concentration_distinct_values": "ليس كتالوجك. تُحتسب القيم التي تظهر في المبيعات فقط.",
+        "concentration_ranked_values": "لا يساوي العدد أعلاه حين يتعذر ترتيب بعض القيم.",
+        "concentration_top_decile_share": "ليست مقياس صحة. كون التركز جيداً يعتمد على نشاطك.",
+        "concentration_top_quartile_share": "ليست مقياس صحة، للسبب نفسه.",
+    },
+}
+
+
+#: Every metric any governed contract publishes, which is what the two tables
+#: above must cover. Derived here rather than imported from `definitions`, which
+#: imports this module: the union is the same one that module computes, read
+#: from the same five governed exports.
+_CATALOGUED_METRIC_CODES = frozenset(
+    set(facts.GOVERNED_METRICS)
+    | set(comparison.GOVERNED_METRICS)
+    | set(growth.GOVERNED_METRICS)
+    | set(basket.GOVERNED_METRICS)
+    | set(concentration.GOVERNED_METRICS)
+)
+
+
+#: Names a reader may already know each metric by, in each language. `RRA-011`
+#: names synonyms as one of three things the catalog's vocabulary carries, beside
+#: the description and the unsupported reading.
+#:
+#: A synonym is a *recognition* aid and never a second definition: it is a phrase
+#: a reader might arrive with, mapped onto the one governed metric. Where a
+#: familiar phrase is used loosely in the trade for something this metric is not,
+#: it belongs in `METRIC_NOT_MEANT` instead -- listing it here would import the
+#: looser meaning through the back door, which is the reading the unsupported
+#: table exists to close.
+#:
+#: A tuple rather than a set: the order is the order a surface offers them in, and
+#: a set would reorder between runs and break a reconciling document.
+METRIC_SYNONYMS: dict[str, dict[str, tuple[str, ...]]] = {
+    LANGUAGE_ENGLISH: {
+        "revenue": ("sales", "turnover", "gross sales"),
+        "units": ("quantity", "volume", "pieces sold"),
+        "transactions": ("orders", "sales count", "receipts"),
+        "cost": ("COGS", "purchase cost"),
+        "discount": ("markdown", "price reduction"),
+        "returns": ("refunds", "returned goods"),
+        "gross_profit": ("margin value", "gross margin value"),
+        "gross_margin": ("margin percentage", "gross margin rate"),
+        "average_order_value": ("AOV", "average basket value", "average ticket"),
+        "average_selling_price": ("ASP", "average unit price"),
+        "revenue_delta_absolute": ("sales change", "absolute change"),
+        "revenue_delta_percent": ("growth rate", "percentage change"),
+        "growth_revenue_change": ("total sales movement",),
+        "growth_price_effect": ("price contribution", "rate effect"),
+        "growth_volume_effect": ("volume contribution", "quantity effect"),
+        "basket_items_per_transaction": ("units per basket", "items per order"),
+        "basket_attach_rate": ("penetration", "attachment", "presence rate"),
+        "concentration_top_decile_share": ("top 10% share",),
+        "concentration_top_quartile_share": ("top 25% share",),
+        "concentration_distinct_values": ("count of contributors",),
+        "concentration_ranked_values": ("contribution ranking",),
+        "concentration_curve": ("concentration distribution",),
+    },
+    LANGUAGE_ARABIC: {
+        "revenue": ("المبيعات", "إجمالي المبيعات", "قيمة المبيعات"),
+        "units": ("الكمية", "الحجم", "القطع المباعة"),
+        "transactions": ("الطلبات", "عدد عمليات البيع", "الفواتير"),
+        "cost": ("تكلفة البضاعة المباعة",),
+        "discount": ("التخفيض", "خفض السعر"),
+        "returns": ("البضاعة المرتجعة", "المردودات"),
+        "gross_profit": ("قيمة الهامش", "قيمة الربح الإجمالي"),
+        "gross_margin": ("نسبة الهامش", "معدل الربح الإجمالي"),
+        "average_order_value": ("متوسط قيمة الطلب", "متوسط قيمة السلة"),
+        "average_selling_price": ("متوسط سعر الوحدة",),
+        "revenue_delta_absolute": ("تغير المبيعات", "التغير المطلق"),
+        "revenue_delta_percent": ("معدل النمو", "نسبة التغير"),
+        "growth_revenue_change": ("إجمالي حركة المبيعات",),
+        "growth_price_effect": ("مساهمة السعر", "أثر السعر"),
+        "growth_volume_effect": ("مساهمة الكمية", "أثر الحجم"),
+        "basket_items_per_transaction": ("الأصناف لكل سلة", "الأصناف لكل طلب"),
+        "basket_attach_rate": ("نسبة الانتشار", "نسبة الحضور"),
+        "concentration_top_decile_share": ("حصة أعلى ١٠٪",),
+        "concentration_top_quartile_share": ("حصة أعلى ٢٥٪",),
+        "concentration_distinct_values": ("عدد المساهمين",),
+        "concentration_ranked_values": ("ترتيب المساهمة",),
+        "concentration_curve": ("توزيع التركز",),
+    },
+}
+
+
+#: The tables the guard below covers, named once. Listing them at each of the
+#: two loops let a table be added to one and forgotten in the other -- which is
+#: how a table reaches customers covering one language.
+_VOCABULARY_TABLES = (
+    ("descriptions", METRIC_DESCRIPTIONS),
+    ("not_meant", METRIC_NOT_MEANT),
+    ("synonyms", METRIC_SYNONYMS),
+)
+
+
+def _assert_vocabulary_complete() -> None:
+    """Every table covers every catalogued metric, in both languages, and no others.
+
+    The language set is asserted first, and separately. Checking only the
+    languages a table happens to contain cannot see one removed: a table with
+    Arabic deleted iterates once, finds English complete, and imports cleanly
+    while every Arabic lookup raises `KeyError` at render time. Every other
+    guard in this module opens the same way for the same reason.
+    """
+    for table_name, table in _VOCABULARY_TABLES:
+        if set(table) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+            message = f"{table_name} must cover every governed language"
+            raise RuntimeError(message)
+    wrong = [
+        f"{table_name}/{language}"
+        for table_name, table in _VOCABULARY_TABLES
+        for language, entries in table.items()
+        if set(entries) != _CATALOGUED_METRIC_CODES
+    ]
+    if wrong:
+        message = f"every catalogued metric needs vocabulary in every language: {wrong}"
+        raise RuntimeError(message)
+
+
+_assert_vocabulary_complete()
+
+
+def metric_description(metric: str, language: str) -> str:
+    """What this metric means, refusing an unknown code or language."""
+    return METRIC_DESCRIPTIONS[language][metric]
+
+
+def metric_not_meant(metric: str, language: str) -> str:
+    """The reading this metric invites and does not support."""
+    return METRIC_NOT_MEANT[language][metric]
+
+
+def metric_synonyms(metric: str, language: str) -> tuple[str, ...]:
+    """Names a reader may recognize this metric by, refusing an unknown code."""
+    return METRIC_SYNONYMS[language][metric]
+
+
+#: The scopes `RRA-009` states a refusal at, in the order a catalog reports them.
+#: A tuple rather than `REFUSAL_WORDING`'s keys so the order is stated rather than
+#: inherited from a dict literal that a later edit could reorder.
+GOVERNED_REASON_SCOPES = ("section", "result")
+
+
+def reason_codes(scope: str) -> frozenset[str]:
+    """Every refusal reason stated at one scope, refusing an unknown scope.
+
+    Read from the English table. The import-time guard already proves both
+    languages carry the same codes at every scope, so reading one is reading the
+    registry -- and reading the union of both would hide a language that lost a
+    code behind the other still having it.
+    """
+    if scope not in GOVERNED_REASON_SCOPES:
+        raise KeyError(scope)
+    return frozenset(REFUSAL_WORDING[scope][LANGUAGE_ENGLISH])
+
+
+def reason_wording(code: str, language: str, scope: str) -> str:
+    """What one refusal says, as authored, placeholders intact."""
+    return REFUSAL_WORDING[scope][language][code]
+
+
+def caveat_codes() -> frozenset[str]:
+    """Every caveat code the governed calculation can state."""
+    return frozenset(CAVEAT_WORDING[LANGUAGE_ENGLISH])
+
+
+def caveat_wording_for(code: str, language: str) -> str:
+    """What one caveat says to a customer."""
+    return CAVEAT_WORDING[language][code]
+
+
+#: What each dimension a series is keyed by is called, in each language. Five
+#: entries rather than one per composed metric: a series metric's meaning is its
+#: measure's meaning resolved over one of these, so this is the only part of it
+#: that is not already authored.
+DIMENSION_NAMES: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "period": "each period",
+        "product": "each product",
+        "category": "each category",
+        "store": "each branch",
+        "channel": "each channel",
+    },
+    LANGUAGE_ARABIC: {
+        "period": "كل فترة",
+        "product": "كل منتج",
+        "category": "كل فئة",
+        "store": "كل فرع",
+        "channel": "كل قناة",
+    },
+}
+
+#: How a series description is composed from its measure's and its dimension's.
+#: A format string per language, because the two put the parts in opposite orders
+#: and concatenating them in one order would read as translated English.
+_SERIES_DESCRIPTION = {
+    LANGUAGE_ENGLISH: "{measure} Broken down by {dimension}.",
+    LANGUAGE_ARABIC: "{measure} موزعة على {dimension}.",
+}
+
+
+def _assert_dimension_names_complete() -> None:
+    """Every governed series dimension is named in every language.
+
+    Read from `facts.SERIES_DIMENSIONS` rather than from this table's own keys: a
+    guard comparing the table to itself passes whatever the table says, and the
+    failure this exists to catch is a dimension admitted there and not named here,
+    which would compose a description with a `KeyError` in it.
+    """
+    if set(DIMENSION_NAMES) != {LANGUAGE_ARABIC, LANGUAGE_ENGLISH}:
+        raise RuntimeError("dimension names must cover every governed language")
+    wrong = [
+        language
+        for language, entries in DIMENSION_NAMES.items()
+        if set(entries) != set(facts.SERIES_DIMENSIONS)
+    ]
+    if wrong:
+        message = f"every governed series dimension needs a name: {sorted(wrong)}"
+        raise RuntimeError(message)
+
+
+_assert_dimension_names_complete()
+
+
+def series_description(measure: str, dimension: str, language: str) -> str:
+    """One series' meaning, composed from its measure's and its dimension's."""
+    return _SERIES_DESCRIPTION[language].format(
+        measure=measure, dimension=DIMENSION_NAMES[language][dimension]
+    )

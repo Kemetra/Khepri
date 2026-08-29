@@ -113,6 +113,43 @@ METRIC_GROSS_PROFIT = "gross_profit"
 METRIC_GROSS_MARGIN = "gross_margin"
 METRIC_DISCOUNT = "discount"
 METRIC_RETURNS = "returns"
+
+#: Every headline metric code `RRA-004` names, as one governed set.
+#:
+#: Stated here, beside the constants, because this is where a metric is added: a
+#: consumer that needs "every core metric" reads this instead of retyping the ten
+#: names, and a metric added above without being added here fails a test rather
+#: than silently narrowing whatever that consumer governs. `wording.py` kept such
+#: a retyped copy until `RRA-011` replaced it with this import.
+#:
+#: Core metrics only. Each `RRA-008` family exports its own `GOVERNED_METRICS`,
+#: and unioning them here would put the analysis families' vocabulary inside
+#: `rra004.formula`'s identity, which is not what the version means.
+GOVERNED_METRICS: frozenset[str] = frozenset(
+    {
+        METRIC_REVENUE,
+        METRIC_UNITS,
+        METRIC_TRANSACTIONS,
+        METRIC_AVERAGE_ORDER_VALUE,
+        METRIC_AVERAGE_SELLING_PRICE,
+        METRIC_COST,
+        METRIC_GROSS_PROFIT,
+        METRIC_GROSS_MARGIN,
+        METRIC_DISCOUNT,
+        METRIC_RETURNS,
+    }
+)
+
+
+def is_governed_metric(code: str) -> bool:
+    """Whether this code names a core metric `RRA-004` defines.
+
+    A predicate rather than bare set membership, matching
+    `populations.is_governed_population`: the two answer the same shape of
+    question, and a caller reading one should not have to check whether the
+    other happens to expose a set or a function.
+    """
+    return code in GOVERNED_METRICS
 #: What `returning_periods` records for a posted return carrying no date.
 #:
 #: It belongs to no period, so no window can be proven free of it. A label no
@@ -180,6 +217,28 @@ COMPARISON_DIMENSIONS = (
     SEMANTIC_STORE,
     SEMANTIC_CHANNEL,
 )
+
+#: The dimension a period series is keyed by. A series metric's code is composed
+#: as `<measure>_by_<dimension>`, and `period` is the one dimension that is not a
+#: column in the file -- it comes from the date. Named here rather than spelled in
+#: the f-string that builds it, because `definitions` derives the catalog's series
+#: codes from the same constants the builders compose them from: a literal in one
+#: place and a literal in the other is two truths, and the catalog would silently
+#: stop covering a series whose name moved.
+PERIOD_DIMENSION = "period"
+
+#: Every dimension a series or comparison metric can be keyed by.
+SERIES_DIMENSIONS: tuple[str, ...] = (PERIOD_DIMENSION, *COMPARISON_DIMENSIONS)
+
+#: Every measure a series or comparison metric can be composed from.
+#:
+#: Not `GOVERNED_METRICS`: `_series` and `_comparisons` both iterate the
+#: `aggregated` tuple, and only revenue and units are aggregated over a
+#: dimension. The other eight core metrics are ratios or counts computed once
+#: over the whole package, so `gross_margin_by_channel` is a code no builder can
+#: emit. Declared here, beside the dimensions, and read by the tuple below so a
+#: measure cannot be aggregated without the catalog learning its name.
+SERIES_MEASURES: tuple[str, ...] = (SEMANTIC_REVENUE, SEMANTIC_UNITS)
 
 
 class FactsRefused(ValueError):
@@ -1100,6 +1159,10 @@ def _build(
         unavailable_reason=totals.additive_reason,
     )
 
+    # Ordered to match `SERIES_MEASURES`, and asserted against it below: the
+    # catalog composes its series codes from that constant, so a measure
+    # aggregated here without being declared there would publish a figure the
+    # catalog cannot define.
     aggregated = (
         _Aggregated(
             measure=SEMANTIC_REVENUE,
@@ -1121,6 +1184,11 @@ def _build(
             unit_kind=UNIT_COUNT,
         ),
     )
+    if tuple(entry.measure for entry in aggregated) != SERIES_MEASURES:
+        raise AssertionError(
+            "aggregated measures drifted from SERIES_MEASURES: "
+            f"{tuple(entry.measure for entry in aggregated)} != {SERIES_MEASURES}"
+        )
     series = _series(
         measures,
         aggregated,
@@ -1805,7 +1873,7 @@ def _series(
     granularity = granularity_for(dated)
     results: list[FactSeries] = []
     for entry in aggregated:
-        metric = f"{entry.measure}_by_period"
+        metric = f"{entry.measure}_by_{PERIOD_DIMENSION}"
         if not dated or entry.total is None:
             refusals.append(
                 RefusedResult(metric=metric, reason=REASON_INPUT_UNAVAILABLE)
