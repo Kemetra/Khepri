@@ -138,6 +138,16 @@ GOVERNED_DIMENSIONS = (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY)
 
 REQUIRED_INPUTS = (SEMANTIC_UNITS, SEMANTIC_TRANSACTION_ID)
 
+#: The dimensions that satisfy the attach rate's requirement. Any one is enough,
+#: since `_found` states a rate over whichever the mapping resolved.
+#:
+#: Stated apart from `REQUIRED_INPUTS` because the two metrics need different
+#: things: items per transaction publishes on units and an identifier alone,
+#: while the attach rate refuses with `dimension_absent` when no governed
+#: dimension was mapped. A mapping carrying neither supports half this family,
+#: which is `partial` rather than available -- found in review on #340.
+ALTERNATIVE_INPUTS = GOVERNED_DIMENSIONS
+
 # The two buckets `build_comparison` synthesizes rather than reads from a source
 # value. Neither is an admissible dimension value, so neither gets an attach rate.
 _SYNTHETIC_LABELS = frozenset({OTHER_BUCKET_LABEL, UNLABELLED_BUCKET_LABEL})

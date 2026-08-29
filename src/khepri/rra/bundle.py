@@ -1608,7 +1608,7 @@ _FAMILIES = {
         derive=basket.derive,
         version=lambda: basket.BASKET_FORMULA_VERSION,
         required_inputs=lambda: basket.REQUIRED_INPUTS,
-        alternative_inputs=lambda: (),
+        alternative_inputs=lambda: basket.ALTERNATIVE_INPUTS,
         refusals=basket.refusals,
         names=basket.attached_label_of,
         # The attach rates, one bar per value. Items per transaction is a different

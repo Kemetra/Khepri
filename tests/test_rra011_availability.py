@@ -232,3 +232,64 @@ def test_a_family_needing_a_dimension_is_not_available_without_one() -> None:
     # both reads as though both were required.
     assert set(entry.missing) <= set(concentration.ALTERNATIVE_INPUTS)
     assert len(entry.missing) == 1
+
+
+def test_basket_without_a_dimension_is_partial_rather_than_available() -> None:
+    """Items per transaction publishes; the attach rate does not.
+
+    `basket` states two metrics over different requirements. Items per
+    transaction needs units and a transaction identifier. The attach rate needs
+    a governed dimension, and `_refusals` emits `dimension_absent` without one --
+    its comment: *"no governed dimension was mapped at all -- there is nothing to
+    state a rate over"*.
+
+    So a mapping carrying units and a transaction id but no product or category
+    supports half this family. Reporting it available would promise the customer
+    an attach rate the analysis is already committed to refusing, which is the
+    false promise this contract exists to prevent.
+    """
+    mapping = _mapping(
+        **{SEMANTIC_UNITS: STATE_MAPPED, SEMANTIC_TRANSACTION_ID: STATE_MAPPED}
+    )
+
+    entry = _for(definitions.availability(mapping), SECTION_BASKET)
+
+    assert entry.state == definitions.PARTIAL
+    assert set(entry.missing) <= set(basket.GOVERNED_DIMENSIONS)
+    assert len(entry.missing) == 1
+
+
+def test_basket_with_a_dimension_is_available() -> None:
+    """Either governed dimension supports the attach rate, as `_found` selects."""
+    for dimension in (SEMANTIC_PRODUCT, SEMANTIC_CATEGORY):
+        mapping = _mapping(
+            **{
+                SEMANTIC_UNITS: STATE_MAPPED,
+                SEMANTIC_TRANSACTION_ID: STATE_MAPPED,
+                dimension: STATE_MAPPED,
+            }
+        )
+
+        entry = _for(definitions.availability(mapping), SECTION_BASKET)
+
+        assert entry.state == definitions.AVAILABLE, dimension
+        assert entry.missing == ()
+
+
+def test_a_family_with_governed_dimensions_declares_them_as_an_alternative() -> None:
+    """The property that would have caught the basket gap before review.
+
+    `basket` and `concentration` each state a metric over a governed dimension
+    and refuse without one. Modelling that for concentration and not for basket
+    is what made the preview promise an attach rate the analysis was already
+    committed to refusing -- and no test noticed, because each family was only
+    ever checked on its own terms.
+
+    Asserted over the families rather than per family, so a fifth one declaring
+    `GOVERNED_DIMENSIONS` fails here rather than shipping the same defect.
+    """
+    for family in (comparison, growth, basket, concentration):
+        dimensions = getattr(family, "GOVERNED_DIMENSIONS", None)
+        if dimensions is None:
+            continue
+        assert dimensions == family.ALTERNATIVE_INPUTS, family.__name__
