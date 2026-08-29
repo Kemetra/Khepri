@@ -32,9 +32,7 @@ from khepri.rra.analysis import basket, comparison, concentration, growth
 from khepri.rra.bundle import (
     CAVEAT_CHART_NOT_DRAWN,
     CAVEAT_CURVE_SAMPLED,
-    CHART_BAR,
-    CHART_GROUPED_BAR,
-    CHART_LINE,
+    GOVERNED_CHART_KINDS,
     GOVERNED_FIGURE_LABELS,
     GOVERNED_SECTION_REASONS,
     KIND_ROWS,
@@ -1102,13 +1100,19 @@ for _language, _headings in SECTION_HEADINGS.items():
         raise RuntimeError("every governed section needs a heading in every language")
 
 
-#: The description code each chart kind resolves to. Spelled from the governed kind
-#: constants rather than as literals, because `charts.py` composes the same string
-#: as `f"chart_description.{spec.kind}"` and `excel.py` reads it back the same way:
-#: a kind added there with no description here is a `KeyError` on the Excel surface
-#: and a chart with no accessible description on the web one.
+#: The description code each chart kind resolves to, derived from the governed kind
+#: set rather than enumerated. `charts.py` composes the same string as
+#: `f"chart_description.{spec.kind}"` and `excel.py` reads it back the same way, so a
+#: kind with no description here is a `KeyError` on the Excel surface and a chart with
+#: no accessible text on the web one.
+#:
+#: Iterating `GOVERNED_CHART_KINDS` is the load-bearing part. An earlier form listed
+#: the three constants by hand, which spelled them from governed names but fixed the
+#: *membership* here: a fourth kind admitted in `bundle` would leave this set at three,
+#: the guard below would still pass, and the missing description would surface as that
+#: `KeyError` at render time -- a guard naming its own scope cannot see the scope grow.
 _CHART_DESCRIPTION_CODES = frozenset(
-    f"chart_description.{kind}" for kind in (CHART_BAR, CHART_GROUPED_BAR, CHART_LINE)
+    f"chart_description.{kind}" for kind in GOVERNED_CHART_KINDS
 )
 
 

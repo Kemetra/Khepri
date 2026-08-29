@@ -690,6 +690,54 @@ def test_chart_description_guard_raises_when_a_governed_kind_has_no_description(
         wording._assert_chart_descriptions_complete()
 
 
+def test_chart_description_codes_follow_a_kind_added_to_the_governed_set(
+    monkeypatch,
+) -> None:
+    """The direction the deletion case above cannot see: the scope grows.
+
+    Removing a description proves the guard notices a table that shrank, and it
+    passes just as well when `_CHART_DESCRIPTION_CODES` hand-lists the three kinds
+    it knows -- the deletion is *inside* the scope it named. A fourth kind admitted
+    in `bundle` is outside it: an enumerated set stays at three, compares equal to
+    a three-entry table, and the chart reaches Excel with a `KeyError` on a
+    description nobody wrote.
+
+    The codes are computed once at import, so patching `GOVERNED_CHART_KINDS` alone
+    changes nothing a test can observe -- the module already holds the value it
+    derived. Re-importing is what makes the derivation run against the widened set,
+    which is why this reloads rather than calling the guard directly. Derived, the
+    codes become four against a three-entry table and the import-time call raises;
+    hand-listed, nothing raises and this fails.
+
+    `monkeypatch.undo()` precedes the restoring reload deliberately: reloading first
+    would re-derive from the patched set and leave the widened codes installed for
+    every test after this one.
+    """
+    monkeypatch.setattr(
+        bundle,
+        "GOVERNED_CHART_KINDS",
+        frozenset(bundle.GOVERNED_CHART_KINDS | {"stacked_bar"}),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="chart"):
+            importlib.reload(wording)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(wording)
+
+
+def test_every_governed_chart_kind_has_a_description_code() -> None:
+    """An equality, so neither side may drift from the other.
+
+    A subset assertion would admit a code for a kind `bundle` does not govern --
+    the reverse leak: wording for a chart no surface can draw. This states the
+    extent; the reload case above states the derivation.
+    """
+    assert wording._CHART_DESCRIPTION_CODES == frozenset(
+        f"chart_description.{kind}" for kind in bundle.GOVERNED_CHART_KINDS
+    )
+
+
 def test_derived_metric_guard_raises_when_one_language_names_a_metric(
     monkeypatch,
 ) -> None:
