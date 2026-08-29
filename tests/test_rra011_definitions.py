@@ -92,7 +92,38 @@ def test_a_definition_carries_only_catalog_scope_attributes() -> None:
     """
     fields = {field.name for field in dataclasses.fields(definitions.MetricDefinition)}
 
-    assert {"code", "family"} == fields
+    assert {"code", "formula_version"} == fields
+
+
+def test_a_definition_names_a_governed_version_rather_than_an_invented_label() -> None:
+    """Scope test 1 binds what the catalog *returns*, not only what it admits.
+
+    An earlier form grouped metrics under labels this module coined -- "core",
+    "basket" -- and the route published them. A label is a code the catalog
+    returns, and "core" corresponded to no constant anywhere, so the catalog was
+    stating vocabulary of its own through the one field nobody was checking.
+
+    Every value is now a version constant its own module declares.
+    """
+    governed = {
+        facts.FORMULA_VERSION,
+        comparison.COMPARISON_FORMULA_VERSION,
+        growth.GROWTH_FORMULA_VERSION,
+        basket.BASKET_FORMULA_VERSION,
+        concentration.CONCENTRATION_FORMULA_VERSION,
+    }
+
+    published = {
+        definitions.define_metric(code).formula_version
+        for code in definitions.METRIC_CODES
+    }
+
+    assert published <= governed
+    assert definitions.define_metric("revenue").formula_version == facts.FORMULA_VERSION
+    assert (
+        definitions.define_metric("basket_attach_rate").formula_version
+        == basket.BASKET_FORMULA_VERSION
+    )
 
 
 # --- T1-03: the vocabulary RRA-011 authors -------------------------------

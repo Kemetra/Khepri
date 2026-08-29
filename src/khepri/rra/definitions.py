@@ -51,13 +51,18 @@ class UnknownCode(LookupError):
 class MetricDefinition:
     """What is knowable about a metric without a package.
 
-    `code` and `family` only. Everything else a reader might want — the value,
-    its precision, the rows behind it — belongs to a produced package and is read
-    from there.
+    The code, and the governed version of the contract that computes it.
+    Everything else a reader might want -- the value, its precision, the rows
+    behind it -- belongs to a produced package and is read from there.
     """
 
     code: str
-    family: str
+    #: The governed version of the contract that computes this metric --
+    #: `rra004.formula.v2` for a core metric, `rra008.<family>.v2` for an
+    #: analysis family. A governed constant read from the module that declares
+    #: it, never a label this module coins: `RRA-011` admits no code of its own,
+    #: and a family name invented here would be one.
+    formula_version: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,14 +73,18 @@ class PopulationDefinition:
     is_family: bool
 
 
-#: Which family publishes which metrics. The values are each family's own
-#: declaration, so a metric added there reaches this catalog without an edit here.
+#: Which governed contract publishes which metrics, keyed by that contract's own
+#: version constant. Both halves are read from the module that declares them, so
+#: a metric added there reaches this catalog without an edit here, and no name in
+#: this table is one this module invented.
 FAMILY_METRICS: dict[str, tuple[str, ...]] = {
-    "core": tuple(sorted(facts.GOVERNED_METRICS)),
-    "comparison": tuple(comparison.GOVERNED_METRICS),
-    "growth": tuple(growth.GOVERNED_METRICS),
-    "basket": tuple(basket.GOVERNED_METRICS),
-    "concentration": tuple(concentration.GOVERNED_METRICS),
+    facts.FORMULA_VERSION: tuple(sorted(facts.GOVERNED_METRICS)),
+    comparison.COMPARISON_FORMULA_VERSION: tuple(comparison.GOVERNED_METRICS),
+    growth.GROWTH_FORMULA_VERSION: tuple(growth.GOVERNED_METRICS),
+    basket.BASKET_FORMULA_VERSION: tuple(basket.GOVERNED_METRICS),
+    concentration.CONCENTRATION_FORMULA_VERSION: tuple(
+        concentration.GOVERNED_METRICS
+    ),
 }
 
 #: Every metric code any governed family publishes.
@@ -87,8 +96,8 @@ METRIC_CODES: frozenset[str] = frozenset(
 #: `admits_population` instead, which is `populations`' own rule.
 POPULATION_CODES: frozenset[str] = frozenset(populations.GOVERNED_POPULATIONS)
 
-_METRIC_FAMILIES: dict[str, str] = {
-    code: family for family, codes in FAMILY_METRICS.items() for code in codes
+_METRIC_VERSIONS: dict[str, str] = {
+    code: version for version, codes in FAMILY_METRICS.items() for code in codes
 }
 
 
@@ -109,10 +118,10 @@ def admits_population(code: str) -> bool:
 
 def define_metric(code: str) -> MetricDefinition:
     """The definition for one metric code, or `UnknownCode`."""
-    family = _METRIC_FAMILIES.get(code)
-    if family is None:
+    formula_version = _METRIC_VERSIONS.get(code)
+    if formula_version is None:
         raise UnknownCode(code)
-    return MetricDefinition(code=code, family=family)
+    return MetricDefinition(code=code, formula_version=formula_version)
 
 
 def define_population(code: str) -> PopulationDefinition:

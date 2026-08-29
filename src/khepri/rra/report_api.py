@@ -425,7 +425,10 @@ def _metric_catalog(language: str) -> dict[str, object]:
         "metrics": [
             {
                 "code": code,
-                "family": definitions.define_metric(code).family,
+                # The governed contract that computes it, read from that
+                # contract's own version constant. A family *label* would be a
+                # code this catalog coined, which `RRA-011` admits none of.
+                "formula_version": definitions.define_metric(code).formula_version,
                 # `None` where the metric has no customer-facing name, which is
                 # a real distinction rather than a gap: `concentration_curve`
                 # names the retained series a chart reads and is deliberately
