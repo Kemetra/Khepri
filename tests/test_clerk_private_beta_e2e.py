@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import URL, func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
@@ -75,8 +76,16 @@ def _token(subject: str = SUBJECT, **claims: object) -> str:
 @dataclass(slots=True)
 class PrivateBetaJourney:
     stack: RuntimeStack
+    engine: Engine
     factory: sessionmaker
     client: TestClient
+
+    def close(self) -> None:
+        """Release the web client before its SQLite engine's file can be removed."""
+        try:
+            self.client.close()
+        finally:
+            self.engine.dispose()
 
     def provision(self, subject: str, email: str, organization: str) -> tuple[str, str]:
         account = AccountService(SqlAccountStore(self.factory)).preprovision_external_account(
@@ -95,8 +104,7 @@ class PrivateBetaJourney:
         )
 
 
-@pytest.fixture(name="journey")
-def journey_fixture(tmp_path) -> PrivateBetaJourney:
+def build_private_beta_journey(tmp_path) -> PrivateBetaJourney:
     settings = RuntimeSettings(
         database_url=URL.create("sqlite+pysqlite", database=str(tmp_path / "private-beta.db")),
         storage_endpoint="https://fra1.spaces.example",
@@ -121,7 +129,30 @@ def journey_fixture(tmp_path) -> PrivateBetaJourney:
     RcaBase.metadata.create_all(engine)
     RraBase.metadata.create_all(engine)
     client = TestClient(build_web_app(stack), base_url=PARTY)
-    return PrivateBetaJourney(stack=stack, factory=stack.factory, client=client)
+    return PrivateBetaJourney(
+        stack=stack,
+        engine=engine,
+        factory=stack.factory,
+        client=client,
+    )
+
+
+@pytest.fixture(name="journey")
+def journey_fixture(tmp_path) -> PrivateBetaJourney:
+    journey = build_private_beta_journey(tmp_path)
+    try:
+        yield journey
+    finally:
+        journey.close()
+
+
+def test_closing_the_private_beta_journey_releases_its_sqlite_database(tmp_path) -> None:
+    """A missing client or engine shutdown leaves the fixture's file locked on Windows."""
+    database_path = tmp_path / "private-beta.db"
+    journey = build_private_beta_journey(tmp_path)
+
+    journey.close()
+    database_path.rename(tmp_path / "private-beta-released.db")
 
 
 def _answer(response) -> tuple[int, bytes, str | None]:

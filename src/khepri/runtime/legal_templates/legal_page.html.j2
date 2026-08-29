@@ -1,0 +1,9 @@
+{% extends "legal.html.j2" %}
+{% block title %}{{ page_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ page_title }}</h1>
+  <p class="lede">{{ copy.unpublished_title }}</p>
+  <p>{{ copy.unpublished_intro }}</p>
+</section>
+{% endblock %}
