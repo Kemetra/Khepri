@@ -287,5 +287,12 @@ families sit on their single governed successor version, and no transitional ver
 | CAL1-14 | **Passes** — zero failures, restart and determinism verified |
 | CAL1-15 | **Complete** — CodeScene passed on `#330`'s gate; every other clause verified here |
 
-**Merge authority is unchanged.** A branch and a pull request are proposals; this work becomes
-governing only when Ahmed Shaaban merges it to `main`. Nothing here was merged.
+**Merged by the owner at `#330` (`f320c17`), 2026-08-29.** This work was authored as a proposal and
+became governing only on that merge, which is the rule this ledger was written under.
+
+**Landing is not the same as closing.** §15 of the roadmap: a merged pull request "prove[s] a slice
+landed, never that its requirements closed." Two acceptance questions remain open and are the
+owner's, not this ledger's — whether `CAL1-12`'s sign/currency clause is met by an unreachable branch
+(F1), and whether `RRA-006`'s deterministic-regeneration clause governs container bytes or governed
+content (F3). The §16 row is therefore left at `IN_IMPLEMENTATION` rather than flipped to `MERGED`,
+because flipping it would answer both silently.
