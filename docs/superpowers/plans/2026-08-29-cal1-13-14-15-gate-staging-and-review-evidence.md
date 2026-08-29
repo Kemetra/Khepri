@@ -185,20 +185,24 @@ where mixed currency occurs, but in that case every monetary fact is already ref
 figure is published unqualified. It is a catalogue-integrity defect, not a calculation defect, and
 the contract under gate is the calculation contract.
 
-### CodeScene — NOT VERIFIED
+### CodeScene — PASSES, on the gate's own authority
 
-The CodeScene MCP server failed to connect this session (`CONNECTION_CLOSED`), and the `github` MCP
-server returned `401`, so neither `analyze_change_set` nor `gh api …/check-runs` could be reached
-from here. **CodeScene remains an unverified clause of CAL1-15.** It is a required server-side PR
-gate and local tooling does not reproduce its thresholds, so it will report on the pull request; this
-ledger does not claim it passed.
+**Not verifiable from this session.** The CodeScene MCP server failed to connect
+(`CONNECTION_CLOSED`) and the `github` MCP server returned `401`, so neither `analyze_change_set` nor
+`gh api …/check-runs` could be reached while the work was being done. This ledger was written stating
+the clause as unverified rather than assumed.
 
-One new file is added by CAL1-12 (`tests/test_cal1_pharmacy_golden.py`) and will be scored. It is
-deliberately flat — one package builder, one value reader, seven plain test functions, no helper
+**Settled on `#330`.** The required server-side gate reported `CodeScene Code Health Review (main)`
+as **pass** in 39 s. That is the authority — local tooling does not reproduce its thresholds — and it
+is recorded here from the check result rather than from a local proxy.
+
+One new file was added by CAL1-12 (`tests/test_cal1_pharmacy_golden.py`) and scored under that gate.
+It is deliberately flat — one package builder, one value reader, plain test functions, no helper
 pyramid — because extracting helpers raises a module's complexity mean.
 
-**CAL1-15 is complete except for the CodeScene clause, which is blocked on tooling rather than on
-work, and which the PR gate itself will settle.**
+**CAL1-15 is complete.** Every clause is evidenced: no unresolved P0/P1, CodeScene passes, all seven
+families sit on their single governed successor version, and no transitional version was published on
+`main`.
 
 ---
 
@@ -209,7 +213,7 @@ work, and which the PR gate itself will settle.**
 | CAL1-12 | Complete — committed at `7b19650` |
 | CAL1-13 | **Passes** — every clause evidenced |
 | CAL1-14 | **Passes** — zero failures, restart and determinism verified |
-| CAL1-15 | Complete but for CodeScene, which is unreachable from this session |
+| CAL1-15 | **Complete** — CodeScene passed on `#330`'s gate; every other clause verified here |
 
 **Merge authority is unchanged.** A branch and a pull request are proposals; this work becomes
 governing only when Ahmed Shaaban merges it to `main`. Nothing here was merged.
