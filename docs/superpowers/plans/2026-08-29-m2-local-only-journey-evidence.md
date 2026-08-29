@@ -38,8 +38,9 @@ Neither returns a hit outside `infra/compute.py`, where the word means an ECS ta
 
 `RRA-011`:53-54 places three read routes in scope — *"read routes exposing the registry, the summary,
 and a fact's evidence, session scoped exactly as their existing siblings are."* The third is merged
-and was exercised in condition 4 below. The first two have no route, because `cc042e3` withdrew the
-catalog route inside `#334`.
+and was exercised in condition 4 below. The first two have no route: the catalog route was withdrawn
+inside `#334`, whose merge commit on `main` is `a91fa63`. The branch commit that made the withdrawal
+is not cited, because `#334` squash-merged and a fresh clone cannot resolve it.
 
 **That withdrawal was not a governance violation**: lines 50-58 sit under `RRA-011`'s **Scope**
 heading, which names the files a slice may touch, not a requirement it must satisfy. What it means is
@@ -170,7 +171,7 @@ symmetric-removal test — which ran in condition 1's suite.
 
 ### Scope note — the catalog surface
 
-`cc042e3` **withdrew** the `GET /api/v1/beta/catalog/{language}` route. §7.4's "merged catalog
+`#334` (`a91fa63`) **withdrew** the `GET /api/v1/beta/catalog/{language}` route. §7.4's "merged catalog
 surfaces" is therefore the rendered evidence HTML that carries governed vocabulary, not an endpoint,
 and that is what the table above exercises.
 
@@ -224,7 +225,7 @@ is merged:
 
 | Route | Consumer it gives | State |
 |---|---|---|
-| the registry | `define_metric`, `describe_metric` | absent -- withdrawn by `cc042e3` |
+| the registry | `define_metric`, `describe_metric` | absent -- withdrawn inside `#334` (`a91fa63`) |
 | the package summary | `summarize` | absent -- never built |
 | a fact's evidence | the rendered projection | **merged**, exercised in condition 4 |
 
