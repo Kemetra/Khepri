@@ -122,6 +122,29 @@ The valid form removes the race by stopping the worker first:
 That is the claim path across a worker lifetime boundary, with the unclaimed interval read directly
 from the job row rather than inferred, and `attempt_count=1` showing it was claimed exactly once.
 
+**A failed first attempt is retried after the governed delay and succeeds.** The clause names
+`restart/retry/recovery`, and the two properties above are recovery, not retry: `attempt_count`
+advancing `0 → 1` is a first-attempt success, which never enters `retryable`, never observes the
+delay, and never proves a second claim. Review raised this and it was right.
+
+The retry is induced with a real transient rather than a fault injection point: MinIO is stopped
+while the job is in flight, so the render cannot write its artifacts and the worker's `except
+Exception` path fires; MinIO is restored before `RETRY_DELAY` elapses so the second attempt can
+succeed. That is precisely the failure shape a retry policy exists for.
+
+| Step | Observed in `rra_report_jobs` |
+|---|---|
+| queued, worker stopped, MinIO stopped | `state=queued`, `attempt_count=0` |
+| worker started — first attempt **fails** | `state=retryable`, `attempt_count=1` after 32 s |
+| retry scheduled | `available_at` = `08:02:16.526`, exactly 60 s after the release at `08:01:16.526` — the configured `RETRY_DELAY` |
+| MinIO restored, delay still running | still `retryable` at +20 s and +40 s |
+| second attempt claimed and completes | `state=succeeded`, `attempt_count=2`, `completed_at 08:02:17.211` |
+
+`rra_report_job_attempts` holds the content-free record of the released attempt:
+`attempt_number=1`, `disposition=retry_scheduled`, `released_at 08:01:16.526`,
+`available_at 08:02:16.526`. `max_attempts=3` was never reached and `dead_letter_reason` stayed
+null, so the job retried rather than exhausting — the distinction the ledger row makes visible.
+
 **Two `OperationalError` classes in the worker log are environmental, not defects.** They read
 `connection to server at "172.22.0.3" … FATAL: the database system is shutting down`, and they occur
 because WSL tears down between tool invocations, taking PostgreSQL with it while the worker is
