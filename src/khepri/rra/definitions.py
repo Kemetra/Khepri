@@ -573,10 +573,18 @@ class CapabilityAvailability:
 
     section: str
     state: str
-    #: The declared semantics this mapping has not resolved, in the family's own
-    #: order. A bare state tells a customer an analysis will not run and not what
-    #: to fix; this names the gap, which is the half they can act on.
-    missing: tuple[str, ...]
+    #: What this mapping has not resolved, as one group per gap, in the family's
+    #: own order. A bare state tells a customer an analysis will not run and not
+    #: what to fix; this names the gap, which is the half they can act on.
+    #:
+    #: **Groups rather than names**, because some gaps are choices. Basket's
+    #: attach rate needs a governed dimension *and* a core measure, so
+    #: `('units',), ('product', 'category'), ('revenue', 'units')` is three
+    #: pieces of work while the flattened four names read as four required
+    #: fields -- misstating the work by two. A one-member group is a plain
+    #: requirement and a longer one is a disjunction, so a surface renders
+    #: "product or category" from the same shape it renders "units" from.
+    missing: tuple[tuple[str, ...], ...]
 
 
 def _is_resolved(mapping, semantic: str) -> bool:
@@ -598,7 +606,7 @@ def _is_resolved(mapping, semantic: str) -> bool:
         return False
 
 
-def _unmet(mapping, requirement) -> tuple[str, ...]:
+def _unmet(mapping, requirement) -> tuple[tuple[str, ...], ...]:
     """What stands between this mapping and one result, in the family's order.
 
     `requirement` is `(required, groups)`: every semantic in `required` must be
@@ -610,20 +618,22 @@ def _unmet(mapping, requirement) -> tuple[str, ...]:
     measure. Collapsing them into one set would report the metric supportable on
     two dimensions and no measure.
 
-    An unsatisfied group contributes all of its members, so a caller can say
-    "product or category" rather than naming one as though it were the
-    requirement.
+    Each gap is returned as a group: a required semantic as a one-member group
+    and an unsatisfied choice as all of its members, so a caller can say "product
+    or category" and tell it apart from two separate requirements.
     """
     required, groups = requirement
-    missing = tuple(code for code in required if not _is_resolved(mapping, code))
+    missing = tuple(
+        (code,) for code in required if not _is_resolved(mapping, code)
+    )
     for group in groups:
         if not any(_is_resolved(mapping, code) for code in group):
-            missing = (*missing, *group)
+            missing = (*missing, tuple(group))
     return missing
 
 
 def _assert_mapping_admitted(mapping) -> None:
-    """Refuse a mapping no admitted package triple names.
+    """Refuse a mapping this build cannot pair with its own versions.
 
     `facts.assert_versions_admitted` refuses such a mapping before `_build`
     produces anything, so every analysis is unavailable in the strongest sense:
@@ -631,16 +641,24 @@ def _assert_mapping_admitted(mapping) -> None:
     Reading only semantic states would report every family available and promise
     a reader analyses that cannot run.
 
-    Fail-closed on the mapping argument, as `availability_for` already is on the
-    section argument. Only the mapping version is checked, because the package
-    and formula versions belong to a package that does not exist yet -- so the
-    test is that *some* admitted triple names this mapping, which is the most
-    this contract can know before the analysis step.
-    """
-    from khepri.rra.versions import ADMITTED_PACKAGE_PAIRS
+    Checked against **this build's** `PACKAGE_VERSION` and `FORMULA_VERSION`,
+    not against membership in any historical triple. `ADMITTED_PACKAGE_PAIRS`
+    retains superseded rows, and during a version migration those name mapping
+    versions the builder no longer accepts -- `rra003.mapping.v2` sits only
+    beside `package.v2`/`formula.v1`. Asking the weaker question would admit a
+    mapping `_build` refuses, which is the promise this guard exists to prevent.
 
-    admitted = {mapping_version for mapping_version, _, _ in ADMITTED_PACKAGE_PAIRS}
-    if mapping.mapping_version not in admitted:
+    Derived from the constants rather than naming a version, so a version move
+    carries this with it instead of needing an edit here.
+
+    Fail-closed on the mapping argument, as `availability_for` already is on the
+    section argument.
+    """
+    if not facts.admits_package(
+        mapping_version=mapping.mapping_version,
+        package_version=facts.PACKAGE_VERSION,
+        formula_version=facts.FORMULA_VERSION,
+    ):
         raise UnknownCode(mapping.mapping_version)
 
 
@@ -694,9 +712,9 @@ def _availability_of(mapping, section: str, family) -> CapabilityAvailability:
     `partial` -- which is the only reading under which `partial` promises a
     reader something they will actually receive.
 
-    `missing` is the union of what the unpublishable metrics lack, in first-seen
-    order, so a customer reads one list of what to supply rather than one per
-    metric.
+    `missing` is the union of what the unpublishable metrics lack, deduplicated
+    on the group so a choice two metrics share is stated once, in first-seen
+    order -- one list of work rather than one per metric.
     """
     requirements = family.result_requirements()
     unmet = {
@@ -710,5 +728,5 @@ def _availability_of(mapping, section: str, family) -> CapabilityAvailability:
     return CapabilityAvailability(
         section=section,
         state=state,
-        missing=tuple(dict.fromkeys(code for gap in blocked for code in gap)),
+        missing=tuple(dict.fromkeys(group for gap in blocked for group in gap)),
     )

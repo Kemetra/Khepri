@@ -23,7 +23,7 @@ import dataclasses
 
 import pytest
 
-from khepri.rra import definitions
+from khepri.rra import definitions, facts
 from khepri.rra.analysis import basket, comparison, concentration, growth
 from khepri.rra.bundle import (
     SECTION_BASKET,
@@ -47,10 +47,19 @@ from khepri.rra.mapping import (
 )
 from khepri.rra.versions import ADMITTED_PACKAGE_PAIRS
 
-#: A mapping version some admitted package triple names. The contract refuses a
-#: mapping the calculation could never build a package from, so the fixture has
-#: to carry a real one or every test would assert against a refusal.
-_ADMITTED_VERSION = next(iter(sorted({m for m, _, _ in ADMITTED_PACKAGE_PAIRS})))
+#: The mapping version *this build* pairs with its own package and formula
+#: versions. Derived rather than named, so a version move carries the suite with
+#: it instead of leaving it asserting against a mapping the builder now refuses.
+#:
+#: Not "any version some historical triple names": during a version migration
+#: those differ, and `facts._build` checks the mapping against this build's
+#: pair alone.
+_ADMITTED_VERSION = next(
+    mapping_version
+    for mapping_version, package_version, formula_version in ADMITTED_PACKAGE_PAIRS
+    if package_version == facts.PACKAGE_VERSION
+    and formula_version == facts.FORMULA_VERSION
+)
 
 _ALL_SEMANTICS = (
     SEMANTIC_TRANSACTION_DATE,
@@ -110,7 +119,7 @@ def test_a_family_with_no_input_resolved_is_unavailable() -> None:
 
     assert entry.state == definitions.UNAVAILABLE
     required, _ = growth.RESULT_REQUIREMENTS[growth.GOVERNED_METRICS[0]]
-    assert set(entry.missing) == set(required)
+    assert {code for group in entry.missing for code in group} == set(required)
 
 
 def test_a_family_missing_one_conjunctive_input_publishes_nothing() -> None:
@@ -127,7 +136,7 @@ def test_a_family_missing_one_conjunctive_input_publishes_nothing() -> None:
     entry = _for(definitions.availability(mapping), SECTION_GROWTH)
 
     assert entry.state == definitions.UNAVAILABLE
-    assert entry.missing == (SEMANTIC_UNITS,)
+    assert entry.missing == ((SEMANTIC_UNITS,),)
 
 
 def test_an_ambiguous_column_does_not_resolve_an_input() -> None:
@@ -153,7 +162,7 @@ def test_an_ambiguous_column_does_not_resolve_an_input() -> None:
     # nothing. What this test fixes is that the column is *not counted as
     # resolved* -- the state follows from that.
     assert entry.state == definitions.UNAVAILABLE
-    assert entry.missing == (SEMANTIC_UNITS,)
+    assert entry.missing == ((SEMANTIC_UNITS,),)
 
 
 def test_availability_covers_every_governed_family() -> None:
@@ -247,7 +256,7 @@ def test_a_family_needing_a_dimension_is_not_available_without_one() -> None:
     # The whole group, not one of them chosen by tuple order: a customer who
     # could satisfy this with either needs to be told both, and naming only
     # `product` would conceal that a category alone would do.
-    assert set(entry.missing) == set(concentration.GOVERNED_DIMENSIONS)
+    assert entry.missing == (concentration.GOVERNED_DIMENSIONS,)
 
 
 def test_basket_without_a_dimension_is_partial_rather_than_available() -> None:
@@ -271,7 +280,7 @@ def test_basket_without_a_dimension_is_partial_rather_than_available() -> None:
     entry = _for(definitions.availability(mapping), SECTION_BASKET)
 
     assert entry.state == definitions.PARTIAL
-    assert set(entry.missing) == set(basket.GOVERNED_DIMENSIONS)
+    assert entry.missing == (basket.GOVERNED_DIMENSIONS,)
 
 
 def test_basket_with_a_dimension_is_available() -> None:
@@ -333,7 +342,7 @@ def test_partial_means_a_result_is_publishable_not_an_input_is_present() -> None
     entry = _for(definitions.availability(mapping), SECTION_GROWTH)
 
     assert entry.state == definitions.UNAVAILABLE
-    assert entry.missing == (SEMANTIC_UNITS,)
+    assert entry.missing == ((SEMANTIC_UNITS,),)
 
 
 def test_a_family_publishing_nothing_is_unavailable_however_much_is_mapped() -> None:
@@ -393,7 +402,7 @@ def test_basket_attach_rate_does_not_need_units() -> None:
     entry = _for(definitions.availability(mapping), SECTION_BASKET)
 
     assert entry.state == definitions.PARTIAL
-    assert entry.missing == (SEMANTIC_UNITS,)
+    assert entry.missing == ((SEMANTIC_UNITS,),)
 
 
 def test_an_unadmitted_mapping_version_refuses_rather_than_reporting_available() -> None:
@@ -421,3 +430,70 @@ def test_an_unadmitted_mapping_version_refuses_rather_than_reporting_available()
         definitions.availability(stale)
     with pytest.raises(definitions.UnknownCode):
         definitions.availability_for(stale, SECTION_GROWTH)
+
+
+def test_a_mapping_this_build_cannot_pair_with_refuses() -> None:
+    """Admitted once is not admitted now.
+
+    `ADMITTED_PACKAGE_PAIRS` carries historical triples, and during a version
+    migration they name mapping versions this build no longer pairs with:
+    `rra003.mapping.v2` appears only beside `package.v2`/`formula.v1`, while
+    `_build` checks every mapping against this build's own
+    `PACKAGE_VERSION`/`FORMULA_VERSION`.
+
+    Membership in *any* triple therefore admits a mapping the builder refuses,
+    which is the promise this guard exists to prevent -- one migration away from
+    reporting every analysis available on data that cannot be analysed.
+    """
+    superseded = {
+        mapping_version
+        for mapping_version, _, _ in ADMITTED_PACKAGE_PAIRS
+        if mapping_version != _ADMITTED_VERSION
+    }
+    assert superseded, "no superseded mapping version to test against"
+
+    for version in superseded:
+        mapping = _mapping(
+            version=version,
+            **{
+                SEMANTIC_TRANSACTION_DATE: STATE_MAPPED,
+                SEMANTIC_REVENUE: STATE_MAPPED,
+                SEMANTIC_UNITS: STATE_MAPPED,
+            },
+        )
+        with pytest.raises(definitions.UnknownCode):
+            definitions.availability(mapping)
+
+
+def test_missing_preserves_which_gaps_are_choices() -> None:
+    """"Units, and either dimension, and either measure" is not four fields.
+
+    `basket` on an identifier alone lacks units outright, a governed dimension,
+    and a core measure -- and the last two are *choices*. Flattened to
+    `('units', 'product', 'category', 'revenue')` a consumer cannot tell whether
+    all four are required, or one from each pair suffices, so the field the
+    docstring calls "the half they can act on" misstates the work by two fields.
+
+    Each gap is therefore a group: a one-member group is a plain requirement and
+    a longer one is a disjunction, so `missing` reads the same way for both and a
+    surface renders "product or category" without a second lookup.
+    """
+    entry = _for(
+        definitions.availability(_mapping(**{SEMANTIC_TRANSACTION_ID: STATE_MAPPED})),
+        SECTION_BASKET,
+    )
+
+    assert (SEMANTIC_UNITS,) in entry.missing
+    assert basket.GOVERNED_DIMENSIONS in entry.missing
+    assert all(isinstance(group, tuple) for group in entry.missing)
+
+
+def test_a_single_missing_input_is_a_one_member_group() -> None:
+    """One shape for both kinds of gap, so a consumer needs no special case."""
+    mapping = _mapping(
+        **{SEMANTIC_TRANSACTION_DATE: STATE_MAPPED, SEMANTIC_REVENUE: STATE_MAPPED}
+    )
+
+    entry = _for(definitions.availability(mapping), SECTION_GROWTH)
+
+    assert entry.missing == ((SEMANTIC_UNITS,),)
