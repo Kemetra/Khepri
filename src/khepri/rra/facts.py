@@ -230,6 +230,16 @@ PERIOD_DIMENSION = "period"
 #: Every dimension a series or comparison metric can be keyed by.
 SERIES_DIMENSIONS: tuple[str, ...] = (PERIOD_DIMENSION, *COMPARISON_DIMENSIONS)
 
+#: Every measure a series or comparison metric can be composed from.
+#:
+#: Not `GOVERNED_METRICS`: `_series` and `_comparisons` both iterate the
+#: `aggregated` tuple, and only revenue and units are aggregated over a
+#: dimension. The other eight core metrics are ratios or counts computed once
+#: over the whole package, so `gross_margin_by_channel` is a code no builder can
+#: emit. Declared here, beside the dimensions, and read by the tuple below so a
+#: measure cannot be aggregated without the catalog learning its name.
+SERIES_MEASURES: tuple[str, ...] = (SEMANTIC_REVENUE, SEMANTIC_UNITS)
+
 
 class FactsRefused(ValueError):
     pass
@@ -1149,6 +1159,10 @@ def _build(
         unavailable_reason=totals.additive_reason,
     )
 
+    # Ordered to match `SERIES_MEASURES`, and asserted against it below: the
+    # catalog composes its series codes from that constant, so a measure
+    # aggregated here without being declared there would publish a figure the
+    # catalog cannot define.
     aggregated = (
         _Aggregated(
             measure=SEMANTIC_REVENUE,
@@ -1170,6 +1184,11 @@ def _build(
             unit_kind=UNIT_COUNT,
         ),
     )
+    if tuple(entry.measure for entry in aggregated) != SERIES_MEASURES:
+        raise AssertionError(
+            "aggregated measures drifted from SERIES_MEASURES: "
+            f"{tuple(entry.measure for entry in aggregated)} != {SERIES_MEASURES}"
+        )
     series = _series(
         measures,
         aggregated,

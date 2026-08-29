@@ -103,9 +103,13 @@ def test_every_catalogued_metric_is_declared_by_the_module_that_computes_it() ->
     # `<measure>_by_<dimension>` from two governed constants, so the expectation is
     # composed here the same way rather than listed. Both operands are read from
     # `facts`, so a code the catalog invented still appears on one side only.
+    #
+    # The measure axis is `SERIES_MEASURES`, the tuple the `aggregated` builder is
+    # asserted against, not `GOVERNED_METRICS`: the eight core metrics that are not
+    # aggregated over a dimension have no series form to catalogue.
     composed = {
         f"{measure}_by_{dimension}"
-        for measure in facts.GOVERNED_METRICS
+        for measure in facts.SERIES_MEASURES
         for dimension in facts.SERIES_DIMENSIONS
     }
 
@@ -363,14 +367,20 @@ def test_exactly_one_catalogued_metric_has_no_business_name() -> None:
     whichever surface serves the catalog next.
     """
     # Over the authored base metrics. A series metric's name is governed by the
-    # same table for the eight that publish, and the rest of the cross-product is
-    # catalogued for its meaning rather than named -- a name for a series no run
-    # produces would title nothing.
+    # same table, and every composed code has a producing builder now that the
+    # cross-product reads `SERIES_MEASURES`.
+    #
+    # `all` rather than a second loop clause: a comprehension that adds the code
+    # when *either* language returns `None` passes while a name exists in one
+    # language and not the other, which is the half-authored table this is meant
+    # to catch. Absence has to hold in both to be absence.
     unnamed = {
         code
         for code in wording._CATALOGUED_METRIC_CODES
-        for language in LANGUAGES
-        if wording.business_metric_name(code, language) is None
+        if all(
+            wording.business_metric_name(code, language) is None
+            for language in LANGUAGES
+        )
     }
 
     assert unnamed == {"concentration_curve"}
@@ -437,14 +447,27 @@ def test_a_reason_reports_every_scope_it_is_stated_at() -> None:
             assert code in wording.reason_codes(scope), (code, scope)
 
 
-def test_a_reason_or_caveat_explains_itself_in_both_languages() -> None:
+def _reason_scopes() -> list[tuple[str, str]]:
+    """Every `(reason, scope)` pair the catalog states a reason at.
+
+    Flattened out of the test so the assertion loops stay one level deep: the
+    reason-by-scope fan-out is data, not control flow, and building it here keeps
+    the parity check a flat walk over pairs.
+    """
+    return [
+        (code, scope)
+        for code in definitions.REASON_CODES
+        for scope in definitions.define_reason(code).scopes
+    ]
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_reason_or_caveat_explains_itself_in_both_languages(language: str) -> None:
     """Parity over the two registries the catalog exposes, not only over metrics."""
-    for language in LANGUAGES:
-        for code in definitions.CAVEAT_CODES:
-            assert definitions.explain_caveat(code, language)
-        for code in definitions.REASON_CODES:
-            for scope in definitions.define_reason(code).scopes:
-                assert definitions.explain_reason(code, language, scope)
+    for code in definitions.CAVEAT_CODES:
+        assert definitions.explain_caveat(code, language), code
+    for code, scope in _reason_scopes():
+        assert definitions.explain_reason(code, language, scope), (code, scope)
 
 
 def test_an_unknown_reason_or_caveat_refuses() -> None:

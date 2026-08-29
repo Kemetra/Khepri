@@ -45,16 +45,28 @@ def test_each_analysis_family_states_the_metrics_it_publishes() -> None:
 
 
 def test_the_catalog_holds_every_governed_metric_and_no_others() -> None:
-    """The union of five sources, and nothing invented on top of them."""
-    expected = (
+    """The union of five sources plus the composed series, nothing invented.
+
+    The series half is composed here from `SERIES_MEASURES` and
+    `SERIES_DIMENSIONS` rather than read back from `definitions`, so a code the
+    catalog coined still appears on one side only. Composing over
+    `GOVERNED_METRICS` instead would admit forty codes -- `gross_margin_by_store`
+    among them -- that no builder emits, which is the defect this asserts against.
+    """
+    declared = (
         set(facts.GOVERNED_METRICS)
         | set(comparison.GOVERNED_METRICS)
         | set(growth.GOVERNED_METRICS)
         | set(basket.GOVERNED_METRICS)
         | set(concentration.GOVERNED_METRICS)
     )
+    composed = {
+        f"{measure}_by_{dimension}"
+        for measure in facts.SERIES_MEASURES
+        for dimension in facts.SERIES_DIMENSIONS
+    }
 
-    assert expected == set(definitions.METRIC_CODES)
+    assert declared | composed == set(definitions.METRIC_CODES)
 
 
 def test_the_catalog_holds_every_governed_population() -> None:

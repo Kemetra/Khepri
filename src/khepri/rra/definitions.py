@@ -96,8 +96,14 @@ FAMILY_METRICS: dict[str, tuple[str, ...]] = {
 #:
 #: Derived from the cross-product rather than listed, which is what makes this a
 #: reading of a governed declaration rather than a set of codes this module coined.
-#: A dimension added to `SERIES_DIMENSIONS` or a measure to `GOVERNED_METRICS`
+#: A dimension added to `SERIES_DIMENSIONS` or a measure to `SERIES_MEASURES`
 #: reaches the catalog with no edit here.
+#:
+#: The measure axis is `SERIES_MEASURES`, not `GOVERNED_METRICS`: only revenue and
+#: units are aggregated over a dimension, so composing over all ten core metrics
+#: admitted forty codes -- `gross_margin_by_channel`, `transactions_by_period` --
+#: that no builder can emit. A catalog that defines an unproducible code is not
+#: fail-closed, so the axis reads the constant the builders are asserted against.
 #:
 #: The cross-product is complete rather than per-package on purpose. Which of these
 #: a given run publishes depends on the columns its mapping resolved, and that is
@@ -105,7 +111,7 @@ FAMILY_METRICS: dict[str, tuple[str, ...]] = {
 #: can answer it without one.
 SERIES_METRICS: frozenset[str] = frozenset(
     f"{measure}_by_{dimension}"
-    for measure in facts.GOVERNED_METRICS
+    for measure in facts.SERIES_MEASURES
     for dimension in facts.SERIES_DIMENSIONS
 )
 
@@ -127,7 +133,7 @@ _METRIC_VERSIONS: dict[str, str] = {
     # `facts.FORMULA_VERSION` rather than looking the measure up keeps this true
     # for a measure that has none of its own.
     f"{measure}_by_{dimension}": facts.FORMULA_VERSION
-    for measure in facts.GOVERNED_METRICS
+    for measure in facts.SERIES_MEASURES
     for dimension in facts.SERIES_DIMENSIONS
 }
 
@@ -173,10 +179,15 @@ def _series_parts(code: str) -> tuple[str, str] | None:
     Split against the governed dimensions rather than on the last `_by_`, because
     a measure could contain that substring and a positional split would then read
     a real metric as a series over a dimension that does not exist.
+
+    The measure is checked against `SERIES_MEASURES`, the same axis
+    `SERIES_METRICS` composes over: a splitter admitting a wider set would
+    decompose `gross_margin_by_channel` into parts and answer for a code the
+    catalog does not hold.
     """
     for dimension in facts.SERIES_DIMENSIONS:
         measure = code.removesuffix(f"_by_{dimension}")
-        if measure != code and measure in facts.GOVERNED_METRICS:
+        if measure != code and measure in facts.SERIES_MEASURES:
             return measure, dimension
     return None
 
@@ -374,11 +385,27 @@ class AnalysisQualitySummary:
     caveats: tuple[str, ...]
 
 
+def _partition_caveats(caveats) -> tuple[tuple, tuple]:
+    """`(scoped, qualifying)` — the two things one caveat channel carries.
+
+    A refusal code is not also a caveat. Both `summarize` fields read
+    `bundle.caveats`, so partitioning is what stops the same refused result being
+    counted as a qualification, listed under `caveats`, and rendered twice to a
+    reader who shows both.
+
+    Split here rather than inline so `summarize` reads as the grouping it is:
+    the separator test is one rule about one channel, and it is stated once.
+    """
+    scoped = tuple(caveat for caveat in caveats if ":" in caveat.code)
+    qualifying = tuple(caveat for caveat in caveats if ":" not in caveat.code)
+    return scoped, qualifying
+
+
 def summarize(bundle) -> AnalysisQualitySummary:
     """Group one bundle's outcomes without recomputing any of them.
 
-    Flat by construction: three comprehensions over `bundle.sections` and
-    `bundle.caveats`, no branch nesting. The tiering is the bundle's own — a
+    Flat by construction: comprehensions over `bundle.sections` and the
+    partitioned caveats, no branch nesting. The tiering is the bundle's own — a
     section carrying a reason is refused, and one carrying none is not — so this
     never re-derives what `RRA-009` already decided.
     """
@@ -405,7 +432,7 @@ def summarize(bundle) -> AnalysisQualitySummary:
     # `rpartition` because a result identity is mode-qualified with a dot and the
     # reason never contains a colon, so the last one is the boundary even if a
     # future identity carries its own.
-    scoped = tuple(caveat for caveat in bundle.caveats if ":" in caveat.code)
+    scoped, qualifying = _partition_caveats(bundle.caveats)
     refusals = tuple(
         (section.section_id, section.reason)
         for section in bundle.sections
@@ -425,11 +452,6 @@ def summarize(bundle) -> AnalysisQualitySummary:
     # either way. Kept because the set is named `qualified` and a reader should
     # not have to work out that a report-level caveat is silently excluded by
     # arithmetic rather than by intent.
-    # A refusal code is not also a caveat. Both fields read `bundle.caveats`, which
-    # is one channel carrying two things, so partitioning here is what stops the
-    # same refused result being counted as a qualification, listed under `caveats`,
-    # and rendered twice to a reader who shows both.
-    qualifying = tuple(caveat for caveat in bundle.caveats if ":" not in caveat.code)
     qualified = {
         caveat.section for caveat in qualifying if caveat.section is not None
     }
