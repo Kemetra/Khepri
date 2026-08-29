@@ -49,6 +49,23 @@ _HAND_LISTED_NESTED = re.compile(
 )
 
 
+def _listed_in(source: str) -> set[str]:
+    """The name of every hand-maintained code list one module declares.
+
+    Split from the walk below so neither function nests four deep: one asks
+    "what does this file declare", the other "which files are there".
+    """
+    names: set[str] = set()
+    for pattern in (_HAND_LISTED, _HAND_LISTED_NESTED):
+        matches = pattern.finditer(source)
+        names.update(
+            match.group(1)
+            for match in matches
+            if len(match.group(2).strip().splitlines()) >= 3
+        )
+    return names
+
+
 def _hand_listed_sets() -> dict[str, str]:
     """Every hand-maintained code list in the product source, by name.
 
@@ -60,11 +77,8 @@ def _hand_listed_sets() -> dict[str, str]:
     assert root.is_dir(), f"the product source moved: {root}"
     found: dict[str, str] = {}
     for path in root.rglob("*.py"):
-        source = path.read_text(encoding="utf-8")
-        for pattern in (_HAND_LISTED, _HAND_LISTED_NESTED):
-            for match in pattern.finditer(source):
-                if len(match.group(2).strip().splitlines()) >= 3:
-                    found[match.group(1)] = str(path)
+        for name in _listed_in(path.read_text(encoding="utf-8")):
+            found[name] = str(path)
     return found
 
 
