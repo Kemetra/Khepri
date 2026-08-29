@@ -102,6 +102,12 @@ BASKET_FORMULA_VERSION = "rra008.basket.v2"
 
 METRIC_ITEMS_PER_TRANSACTION = "basket_items_per_transaction"
 METRIC_ATTACH_RATE = "basket_attach_rate"
+#: The metrics this family publishes, in the shape `comparison` and `growth`
+#: already use. Stated rather than left to a scan of this module's `METRIC_*`
+#: names, because those include `METRIC_REVENUE`, `METRIC_TRANSACTIONS` and
+#: `METRIC_UNITS` imported from `facts` -- a scan would attribute three core
+#: metrics to the basket family.
+GOVERNED_METRICS = (METRIC_ITEMS_PER_TRANSACTION, METRIC_ATTACH_RATE)
 
 REASON_TRANSACTION_IDENTIFIER_ABSENT = "transaction_identifier_absent"
 # Reserved for this case by the merged plan and by `bundle.py`, which says it
