@@ -220,6 +220,20 @@ pass -- §7 requires all four. What remains is one slice: the `T1-05` metric-det
 `report_api.py`, session-scoped like its siblings, after which condition 1 can be re-measured against
 a catalog something calls.
 
+**`R8-10` is downstream of that, not separate work.** Its journey and shell entry points for analysis
+quality and evidence depend on the "T1 minimum", and they are unbuilt -- no document claims
+otherwise. They become buildable once the catalog has a consumer, so they are the slice after the
+one above rather than a second defect.
+
+Conditions 3 and 4 are **not** marked failing on the grounds that the catalog has no consumer, and
+that restraint is deliberate. Condition 3 asks whether the entry points render *without widening*
+`RRA-010` or `RCA-002`; a surface that does not exist widens nothing, and its absence is condition
+1's finding. Condition 4 asks whether the journey passes against the merged catalog surfaces, and it
+does: `rendering/html.py`:483 calls `business_metric_name` from `wording`, so the rendered surfaces
+carry governed vocabulary -- which is why asserting `المنتجات أو الفئات` in `web/ar` is direct proof
+that a merged wording table reached a customer surface. Recording one defect three times would make
+this ledger less precise, not more rigorous.
+
 Two of this ledger's own findings came from review rather than from the run, and both were checks
 that reported success while measuring nothing -- an empty `git diff` over paths that do not exist,
 and a passing test count for a module with no caller. They are recorded rather than quietly
