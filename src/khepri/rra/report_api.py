@@ -46,11 +46,12 @@ from khepri.rra import definitions
 from khepri.rra.artifact_publication import ArtifactDocument
 from khepri.rra.bundle import ReportBundle
 from khepri.rra.datasets import ProfileCorrupted
-from khepri.rra.facts import FactPackage
+from khepri.rra.facts import Fact, FactPackage
 from khepri.rra.jobs import UnknownJobState
 from khepri.rra.package_source import SessionPackageReader, rebuild_fact_package
-from khepri.rra.packages import PackageCorrupted, PackageRefused
+from khepri.rra.packages import FactPackageRecord, PackageCorrupted, PackageRefused
 from khepri.rra.rendering.html import build_cells, build_context
+from khepri.rra.rendering.wording import RESULT_CAVEAT_SEPARATOR, caveat_prose
 from khepri.rra.reports import (
     DeliveredBundle,
     DeliveryWithheld,
@@ -201,6 +202,19 @@ class CaveatDefinitionResponse(BaseModel):
     wording: str
 
 
+class SectionStatement(BaseModel):
+    """One refused analysis, its governed reason, and what that reason says.
+
+    `wording` is why this route is language-keyed. Without it the summary would
+    be a set of codes identical in both languages, and the path segment would
+    promise a bilingual answer the body did not give.
+    """
+
+    section_id: str
+    reason: str
+    wording: str
+
+
 class SectionOutcome(BaseModel):
     """One analysis and the reason it was refused, or `None` where it answered.
 
@@ -214,10 +228,15 @@ class SectionOutcome(BaseModel):
 
 
 class CaveatStatement(BaseModel):
-    """One caveat and the analysis it qualified, or `None` for a report-level one."""
+    """One caveat, the analysis it qualified, and what it says.
+
+    `section` is `None` for a report-level caveat. `wording` is the governed
+    sentence `RRA-009` owns, surfaced rather than parsed.
+    """
 
     code: str
     section: str | None
+    wording: str
 
 
 class RetainedBasisEvidence(BaseModel):
@@ -246,9 +265,9 @@ class AnalysisQualityResponse(BaseModel):
     answered: int
     caveated: int
     refused: int
-    refusals: list[SectionOutcome]
-    refused_results: list[SectionOutcome]
-    caveats: list[str]
+    refusals: list[SectionStatement]
+    refused_results: list[SectionStatement]
+    caveats: list[CaveatStatement]
     answered_sections: list[str]
     caveated_sections: list[str]
 
@@ -270,6 +289,13 @@ class FactEvidenceResponse(BaseModel):
     metric: str
     formula_version: str
     definition: str
+    #: Package scope, from the `Fact` the citation names -- `RRA-011` places a
+    #: figure's unit kind and precision there, and roadmap:745 names its inputs.
+    #: The fact's `value` is deliberately not among them: this surface says what
+    #: a figure is made of and never what it measured.
+    unit_kind: str
+    precision: int
+    inputs: list[str]
     figure_ids: list[str]
     sections: list[SectionOutcome]
     caveats: list[CaveatStatement]
@@ -583,11 +609,16 @@ def add_catalog_routes(
     if services is None or services.packages is None:
         return
 
-    _add_registry_routes(app)
+    _add_registry_routes(app, packages=services.packages, clock=clock)
     _add_package_routes(app, packages=services.packages, clock=clock)
 
 
-def _add_registry_routes(app: FastAPI) -> None:
+def _add_registry_routes(
+    app: FastAPI,
+    *,
+    packages: SessionPackageReader,
+    clock: Callable[[], datetime],
+) -> None:
     """Catalog-scope reads: what a governed code means, in one language.
 
     Every one still resolves a session. `RRA-011` scopes *every* read route, and a
@@ -604,7 +635,7 @@ def _add_registry_routes(app: FastAPI) -> None:
         language: ArtifactLanguage,
         session_id: BetaSessionCookie = None,
     ) -> MetricDefinitionResponse:
-        _require_session(session_id)
+        _resolve_caller(packages, session_id, clock())
         return _metric_definition_response(code, language)
 
     @app.get(
@@ -615,7 +646,7 @@ def _add_registry_routes(app: FastAPI) -> None:
         code: CatalogCode,
         session_id: BetaSessionCookie = None,
     ) -> PopulationDefinitionResponse:
-        _require_session(session_id)
+        _resolve_caller(packages, session_id, clock())
         return _population_definition_response(code)
 
     @app.get(
@@ -628,7 +659,7 @@ def _add_registry_routes(app: FastAPI) -> None:
         language: ArtifactLanguage,
         session_id: BetaSessionCookie = None,
     ) -> ReasonDefinitionResponse:
-        _require_session(session_id)
+        _resolve_caller(packages, session_id, clock())
         return _reason_definition_response(code, scope, language)
 
     @app.get(
@@ -640,7 +671,7 @@ def _add_registry_routes(app: FastAPI) -> None:
         language: ArtifactLanguage,
         session_id: BetaSessionCookie = None,
     ) -> CaveatDefinitionResponse:
-        _require_session(session_id)
+        _resolve_caller(packages, session_id, clock())
         return _caveat_definition_response(code, language)
 
 
@@ -662,7 +693,7 @@ def _add_package_routes(
     ) -> AnalysisQualityResponse:
         caller = _require_session(session_id)
         bundle, _ = _session_bundle(packages, session_id=caller, now=clock())
-        return _quality_response(bundle)
+        return _quality_response(bundle, language)
 
     @app.get(
         "/api/v1/beta/catalog/citations/{citation_id}/evidence/{language}",
@@ -692,18 +723,94 @@ def _session_bundle(
     it is deliberately not addressed by `bundle_id`, which hashes the narrative a
     provider composed and nothing persists.
 
-    The digest check is this function's own rather than the caller's: rebuilding
-    and comparing proves both that the stored document is intact and that nothing
-    was lost or invented in rebuilding it.
+    The rebuild happens *inside* `_found`, not after it. A stored document that
+    is digest-consistent but structurally invalid raises `PackageCorrupted` from
+    the rebuild itself, and that refusal has a governed status in
+    `_REPORT_REFUSALS` -- reaching a caller as a 500 instead would report a
+    refused read as a broken one. The digest check is inside for the same reason.
     """
-    record = _found(
-        lambda: packages.get_session_package(session_id=session_id, now=now),
+    record, package = _found(
+        lambda: _rebuilt(packages.get_session_package(session_id=session_id, now=now)),
         missing=_NO_PACKAGE,
     )
+    return ReportBundle.of(package), package
+
+
+def _rebuilt(
+    record: FactPackageRecord | None,
+) -> tuple[FactPackageRecord, FactPackage] | None:
+    """One stored package, rebuilt and checked against its own digest.
+
+    Absence stays absence so `_found` can answer 404; every other unhappy answer
+    raises a governed refusal for `_refusal_for` to map. Recomputed from the
+    rebuilt package rather than from the stored text, so this proves two things
+    at once: the document is intact, and nothing was lost or invented in
+    rebuilding it.
+    """
+    if record is None:
+        return None
     package = rebuild_fact_package(record.document)
     if package.digest != record.package_digest:
         raise PackageCorrupted("Rebuilt fact package does not match its digest.")
-    return ReportBundle.of(package), package
+    return record, package
+
+
+def _resolve_caller(
+    packages: SessionPackageReader,
+    session_id: str | None,
+    now: datetime,
+) -> None:
+    """Resolve the caller's session before serving a definition, and discard it.
+
+    The cookie check alone is the cheap half of a two-layer pattern. Every
+    sibling read route pairs it with a store read that does the resolving --
+    `get_session_job`, `_session_profile`, `get_session_package` -- and a
+    registry route reads no store, so copying only the first layer would leave
+    these the one surface in the codebase that answers an invented cookie.
+    `RRA-011` scopes *every* read route, so the resolution happens here.
+
+    `get_session_package` is the resolver because it is the one this group
+    already holds, and its refusals already have governed statuses.
+
+    **A missing package resolves rather than refuses.** A definition is catalog
+    scope: what a metric means does not depend on having published anything, so
+    a live session that has uploaded nothing still gets an answer. Only a raised
+    refusal -- an expired session, a withdrawn consent -- refuses here.
+    """
+    _require_session(session_id)
+    _found(
+        lambda: _resolved(packages.get_session_package(session_id=session_id, now=now)),
+        missing=SESSION_UNAVAILABLE,
+    )
+
+
+def _resolved(record: FactPackageRecord | None) -> str:
+    """A live session, whether or not it has published a package.
+
+    Returns a marker rather than the record: the caller wants the resolution,
+    not the package, and `_found` refuses `None` -- which here would turn "no
+    package yet" into "no session", two different findings.
+    """
+    return "resolved" if record is None else record.session_id
+
+
+def _fact_for(package: FactPackage, citation_id: str) -> Fact | None:
+    """The one governed fact a citation names, across every collection.
+
+    A package holds facts, series entries and comparisons, and a citation may
+    name any of them. Read from the package rather than from the audit region
+    because unit kind, precision and inputs are package scope -- `RRA-011` says
+    each `Fact` carries them and that a package-scoped attribute must be read
+    from the package that carries it.
+    """
+    return next(
+        (
+            fact
+            for fact in (*package.facts, *package.series, *package.comparisons)
+            if fact.citation_id == citation_id
+        ),
+        None,
+    )
 
 
 def _metric_definition_response(code: str, language: str) -> MetricDefinitionResponse:
@@ -747,24 +854,69 @@ def _caveat_definition_response(code: str, language: str) -> CaveatDefinitionRes
     )
 
 
-def _quality_response(bundle: ReportBundle) -> AnalysisQualityResponse:
+def _quality_response(bundle: ReportBundle, language: str) -> AnalysisQualityResponse:
+    """Which analyses answered, which were qualified, and which were refused.
+
+    Every code the summary states is paired with the governed prose that code
+    carries, which is what makes the answer bilingual rather than a set of
+    identifiers that read the same in either language.
+    """
     summary = definitions.summarize(bundle)
     return AnalysisQualityResponse(
         answered=summary.answered,
         caveated=summary.caveated,
         refused=summary.refused,
         refusals=[
-            SectionOutcome(section_id=entry, reason=reason)
+            _section_statement(entry, reason, language, "section")
             for entry, reason in summary.refusals
         ],
         refused_results=[
-            SectionOutcome(section_id=entry, reason=reason)
+            _section_statement(entry, reason, language, "result")
             for entry, reason in summary.refused_results
         ],
-        caveats=list(summary.caveats),
+        caveats=[
+            CaveatStatement(code=code, section=None, wording=_caveat_prose(code, language))
+            for code in summary.caveats
+        ],
         answered_sections=list(summary.answered_sections),
         caveated_sections=list(summary.caveated_sections),
     )
+
+
+def _section_statement(
+    section_id: str,
+    reason: str,
+    language: str,
+    scope: str,
+) -> SectionStatement:
+    """One refusal, said in the reader's language rather than only coded.
+
+    A refused *result* is keyed by the metric scope that was refused rather than
+    by a section id, and its sentence carries a `{metric}` placeholder that has
+    to be filled from that scope. `wording.caveat_prose` is the governed
+    resolver for exactly that joined shape, and it is what the evidence template
+    renders the same refusals with, so the two surfaces cannot word one
+    differently.
+    """
+    if scope == "result":
+        wording = caveat_prose(f"{section_id}{RESULT_CAVEAT_SEPARATOR}{reason}", language)
+    else:
+        wording = definitions.explain_reason(reason, language, scope)
+    return SectionStatement(section_id=section_id, reason=reason, wording=wording)
+
+
+def _caveat_prose(code: str, language: str) -> str:
+    """A caveat's governed sentence, surfaced rather than restated.
+
+    `wording.caveat_prose` rather than `definitions.explain_caveat`, and the
+    difference is not cosmetic. A bundle's caveat list also carries result-tier
+    refusals travelling as caveats, whose codes are metric-qualified --
+    `revenue_delta_absolute.year_over_year:prior_window_absent`. The catalog
+    admits no such code and refuses it, correctly: it is not a caveat code. This
+    is the function the evidence template already renders those with, so the
+    catalog and the evidence page say the same sentence.
+    """
+    return caveat_prose(code, language)
 
 
 def _evidence_response(
@@ -780,26 +932,56 @@ def _evidence_response(
     top level and is Internal, so never reaching for it is what keeps it off this
     surface.
 
-    The package-scope half is assembled separately, because it comes from a
-    different place for a stated reason: coverage, filters and reconciliation are
-    records the package carries and the audit region never held.
+    Assembled from three places, each named where it comes from: the audit region
+    for what the report showed, the `Fact` for the unit and precision `RRA-011`
+    puts at package scope, and the package for coverage, filters and
+    reconciliation. None of the three restates another.
     """
     cells = build_cells(bundle, language)
     audit = build_context(bundle, language, cells)["audit"]
     figures = [cell for cell in audit["figures"] if cell.citation_id == citation_id]
-    if not figures:
+    fact = _fact_for(package, citation_id)
+    if not figures or fact is None:
         raise HTTPException(status_code=404, detail=_NO_CITATION)
-    metric = figures[0].metric
     return FactEvidenceResponse(
-        citation_id=citation_id,
-        metric=metric,
-        formula_version=definitions.define_metric(metric).formula_version,
-        definition=definitions.describe_metric(metric, language),
         figure_ids=[cell.figure_id for cell in figures],
-        sections=[SectionOutcome(**entry) for entry in audit["sections"]],
-        caveats=[CaveatStatement(**entry) for entry in audit["caveats"]],
+        **_cited_fact(fact, figures[0].metric, language),
+        **_audit_evidence(audit, language),
         **_package_evidence(package),
     )
+
+
+def _cited_fact(fact: Fact, metric: str, language: str) -> dict[str, object]:
+    """What the catalog and the `Fact` together say about one cited figure.
+
+    The fact's `value` is deliberately absent. This surface says what a figure is
+    made of -- its unit kind, its precision, the inputs it was derived from --
+    and never what it measured, which is `RRA-006`'s to publish.
+    """
+    return {
+        "citation_id": fact.citation_id,
+        "metric": metric,
+        "formula_version": definitions.define_metric(metric).formula_version,
+        "definition": definitions.describe_metric(metric, language),
+        "unit_kind": fact.unit_kind,
+        "precision": fact.precision,
+        "inputs": list(fact.inputs),
+    }
+
+
+def _audit_evidence(audit: dict[str, object], language: str) -> dict[str, object]:
+    """The sections and caveats the report already showed, worded for a reader."""
+    return {
+        "sections": [SectionOutcome(**entry) for entry in audit["sections"]],
+        "caveats": [
+            CaveatStatement(
+                code=entry["code"],
+                section=entry["section"],
+                wording=_caveat_prose(entry["code"], language),
+            )
+            for entry in audit["caveats"]
+        ],
+    }
 
 
 def _package_evidence(package: FactPackage) -> dict[str, object]:

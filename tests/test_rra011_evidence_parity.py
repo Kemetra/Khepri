@@ -30,11 +30,12 @@ from sqlalchemy.pool import StaticPool
 from khepri.rra import report_api
 from khepri.rra.api import create_app
 from khepri.rra.bundle import ReportBundle
-from khepri.rra.packages import FactPackageRecord
+from khepri.rra.facts import FactPackage
+from khepri.rra.packages import FactPackageRecord, PackageCorrupted
 from khepri.rra.persistence import Base, SqlSessionStore
 from khepri.rra.rendering.html import build_cells, build_context
 from khepri.rra.reports import ReportServices
-from khepri.rra.sessions import InvitationService
+from khepri.rra.sessions import InvitationService, SessionExpired
 from tests.test_rra006_html_sections import ROWS, package_for
 
 LANGUAGES = ("en", "ar")
@@ -429,3 +430,118 @@ def test_no_catalog_response_carries_a_figure_value() -> None:
     assert "text" not in body
     assert not any(isinstance(value, str) and value in {c.text for c in cells}
                    for value in body.values())
+
+
+def test_an_unreadable_stored_package_refuses_rather_than_breaking() -> None:
+    """A rebuild that raises reaches the caller as its governed status, not a 500.
+
+    `rebuild_fact_package` runs inside `_found`, not after it. A document that is
+    digest-consistent but structurally invalid -- a legacy shape, a field a newer
+    build enumerates and an older one did not write -- raises `PackageCorrupted`
+    from the rebuild itself, and that refusal has a row in `_REPORT_REFUSALS`.
+    Outside the guard it escaped unhandled, which reports a refused read as a
+    broken server.
+    """
+    client, _ = _harness()
+
+    def unreadable(_: object) -> FactPackage:
+        raise PackageCorrupted("Stored fact package is unreadable.")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(report_api, "rebuild_fact_package", unreadable)
+        answer = client.get(f"{QUALITY}/en")
+
+    assert answer.status_code == 503
+
+
+def test_a_registry_read_resolves_the_session_it_claims() -> None:
+    """An invented cookie is refused by the registry routes, not answered.
+
+    These read no store, so the cookie check alone left them the one surface here
+    that served content to a caller whose session was never resolved. Every
+    sibling pairs that check with a store read that does the resolving; these now
+    resolve through `get_session_package`, whose refusals already have governed
+    statuses.
+    """
+    client, _ = _harness()
+
+    def expired(_self: object, **_: object) -> FactPackageRecord:
+        raise SessionExpired("Session content has expired.")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(FakePackageReader, "get_session_package", expired)
+        answers = [
+            client.get("/api/v1/beta/catalog/metrics/revenue/en"),
+            client.get("/api/v1/beta/catalog/populations/complete_sales"),
+            client.get("/api/v1/beta/catalog/reasons/zero_denominator/result/en"),
+            client.get("/api/v1/beta/catalog/caveats/currency_not_declared/en"),
+        ]
+
+    assert [answer.status_code for answer in answers] == [401, 401, 401, 401]
+
+
+def test_a_registry_read_answers_a_session_that_published_nothing() -> None:
+    """A definition does not depend on having published, so absence resolves.
+
+    `get_session_package` returns `None` for a live session that has uploaded
+    nothing. Treating that as a refusal would conflate "no package yet" with "no
+    session" -- two different findings -- and would make the catalog unreadable
+    at exactly the point in the journey where a reader most wants to know what a
+    metric means.
+    """
+    client, _ = _harness()
+
+    def nothing_published(_self: object, **_: object) -> None:
+        return None
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(FakePackageReader, "get_session_package", nothing_published)
+        answer = client.get("/api/v1/beta/catalog/metrics/revenue/en")
+
+    assert answer.status_code == 200
+
+
+def test_the_evidence_response_states_the_unit_and_precision_of_its_fact() -> None:
+    """`RRA-011` puts unit kind and precision at package scope, on the `Fact`.
+
+    Read from the package rather than the audit region, which carries neither,
+    and paired with the inputs roadmap:745 names. The fact's `value` is not among
+    them: the catalog says what a figure is made of, never what it measured.
+    """
+    client, _ = _harness()
+    package = package_for(ROWS, published=True)
+    citation = build_cells(ReportBundle.of(package), "en")[0].citation_id
+    fact = next(
+        entry
+        for entry in (*package.facts, *package.series, *package.comparisons)
+        if entry.citation_id == citation
+    )
+
+    body = client.get(f"{EVIDENCE}/{citation}/evidence/en").json()
+
+    assert body["unit_kind"] == fact.unit_kind
+    assert body["precision"] == fact.precision
+    assert body["inputs"] == list(fact.inputs)
+    assert "value" not in body
+
+
+def test_the_quality_summary_says_its_refusals_in_the_readers_language() -> None:
+    """The route is language-keyed, so the body must differ between languages.
+
+    Without the governed prose beside each code the two answers would be
+    byte-identical and the path segment would promise a bilingual answer the
+    response did not give.
+    """
+    client, _ = _harness()
+
+    english = client.get(f"{QUALITY}/en").json()
+    arabic = client.get(f"{QUALITY}/ar").json()
+
+    assert english != arabic
+    assert all(entry["wording"] for entry in english["refused_results"])
+    assert all(
+        entry["wording"] != mirror["wording"]
+        for entry, mirror in zip(
+            english["refused_results"], arabic["refused_results"], strict=True
+        )
+    )
