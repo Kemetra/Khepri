@@ -105,15 +105,17 @@ def legal_environment() -> Environment:
     )
 
 
-def _publication_has_prohibited_claims(publication: LegalPublication) -> bool:
-    """Keep unverified compliance and out-of-scope commitments out of public copy."""
-    document = "\n".join(
+def _publication_document(publication: LegalPublication) -> str:
+    """Combine bilingual copy only for publication-policy checks."""
+    return "\n".join(
         paragraph
         for language_content in publication.content.values()
         for paragraph in language_content
     )
-    if any(pattern.search(document) for pattern in _PROHIBITED_CLAIM_PATTERNS):
-        return True
+
+
+def _has_unverified_claim(document: str, publication: LegalPublication) -> bool:
+    """Identify claims that lack the explicitly registered supporting evidence."""
     return any(
         pattern.search(document)
         and not (_VERIFIED_CLAIM_EVIDENCE.get(claim, frozenset()) & publication.verified_evidence)
@@ -121,38 +123,57 @@ def _publication_has_prohibited_claims(publication: LegalPublication) -> bool:
     )
 
 
+def _publication_has_prohibited_claims(publication: LegalPublication) -> bool:
+    """Keep unverified compliance and out-of-scope commitments out of public copy."""
+    document = _publication_document(publication)
+    has_prohibited_commitment = any(
+        pattern.search(document) for pattern in _PROHIBITED_CLAIM_PATTERNS
+    )
+    return has_prohibited_commitment or _has_unverified_claim(document, publication)
+
+
+def _has_verified_value_in_each_language(
+    publication: LegalPublication, field_name: str
+) -> bool:
+    """Require a non-empty, rendered value in each approved language."""
+    values = publication.verified_values.get(field_name, {})
+    return set(values) == set(DIRECTIONS) and all(
+        value and value in "\n".join(publication.content[language])
+        for language, value in values.items()
+    )
+
+
 def _has_verified_required_values(publication: LegalPublication, page: str) -> bool:
     """Require each operative value in both approved language variants before publication."""
     required_inputs = _REQUIRED_PUBLICATION_INPUTS.get(page, frozenset())
-    if not required_inputs.issubset(publication.verified_inputs):
-        return False
-    for field_name in required_inputs:
-        values = publication.verified_values.get(field_name, {})
-        if set(values) != set(DIRECTIONS):
-            return False
-        for language, value in values.items():
-            if not value or value not in "\n".join(publication.content[language]):
-                return False
-    return True
+    return required_inputs.issubset(publication.verified_inputs) and all(
+        _has_verified_value_in_each_language(publication, field_name)
+        for field_name in required_inputs
+    )
+
+
+def _has_complete_bilingual_content(publication: LegalPublication) -> bool:
+    """Require non-empty EN and AR copy without unresolved markers."""
+    return set(publication.content) == set(DIRECTIONS) and all(
+        paragraph and _PLACEHOLDER_MARKER not in paragraph
+        for language_content in publication.content.values()
+        for paragraph in language_content
+    )
+
+
+def _is_publishable(publication: LegalPublication, page: str) -> bool:
+    """Apply every fail-closed condition for one public legal document."""
+    return (
+        _has_complete_bilingual_content(publication)
+        and not _publication_has_prohibited_claims(publication)
+        and _has_verified_required_values(publication, page)
+    )
 
 
 def _published_content(language: str, page: str) -> tuple[str, ...] | None:
     """Return one verified language variant only when bilingual publication is complete."""
     publication = LEGAL_PUBLICATIONS[page]
-    if set(publication.content) != set(DIRECTIONS):
-        return None
-    content = publication.content[language]
-    if not content or any(
-        _PLACEHOLDER_MARKER in paragraph
-        for language_content in publication.content.values()
-        for paragraph in language_content
-    ):
-        return None
-    if _publication_has_prohibited_claims(publication):
-        return None
-    if not _has_verified_required_values(publication, page):
-        return None
-    return content
+    return publication.content[language] if _is_publishable(publication, page) else None
 
 
 def _published_pages(language: str) -> tuple[tuple[str, str], ...]:
