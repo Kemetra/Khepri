@@ -622,6 +622,28 @@ def _unmet(mapping, requirement) -> tuple[str, ...]:
     return missing
 
 
+def _assert_mapping_admitted(mapping) -> None:
+    """Refuse a mapping no admitted package triple names.
+
+    `facts.assert_versions_admitted` refuses such a mapping before `_build`
+    produces anything, so every analysis is unavailable in the strongest sense:
+    not "this data does not support it" but "no package can be built at all".
+    Reading only semantic states would report every family available and promise
+    a reader analyses that cannot run.
+
+    Fail-closed on the mapping argument, as `availability_for` already is on the
+    section argument. Only the mapping version is checked, because the package
+    and formula versions belong to a package that does not exist yet -- so the
+    test is that *some* admitted triple names this mapping, which is the most
+    this contract can know before the analysis step.
+    """
+    from khepri.rra.versions import ADMITTED_PACKAGE_PAIRS
+
+    admitted = {mapping_version for mapping_version, _, _ in ADMITTED_PACKAGE_PAIRS}
+    if mapping.mapping_version not in admitted:
+        raise UnknownCode(mapping.mapping_version)
+
+
 def availability(mapping) -> tuple[CapabilityAvailability, ...]:
     """What each governed analysis can be answered on this mapping, before it runs.
 
@@ -634,6 +656,7 @@ def availability(mapping) -> tuple[CapabilityAvailability, ...]:
     """
     from khepri.rra.bundle import _FAMILIES
 
+    _assert_mapping_admitted(mapping)
     return tuple(
         _availability_of(mapping, section, family)
         for section, family in _FAMILIES.items()
@@ -649,6 +672,7 @@ def availability_for(mapping, section: str) -> CapabilityAvailability:
     """
     from khepri.rra.bundle import _FAMILIES
 
+    _assert_mapping_admitted(mapping)
     family = _FAMILIES.get(section)
     if family is None:
         raise UnknownCode(section)

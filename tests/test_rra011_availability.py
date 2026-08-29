@@ -45,6 +45,12 @@ from khepri.rra.mapping import (
     RetailMapping,
     SemanticMapping,
 )
+from khepri.rra.versions import ADMITTED_PACKAGE_PAIRS
+
+#: A mapping version some admitted package triple names. The contract refuses a
+#: mapping the calculation could never build a package from, so the fixture has
+#: to carry a real one or every test would assert against a refusal.
+_ADMITTED_VERSION = next(iter(sorted({m for m, _, _ in ADMITTED_PACKAGE_PAIRS})))
 
 _ALL_SEMANTICS = (
     SEMANTIC_TRANSACTION_DATE,
@@ -56,7 +62,7 @@ _ALL_SEMANTICS = (
 )
 
 
-def _mapping(**states: str) -> RetailMapping:
+def _mapping(version: str = _ADMITTED_VERSION, **states: str) -> RetailMapping:
     """A mapping whose every semantic is `STATE_UNAVAILABLE` unless named.
 
     Built here rather than from a file so a test states exactly the mapping
@@ -64,7 +70,7 @@ def _mapping(**states: str) -> RetailMapping:
     mapper would attach are not what this contract consults.
     """
     return RetailMapping(
-        mapping_version="rra003.mapping.v1",
+        mapping_version=version,
         mappings=tuple(
             SemanticMapping(
                 semantic=semantic,
@@ -388,3 +394,30 @@ def test_basket_attach_rate_does_not_need_units() -> None:
 
     assert entry.state == definitions.PARTIAL
     assert entry.missing == (SEMANTIC_UNITS,)
+
+
+def test_an_unadmitted_mapping_version_refuses_rather_than_reporting_available() -> None:
+    """A mapping the calculation cannot build a package from supports nothing.
+
+    `facts.assert_versions_admitted` refuses a mapping whose version pairing was
+    never authorized, before `_build` produces anything. Reading only semantic
+    states would report every family available on such a mapping, promising a
+    reader analyses that cannot run at all -- the same fail-closed rule
+    `availability_for` already applies to an unrecognized section, applied to
+    the other argument.
+    """
+    stale = _mapping(
+        version="rra003.mapping.v99",
+        **{
+            SEMANTIC_TRANSACTION_DATE: STATE_MAPPED,
+            SEMANTIC_REVENUE: STATE_MAPPED,
+            SEMANTIC_UNITS: STATE_MAPPED,
+            SEMANTIC_TRANSACTION_ID: STATE_MAPPED,
+            SEMANTIC_PRODUCT: STATE_MAPPED,
+        },
+    )
+
+    with pytest.raises(definitions.UnknownCode):
+        definitions.availability(stale)
+    with pytest.raises(definitions.UnknownCode):
+        definitions.availability_for(stale, SECTION_GROWTH)
