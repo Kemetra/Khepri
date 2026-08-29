@@ -16,13 +16,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from khepri.rra.rendering.fonts import load_report_fonts
-from khepri.rra.rendering.wording import metric_business_name, refusal_message
+from khepri.rra.rendering.wording import (
+    caveat_message,
+    metric_business_name,
+    refusal_message,
+)
 from khepri.runtime.landing_api import (
     LANDING_PAGES,
     LANDING_PREFIX,
     add_landing_routes,
     legal_links,
     specimen,
+    specimen_caveat,
     specimen_refusal,
 )
 from khepri.runtime.landing_copy import LANDING_COPY, LANDING_DIRECTIONS
@@ -186,6 +191,41 @@ def test_the_refusal_is_the_governed_wording(client: TestClient, language: str) 
     governed = refusal_message("prior_window_absent", context="section", language=language)
     assert specimen_refusal(language) == governed
     assert governed in client.get(f"{LANDING_PREFIX}/{language}").text
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_caveat_is_the_governed_wording(client: TestClient, language: str) -> None:
+    """A caveat the landing shows must be one the product can actually emit.
+
+    An earlier draft narrated a missing-category caveat. The runtime refuses an incomplete
+    dimension with `dimension_values_incomplete` rather than caveating it, and no such caveat
+    code exists — so the page advertised behavior the product does not have and defined a caveat
+    meaning of its own. Reading the text from the catalog makes both failures impossible.
+    """
+    governed = caveat_message("rows_without_time_field_excluded", language)
+    assert specimen_caveat(language) == governed
+    assert governed in client.get(f"{LANDING_PREFIX}/{language}").text
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_bilingual_panel_names_the_metric_from_the_catalog(
+    client: TestClient, language: str
+) -> None:
+    """Both panels label a displayed figure, so both names come from the catalog.
+
+    The panels render in both scripts on both pages, so each is checked in its own script rather
+    than in the page's language.
+    """
+    response = client.get(f"{LANDING_PREFIX}/{language}")
+    for script in LANGUAGES:
+        assert metric_business_name("revenue", script) in response.text
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_landing_copy_holds_no_second_copy_of_the_governed_caveat(language: str) -> None:
+    """The caveat, like the refusal, has exactly one source."""
+    governed = caveat_message("rows_without_time_field_excluded", language)
+    assert governed not in "\n".join(LANDING_COPY[language].values())
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

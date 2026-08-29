@@ -138,6 +138,7 @@
           <span class="verdict-name">{{ copy.verdict_caveated_name }}</span>
           <p class="verdict-claim">{{ copy.verdict_caveated_claim }}</p>
           <p class="verdict-detail">{{ copy.verdict_caveated_detail }}</p>
+          <p class="verdict-refusal">{{ caveat }}</p>
         </article>
 
         <article class="verdict verdict--withheld">
@@ -184,16 +185,19 @@
       <h2 class="register-mark" id="scripts-title"><span>{{ copy.scripts_heading }}</span></h2>
 
       <div class="scripts">
+        {# Both panels name the metric from the governed catalog, in their own script. A literal
+           here would be a second maintained truth for a metric name (`FR-085`), and it would go
+           stale silently — the specimen would follow a catalog rename and these would not. #}
         <div class="script-panel" lang="en" dir="ltr">
           <p class="script-name"><span>EN</span><span>English</span></p>
-          <p class="script-claim">Revenue, Q3</p>
+          <p class="script-claim">{{ panel_metric_en }}</p>
           <p class="script-figure tabular">4,182,600 EGP</p>
           <p class="script-note">Reconciled across 18 stores.</p>
         </div>
 
         <div class="script-panel" lang="ar" dir="rtl">
           <p class="script-name"><span>ع</span><span>العربية</span></p>
-          <p class="script-claim">الإيرادات، الربع الثالث</p>
+          <p class="script-claim">{{ panel_metric_ar }}</p>
           <p class="script-figure tabular">٤٬١٨٢٬٦٠٠ ج.م</p>
           <p class="script-note">تمت المطابقة عبر ١٨ متجرًا.</p>
         </div>

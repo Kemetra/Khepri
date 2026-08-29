@@ -244,7 +244,11 @@ body {
   overflow-x: hidden;
 }
 
-::selection { background: var(--gold-dim); color: var(--papyrus); }
+/* Selected text is still text and still owes 4.5:1. `--papyrus` on `--gold-dim` computed to
+ * 3.88:1, and selection lands on the page's 0.7-1.06rem copy, so the large-text exception does
+ * not apply. Inverting to stone on full gold gives 8.55:1 from tokens already in the palette,
+ * and reads as leaf taking the text rather than as a tint laid over it. */
+::selection { background: var(--gold); color: var(--stone-900); }
 
 a { color: inherit; text-underline-offset: .22em; }
 button, input { font: inherit; }

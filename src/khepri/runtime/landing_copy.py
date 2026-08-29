@@ -71,10 +71,10 @@ _EN: dict[str, str] = {
         "Population and coverage were established first; the figure matches the rows behind it."
     ),
     "verdict_caveated_name": "Caveated",
-    "verdict_caveated_claim": "Category performance is reported for 16 of 18 stores.",
+    "verdict_caveated_claim": "Monthly figures are reported, and qualified.",
     "verdict_caveated_detail": (
-        "Two stores did not report category codes for the period. The caveat travels with the "
-        "figure wherever it is read."
+        "Some rows carried no date. The figure is still reported, and the qualification travels "
+        "with it wherever it is read — again in the product's own wording:"
     ),
     "verdict_withheld_name": "Withheld",
     "verdict_withheld_claim": "Comparison with an earlier period is not reported here.",
@@ -174,9 +174,10 @@ _AR: dict[str, str] = {
         "حُدِّد النطاق والتغطية أولًا، والرقم يطابق الصفوف التي خلفه."
     ),
     "verdict_caveated_name": "متحفَّظ عليه",
-    "verdict_caveated_claim": "أداء الفئات مُصدَر عن ١٦ متجرًا من ١٨.",
+    "verdict_caveated_claim": "الأرقام الشهرية مُصدَرة، ومتحفَّظ عليها.",
     "verdict_caveated_detail": (
-        "متجران لم يُصدرا رموز الفئات لهذه الفترة. والتحفّظ يرافق الرقم أينما قُرئ."
+        "بعض الصفوف لم تحمل تاريخًا. والرقم مُصدَر رغم ذلك، والتحفّظ يرافقه أينما قُرئ — وهذا "
+        "أيضًا نص المنتج نفسه:"
     ),
     "verdict_withheld_name": "ممتنع",
     "verdict_withheld_claim": "المقارنة بفترة سابقة غير مُصدَرة هنا.",

@@ -30,7 +30,11 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 
 from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.rra.rendering.fonts import load_report_fonts
-from khepri.rra.rendering.wording import metric_business_name, refusal_message
+from khepri.rra.rendering.wording import (
+    caveat_message,
+    metric_business_name,
+    refusal_message,
+)
 from khepri.runtime.landing_copy import LANDING_COPY, LANDING_DIRECTIONS
 from khepri.runtime.legal_api import LEGAL_PREFIX, published_pages
 
@@ -49,6 +53,17 @@ _PUBLIC_HEADERS = {**SECURITY_HEADERS, "Cache-Control": "public, max-age=0, must
 #: `REASON_SCOPES`, so it is read at section scope; asking for it at result scope raises.
 _SPECIMEN_REASON = "prior_window_absent"
 _SPECIMEN_REASON_SCOPE = "section"
+
+#: The caveat the specimen qualifies with, read from the same catalog as the refusal.
+#:
+#: An earlier draft narrated a missing-category caveat in marketing prose. The runtime cannot
+#: produce that outcome — `basket` refuses an incomplete dimension with
+#: `dimension_values_incomplete` rather than caveating it, and no missing-category caveat code
+#: exists — so the page advertised
+#: behavior the product does not have and defined a caveat meaning of its own, which is exactly
+#: what `FR-085` excludes. This code is a real caveat with the right shape: the figure is reported,
+#: and the qualification travels with it.
+_SPECIMEN_CAVEAT = "rows_without_time_field_excluded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +127,29 @@ def specimen_refusal(language: str) -> str:
     )
 
 
+def specimen_caveat(language: str) -> str:
+    """The governed caveat text the specimen qualifies with.
+
+    Read from the catalog for the same reason the refusal is: the landing may not state a
+    qualification the product would not state, nor invent one it has no code for.
+    """
+    return caveat_message(_SPECIMEN_CAVEAT, language)
+
+
+def panel_metric(language: str) -> str:
+    """The metric the bilingual panel names, resolved from the catalog.
+
+    The panel labels a displayed figure rather than narrating, so a hard-coded label here would
+    be a second maintained truth for a metric name — the drift `FR-085` excludes, and invisible
+    until the catalog renamed `revenue` and only the specimen followed.
+
+    Both panels render on both pages, side by side, so each is asked for by its own script rather
+    than by the page's language. That is the point of the register: the same fact, twice, neither
+    a translation of the other.
+    """
+    return metric_business_name("revenue", language)
+
+
 def legal_links(language: str) -> tuple[dict[str, str], ...]:
     """Every legal destination that currently publishes, in the requested language.
 
@@ -168,6 +206,9 @@ def add_landing_routes(app: FastAPI) -> None:
             faces=tuple(_TYPEFACES.values()),
             courses=specimen(language),
             refusal=specimen_refusal(language),
+            caveat=specimen_caveat(language),
+            panel_metric_en=panel_metric("en"),
+            panel_metric_ar=panel_metric("ar"),
             legal_links=legal_links(language),
         )
         return Response(
@@ -185,6 +226,8 @@ __all__ = [
     "add_landing_routes",
     "landing_environment",
     "legal_links",
+    "panel_metric",
     "specimen",
+    "specimen_caveat",
     "specimen_refusal",
 ]
