@@ -301,6 +301,7 @@ artifacts:
     depends_on:
       - RRA
       - RRA-004
+      - RRA-008
       - RRA-009
   - type: specification
     id: RCA-001
