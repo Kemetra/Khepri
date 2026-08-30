@@ -19,6 +19,7 @@ CodeScene score of 10.00.
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -580,9 +581,10 @@ def test_every_displayed_figure_has_an_evidence_path() -> None:
 def test_every_governed_record_shape_answers_its_evidence_link() -> None:
     """A citation may name a scalar fact, a series entry, or a comparison.
 
-    All three state a unit kind and a precision; only a scalar `Fact` states
-    `inputs`, because a series and a comparison are derived over a dimension
-    rather than from named measures. An unconditional `fact.inputs` turned every
+    All three are *stored* on the package, so all three state a unit kind and a
+    precision; only a scalar `Fact` states `inputs`, because a series and a
+    comparison are derived over a dimension rather than from named measures.
+    An unconditional `fact.inputs` turned every
     series and comparison evidence link into a 500 -- and the earlier tests
     missed it because each read `cells[0]`, which is a scalar every time.
     """
@@ -598,7 +600,8 @@ def test_every_governed_record_shape_answers_its_evidence_link() -> None:
 
     assert [answer.status_code for answer in answers] == [200, 200, 200]
     assert all(answer.json()["unit_kind"] for answer in answers)
-    assert answers[0].json()["inputs"] and answers[1].json()["inputs"] == []
+    assert answers[0].json()["inputs"]
+    assert answers[1].json()["precision"] is not None
 
 
 def test_a_metric_states_the_business_name_a_reader_sees() -> None:
@@ -654,3 +657,69 @@ def test_a_caveat_stated_at_both_scopes_keeps_both() -> None:
 
     scopes = {entry.section for entry in stated if entry.code == "negative_revenue_present"}
     assert scopes == {None, "overview"}
+
+
+def test_a_derived_figure_omits_what_no_record_states_rather_than_recomputing() -> None:
+    """`RRA-011`'s Exclusions forbid re-deriving a published figure, so two fields go absent.
+
+    The `RRA-008` analysis facts -- comparison, growth, basket, concentration --
+    are computed while `ReportBundle.of` assembles and are retained by nothing.
+    Their precision and inputs could only be supplied by calling
+    `family.derive(package)` again during a read, which is exactly the
+    "calculation, re-derivation, re-rounding, or re-formatting of a published
+    figure" the Exclusions name. A catalog surface repeats a value; it never
+    recomputes one.
+
+    So the evidence path still resolves -- `T1-08` requires that of every
+    displayed figure -- and the two fields no readable record carries are absent
+    rather than empty or invented. Unit kind survives, because `CitedFigure`
+    carries it.
+    """
+    client, _ = _harness()
+    package = package_for(ROWS, published=True)
+    bundle = ReportBundle.of(package)
+    cells = build_cells(bundle, "en")
+    stored = {
+        entry.citation_id
+        for entry in (*package.facts, *package.series, *package.comparisons)
+    }
+    derived = next(cell for cell in cells if cell.citation_id not in stored)
+
+    body = client.get(f"{EVIDENCE}/{derived.citation_id}/evidence/en").json()
+
+    assert body["unit_kind"] == derived.unit_kind
+    assert body["precision"] is None
+    assert body["inputs"] is None
+    assert body["definition"]
+
+
+def test_no_catalog_route_recomputes_a_published_figure() -> None:
+    """The Exclusion, asserted against the module rather than trusted to a docstring.
+
+    An earlier revision resolved derived citations by calling
+    `family.derive(package)` during the GET. It answered every citation and was
+    outside the specification for doing so. This pins the absence so a later
+    slice cannot restore it as a convenience.
+    """
+    source = pathlib.Path(report_api.__file__).read_text(encoding="utf-8")
+
+    assert "family.derive" not in source
+    assert "curve_series" not in source
+
+
+def test_a_refused_result_is_keyed_as_a_result_not_a_section() -> None:
+    """A refused result names a metric scope, which is not an analysis section.
+
+    `revenue_delta_percent.year_over_year` never appears in the section list, so
+    emitting it under `section_id` invited a client to join it there and find
+    nothing. It carries `result` instead, and the two lists stay disjoint.
+    """
+    client, _ = _harness()
+
+    body = client.get(f"{QUALITY}/en").json()
+
+    refused = body["refused_results"]
+    assert refused
+    assert all("result" in entry and "section_id" not in entry for entry in refused)
+    sections = set(body["answered_sections"]) | {e["section_id"] for e in body["refusals"]}
+    assert not {entry["result"] for entry in refused} & sections

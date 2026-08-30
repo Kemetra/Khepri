@@ -43,11 +43,10 @@ from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from khepri.rra import definitions
-from khepri.rra.analysis import concentration
 from khepri.rra.artifact_publication import ArtifactDocument
-from khepri.rra.bundle import _FAMILIES, ReportBundle
+from khepri.rra.bundle import ReportBundle
 from khepri.rra.datasets import ProfileCorrupted
-from khepri.rra.facts import FactPackage, RefusedResult
+from khepri.rra.facts import FactPackage
 from khepri.rra.jobs import UnknownJobState
 from khepri.rra.package_source import SessionPackageReader, rebuild_fact_package
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted, PackageRefused
@@ -210,6 +209,20 @@ class CaveatDefinitionResponse(BaseModel):
     wording: str
 
 
+class ResultStatement(BaseModel):
+    """One refused result, keyed by the metric scope that was refused.
+
+    `result` rather than `section_id`, because that is what it is: a value such
+    as `revenue_delta_percent.year_over_year` names a metric and its scope, not
+    an analysis section. Emitting it under `section_id` invited a client to join
+    it against the section list, where it would never match.
+    """
+
+    result: str
+    reason: str
+    wording: str
+
+
 class SectionStatement(BaseModel):
     """One refused analysis, its governed reason, and what that reason says.
 
@@ -274,7 +287,7 @@ class AnalysisQualityResponse(BaseModel):
     caveated: int
     refused: int
     refusals: list[SectionStatement]
-    refused_results: list[SectionStatement]
+    refused_results: list[ResultStatement]
     caveats: list[CaveatStatement]
     answered_sections: list[str]
     caveated_sections: list[str]
@@ -303,8 +316,11 @@ class FactEvidenceResponse(BaseModel):
     #: The fact's `value` is deliberately not among them: this surface says what
     #: a figure is made of and never what it measured.
     unit_kind: str
-    precision: int
-    inputs: list[str]
+    #: Absent for a derived analysis figure. Its fact is computed while the
+    #: bundle assembles and retained by nothing, and re-deriving it to fill
+    #: these in is what `RRA-011`'s Exclusions forbid.
+    precision: int | None
+    inputs: list[str] | None
     figure_ids: list[str]
     sections: list[SectionOutcome]
     caveats: list[CaveatStatement]
@@ -803,50 +819,25 @@ def _resolved(record: FactPackageRecord | None) -> str:
     return "resolved" if record is None else record.session_id
 
 
-def _fact_for(package: FactPackage, citation_id: str) -> object | None:
-    """The one governed record a citation names, stored or derived.
+def _stored_fact(package: FactPackage, citation_id: str) -> object | None:
+    """The stored governed record a citation names, or nothing.
 
-    A package stores scalar facts, series entries and comparisons. It does **not**
-    store the `RRA-008` analysis facts -- comparison, growth, basket and
-    concentration -- which `ReportBundle.of` obtains by calling
-    `family.derive(package)` as it assembles. Searching only the stored
-    collections answered 404 for 13 of the 22 citations one report displays,
-    which is precisely the evidence path `T1-08` requires every displayed figure
-    to have.
+    Only the collections a package *retains*. The `RRA-008` analysis facts --
+    comparison, growth, basket, concentration -- are computed during
+    `ReportBundle.of` and stored nowhere, and this deliberately does not
+    recompute them: `RRA-011`'s Exclusions forbid "any calculation,
+    re-derivation, re-rounding, or re-formatting of a published figure", and
+    determinism is not an exemption the text offers. A catalog surface repeats a
+    value; it never recomputes one.
 
-    Derivation is deterministic over the package, so recomputing here reads the
-    same truth the bundle read rather than inventing a second one -- the same
-    reason the bundle itself is re-derived rather than stored. A family that
-    refuses returns a `RefusedResult` rather than facts, and a refused analysis
-    displays no figure, so it contributes no citation to miss.
+    A derived citation therefore answers from what the bundle and its audit
+    region already hold, with the two fields no readable record carries omitted
+    rather than invented. See `_cited_figure`.
     """
-    stored = (*package.facts, *package.series, *package.comparisons)
-    found = _by_citation(stored, citation_id)
-    return found if found is not None else _derived_fact(package, citation_id)
-
-
-def _derived_fact(package: FactPackage, citation_id: str) -> object | None:
-    """The analysis fact one citation names, recomputed as the bundle computes it."""
-    for family in _FAMILIES.values():
-        stated = family.derive(package)
-        if isinstance(stated, RefusedResult):
-            continue
-        found = _by_citation(stated, citation_id)
-        if found is not None:
-            return found
-    return _by_citation(_curve_series(package), citation_id)
-
-
-def _curve_series(package: FactPackage) -> tuple[object, ...]:
-    """The concentration curve as its one governed record, or nothing.
-
-    The curve reaches a surface the way a trend does -- one `FactSeries` whose
-    buckets become many figures sharing a single citation -- and it is appended
-    outside the family loop, so a search over `derive` alone misses it. It is the
-    22nd of this report's 22 displayed citations.
-    """
-    series = concentration.curve_series(package)
-    return () if series is None else (series,)
+    return _by_citation(
+        (*package.facts, *package.series, *package.comparisons),
+        citation_id,
+    )
 
 
 def _by_citation(records: Iterable[object], citation_id: str) -> object | None:
@@ -912,11 +903,11 @@ def _quality_response(bundle: ReportBundle, language: str) -> AnalysisQualityRes
         caveated=summary.caveated,
         refused=summary.refused,
         refusals=[
-            _section_statement(entry, reason, language, "section")
+            _section_statement(entry, reason, language)
             for entry, reason in summary.refusals
         ],
         refused_results=[
-            _section_statement(entry, reason, language, "result")
+            _result_statement(entry, reason, language)
             for entry, reason in summary.refused_results
         ],
         caveats=_quality_caveats(bundle, language),
@@ -953,26 +944,28 @@ def _quality_caveats(bundle: ReportBundle, language: str) -> list[CaveatStatemen
     ]
 
 
-def _section_statement(
-    section_id: str,
-    reason: str,
-    language: str,
-    scope: str,
-) -> SectionStatement:
-    """One refusal, said in the reader's language rather than only coded.
+def _section_statement(section_id: str, reason: str, language: str) -> SectionStatement:
+    """One refused analysis, said in the reader's language rather than only coded."""
+    return SectionStatement(
+        section_id=section_id,
+        reason=reason,
+        wording=definitions.explain_reason(reason, language, "section"),
+    )
 
-    A refused *result* is keyed by the metric scope that was refused rather than
-    by a section id, and its sentence carries a `{metric}` placeholder that has
-    to be filled from that scope. `wording.caveat_prose` is the governed
-    resolver for exactly that joined shape, and it is what the evidence template
-    renders the same refusals with, so the two surfaces cannot word one
-    differently.
+
+def _result_statement(result: str, reason: str, language: str) -> ResultStatement:
+    """One refused result, whose sentence names the metric that was refused.
+
+    The refusal prose carries a `{metric}` placeholder filled from the result
+    scope, and `wording.caveat_prose` is the governed resolver for that joined
+    shape -- the same one the evidence template renders these with, so the two
+    surfaces cannot word one refusal differently.
     """
-    if scope == "result":
-        wording = caveat_prose(f"{section_id}{RESULT_CAVEAT_SEPARATOR}{reason}", language)
-    else:
-        wording = definitions.explain_reason(reason, language, scope)
-    return SectionStatement(section_id=section_id, reason=reason, wording=wording)
+    return ResultStatement(
+        result=result,
+        reason=reason,
+        wording=caveat_prose(f"{result}{RESULT_CAVEAT_SEPARATOR}{reason}", language),
+    )
 
 
 def _caveat_prose(code: str, language: str) -> str:
@@ -1010,43 +1003,50 @@ def _evidence_response(
     cells = build_cells(bundle, language)
     audit = build_context(bundle, language, cells)["audit"]
     figures = [cell for cell in audit["figures"] if cell.citation_id == citation_id]
-    fact = _fact_for(package, citation_id)
-    if not figures or fact is None:
+    if not figures:
         raise HTTPException(status_code=404, detail=_NO_CITATION)
     return FactEvidenceResponse(
         figure_ids=[cell.figure_id for cell in figures],
-        **_cited_fact(fact, figures[0].metric, language),
+        **_cited_figure(package, figures[0], language),
         **_audit_evidence(audit, language),
         **_package_evidence(package),
     )
 
 
-def _cited_fact(fact: object, metric: str, language: str) -> dict[str, object]:
-    """What the catalog and the cited record together say about one figure.
+def _cited_figure(
+    package: FactPackage,
+    cell: object,
+    language: str,
+) -> dict[str, object]:
+    """What the governed records together say about one cited figure.
 
-    Three governed record shapes can carry a citation. All three state a unit
-    kind and a precision; only a scalar `Fact` states `inputs`, because a series
-    and a comparison are derived over a dimension rather than from named
-    measures. Read from each shape for what it declares -- an unconditional
-    `fact.inputs` turned every series and comparison evidence link into a 500.
+    Two kinds of citation reach here and they carry different evidence, which is
+    stated rather than smoothed over.
 
-    `name` is the governed business name `RRA-009` holds, which `RRA-011` places
-    at catalog scope. It is `None` where the row's own label names the figure;
-    the raw code is never a fallback, because that would put an internal
-    identifier on a customer surface.
+    A **stored** fact -- a scalar, a series entry, a comparison the package
+    retains -- carries its own precision and the inputs it was derived from, and
+    `RRA-011` places both at package scope.
 
-    The record's `value` is deliberately absent. This surface says what a figure
+    A **derived** analysis fact -- comparison, growth, basket, concentration --
+    is computed while `ReportBundle.of` assembles and is retained by nothing. Its
+    precision and inputs are therefore **absent, not empty and not recomputed**:
+    the Exclusions forbid re-deriving a published figure, so the honest answer is
+    that no readable record states them. Unit kind survives either way, because
+    `CitedFigure` carries it.
+
+    The figure's `value` is absent in both cases. This surface says what a figure
     is made of and never what it measured.
     """
+    fact = _stored_fact(package, cell.citation_id)
     return {
-        "citation_id": fact.citation_id,
-        "metric": metric,
-        "name": business_metric_name(metric, language),
-        "formula_version": definitions.define_metric(metric).formula_version,
-        "definition": definitions.describe_metric(metric, language),
-        "unit_kind": fact.unit_kind,
-        "precision": fact.precision,
-        "inputs": list(getattr(fact, "inputs", ())),
+        "citation_id": cell.citation_id,
+        "metric": cell.metric,
+        "name": business_metric_name(cell.metric, language),
+        "formula_version": definitions.define_metric(cell.metric).formula_version,
+        "definition": definitions.describe_metric(cell.metric, language),
+        "unit_kind": cell.unit_kind,
+        "precision": getattr(fact, "precision", None),
+        "inputs": list(fact.inputs) if hasattr(fact, "inputs") else None,
     }
 
 

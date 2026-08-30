@@ -208,6 +208,38 @@ so running pytest from elsewhere scanned a path that did not exist. Now rooted a
 
 ---
 
+### F7 — a derived figure's precision and inputs are unobtainable without re-derivation
+
+*(CLOSED by omission; the underlying gap is filed below)*
+
+`RRA-008`'s analysis facts — comparison, growth, basket, concentration — are computed by
+`family.derive(package)` while `ReportBundle.of` assembles, and no governed record retains them. Only
+`CitedFigure` survives, carrying `unit_kind` but not `precision` or `inputs`.
+
+**An earlier revision of this slice resolved those citations by calling `family.derive(package)`
+during the read, and that was outside the specification.** `RRA-011`'s Exclusions forbid *"any
+calculation, re-derivation, re-rounding, or re-formatting of a published figure. A catalog surface
+repeats a value; it never recomputes one."* The commit that introduced it argued determinism made it
+safe — that re-deriving "reads the same truth the bundle read rather than inventing a second one."
+That reasoning is wrong against the text: the Exclusion names re-derivation itself, not
+non-determinism, and no exemption for deterministic recomputation is offered. Recorded as a reversal
+rather than only as a final state, because the argument was plausible and a later slice may reach for
+it again.
+
+The surface therefore serves derived citations from what the bundle and its audit region already
+hold, and **omits `precision` and `inputs` for them** — absent, not empty and not recomputed, the
+same rule F4 applies to `provenance` and `passages`. Every one of the 22 displayed citations still
+resolves, so `T1-08`'s evidence path holds; only the two fields no readable record states are gone.
+`test_no_catalog_route_recomputes_a_published_figure` asserts the absence of `family.derive` in the
+module so the reversal cannot be quietly undone.
+
+**The gap this leaves is real and filed as P2.** Roadmap:745 names "inputs" in `T1-05`'s acceptance.
+It is met for stored facts and structurally unmeetable for derived ones under `RRA-011`'s own
+Exclusions — the two clauses cannot both be satisfied for a derived figure without retaining those
+facts on the package or in the shared projection, which is an `RRA-004`/`RRA-008` change and not this
+specification's to make. `P2` on the same reasoning as F6: no wrong figure is published, and the
+omission is visible in the response rather than papered over with an empty list.
+
 ## Findings
 
 | Finding | Kind | Severity | State |
@@ -218,6 +250,7 @@ so running pytest from elsewhere scanned a path that did not exist. Now rooted a
 | F4 | Unreproducible `bundle_id` | — | Closed by omission |
 | F5 | Invisible hand-maintained list | P1 | Closed, mutation-verified |
 | F6 | No report-to-package link exists | **P2** | **Filed, open** |
+| F7 | Derived figures: precision and inputs unobtainable without re-derivation | **P2** | **Filed, open** |
 
 ### F6 — no governed record ties a delivered report to the package it was built from
 
