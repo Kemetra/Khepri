@@ -229,6 +229,7 @@ def build_report_services(stack: RuntimeStack) -> ReportServices:
             reader=reader,
         ),
         artifacts=ReportArtifactAdapter(stack.reports.publisher),
+        packages=stack.services.packages,
     )
 
 

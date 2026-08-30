@@ -877,15 +877,15 @@ anti-reference for these surfaces. No high-fidelity mockups are produced here.
 | Data detail | lineage + audit behind disclosure | `W1-01`, `W1-04`, `W1-06` provenance | `G2` → `G3` | **CONTRACT-BLOCKED** |
 | Analyses | durable history spine | `W1-04` | `G2` → `G3` | **CONTRACT-BLOCKED** |
 | Analysis detail | artifacts discovered here | `W1-04`, `W1-06`, report bundle | `G2` → `G3` | **CONTRACT-BLOCKED** |
-| Quality summary | trust state, no fixed counts | `T1` metric/quality contracts | `T1` (**PROPOSED**) | **CONTRACT-BLOCKED** |
+| Quality summary | trust state, no fixed counts | `T1` metric/quality contracts | `T1` (**active `RRA-011`**) | **IMPLEMENTATION-BLOCKED**. The contract is no longer blocked: `T1-04` merged `AnalysisQualitySummary` and `T1-05` serves it at `/api/v1/beta/catalog/quality/{language}`, which counts and groups outcomes and states no score. No consumer reads it yet, and rendering it is an `RRA-010` slice |
 | Retention display | one clock, absolute time | `W1-07` lifecycle + deletion evidence | `G2` | **AUTHORITY-BLOCKED** |
 | Tombstones | history survives content | `W1-07`; fields undefined | `G2` / `G3` | **AUTHORITY-BLOCKED** |
 | Deletion action | owner-only | `W1-07` | a **registered** artifact (future active `G3`) | **AUTHORITY-BLOCKED** |
 | Activity context | contextual only | `W1-09` | `G3` | **CONTRACT-BLOCKED** |
-| Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **partly SHIPPED**; metric detail **CONTRACT-BLOCKED** |
+| Evidence detail | contextual entry | existing bundle + `T1-05` for metric detail | `T1` for metric detail | **partly SHIPPED**; metric detail **IMPLEMENTATION-BLOCKED**. `RRA-011` is active and `T1-05` merged the read routes, so the contract is no longer blocked: `/api/v1/beta/catalog/metrics/{code}/{language}` and `/api/v1/beta/catalog/citations/{citation_id}/evidence/{language}`. No journey or front-end consumer reads them yet -- rendering either is an `RRA-010` slice, so this is a contract in place rather than delivered UX |
 | Journey organization identity | make scope legible in `/beta` | — | authority permitting identity to cross the boundary | **AUTHORITY-BLOCKED** |
 
-`W1` is blocked on active `G2`/`G3` authority; `T1` is `PROPOSED`. **Both `G2` and `G3` gate M3** —
+`W1` is blocked on active `G2`/`G3` authority; `T1` is governed by active `RRA-011` and in implementation. **Both `G2` and `G3` gate M3** —
 `G2-03` activates the retention decision, and `W1-01` requires an **active `G3`** specification
 (`roadmap:742`) whose `G3-03` defines authorization, audit, and evidence rules for every workspace
 action (`roadmap:727`). M3 is not implementation-ready after `G2` alone. Design may proceed;
@@ -963,7 +963,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 |---|---|---|
 | Exact M3 route shapes | PROVISIONAL | a specification carrying them; no route is authoritative here |
 | Exact `W1` read models | CONTRACT-BLOCKED | `W1-01`, `W1-04` |
-| Quality-summary aggregation contract, and the customer trust labels | CONTRACT-BLOCKED | `T1` (**PROPOSED**) |
+| Quality-summary aggregation contract, and the customer trust labels | **IMPLEMENTATION-BLOCKED** | `T1` (**active `RRA-011`**); the contract is resolved -- merged at `T1-04`, served by `T1-05` -- and its presentation is an `RRA-010` slice |
 | Exact tombstone fields | CONTRACT-BLOCKED | `G2`/`G3`, `W1-07` |
 | Deletion authority | AUTHORITY-BLOCKED | a **registered** artifact (future active `G3`); the `R6-01` note is evidence, not authority |
 | Workspace role cells (list, read, reopen artifacts) | AUTHORITY-BLOCKED | `G3-03` reserves authorization for every workspace action (`roadmap:727`) |
@@ -979,7 +979,7 @@ Unresolved. **Do not mistake any of these for a shipped contract.**
 | Whether an analysis outlives its deleted data entry | PROVISIONAL | `G2`/`G3` retention contract |
 | Metrics as a dedicated destination | PROVISIONAL | `T1` + demonstrated customer need |
 | Remember My Data / reusable source-mapping profile | CONTRACT-BLOCKED | `W1-01` profile contract; active `G3`; must re-attest on material source change (Article V) |
-| Analysis Impact Preview | CONTRACT-BLOCKED (data) / AUTHORITY-BLOCKED (journey step) | `T1-04` availability vocabulary needs active `T1`; the journey step itself needs an active RRA specification, since `RRA-010` excludes new journey phases |
+| Analysis Impact Preview | AUTHORITY-BLOCKED (journey step) | **The data half is no longer blocked**: `RRA-011` is active and `T1-04` merged the availability vocabulary, so `definitions.availability(mapping)` states what the admitted data supports. The journey step itself is unchanged -- it needs an active RRA specification naming that phase, since `RRA-010` excludes new journey phases |
 | Analysis Passport fields | CONTRACT-BLOCKED | `W1-06` provenance record; active `G3` |
 | Run Again / Run New Period compatibility rule | CONTRACT-BLOCKED | `W1-04`; underlying `RRA-003`/`RRA-004` compatibility contracts |
 | Try Sample Analysis (pre-authentication) | AUTHORITY-BLOCKED | a new or amended RCA/RRA specification — `RCA-002` excludes public self-serve signup and any change to the beta journey's routes; active `RRA-010` is presentation-only and excludes new routes/phases; `G5-01` |

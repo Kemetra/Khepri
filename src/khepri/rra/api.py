@@ -41,7 +41,7 @@ from khepri.rra.profile_request import (
     governed_semantics,
 )
 from khepri.rra.profiling import ProfileRejected
-from khepri.rra.report_api import add_report_routes
+from khepri.rra.report_api import add_catalog_routes, add_report_routes
 from khepri.rra.reports import ReportServices
 from khepri.rra.session_cookie import SESSION_COOKIE, SESSION_UNAVAILABLE
 from khepri.rra.sessions import (
@@ -406,6 +406,7 @@ def create_app(
     # collaborators were supplied. Same conditional contract as every group
     # above, one function deeper -- see `report_api.add_report_routes`.
     add_report_routes(app, services=report_services, clock=clock)
+    add_catalog_routes(app, services=report_services, clock=clock)
     add_journey_routes(app, services=journey_services, clock=clock)
     add_coverage_routes(app, profiling_service=profiling_service, clock=clock)
 

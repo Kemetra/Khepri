@@ -266,6 +266,7 @@ def build_report_services(stack: LocalStack) -> ReportServices:
         ),
         bundles=DeliveredBundleAdapter(deliveries=deliveries, reader=reader),
         artifacts=ReportArtifactAdapter(stack.reports.publisher),
+        packages=stack.services.packages,
     )
 
 

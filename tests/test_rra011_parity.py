@@ -36,16 +36,49 @@ _HAND_LISTED = re.compile(
     r"((?:\s+[a-z_]+\.[A-Z][A-Z_0-9]*,\n|\s+[A-Z][A-Z_0-9]*,\n)+)",
     re.MULTILINE,
 )
+#: The same question asked of a nested shape. `SECTION_REASONS` is a dict whose
+#: *values* are the hand-maintained frozensets, so its body lines read
+#: `SECTION_COMPARISON: frozenset(` and the colon breaks the alternation above.
+#: A list that escapes the guard by being one level deeper is still a list.
+_HAND_LISTED_NESTED = re.compile(
+    r"^(_?[A-Z][A-Z_0-9]*)\s*[:=][^\n]*\{\s*\n"
+    r"(?:[^\n]*\n)*?"
+    r"\s+[A-Z][A-Z_0-9]*:\s*frozenset\(\s*\{?\s*\n"
+    r"((?:\s+[A-Z][A-Z_0-9]*,\n)+)",
+    re.MULTILINE,
+)
+
+
+def _listed_in(source: str) -> set[str]:
+    """The name of every hand-maintained code list one module declares.
+
+    Split from the walk below so neither function nests four deep: one asks
+    "what does this file declare", the other "which files are there".
+    """
+    names: set[str] = set()
+    for pattern in (_HAND_LISTED, _HAND_LISTED_NESTED):
+        matches = pattern.finditer(source)
+        names.update(
+            match.group(1)
+            for match in matches
+            if len(match.group(2).strip().splitlines()) >= 3
+        )
+    return names
 
 
 def _hand_listed_sets() -> dict[str, str]:
-    """Every hand-maintained code list in the product source, by name."""
+    """Every hand-maintained code list in the product source, by name.
+
+    Rooted at this file rather than at the working directory. The scan used to
+    take `src/khepri/rra` relative to wherever pytest was invoked, so running it
+    from any other directory found nothing and reported no lists at all.
+    """
+    root = pathlib.Path(__file__).resolve().parent.parent / "src" / "khepri" / "rra"
+    assert root.is_dir(), f"the product source moved: {root}"
     found: dict[str, str] = {}
-    for path in pathlib.Path("src/khepri/rra").rglob("*.py"):
-        source = path.read_text(encoding="utf-8")
-        for match in _HAND_LISTED.finditer(source):
-            if len(match.group(2).strip().splitlines()) >= 3:
-                found[match.group(1)] = str(path)
+    for path in root.rglob("*.py"):
+        for name in _listed_in(path.read_text(encoding="utf-8")):
+            found[name] = str(path)
     return found
 
 
@@ -55,19 +88,54 @@ def _hand_listed_sets() -> dict[str, str]:
 def test_the_catalog_adds_no_hand_maintained_code_list() -> None:
     """`RRA-011`'s reduction requirement, counted rather than claimed.
 
-    Two lists remain, both in `wording.py` and both pre-dating this catalog:
+    Three lists remain, all pre-dating this catalog. Two are in `wording.py`:
     `_RESULT_REASON_CODES` and `_GOVERNED_CAVEAT_CODES`. A third was
     `_FACT_METRIC_CODES`, which this program replaced with an import of
-    `facts.GOVERNED_METRICS` — so the net effect is one fewer, which is the
+    `facts.GOVERNED_METRICS` -- so the net effect is one fewer, which is the
     direction the specification requires.
 
-    Pinned by name so that adding one fails here, and so that removing one of
-    the two remaining is a deliberate edit to this test rather than a silent
-    loosening.
+    **`SECTION_REASONS` is the third, and it appears here only because `T1-08`
+    widened the scan to see it.** The earlier pattern matched a flat set literal,
+    and this one is a dict whose *values* are frozensets, so its body lines read
+    `SECTION_COMPARISON: frozenset(` and the colon broke the alternation. It was
+    never absent from the source; it was invisible to the guard, which is the
+    worse of the two.
+
+    It is pinned rather than removed, and the distinction is the one the
+    specification draws. `REASON_CODES` states which reasons exist;
+    `SECTION_REASONS` states which of them each analysis may refuse with -- a
+    per-section scoping no governed module derives and the catalog deliberately
+    does not model. Deriving it would mean inventing that relationship here,
+    which is the second truth this test exists to prevent, and narrowing it to
+    the catalog's flat set would lose a real constraint. Reducing it is an
+    `RRA-009` change to what a section may say, not a catalog slice's to make.
+
+    Pinned by name so that adding one fails here, and so that removing any of
+    the three is a deliberate edit to this test rather than a silent loosening.
     """
     assert set(_hand_listed_sets()) == {
+        "SECTION_REASONS",
         "_RESULT_REASON_CODES",
         "_GOVERNED_CAVEAT_CODES",
+    }
+
+
+def test_the_hand_listed_scan_reaches_the_product_source() -> None:
+    """The guard above is worthless if the scan silently finds nothing.
+
+    It used to resolve `src/khepri/rra` against the working directory, so running
+    pytest from anywhere else scanned a path that did not exist and reported no
+    lists at all. The equality assertion would then fail loudly -- but a scan
+    rooted at a wrong-but-existing path would under-report instead, which is the
+    failure this pins.
+    """
+    found = _hand_listed_sets()
+
+    assert found
+    assert all(path.endswith(".py") for path in found.values())
+    assert {pathlib.Path(path).name for path in found.values()} == {
+        "bundle.py",
+        "wording.py",
     }
 
 
