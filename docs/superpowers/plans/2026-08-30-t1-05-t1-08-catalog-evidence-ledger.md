@@ -158,7 +158,7 @@ definition and evidence path."*
 
 `tests/test_rra011_parity.py` (588 lines, merged at `#334`) already covers parity, fail-closed and
 no-duplicate-truth over the metric, definition and quality **functions**. The genuinely new half is
-the **evidence surface and the HTTP boundary**, in `tests/test_rra011_evidence_parity.py` — 15 tests,
+the **evidence surface and the HTTP boundary**, in `tests/test_rra011_catalog_routes.py` — 15 tests,
 written deliberately flat, no helper pyramid.
 
 | Property | Test |
@@ -292,7 +292,7 @@ passing.
 
 | File | Score |
 |---|---|
-| `tests/test_rra011_evidence_parity.py` (new) | **10.00** |
+| `tests/test_rra011_catalog_routes.py` (new) | **10.00** |
 | `src/khepri/rra/report_api.py` (modified) | **9.37**, its baseline unchanged |
 
 **The server gate caught a file the local pre-flight had not scored.** `test_rra011_parity.py` fell
