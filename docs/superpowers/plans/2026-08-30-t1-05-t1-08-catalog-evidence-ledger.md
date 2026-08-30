@@ -296,7 +296,7 @@ serve the delivered artifact.
 |---|---|
 | `uv run khepri-gov validate` | **Governance validation passed.** |
 | `uv run ruff check .` | **All checks passed!** |
-| `uv run pytest` | **3813 passed, 72 skipped, 1 xfailed** |
+| `uv run pytest` | **3813 passed, 72 skipped, 1 xfailed** on the `T1-05` branch; **3,910** on `main` at `bc96a65` once `#341` and `#342` also merged |
 
 The baseline on `main` at `46b2d56` is **3797 passed, 72 skipped, 1 xfailed**, measured this session
 rather than quoted: `CAL1-13`'s recorded 3,631 predates `#334`, `#338` and `#340`. The delta is

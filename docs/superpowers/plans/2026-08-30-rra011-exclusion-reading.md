@@ -75,11 +75,11 @@ rendered value, no `text`, no `value` field reaches any catalog response.
 
 ### Why this is not mine to settle
 
-The two readings differ on whether a merged surface is admissible, and one of them makes an active
-specification unimplementable. `AGENTS.md` makes that an owner reading. Choosing Reading B silently
-would be resolving a governance question by preferring the answer that keeps my own slice; choosing
-Reading A silently would withdraw a merged surface on an interpretation the specification's own
-Requirements contradict.
+The two readings differ on whether two merged surfaces are admissible, and on whether work is owed
+against the storage architecture. `AGENTS.md` makes that an owner reading. Choosing Reading B
+silently would resolve a governance question by preferring the answer that keeps my own slice;
+choosing Reading A silently would withdraw a merged surface and commit the project to retaining a
+projection, neither of which is a slice author's call.
 
 **What follows from each:**
 
@@ -126,5 +126,7 @@ and would have to read a retained projection, which nothing currently persists.
 
 **No wrong figure is published under either reading.** The catalog serves no value, no rendered text
 and no `value` field, which `test_no_catalog_response_carries_a_figure_value` proves; and the
-whole-repo suite is green at 3,910 passed. That is why this is filed for a reading rather than
-reverted on my own judgement.
+whole-repo suite is green at **3,910 passed, 72 skipped, 1 xfailed**, measured on this branch. The
+`T1-05` ledger records 3,813 for its own branch, which predates `#341` and `#342` merging; both
+figures are correct for the tree each was measured on. That is why this is filed for a reading rather
+than reverted on my own judgement.
