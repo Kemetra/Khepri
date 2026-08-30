@@ -919,37 +919,37 @@ def _quality_response(bundle: ReportBundle, language: str) -> AnalysisQualityRes
             _section_statement(entry, reason, language, "result")
             for entry, reason in summary.refused_results
         ],
-        caveats=_quality_caveats(summary, language),
+        caveats=_quality_caveats(bundle, language),
         answered_sections=list(summary.answered_sections),
         caveated_sections=list(summary.caveated_sections),
     )
 
 
-def _quality_caveats(
-    summary: definitions.AnalysisQualitySummary,
-    language: str,
-) -> list[CaveatStatement]:
-    """Every caveat the package carried, keeping the analysis each qualified.
+def _quality_caveats(bundle: ReportBundle, language: str) -> list[CaveatStatement]:
+    """Every caveat the report carried, each keeping the scope it was stated at.
 
-    `summarize` retains the `(code, section_id)` associations separately from the
-    flat code list, and flattening to `section=None` would report a section-scoped
-    qualification as a report-level one -- telling a reader the whole dataset is
-    qualified when one analysis is. A code qualifying several sections is stated
-    once per section, which is what the associations record.
+    Read from `bundle.caveats`, which carries the `(code, section)` pair itself,
+    rather than reconstructed by matching the summary's flat code list against
+    its `(code, section_id)` associations. That reconstruction had a real defect:
+    one code can be stated *both* report-level and section-scoped -- a redaction
+    disclosed over the dataset and inherited by one analysis -- and filtering the
+    flat list by "does this code appear scoped anywhere" dropped the report-level
+    occurrence, reporting a dataset-wide disclosure as a single section's
+    qualification.
+
+    A refusal travelling in this channel is excluded here for the reason
+    `summarize` partitions it: it is reported under `refused_results`, and listing
+    it again as a caveat would render one outcome twice to a reader who shows
+    both.
     """
-    scoped = [
+    return [
         CaveatStatement(
-            code=code,
-            section=section,
-            wording=_caveat_prose(code, language),
+            code=caveat.code,
+            section=caveat.section,
+            wording=_caveat_prose(caveat.code, language),
         )
-        for code, section in summary.caveat_sections
-    ]
-    qualified = {code for code, _ in summary.caveat_sections}
-    return scoped + [
-        CaveatStatement(code=code, section=None, wording=_caveat_prose(code, language))
-        for code in summary.caveats
-        if code not in qualified
+        for caveat in bundle.caveats
+        if RESULT_CAVEAT_SEPARATOR not in caveat.code
     ]
 
 

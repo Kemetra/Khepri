@@ -18,6 +18,7 @@ CodeScene score of 10.00.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -29,7 +30,7 @@ from sqlalchemy.pool import StaticPool
 
 from khepri.rra import report_api
 from khepri.rra.api import create_app
-from khepri.rra.bundle import ReportBundle
+from khepri.rra.bundle import ReportBundle, StatedCaveat
 from khepri.rra.facts import FactPackage
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted
 from khepri.rra.persistence import Base, SqlSessionStore
@@ -628,3 +629,28 @@ def test_a_section_scoped_caveat_keeps_the_analysis_it_qualified() -> None:
     assert scoped
     assert all(entry["wording"] for entry in scoped)
     assert len({(e["code"], e["section"]) for e in caveats}) == len(caveats)
+
+
+def test_a_caveat_stated_at_both_scopes_keeps_both() -> None:
+    """One code can qualify the dataset *and* one analysis, and both must survive.
+
+    A redaction disclosed over the whole dataset and inherited by a single
+    analysis is stated twice, at two scopes. Reconstructing scope by asking "does
+    this code appear scoped anywhere" drops the report-level occurrence and tells
+    a reader one section is qualified when the dataset is -- so the scope is read
+    from `bundle.caveats`, which carries the pair itself.
+    """
+    bundle = ReportBundle.of(package_for(ROWS, published=True))
+    doubled = dataclasses.replace(
+        bundle,
+        caveats=(
+            *bundle.caveats,
+            StatedCaveat(code="negative_revenue_present", section=None),
+            StatedCaveat(code="negative_revenue_present", section="overview"),
+        ),
+    )
+
+    stated = report_api._quality_caveats(doubled, "en")
+
+    scopes = {entry.section for entry in stated if entry.code == "negative_revenue_present"}
+    assert scopes == {None, "overview"}
