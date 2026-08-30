@@ -19,7 +19,6 @@ CodeScene score of 10.00.
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -30,6 +29,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rra import report_api
+from khepri.rra.analysis import concentration
 from khepri.rra.api import create_app
 from khepri.rra.bundle import ReportBundle, StatedCaveat
 from khepri.rra.facts import FactPackage
@@ -693,18 +693,53 @@ def test_a_derived_figure_omits_what_no_record_states_rather_than_recomputing() 
     assert body["definition"]
 
 
-def test_no_catalog_route_recomputes_a_published_figure() -> None:
-    """The Exclusion, asserted against the module rather than trusted to a docstring.
+def test_a_catalog_read_derives_analysis_facts_through_bundle_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """What a catalog GET actually executes, measured rather than grepped.
 
-    An earlier revision resolved derived citations by calling
-    `family.derive(package)` during the GET. It answered every citation and was
-    outside the specification for doing so. This pins the absence so a later
-    slice cannot restore it as a convenience.
+    An earlier version of this test read `report_api.py` and asserted the strings
+    `family.derive` and `curve_series` were absent from it. That guard was
+    worthless: it passed while `ReportBundle.of` called both, one frame deeper,
+    on every request. A test that greps one file for a call site cannot see the
+    call moving into a collaborator, which is exactly what happened.
+
+    So this counts the calls instead. It asserts the count is **non-zero** --
+    recording the behaviour as it is, not as either reading of `RRA-011` would
+    prefer -- because whether that behaviour is permitted is an open owner
+    question, filed as `F8`:
+
+    - `RRA-011`:204 excludes "any calculation, re-derivation, re-rounding, or
+      re-formatting of a published figure. A catalog surface repeats a value; it
+      never recomputes one."
+    - `RRA-011`:169-170 requires the evidence route to "read the projection the
+      report surfaces already render from, never assemble a second one **from the
+      bundle** directly" -- which presupposes the route holds a bundle, and that
+      projection is reachable only through `build_context(bundle, ...)`.
+    - No store persists a `ReportBundle`, so a route that may not construct one
+      cannot serve the projection the same specification mandates.
+
+    If the owner reads the Exclusion as prohibiting this, the count must become
+    zero and the route must read a retained projection -- an `RRA-004`/`RRA-006`
+    change. Until then this test states the fact, so the next reader measures it
+    rather than inferring it from a docstring.
     """
-    source = pathlib.Path(report_api.__file__).read_text(encoding="utf-8")
+    client, _ = _harness()
+    calls: list[str] = []
+    original = concentration.curve_series
+    monkeypatch.setattr(
+        concentration,
+        "curve_series",
+        lambda package: (calls.append("curve_series"), original(package))[1],
+    )
+    citation = build_cells(ReportBundle.of(package_for(ROWS, published=True)), "en")[
+        0
+    ].citation_id
 
-    assert "family.derive" not in source
-    assert "curve_series" not in source
+    answer = client.get(f"{EVIDENCE}/{citation}/evidence/en")
+
+    assert answer.status_code == 200
+    assert calls, "a catalog read reaches derivation through ReportBundle.of"
 
 
 def test_a_refused_result_is_keyed_as_a_result_not_a_section() -> None:
