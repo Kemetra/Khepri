@@ -158,8 +158,16 @@ definition and evidence path."*
 
 `tests/test_rra011_parity.py` (588 lines, merged at `#334`) already covers parity, fail-closed and
 no-duplicate-truth over the metric, definition and quality **functions**. The genuinely new half is
-the **evidence surface and the HTTP boundary**, in `tests/test_rra011_catalog_routes.py` — 15 tests,
-written deliberately flat, no helper pyramid.
+the **evidence surface and the HTTP boundary**, across two modules — 28 tests, written deliberately
+flat, no helper pyramid.
+
+They began as one file and were split when CodeScene failed it on Low Cohesion, a critical rule:
+LCOM4 measures whether a module's functions share data or call each other, and this one held two
+groups that never touched. `tests/test_rra011_projection.py` (5 tests) characterizes
+`build_context(...)["audit"]` using only the rendering path;
+`tests/test_rra011_catalog_routes.py` (23 tests) drives the HTTP boundary through `_harness` and
+`FakePackageReader`. The file already carried a `# --- the HTTP boundary ---` divider between them,
+so the metric found a seam that had been drawn and then ignored. Both score 10.00.
 
 | Property | Test |
 |---|---|
@@ -292,6 +300,7 @@ passing.
 
 | File | Score |
 |---|---|
+| `tests/test_rra011_projection.py` (new) | **10.00** |
 | `tests/test_rra011_catalog_routes.py` (new) | **10.00** |
 | `src/khepri/rra/report_api.py` (modified) | **9.37**, its baseline unchanged |
 
