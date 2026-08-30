@@ -22,17 +22,23 @@ from khepri.rra.rendering.wording import (
     refusal_message,
 )
 from khepri.runtime.landing_api import (
+    _SPECIMEN_COURSES,
     LANDING_PAGES,
     LANDING_PREFIX,
     SPECIMEN_AVERAGE_ORDER_VALUE,
+    SPECIMEN_RETURNS,
     SPECIMEN_REVENUE,
     SPECIMEN_ROWS,
     SPECIMEN_TRANSACTIONS,
+    SPECIMEN_UNITS,
     add_landing_routes,
     legal_links,
     specimen,
     specimen_caveat,
     specimen_refusal,
+    specimen_row_caveat,
+    strip_field_keys,
+    strip_fields,
 )
 from khepri.runtime.landing_copy import LANDING_COPY, LANDING_DIRECTIONS
 from khepri.runtime.legal_api import LEGAL_PAGES, add_legal_routes, published_pages
@@ -131,7 +137,19 @@ def test_the_template_and_the_copy_module_agree() -> None:
     )
     used = set(re.findall(r"copy\.([a-z_0-9]+)", template))
     assert used - set(LANDING_COPY["en"]) == set(), "template reads a key the copy lacks"
-    assert set(LANDING_COPY["en"]) - used == set(), "copy carries a key no template renders"
+
+    # A panel that renders BOTH scripts on one page cannot read `copy.` — that is the page's own
+    # language. Those keys are resolved in `landing_api` instead, through the same seam
+    # `panel_metric` uses, so the reachability question spans both files. The property is
+    # unchanged: a key no code anywhere reads is still a failure. The keys are declared by the
+    # module that reads them, because matching on a loose suffix here would excuse any orphan
+    # ending in the same word and gut this guard.
+    consumed = strip_field_keys()
+    assert consumed <= set(LANDING_COPY["en"]), "the strip reads a key the copy lacks"
+
+    assert set(LANDING_COPY["en"]) - used - consumed == set(), (
+        "copy carries a key nothing renders"
+    )
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -202,6 +220,15 @@ def test_the_specimen_satisfies_the_products_own_arithmetic() -> None:
         SPECIMEN_REVENUE / SPECIMEN_TRANSACTIONS
     )
 
+    # A sale moves at least one unit, so units can never fall below the sale count. Without this,
+    # a units figure smaller than the transaction count would look entirely plausible on its own.
+    assert SPECIMEN_UNITS >= SPECIMEN_TRANSACTIONS
+
+    # Returns are reported gross of revenue rather than netted from it, so they are part of the
+    # same trade and must be a fraction of it — a returns figure exceeding revenue would describe
+    # a business that refunded more than it sold.
+    assert 0 < SPECIMEN_RETURNS < SPECIMEN_REVENUE
+
 
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_the_rendered_specimen_shows_those_numbers(client: TestClient, language: str) -> None:
@@ -262,13 +289,19 @@ def test_the_specimen_names_metrics_from_the_governed_catalog(
 
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_the_specimen_metric_names_are_not_retyped(language: str) -> None:
-    """Each rendered term equals `metric_business_name`, not a landing-authored string."""
+    """Each rendered term equals `metric_business_name`, not a landing-authored string.
+
+    The expected set is derived from the specimen's own metric codes rather than retyped here: a
+    hand-written list would be a second maintained truth for the specimen's shape, and it would
+    fail this guard for the innocent act of adding a metric while catching nothing extra. What is
+    actually asserted is the property that matters — every rendered term came from the catalog.
+    """
     rendered = {course["term"] for course in specimen(language)}
     governed = {
-        metric_business_name(code, language)
-        for code in ("revenue", "transactions", "average_order_value")
+        metric_business_name(course.metric, language) for course in _SPECIMEN_COURSES
     }
     assert rendered == governed
+    assert len(rendered) == len(_SPECIMEN_COURSES), "each course needs its own governed name"
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -291,6 +324,52 @@ def test_the_caveat_is_the_governed_wording(client: TestClient, language: str) -
     governed = caveat_message("rows_without_time_field_excluded", language)
     assert specimen_caveat(language) == governed
     assert governed in client.get(f"{LANDING_PREFIX}/{language}").text
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_ledgers_caveated_row_carries_a_caveat_for_that_metric(
+    client: TestClient, language: str
+) -> None:
+    """The row caveat must be one the runtime emits FOR THE METRIC it is attached to.
+
+    A caveat is not a marketing adjective — it qualifies a specific figure. `returns_not_netted`
+    states that returns are reported gross and never subtracted from revenue, which is exactly
+    what the returns row shows. Attaching the specimen's section-scope time-field caveat here
+    instead would state a qualification the runtime would not make for this metric, which is the
+    same class of defect as narrating a caveat that has no code at all.
+    """
+    governed = caveat_message("returns_not_netted", language)
+    assert specimen_row_caveat(language) == governed
+    assert governed in client.get(f"{LANDING_PREFIX}/{language}").text
+
+    # And it is a DIFFERENT caveat from the section-scope one, or the ledger's row would be
+    # qualified by a statement about periods rather than about returns.
+    assert specimen_row_caveat(language) != specimen_caveat(language)
+
+    # The row it belongs to is the one the specimen marks caveated, so exactly one row carries it.
+    caveated = [course for course in specimen(language) if course["state"] == "caveated"]
+    assert len(caveated) == 1
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_strip_states_the_same_figure_in_both_scripts(
+    client: TestClient, language: str
+) -> None:
+    """The strip renders both scripts on every page, so both field sets must render on both.
+
+    Its fields come from `LANDING_COPY` through `strip_fields` rather than from literals in the
+    template: an earlier draft typed the Arabic values directly into the markup, which put a
+    second maintained truth beside the copy module and would drift the moment either changed.
+    """
+    body = client.get(f"{LANDING_PREFIX}/{language}").text
+    for script in LANGUAGES:
+        for field in strip_fields(script):
+            assert field["term"] in body, f"{script} strip term missing: {field['term']}"
+            assert field["value"] in body, f"{script} strip value missing: {field['value']}"
+
+    # Neither script's panel is a translation of the other: each names the metric in its own
+    # catalog wording, so the two terms must actually differ.
+    assert strip_fields("en")[0]["term"] != strip_fields("ar")[0]["term"]
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -387,15 +466,79 @@ def test_the_landing_offers_no_signup_or_beta_destination(
 
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_every_link_is_a_destination_that_answers(client: TestClient, language: str) -> None:
-    """No dead or invented href reaches the visitor, whatever its label."""
+    """No dead or invented href reaches the visitor, whatever its label.
+
+    `href` is not only a link attribute: SVG `<use href="#id">` names a symbol inside this same
+    document, and it is not navigation. Those are checked separately — that every referenced
+    symbol is actually defined — rather than treated as destinations that must answer.
+    """
     response = client.get(f"{LANDING_PREFIX}/{language}")
-    for href in set(re.findall(r'href="([^"]+)"', response.text)):
+    anchors = set(re.findall(r'<a\b[^>]*\bhref="([^"]+)"', response.text))
+    for href in anchors:
         if href.startswith("#"):
             assert href == "#main"
             assert f'id="{href[1:]}"' in response.text
             continue
         assert href.startswith("/"), f"external destination on a public page: {href}"
         assert client.get(href).status_code == 200
+
+
+# ---- The authored glyph set ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_every_referenced_glyph_is_defined(client: TestClient, language: str) -> None:
+    """A `<use>` naming a missing symbol renders nothing at all, silently."""
+    body = client.get(f"{LANDING_PREFIX}/{language}").text
+    defined = set(re.findall(r'<symbol id="([\w-]+)"', body))
+    referenced = set(re.findall(r'<use href="#([\w-]+)"', body))
+    assert referenced, "the page references no glyph at all"
+    assert referenced <= defined
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_no_glyph_carries_meaning_alone(client: TestClient, language: str) -> None:
+    """Every glyph is decorative, so every one is hidden from assistive technology.
+
+    PRODUCT.md's rule is that colour never carries a distinction alone; the same applies to a
+    picture. Each state glyph sits beside its state NAME, so a reader who cannot see it loses
+    nothing — and the markup has to say so, or a screen reader announces a shape.
+    """
+    body = client.get(f"{LANDING_PREFIX}/{language}").text
+    for element in re.findall(r"<svg\b[^>]*>", body):
+        assert 'aria-hidden="true"' in element, element[:90]
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_glyphs_are_authored_locally(client: TestClient, language: str) -> None:
+    """Drawn, not borrowed: no icon font, no library, no remote asset.
+
+    `default-src 'none'` would block a hosted set anyway, but the reason is design as much as
+    security — an imported set would not share this hand.
+    """
+    body = client.get(f"{LANDING_PREFIX}/{language}").text
+    assert "<symbol" in body
+    assert "http" not in body
+    for costume in ("font-awesome", "material-icons", "feather", "lucide", "bootstrap-icons"):
+        assert costume not in body.lower()
+
+
+def test_ornament_gold_is_never_set_on_prose() -> None:
+    """`--gold-leaf` clears the 3:1 non-text floor but NOT the 4.5:1 text floor.
+
+    Measured worst case 4.09:1 on the lightest ground it is drawn on. It is scoped to glyph
+    strokes, frames and rules; setting it on a paragraph would ship text under the floor, and the
+    two-tier split exists precisely so ornament can be gold without gold losing its meaning.
+    """
+    body = _without_comments(_stylesheet())
+    for rule in re.findall(r"([^{}]+)\{([^}]*)\}", body):
+        selector, declarations = rule
+        if "var(--gold-leaf)" not in declarations:
+            continue
+        if re.search(r"(?<![-\w])color\s*:\s*var\(--gold-leaf\)", declarations):
+            assert "glyph" in selector or "lintel" in selector, (
+                f"--gold-leaf set as text colour on {selector.strip()}"
+            )
 
 
 # ---- FR-089 / FR-090: presentation and security ---------------------------------------------
@@ -531,14 +674,24 @@ def test_the_admission_sequence_covers_every_course_it_staggers(language: str) -
     ties the two together so the omission fails here rather than on the page.
     """
     html = build_client().get(f"{LANDING_PREFIX}/{language}").text
-    value_courses = len(re.findall(r'class="course"', html))
+    rows = len(re.findall(r'class="ledger-row ledger-row--', html))
     delays = set(
         int(index)
         for index in re.findall(
-            r"\.specimen \.course:nth-of-type\((\d+)\) \.course-value", _stylesheet()
+            r"\.ledger tbody tr:nth-of-type\((\d+)\) \.ledger-value", _stylesheet()
         )
     )
-    assert delays == set(range(1, value_courses + 1))
+    assert delays == set(range(1, rows + 1))
+
+    # The standing settles alongside its figure, so its stagger must cover the same rows. A row
+    # whose state never animates would appear fully formed beside a figure still resolving.
+    states = set(
+        int(index)
+        for index in re.findall(
+            r"\.ledger tbody tr:nth-of-type\((\d+)\) \.ledger-state", _stylesheet()
+        )
+    )
+    assert states == delays
 
 
 def test_the_withheld_course_is_the_last_course_rendered() -> None:
@@ -548,9 +701,25 @@ def test_the_withheld_course_is_the_last_course_rendered() -> None:
     stopped being last, the refusal would land mid-sequence and the argument would misread.
     """
     html = build_client().get(f"{LANDING_PREFIX}/en").text
-    courses = re.findall(r'class="(course(?: course--withheld)?)"', html)
-    assert courses[-1] == "course course--withheld"
-    assert courses.count("course course--withheld") == 1
+    rows = re.findall(r'class="ledger-row ledger-row--(\w+)"', html)
+    assert rows[-1] == "withheld"
+    assert rows.count("withheld") == 1
+
+    # And its settle must begin after the last figure's stagger, or the refusal lands mid-sequence.
+    stylesheet = _stylesheet()
+    last_figure = max(
+        int(delay)
+        for delay in re.findall(
+            r"\.ledger tbody tr:nth-of-type\(\d+\) \.ledger-value \{ animation-delay: (\d+)ms",
+            stylesheet,
+        )
+    )
+    withheld = re.search(
+        r"\.ledger-row--withheld \{\s*animation: withheld-settles \d+ms [^\s]+ (\d+)ms",
+        stylesheet,
+    )
+    assert withheld is not None, "the withheld row must carry its own settle"
+    assert int(withheld.group(1)) > last_figure
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -574,9 +743,24 @@ def test_the_page_reads_correctly_with_no_animation(language: str) -> None:
         assert "visibility: hidden" not in block
 
     # Every keyframe moves only compositable, non-layout properties.
+    #
+    # `filter`, `text-shadow` and `box-shadow` are on the list deliberately. The first build
+    # animated `transform` alone and the owner's verdict was that the page had no animation at
+    # all — a 6px translate is not perceptible. Blur is what carries the weight instead, and it
+    # is the one effect that reads as movement WITHOUT touching the contrast of the resolved
+    # colour, which is why it is available here where `opacity` is not. None of these trigger
+    # layout; they compose on the GPU like transform does.
     for frames in _keyframes(body).values():
         animated = set(re.findall(r"([a-z-]+)\s*:", frames))
-        assert animated <= {"opacity", "transform", "color", "content"}
+        assert animated <= {
+            "opacity",
+            "transform",
+            "color",
+            "content",
+            "filter",
+            "text-shadow",
+            "box-shadow",
+        }
 
 
 def test_no_animation_starts_from_invisible_content() -> None:

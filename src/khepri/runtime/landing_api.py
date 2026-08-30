@@ -64,6 +64,13 @@ _SPECIMEN_REASON_SCOPE = "section"
 #: the right shape: the figure is reported, and the qualification travels with it.
 _SPECIMEN_CAVEAT = "rows_without_time_field_excluded"
 
+#: The caveat carried by the specimen's own caveated row. It is a different code from the one
+#: above because it qualifies a different thing: this one travels with the returns figure in the
+#: table, and it is the caveat the runtime actually attaches to a returns total — returns are
+#: reported gross and never netted from revenue. Attaching the section-scope time-field caveat to
+#: a returns row would state a qualification the runtime would not make for that metric.
+_SPECIMEN_ROW_CAVEAT = "returns_not_netted"
+
 #: The specimen's numbers, as numbers, so the invariants between them can be checked.
 #:
 #: A synthetic specimen must satisfy the product's own arithmetic, not merely look plausible. An
@@ -75,6 +82,16 @@ SPECIMEN_ROWS = 41905
 SPECIMEN_TRANSACTIONS = 30600
 SPECIMEN_REVENUE = 4182600.0
 SPECIMEN_AVERAGE_ORDER_VALUE = 136.69
+
+#: Units cannot fall below the sale count — a sale moves at least one unit — and the ratio it
+#: implies (2.332 units per sale) has to stay in a range a retail basket could actually hold.
+SPECIMEN_UNITS = 71344
+
+#: Returns are reported gross of revenue and never netted from it, which is precisely what the
+#: `returns_not_netted` caveat states. This is the specimen's caveated figure: reported, and
+#: qualified by a caveat the runtime genuinely emits for THIS metric. An earlier draft caveated a
+#: figure the runtime would have refused instead, which advertised behaviour the product lacks.
+SPECIMEN_RETURNS = 61980.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,13 +112,17 @@ class SpecimenCourse:
 _SPECIMEN_COURSES = (
     SpecimenCourse(metric="revenue", value="4,182,600 EGP", state="proven"),
     SpecimenCourse(metric="transactions", value="30,600", state="proven"),
+    SpecimenCourse(metric="units", value="71,344", state="proven"),
     SpecimenCourse(metric="average_order_value", value="136.69 EGP", state="proven"),
+    SpecimenCourse(metric="returns", value="61,980 EGP", state="caveated"),
 )
 
 _ARABIC_SPECIMEN_VALUES = {
     "revenue": "٤٬١٨٢٬٦٠٠ ج.م",
     "transactions": "٣٠٬٦٠٠",
+    "units": "٧١٬٣٤٤",
     "average_order_value": "١٣٦٫٦٩ ج.م",
+    "returns": "٦١٬٩٨٠ ج.م",
 }
 
 
@@ -138,6 +159,11 @@ def specimen_refusal(language: str) -> str:
     )
 
 
+def specimen_row_caveat(language: str) -> str:
+    """The governed caveat travelling with the specimen's caveated row."""
+    return caveat_message(_SPECIMEN_ROW_CAVEAT, language)
+
+
 def specimen_caveat(language: str) -> str:
     """The governed caveat text the specimen qualifies with.
 
@@ -159,6 +185,35 @@ def panel_metric(language: str) -> str:
     a translation of the other.
     """
     return metric_business_name("revenue", language)
+
+
+#: The strip's fields, in the order they are read. Named here rather than inline so the copy keys
+#: this surface consumes outside the template are discoverable — a guard that asks "does anything
+#: render this key" has to be able to see them.
+STRIP_FIELDS = ("period", "governance", "sources", "confidence")
+
+
+def strip_field_keys() -> frozenset[str]:
+    """Every `LANDING_COPY` key `strip_fields` reads."""
+    return frozenset(
+        f"strip_{field}_{part}" for field in STRIP_FIELDS for part in ("term", "value")
+    )
+
+
+def strip_fields(language: str) -> tuple[dict[str, str], ...]:
+    """The strip's four fields in one script, for a panel that renders on both pages.
+
+    Same seam as `panel_metric`, for the same reason: the strip states one figure once in each
+    script, so each panel is asked for by ITS OWN script rather than by the page's language, and
+    neither panel may hold a hard-coded string that the copy module also defines. An earlier draft
+    typed the Arabic values directly into the template, which put a second maintained truth beside
+    `LANDING_COPY` and drifted the moment either changed.
+    """
+    copy = LANDING_COPY[language]
+    return tuple(
+        {"term": copy[f"strip_{field}_term"], "value": copy[f"strip_{field}_value"]}
+        for field in STRIP_FIELDS
+    )
 
 
 def legal_links(language: str) -> tuple[dict[str, str], ...]:
@@ -218,8 +273,11 @@ def add_landing_routes(app: FastAPI) -> None:
             courses=specimen(language),
             refusal=specimen_refusal(language),
             caveat=specimen_caveat(language),
+            row_caveat=specimen_row_caveat(language),
             panel_metric_en=panel_metric("en"),
             panel_metric_ar=panel_metric("ar"),
+            strip_fields_en=strip_fields("en"),
+            strip_fields_ar=strip_fields("ar"),
             legal_links=legal_links(language),
         )
         return Response(
@@ -244,5 +302,7 @@ __all__ = [
     "panel_metric",
     "specimen",
     "specimen_caveat",
+    "specimen_row_caveat",
+    "strip_fields",
     "specimen_refusal",
 ]

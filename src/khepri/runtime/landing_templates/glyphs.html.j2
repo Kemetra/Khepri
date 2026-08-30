@@ -1,0 +1,94 @@
+{# Authored glyph set for the public landing (`LAND1-01`, RCA-004).
+
+   PRODUCT.md records "no icon set" as a deliberate absence for the APPLICATION. This set belongs
+   to the marketing surface only, which `FR-091` keeps as a distinct visual world; nothing here is
+   imported by `/app` or `/beta`.
+
+   Drawn, not borrowed: no icon library, no font, no emoji, no external asset — the craft floor's
+   rule and the CSP's `default-src 'none'` agree on that. One stroke weight (1.5 at a 24 viewBox)
+   across every glyph, so the set reads as one hand.
+
+   Each is a `<symbol>` in a single inert sprite, referenced by `<use>`. `currentColor` on every
+   stroke means a glyph takes the colour of whatever state it marks, so the palette stays the one
+   source of semantic colour.
+
+   Every glyph is decorative: the meaning is always carried by adjacent text as well, so each
+   `<use>` site sets `aria-hidden`. No information is glyph-only. #}
+<svg class="glyph-sprite" aria-hidden="true" focusable="false" width="0" height="0">
+  <defs>
+
+    {# The winged sun disc — the lintel over the hero specimen. Khepri's own emblem: the disc
+       carried across the sky, which is exactly the transformation the product claims. #}
+    <symbol id="g-winged-sun" viewBox="0 0 120 32">
+      <circle cx="60" cy="16" r="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <circle cx="60" cy="16" r="3" fill="currentColor"/>
+      <path d="M52 12 C40 9 26 8 6 13 C24 15 38 15 51 17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M52 19 C40 19 26 20 10 24 C26 24 40 22 51 21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M68 12 C80 9 94 8 114 13 C96 15 82 15 69 17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M68 19 C80 19 94 20 110 24 C94 24 80 22 69 21" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+
+    {# PROVEN — the eye. It saw the figure reconcile. #}
+    <symbol id="g-proven" viewBox="0 0 24 24">
+      <path d="M2 12 C6 6.5 9.5 4.5 12 4.5 C14.5 4.5 18 6.5 22 12 C18 17.5 14.5 19.5 12 19.5 C9.5 19.5 6 17.5 2 12 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <circle cx="12" cy="12" r="1.3" fill="currentColor"/>
+      <path d="M12 19.5 L12 22.5 M15.5 18.6 L17.6 21.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+
+    {# CAVEATED — the water sign. The figure is there, and it moves. #}
+    <symbol id="g-caveated" viewBox="0 0 24 24">
+      <path d="M2 8 C4.6 5.4 6.9 5.4 9.5 8 C12.1 10.6 14.4 10.6 17 8 C19.6 5.4 21.4 5.4 22 6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M2 13 C4.6 10.4 6.9 10.4 9.5 13 C12.1 15.6 14.4 15.6 17 13 C19.6 10.4 21.4 10.4 22 11.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M2 18 C4.6 15.4 6.9 15.4 9.5 18 C12.1 20.6 14.4 20.6 17 18 C19.6 15.4 21.4 15.4 22 16.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+
+    {# WITHHELD — the closed cartouche. A name-ring drawn shut: the place a figure would have been
+       recorded, sealed rather than filled. Not an error mark, not a cross. #}
+    <symbol id="g-withheld" viewBox="0 0 24 24">
+      <rect x="3.5" y="7.5" width="17" height="9" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6.5 12 L17.5 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M12 3.5 L12 7.5 M12 16.5 L12 20.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+
+    {# ADMISSION — the scales. Meaning weighed before any claim is made. #}
+    <symbol id="g-scales" viewBox="0 0 24 24">
+      <path d="M12 3.5 L12 20.5 M6.5 20.5 L17.5 20.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M4 7.5 L20 7.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M1.5 8 L4 14 L6.5 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M17.5 8 L20 14 L22.5 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="12" cy="5.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+
+    {# THE EXPORT — a papyrus roll, the file as it arrives. #}
+    <symbol id="g-export" viewBox="0 0 24 24">
+      <path d="M6 4.5 L18 4.5 C19.4 4.5 20.5 5.6 20.5 7 L20.5 19.5 L6 19.5 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <ellipse cx="6" cy="12" rx="2.5" ry="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M10.5 9 L17 9 M10.5 12.5 L17 12.5 M10.5 16 L14.5 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+
+    {# DETERMINISTIC FACTS — the sun at its zenith, rays fixed. The same inputs, the same result. #}
+    <symbol id="g-sun" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M12 1.5 L12 4.5 M12 19.5 L12 22.5 M1.5 12 L4.5 12 M19.5 12 L22.5 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M4.6 4.6 L6.8 6.8 M17.2 17.2 L19.4 19.4 M19.4 4.6 L17.2 6.8 M6.8 17.2 L4.6 19.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+
+    {# THE DECISION — a seated figure's throne seat, abstracted to its geometry: the place the
+       operator sits when the answer has to be defended. #}
+    <symbol id="g-decision" viewBox="0 0 24 24">
+      <path d="M5 20.5 L5 3.5 L13 3.5 L13 20.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M13 12.5 L19.5 12.5 L19.5 20.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M3 20.5 L21.5 20.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="9" cy="8" r="1.6" fill="currentColor"/>
+    </symbol>
+
+    {# A column capital — the papyrus-bundle form, used as the specimen shrine's jambs. #}
+    <symbol id="g-capital" viewBox="0 0 24 40">
+      <path d="M4 10 C4 5 8 2.5 12 2.5 C16 2.5 20 5 20 10 L20 12 L4 12 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M4 12 L20 12 M5.5 12 L5.5 37 M8.75 12 L8.75 37 M12 12 L12 37 M15.25 12 L15.25 37 M18.5 12 L18.5 37" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M2.5 37 L21.5 37" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+
+  </defs>
+</svg>

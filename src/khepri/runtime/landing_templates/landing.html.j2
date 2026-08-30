@@ -9,6 +9,7 @@
   <link rel="alternate" hreflang="{{ alternate }}" href="{{ alternate_href }}">
 </head>
 <body>
+{% include "glyphs.html.j2" %}
 <a class="skip-link" href="#main">{{ copy.skip }}</a>
 
 <header class="site-header">
@@ -24,44 +25,97 @@
 
 <main id="main">
 
-  {# ══ REGISTER I — arrival. The claim, then the specimen that proves it. ══════════════════ #}
+  {# ══ REGISTER I — arrival. The claim, and beside it the specimen that proves it.
+       Two columns on a wide viewport: the claim holds one side, the shrine the other, and the
+       band fills the width rather than leaving the wall bare either side of a narrow column.
+       DOM order puts the claim first and the grid resolves the sides, so RTL inverts the whole
+       composition without a single physical property. ═══════════════════════════════════════ #}
   <section class="register register--claim" aria-labelledby="claim-title">
-    <div class="wall">
+    <div class="wall hero">
 
-      <h1 id="claim-title">
-        {%- set parts = copy.tagline.split(copy.claim_prove) -%}
-        {{ parts[0] }}<span class="claim-mark">{{ copy.claim_prove }}</span>{{ parts[1] if parts|length > 1 else "" }}
-      </h1>
+      <div class="hero-claim">
+        <h1 id="claim-title">
+          {%- set parts = copy.tagline.split(copy.claim_prove) -%}
+          {{ parts[0] }}<span class="claim-mark">{{ copy.claim_prove }}</span>{{ parts[1] if parts|length > 1 else "" }}
+        </h1>
 
-      <p class="claim-lede">{{ copy.claim_lede }}</p>
+        <p class="claim-lede">{{ copy.claim_lede }}</p>
 
-      <figure class="specimen" aria-labelledby="specimen-title">
+        <dl class="hero-facts">
+          <div class="hero-fact">
+            <dt>{{ copy.specimen_population_term }}</dt>
+            <dd class="tabular">{{ copy.specimen_population_value }}</dd>
+          </div>
+          <div class="hero-fact">
+            <dt>{{ copy.specimen_coverage_term }}</dt>
+            <dd class="tabular">{{ copy.specimen_coverage_value }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <figure class="shrine" aria-labelledby="specimen-title">
+        <div class="shrine-lintel" aria-hidden="true">
+          <svg class="glyph glyph--lintel" aria-hidden="true" focusable="false"><use href="#g-winged-sun"/></svg>
+        </div>
+        <svg class="glyph glyph--jamb glyph--jamb-start" aria-hidden="true"><use href="#g-capital"/></svg>
+        <svg class="glyph glyph--jamb glyph--jamb-end" aria-hidden="true"><use href="#g-capital"/></svg>
+        <div class="specimen">
         <div class="specimen-head">
           <span class="specimen-file" id="specimen-title" dir="auto">{{ copy.specimen_file }}</span>
           <span class="state-mark state-mark--admitted">{{ copy.specimen_admitted }}</span>
         </div>
 
-        <dl class="courses">
-          <div class="course">
-            <dt class="course-term">{{ copy.specimen_population_term }}</dt>
-            <dd class="course-value course-value--plain tabular">{{ copy.specimen_population_value }}</dd>
-          </div>
-          {% for course in courses %}
-          <div class="course">
-            <dt class="course-term">{{ course.term }}</dt>
-            <dd class="course-value course-value--proven tabular">{{ course.value }}</dd>
-          </div>
-          {% endfor %}
+        <div class="specimen-meta">
+          <span class="tabular">{{ copy.specimen_meta }}</span>
+          <span class="tabular">{{ copy.specimen_period }}</span>
+        </div>
 
-          {# The withheld course, set into the register where the figure would have stood.
-             Its text is the product's own governed refusal wording, not a paraphrase. #}
-          <div class="course course--withheld">
-            <dt class="course-term">{{ copy.specimen_withheld_term }}</dt>
-            <dd class="course-refusal">{{ refusal }}</dd>
-          </div>
-        </dl>
+        {# A real table, because this is real tabular data: three columns, one row per measure.
+           The standing is a column rather than a badge — a figure and its standing are one
+           thing. Every state cell names its state in words; the glyph beside it repeats that
+           name and never carries it alone. #}
+        <table class="ledger">
+          <thead>
+            <tr>
+              <th scope="col">{{ copy.specimen_col_metric }}</th>
+              <th scope="col" class="ledger-value">{{ copy.specimen_col_value }}</th>
+              <th scope="col">{{ copy.specimen_col_state }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for course in courses %}
+            <tr class="ledger-row ledger-row--{{ course.state }}">
+              <th scope="row">{{ course.term }}</th>
+              <td class="ledger-value tabular">{{ course.value }}</td>
+              <td class="ledger-state">
+                {% if course.state == "proven" %}
+                <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-proven"/></svg>{{ copy.verdict_proven_name }}
+                {% else %}
+                <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-caveated"/></svg>{{ copy.verdict_caveated_name }}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+
+            {# The withheld row, set into the ledger where the figure would have stood. The value
+               cell holds an em dash — the place is kept, and left deliberately unfilled. #}
+            <tr class="ledger-row ledger-row--withheld">
+              <th scope="row">{{ copy.specimen_withheld_term }}</th>
+              <td class="ledger-value tabular" aria-hidden="true">—</td>
+              <td class="ledger-state">
+                <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-withheld"/></svg>{{ copy.verdict_withheld_name }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        {# The governed texts the ledger's two non-proven rows carry, in the product's own
+           wording rather than a paraphrase of it. #}
+        <p class="ledger-note ledger-note--caveat">{{ row_caveat }}</p>
+        <p class="ledger-note ledger-note--refusal">{{ refusal }}</p>
 
         <figcaption class="synthetic-note">{{ copy.specimen_caption }}</figcaption>
+        </div>
       </figure>
 
     </div>
@@ -77,29 +131,34 @@
 
       <ol class="passage">
         <li class="passage-step">
-          <span class="passage-index" aria-hidden="true">I</span>
+          <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-export"/></svg>
+          <span class="passage-index" aria-hidden="true">01</span>
           <span class="passage-term">{{ copy.passage_1_term }}</span>
           <span class="passage-detail">{{ copy.passage_1_detail }}</span>
           <span class="passage-state tabular">{{ copy.passage_1_state }}</span>
         </li>
         <li class="passage-step">
-          <span class="passage-index" aria-hidden="true">II</span>
+          <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-scales"/></svg>
+          <span class="passage-index" aria-hidden="true">02</span>
           <span class="passage-term">{{ copy.passage_2_term }}</span>
           <span class="passage-detail">{{ copy.passage_2_detail }}</span>
           <span class="passage-state tabular">{{ copy.passage_2_state }}</span>
         </li>
         <li class="passage-step">
-          <span class="passage-index" aria-hidden="true">III</span>
+          <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-sun"/></svg>
+          <span class="passage-index" aria-hidden="true">03</span>
           <span class="passage-term">{{ copy.passage_3_term }}</span>
           <span class="passage-detail">{{ copy.passage_3_detail }}</span>
         </li>
         <li class="passage-step passage-step--withheld">
-          <span class="passage-index" aria-hidden="true">IV</span>
+          <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-withheld"/></svg>
+          <span class="passage-index" aria-hidden="true">04</span>
           <span class="passage-term">{{ copy.passage_4_term }}</span>
           <span class="passage-detail">{{ copy.passage_4_detail }}</span>
         </li>
         <li class="passage-step">
-          <span class="passage-index" aria-hidden="true">V</span>
+          <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-decision"/></svg>
+          <span class="passage-index" aria-hidden="true">05</span>
           <span class="passage-term">{{ copy.passage_5_term }}</span>
           <span class="passage-detail">{{ copy.passage_5_detail }}</span>
         </li>
@@ -127,22 +186,52 @@
         </div>
       </div>
 
+      {# The comparison register. Four axes the rest of this page demonstrates — no axis states a
+         capability the specimen and the passage have not already shown. The compared column is a
+         category, never a named company. #}
+      <table class="compare">
+        <caption class="compare-caption">{{ copy.compare_heading }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{ copy.compare_axis }}</th>
+            <th scope="col" class="compare-ours-head">{{ copy.compare_ours_head }}</th>
+            <th scope="col">{{ copy.compare_theirs_head }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in [
+            ("g-proven",   copy.compare_1_axis, copy.compare_1_ours, copy.compare_1_theirs),
+            ("g-caveated", copy.compare_2_axis, copy.compare_2_ours, copy.compare_2_theirs),
+            ("g-export",   copy.compare_3_axis, copy.compare_3_ours, copy.compare_3_theirs),
+            ("g-sun",      copy.compare_4_axis, copy.compare_4_ours, copy.compare_4_theirs),
+          ] %}
+          <tr>
+            <th scope="row">{{ row[1] }}</th>
+            <td class="compare-ours">
+              <svg class="glyph glyph--cell" aria-hidden="true"><use href="#{{ row[0] }}"/></svg>{{ row[2] }}
+            </td>
+            <td class="compare-theirs">{{ row[3] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
       <div class="verdicts">
         <article class="verdict verdict--proven">
-          <span class="verdict-name">{{ copy.verdict_proven_name }}</span>
+          <span class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-proven"/></svg>{{ copy.verdict_proven_name }}</span>
           <p class="verdict-claim">{{ copy.verdict_proven_claim }}</p>
           <p class="verdict-detail">{{ copy.verdict_proven_detail }}</p>
         </article>
 
         <article class="verdict verdict--caveated">
-          <span class="verdict-name">{{ copy.verdict_caveated_name }}</span>
+          <span class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-caveated"/></svg>{{ copy.verdict_caveated_name }}</span>
           <p class="verdict-claim">{{ copy.verdict_caveated_claim }}</p>
           <p class="verdict-detail">{{ copy.verdict_caveated_detail }}</p>
           <p class="verdict-refusal">{{ caveat }}</p>
         </article>
 
         <article class="verdict verdict--withheld">
-          <span class="verdict-name">{{ copy.verdict_withheld_name }}</span>
+          <span class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-withheld"/></svg>{{ copy.verdict_withheld_name }}</span>
           <p class="verdict-claim">{{ copy.verdict_withheld_claim }}</p>
           <p class="verdict-detail">{{ copy.verdict_withheld_detail }}</p>
           <p class="verdict-refusal">{{ refusal }}</p>
@@ -202,6 +291,37 @@
           <p class="script-note">تمت المطابقة عبر ١٨ متجرًا.</p>
         </div>
       </div>
+
+      {# The strip. One figure, stated once in each script, with the sun disc between them — the
+         two readings meet at the disc rather than one being a translation of the other. Beneath
+         each, the four things established before the runtime will report a figure at all. #}
+      <div class="strip">
+        <div class="strip-side" lang="en" dir="ltr">
+          <p class="strip-term">{{ panel_metric_en }}</p>
+          <p class="strip-figure tabular">4,182,600 <span class="strip-unit">EGP</span></p>
+          <dl class="strip-fields">
+            {% for field in strip_fields_en %}
+            <div><dt>{{ field.term }}</dt><dd>{{ field.value }}</dd></div>
+            {% endfor %}
+          </dl>
+        </div>
+
+        <div class="strip-disc" aria-hidden="true">
+          <svg class="glyph glyph--disc" aria-hidden="true"><use href="#g-sun"/></svg>
+        </div>
+
+        <div class="strip-side" lang="ar" dir="rtl">
+          <p class="strip-term">{{ panel_metric_ar }}</p>
+          <p class="strip-figure tabular">٤٬١٨٢٬٦٠٠ <span class="strip-unit">ج.م</span></p>
+          <dl class="strip-fields">
+            {% for field in strip_fields_ar %}
+            <div><dt>{{ field.term }}</dt><dd>{{ field.value }}</dd></div>
+            {% endfor %}
+          </dl>
+        </div>
+      </div>
+
+      <p class="strip-note">{{ copy.strip_note }}</p>
 
       <p class="synthetic-note">{{ copy.scripts_note }}</p>
     </div>
