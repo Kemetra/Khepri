@@ -158,8 +158,16 @@ definition and evidence path."*
 
 `tests/test_rra011_parity.py` (588 lines, merged at `#334`) already covers parity, fail-closed and
 no-duplicate-truth over the metric, definition and quality **functions**. The genuinely new half is
-the **evidence surface and the HTTP boundary**, in `tests/test_rra011_evidence_parity.py` — 15 tests,
-written deliberately flat, no helper pyramid.
+the **evidence surface and the HTTP boundary**, across two modules — 28 tests, written deliberately
+flat, no helper pyramid.
+
+They began as one file and were split when CodeScene failed it on Low Cohesion, a critical rule:
+LCOM4 measures whether a module's functions share data or call each other, and this one held two
+groups that never touched. `tests/test_rra011_projection.py` (5 tests) characterizes
+`build_context(...)["audit"]` using only the rendering path;
+`tests/test_rra011_catalog_routes.py` (23 tests) drives the HTTP boundary through `_harness` and
+`FakePackageReader`. The file already carried a `# --- the HTTP boundary ---` divider between them,
+so the metric found a seam that had been drawn and then ignored. Both score 10.00.
 
 | Property | Test |
 |---|---|
@@ -230,8 +238,16 @@ The surface therefore serves derived citations from what the bundle and its audi
 hold, and **omits `precision` and `inputs` for them** — absent, not empty and not recomputed, the
 same rule F4 applies to `provenance` and `passages`. Every one of the 22 displayed citations still
 resolves, so `T1-08`'s evidence path holds; only the two fields no readable record states are gone.
-`test_no_catalog_route_recomputes_a_published_figure` asserts the absence of `family.derive` in the
-module so the reversal cannot be quietly undone.
+`test_no_catalog_route_recomputes_a_published_figure` asserted the absence of `family.derive` in the
+module.
+
+**That guard was later found worthless and is gone.** `ReportBundle.of` calls `family.derive` and
+`concentration.curve_series` itself, so the two package-scoped routes still reach derivation one
+frame deeper, and a string search over one file could not see it. Whether *that* is permitted is the
+open question `F8` puts to the owner — see
+`docs/superpowers/plans/2026-08-30-rra011-exclusion-reading.md`. What this slice fixed is narrower
+than the paragraph above claimed: the route no longer calls `family.derive` directly, and the two
+fields no readable record states are still omitted rather than recomputed.
 
 **The gap this leaves is real and filed as P2.** Roadmap:745 names "inputs" in `T1-05`'s acceptance.
 It is met for stored facts and structurally unmeetable for derived ones under `RRA-011`'s own
@@ -280,7 +296,7 @@ serve the delivered artifact.
 |---|---|
 | `uv run khepri-gov validate` | **Governance validation passed.** |
 | `uv run ruff check .` | **All checks passed!** |
-| `uv run pytest` | **3813 passed, 72 skipped, 1 xfailed** |
+| `uv run pytest` | **3813 passed, 72 skipped, 1 xfailed** on the `T1-05` branch; **3,910** on `main` at `bc96a65` once `#341` and `#342` also merged |
 
 The baseline on `main` at `46b2d56` is **3797 passed, 72 skipped, 1 xfailed**, measured this session
 rather than quoted: `CAL1-13`'s recorded 3,631 predates `#334`, `#338` and `#340`. The delta is
@@ -292,7 +308,8 @@ passing.
 
 | File | Score |
 |---|---|
-| `tests/test_rra011_evidence_parity.py` (new) | **10.00** |
+| `tests/test_rra011_projection.py` (new) | **10.00** |
+| `tests/test_rra011_catalog_routes.py` (new) | **10.00** |
 | `src/khepri/rra/report_api.py` (modified) | **9.37**, its baseline unchanged |
 
 **The server gate caught a file the local pre-flight had not scored.** `test_rra011_parity.py` fell

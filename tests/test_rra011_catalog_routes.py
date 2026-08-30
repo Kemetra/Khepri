@@ -1,4 +1,4 @@
-"""`T1-08`: the catalog evidence surface, proved against the surface it mirrors.
+"""`T1-08`: the catalog routes at the HTTP boundary.
 
 `test_rra011_parity.py` already covers parity, fail-closed, and no-duplicate-truth
 over the metric, definition, and quality *functions*. What could not exist until
@@ -19,7 +19,6 @@ CodeScene score of 10.00.
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -30,12 +29,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from khepri.rra import report_api
+from khepri.rra.analysis import concentration
 from khepri.rra.api import create_app
 from khepri.rra.bundle import ReportBundle, StatedCaveat
 from khepri.rra.facts import FactPackage
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted
 from khepri.rra.persistence import Base, SqlSessionStore
-from khepri.rra.rendering.html import build_cells, build_context
+from khepri.rra.rendering.html import build_cells
 from khepri.rra.rendering.wording import business_metric_name
 from khepri.rra.reports import ReportServices
 from khepri.rra.sessions import InvitationService, SessionExpired
@@ -95,94 +95,6 @@ class FakePackageReader:
             created_at=now,
             document=package.as_document(),
         )
-
-
-def test_the_audit_region_names_no_fact_identifier() -> None:
-    """Why the evidence route is keyed on a citation rather than a fact.
-
-    `_identity` (`facts.py:2211`) derives `fct_<digest[:24]>` and
-    `cit_<digest[:12]>` from one digest, so the two are different strings for the
-    same fact. `FigureCell` carries the citation and deliberately drops the fact
-    identifier, so no `fact_id` reaches the audit region at all.
-
-    A route keyed on `fact_id` could therefore only answer by reading
-    `bundle.figures` itself -- a second projection assembled from the bundle,
-    which `RRA-011` forbids in the same sentence that requires exactly one. This
-    test pins the reason so a later slice cannot "helpfully" add the field back.
-    """
-    bundle = ReportBundle.of(package_for(ROWS, published=True))
-    cells = build_cells(bundle, "en")
-
-    audit = build_context(bundle, "en", cells)["audit"]
-
-    assert {figure.fact_id for figure in bundle.figures}
-    assert not any(hasattr(cell, "fact_id") for cell in audit["figures"])
-
-
-def test_one_citation_answers_for_every_cell_that_quotes_it() -> None:
-    """A series has one citation and many cells, so evidence groups rather than pairs.
-
-    Measured rather than assumed: the shared fixture renders 49 figures over 22
-    citations. An evidence surface that assumed one cell per citation would answer
-    for the first and silently drop the rest.
-    """
-    bundle = ReportBundle.of(package_for(ROWS, published=True))
-    cells = build_cells(bundle, "en")
-
-    citations = {cell.citation_id for cell in cells}
-
-    assert len(cells) > len(citations)
-    assert citations == set(build_context(bundle, "en", cells)["audit"]["citations"])
-
-
-def test_every_cell_carries_a_citation_the_audit_region_lists() -> None:
-    """No figure is displayed whose evidence path the audit region omits.
-
-    This is the `T1-08` acceptance clause -- "every displayed figure has one
-    definition and evidence path" -- read against the citation half.
-    """
-    for language in LANGUAGES:
-        bundle = ReportBundle.of(package_for(ROWS, published=True))
-        cells = build_cells(bundle, language)
-        audit = build_context(bundle, language, cells)["audit"]
-
-        listed = set(audit["citations"])
-
-        assert listed
-        assert all(cell.citation_id in listed for cell in cells)
-
-
-def test_the_audit_region_states_a_reason_for_every_refused_section() -> None:
-    """A refused section is the one carrying a reason, never the one carrying a state.
-
-    `Section.state` is Internal tier and reaches no customer surface, so the audit
-    region identifies refusal by `reason is not None`. The catalog must classify
-    the same way or the two surfaces disagree about which analyses were answered.
-    """
-    bundle = ReportBundle.of(package_for(ROWS, published=False))
-    cells = build_cells(bundle, "en")
-
-    audit = build_context(bundle, "en", cells)["audit"]
-
-    refused = [entry for entry in audit["sections"] if entry["reason"] is not None]
-
-    assert refused
-    assert all(set(entry) == {"section_id", "reason"} for entry in audit["sections"])
-
-
-def test_the_audit_region_carries_no_internal_tier_field() -> None:
-    """`state` and `narrative_state` are Internal and appear on no catalog surface.
-
-    Asserted against the projection itself rather than a response model, so it
-    holds for every surface reading it -- including the ones this slice adds.
-    """
-    bundle = ReportBundle.of(package_for(ROWS, published=True))
-    cells = build_cells(bundle, "en")
-
-    audit = build_context(bundle, "en", cells)["audit"]
-
-    assert "narrative_state" not in audit
-    assert all("state" not in entry for entry in audit["sections"])
 
 
 # --- the HTTP boundary ------------------------------------------------------
@@ -693,18 +605,58 @@ def test_a_derived_figure_omits_what_no_record_states_rather_than_recomputing() 
     assert body["definition"]
 
 
-def test_no_catalog_route_recomputes_a_published_figure() -> None:
-    """The Exclusion, asserted against the module rather than trusted to a docstring.
+def test_a_catalog_read_derives_analysis_facts_through_bundle_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """What a catalog GET actually executes, measured rather than grepped.
 
-    An earlier revision resolved derived citations by calling
-    `family.derive(package)` during the GET. It answered every citation and was
-    outside the specification for doing so. This pins the absence so a later
-    slice cannot restore it as a convenience.
+    An earlier version of this test read `report_api.py` and asserted the strings
+    `family.derive` and `curve_series` were absent from it. That guard was
+    worthless: it passed while `ReportBundle.of` called both, one frame deeper,
+    on every request. A test that greps one file for a call site cannot see the
+    call moving into a collaborator, which is exactly what happened.
+
+    So this counts the calls instead. It asserts the count is **non-zero** --
+    recording the behaviour as it is, not as either reading of `RRA-011` would
+    prefer -- because whether that behaviour is permitted is an open owner
+    question, filed as `F8`:
+
+    - `RRA-011`:204 excludes "any calculation, re-derivation, re-rounding, or
+      re-formatting of a published figure. A catalog surface repeats a value; it
+      never recomputes one."
+    - `RRA-011`:169-170 requires the evidence route to "read the projection the
+      report surfaces already render from, never assemble a second one **from the
+      bundle** directly" -- which presupposes the route holds a bundle, and that
+      projection is reachable only through `build_context(bundle, ...)`.
+    - No store persists a `ReportBundle`, so a route that may not construct one
+      cannot serve the projection the same specification mandates.
+
+    If the owner reads the Exclusion as prohibiting this, the count must become
+    zero and the route must read a retained projection -- an `RRA-004`/`RRA-006`
+    change. Until then this test states the fact, so the next reader measures it
+    rather than inferring it from a docstring.
     """
-    source = pathlib.Path(report_api.__file__).read_text(encoding="utf-8")
+    client, _ = _harness()
+    calls: list[str] = []
+    original = concentration.curve_series
+    monkeypatch.setattr(
+        concentration,
+        "curve_series",
+        lambda package: (calls.append("curve_series"), original(package))[1],
+    )
+    citation = build_cells(ReportBundle.of(package_for(ROWS, published=True)), "en")[
+        0
+    ].citation_id
+    # The line above constructs a bundle itself, so it fires the patched
+    # function. Cleared here, or this would count its own setup and pass
+    # whatever the route does -- which is the failure the grep version of this
+    # test already had once.
+    calls.clear()
 
-    assert "family.derive" not in source
-    assert "curve_series" not in source
+    answer = client.get(f"{EVIDENCE}/{citation}/evidence/en")
+
+    assert answer.status_code == 200
+    assert calls, "a catalog read reaches derivation through ReportBundle.of"
 
 
 def test_a_refused_result_is_keyed_as_a_result_not_a_section() -> None:
