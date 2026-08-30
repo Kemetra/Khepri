@@ -35,7 +35,7 @@ wearing this one's name.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Annotated
 
@@ -43,10 +43,11 @@ from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from khepri.rra import definitions
+from khepri.rra.analysis import concentration
 from khepri.rra.artifact_publication import ArtifactDocument
-from khepri.rra.bundle import ReportBundle
+from khepri.rra.bundle import _FAMILIES, ReportBundle
 from khepri.rra.datasets import ProfileCorrupted
-from khepri.rra.facts import Fact, FactPackage
+from khepri.rra.facts import FactPackage, RefusedResult
 from khepri.rra.jobs import UnknownJobState
 from khepri.rra.package_source import SessionPackageReader, rebuild_fact_package
 from khepri.rra.packages import FactPackageRecord, PackageCorrupted, PackageRefused
@@ -802,21 +803,56 @@ def _resolved(record: FactPackageRecord | None) -> str:
     return "resolved" if record is None else record.session_id
 
 
-def _fact_for(package: FactPackage, citation_id: str) -> Fact | None:
-    """The one governed fact a citation names, across every collection.
+def _fact_for(package: FactPackage, citation_id: str) -> object | None:
+    """The one governed record a citation names, stored or derived.
 
-    A package holds facts, series entries and comparisons, and a citation may
-    name any of them. Read from the package rather than from the audit region
-    because unit kind, precision and inputs are package scope -- `RRA-011` says
-    each `Fact` carries them and that a package-scoped attribute must be read
-    from the package that carries it.
+    A package stores scalar facts, series entries and comparisons. It does **not**
+    store the `RRA-008` analysis facts -- comparison, growth, basket and
+    concentration -- which `ReportBundle.of` obtains by calling
+    `family.derive(package)` as it assembles. Searching only the stored
+    collections answered 404 for 13 of the 22 citations one report displays,
+    which is precisely the evidence path `T1-08` requires every displayed figure
+    to have.
+
+    Derivation is deterministic over the package, so recomputing here reads the
+    same truth the bundle read rather than inventing a second one -- the same
+    reason the bundle itself is re-derived rather than stored. A family that
+    refuses returns a `RefusedResult` rather than facts, and a refused analysis
+    displays no figure, so it contributes no citation to miss.
     """
+    stored = (*package.facts, *package.series, *package.comparisons)
+    found = _by_citation(stored, citation_id)
+    return found if found is not None else _derived_fact(package, citation_id)
+
+
+def _derived_fact(package: FactPackage, citation_id: str) -> object | None:
+    """The analysis fact one citation names, recomputed as the bundle computes it."""
+    for family in _FAMILIES.values():
+        stated = family.derive(package)
+        if isinstance(stated, RefusedResult):
+            continue
+        found = _by_citation(stated, citation_id)
+        if found is not None:
+            return found
+    return _by_citation(_curve_series(package), citation_id)
+
+
+def _curve_series(package: FactPackage) -> tuple[object, ...]:
+    """The concentration curve as its one governed record, or nothing.
+
+    The curve reaches a surface the way a trend does -- one `FactSeries` whose
+    buckets become many figures sharing a single citation -- and it is appended
+    outside the family loop, so a search over `derive` alone misses it. It is the
+    22nd of this report's 22 displayed citations.
+    """
+    series = concentration.curve_series(package)
+    return () if series is None else (series,)
+
+
+def _by_citation(records: Iterable[object], citation_id: str) -> object | None:
+    """The first record naming this citation, or nothing."""
     return next(
-        (
-            fact
-            for fact in (*package.facts, *package.series, *package.comparisons)
-            if fact.citation_id == citation_id
-        ),
+        (record for record in records if record.citation_id == citation_id),
         None,
     )
 

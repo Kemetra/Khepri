@@ -548,6 +548,34 @@ def test_the_quality_summary_says_its_refusals_in_the_readers_language() -> None
     )
 
 
+def test_every_displayed_figure_has_an_evidence_path() -> None:
+    """`T1-08`'s acceptance, enumerated over the displayed set rather than sampled.
+
+    The earlier shape test drew its citations from the package's three stored
+    collections and passed while **13 of the 22 displayed citations answered
+    404**: the `RRA-008` analysis facts -- comparison, growth, basket,
+    concentration -- are derived by `family.derive(package)` while
+    `ReportBundle.of` assembles and are stored nowhere, and the concentration
+    curve is a `FactSeries` appended outside that loop again.
+
+    "Every displayed figure has one definition and evidence path" is a claim about
+    the figures a report *shows*, so the expectation is built from the rendered
+    cells. A test that samples the stored side can be green while most of the
+    surface is broken, which is exactly what happened.
+    """
+    client, _ = _harness()
+    bundle = ReportBundle.of(package_for(ROWS, published=True))
+    displayed = sorted({cell.citation_id for cell in build_cells(bundle, "en")})
+
+    answers = {
+        citation: client.get(f"{EVIDENCE}/{citation}/evidence/en").status_code
+        for citation in displayed
+    }
+
+    assert len(displayed) > 20
+    assert set(answers.values()) == {200}
+
+
 def test_every_governed_record_shape_answers_its_evidence_link() -> None:
     """A citation may name a scalar fact, a series entry, or a comparison.
 
