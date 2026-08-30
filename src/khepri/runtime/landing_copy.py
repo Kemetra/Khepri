@@ -36,8 +36,11 @@ _EN: dict[str, str] = {
     "specimen_population_value": "18 stores · 1 quarter",
     "specimen_caption": "Illustrative export. Not customer data.",
     "specimen_withheld_term": "Change against the prior quarter",
-    "register_ii": "Register II · The passage",
-    "register_v": "Register III · What an answer is worth",
+    # Station headings. These replaced two eyebrow labels ("Register II · The passage") that sat
+    # above the real heading and said nothing the heading did not — a label the reader's eye must
+    # skip is a cost with no return. Each station now carries one heading that does the work.
+    "passage_heading": "What happens to one file",
+    "sanctuary_heading": "Refusal is a capability.",
     "passage_1_term": "Operational export",
     "passage_1_detail": "The file the retailer already produces, imperfect as it is.",
     "passage_1_state": "41,905 rows · 22 columns",
@@ -60,15 +63,9 @@ _EN: dict[str, str] = {
     "passage_5_detail": (
         "The same facts in Arabic and English, carrying their caveats and refusals with them."
     ),
-    "passage_figure": "Refusal is a capability.",
     "passage_figure_em": (
         "We would rather refuse an unsupported answer than manufacture confidence."
     ),
-    "contrast_theirs_label": "Typical analytics",
-    "contrast_theirs": "“Here is your answer.”",
-    "contrast_ours_label": "Khepri",
-    "contrast_ours_before": "“Here is the answer we can ",
-    "contrast_ours_after": " — and here is what we cannot.”",
     # The comparison register. Four axes, each stating a difference in behaviour that the rest
     # of this page demonstrates — nothing here is a claim the specimen and the passage do not
     # already show. No competitor is named: the column is a category, not a company.
@@ -102,9 +99,6 @@ _EN: dict[str, str] = {
     "strip_sources_value": "ERP · POS · E-commerce",
     "strip_confidence_term": "Coverage",
     "strip_confidence_value": "Complete",
-    "strip_note": (
-        "Deterministic aggregation · every figure traceable · limits stated, never implied."
-    ),
     "compare_heading": "Why Khepri is not an ordinary analysis tool",
     "verdict_proven_name": "Proven",
     "verdict_proven_claim": "Revenue reconciles across all 18 stores.",
@@ -127,7 +121,6 @@ _EN: dict[str, str] = {
         "The three results above are illustrative, not customer data. Their state names and the "
         "refusal wording are the product's governed vocabulary."
     ),
-    "pillars_heading": "Why Khepri",
     "pillar_1_name": "Provable figures",
     "pillar_1_body": (
         "Every important figure reconciles with the evidence behind it, reachable from the claim "
@@ -184,8 +177,8 @@ _AR: dict[str, str] = {
     "specimen_population_value": "١٨ متجرًا · ربع سنة",
     "specimen_caption": "ملف توضيحي. ليس بيانات عميل.",
     "specimen_withheld_term": "التغيّر مقارنةً بالربع السابق",
-    "register_ii": "السجل الثاني · المسار",
-    "register_v": "السجل الثالث · ما قيمة الإجابة",
+    "passage_heading": "ما الذي يحدث لملف واحد",
+    "sanctuary_heading": "الامتناع قدرة.",
     "passage_1_term": "ملف تشغيلي",
     "passage_1_detail": "الملف الذي ينتجه المتجر أصلًا، بما فيه من نقص.",
     "passage_1_state": "٤١٬٩٠٥ صفًا · ٢٢ عمودًا",
@@ -206,13 +199,7 @@ _AR: dict[str, str] = {
     "passage_5_detail": (
         "الحقائق نفسها بالعربية والإنجليزية، وتحمل معها تحفّظاتها وامتناعها."
     ),
-    "passage_figure": "الامتناع قدرة.",
     "passage_figure_em": "نفضّل الامتناع عن إجابة غير مثبتة على أن نصطنع ثقة بها.",
-    "contrast_theirs_label": "التحليلات المعتادة",
-    "contrast_theirs": "«هذه إجابتك.»",
-    "contrast_ours_label": "خِبري",
-    "contrast_ours_before": "«هذه الإجابة التي نستطيع ",
-    "contrast_ours_after": " — وهذا ما لا نستطيعه.»",
     "compare_axis": "الوجه",
     "compare_theirs_head": "التحليلات المعتادة",
     "compare_ours_head": "خِبري",
@@ -239,7 +226,6 @@ _AR: dict[str, str] = {
     "strip_sources_value": "تخطيط الموارد · نقاط البيع · المتجر الإلكتروني",
     "strip_confidence_term": "التغطية",
     "strip_confidence_value": "كاملة",
-    "strip_note": "تجميع حتمي · كل رقم قابل للتتبع · الحدود مذكورة لا مُلمَّح إليها.",
     "compare_heading": "لماذا خِبري ليس أداة تحليل عادية",
     "verdict_proven_name": "مثبت",
     "verdict_proven_claim": "الإيرادات مطابَقة عبر المتاجر الـ١٨ جميعها.",
@@ -262,7 +248,6 @@ _AR: dict[str, str] = {
         "النتائج الثلاث أعلاه توضيحية، وليست بيانات عميل. وأسماء حالاتها ونص الامتناع هي مفردات "
         "المنتج المعتمدة."
     ),
-    "pillars_heading": "لماذا خِبري",
     "pillar_1_name": "أرقام قابلة للإثبات",
     "pillar_1_body": (
         "كل رقم مهم يطابق الدليل الذي خلفه، ويمكن الوصول إليه من الادعاء الذي يسنده."

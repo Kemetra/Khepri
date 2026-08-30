@@ -9,6 +9,22 @@
   <link rel="alternate" hreflang="{{ alternate }}" href="{{ alternate_href }}">
 </head>
 <body>
+<!--
+  THESIS: The page is a walk toward the answer, not a wall you read. Each station narrows and
+  quiets until the governed result stands alone. It refuses the stacked equal-weight sections
+  every analytics landing ships: a procession has a destination, so its parts are unequal.
+  OWN-WORLD: Quarried stone (#17130f→#332822) under raking light, gold leaf for proven figures
+  only, Egyptian blue hairlines as construction lines, weathered stone for withheld. Battered
+  (tapering) frames, incised rules, authored SVG glyphs at one stroke weight. No cards.
+  STORY: The visitor sees a claim through a gateway, walks the admission of one real file, meets
+  the three things an answer can be, and leaves knowing a refusal is a result.
+  FIRST VIEWPORT: A pylon spanning the full width — two battered towers, the wordmark cut into
+  the lintel between them, the claim carved on one tower and the specimen visible through the
+  gateway. No CTA: no authorized destination exists.
+  FORM: The Axial Procession, index 7 of 7 grounded structures, seed 9752a96f.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the
+  verdict, DESIGN.md, and every shipping raster carrying its provenance.
+-->
 {% include "glyphs.html.j2" %}
 <a class="skip-link" href="#main">{{ copy.skip }}</a>
 
@@ -25,15 +41,18 @@
 
 <main id="main">
 
-  {# ══ REGISTER I — arrival. The claim, and beside it the specimen that proves it.
-       Two columns on a wide viewport: the claim holds one side, the shrine the other, and the
-       band fills the width rather than leaving the wall bare either side of a narrow column.
-       DOM order puts the claim first and the grid resolves the sides, so RTL inverts the whole
-       composition without a single physical property. ═══════════════════════════════════════ #}
-  <section class="register register--claim" aria-labelledby="claim-title">
-    <div class="wall hero">
+  {# ══ STATION I — THE PYLON ═══════════════════════════════════════════════════════════════════
+     The gateway. Two battered towers frame a central opening; the claim is cut into the tower
+     and the specimen stands in the opening, visible from outside and entered by scrolling. This
+     is the widest station and the only one that spans the full wall. #}
+  <section class="station station--pylon" aria-labelledby="claim-title">
+    <div class="pylon">
 
-      <div class="hero-claim">
+      <div class="tower tower--start" aria-hidden="true">
+        <span class="tower-flute"></span><span class="tower-flute"></span><span class="tower-flute"></span>
+      </div>
+
+      <div class="gateway">
         <h1 id="claim-title">
           {%- set parts = copy.tagline.split(copy.claim_prove) -%}
           {{ parts[0] }}<span class="claim-mark">{{ copy.claim_prove }}</span>{{ parts[1] if parts|length > 1 else "" }}
@@ -41,156 +60,138 @@
 
         <p class="claim-lede">{{ copy.claim_lede }}</p>
 
-        <dl class="hero-facts">
-          <div class="hero-fact">
+        {# What was established before any figure was calculated. These two sit on the threshold
+           because admission precedes claim — the reader meets them before the numbers. #}
+        <dl class="threshold">
+          <div>
             <dt>{{ copy.specimen_population_term }}</dt>
             <dd class="tabular">{{ copy.specimen_population_value }}</dd>
           </div>
-          <div class="hero-fact">
+          <div>
             <dt>{{ copy.specimen_coverage_term }}</dt>
             <dd class="tabular">{{ copy.specimen_coverage_value }}</dd>
           </div>
         </dl>
+
+        <figure class="specimen" aria-labelledby="specimen-title">
+          <div class="lintel" aria-hidden="true">
+            <svg class="glyph glyph--lintel" aria-hidden="true" focusable="false"><use href="#g-winged-sun"/></svg>
+          </div>
+
+          <div class="specimen-body">
+            <div class="specimen-head">
+              <span class="specimen-file" id="specimen-title" dir="auto">{{ copy.specimen_file }}</span>
+              <span class="state-mark state-mark--admitted">{{ copy.specimen_admitted }}</span>
+            </div>
+
+            <p class="specimen-meta">
+              <span class="tabular">{{ copy.specimen_meta }}</span>
+              <span class="tabular">{{ copy.specimen_period }}</span>
+            </p>
+
+            {# A real table: the standing is a column because a figure and its standing are one
+               thing. Every state cell names its state in words; the glyph never carries it. #}
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th scope="col">{{ copy.specimen_col_metric }}</th>
+                  <th scope="col" class="ledger-value">{{ copy.specimen_col_value }}</th>
+                  <th scope="col" class="ledger-state">{{ copy.specimen_col_state }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for course in courses %}
+                <tr class="ledger-row ledger-row--{{ course.state }}">
+                  <th scope="row">{{ course.term }}</th>
+                  <td class="ledger-value tabular">{{ course.value }}</td>
+                  <td class="ledger-state">
+                    {% if course.state == "proven" %}
+                    <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-proven"/></svg><span>{{ copy.verdict_proven_name }}</span>
+                    {% else %}
+                    <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-caveated"/></svg><span>{{ copy.verdict_caveated_name }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+
+                {# The withheld row keeps its place and leaves the value cell unfilled. #}
+                <tr class="ledger-row ledger-row--withheld">
+                  <th scope="row">{{ copy.specimen_withheld_term }}</th>
+                  <td class="ledger-value tabular" aria-hidden="true">—</td>
+                  <td class="ledger-state">
+                    <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-withheld"/></svg><span>{{ copy.verdict_withheld_name }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p class="ledger-note ledger-note--caveat">{{ row_caveat }}</p>
+            <p class="ledger-note ledger-note--refusal">{{ refusal }}</p>
+
+            <figcaption class="synthetic-note">{{ copy.specimen_caption }}</figcaption>
+          </div>
+        </figure>
       </div>
 
-      <figure class="shrine" aria-labelledby="specimen-title">
-        <div class="shrine-lintel" aria-hidden="true">
-          <svg class="glyph glyph--lintel" aria-hidden="true" focusable="false"><use href="#g-winged-sun"/></svg>
-        </div>
-        <svg class="glyph glyph--jamb glyph--jamb-start" aria-hidden="true"><use href="#g-capital"/></svg>
-        <svg class="glyph glyph--jamb glyph--jamb-end" aria-hidden="true"><use href="#g-capital"/></svg>
-        <div class="specimen">
-        <div class="specimen-head">
-          <span class="specimen-file" id="specimen-title" dir="auto">{{ copy.specimen_file }}</span>
-          <span class="state-mark state-mark--admitted">{{ copy.specimen_admitted }}</span>
-        </div>
-
-        <div class="specimen-meta">
-          <span class="tabular">{{ copy.specimen_meta }}</span>
-          <span class="tabular">{{ copy.specimen_period }}</span>
-        </div>
-
-        {# A real table, because this is real tabular data: three columns, one row per measure.
-           The standing is a column rather than a badge — a figure and its standing are one
-           thing. Every state cell names its state in words; the glyph beside it repeats that
-           name and never carries it alone. #}
-        <table class="ledger">
-          <thead>
-            <tr>
-              <th scope="col">{{ copy.specimen_col_metric }}</th>
-              <th scope="col" class="ledger-value">{{ copy.specimen_col_value }}</th>
-              <th scope="col">{{ copy.specimen_col_state }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for course in courses %}
-            <tr class="ledger-row ledger-row--{{ course.state }}">
-              <th scope="row">{{ course.term }}</th>
-              <td class="ledger-value tabular">{{ course.value }}</td>
-              <td class="ledger-state">
-                {% if course.state == "proven" %}
-                <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-proven"/></svg>{{ copy.verdict_proven_name }}
-                {% else %}
-                <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-caveated"/></svg>{{ copy.verdict_caveated_name }}
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-
-            {# The withheld row, set into the ledger where the figure would have stood. The value
-               cell holds an em dash — the place is kept, and left deliberately unfilled. #}
-            <tr class="ledger-row ledger-row--withheld">
-              <th scope="row">{{ copy.specimen_withheld_term }}</th>
-              <td class="ledger-value tabular" aria-hidden="true">—</td>
-              <td class="ledger-state">
-                <svg class="glyph glyph--cell" aria-hidden="true"><use href="#g-withheld"/></svg>{{ copy.verdict_withheld_name }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        {# The governed texts the ledger's two non-proven rows carry, in the product's own
-           wording rather than a paraphrase of it. #}
-        <p class="ledger-note ledger-note--caveat">{{ row_caveat }}</p>
-        <p class="ledger-note ledger-note--refusal">{{ refusal }}</p>
-
-        <figcaption class="synthetic-note">{{ copy.specimen_caption }}</figcaption>
-        </div>
-      </figure>
+      <div class="tower tower--end" aria-hidden="true">
+        <span class="tower-flute"></span><span class="tower-flute"></span><span class="tower-flute"></span>
+      </div>
 
     </div>
   </section>
 
-  {# ══ REGISTERS II–IV — the passage of one file through admission ═════════════════════════ #}
-  <section class="register register--deep" aria-labelledby="passage-title">
-    <div class="wall">
-      <h2 class="register-mark" id="passage-title">
-        <span>{{ copy.register_ii }}</span>
-        <span class="register-subject" dir="auto">{{ copy.specimen_file }}</span>
-      </h2>
+  {# ══ STATION II — THE COURT ══════════════════════════════════════════════════════════════════
+     Open ground, still wide. The passage of one file through admission, in five columns. The
+     numerals stay because the sequence itself is the information. #}
+  <section class="station station--court" aria-labelledby="passage-title">
+    <div class="court">
+      <h2 class="station-title" id="passage-title">{{ copy.passage_heading }}</h2>
 
       <ol class="passage">
         <li class="passage-step">
           <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-export"/></svg>
           <span class="passage-index" aria-hidden="true">01</span>
-          <span class="passage-term">{{ copy.passage_1_term }}</span>
-          <span class="passage-detail">{{ copy.passage_1_detail }}</span>
-          <span class="passage-state tabular">{{ copy.passage_1_state }}</span>
+          <h3 class="passage-term">{{ copy.passage_1_term }}</h3>
+          <p class="passage-detail">{{ copy.passage_1_detail }}</p>
+          <p class="passage-state tabular">{{ copy.passage_1_state }}</p>
         </li>
         <li class="passage-step">
           <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-scales"/></svg>
           <span class="passage-index" aria-hidden="true">02</span>
-          <span class="passage-term">{{ copy.passage_2_term }}</span>
-          <span class="passage-detail">{{ copy.passage_2_detail }}</span>
-          <span class="passage-state tabular">{{ copy.passage_2_state }}</span>
+          <h3 class="passage-term">{{ copy.passage_2_term }}</h3>
+          <p class="passage-detail">{{ copy.passage_2_detail }}</p>
+          <p class="passage-state tabular">{{ copy.passage_2_state }}</p>
         </li>
         <li class="passage-step">
           <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-sun"/></svg>
           <span class="passage-index" aria-hidden="true">03</span>
-          <span class="passage-term">{{ copy.passage_3_term }}</span>
-          <span class="passage-detail">{{ copy.passage_3_detail }}</span>
+          <h3 class="passage-term">{{ copy.passage_3_term }}</h3>
+          <p class="passage-detail">{{ copy.passage_3_detail }}</p>
         </li>
         <li class="passage-step passage-step--withheld">
           <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-withheld"/></svg>
           <span class="passage-index" aria-hidden="true">04</span>
-          <span class="passage-term">{{ copy.passage_4_term }}</span>
-          <span class="passage-detail">{{ copy.passage_4_detail }}</span>
+          <h3 class="passage-term">{{ copy.passage_4_term }}</h3>
+          <p class="passage-detail">{{ copy.passage_4_detail }}</p>
         </li>
         <li class="passage-step">
           <svg class="glyph glyph--passage" aria-hidden="true"><use href="#g-decision"/></svg>
           <span class="passage-index" aria-hidden="true">05</span>
-          <span class="passage-term">{{ copy.passage_5_term }}</span>
-          <span class="passage-detail">{{ copy.passage_5_detail }}</span>
+          <h3 class="passage-term">{{ copy.passage_5_term }}</h3>
+          <p class="passage-detail">{{ copy.passage_5_detail }}</p>
         </li>
       </ol>
-
-      <p class="passage-figure">
-        {{ copy.passage_figure }} <em>{{ copy.passage_figure_em }}</em>
-      </p>
     </div>
   </section>
 
-  {# ══ REGISTER V — proof. The three outcomes, named in governed vocabulary. ═══════════════ #}
-  <section class="register" aria-labelledby="verdicts-title">
-    <div class="wall">
-      <h2 class="register-mark" id="verdicts-title"><span>{{ copy.register_v }}</span></h2>
+  {# ══ STATION III — THE HYPOSTYLE ═════════════════════════════════════════════════════════════
+     Narrower, columned, darker. The comparison stands between the columns: what Khepri does,
+     against what the category does. #}
+  <section class="station station--hypostyle" aria-labelledby="compare-title">
+    <div class="hypostyle">
+      <h2 class="station-title" id="compare-title">{{ copy.compare_heading }}</h2>
 
-      <div class="contrast">
-        <div>
-          <span class="contrast-label">{{ copy.contrast_theirs_label }}</span>
-          <p class="contrast-quote contrast-quote--theirs">{{ copy.contrast_theirs }}</p>
-        </div>
-        <div>
-          <span class="contrast-label">{{ copy.contrast_ours_label }}</span>
-          <p class="contrast-quote contrast-quote--ours">{{ copy.contrast_ours_before }}<span class="claim-mark">{{ copy.claim_prove }}</span>{{ copy.contrast_ours_after }}</p>
-        </div>
-      </div>
-
-      {# The comparison register. Four axes the rest of this page demonstrates — no axis states a
-         capability the specimen and the passage have not already shown. The compared column is a
-         category, never a named company. #}
       <table class="compare">
-        <caption class="compare-caption">{{ copy.compare_heading }}</caption>
         <thead>
           <tr>
             <th scope="col">{{ copy.compare_axis }}</th>
@@ -208,7 +209,7 @@
           <tr>
             <th scope="row">{{ row[1] }}</th>
             <td class="compare-ours">
-              <svg class="glyph glyph--cell" aria-hidden="true"><use href="#{{ row[0] }}"/></svg>{{ row[2] }}
+              <svg class="glyph glyph--cell" aria-hidden="true"><use href="#{{ row[0] }}"/></svg><span>{{ row[2] }}</span>
             </td>
             <td class="compare-theirs">{{ row[3] }}</td>
           </tr>
@@ -216,51 +217,22 @@
         </tbody>
       </table>
 
-      <div class="verdicts">
-        <article class="verdict verdict--proven">
-          <span class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-proven"/></svg>{{ copy.verdict_proven_name }}</span>
-          <p class="verdict-claim">{{ copy.verdict_proven_claim }}</p>
-          <p class="verdict-detail">{{ copy.verdict_proven_detail }}</p>
-        </article>
-
-        <article class="verdict verdict--caveated">
-          <span class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-caveated"/></svg>{{ copy.verdict_caveated_name }}</span>
-          <p class="verdict-claim">{{ copy.verdict_caveated_claim }}</p>
-          <p class="verdict-detail">{{ copy.verdict_caveated_detail }}</p>
-          <p class="verdict-refusal">{{ caveat }}</p>
-        </article>
-
-        <article class="verdict verdict--withheld">
-          <span class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-withheld"/></svg>{{ copy.verdict_withheld_name }}</span>
-          <p class="verdict-claim">{{ copy.verdict_withheld_claim }}</p>
-          <p class="verdict-detail">{{ copy.verdict_withheld_detail }}</p>
-          <p class="verdict-refusal">{{ refusal }}</p>
-        </article>
-      </div>
-
-      <p class="synthetic-note">{{ copy.verdicts_note }}</p>
-    </div>
-  </section>
-
-  {# ══ Why Khepri ═════════════════════════════════════════════════════════════════════════ #}
-  <section class="register register--deep" aria-labelledby="pillars-title">
-    <div class="wall">
-      <h2 class="register-mark" id="pillars-title"><span>{{ copy.pillars_heading }}</span></h2>
-
-      <div class="pillars">
-        <article class="pillar">
+      {# The four columns of the hall. Each is a claim the comparison above demonstrates, so they
+         carry the weight of the roof rather than repeating the argument. #}
+      <div class="columns">
+        <article class="column">
           <h3>{{ copy.pillar_1_name }}</h3>
           <p>{{ copy.pillar_1_body }}</p>
         </article>
-        <article class="pillar">
+        <article class="column">
           <h3>{{ copy.pillar_2_name }}</h3>
           <p>{{ copy.pillar_2_body }}</p>
         </article>
-        <article class="pillar">
+        <article class="column">
           <h3>{{ copy.pillar_3_name }}</h3>
           <p>{{ copy.pillar_3_body }}</p>
         </article>
-        <article class="pillar">
+        <article class="column">
           <h3>{{ copy.pillar_4_name }}</h3>
           <p>{{ copy.pillar_4_body }}</p>
         </article>
@@ -268,33 +240,47 @@
     </div>
   </section>
 
-  {# ══ The two scripts, as equal courses ══════════════════════════════════════════════════ #}
-  <section class="register" aria-labelledby="scripts-title">
-    <div class="wall">
-      <h2 class="register-mark" id="scripts-title"><span>{{ copy.scripts_heading }}</span></h2>
+  {# ══ STATION IV — THE SANCTUARY ══════════════════════════════════════════════════════════════
+     The narrowest and quietest station, and the destination. The three things an answer can be,
+     given equal weight — a refusal has the same standing as a proof. #}
+  <section class="station station--sanctuary" aria-labelledby="verdicts-title">
+    <div class="sanctuary">
+      <h2 class="sanctuary-title" id="verdicts-title">{{ copy.sanctuary_heading }}</h2>
+      <p class="sanctuary-lede">{{ copy.passage_figure_em }}</p>
 
-      <div class="scripts">
-        {# Both panels name the metric from the governed catalog, in their own script. A literal
-           here would be a second maintained truth for a metric name (`FR-085`), and it would go
-           stale silently — the specimen would follow a catalog rename and these would not. #}
-        <div class="script-panel" lang="en" dir="ltr">
-          <p class="script-name"><span>EN</span><span>English</span></p>
-          <p class="script-claim">{{ panel_metric_en }}</p>
-          <p class="script-figure tabular">4,182,600 EGP</p>
-          <p class="script-note">Reconciled across 18 stores.</p>
-        </div>
+      <div class="verdicts">
+        <article class="verdict verdict--proven">
+          <h3 class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-proven"/></svg><span>{{ copy.verdict_proven_name }}</span></h3>
+          <p class="verdict-claim">{{ copy.verdict_proven_claim }}</p>
+          <p class="verdict-detail">{{ copy.verdict_proven_detail }}</p>
+        </article>
 
-        <div class="script-panel" lang="ar" dir="rtl">
-          <p class="script-name"><span>ع</span><span>العربية</span></p>
-          <p class="script-claim">{{ panel_metric_ar }}</p>
-          <p class="script-figure tabular">٤٬١٨٢٬٦٠٠ ج.م</p>
-          <p class="script-note">تمت المطابقة عبر ١٨ متجرًا.</p>
-        </div>
+        <article class="verdict verdict--caveated">
+          <h3 class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-caveated"/></svg><span>{{ copy.verdict_caveated_name }}</span></h3>
+          <p class="verdict-claim">{{ copy.verdict_caveated_claim }}</p>
+          <p class="verdict-detail">{{ copy.verdict_caveated_detail }}</p>
+          <p class="verdict-governed" tabindex="0">{{ caveat }}</p>
+        </article>
+
+        <article class="verdict verdict--withheld">
+          <h3 class="verdict-name"><svg class="glyph glyph--state" aria-hidden="true"><use href="#g-withheld"/></svg><span>{{ copy.verdict_withheld_name }}</span></h3>
+          <p class="verdict-claim">{{ copy.verdict_withheld_claim }}</p>
+          <p class="verdict-detail">{{ copy.verdict_withheld_detail }}</p>
+          <p class="verdict-governed" tabindex="0">{{ refusal }}</p>
+        </article>
       </div>
 
-      {# The strip. One figure, stated once in each script, with the sun disc between them — the
-         two readings meet at the disc rather than one being a translation of the other. Beneath
-         each, the four things established before the runtime will report a figure at all. #}
+      <p class="synthetic-note">{{ copy.verdicts_note }}</p>
+    </div>
+  </section>
+
+  {# ══ THE OFFERING TABLE ══════════════════════════════════════════════════════════════════════
+     Past the sanctuary: one figure stated once in each script, meeting at the sun disc. The two
+     readings are equal; neither is a translation of the other. #}
+  <section class="station station--offering" aria-labelledby="scripts-title">
+    <div class="offering">
+      <h2 class="station-title" id="scripts-title">{{ copy.scripts_heading }}</h2>
+
       <div class="strip">
         <div class="strip-side" lang="en" dir="ltr">
           <p class="strip-term">{{ panel_metric_en }}</p>
@@ -321,16 +307,15 @@
         </div>
       </div>
 
-      <p class="strip-note">{{ copy.strip_note }}</p>
-
       <p class="synthetic-note">{{ copy.scripts_note }}</p>
     </div>
   </section>
 
-  {# ══ REGISTER VI — decision. No CTA: FR-087 permits one only where the destination
-       already exists, and no active specification authorizes a public one. ═══════════════ #}
-  <section class="register register--close" aria-labelledby="close-title">
-    <div class="wall">
+  {# ══ THE CLOSE ═══════════════════════════════════════════════════════════════════════════════
+     No CTA: `FR-087` permits one only where the destination already exists, and no active
+     specification authorizes a public one. #}
+  <section class="station station--close" aria-labelledby="close-title">
+    <div class="close">
       <h2 class="close-headline" id="close-title">{{ copy.close_headline }}</h2>
       <p class="close-body">{{ copy.close_body }}</p>
     </div>
@@ -339,7 +324,7 @@
 </main>
 
 <footer class="colophon">
-  <div class="wall colophon-row">
+  <div class="colophon-row">
     <nav aria-label="{{ copy.legal_navigation }}">
       <ul>
         {% for link in legal_links %}

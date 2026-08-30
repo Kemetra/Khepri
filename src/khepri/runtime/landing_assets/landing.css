@@ -1,90 +1,37 @@
 /*
- * Khepri — public landing page. THE REGISTER WALL.
+ * Khepri — public landing page. THE AXIAL PROCESSION.
  *
  * The shipped stylesheet for the RCA-004 public product landing (`LAND1-01`), served from
- * `/landing/assets/landing.css`. It began as the design concept at
- * `docs/product/concepts/landing/landing.css`, which RCA-004 `FR-083` admits as design direction
- * rather than as a second source of authority. The concept file stays where it is as the recorded
- * origin; this file is the one a visitor loads.
+ * `/landing/assets/landing.css`.
  *
- * It styles the marketing surface ONLY. `KHEPRI_DESIGN_LANGUAGE.md` still governs `/app` and
- * `/beta`, including its Law 1, and no token here is imported by either (`FR-091`).
+ * ## The structure, and why
+ *
+ * Impeccable direction round, seed `9752a96f`, structure index 7 of 7. The page is a walk toward
+ * the answer rather than a wall to read: four stations on one axis, each NARROWER, darker and
+ * quieter than the one before it, ending at the sanctuary where the three trust states stand.
+ *
+ * That funnel is the whole idea, and it is measurable rather than decorative — the measure token
+ * steps 1240 → 1080 → 920 → 760px, so the visitor feels the approach without being told about it.
+ * It refuses the arrangement every analytics landing ships, equal-weight stacked sections, because
+ * a procession has a destination and its parts are therefore unequal.
+ *
+ * A previous build (commit `edbd383`) translated the shipped page toward a reference image band by
+ * band. The owner's verdict was that it read as an edit rather than a design, which it was. That
+ * stylesheet is evidence and anti-reference here, not a base to polish.
+ *
+ * ## What this file may not do
+ *
+ * It styles the marketing surface ONLY. `KHEPRI_DESIGN_LANGUAGE.md` governs `/app` and `/beta`,
+ * and no token here is imported by either (`FR-091`).
  *
  * The faces are served by the landing's asset route from the digest-verified loader in
- * `khepri.rra.rendering.fonts` — the same bytes the report and journey use, not a second copy.
- * The relative `url()` below resolves against this stylesheet's own path, so it reaches
- * `/landing/assets/<face>.woff2` without an absolute URL.
+ * `khepri.rra.rendering.fonts` — the same bytes the report and journey use, not a second copy. The
+ * relative `url()` below resolves against this stylesheet's own path.
  *
- * ## This is a NEW visual world, deliberately
- *
- * The previous concept (archived at `../landing-v1/`) inherited the shipped app palette exactly.
- * That palette was designed for a workspace — one accent, hairline rules, no elevation — and on a
- * public page it read as a plain document rather than as an enterprise product. The owner decided
- * the marketing surface gets its own identity while the app keeps `KHEPRI_DESIGN_LANGUAGE.md` Law 1
- * unchanged. Two registers, one thesis.
- *
- * **The app is untouched.** No token here is imported by `/app` or `/beta`, and nothing here
- * proposes a change to the shipped world.
- *
- * ## The world: Egyptian tomb-wall registers
- *
- * Egyptian register composition was a DATA-GRAPHICS system before it was art. Content is organised
- * into horizontal bands with strict shared baselines, read in a fixed order, and figures are scaled
- * by significance rather than by perspective distance. That is structurally what a governed report
- * is: banded facts, ordered, each on its baseline, sized by importance.
- *
- * Taking the composition rather than the ornament is what keeps this out of pastiche. There is not
- * one hieroglyph, papyrus texture, or pyramid silhouette in this file. The layout IS the reference.
- *
- * ## Palette, derived from material rather than picked
- *
- * - `--stone-*`   granite and limestone, the quarried ground the registers are cut into.
- * - `--gold`      gold leaf. Scarce BY RULE: it marks a proven figure and nothing else. If gold
- *                 appeared on navigation, buttons, and decoration it would stop meaning "proven".
- * - `--egyptian-blue` the world's first synthetic pigment, made in Egypt c. 2500 BCE
- *                 (calcium copper silicate). The structural accent: rules, links, admitted state.
- * - `--papyrus`   the warm off-white that carries body text on the dark ground.
- * - `--ochre`     red ochre. In the scribe's palette red marked headings and CORRECTIONS against
- *                 black body text — the oldest two-colour semantic system there is. Here it marks
- *                 a caveat: present, qualified, not an error.
- *
- * Contrast is computed, not asserted; every ratio below is measured against its own ground and
- * recorded beside the token.
- *
- * ## The raise, donated by a declined challenger
- *
- * The direction round declined a phosphor-terminal world but took one discipline from it: STATE
- * PRINTS ITSELF INTO THE REGISTER AS CONTENT. A refusal or caveat is set into the band where the
- * figure would have appeared — never a floating badge, toast, pill, or chrome overlay. This agrees
- * exactly with `KHEPRI_DESIGN_LANGUAGE.md` §4.6, which requires a refusal to stay where the answer
- * would have been. The marketing world changed; the product's law about refusal did not.
- *
- * ## What carries over from the app, unchanged
- *
- * Zero physical directional properties. `lang`/`dir` as real subtrees. 44px minimum targets.
- * Refusal never borrows the error palette. Colour never carries a distinction alone. Monospace
- * marks machine-adjacent values only. Contrast computed rather than claimed.
+ * Logical properties only: this surface inherits the product's verified zero-physical-directional
+ * property, so the entire procession mirrors under `dir="rtl"` with no second rule anywhere.
  */
 
-/* ---- Typeface --------------------------------------------------------------------------------
- * One face, local, no font host — and here that is enforced rather than merely observed: the
- * public CSP is `default-src 'none'` with `font-src 'self'`, so a hosted face would not load at
- * all. These are not copies. The asset route serves the very bytes
- * `khepri.rra.rendering.fonts.load_report_fonts()` returns, checked against the audited SHA-256
- * digests on every read, so the landing cannot drift from the faces the report and journey use.
- *
- * NO SECOND FACE, and this is a design decision rather than a limitation. Display weight comes from
- * SCALE and TRACKING, not from an imported display face: at 5-8rem with tight negative tracking the
- * shipped face reads monumental, which is exactly how monumental Egyptian lettering worked — the
- * same forms, cut larger. An imported Latin display face would also quietly break parity, because
- * it would apply to English and not to Arabic, making one script the designed one and the other the
- * fallback. On this page that is the one thing that must not happen.
- *
- * Only Regular (400) ships; the descriptor says so. Weights above 400 render browser-synthesised.
- * Recorded in PROVENANCE.md and left by explicit decision. THE DESIGN THEREFORE DOES NOT LEAN ON
- * WEIGHT: hierarchy is carried by scale, colour role, tracking, and register position instead, so
- * the absent weight axis costs the composition nothing.
- */
 @font-face {
   font-family: "Noto Sans Arabic";
   src: url("NotoSansArabic-Regular-arabic.woff2") format("woff2");
@@ -104,257 +51,109 @@
 :root {
   color-scheme: dark;
 
-  /* ---- The quarried ground, LIT ---------------------------------------------------------------
-   * The first build set a near-black ramp and lit nothing, and the owner's verdict was "gloomy".
-   * Gloom is flatness, not darkness: an unlit wall of one value reads as absence, while the same
-   * wall under raking light reads as mass. So the ramp is warmed and widened, and every band is
-   * lit by a gradient rather than filled with a flat value.
-   *
-   * Measured on the four grounds below, every ink clears 4.5:1 with headroom (worst case: ochre
-   * at 5.29:1, withheld at 5.33:1), so the wall got brighter AND the floor got safer. */
-  --stone-900: #17130f;  /* the deepest cut — page ground */
-  --stone-800: #211a14;  /* a band lifted out of the ground */
-  --stone-700: #2b221a;  /* the register field */
-  --stone-650: #332822;  /* the lit top edge of a raised panel */
-  --stone-600: #4a3d30;  /* incised rule, decorative weight — never encodes state */
-  --stone-500: #5b4c3c;  /* decorative hairline on the page ground */
+  /* ---- The quarry ---------------------------------------------------------------------------
+   * Stone under raking light, and the ramp widens as the procession deepens: the pylon stands in
+   * open sun, the sanctuary in shadow. Darkness here is a place on the axis, not a mood.
+   * Every ink below clears 4.5:1 on every ground it is drawn on; the figures are in the comments
+   * beside each one, computed rather than asserted. */
+  --stone-950: #100d0a;  /* the sanctuary floor — deepest */
+  --stone-900: #17130f;  /* the page ground */
+  --stone-850: #1b1610;  /* the hypostyle — between the court and the sanctuary */
+  --stone-800: #211a14;  /* a lifted band */
+  --stone-700: #2b221a;  /* a panel field */
+  --stone-650: #332822;  /* the lit top edge of a panel */
+  --stone-600: #4a3d30;  /* incised rule — decorative weight, never state */
+  --stone-500: #5b4c3c;  /* hairline on the page ground */
 
-  /* `--withheld` is derived, not picked: the stone ramp's own hue and saturation lifted until it
-   * clears 4.5:1 on the LIGHTEST ground it is ever drawn on. It reads as weathered stone — present,
-   * cut, deliberately unfilled — which is what a withheld state should look like in this world. */
+  /* Weathered stone: the ramp's own hue lifted until it clears 4.5:1 on the LIGHTEST ground it
+   * is ever drawn on. Present, cut, deliberately unfilled — what a withheld result looks like. */
   --withheld: #a99c8b;
 
-  /* ---- Ink on stone ------------------------------------------------------------------------- */
-  --papyrus: #f2ebdd;     /* body and headline — 15.58:1 on --stone-900 */
+  /* ---- Ink ---------------------------------------------------------------------------------- */
+  --papyrus: #f2ebdd;     /* headline and body — 15.58:1 on --stone-900 */
   --papyrus-dim: #bdb2a0; /* secondary — 8.83:1 on --stone-900 */
 
-  /* ---- Gold leaf: PROVEN, and nothing else ---------------------------------------------------
-   * 9.50:1 on --stone-900. Scarcity is the mechanism: gold marks a proven figure, the sun mark and
-   * the lit edge of a raised panel. It never decorates. */
-  /* TWO TIERS, and the separation is the point. The bright leaf marks a PROVEN figure and
-   * nothing else; the dim leaf carries ornament, frames and glyph strokes. Without that split,
-   * covering the page in gold would cost gold its meaning — and the meaning is the product's
-   * thesis. Measured: --gold 7.36:1 worst-case as text; --gold-leaf 4.09:1 worst-case, which
-   * clears the 3:1 non-text floor it is scoped to but NOT the 4.5:1 text floor, so it is never
-   * set on prose. The two read as visibly different metals (1.80:1 apart). */
-  --gold: #e0b44a;        /* PROVEN figures, the sun mark. Text-legal. */
-  --gold-leaf: #a8842e;   /* ornament, glyph strokes, frames. NEVER prose. */
-  --gold-dim: #8a6d24;    /* gold at rest — hairlines and edges */
+  /* ---- Gold, in two tiers ---------------------------------------------------------------------
+   * The bright leaf marks a PROVEN figure and nothing else; the dim leaf carries ornament, frames
+   * and glyph strokes. Without that split, covering the page in gold costs gold its meaning — and
+   * the meaning is this product's thesis. Measured: --gold 7.36:1 worst case as text; --gold-leaf
+   * 4.09:1, which clears the 3:1 non-text floor it is scoped to but NOT the 4.5:1 text floor, so
+   * it is never set on prose. The two read as visibly different metals (1.80:1 apart). */
+  --gold: #e0b44a;        /* proven figures, the sun mark. Text-legal. */
+  --gold-leaf: #a8842e;   /* ornament, frames, glyph strokes. Never prose. */
+  --gold-dim: #8a6d24;    /* deep frame metal */
 
-  /* ---- Egyptian blue: structure and admission ------------------------------------------------
-   * Calcium copper silicate, first synthesised in Egypt c. 2500 BCE. 7.84:1 on --stone-900. */
+  /* Egyptian blue, as the construction line — the setting-out geometry left visible, the way a
+   * mason's guide survives on an unfinished wall. Structural, never decorative. */
   --egyptian-blue: #5cb3d9;
-  --egyptian-blue-dim: #4291b8;
+  --egyptian-blue-dim: #4291b8;  /* 5.40:1 worst case */
 
-  /* ---- Red ochre: CAVEATED --------------------------------------------------------------------
-   * In the scribe's palette red marked headings and CORRECTIONS. Here it marks a qualified figure:
-   * present but conditioned. Not an error colour — nothing broke. 6.83:1 on --stone-900. */
+  /* Ochre carries CAVEATED and nothing else. */
   --ochre: #d98a63;
-  --ochre-dim: #7d4a36;
 
-  /* ---- Depth ----------------------------------------------------------------------------------
-   * `KHEPRI_DESIGN_LANGUAGE.md` Law 1 forbids elevation in the APP. RCA-004 `FR-091` frees the
-   * marketing surface from it, and this is where that freedom earns its keep: the first build was
-   * flat and read as a document rather than a product.
-   *
-   * Every shadow carries an offset AND a soft blur — a zero-offset halo is decoration, not depth.
-   * The light source is high and slightly inline-start, consistent everywhere, so the whole wall
-   * agrees about where the sun is. */
-  --lift-1: 0 1px 2px rgba(0, 0, 0, .34), 0 2px 8px rgba(0, 0, 0, .26);
-  --lift-2: 0 2px 4px rgba(0, 0, 0, .38), 0 10px 28px rgba(0, 0, 0, .34);
-  --lift-3: 0 4px 8px rgba(0, 0, 0, .42), 0 22px 60px rgba(0, 0, 0, .42);
+  /* ---- The funnel -----------------------------------------------------------------------------
+   * The measurable form of the whole idea. Each station is narrower than the one above it, so the
+   * page physically converges on the sanctuary. Changing these four numbers changes the design's
+   * central claim, which is why they are named rather than inlined. */
+  --measure-pylon: 1240px;
+  --measure-court: 1080px;
+  --measure-hypostyle: 920px;
+  --measure-sanctuary: 760px;
 
-  /* A cut, not a drawn line: dark above the edge, lit below it. This is what makes a rule read as
-   * incised stone rather than as a 1px border. */
-  --incision: inset 0 1px 0 rgba(0, 0, 0, .5), inset 0 2px 0 rgba(224, 180, 74, .05);
-
-  /* ---- Spacing: the 4px ramp, extended for monumental scale ---------------------------------- */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
+  /* ---- Spacing, on a 4px keel ------------------------------------------------------------- */
+  --space-2: .5rem;
+  --space-3: .75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
   --space-7: 3rem;
   --space-8: 4rem;
   --space-9: 6rem;
-  --space-10: 9rem;
 
-  /* ---- Type: register scale ------------------------------------------------------------------
-   * Egyptian registers scale figures by SIGNIFICANCE, not by distance. The ramp is therefore wide:
-   * a monumental tier for the claim, a small incised tier for the machine-adjacent values, and
-   * little in between — because a register wall has few sizes, used decisively. */
-  /* The ledger's field labels sit a step below `--text-xs`. Below this the mono face stops being
-   * legible at a glance, which is the floor a label of four words has to clear. */
-  --text-2xs: 0.64rem;
-  --text-xs: 0.72rem;
-  --text-sm: 0.86rem;
+  /* ---- Type ---------------------------------------------------------------------------------
+   * One face ships (Noto Sans Arabic Regular 400, digest-locked), so hierarchy is carried by
+   * size, tracking and colour rather than by weight. That constraint is the reason the display
+   * sizes are set this large: with no bold available, scale has to do the work alone. */
+  --text-2xs: .64rem;
+  --text-xs: .72rem;
+  --text-sm: .86rem;
   --text-base: 1.0625rem;
   --text-md: 1.3rem;
-  --text-lg: 1.75rem;
-  --text-xl: 2.4rem;
-  --text-2xl: 3.2rem;
 
-  /* The monumental tiers, cut deeper.
-   *
-   * Only Regular 400 ships — the faces are digest-locked and a second weight needs the licence
-   * plus audited-digest process. The first build treated that as a ceiling and leaned on air
-   * instead, which the owner read as thin. The axis that was actually free is SCALE and TRACKING,
-   * and that is authentically how monumental lettering worked: the same forms, cut larger and set
-   * tighter until the counters close up and the line reads as one mass.
-   *
-   * At -0.055em the display tier is well past the -0.04em body floor, deliberately: negative
-   * tracking is what buys optical weight from a Regular face. Body copy stays at its own tracking. */
-  --text-monument: clamp(3.2rem, 8.6vw, 8rem);
-  --text-register: clamp(2.1rem, 4.2vw, 3.9rem);
-  --text-lede: clamp(1.15rem, 1.7vw, 1.45rem);
+  --text-claim: clamp(2.6rem, 5.4vw, 5rem);
+  --text-station: clamp(1.9rem, 3.4vw, 3.1rem);
+  --text-lede: clamp(1.1rem, 1.5vw, 1.35rem);
 
-  --track-monument: -0.055em;
-  --track-register: -0.038em;
-
-  --leading-monument: 0.88;
-  --leading-tight: 1.1;
-  --leading-snug: 1.35;
-  --leading-normal: 1.6;
-  /* Governed refusal and caveat texts run long and are read closely rather than scanned. */
+  --leading-claim: .98;
+  --leading-tight: 1.15;
+  --leading-snug: 1.4;
+  --leading-normal: 1.62;
   --leading-relaxed: 1.72;
 
-  /* ---- Measure -------------------------------------------------------------------------------- */
-  --measure-monument: 15ch;
-  --measure-lede: 46ch;
-  --measure-note: 40ch;
-  --wall-width: 1240px;
+  --track-claim: -.035em;
+
+  /* ---- Depth ----------------------------------------------------------------------------------
+   * Offset plus soft blur, always. A zero-offset halo is decoration, not depth. */
+  --lift-1: 0 1px 2px rgba(0, 0, 0, .34), 0 2px 8px rgba(0, 0, 0, .26);
+  --lift-2: 0 2px 4px rgba(0, 0, 0, .38), 0 10px 28px rgba(0, 0, 0, .34);
+  --lift-3: 0 4px 8px rgba(0, 0, 0, .42), 0 22px 54px rgba(0, 0, 0, .40);
+
+  /* Exponential ease-out: fast departure, long settle. Stone is heavy. */
+  --ease-sun: cubic-bezier(.16, 1, .3, 1);
+
   --touch-min: 44px;
-
-  --font-body: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
-
-  /* Motion. One grammar: the sun's passage is slow and inevitable, so eases are long and never
-   * bouncy. Nothing on this page overshoots. */
-  --ease-sun: cubic-bezier(0.16, 0.84, 0.28, 1);
-  --dur-slow: 1100ms;
-  --dur-mid: 620ms;
 }
 
-/* ---- Glyphs ---------------------------------------------------------------------------------
- * Authored SVG, one stroke weight, `currentColor` throughout — so a glyph takes the colour of the
- * state it marks and the palette stays the single source of semantic colour. Every glyph is
- * decorative and marked `aria-hidden`: its meaning is always carried by adjacent text too, so a
- * reader who cannot see it loses nothing. */
+/* ---- Reset ------------------------------------------------------------------------------- */
 
-.glyph-sprite { position: absolute; inline-size: 0; block-size: 0; overflow: hidden; }
-
-.glyph {
-  display: block;
-  fill: none;
-  stroke: currentColor;
-  flex: none;
-}
-
-.glyph--state {
-  inline-size: 1.15rem;
-  block-size: 1.15rem;
-  display: inline-block;
-  vertical-align: -0.22em;
-  margin-inline-end: var(--space-2);
-}
-
-.glyph--passage {
-  inline-size: 1.6rem;
-  block-size: 1.6rem;
-  color: var(--gold-leaf);
-  margin-block-end: var(--space-3);
-}
-
-.passage-step--withheld .glyph--passage { color: var(--withheld); }
-
-/* ---- The shrine ------------------------------------------------------------------------------
- * The specimen is set in an aedicule: a winged lintel resting ON the panel's top edge, and
- * papyrus-bundle jambs standing beside it. This is the one place the page allows a figurative
- * frame, and it earns it — the composition quotes a doorway, and what stands in the doorway is the
- * product's own output.
- *
- * A grid rather than absolute positioning, so the jambs are laid out BY the panel instead of
- * floating near it. The first attempt positioned them against the section and they landed at the
- * page edges, detached from the thing they were supposed to frame.
- *
- * The jambs are decorative and never enter the reading order. Below the shrine breakpoint they are
- * dropped rather than shrunk: a 2rem-wide column reads as a smudge, not as architecture. */
-.shrine {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: stretch;
-  column-gap: var(--space-4);
-  margin-block-start: clamp(var(--space-5), 3vw, var(--space-6));
-}
-
-.shrine-lintel {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: center;
-  color: var(--gold-leaf);
-  margin-block-end: -1px;
-}
-
-/* Sized against the shrine that carries it, not the viewport: `46vw` was set when the shrine spanned
- * the whole wall, and in the hero's right-hand column it made a 150px lintel over a panel half that
- * width. A lintel spans its own doorway. */
-.shrine { container-type: inline-size; }
-
-/* A lintel crowns the doorway; it does not outweigh it. At 88cqw and full `--gold-leaf` the disc
- * read as the loudest thing in the hero, pulling the eye off the specimen — which is the one thing
- * on this page that has to be read. Narrower, and dimmed to the frame metal. */
-.glyph--lintel {
-  inline-size: min(100%, 62cqw);
-  block-size: auto;
-  color: var(--gold-dim);
-  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, .6));
-}
-
-/* The jambs stretch to the panel's height, so the three pieces read as one structure. */
-.glyph--jamb {
-  grid-row: 2;
-  inline-size: clamp(1.6rem, 2.4vw, 2.3rem);
-  block-size: 100%;
-  color: var(--gold-dim);
-}
-
-.glyph--jamb-start { grid-column: 1; }
-.glyph--jamb-end { grid-column: 3; }
-
-.shrine .specimen {
-  grid-row: 2;
-  grid-column: 2;
-  margin-block-start: 0;
-}
-
-@media (max-width: 1080px) {
-  .glyph--jamb { display: none; }
-  .shrine { grid-template-columns: minmax(0, 1fr); }
-  .shrine .specimen { grid-column: 1; }
-}
-
-/* ---- Reset ------------------------------------------------------------------------------------ */
-
-* { box-sizing: border-box; }
-
-html {
-  background: var(--stone-900);
-  color: var(--papyrus);
-  accent-color: var(--gold);
-  scrollbar-color: var(--stone-600) var(--stone-900);
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;
   min-width: 320px;
-  font-family: var(--font-body);
+  background: var(--stone-900);
+  color: var(--papyrus);
+  font-family: var(--font-body, "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif);
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
@@ -362,23 +161,26 @@ body {
   overflow-x: hidden;
 }
 
-/* Selected text is still text and still owes 4.5:1. `--papyrus` on `--gold-dim` computed to
- * 3.88:1, and selection lands on the page's 0.7-1.06rem copy, so the large-text exception does
- * not apply. Inverting to stone on full gold gives 8.55:1 from tokens already in the palette,
- * and reads as leaf taking the text rather than as a tint laid over it. */
-::selection { background: var(--gold); color: var(--stone-900); }
+:root {
+  --font-body: "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+}
+
+h1, h2, h3, p, ul, ol, figure, dl, dd, table { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+h1, h2, h3 { font-weight: 400; }
 
 a { color: inherit; text-underline-offset: .22em; }
-button, input { font: inherit; }
-button, a, label { -webkit-tap-highlight-color: transparent; }
+
+/* The browser surfaces this page did not draw still belong to it. */
+::selection { background: var(--gold); color: var(--stone-900); }
 
 :focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 4px;
 }
 
-h1, h2, h3, p, ul, ol, figure, dl, dd { margin: 0; }
-ul, ol { padding: 0; list-style: none; }
+.tabular { font-variant-numeric: tabular-nums; }
 
 .skip-link {
   position: absolute;
@@ -398,260 +200,342 @@ ul, ol { padding: 0; list-style: none; }
 
 .skip-link:focus { inset-inline-start: var(--space-3); }
 
-/* ---- The wall ---------------------------------------------------------------------------------
- * Every register shares one measure and one gutter, because a register wall's bands share their
- * margins — that shared edge is what makes them read as courses of one wall rather than as separate
- * boxes. The gutter lives inside the `min()` so no media query is needed to keep content off the
- * edge. */
-
-.wall {
-  width: min(100% - 2.5rem, var(--wall-width));
-  margin-inline: auto;
-}
-
-/* A register: one horizontal band, cut from the wall by an incised rule at its top edge.
- *
- * The rule is a real inset shadow pair rather than a border, so it reads as INCISED — a dark line
- * with a lit lower lip, which is what a cut in stone does under raking light. This is the one place
- * the world spends an effect, and it is doing structural work rather than decoration. */
-/* The incised rule — the world's one material claim, and it must actually be perceptible.
- *
- * The first draft used a single `rgba(237,228,211,.045)` inset lip, which measured an 8/255 lift
- * against the band below: below perceptual threshold, so every boundary read as a flat hairline and
- * the "cut stone under raking light" promise was structurally real but visually absent.
- *
- * A real cut has three parts, and all three are now drawn: a dark shadow line at the top of the cut
- * (the border), a bright lit lip just below it where light catches the lower edge, and a soft
- * falloff beneath that returns to the stone. The lip is now ~4x its first value and the falloff
- * gives it depth rather than leaving a second hairline. */
-/* Each register is a course of stone with light falling across it, not a flat band.
- *
- * The gradient is the whole difference between "dark" and "gloomy": a band lit at its top edge and
- * falling into shadow at its base reads as MASS, while the same band filled with one value reads as
- * absence. The incision above it is dark-over-light so the seam reads as cut rather than drawn. */
-.register {
-  position: relative;
-  padding-block: clamp(var(--space-7), 5.5vw, var(--space-9));
-  border-block-start: 1px solid var(--stone-600);
-  background-image: linear-gradient(
-    180deg,
-    rgba(224, 180, 74, 0.035) 0%,
-    rgba(224, 180, 74, 0.012) 14%,
-    rgba(0, 0, 0, 0) 46%,
-    rgba(0, 0, 0, 0.24) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(242, 235, 221, 0.16),
-    inset 0 8px 18px -10px rgba(0, 0, 0, 0.72);
-}
-
-.register--deep { background: var(--stone-800); }
-
-/* The register label. Machine-adjacent, so monospace (the app's rule, kept). Numbered in Roman
- * because the courses of a wall are counted, and the sequence carries real reading order. */
-.register-mark {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin-block-end: clamp(var(--space-6), 4vw, var(--space-8));
-  color: var(--papyrus-dim);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .32em;
-  text-transform: uppercase;
-}
-
-[dir="rtl"] .register-mark { letter-spacing: .1em; }
-
-.register-mark::before {
+/* ---- The quarried surface --------------------------------------------------------------------
+ * `default-src 'none'` denies `img-src` from an external origin and there is no texture file to
+ * serve, so the grain is generated. Two repeating gradients at ~1.4% and ~1.1% alpha crossing at
+ * 27° and -63°: neither period divides the other, so no visible lattice forms. This is material
+ * grain rather than a decorative colour wash — it carries no hue of its own and encodes nothing. */
+body::before {
   content: "";
-  inline-size: clamp(2rem, 6vw, 5rem);
-  block-size: 1px;
-  background: var(--egyptian-blue-dim);
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(27deg,
+      rgba(242, 235, 221, .014) 0 1px, rgba(0, 0, 0, 0) 1px 7px),
+    repeating-linear-gradient(-63deg,
+      rgba(0, 0, 0, .05) 0 1px, rgba(0, 0, 0, 0) 1px 11px);
 }
 
-.register-subject {
-  color: var(--papyrus);
-  letter-spacing: .06em;
-  text-transform: none;
-}
+body > * { position: relative; z-index: 1; }
 
-/* ---- Header ----------------------------------------------------------------------------------- */
+/* ---- Header ---------------------------------------------------------------------------------- */
 
 .site-header {
   position: sticky;
   inset-block-start: 0;
   z-index: 20;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-5);
-  min-block-size: 72px;
-  padding-inline: clamp(1.25rem, 4vw, 3rem);
-  background: rgba(18, 16, 14, 0.86);
-  backdrop-filter: blur(14px);
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-block-size: 4.5rem;
+  padding-inline: clamp(var(--space-4), 4vw, var(--space-7));
   border-block-end: 1px solid var(--stone-600);
+  background: rgba(16, 13, 10, .88);
+  backdrop-filter: blur(10px);
 }
 
-/* The wordmark carries a sun mark — a small gold disc, the one piece of iconography on the page.
- * It is the scarab's burden and the product's name, drawn as pure geometry rather than as an
- * illustration of a beetle. Real text beside it, so speech input can operate the control. */
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
-  min-block-size: var(--touch-min);
-  margin-inline-end: auto;
-  font-family: var(--font-mono);
+  gap: .6em;
   font-size: var(--text-sm);
   letter-spacing: .34em;
-  /* PRODUCT.md sets the wordmark as KHEPRI, letterspaced. Uppercasing in CSS rather than in the
-   * copy string is what keeps that true in both scripts: Arabic has no letter case, so this is a
-   * no-op on "خِبري" and the Arabic wordmark keeps its correct form from the same one rule. */
   text-transform: uppercase;
-  text-decoration: none;
-  color: var(--papyrus);
 }
 
+[dir="rtl"] .brand { letter-spacing: .12em; }
+
+/* The sun mark: the one piece of iconography that is not a drawn glyph, because it is not an icon
+ * — it is the disc itself, and a disc is a circle. */
 .brand-sun {
-  inline-size: 11px;
-  block-size: 11px;
+  inline-size: .62em;
+  block-size: .62em;
   border-radius: 50%;
   background: var(--gold);
-  box-shadow: 0 0 14px rgba(212, 168, 58, 0.55);
-  flex: none;
+  box-shadow: 0 0 0 .22em rgba(224, 180, 74, .16);
 }
 
 .header-actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .language-link {
   display: inline-flex;
   align-items: center;
   min-block-size: var(--touch-min);
-  padding-inline: var(--space-2);
+  padding-inline: var(--space-3);
   color: var(--papyrus-dim);
   font-size: var(--text-sm);
   text-decoration: none;
-  transition: color var(--dur-mid) var(--ease-sun);
 }
 
-.language-link:hover { color: var(--gold); }
+.language-link:hover { color: var(--papyrus); }
 
-/* ---- REGISTER I — the claim -------------------------------------------------------------------
- * The first viewport. A monumental claim cut into the wall, and immediately beneath it the product
- * doing its job on one real export — including the refusal, set into its own course. */
+/* ══ THE AXIS ══════════════════════════════════════════════════════════════════════════════════
+ *
+ * Four stations, each narrower and darker than the last. The measure steps are the design; the
+ * grounds deepen along the same axis so that light itself falls off as the visitor advances.
+ */
 
-.register--claim {
-  padding-block: clamp(var(--space-7), 7vh, 5.5rem) clamp(var(--space-7), 5vw, var(--space-8));
-  border-block-start: 0;
-  box-shadow: none;
-  overflow: hidden;
+.station {
+  position: relative;
+  padding-block: clamp(var(--space-7), 6vw, var(--space-9));
 }
 
-/* The sun's passage. A single radial field low on the horizon behind the claim — the light the
- * scarab pushes. It is a light source, not a decorative blob: it sits at one edge, it is warm, and
- * everything above it is darker than everything below it, which is what gives the stone its rake. */
-.register--claim::before {
-  content: "";
-  position: absolute;
-  inset-block-start: -18%;
-  inset-inline-start: 50%;
-  inline-size: min(150vw, 1500px);
-  block-size: min(150vw, 1500px);
-  transform: translateX(-50%);
-  background: radial-gradient(circle at 50% 50%,
-    rgba(212, 168, 58, 0.13) 0%,
-    rgba(212, 168, 58, 0.05) 32%,
-    rgba(74, 159, 196, 0.028) 52%,
-    transparent 68%);
-  pointer-events: none;
-  z-index: 0;
+/* Every station but the first is cut from the one above it by an incised rule: a dark line with a
+ * lit lower lip, which is what a cut in stone does under raking light. Three parts, all drawn. */
+.station + .station {
+  border-block-start: 1px solid var(--stone-600);
+  box-shadow:
+    inset 0 1px 0 rgba(242, 235, 221, .14),
+    inset 0 10px 22px -12px rgba(0, 0, 0, .78);
 }
 
-.register--claim > * { position: relative; z-index: 1; }
+.station--court { background: var(--stone-800); }
+.station--hypostyle { background: var(--stone-850); }
+.station--sanctuary { background: var(--stone-950); }
+.station--offering { background: var(--stone-800); }
+.station--close { background: var(--stone-950); }
 
-h1 {
-  max-width: var(--measure-monument);
-  font-size: var(--text-monument);
-  font-weight: 400;
-  line-height: var(--leading-monument);
-  letter-spacing: var(--track-monument);
+/* The measures. Reading these four numbers in order IS reading the design. */
+.pylon { width: min(100% - 2.5rem, var(--measure-pylon)); margin-inline: auto; }
+.court { width: min(100% - 2.5rem, var(--measure-court)); margin-inline: auto; }
+.hypostyle { width: min(100% - 2.5rem, var(--measure-hypostyle)); margin-inline: auto; }
+.sanctuary { width: min(100% - 2.5rem, var(--measure-sanctuary)); margin-inline: auto; }
+.offering { width: min(100% - 2.5rem, var(--measure-court)); margin-inline: auto; }
+.close { width: min(100% - 2.5rem, var(--measure-sanctuary)); margin-inline: auto; }
+
+/* One heading per station, and no eyebrow above it. A label the eye must skip is a cost with no
+ * return; the heading carries its own weight. */
+.station-title {
+  margin-block-end: clamp(var(--space-6), 3.5vw, var(--space-8));
+  font-size: var(--text-station);
+  line-height: var(--leading-tight);
+  letter-spacing: -.02em;
   text-wrap: balance;
 }
 
-/* Negative tracking is a Latin display convention and damages Arabic joins — the glyphs connect,
- * so tightening pulls the connections apart.
+/* ---- STATION I — THE PYLON --------------------------------------------------------------------
+ * Two battered towers frame a central gateway. The towers taper inward as real pylon towers do,
+ * drawn with a clip-path rather than a border so the batter is true at any height. The claim and
+ * the specimen stand in the opening between them. */
+
+/* The towers rise from the station's own floor and are cut off by its top edge, the way a pylon
+ * is met at eye level rather than seen whole. The block padding is asymmetric because the gateway
+ * needs air beneath it and none above: the header already provides that. */
+.station--pylon {
+  padding-block: 0 clamp(var(--space-7), 6vw, var(--space-9));
+  overflow: hidden;
+}
+
+/* The sun low behind the gateway — a light source, not a decorative blob. Everything above it is
+ * darker than everything below it, which is what gives the stone its rake. */
+.station--pylon::before {
+  content: "";
+  position: absolute;
+  inset-block-start: -12%;
+  inset-inline-start: 50%;
+  inline-size: min(140vw, 1400px);
+  block-size: min(140vw, 1400px);
+  transform: translateX(-50%);
+  background: radial-gradient(circle at 50% 50%,
+    rgba(212, 168, 58, .15) 0%,
+    rgba(212, 168, 58, .055) 30%,
+    rgba(74, 159, 196, .03) 50%,
+    transparent 66%);
+  pointer-events: none;
+}
+
+.pylon {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+/* The towers appear only where there is room for a gateway between them. Below that the pylon
+ * reads as a single face, which is what a narrow viewport can honestly carry. */
+.tower { display: none; }
+
+@media (min-width: 64rem) {
+  .pylon {
+    grid-template-columns: clamp(4rem, 9vw, 8rem) minmax(0, 1fr) clamp(4rem, 9vw, 8rem);
+    gap: clamp(var(--space-5), 3vw, var(--space-7));
+    align-items: stretch;
+  }
+
+  /* The batter: a real pylon tower's faces lean inward as they rise, and each tower leans toward
+   * the gateway it flanks. A symmetric taper would read as two obelisks; the asymmetry is what
+   * makes the pair read as one doorway. */
+  /* A pylon is the heaviest thing on the site and must read as mass, not as a tinted margin. The
+   * first pass sat one step off the page ground and disappeared; these are lit along their whole
+   * height, from a sunlit crown to a shadowed base, with a bright gold-lit inner edge where the
+   * light rakes across the gateway. */
+  .tower {
+    display: block;
+    position: relative;
+    background:
+      linear-gradient(180deg,
+        #3d3025 0%,
+        var(--stone-650) 22%,
+        var(--stone-700) 58%,
+        #191410 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(242, 235, 221, .18),
+      var(--lift-3);
+  }
+
+  /* The lit edge, on the face that meets the gateway. It is the light source's own direction made
+   * visible, which is what tells the eye these two masses stand in front of the wall. */
+  .tower::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inline-size: 2px;
+    background: linear-gradient(180deg,
+      rgba(224, 180, 74, .34) 0%,
+      rgba(224, 180, 74, .1) 45%,
+      transparent 100%);
+  }
+
+  .tower--start::after { inset-inline-end: 0; }
+  .tower--end::after { inset-inline-start: 0; }
+
+  /* The outer face carries the full batter; the gateway face stays nearly plumb, so the opening
+   * between the towers has parallel jambs. Written as physical percentages inside a logical
+   * property's value, which `clip-path` has no logical form of — so the two are swapped under
+   * RTL by the rules below rather than by a directional property. */
+  .tower--start { clip-path: polygon(9% 0, 100% 0, 100% 100%, 0 100%); }
+  .tower--end { clip-path: polygon(0 0, 91% 0, 100% 100%, 0 100%); }
+
+  [dir="rtl"] .tower--start { clip-path: polygon(0 0, 91% 0, 100% 100%, 0 100%); }
+  [dir="rtl"] .tower--end { clip-path: polygon(9% 0, 100% 0, 100% 100%, 0 100%); }
+
+  /* The flag-mast niches every pylon carries, as three recessed channels. */
+  /* A real recess is a dark channel with a lit lip on one side — the same three-part cut the
+   * station rules use, at a smaller scale. */
+  .tower-flute {
+    position: absolute;
+    inset-block: 14% 0;
+    inline-size: 3px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, .62), rgba(0, 0, 0, .2));
+    box-shadow: 1px 0 0 rgba(242, 235, 221, .09), -1px 0 0 rgba(0, 0, 0, .3);
+  }
+
+  .tower-flute:nth-child(1) { inset-inline-start: 28%; }
+  .tower-flute:nth-child(2) { inset-inline-start: 50%; }
+  .tower-flute:nth-child(3) { inset-inline-start: 72%; }
+}
+
+/* The gateway carries its own top air rather than the station carrying it, so the towers can run
+ * to the station's top edge while the claim still stands clear of the header. */
+.gateway {
+  min-inline-size: 0;
+  padding-block-start: clamp(var(--space-6), 5vw, var(--space-8));
+}
+
+h1 {
+  max-width: 16ch;
+  font-size: var(--text-claim);
+  line-height: var(--leading-claim);
+  letter-spacing: var(--track-claim);
+  text-wrap: balance;
+}
+
+/* Arabic needs its line-height back and its tracking at zero: the script's own proportions carry
+ * the monumentality that tight tracking gives the Latin. */
+[dir="rtl"] h1 { line-height: 1.18; letter-spacing: 0; }
+
+/* The claim's own mark: the page marking its thesis word the way it marks a proven figure.
  *
- * That matters more here than it looks. Tracking is the axis this design uses to buy optical
- * weight from a Regular-only face, and it is unavailable in Arabic — so leaning on it alone would
- * make English the designed script and Arabic the fallback, which is the one thing this page must
- * not do. Arabic takes its weight from the other two axes instead: a step MORE scale, and tighter
- * leading, so the Arabic headline reads with the same mass by different means. */
-[dir="rtl"] h1,
-[dir="rtl"] .close-headline,
-[dir="rtl"] .contrast-quote,
-[dir="rtl"] .register-mark > span:first-child { letter-spacing: 0; }
-
-[dir="rtl"] h1 {
-  font-size: clamp(3.4rem, 9.2vw, 8.6rem);
-  line-height: 0.94;
-}
-
-/* "prove" takes gold: the page's own claim is marked the way a proven figure is marked, so the
- * colour rule is stated by the headline before it is explained anywhere. */
+ * `inline-block` is load-bearing, not a habit. As a plain inline the mark's box inherits the h1's
+ * own line box, which at `line-height: .98` on a 5rem face measures 164px against ~92px of text —
+ * so an `::after` anchored to its block-end landed 60px BELOW the headline, drawing a rule through
+ * the lede beneath it. An inline-block has a real height that matches its glyphs. */
 .claim-mark {
+  position: relative;
+  display: inline-block;
   color: var(--gold);
-  font-style: normal;
+  white-space: nowrap;
 }
+
+.claim-mark::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: .08em;
+  block-size: 2px;
+  background: var(--gold-leaf);
+  transform-origin: left center;
+}
+
+[dir="rtl"] .claim-mark::after { transform-origin: right center; }
 
 .claim-lede {
-  max-width: var(--measure-lede);
-  margin-block-start: clamp(var(--space-5), 3vw, var(--space-6));
+  max-width: 54ch;
+  margin-block-start: var(--space-5);
   color: var(--papyrus-dim);
   font-size: var(--text-lede);
+  line-height: var(--leading-snug);
 }
 
-/* ---- The specimen: one export, mid-admission ---------------------------------------------------
- * Not a dashboard screenshot. A governed document fragment, banded like the wall it sits on, with
- * every row on a shared baseline. */
-
-/* The specimen is an object set into the wall, so it casts a shadow and catches light on its top
- * edge. `FR-091` frees this surface from the app's Law 1, and this is where that freedom is spent:
- * the flat version read as a table printed on the page rather than a slab cut into it. */
-.specimen {
-  position: relative;
-  /* The gap under the lintel. It was `--space-8` at the top of its clamp — 4rem of air between the
-   * winged disc and the panel it crowns, which made the shrine the hero grid's binding item and
-   * held the whole first register 1.3 screens tall. The lintel reads as resting on the panel at a
-   * far smaller gap. */
-  margin-block-start: clamp(var(--space-3), 1.6vw, var(--space-5));
-  border: 1px solid var(--stone-600);
-  border-block-start-color: var(--stone-500);
-  background-image: linear-gradient(
-    180deg,
-    var(--stone-650) 0%,
-    var(--stone-700) 38%,
-    #241c15 100%
-  );
-  box-shadow: var(--lift-3), inset 0 1px 0 rgba(224, 180, 74, 0.16);
-}
-
-.specimen-meta {
+/* The threshold facts: what was established before any figure was calculated. They sit above the
+ * specimen because admission precedes claim, and the reader meets them in that order. */
+.threshold {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-5);
-  padding: var(--space-3) clamp(var(--space-4), 3vw, var(--space-6));
-  border-block-end: 1px solid var(--stone-700);
+  gap: clamp(var(--space-5), 4vw, var(--space-8));
+  margin-block-start: clamp(var(--space-5), 3vw, var(--space-6));
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--stone-600);
+}
+
+.threshold dt {
   color: var(--papyrus-dim);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .06em;
+  font-size: var(--text-2xs);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+[dir="rtl"] .threshold dt { letter-spacing: .02em; }
+
+.threshold dd {
+  margin-block-start: .3em;
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+}
+
+/* ---- The specimen, standing in the gateway ------------------------------------------------- */
+
+.specimen {
+  margin-block-start: clamp(var(--space-6), 4vw, var(--space-8));
+}
+
+.lintel {
+  display: flex;
+  justify-content: center;
+  color: var(--gold-dim);
+  margin-block-end: -1px;
+}
+
+.glyph--lintel {
+  inline-size: min(100%, 22rem);
+  block-size: auto;
+  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, .6));
+}
+
+.specimen-body {
+  border: 1px solid var(--stone-600);
+  border-block-start-color: var(--stone-500);
+  background:
+    linear-gradient(180deg, var(--stone-650) 0%, var(--stone-700) 38%, #241c15 100%);
+  box-shadow: var(--lift-3), inset 0 1px 0 rgba(224, 180, 74, .16);
 }
 
 .specimen-head {
@@ -667,953 +551,61 @@ h1 {
 .specimen-file {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  color: var(--papyrus);
-}
-
-/* The neutral state mark. A hairline and a word — no fill, no pill. `--stone-500` rather than
- * `--stone-600` because this border encodes state and must clear WCAG 1.4.11's 3:1 (it measures
- * 3.02:1); the decorative rules elsewhere may sit lower. The app's `--line`/`--muted` split, carried
- * into the new world unchanged. */
-.state-mark {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px var(--space-3);
-  border: 1px solid var(--stone-500);
-  color: var(--papyrus-dim);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-/* The admitted mark's border takes full `--egyptian-blue`, not the dim step. `--egyptian-blue-dim`
- * measured 2.87:1 against the specimen ground — under 1.4.11's 3:1 for a border that encodes state,
- * and the word ADMITTED plus the border are the only two carriers here. The full pigment measures
- * 5.02:1 on that ground. The dim step keeps its job as a resting rule elsewhere. */
-.state-mark--admitted {
-  border-color: var(--egyptian-blue);
-  color: var(--egyptian-blue);
-}
-
-/* The courses of the specimen. Each row is a band; the shared baseline is the point. */
-.courses { padding-inline: clamp(var(--space-4), 3vw, var(--space-6)); }
-
-.course {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3) var(--space-6);
-  min-block-size: var(--touch-min);
-  padding-block: var(--space-4);
-  border-block-end: 1px solid var(--stone-700);
-}
-
-.course:last-of-type { border-block-end: 0; }
-
-.course-term { color: var(--papyrus); font-size: var(--text-sm); }
-
-.course-value {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
   letter-spacing: .04em;
 }
 
-/* Proven figures take gold. This is the entire colour system in one line: gold means the figure
- * reconciled with its evidence. */
-.course-value--proven { color: var(--gold); }
-.course-value--plain { color: var(--papyrus-dim); }
-
-.tabular { font-variant-numeric: tabular-nums; }
-
-/* ---- The withheld course ----------------------------------------------------------------------
- * THE RAISE, and the most important rule in this file.
- *
- * A refused figure is set INTO the register where the figure would have been — its own course, on
- * the same baseline as the proven ones, never a floating badge or a toast. The treatment is the
- * app's governed disclosure shape carried into the new world: a 4px inline-start rule plus italic,
- * in the withheld ink. Rule and italic each carry the meaning independently, so the state survives
- * greyscale, a colour-blind reader, and print.
- *
- * It is NOT red. Nothing broke — Khepri declined to answer, which is a governed result. Red ochre
- * on this page means CAVEATED, and even that is not an error colour. */
-.course--withheld {
-  display: block;
-  padding-inline-start: var(--space-5);
-  border-inline-start: 4px solid var(--withheld);
-  border-block-end: 0;
-  margin-block: var(--space-2) var(--space-5);
-  color: var(--papyrus-dim);
-  font-style: italic;
-}
-
-.course--withheld .course-term {
-  display: block;
-  color: var(--papyrus-dim);
-  font-style: italic;
-  font-size: var(--text-base);
-}
-
-/* The governed refusal prose itself, set inside the withheld course.
- *
- * The concept carried a short authored label here ("Reason: coverage"). The shipped page carries
- * the product's OWN refusal wording, read from the RRA-011 catalog — several sentences that say
- * what is unavailable, why, that the other figures are unaffected, and what would make it
- * available. That is a stronger demonstration than any marketing paraphrase, but it is prose, so
- * it needs a reading measure and its own block rhythm rather than a label's tracking.
- *
- * It stays inside `.course--withheld`, so it inherits the state-bearing rule and the italic. Both
- * carriers still apply, and the state still survives greyscale and print. */
-.course-refusal {
-  display: block;
-  max-width: var(--measure-note);
-  margin-block-start: var(--space-3);
-  color: var(--withheld);
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-}
-
-.synthetic-note {
-  padding: var(--space-3) clamp(var(--space-4), 3vw, var(--space-6));
-  border-block-start: 1px solid var(--stone-700);
-  color: var(--papyrus-dim);
-  font-size: var(--text-xs);
-  font-style: italic;
-  opacity: .8;
-}
-
-/* ---- REGISTER II — the passage -----------------------------------------------------------------
- * Five courses, read in order. The export's own figures carry through each one, so the section is a
- * trace rather than a feature row. */
-
-.passage {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
-  border-block-start: 1px solid var(--stone-600);
-}
-
-.passage-step {
-  position: relative;
-  /* Block and inline stated separately. A four-value `padding` shorthand assigns physical
-   * top/right/bottom/left, and the `padding-inline` that followed it overrode the inline halves —
-   * so the physical values were masked at runtime AND from the guard, which matches only
-   * explicitly named `*-left`/`*-right`. The declaration looked logical and was not. */
-  padding-block: clamp(var(--space-6), 4vw, var(--space-7));
-  padding-inline: 0 var(--space-5);
-  border-block-end: 1px solid var(--stone-700);
-}
-
-.passage-step + .passage-step {
-  border-inline-start: 1px solid var(--stone-700);
-  padding-inline-start: var(--space-5);
-}
-
-.passage-index {
-  display: block;
-  margin-block-end: var(--space-4);
-  color: var(--egyptian-blue-dim);
+/* A governed state's mark: a cut label, never a pill. The shape is shared; the ink names which
+ * state it is, so a second state added later inherits the form and only chooses its colour. */
+.state-mark {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .28em;
+  font-size: var(--text-2xs);
+  letter-spacing: .2em;
+  text-transform: uppercase;
 }
 
-.passage-term {
-  display: block;
-  margin-block-end: var(--space-3);
-  font-size: var(--text-md);
-  line-height: var(--leading-tight);
-  text-wrap: balance;
-}
+[dir="rtl"] .state-mark { letter-spacing: .04em; }
 
-.passage-detail {
-  display: block;
-  color: var(--papyrus-dim);
-  font-size: var(--text-sm);
-}
-
-/* The export's state at this stage — the line that makes it a passage. */
-.passage-state {
-  display: block;
-  margin-block-start: var(--space-4);
-  padding-block-start: var(--space-4);
-  border-block-start: 1px solid var(--stone-700);
+/* Admission is a governed state, so its mark is drawn in the construction-line blue rather than
+ * in gold: it reports that the file was admitted, not that a figure was proven. */
+.state-mark--admitted {
+  padding: .3em .8em;
+  border: 1px solid var(--egyptian-blue-dim);
   color: var(--egyptian-blue);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .1em;
+  font-size: var(--text-2xs);
+  letter-spacing: .2em;
+  text-transform: uppercase;
 }
 
-/* Stage 04 is where the refusal is minted, so it carries the disclosure shape and its state line
- * moves to the withheld treatment. */
-/* The 4px is declared here, not only in the narrow-width block. An earlier draft set it at 660px
- * alone, so at desktop width this step inherited the 1px sibling divider and the disclosure shape —
- * the one treatment that marks a governed refusal — was simply absent on the widest viewport, where
- * most visitors meet it. Measured at 1.09:1 before the fix. */
-/* Written as a compound so it actually wins. `.passage-step + .passage-step` scores 0-2-0 (two class
- * components), and a bare `.passage-step--withheld` scores 0-1-0 — so the sibling divider beat the
- * state rule outright and source order was never consulted. The declaration looked correct in the
- * file and computed to 1px on the page; only measuring the resolved value caught it. */
-.passage-step.passage-step--withheld {
-  border-inline-start: 4px solid var(--withheld);
-  padding-inline-start: var(--space-5);
-}
+[dir="rtl"] .state-mark--admitted { letter-spacing: .04em; }
 
-.passage-step--withheld .passage-state {
-  color: var(--papyrus-dim);
-  font-style: italic;
-}
-
-/* The page's thesis, cut at register scale. */
-.passage-figure {
-  max-width: 30ch;
-  margin-block-start: clamp(var(--space-7), 5vw, var(--space-9));
-  font-size: var(--text-register);
-  line-height: var(--leading-tight);
-  letter-spacing: -.018em;
-  text-wrap: balance;
-}
-
-/* NOT gold. Gold means "reconciled with its evidence", and this clause names the thing the page
- * refuses to do — so gold here both broke the scarcity rule and inverted it, marking the refused
- * act as proven. The italic carries the turn in the sentence on its own. */
-.passage-figure em { color: var(--papyrus); font-style: italic; }
-
-/* ---- REGISTER III — the three states -----------------------------------------------------------
- * The page's argument, and its visual peak. Three states, each encoded THREE ways at once: the
- * word, the rule colour, and the roman-versus-italic face. Any one alone identifies the state. */
-
-.contrast {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
-  gap: clamp(var(--space-6), 5vw, var(--space-8));
-  margin-block-end: clamp(var(--space-8), 7vw, var(--space-9));
-  padding-block-end: clamp(var(--space-7), 5vw, var(--space-8));
+.specimen-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  padding: var(--space-3) clamp(var(--space-4), 3vw, var(--space-6));
   border-block-end: 1px solid var(--stone-600);
-}
-
-.contrast-label {
-  display: block;
-  margin-block-end: var(--space-4);
   color: var(--papyrus-dim);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  letter-spacing: .28em;
-  text-transform: uppercase;
 }
 
-[dir="rtl"] .contrast-label { letter-spacing: .1em; }
+/* ---- The ledger --------------------------------------------------------------------------------
+ * A real table, because the specimen is real tabular data. The standing is a COLUMN rather than a
+ * badge beside the number: a figure and its standing are one thing, and a badge says otherwise. */
 
-.contrast-quote {
-  max-width: 22ch;
-  font-size: var(--text-xl);
-  line-height: var(--leading-tight);
-  letter-spacing: -.016em;
-  text-wrap: balance;
-}
-
-.contrast-quote--theirs { color: var(--papyrus-dim); }
-.contrast-quote--ours { color: var(--papyrus); }
-.contrast-quote--ours .claim-mark { color: var(--gold); }
-
-.verdicts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
-  gap: clamp(var(--space-6), 4vw, var(--space-7));
-}
-
-/* Each verdict is a slab cut from the wall, lit at its top edge and casting into the register.
- * The state border stays exactly as it was — it is the governed disclosure shape, not decoration —
- * but it now sits on an object rather than floating on flat ground. */
-.verdict {
-  padding-block: var(--space-5) var(--space-6);
-  padding-inline: var(--space-5);
-  border-inline-start: 4px solid var(--withheld);
-  background-image: linear-gradient(180deg, var(--stone-700) 0%, #241c15 100%);
-  box-shadow: var(--lift-2), inset 0 1px 0 rgba(242, 235, 221, 0.07);
-}
-
-.verdict--proven { border-inline-start-color: var(--gold); }
-.verdict--caveated { border-inline-start-color: var(--ochre); }
-.verdict--withheld {
-  border-inline-start-color: var(--withheld);
-  font-style: italic;
-}
-
-.verdict-name {
-  display: block;
-  margin-block-end: var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-style: normal;
-  letter-spacing: .28em;
-  text-transform: uppercase;
-}
-
-[dir="rtl"] .verdict-name { letter-spacing: .1em; }
-
-.verdict--proven .verdict-name { color: var(--gold); }
-.verdict--caveated .verdict-name { color: var(--ochre); }
-.verdict--withheld .verdict-name { color: var(--papyrus-dim); }
-
-.verdict-claim {
-  margin-block-end: var(--space-3);
-  font-size: var(--text-md);
-  line-height: var(--leading-tight);
-}
-
-.verdict--withheld .verdict-claim { color: var(--papyrus-dim); }
-
-.verdict-detail {
-  color: var(--papyrus-dim);
-  font-size: var(--text-sm);
-}
-
-/* The product's own refusal wording, quoted into the withheld verdict.
- *
- * The concept ended each verdict with a "View evidence" link. On a public page that destination
- * does not exist — evidence is reached from inside a report, by a customer who has one — and
- * `FR-088` forbids rendering a control whose destination is invented. The space it occupied now
- * carries something better: the actual governed refusal text, which argues the thesis instead of
- * pointing at it.
- *
- * Set apart from the marketing sentence above it by a second incised rule, so the visitor can see
- * where our narration stops and the product's own words begin. */
-.verdict-refusal {
-  margin-block-start: var(--space-4);
-  padding-inline-start: var(--space-4);
-  border-inline-start: 1px solid var(--stone-600);
-  color: var(--withheld);
-  font-size: var(--text-sm);
-  font-style: normal;
-  line-height: var(--leading-normal);
-}
-
-
-/* ---- REGISTER IV — why Khepri (pillars) --------------------------------------------------------- */
-
-.pillars {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
-  gap: clamp(var(--space-6), 4vw, var(--space-7));
-}
-
-.pillar { padding-block-start: var(--space-5); border-block-start: 1px solid var(--stone-600); }
-
-.pillar h3 {
-  margin-block-end: var(--space-3);
-  font-size: var(--text-md);
-  font-weight: 400;
-  line-height: var(--leading-tight);
-}
-
-.pillar p { max-width: var(--measure-note); color: var(--papyrus-dim); font-size: var(--text-sm); }
-
-
-/* ---- REGISTER VII — the two scripts, equal courses -----------------------------------------------
- * Not a picture of a translation. Two real subtrees, each with its own `lang` and `dir`, so the
- * browser mirrors natively and renders Arabic-Indic digits from the markup. Equal width, equal
- * treatment, one shared baseline — the layout states the parity claim. */
-
-.scripts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
-  border-block-start: 1px solid var(--stone-600);
-}
-
-.script-panel {
-  min-inline-size: 0;
-  padding-block: clamp(var(--space-6), 4vw, var(--space-8));
-  padding-inline-end: clamp(var(--space-5), 4vw, var(--space-8));
-}
-
-.script-panel + .script-panel {
-  border-inline-start: 1px solid var(--stone-600);
-  padding-inline: clamp(var(--space-5), 4vw, var(--space-8)) 0;
-}
-
-.script-name {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  margin-block-end: var(--space-6);
-  color: var(--papyrus-dim);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .28em;
-  text-transform: uppercase;
-}
-
-[dir="rtl"] .script-name { letter-spacing: .1em; }
-
-.script-claim { margin-block-end: var(--space-3); color: var(--papyrus-dim); font-size: var(--text-sm); }
-
-.script-figure {
-  margin-block-end: var(--space-4);
-  color: var(--gold);
-  font-size: var(--text-2xl);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.014em;
-  line-height: var(--leading-tight);
-}
-
-[dir="rtl"] .script-figure { letter-spacing: 0; }
-
-.script-note { color: var(--papyrus-dim); font-size: var(--text-sm); }
-
-/* ---- Close --------------------------------------------------------------------------------------- */
-
-.register--close {
-  padding-block: clamp(var(--space-9), 12vw, 12rem);
-  text-align: center;
-  overflow: hidden;
-}
-
-/* The sun completes its passage: the light returns at the foot of the wall, now risen. */
-.register--close::before {
-  content: "";
-  position: absolute;
-  inset-block-end: -55%;
-  inset-inline-start: 50%;
-  inline-size: min(140vw, 1300px);
-  block-size: min(140vw, 1300px);
-  transform: translateX(-50%);
-  background: radial-gradient(circle at 50% 50%,
-    rgba(212, 168, 58, 0.115) 0%,
-    rgba(212, 168, 58, 0.042) 34%,
-    transparent 66%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.register--close > * { position: relative; z-index: 1; }
-
-.close-headline {
-  max-width: 18ch;
-  margin-inline: auto;
-  /* Declared, not inherited. This is an `h2`, so without it the UA default `bold` applies — and only
-   * Regular 400 ships, so the page's second-largest type rendered browser-synthesised bold, which
-   * degrades Arabic joins harder than Latin. `h1` and `.pillar h3` both declared it; this one was
-   * missed, which is exactly how a no-weight-axis decision quietly stops holding. */
-  font-weight: 400;
-  font-size: var(--text-register);
-  line-height: var(--leading-monument);
-  letter-spacing: -.026em;
-  text-wrap: balance;
-}
-
-/* The close carries a statement, not a control.
- *
- * The concept ended on a "Request access" button. No such destination exists: `contact-us` is
- * unpublished, `/beta` is the invitation-gated private journey, and RCA-001 and RCA-002 both
- * exclude public self-serve signup. `FR-087` permits a CTA only where its destination already
- * exists and `FR-088` forbids a dead or disabled one, so the register closes by saying plainly
- * how access actually works. When a destination is authorized, a control returns here. */
-.close-body {
-  max-width: var(--measure-lede);
-  margin-inline: auto;
-  margin-block-start: clamp(var(--space-5), 3vw, var(--space-6));
-  color: var(--papyrus-dim);
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-  text-wrap: pretty;
-}
-
-/* ---- Colophon ------------------------------------------------------------------------------------ */
-
-.colophon {
-  padding-block: var(--space-7);
-  border-block-start: 1px solid var(--stone-600);
-  color: var(--papyrus-dim);
-  font-size: var(--text-sm);
-}
-
-.colophon-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-5);
-}
-
-.colophon-row ul {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-5);
-  margin-inline-end: auto;
-}
-
-.colophon a {
-  display: inline-flex;
-  align-items: center;
-  min-block-size: var(--touch-min);
-  color: var(--papyrus-dim);
-  text-decoration: none;
-  transition: color var(--dur-mid) var(--ease-sun);
-}
-
-.colophon a:hover { color: var(--gold); }
-
-.colophon-mark {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .34em;
-  /* Same wordmark, same rule as `.brand` — the header and the footer must not disagree about how
-   * the product is spelled. A no-op in Arabic, which has no letter case. */
-  text-transform: uppercase;
-}
-
-/* ---- MOTION — the sun's passage -------------------------------------------------------------------
- * ONE authored grammar, not scattered effects: every register rises into place as the light reaches
- * it, and the incised rule above it draws itself open. Slow, long-eased, never bouncy — the sun does
- * not overshoot.
- *
- * Three properties make it safe:
- *   1. It animates `transform` and `opacity` only, so it never triggers layout.
- *   2. Content is VISIBLE BY DEFAULT. The animation runs from a visible state to a visible state;
- *      a client with no view-timeline support, no JS, or a print stylesheet sees the finished page.
- *      Nothing is hidden waiting for a scroll event that may never fire.
- *   3. It is gated twice — behind `@supports` and behind `prefers-reduced-motion: no-preference`. */
-
-/* The reveal resolves EARLY and then holds sharp.
- *
- * A `view()` timeline maps progress across the whole range, so a wide range leaves the element
- * mid-animation for most of the time it is on screen — which with blur means a visitor reads
- * blurred text while scrolling normally. The blur is therefore front-loaded: gone by 55% of the
- * range, with only the last of the travel left to settle. */
-@keyframes rise-into-light {
-  0% { transform: translateY(2.6rem) scale(0.99); filter: blur(5px); }
-  55% { transform: translateY(0.4rem) scale(1); filter: blur(0); }
-  100% { transform: none; filter: blur(0); }
-}
-
-@keyframes rule-open {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-
-/* ---- The admission sequence: the page's signature moment ----------------------------------------
- * On load, the specimen performs the product. Raw values resolve into proven figures one course at a
- * time, gold arriving as each reconciles — and then the last course FAILS to resolve and settles
- * into the withheld treatment instead. The page argues its thesis before a word of copy is read.
- *
- * This is orchestrated, not scattered: one sequence, one direction, staggered by course. Every step
- * animates `opacity`, `transform`, and `color` only — no layout property, so no reflow.
- *
- * CONTENT IS VISIBLE AND CORRECT AT FRAME ZERO. The un-animated default is the finished state: a
- * client with no JS, no animation support, reduced motion, or a print stylesheet sees the resolved
- * figures immediately. The animation only replays a transition that has already happened. */
-
-/* A figure reconciling: it arrives dim and unresolved, then takes gold as it proves. */
-/* Every figure keyframe starts VISIBLE, and that is the correctness property, not a preference.
- *
- * These animations carry delays of up to 1.26s so the courses resolve in sequence. With
- * `animation-fill-mode: both`, the element is held at its `from` state for the whole delay — so a
- * keyframe starting at `opacity: 0` leaves the specimen's figures BLANK for the first second and
- * a quarter. A visitor on a slow first paint, a throttled tab, or a screenshot taken during the
- * delay sees a specimen with no numbers in it: the page's entire argument, missing.
- *
- * The concept asserted "content is visible and correct at frame zero" in a comment while its
- * keyframes opened at zero opacity, and no assertion caught the contradiction — it took a
- * screenshot. Starting at .45 keeps the same perceived resolve — the figure still arrives, still
- * travels, and still takes gold — while the text is READABLE in every frame, not merely
- * present in the DOM. .18 satisfied the letter of frame-zero correctness and failed its
- * intent: at a glance the specimen still looked empty. */
-/* NO KEYFRAME THAT MOVES TEXT ANIMATES `opacity`. This is a contrast rule, not a taste one.
- *
- * These animations carry delays of up to 1.7s and `animation-fill-mode: both` pins an element to
- * its opening keyframe for the whole delay, so whatever the opening step says is what a visitor
- * reads for over a second. Opening at `opacity: 0` blanked the specimen (caught by a screenshot);
- * raising it to .45 made the text present but not legible — composited on the specimen ground
- * that is 2.59:1 for gold, 2.36:1 for `--papyrus-dim`, 2.09:1 for `--withheld`, all under the
- * 4.5:1 floor.
- *
- * There is no safe partial value to pick. Measured on the specimen's own ground, `--withheld`
- * fails at EVERY opacity below 1.0 (0.85 gives 4.20:1) and `--egyptian-blue` at every value up to
- * and including 0.85. Fading text is simply not available in this palette.
- *
- * So the motion carries no opacity at all: the figures travel and take gold, the mark stamps, the
- * refusal settles — all through `transform` and `color`, which cost nothing in contrast because
- * the ink is fully painted in every frame. The sequence reads exactly as designed and every
- * character clears the floor from frame zero.
- *
- * The decorative pseudo-elements below may still animate opacity: they carry no text. */
-@keyframes figure-resolves {
-  0% { transform: translateY(28px) scale(0.94); filter: blur(9px); color: var(--papyrus-dim); }
-  46% { transform: none; filter: blur(0); color: var(--papyrus-dim); text-shadow: none; }
-  62% { color: var(--gold); text-shadow: 0 0 22px rgba(224, 180, 74, 0.75); }
-  100% { transform: none; filter: blur(0); color: var(--gold); text-shadow: none; }
-}
-
-/* A plain value: it arrives, but never takes gold, because it was never a proven figure. */
-@keyframes value-arrives {
-  from { transform: translateY(24px) scale(0.96); filter: blur(7px); }
-  to { transform: none; filter: blur(0); }
-}
-
-/* The withheld course settling in. It arrives LAST and slowest — the refusal is the considered
- * outcome, not the quick one — and its rule draws down rather than across, because a withheld
- * course is cut into the register vertically where the answer would have stood. */
-/* The refusal waits 1700ms before it settles — the longest delay on the page, because a withheld
- * result is the considered outcome. That makes starting from zero opacity the worst instance of
- * the frame-zero defect, not the mildest: the governed refusal text, which is the one thing this
- * page exists to demonstrate, would be blank for the first 1.7 seconds. */
-@keyframes withheld-settles {
-  from { transform: translateY(34px) scale(0.97); filter: blur(10px); }
-  to { transform: none; filter: blur(0); }
-}
-
-/* This rule IS the disclosure shape, not decoration, so it opens partly cut rather than absent.
- *
- * The block above sets `border-inline-start-color: transparent` and hands the 4px bar to this
- * pseudo-element. With a 1900ms delay and `fill-mode: both`, opening at `scaleY(0)` left the
- * withheld course with NO state carrier for the first 1.9 seconds — the same frame-zero defect as
- * the figures, in `transform` instead of `opacity`, and lasting longer. The italic still carried
- * the meaning redundantly, so it was never a 1.4.11 failure, but the shape the design language
- * requires for a refusal was simply missing. Starting at .35 keeps the downward cut legible as
- * motion while the bar is present in every frame. */
-@keyframes withheld-rule-cuts {
-  0% { transform: scaleY(.35); }
-  70% { transform: scaleY(1.04); }
-  100% { transform: scaleY(1); }
-}
-
-/* The admitted mark stamping onto the file. */
-@keyframes mark-stamps {
-  0% { transform: scale(2.1) rotate(-4deg); filter: blur(8px); }
-  55% { transform: scale(0.94) rotate(0deg); filter: blur(0); }
-  72% { transform: scale(1.03); box-shadow: 0 0 0 6px rgba(92, 179, 217, 0.16); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(92, 179, 217, 0); }
-}
-
-/* The sun's slow breath behind the claim. Extremely slow and extremely subtle — this is the one
- * ambient loop on the page, and it exists because a stone wall lit by a moving sun is never quite
- * still. 24s, opacity only, no transform, so it costs nothing. */
-@keyframes sun-breathes {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .72; }
-}
-
-/* The gold underline beneath "prove" in the headline, drawn as the page settles — the page marking
- * its own claim the way it marks a proven figure. */
-@keyframes claim-underlines {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-
-/* ---- The admission sequence, on load -------------------------------------------------------------
- * Runs once, immediately, without waiting for a scroll — the hero must perform on arrival. Each
- * course resolves in turn, then the withheld course settles last. */
-
-@media (prefers-reduced-motion: no-preference) {
-  .ledger .ledger-value {
-    animation: value-arrives 900ms var(--ease-sun) both;
-  }
-
-  /* Proven figures take gold as they reconcile. The stagger is the sequence: the reader watches
-   * admission proceed row by row rather than seeing a block appear. */
-  .ledger-row--proven .ledger-value {
-    animation-name: figure-resolves;
-    animation-duration: 2100ms;
-  }
-
-  .ledger tbody tr:nth-of-type(1) .ledger-value { animation-delay: 560ms; }
-  .ledger tbody tr:nth-of-type(2) .ledger-value { animation-delay: 800ms; }
-  .ledger tbody tr:nth-of-type(3) .ledger-value { animation-delay: 1040ms; }
-  .ledger tbody tr:nth-of-type(4) .ledger-value { animation-delay: 1280ms; }
-  .ledger tbody tr:nth-of-type(5) .ledger-value { animation-delay: 1520ms; }
-  .ledger tbody tr:nth-of-type(6) .ledger-value { animation-delay: 1760ms; }
-
-  /* Each row's standing settles just after its figure — the state is read WITH the number, so it
-   * must not trail so far behind that the two read as separate events. */
-  .ledger-state { animation: value-arrives 700ms var(--ease-sun) both; }
-
-  .ledger tbody tr:nth-of-type(1) .ledger-state { animation-delay: 700ms; }
-  .ledger tbody tr:nth-of-type(2) .ledger-state { animation-delay: 940ms; }
-  .ledger tbody tr:nth-of-type(3) .ledger-state { animation-delay: 1180ms; }
-  .ledger tbody tr:nth-of-type(4) .ledger-state { animation-delay: 1420ms; }
-  .ledger tbody tr:nth-of-type(5) .ledger-state { animation-delay: 1660ms; }
-  .ledger tbody tr:nth-of-type(6) .ledger-state { animation-delay: 1900ms; }
-
-  .state-mark--admitted {
-    animation: mark-stamps 760ms var(--ease-sun) 300ms both;
-  }
-
-  /* The refusal arrives last and slowest. A withheld figure is the considered outcome. */
-  .ledger-row--withheld {
-    animation: withheld-settles 1400ms var(--ease-sun) 2200ms both;
-  }
-
-  /* Its rule cuts downward into the register rather than fading in.
-   *
-   * Both of these live INSIDE `prefers-reduced-motion: no-preference`, and that is load-bearing. An
-   * earlier draft put only the `::after` here and left `border-inline-start-color: transparent`
-   * outside it — so a reduced-motion client got a transparent border with no pseudo-element to
-   * replace it, and the disclosure shape marking a governed refusal disappeared entirely for exactly
-   * the users least served by a subtle signal. The static 4px `--withheld` border is the default and
-   * is only handed over to the animation when animation will actually run. */
-  .course--withheld { border-inline-start-color: transparent; }
-
-  .course--withheld::after {
-    content: "";
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: -4px;
-    inline-size: 4px;
-    background: var(--withheld);
-    transform-origin: top;
-    animation: withheld-rule-cuts 900ms var(--ease-sun) 2850ms both;
-  }
-
-  /* The sun's slow breath. One ambient loop, opacity only. */
-  .register--claim::before {
-    animation: sun-breathes 24s ease-in-out infinite;
-  }
-
-  /* The page marks its own claim, the way it marks a proven figure.
-   *
-   * `inline-block` is load-bearing, not tidiness. As a plain inline span inside an `h1` set at
-   * `line-height: .95`, the absolutely-positioned rule resolved against an inline box SHORTER than
-   * its own glyphs, so `inset-block-end` placed it below the box — and since the h1's line box
-   * overlaps the lede beneath it, the gold rule rendered as a strikethrough across the paragraph.
-   * An inline-block gives the pseudo-element a block box that matches the text, and positioning from
-   * the top rather than the bottom means it cannot escape downward whatever the leading. */
-  .claim-mark {
-    position: relative;
-    display: inline-block;
-  }
-
-  .claim-mark::after {
-    content: "";
-    position: absolute;
-    inset-block-start: 100%;
-    inset-inline: 0;
-    block-size: 2px;
-    margin-block-start: -.18em;
-    background: var(--gold);
-    opacity: .5;
-    transform-origin: left center;
-    animation: claim-underlines 900ms var(--ease-sun) 900ms both;
-  }
-
-  [dir="rtl"] .claim-mark::after { transform-origin: right center; }
-}
-
-/* The withheld course carries its own rule via ::after when animating, so the static border would
- * double it. Positioned relative for the pseudo-element in both cases. */
-.course--withheld { position: relative; }
-
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .register-mark,
-    .specimen,
-    .passage-step,
-    .verdict,
-    .pillar,
-    .script-panel,
-    .close-headline {
-      animation: rise-into-light var(--dur-slow) var(--ease-sun) both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 22%;
-    }
-
-    /* The incised rule draws open across the wall as its register arrives. */
-    .register-mark::before {
-      animation: rule-open var(--dur-slow) var(--ease-sun) both;
-      animation-timeline: view();
-      animation-range: entry 4% cover 22%;
-      transform-origin: left center;
-    }
-
-    [dir="rtl"] .register-mark::before { transform-origin: right center; }
-  }
-}
-
-/* ---- Narrow widths --------------------------------------------------------------------------------
- * Every grid above uses `auto-fit` with a `min()`-wrapped floor, so the page reflows on its own and
- * can never overflow at 320px. The single breakpoint below does narrow-width adjustment only: it
- * introduces no component, changes no colour, and alters no topology. */
-
-@media (max-width: 660px) {
-
-  /* Vertical rules between columns become horizontal ones: at one column an inline-start border
-   * would run down the side of every block, colliding with the withheld treatment — where that exact
-   * shape carries state. Keeping the two distinct is what makes the disclosure legible. */
-  .passage-step + .passage-step,
-  .script-panel + .script-panel {
-    border-inline-start: 0;
-    border-block-start: 1px solid var(--stone-700);
-    padding-inline-start: 0;
-  }
-
-  .script-panel + .script-panel { padding-inline-end: 0; }
-
-  /* The withheld states keep their 4px rule — it is the state, not a divider. */
-  .passage-step--withheld { border-inline-start: 4px solid var(--withheld); }
-
-  /* The header wrapped to three rows and, being sticky, held 212px — about a quarter of an 844px
-   * phone viewport — on every scroll. Measured. At this width the wordmark and the primary action
-   * are what a visitor needs; the four section links are reachable by scrolling the page they name,
-   * so they are dropped rather than hidden behind a disclosure that would be capability this concept
-   * does not implement. The language control stays: parity is not an optional affordance. */
-  .site-header {
-    min-block-size: 0;
-    padding-block: var(--space-3);
-    gap: var(--space-3);
-  }
-}
-
-/* ---- Reduced motion --------------------------------------------------------------------------------
- * The authored moment is already gated behind `no-preference`, so it never starts here. Durations
- * collapse to near-zero rather than to `none`: an animation cancelled outright can strand an element
- * at its `from` state, while one that completes instantly cannot. */
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .001ms !important;
-  }
-}
-
-/* ---- Print -------------------------------------------------------------------------------------- */
-
-/* Flipping the ground to white inverts every contrast on the page, so every ink has to be
- * re-stated — not the three that happened to be brightest on screen. `--papyrus-dim` computes to
- * about 2.65:1 on white and gold to about 2.22:1, so the caveat detail, the verdict names and the
- * synthetic note all fell below the floor on paper while looking correct on screen.
- *
- * The state distinctions survive the flip because they were never carried by colour alone: the
- * withheld and caveated rules keep their inline-start borders and their italic, and the ink is
- * darkened rather than dropped. Redundant encoding is what makes a palette printable. */
-
-/* ═══ THE WALL AS ONE ARTIFACT ═══════════════════════════════════════════════════════════════════
- *
- * The owner's verdict on the shipped page was "empty". The measurement behind that word: the page
- * ran 3.23 (AR) to 3.52 (EN) times taller than wide, while the reference composition carries more
- * information at 1.90. Emptiness was never darkness — it was a narrow column of content with the
- * wall bare either side of it, so every screen showed a little text floating in a lot of nothing.
- *
- * The fix is horizontal, not vertical: fill the axis already there. Nothing below adds a section;
- * everything below widens one.
- */
-
-/* ---- Quarried grain ----------------------------------------------------------------------------
- * `default-src 'none'` denies `img-src` too, so a texture file is not available at any price — the
- * grain has to be generated. Two repeating gradients at 1.4% and 1.1% alpha, crossing at 27° and
- * -63°, read as tooled stone rather than as a pattern: neither period divides the other, so no
- * visible lattice forms.
- *
- * This is material grain, not a decorative colour wash — the distinction the brief's "no gradients"
- * rule is drawing. It carries no colour of its own and encodes nothing. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    repeating-linear-gradient(27deg,
-      rgba(242, 235, 221, 0.014) 0 1px, rgba(0, 0, 0, 0) 1px 7px),
-    repeating-linear-gradient(-63deg,
-      rgba(0, 0, 0, 0.05) 0 1px, rgba(0, 0, 0, 0) 1px 11px);
-}
-
-body > * { position: relative; z-index: 1; }
-
-/* ---- The hero as two columns -------------------------------------------------------------------
- * The claim holds one side and the specimen the other, so the first viewport carries both the
- * promise and the evidence at once — which is the page's whole argument, made before any scroll.
- *
- * `grid-template-columns` with the claim FIRST in DOM order: direction resolves which side each
- * lands on, so RTL mirrors the entire composition with no physical property anywhere. */
-.hero {
-  display: grid;
-  gap: clamp(var(--space-6), 4vw, var(--space-8));
-  align-items: center;
-}
-
-@media (min-width: 62rem) {
-  .hero {
-    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1fr);
-    gap: clamp(var(--space-6), 4.5vw, var(--space-9));
-  }
-}
-
-/* Freed from centring, the claim takes the measure it wants and the lede sits under it. */
-/* `--text-monument` is sized for a headline that owns the full wall. In the two-column hero the
- * claim holds ~44% of it, and 8.6vw put roughly four characters on a line — the headline wrapped to
- * four lines, grew to 498px, and drove the whole register past the viewport.
- *
- * The column, not the viewport, is the measure here: `cqw` against the claim column keeps the type
- * monumental relative to the space it actually occupies, at any width. */
-.hero-claim {
-  container-type: inline-size;
-  min-inline-size: 0;
-}
-
-@media (min-width: 62rem) {
-  .hero-claim h1 {
-    max-width: 100%;
-    font-size: clamp(2.6rem, 13cqw, 5.2rem);
-    line-height: 0.94;
-  }
-
-  /* Arabic ascenders and descenders need more room between lines than Latin caps do, and the
-   * script's own proportions carry the monumentality that tight tracking gives the Latin. */
-  [dir="rtl"] .hero-claim h1 {
-    font-size: clamp(2.8rem, 14cqw, 5.6rem);
-    line-height: 1.12;
-  }
-}
-
-/* Two facts under the claim, sharing the ledger's rule weight so the column reads as one
- * structure rather than as a headline with an unrelated list beneath it. */
-.hero-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: clamp(var(--space-4), 3vw, var(--space-6));
-  margin-block-start: clamp(var(--space-5), 3vw, var(--space-6));
-  padding-block-start: var(--space-4);
-  border-block-start: 1px solid var(--stone-600);
-}
-
-.hero-fact dt {
-  color: var(--papyrus-dim);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .16em;
-  text-transform: uppercase;
-}
-
-[dir="rtl"] .hero-fact dt { letter-spacing: .04em; }
-
-.hero-fact dd {
-  margin-block-start: .35em;
-  color: var(--papyrus);
-  font-size: var(--text-lg);
-}
-
-/* ---- The ledger ------------------------------------------------------------------------------
- * A real table, because the specimen is real tabular data. Three columns: the measure, its value,
- * and its standing — the standing is a column because a figure and its standing are one thing, and
- * a badge floating beside a number says the opposite. */
 .ledger {
   inline-size: 100%;
-  margin-block-start: var(--space-5);
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
 
 .ledger thead th {
-  padding-block: .5em .75em;
+  padding-block: .7em .6em;
   border-block-end: 1px solid var(--stone-600);
   color: var(--papyrus-dim);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: .2em;
   text-transform: uppercase;
@@ -1622,89 +614,68 @@ body > * { position: relative; z-index: 1; }
 
 [dir="rtl"] .ledger thead th { letter-spacing: .04em; }
 
-/* The value column's head follows its column to the end edge, and carries the head's own type size
- * rather than the column's figure size — `.ledger .ledger-value` would otherwise set the figure
- * scale on a label. A column head that does not sit over its column is not a head. */
-.ledger thead th.ledger-value {
-  text-align: end;
-  font-size: var(--text-xs);
-}
+.ledger thead th:first-child { padding-inline-start: clamp(var(--space-4), 3vw, var(--space-6)); }
+.ledger thead th:last-child { padding-inline-end: clamp(var(--space-4), 3vw, var(--space-6)); }
 
-/* The standing column stands off the value beside it. The value column is set to its end edge and
- * the standing to its start, so without this the two meet with nothing between them — "VALUE" and
- * "STANDING" ran together in the head. The head cell carries no class of its own, so the rule
- * follows the COLUMN (`:last-child`) rather than the markup. Logical, so it holds in both scripts. */
-.ledger .ledger-state,
-.ledger thead th:last-child { padding-inline-start: 0.9rem; }
+.ledger thead th.ledger-value { text-align: end; }
 
-/* `rem`, not `em`. A row's height is the tallest of its cells, and `em` padding is relative to each
- * cell's OWN font size — so the same `.82em` gave the 13.76px metric cell 11px and the 28px value
- * cell 23px, and the larger one set the height of every row. Six rows at 92px made the ledger 630px
- * and the ledger made the hero 1.3 screens tall. Absolute units keep the rhythm uniform. */
+/* `rem`, not `em`: a row's height is the tallest of its cells, and `em` padding is relative to
+ * each cell's OWN font size — the same declaration then gives a 13px cell 11px and a 28px cell
+ * 23px, and the larger one silently sets the height of every row in the table. */
 .ledger tbody th,
 .ledger tbody td {
-  padding-block: 0.6rem;
-  border-block-end: 1px solid rgba(74, 61, 48, 0.55);
+  padding-block: .62rem;
+  border-block-end: 1px solid rgba(74, 61, 48, .5);
   text-align: start;
   vertical-align: baseline;
 }
 
+.ledger tbody th { padding-inline-start: clamp(var(--space-4), 3vw, var(--space-6)); }
+.ledger tbody td:last-child { padding-inline-end: clamp(var(--space-4), 3vw, var(--space-6)); }
+
 .ledger tbody tr:last-child th,
 .ledger tbody tr:last-child td { border-block-end: 0; }
 
-.ledger tbody th {
-  color: var(--papyrus);
-  font-weight: 400;
-}
+.ledger tbody th { color: var(--papyrus); font-weight: 400; }
 
-/* The value column is the one the eye goes to, so it carries the figure weight and sits right of
- * its own axis — `text-align: end` resolves per direction. */
-/* The value column carries the eye, but `--text-lg` is heading scale: at 28px in a 44.8px line box
- * it set the row height for the whole table. `--text-md` still reads as the dominant column against
- * the 13.76px metric name beside it, at half the vertical cost. */
-.ledger .ledger-value {
-  text-align: end;
+/* The column head and the figures below it share the class because they share the COLUMN, not
+ * because they share a type size — an unscoped `.ledger .ledger-value` set the figure scale on the
+ * head too, and "VALUE" printed at twice the size of the labels either side of it. Scoped to the
+ * body, the class means the column and the element decides how it is set. */
+.ledger tbody .ledger-value {
   font-size: var(--text-md);
   line-height: var(--leading-tight);
+}
+
+.ledger .ledger-value {
+  text-align: end;
   white-space: nowrap;
 }
 
-/* Every row shares one ground, so the state colours below read as ink on the same stone rather
- * than as three differently-lit bands. */
-.ledger-row { background: transparent; }
-
 .ledger-row--proven .ledger-value { color: var(--gold); }
 .ledger-row--caveated .ledger-value { color: var(--ochre); }
-
-/* The withheld row keeps its place in the ledger and leaves the value cell unfilled. The dash is
- * `aria-hidden`: the standing cell already names the state in words. */
 .ledger-row--withheld .ledger-value { color: var(--withheld); }
 
-.ledger-row--withheld th,
-.ledger-row--withheld .ledger-state { color: var(--withheld); }
+.ledger-row { background: transparent; }
 
-/* A hairline down the withheld row's leading edge — the register mark for a course left uncut. */
-.ledger-row--withheld th {
-  box-shadow: inset 2px 0 0 var(--withheld);
-  padding-inline-start: .7em;
-}
-
-[dir="rtl"] .ledger-row--withheld th { box-shadow: inset -2px 0 0 var(--withheld); }
-
-/* The base `.glyph` is `display: block` — correct for the standalone lintel, jambs and passage
- * marks, wrong for a glyph set beside a word. In a `nowrap` cell the block-level glyph pushed the
- * state name onto its own line, where it rendered as a crushed superscript above the mark.
- *
- * Flex is the fix rather than an overridden `display`, because it aligns the pair on a shared
- * centre whatever the glyph's own display value is, and no later `white-space` rule can break it. */
-.ledger-state {
+/* The standing column, set as a flex pair so the glyph and its word share one centre. The base
+ * `.glyph` is `display: block` — correct for the standalone lintel and passage marks, and wrong
+ * for a glyph beside a word, where it would push the word onto its own line. */
+/* The flex pairing is for the BODY cells, which hold a glyph beside a word. The column head holds
+ * only a word, and making a `<th>` a flex container drops it out of the table's column sizing —
+ * the head then stops sitting over the column it names. */
+.ledger tbody .ledger-state {
   display: flex;
   align-items: center;
   gap: .45em;
+}
+
+.ledger-state {
+  padding-inline-start: 1.4rem;
   color: var(--papyrus-dim);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .12em;
+  font-size: var(--text-2xs);
+  letter-spacing: .14em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -1713,44 +684,33 @@ body > * { position: relative; z-index: 1; }
 
 .ledger-row--proven .ledger-state { color: var(--gold); }
 .ledger-row--caveated .ledger-state { color: var(--ochre); }
+.ledger-row--withheld .ledger-state,
+.ledger-row--withheld th { color: var(--withheld); }
 
-/* The glyph in a cell: sized to the cap height beside it, never carrying the meaning alone. */
-/* Sized against the text it accompanies. The spacing is the flex `gap` of whichever cell holds it,
- * so no margin here — a margin would double-count against that gap. */
+/* The withheld row keeps its place in the ledger with the value cell deliberately unfilled. The
+ * inline-start rule is the governed refusal shape (`KHEPRI_DESIGN_LANGUAGE.md` 4.6), raised to
+ * 5.04:1 so the border alone clears WCAG 1.4.11 as a state carrier — it survives onto paper,
+ * where the tint does not. */
+.ledger-row--withheld th {
+  border-inline-start: 4px solid var(--withheld);
+  padding-inline-start: calc(clamp(var(--space-4), 3vw, var(--space-6)) - 4px);
+}
+
 .glyph--cell {
   inline-size: 1.15em;
   block-size: 1.15em;
   flex: none;
 }
 
-/* Khepri's comparison cell sets its glyph beside the sentence, on the first line. */
-.compare-ours {
-  display: flex;
-  align-items: flex-start;
-  gap: .5em;
-}
-
-.compare-ours .glyph--cell { margin-block-start: .12em; }
-
-/* The verdict name and its state glyph, on one baseline. */
-.verdict-name {
-  display: flex;
-  align-items: center;
-  gap: .5em;
-}
-
-.verdict-name .glyph--state { margin-inline-end: 0; }
-
-/* The two governed texts the ledger's non-proven rows carry. Each is tied to its row by the same
- * ink the row uses, so the reader connects text to row without a line being drawn. */
+/* The governed texts the ledger's two non-proven rows carry, each tied to its row by the same ink
+ * the row uses, so the reader connects text to row with no line drawn between them. */
 .ledger-note {
   margin-block-start: var(--space-3);
+  margin-inline: clamp(var(--space-4), 3vw, var(--space-6));
   padding-inline-start: .8em;
   font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
 }
-
-[dir="rtl"] .ledger-note { padding-inline-start: 0; padding-inline-end: .8em; }
 
 .ledger-note--caveat {
   border-inline-start: 2px solid var(--ochre);
@@ -1758,36 +718,102 @@ body > * { position: relative; z-index: 1; }
 }
 
 .ledger-note--refusal {
-  border-inline-start: 2px solid var(--withheld);
+  border-inline-start: 4px solid var(--withheld);
   color: var(--withheld);
+  font-style: italic;
+  margin-block-end: var(--space-4);
 }
 
-/* ---- The comparison register -------------------------------------------------------------------
- * Khepri's column comes FIRST, before the compared category. The reference puts it first too, and
- * the reason is not vanity: a reader scanning a comparison reads the first column as the subject
- * and the second as the foil, so leading with the other party frames the page as a response. */
+.synthetic-note {
+  padding: var(--space-3) clamp(var(--space-4), 3vw, var(--space-6));
+  color: var(--papyrus-dim);
+  font-size: var(--text-xs);
+  font-style: italic;
+}
+
+/* ---- STATION II — THE COURT -------------------------------------------------------------------
+ * Open ground, still wide. Five steps in five columns, framed as one band. The numerals stay
+ * because the sequence itself is the information: this is what happens to a file, in order. */
+
+.passage {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--stone-600);
+  background: rgba(0, 0, 0, .18);
+}
+
+@media (min-width: 62rem) {
+  .passage { grid-template-columns: repeat(5, 1fr); }
+
+  .passage-step + .passage-step {
+    border-inline-start: 1px solid var(--stone-600);
+    border-block-start: 0;
+  }
+}
+
+.passage-step {
+  display: flex;
+  flex-direction: column;
+  gap: .45em;
+  padding: clamp(var(--space-5), 2.6vw, var(--space-6));
+}
+
+.passage-step + .passage-step { border-block-start: 1px solid var(--stone-600); }
+
+.passage-index {
+  order: -2;
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  line-height: 1;
+  letter-spacing: .04em;
+}
+
+.glyph--passage {
+  order: -1;
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  color: var(--gold-leaf);
+}
+
+.passage-step--withheld .glyph--passage { color: var(--withheld); }
+
+.passage-term {
+  font-size: var(--text-base);
+  line-height: var(--leading-tight);
+}
+
+.passage-detail {
+  color: var(--papyrus-dim);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.passage-state {
+  margin-block-start: auto;
+  padding-block-start: var(--space-3);
+  color: var(--egyptian-blue);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+/* ---- STATION III — THE HYPOSTYLE -------------------------------------------------------------
+ * Narrower and darker. The comparison stands in the hall, and the four columns carry the roof. */
+
 .compare {
   inline-size: 100%;
-  margin-block-start: clamp(var(--space-6), 4vw, var(--space-7));
   border-collapse: collapse;
   border: 1px solid var(--stone-600);
   font-size: var(--text-sm);
 }
 
-.compare-caption {
-  padding-block-end: var(--space-4);
-  color: var(--papyrus);
-  font-size: var(--text-lg);
-  text-align: start;
-}
-
 .compare thead th {
-  padding: .9em 1em;
+  padding: .85em 1em;
   border-block-end: 1px solid var(--stone-600);
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, .24);
   color: var(--papyrus-dim);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: .18em;
   text-transform: uppercase;
@@ -1800,8 +826,8 @@ body > * { position: relative; z-index: 1; }
 
 .compare tbody th,
 .compare tbody td {
-  padding: 1em;
-  border-block-end: 1px solid rgba(74, 61, 48, 0.5);
+  padding: .95em 1em;
+  border-block-end: 1px solid rgba(74, 61, 48, .45);
   text-align: start;
   vertical-align: top;
 }
@@ -1810,10 +836,10 @@ body > * { position: relative; z-index: 1; }
 .compare tbody tr:last-child td { border-block-end: 0; }
 
 .compare tbody th {
-  inline-size: 22%;
+  inline-size: 20%;
   color: var(--papyrus-dim);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: .14em;
   text-transform: uppercase;
@@ -1822,40 +848,176 @@ body > * { position: relative; z-index: 1; }
 [dir="rtl"] .compare tbody th { letter-spacing: 0; }
 
 /* Khepri's cell is lit and its glyph gilded; the compared cell is unlit stone. The difference is
- * material, not a tick and a cross — this world does not do checkmarks. */
+ * material rather than a tick against a cross — this world does not do checkmarks. */
 .compare-ours {
-  background: rgba(224, 180, 74, 0.045);
+  display: flex;
+  align-items: flex-start;
+  gap: .55em;
+  background: rgba(224, 180, 74, .05);
   color: var(--papyrus);
 }
 
-.compare-ours .glyph--cell { color: var(--gold-leaf); }
+.compare-ours .glyph--cell { color: var(--gold-leaf); margin-block-start: .1em; }
 
-.compare-theirs { color: var(--papyrus-dim); }
-
-/* A vertical rule between the two columns, drawn on the leading edge of the compared cell. */
-.compare-theirs { border-inline-start: 1px solid var(--stone-600); }
-
-@media (max-width: 47rem) {
-  /* The axis column's width is the first thing to give on a narrow screen. */
-  .compare tbody th { inline-size: auto; }
-  .compare thead th,
-  .compare tbody th,
-  .compare tbody td { padding: .7em; }
+.compare-theirs {
+  border-inline-start: 1px solid var(--stone-600);
+  color: var(--papyrus-dim);
 }
 
-/* ---- The strip ---------------------------------------------------------------------------------
- * One figure, stated once in each script, meeting at the sun disc. Beneath each statement, the four
- * things the runtime establishes before it will report any figure at all — so the strip summarises
- * admission rather than listing statistics. */
+/* The four columns of the hall. */
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: clamp(var(--space-4), 2.4vw, var(--space-5));
+  margin-block-start: clamp(var(--space-6), 3.5vw, var(--space-7));
+}
+
+/* A column, drawn as one: capital above, shaft below. The top rule is the abacus. */
+.column {
+  padding: clamp(var(--space-4), 2.2vw, var(--space-5));
+  border: 1px solid var(--stone-600);
+  border-block-start: 2px solid var(--gold-leaf);
+  background: rgba(0, 0, 0, .2);
+}
+
+.column h3 {
+  margin-block-end: .45em;
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+}
+
+.column p {
+  color: var(--papyrus-dim);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+/* ---- STATION IV — THE SANCTUARY --------------------------------------------------------------
+ * The narrowest, darkest, quietest station, and the destination. The three things an answer can
+ * be, given equal weight — a refusal has the same standing here as a proof, which is the one
+ * claim this whole page exists to make. */
+
+.station--sanctuary { text-align: center; }
+
+.sanctuary-title {
+  font-size: var(--text-station);
+  line-height: var(--leading-tight);
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+
+.sanctuary-lede {
+  max-width: 46ch;
+  margin-block: var(--space-5) 0;
+  margin-inline: auto;
+  color: var(--papyrus-dim);
+  font-size: var(--text-lede);
+  line-height: var(--leading-snug);
+}
+
+.verdicts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  gap: var(--space-4);
+  margin-block-start: clamp(var(--space-6), 4vw, var(--space-8));
+  text-align: start;
+}
+
+/* Same frame, same field, same height for all three. What differs is the ink and the rule beneath
+ * it, never the prominence — a refusal that looked smaller would contradict the heading above it. */
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: clamp(var(--space-4), 2.4vw, var(--space-5));
+  border: 1px solid var(--stone-600);
+  background:
+    linear-gradient(180deg, rgba(242, 235, 221, .035) 0%, rgba(0, 0, 0, .2) 100%),
+    var(--stone-800);
+  box-shadow: var(--lift-1);
+}
+
+.verdict--proven { border-block-end: 3px solid var(--gold); }
+.verdict--caveated { border-block-end: 3px solid var(--ochre); }
+.verdict--withheld { border-block-end: 3px solid var(--withheld); }
+
+.verdict-name {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: .26em;
+  text-transform: uppercase;
+}
+
+[dir="rtl"] .verdict-name { letter-spacing: .04em; }
+
+.verdict--proven .verdict-name { color: var(--gold); }
+.verdict--caveated .verdict-name { color: var(--ochre); }
+.verdict--withheld .verdict-name { color: var(--withheld); }
+
+.glyph--state { inline-size: 1.25em; block-size: 1.25em; flex: none; }
+
+.verdict-claim {
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+}
+
+.verdict--withheld .verdict-claim { color: var(--withheld); font-style: italic; }
+
+.verdict-detail {
+  color: var(--papyrus-dim);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+/* The product's own wording, quoted rather than paraphrased — so it carries the governed refusal
+ * shape here too.
+ *
+ * The refusal text runs to 60 words where the caveat runs to 30, and in a three-column grid the
+ * longest cell sets every card's height: the withheld card ran near double the proven one, which
+ * read as the refusal being the important one rather than the equal one. Clamping the quote to a
+ * scrollable measure keeps all three cards the same height without truncating governed wording —
+ * the full text stays in the DOM, reachable by keyboard and read out in full. */
+.verdict-governed {
+  margin-block-start: auto;
+  max-block-size: 11.5rem;
+  overflow-y: auto;
+  padding-inline-start: var(--space-4);
+  border-inline-start: 4px solid var(--withheld);
+  color: var(--withheld);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  scrollbar-color: var(--stone-600) transparent;
+  scrollbar-width: thin;
+}
+
+/* A scrollable region is a tab stop, so it needs a visible focus ring of its own. */
+.verdict-governed:focus-visible { outline-offset: 2px; }
+
+.verdict--caveated .verdict-governed {
+  border-inline-start-color: var(--ochre);
+  color: var(--papyrus-dim);
+}
+
+.station--sanctuary .synthetic-note {
+  padding-inline: 0;
+  margin-block-start: var(--space-5);
+}
+
+/* ---- THE OFFERING TABLE -----------------------------------------------------------------------
+ * One figure stated once in each script, meeting at the sun disc. Neither reading is a
+ * translation of the other; they meet here as equals. */
+
 .strip {
   display: grid;
   gap: clamp(var(--space-5), 3vw, var(--space-6));
   align-items: center;
-  margin-block-start: clamp(var(--space-6), 4vw, var(--space-7));
   padding: clamp(var(--space-5), 3.5vw, var(--space-7));
   border: 1px solid var(--stone-600);
   background:
-    linear-gradient(180deg, rgba(242, 235, 221, 0.035) 0%, rgba(0, 0, 0, 0.2) 100%),
+    linear-gradient(180deg, rgba(242, 235, 221, .035) 0%, rgba(0, 0, 0, .2) 100%),
     var(--stone-700);
   box-shadow: var(--lift-2);
 }
@@ -1869,7 +1031,7 @@ body > * { position: relative; z-index: 1; }
 .strip-term {
   color: var(--papyrus-dim);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   letter-spacing: .2em;
   text-transform: uppercase;
 }
@@ -1877,11 +1039,11 @@ body > * { position: relative; z-index: 1; }
 .strip-side[dir="rtl"] .strip-term { letter-spacing: 0; }
 
 .strip-figure {
-  margin-block-start: .2em;
+  margin-block-start: .18em;
   color: var(--gold);
-  font-size: clamp(2rem, 4.6vw, 3.4rem);
-  line-height: 1.04;
-  letter-spacing: -0.02em;
+  font-size: clamp(1.9rem, 4.2vw, 3rem);
+  line-height: 1.06;
+  letter-spacing: -.02em;
 }
 
 .strip-unit {
@@ -1890,23 +1052,21 @@ body > * { position: relative; z-index: 1; }
   letter-spacing: .1em;
 }
 
-/* Four fields, in one row where the width allows it. Each names a precondition, not a statistic. */
-/* Four fields, and four in BOTH scripts. `auto-fit` with a `minmax` floor counts columns by the
- * space available, not by the number of items, so the longer Arabic labels wrapped to 3+1 while
- * English fitted 4 — an orphaned field in the one band whose whole argument is that neither script
- * is the secondary one. Pinned to four where there is room, two below that. */
 .strip-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4) var(--space-5);
+  gap: var(--space-4);
   margin-block-start: var(--space-5);
   padding-block-start: var(--space-4);
   border-block-start: 1px solid var(--stone-600);
 }
 
-/* Where the strip itself goes side-by-side, each half has room for all four in one row. */
+/* Where the strip goes side by side, each half holds all four fields in one row — in BOTH
+ * scripts. An `auto-fit` floor counts columns by available space rather than by item count, so
+ * the longer Arabic labels wrapped to 3+1 while English fitted 4: an orphaned field in the one
+ * band whose entire argument is that neither script is secondary. */
 @media (min-width: 56rem) {
-  .strip-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+  .strip-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .strip-fields dt {
@@ -1920,259 +1080,226 @@ body > * { position: relative; z-index: 1; }
 .strip-side[dir="rtl"] .strip-fields dt { letter-spacing: 0; }
 
 .strip-fields dd {
-  margin-block-start: .3em;
-  color: var(--papyrus);
+  margin-block-start: .28em;
   font-size: var(--text-sm);
   line-height: var(--leading-snug);
 }
 
-/* The disc between the two scripts. Neither reading is a translation of the other; they meet
- * here. On a narrow screen the disc becomes a horizontal rule instead of a medallion. */
-/* The ornament gold belongs on the glyph, never on this wrapper: `color` on a container cascades to
- * any text later placed inside it, and `--gold-leaf` clears the 3:1 non-text floor but not the
- * 4.5:1 text floor. Scoping it to the drawn element keeps that true structurally. */
-.strip-disc {
-  display: grid;
-  place-items: center;
-}
+.strip-disc { display: grid; place-items: center; }
 
 .glyph--disc {
-  inline-size: clamp(2.4rem, 5vw, 3.6rem);
-  block-size: clamp(2.4rem, 5vw, 3.6rem);
+  inline-size: clamp(2.2rem, 4.5vw, 3.2rem);
+  block-size: clamp(2.2rem, 4.5vw, 3.2rem);
   color: var(--gold-leaf);
 }
 
 @media (max-width: 55.999rem) {
-  .strip-disc {
-    block-size: 1px;
-    background: var(--stone-600);
-    overflow: visible;
-  }
-  .glyph--disc {
-    padding: 0 .6rem;
-    background: var(--stone-700);
-  }
+  .strip-disc { block-size: 1px; background: var(--stone-600); overflow: visible; }
+  .glyph--disc { padding: 0 .6rem; background: var(--stone-700); }
 }
 
-.strip-note {
-  margin-block-start: var(--space-4);
-  color: var(--papyrus-dim);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: .06em;
-  text-align: center;
-}
+.station--offering .synthetic-note { padding-inline: 0; }
 
-/* ---- Registers, filled edge to edge ------------------------------------------------------------
- * The passage steps become a single framed band of five columns rather than a vertical list, so the
- * register reads as one course of the wall. Below the breakpoint they stack, and the frame becomes
- * a set of horizontal cuts instead of vertical ones. */
-@media (min-width: 62rem) {
-  .passage {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    border: 1px solid var(--stone-600);
-    background: rgba(0, 0, 0, 0.16);
-  }
+/* ---- THE CLOSE ------------------------------------------------------------------------------
+ * No CTA: `FR-087` permits one only where the destination already exists. */
 
-  .passage-step {
-    display: flex;
-    flex-direction: column;
-    gap: .55em;
-    padding: clamp(var(--space-5), 2.4vw, var(--space-6));
-    margin: 0;
-  }
+.station--close { text-align: center; }
 
-  /* The dividing cut sits on the leading edge of every step but the first — logical, so RTL puts
-   * it on the other side without a second rule. */
-  .passage-step + .passage-step {
-    border-inline-start: 1px solid var(--stone-600);
-    border-block-start: 0;
-    padding-block-start: clamp(var(--space-5), 2.4vw, var(--space-6));
-  }
-
-  /* The step numeral is rendered text, so it owes the 4.5:1 text floor whatever its decorative
-   * intent — `--gold-leaf` measures 4.09:1 and misses it. `--gold` is 7.36:1 and reads as the same
-   * metal at this size, so the reference's gilded ordinal costs nothing to make compliant. */
-  .passage-index {
-    order: -1;
-    color: var(--gold);
-    font-size: var(--text-lg);
-  }
-
-  .passage-detail { margin-block-start: auto; }
-}
-
-/* The step number, set as a numeral the way the reference sets it: large, gilded, and above the
- * glyph rather than inline with the text. */
-.passage-index {
-  font-family: var(--font-mono);
-  letter-spacing: .04em;
-}
-
-/* ---- Verdicts, as substantial panels ------------------------------------------------------------
- * A refusal is a result, so it gets the same weight as a proof: same panel, same frame, same
- * height. What differs is the ink and the rule beneath it, never the prominence. */
-.verdict {
-  padding: clamp(var(--space-5), 2.6vw, var(--space-6));
-  border: 1px solid var(--stone-600);
-  background:
-    linear-gradient(180deg, rgba(242, 235, 221, 0.03) 0%, rgba(0, 0, 0, 0.18) 100%),
-    var(--stone-700);
-  box-shadow: var(--lift-1);
-}
-
-/* The state's colour is stated on the panel's base rule — the course beneath the course. */
-.verdict--proven { border-block-end: 3px solid var(--gold); }
-.verdict--caveated { border-block-end: 3px solid var(--ochre); }
-.verdict--withheld { border-block-end: 3px solid var(--withheld); }
-
-.glyph--state {
-  inline-size: 1.2em;
-  block-size: 1.2em;
-  margin-inline-end: .5em;
-  vertical-align: -0.2em;
-}
-
-/* ═══ VERTICAL BUDGET ════════════════════════════════════════════════════════════════════════════
- *
- * Measured after the band work: the page ran 5361px (AR) / 5792px (EN) at 1440 wide, against a
- * reference composition whose proportion is 1.90 tall-to-wide — about 2700px at this width. The
- * registers were padded for a page carrying half this much, so density arrived and the spacing
- * never adjusted to it. Filled bands need LESS air between them, not more: the frame now does the
- * separating that whitespace used to do.
- */
-
-.register {
-  padding-block: clamp(var(--space-6), 3.4vw, var(--space-8));
-}
-
-/* The claim register sets the first viewport and should fill roughly one screen, not 1.35 of it. */
-.register--claim {
-  padding-block: clamp(var(--space-6), 3.4vw, var(--space-7)) clamp(var(--space-6), 3.4vw, var(--space-8));
-}
-
-@media (min-width: 62rem) {
-  .register--claim { min-block-size: min(88vh, 60rem); display: grid; align-items: center; }
-  .hero { inline-size: min(100% - 2.5rem, var(--wall-width)); }
-}
-
-.register-mark {
-  margin-block-end: clamp(var(--space-5), 2.6vw, var(--space-6));
-}
-
-/* The contrast pair sat above a rule with `--space-9` beneath it — 6rem of nothing between two
- * blocks the frame already separates. */
-/* The contrast pair and the comparison table make the same argument, and they sat in the same
- * register one above the other. The table states it with evidence; the pair is the epigraph to it,
- * so the two now read as one block — no rule between them, no register-sized gap. */
-.contrast {
-  gap: clamp(var(--space-5), 3.5vw, var(--space-7));
-  margin-block-end: 0;
-  padding-block-end: clamp(var(--space-4), 2.4vw, var(--space-5));
-  border-block-end: 0;
-}
-
-.verdicts,
-.pillars {
-  gap: clamp(var(--space-4), 2.2vw, var(--space-5));
-}
-
-/* ---- Filling the pillars register --------------------------------------------------------------
- * The pillars were four headings with a line of prose each, sitting in 994px of register: the
- * emptiest band on the page. Framed and gilded like every other panel, they become a course of the
- * wall rather than four labels floating in it. */
-.pillar {
-  padding: clamp(var(--space-4), 2.2vw, var(--space-5));
-  border: 1px solid var(--stone-600);
-  border-block-start: 2px solid var(--gold-leaf);
-  background: rgba(0, 0, 0, 0.16);
-}
-
-.pillar h3 {
-  margin-block-end: .5em;
-  color: var(--papyrus);
-  font-size: var(--text-md);
-  font-weight: 400;
+.close-headline {
+  max-width: 20ch;
+  margin-inline: auto;
+  font-size: var(--text-station);
   line-height: var(--leading-tight);
+  letter-spacing: -.02em;
+  text-wrap: balance;
 }
 
-.pillar p {
+.close-body {
+  max-width: 48ch;
+  margin-block: var(--space-5) 0;
+  margin-inline: auto;
   color: var(--papyrus-dim);
-  font-size: var(--text-sm);
   line-height: var(--leading-snug);
 }
 
-/* ---- The passage band, filled --------------------------------------------------------------- */
-@media (min-width: 62rem) {
-  /* The steps had content in the top third and air beneath. The numeral and glyph share one row,
-   * the term sits under them, and the detail takes the space that was empty. */
-  .passage-step { gap: .4em; }
+/* ---- Colophon ------------------------------------------------------------------------------- */
 
-  .passage-step .glyph--passage {
-    inline-size: 1.6rem;
-    block-size: 1.6rem;
-    color: var(--gold-leaf);
+.colophon {
+  padding-block: var(--space-6);
+  border-block-start: 1px solid var(--stone-600);
+  background: var(--stone-900);
+}
+
+.colophon-row {
+  width: min(100% - 2.5rem, var(--measure-pylon));
+  margin-inline: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.colophon ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
+
+.colophon a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--touch-min);
+  color: var(--papyrus-dim);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.colophon a:hover { color: var(--papyrus); text-decoration: underline; }
+
+.colophon-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: .6em;
+  color: var(--papyrus-dim);
+  font-size: var(--text-xs);
+  letter-spacing: .3em;
+  text-transform: uppercase;
+}
+
+[dir="rtl"] .colophon-mark { letter-spacing: .08em; }
+
+/* ---- The glyph set --------------------------------------------------------------------------- */
+
+.glyph-sprite { position: absolute; inline-size: 0; block-size: 0; overflow: hidden; }
+
+.glyph {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  flex: none;
+}
+
+/* ══ MOTION ════════════════════════════════════════════════════════════════════════════════════
+ *
+ * One authored moment: the admission sequence. The ledger resolves row by row, each figure taking
+ * gold as it reconciles, and the withheld row settles LAST and slowest because a refusal is the
+ * considered outcome rather than the quick one. Nothing else on the page animates on entrance.
+ *
+ * No opacity on text, ever. `--withheld` fails 4.5:1 at every opacity below 1.0, so there is no
+ * safe partial value — an earlier build faded text to 45% and shipped 2.09:1. Motion here is
+ * transform, colour and blur, all of which leave the resolved colour alone.
+ */
+
+@keyframes value-arrives {
+  from { transform: translateY(.5em); filter: blur(3px); }
+  to { transform: none; filter: blur(0); }
+}
+
+@keyframes figure-resolves {
+  0% { transform: translateY(.5em); filter: blur(3px); color: var(--papyrus-dim); }
+  55% { color: var(--papyrus); }
+  100% { transform: none; filter: blur(0); color: var(--gold); }
+}
+
+@keyframes withheld-settles {
+  from { transform: translateY(.7em); filter: blur(4px); }
+  to { transform: none; filter: blur(0); }
+}
+
+@keyframes mark-stamps {
+  from { transform: scale(1.14); filter: blur(2px); }
+  to { transform: none; filter: blur(0); }
+}
+
+@keyframes claim-underlines {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* The sun mark's slow pulse — the one thing on the page that keeps moving after the admission
+ * sequence settles. It is a decorative pseudo-element with no text of its own, which is the only
+ * place `opacity` is allowed to animate here: nothing it fades can fall below a contrast floor. */
+@keyframes sun-breathes {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .72; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ledger tbody .ledger-value { animation: value-arrives 900ms var(--ease-sun) both; }
+
+  .ledger-row--proven .ledger-value {
+    animation-name: figure-resolves;
+    animation-duration: 2100ms;
   }
 
-  .passage-index {
-    font-size: var(--text-md);
-    line-height: 1;
-  }
+  .ledger tbody tr:nth-of-type(1) .ledger-value { animation-delay: 520ms; }
+  .ledger tbody tr:nth-of-type(2) .ledger-value { animation-delay: 760ms; }
+  .ledger tbody tr:nth-of-type(3) .ledger-value { animation-delay: 1000ms; }
+  .ledger tbody tr:nth-of-type(4) .ledger-value { animation-delay: 1240ms; }
+  .ledger tbody tr:nth-of-type(5) .ledger-value { animation-delay: 1480ms; }
+  .ledger tbody tr:nth-of-type(6) .ledger-value { animation-delay: 1720ms; }
 
-  .passage-term {
-    color: var(--papyrus);
-    font-size: var(--text-base);
-    line-height: var(--leading-tight);
-  }
+  .ledger-state { animation: value-arrives 700ms var(--ease-sun) both; }
 
-  .passage-detail {
-    margin-block-start: .3em;
-    font-size: var(--text-sm);
-    line-height: var(--leading-snug);
+  .ledger tbody tr:nth-of-type(1) .ledger-state { animation-delay: 660ms; }
+  .ledger tbody tr:nth-of-type(2) .ledger-state { animation-delay: 900ms; }
+  .ledger tbody tr:nth-of-type(3) .ledger-state { animation-delay: 1140ms; }
+  .ledger tbody tr:nth-of-type(4) .ledger-state { animation-delay: 1380ms; }
+  .ledger tbody tr:nth-of-type(5) .ledger-state { animation-delay: 1620ms; }
+  .ledger tbody tr:nth-of-type(6) .ledger-state { animation-delay: 1860ms; }
+
+  .state-mark--admitted { animation: mark-stamps 760ms var(--ease-sun) 280ms both; }
+
+  .ledger-row--withheld { animation: withheld-settles 1400ms var(--ease-sun) 2100ms both; }
+
+  .claim-mark::after { animation: claim-underlines 900ms var(--ease-sun) 700ms both; }
+
+  .brand-sun { animation: sun-breathes 5200ms ease-in-out infinite; }
+}
+
+/* Gating additions is not the same as suppressing motion. The block above adds nothing when the
+ * visitor asks for reduce, but the browser still animates what it animates by default — smooth
+ * scrolling most of all. This states the un-animated page as the finished one. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* ---- The closing register ---------------------------------------------------------------------
- * 582px for a headline and one line of prose. It closes the wall; it does not need a screen. */
-.register--close {
-  padding-block: clamp(var(--space-7), 4.5vw, var(--space-9));
-}
+/* ══ PRINT ═════════════════════════════════════════════════════════════════════════════════════
+ *
+ * Tokens are REDEFINED rather than selectors re-listed. A print block gets no specificity bonus,
+ * so a flat `.verdict-claim` rule here loses to `.verdict--withheld .verdict-claim` (0,2,0) in the
+ * screen sheet — an earlier build listed selectors by hand and still shipped 17 unreadable inks.
+ * Redefining the tokens reaches every rule that uses them, whatever its specificity.
+ */
+
 @media print {
-  html { background: #fff; color: #111; }
-  .site-header { position: static; }
-  .register--claim::before, .register--close::before { display: none; }
-  .register { break-inside: avoid; }
-  /* Every painted ground is cleared, including the header's literal `rgba(18, 16, 14, .86)`,
-   * which is written as a colour rather than a token and so survives the token override below.
-   * A dark bar behind darkened text is the one way this block can still fail. */
-  .register--deep, .register--close, .specimen, .site-header { background: transparent; }
-
-  /* The inks are redefined at the token, not chased selector by selector.
-   *
-   * A print block gets no specificity bonus: `.verdict--withheld .verdict-claim` (0,2,0) beats a
-   * flat `.verdict-claim` (0,1,0) whatever the media query or source order. An earlier attempt
-   * listed the selectors it could remember and left seventeen failures behind — the enumeration
-   * was both incomplete and outranked. Redefining the tokens reaches every consumer at once,
-   * including the ones nobody thought to name.
-   *
-   * The semantic ROLES survive the flip. Gold still marks a proven figure, ochre still marks a
-   * caveat and the withheld ink is still its own step — each darkened until it clears 4.5:1 on
-   * white, rather than flattened to one black. The distinctions were never carried by colour
-   * alone (rule and italic carry them too), so nothing is lost when the hues compress. */
   :root {
+    --stone-950: #ffffff;
     --stone-900: #ffffff;
     --stone-800: #ffffff;
     --stone-700: #ffffff;
-    --stone-600: #8f8676;
-    --stone-500: #8f8676;
+    --stone-650: #ffffff;
+    --stone-600: #767676;
+    --stone-500: #949494;
     --papyrus: #111111;
-    --papyrus-dim: #3a3a3a;
-    --withheld: #52493f;
-    --gold: #6b5210;
-    --gold-dim: #6b5210;
+    --papyrus-dim: #444444;
+    --withheld: #5a5147;
+    --gold: #6f5620;
+    --gold-leaf: #6f5620;
+    --gold-dim: #6f5620;
     --egyptian-blue: #1c556e;
     --egyptian-blue-dim: #1c556e;
     --ochre: #8a3d1f;
   }
+
+  body::before, .site-header { display: none; }
+  .station, .strip, .verdict, .specimen-body, .column { box-shadow: none; background: #ffffff; }
+  .station--pylon::before { display: none; }
+  .tower { display: none; }
 }
