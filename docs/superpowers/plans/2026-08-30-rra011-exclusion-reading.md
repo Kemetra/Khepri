@@ -63,8 +63,12 @@ Three things in the same specification point the other way.
    `bundle_id` hashes a narrative nothing retains (`#343`'s Finding F4). `ReportBundle.of` is called
    in three places — `pipeline.py:352`, `benchmark_trial.py:127`, and `report_api.py:761`.
 
-Under Reading A, `RRA-011` mandates a route that no implementation can satisfy: it requires serving a
-projection reachable only through an object the route may not construct and no store holds. Under
+Under Reading A no *current* implementation can satisfy `RRA-011`: the mandated projection is
+reachable only through an object the route may not construct and no store holds. That is an argument
+from today's storage architecture rather than proof the specification is defective — retaining the
+projection would make the route compliant without amending `RRA-011`, and 169-170 requires *reading*
+the shared projection, not constructing a bundle to obtain it. Reading A therefore implies work, not
+a contradiction. Under
 Reading B, "repeats a value" prohibits the catalog *publishing a figure it computed itself* — which
 the surfaces do not do, and which `test_no_catalog_response_carries_a_figure_value` proves: no
 rendered value, no `text`, no `value` field reaches any catalog response.
@@ -85,7 +89,7 @@ Requirements contradict.
 | `#343`'s two package routes | Outside specification; must read a retained projection | Admissible as merged |
 | `#343`'s four registry routes | Unaffected -- they construct no bundle | Unaffected |
 | Work implied | Retain the bundle or its projection — an `RRA-004`/`RRA-006` change, since neither currently persists one | None |
-| `RRA-011`:169-170 | Must be amended, being unsatisfiable as written | Unchanged |
+| `RRA-011`:169-170 | Satisfiable once a projection is retained -- it requires *reading* the shared projection, not constructing a bundle | Unchanged |
 
 ---
 

@@ -238,8 +238,16 @@ The surface therefore serves derived citations from what the bundle and its audi
 hold, and **omits `precision` and `inputs` for them** — absent, not empty and not recomputed, the
 same rule F4 applies to `provenance` and `passages`. Every one of the 22 displayed citations still
 resolves, so `T1-08`'s evidence path holds; only the two fields no readable record states are gone.
-`test_no_catalog_route_recomputes_a_published_figure` asserts the absence of `family.derive` in the
-module so the reversal cannot be quietly undone.
+`test_no_catalog_route_recomputes_a_published_figure` asserted the absence of `family.derive` in the
+module.
+
+**That guard was later found worthless and is gone.** `ReportBundle.of` calls `family.derive` and
+`concentration.curve_series` itself, so the two package-scoped routes still reach derivation one
+frame deeper, and a string search over one file could not see it. Whether *that* is permitted is the
+open question `F8` puts to the owner — see
+`docs/superpowers/plans/2026-08-30-rra011-exclusion-reading.md`. What this slice fixed is narrower
+than the paragraph above claimed: the route no longer calls `family.derive` directly, and the two
+fields no readable record states are still omitted rather than recomputed.
 
 **The gap this leaves is real and filed as P2.** Roadmap:745 names "inputs" in `T1-05`'s acceptance.
 It is met for stored facts and structurally unmeetable for derived ones under `RRA-011`'s own
