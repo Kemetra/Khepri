@@ -647,6 +647,11 @@ def test_a_catalog_read_derives_analysis_facts_through_bundle_construction(
     citation = build_cells(ReportBundle.of(package_for(ROWS, published=True)), "en")[
         0
     ].citation_id
+    # The line above constructs a bundle itself, so it fires the patched
+    # function. Cleared here, or this would count its own setup and pass
+    # whatever the route does -- which is the failure the grep version of this
+    # test already had once.
+    calls.clear()
 
     answer = client.get(f"{EVIDENCE}/{citation}/evidence/en")
 

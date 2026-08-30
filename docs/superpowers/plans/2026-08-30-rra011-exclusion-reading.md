@@ -9,8 +9,14 @@ replaces a guard that measured nothing, which is not in question.
 
 ## What was found
 
-`#344` proposed recording `M2` as reached. Review raised a `P1` against it: every catalog `GET`
-re-derives published figures, contrary to `RRA-011`'s Exclusion.
+`#344` proposed recording `M2` as reached. Review raised a `P1` against it: catalog reads re-derive
+published figures, contrary to `RRA-011`'s Exclusion.
+
+**Two of the six routes are affected, not all of them.** Measured per route kind: the four registry
+reads (`metrics`, `populations`, `reasons`, `caveats`) construct no bundle and make **zero**
+derivation calls. The two package-scoped reads -- `/catalog/quality/{language}` and
+`/catalog/citations/{citation_id}/evidence/{language}` -- make **two** each. An earlier draft of this
+document said "every catalog `GET`", which overstated the question put to the owner.
 
 **The mechanism is confirmed, and it is not what `#343` believed it had fixed.** `_session_bundle`
 calls `ReportBundle.of(package)`, and that constructor calls `family.derive(package)`
@@ -39,8 +45,8 @@ of how the question below is answered, with one that counts the calls — see *W
 > surface repeats a value; it never recomputes one."*
 
 Constructing a bundle executes the analysis families. On a plain reading of "re-derivation", the read
-path performs one. Under this reading the catalog's package-scoped routes are outside the
-specification as merged, and `M2` condition 1 does not hold.
+path performs one. Under this reading the catalog's two package-scoped routes are outside the specification as merged --
+the four registry routes are unaffected either way -- and `M2` condition 1 does not hold.
 
 ### Reading B — it does not
 
@@ -76,7 +82,8 @@ Requirements contradict.
 | | Reading A | Reading B |
 |---|---|---|
 | `M2` §7 condition 1 | Does not hold | Holds, pending condition 4's re-run |
-| `#343`'s package routes | Outside specification; must read a retained projection | Admissible as merged |
+| `#343`'s two package routes | Outside specification; must read a retained projection | Admissible as merged |
+| `#343`'s four registry routes | Unaffected -- they construct no bundle | Unaffected |
 | Work implied | Retain the bundle or its projection — an `RRA-004`/`RRA-006` change, since neither currently persists one | None |
 | `RRA-011`:169-170 | Must be amended, being unsatisfiable as written | Unchanged |
 
@@ -108,6 +115,12 @@ Two things are owed before `M2` can be reassessed, and only the first depends on
    *full* journey, and `#343` changed `report_api.py` and the API wiring, so `#342`'s delivery
    evidence cannot simply be inherited. This is owed under either reading.
 
-`#343`'s catalog surfaces stay merged meanwhile. Under Reading B they are correct; under Reading A
-they are admissible but incomplete, and no wrong figure is published either way — the catalog serves
-no value, and the whole-repo suite is green at 3,910 passed.
+`#343`'s catalog surfaces stay merged meanwhile, and the two readings differ on what that means.
+Under Reading B they are correct as merged. Under Reading A the four registry routes are still
+correct — they construct no bundle — and the two package-scoped routes are outside the specification
+and would have to read a retained projection, which nothing currently persists.
+
+**No wrong figure is published under either reading.** The catalog serves no value, no rendered text
+and no `value` field, which `test_no_catalog_response_carries_a_figure_value` proves; and the
+whole-repo suite is green at 3,910 passed. That is why this is filed for a reading rather than
+reverted on my own judgement.
