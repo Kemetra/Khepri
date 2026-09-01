@@ -199,6 +199,13 @@ artifacts:
       - KHEPRI-DEC-029
       - KHEPRI-DEC-030
       - RRA-011
+  - type: decision
+    id: KHEPRI-DEC-032
+    state: active
+    document: governance/decisions/KHEPRI-DEC-032-catalog-bundle-construction-reading.md
+    depends_on:
+      - KHEPRI-DEC-031
+      - RRA-011
 
   - type: specification
     id: FND-001
