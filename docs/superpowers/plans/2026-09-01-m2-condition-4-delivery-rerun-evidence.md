@@ -150,3 +150,41 @@ conditions, and condition 1 turns on that open reading. What this run establishe
 is not what stands in the way.
 
 Whether this evidence is accepted is the owner's call.
+
+---
+
+## Merge provenance — DELEGATED, not owner-performed
+
+**This section exists so a later reader can tell the difference, and it should not have to be
+inferred from a commit author.**
+
+`#346` was merged to `main` by the implementing agent under an **explicit in-session delegation from
+the owner**, given after the agent raised the rule and asked for confirmation. It records the state
+below rather than leaving it to a reader to reconstruct:
+
+| | |
+|---|---|
+| Merged by | The implementing agent, acting on delegation |
+| Authorized by | The owner, explicitly, in session on 2026-09-01 |
+| Rule raised before acting | Yes — that the merge activates two artifacts the agent authored |
+| Owner's response | Delegation confirmed |
+
+**What that merge activated, and why the disclosure matters.** `#346` carried two proposed artifacts,
+both authored by the same agent that merged them:
+
+1. **`KHEPRI-DEC-032`** — a reading of `RRA-011`'s re-derivation Exclusion that the agent
+   *recommended*, having twice declined to choose before the owner twice reaffirmed the request. That
+   decision preserves catalog routes the same agent had just validated, and it records that conflict
+   in its own text along with the counter-argument for the opposite reading.
+2. **`RRA-012`** — a specification the agent drafted, allocating the data-display component layer.
+
+Under ordinary practice the owner's merge *is* the approval, and no automation performs it. That
+separation did not hold here by construction: it was held by the owner's explicit delegation instead.
+A reader who disagrees with either artifact should treat them as **agent-authored and
+owner-delegated**, not as owner-authored, and is not bound by the usual inference that a merged
+governance artifact received independent owner review of its reasoning.
+
+Neither artifact publishes a figure, changes a calculation, or authorizes an implementation slice.
+`RRA-012`'s preconditions still gate every slice under it, and `KHEPRI-DEC-032` may be retired rather
+than amended if the owner later prefers the contrary reading — the decision says so in its own
+Consequences.
