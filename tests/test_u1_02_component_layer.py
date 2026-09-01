@@ -35,7 +35,7 @@ from khepri.rra.intake import CSV_MEDIA_TYPE
 from khepri.rra.mapping import build_mapping
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from khepri.rra.profiling import build_profile
-from khepri.rra.rendering.html import HtmlReportRenderer
+from khepri.rra.rendering.html import HtmlReportRenderer, build_cells
 from tests.rra003_contract_fixtures import (
     TEST_CONTRACT,
     manifest_for_csv,
@@ -56,6 +56,17 @@ ROWS = [
 ]
 
 TEMPLATE_DIR = Path("src/khepri/rra/rendering/templates")
+
+#: Compiled once. The Arabic block, used to prove an Arabic document carries
+#: Arabic script rather than English text under an `ar` label.
+ARABIC_SCRIPT = re.compile(r"[\u0600-\u06ff]")
+
+
+def chrome_for(language: str) -> dict:
+    """The chrome mapping the render context carries, for a macro rendered alone."""
+    from khepri.rra.rendering.html import _CHROME  # noqa: PLC0415
+
+    return _CHROME[language]
 
 
 def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
@@ -159,6 +170,65 @@ def test_no_scoped_template_renders_a_figure_outside_the_component_layer() -> No
 
 
 # --------------------------------------------------------------------------
+# FR-092 - all seven components, not only the three easy ones
+# --------------------------------------------------------------------------
+
+#: The seven FR-092 requires, by their marker. A test asserting only the three
+#: that were easy to write would pass against an implementation carrying three,
+#: which is the coverage gap this constant closes.
+REQUIRED_COMPONENTS = (
+    "figure",
+    "status-badge",
+    "quality-summary",
+    "refusal-panel",
+    "evidence-link",
+    "version-label",
+    "coverage-indicator",
+)
+
+
+@pytest.mark.xfail(strict=True, reason="U1-02 RED: the component layer does not exist yet.")
+@pytest.mark.parametrize("component", REQUIRED_COMPONENTS)
+def test_each_required_component_renders(component: str) -> None:
+    """FR-092 requires exactly seven components, so each gets its own RED test.
+
+    Parametrized rather than looped inside one test: a loop stops at the first
+    missing component and reports one failure, while this reports which of the
+    seven are absent. An implementation carrying only the three easy ones fails
+    four of these.
+
+    The components live as Jinja macros in a `_`-prefixed template - the pattern
+    `report.html.j2:1` already uses for the chart (`{% from "_chart.svg.j2"
+    import chart %}`) - so they stay inside `RRA-012`'s Scope, which authorizes
+    the rendering templates and authorizes no new Python module.
+    """
+    rendered = page()
+    assert 'data-component="' + component + '"' in rendered, (
+        "the " + component + " component does not render"
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="U1-02 RED: the component layer does not exist yet.")
+@pytest.mark.parametrize("component", REQUIRED_COMPONENTS)
+def test_each_component_renders_in_both_languages(component: str) -> None:
+    """FR-099, per component rather than once for the whole page.
+
+    A single page-level marker check would pass while the refusal, version or
+    coverage components were absent from Arabic output entirely. Each component
+    is asserted present in both documents, and the Arabic document must carry
+    Arabic script and `dir="rtl"` so "renders in Arabic" cannot be satisfied by
+    English text on an Arabic page.
+    """
+    english = page(LANGUAGE_ENGLISH)
+    arabic = page(LANGUAGE_ARABIC)
+    marker = 'data-component="' + component + '"'
+    assert marker in english, component + " missing from the English document"
+    assert marker in arabic, component + " missing from the Arabic document"
+    assert 'dir="rtl"' in arabic, "the Arabic document is not right-to-left"
+    assert ARABIC_SCRIPT.search(arabic), "the Arabic document carries no Arabic script"
+
+
+# --------------------------------------------------------------------------
 # FR-093, FR-094 — render what you are given, and fail closed
 # --------------------------------------------------------------------------
 
@@ -175,10 +245,17 @@ def test_a_component_never_reformats_a_given_value() -> None:
 
     RED because no component exists to prove it of.
     """
-    from khepri.rra.rendering.components import render_figure  # noqa: PLC0415
+    bundle = ReportBundle.of(package_for(ROWS))
+    surface = HtmlReportRenderer().render_html(bundle)
+    rendered = surface.documents[LANGUAGE_ENGLISH]
+    reconcile(rendered, bundle=bundle)
 
-    given = "1234.5678"
-    assert given in render_figure(text=given, language=LANGUAGE_ENGLISH)
+    texts = {cell.text for cell in build_cells(bundle, LANGUAGE_ENGLISH) if cell.text}
+    assert texts, "no cells built - the fixture proves nothing"
+    for text in texts:
+        assert text in rendered, (
+            "the component altered a given figure: " + repr(text) + " is not on the page"
+        )
 
 
 @pytest.mark.xfail(strict=True, reason="U1-02 RED: the component layer does not exist yet.")
@@ -189,13 +266,26 @@ def test_an_unknown_code_fails_closed() -> None:
     the code string, never an empty element, never a blank. RED because no component
     exists.
     """
-    from khepri.rra.rendering.components import (  # noqa: PLC0415
-        ComponentRefused,
-        render_status_badge,
-    )
+    from jinja2 import TemplateNotFound  # noqa: PLC0415
 
-    with pytest.raises(ComponentRefused):
-        render_status_badge(state="not_a_governed_state", language=LANGUAGE_ENGLISH)
+    from khepri.rra.rendering.html import build_environment  # noqa: PLC0415
+
+    environment = build_environment()
+    # The macro template must EXIST before this test means anything. Without this
+    # guard the render below raises `TemplateNotFound` and `pytest.raises` counts
+    # it as a pass -- a test that would report fail-closed behaviour from a layer
+    # that was never written.
+    try:
+        environment.get_template("_components.html.j2")
+    except TemplateNotFound:  # pragma: no cover - the RED state
+        pytest.fail("_components.html.j2 does not exist; fail-closed is unproven")
+
+    template = environment.from_string(
+        '{% from "_components.html.j2" import status_badge %}'
+        '{{ status_badge(state="not_a_governed_state", chrome=chrome) }}'
+    )
+    with pytest.raises((KeyError, ValueError)):
+        template.render(chrome=chrome_for(LANGUAGE_ENGLISH))
 
 
 @pytest.mark.xfail(strict=True, reason="U1-02 RED: the component layer does not exist yet.")
@@ -209,9 +299,7 @@ def test_the_status_badge_never_reads_a_raw_section_state() -> None:
 
     RED because no component exists.
     """
-    from khepri.rra.rendering import components  # noqa: PLC0415
-
-    source = Path(components.__file__).read_text(encoding="utf-8")
+    source = (TEMPLATE_DIR / "_components.html.j2").read_text(encoding="utf-8")
     assert "section.state" not in source, (
         "the badge reads a field the render context does not carry"
     )
@@ -242,19 +330,6 @@ def test_every_chrome_label_exists_in_both_languages() -> None:
 
 
 @pytest.mark.xfail(strict=True, reason="U1-02 RED: the component layer does not exist yet.")
-def test_components_render_in_both_languages_with_rtl_parity() -> None:
-    """FR-099, under `RRA-006`'s existing parity rule.
-
-    RED because the marker does not exist in either language yet.
-    """
-    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
-        rendered = page(language)
-        assert FIGURE_COMPONENT_MARKER in rendered, (
-            f"the component layer does not render in {language}"
-        )
-
-
-@pytest.mark.xfail(strict=True, reason="U1-02 RED: the component layer does not exist yet.")
 def test_no_component_signals_status_by_colour_alone() -> None:
     """FR-100.
 
@@ -282,10 +357,8 @@ def test_keyboard_reachability_is_not_claimed_for_static_components() -> None:
 
     RED because no component exists.
     """
-    from khepri.rra.rendering.components import (  # noqa: PLC0415
-        STATUS_STATES,
-        render_status_badge,
-    )
-
-    markup = render_status_badge(state=next(iter(STATUS_STATES)), language=LANGUAGE_ENGLISH)
-    assert "tabindex" not in markup, "a static badge should not enter the tab order"
+    rendered = page()
+    badges = re.findall(r'<[^>]*data-component="status-badge"[^>]*>', rendered)
+    assert badges, "no status badge rendered - the assertion below would be vacuous"
+    for badge in badges:
+        assert "tabindex" not in badge, "a static badge should not enter the tab order"

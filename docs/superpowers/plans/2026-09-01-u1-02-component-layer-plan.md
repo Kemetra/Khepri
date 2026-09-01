@@ -76,11 +76,25 @@ rather than assuming it.
 
 ---
 
+## Where the components live
+
+**As Jinja macros in `_components.html.j2`**, the pattern `report.html.j2:1` already uses for the
+chart (`{% from "_chart.svg.j2" import chart %}`). This matters for authority, not taste: `RRA-012`'s
+Scope authorizes the rendering templates, `report.css`, `wording.py`'s chrome labels, the `_CHROME`
+binding point, and tests. **It authorizes no new Python module.** An earlier draft of these tests
+imported `khepri.rra.rendering.components`, which would have required widening the specification a
+sixth time — caught in review and corrected here.
+
 ## RED tests — the deliverable
 
-Each fails now, for the stated reason, and passes only when the component exists.
+23 tests in `tests/test_u1_02_component_layer.py`, each failing now for the stated reason and passing only when its component exists. The headings below group them by requirement, not by file.
 
-### `test_u1_02_components.py`
+**All seven components are covered, parametrized rather than looped.** A loop stops at the first
+missing component and reports one failure; parametrized tests report *which* of the seven are absent.
+An implementation carrying only the three that were easy to write fails four of them — which is the
+gap an earlier draft had, covering figure, refusal panel and status badge alone.
+
+### Components, fail-closed, and value fidelity
 
 1. **`test_every_figure_renders_through_the_figure_component`** — renders a bundle, parses the HTML,
    asserts every element carrying a figure has the component's marker class. **Fails now:** figures
@@ -98,19 +112,22 @@ Each fails now, for the stated reason, and passes only when the component exists
    a raw `section.state`, since `html.py:519` records it is not carried. FR guard against check 3's
    trap.
 
-### `test_u1_02_parity.py`
+### Vocabulary, parity, and colour
 
 6. **`test_every_chrome_label_exists_in_both_languages`** — drives the import-time completeness
    assertion FR-095a requires over the new chrome labels. **Fails now:** the labels do not exist.
-7. **`test_components_render_in_both_languages_with_rtl_parity`** — FR-099, under `RRA-006`'s
-   existing parity rule.
+7. **`test_each_component_renders_in_both_languages[7]`** — FR-099, **per component**. A page-level
+   marker check would pass while the refusal, version or coverage components were absent from Arabic
+   entirely. Each is asserted present in both documents, and the Arabic document must carry Arabic
+   script and `dir="rtl"` — so "renders in Arabic" cannot be satisfied by English text under an `ar`
+   label.
 8. **`test_no_component_signals_status_by_color_alone`** — asserts every status, refusal and caveat
    carries a text or non-color indicator. FR-100.
 9. **`test_keyboard_reachability_is_not_claimed_for_static_components`** — asserts the static
    components are readable without entering the tab order. Guards the round-5 correction: only the
    drawer and its opener are interactive.
 
-### `test_u1_02_no_duplicate_truth.py`
+### No duplicate truth
 
 10. **`test_no_scoped_template_renders_a_figure_outside_the_component_layer`** — FR-101's guard, and
     the load-bearing one.
