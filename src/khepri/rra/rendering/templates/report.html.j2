@@ -1,4 +1,5 @@
 {% from "_chart.svg.j2" import chart %}
+{% from "_components.html.j2" import figure, status_badge, quality_summary, refusal_panel %}
 {#
   The canonical bilingual report page. Rendered once per governed language, so
   the root element states one `lang` and one `dir` and the stylesheet lays both
@@ -39,6 +40,22 @@
   rather than as a hidden attribute on customer prose.
 #}
 <p class="disclosure" role="note">{{ disclosure }}</p>
+{#
+  The analysis-quality summary (`RRA-012` FR-092): how many of this report's sections
+  answered, answered with a caveat, and refused. Grouped with filters over the section
+  views the page iterates below, so the summary and the sections cannot disagree: a
+  section is refused when its state is the governed refused constant, caveated when it
+  renders a section caveat list, and answered otherwise. These are counts of headings on
+  this page, not figures -- nothing is computed from the data, and the macro is handed
+  the three counts rather than the sections so it cannot group them differently.
+#}
+{% set refused_sections = sections | selectattr("state", "equalto", refused_state) | list %}
+{% set answered_sections = sections | rejectattr("state", "equalto", refused_state) | list %}
+{{ quality_summary(
+     answered_sections | rejectattr("caveats") | list | length,
+     answered_sections | selectattr("caveats") | list | length,
+     refused_sections | length,
+     chrome) }}
 </header>
 <nav aria-label="{{ chrome.navigation }}">
 <h2>{{ chrome.navigation }}</h2>
@@ -61,8 +78,15 @@
 {% for section in sections %}
 <section id="{{ section.section_id }}" aria-labelledby="{{ section.section_id }}-heading">
 <h2 id="{{ section.section_id }}-heading">{{ chrome.sections[section.section_id] }}</h2>
+{#
+  The badge takes the same governed constant the branch below compares, so a section
+  cannot be badged one way and rendered another. It follows the heading rather than
+  sitting inside it: the heading names the section for the landmark list and for the
+  scroller's `aria-labelledby`, and "Overview Answered" is not the section's name.
+#}
+{{ status_badge(section.state, chrome) }}
 {% if section.state == refused_state %}
-<p class="refused">{{ chrome.refusal_prose[section.section_id][section.reason] }}</p>
+{{ refusal_panel(chrome.refusal_prose[section.section_id][section.reason], chrome) }}
 {% else %}
 {% if section.chart %}{{ chart(section.chart, section.section_id, chrome) }}{% endif %}
 {#
@@ -108,7 +132,7 @@
 {%- elif cell.metric_name %}{{ cell.metric_name }}
 {%- else %}{{ cell.label }}{% endif -%}
 </th>
-<td class="figure">{{ cell.text }}</td>
+{{ figure(cell.text) }}
 </tr>
 {% endfor %}
 </tbody>
@@ -152,7 +176,7 @@
 {% for row in table.rows %}
 <tr>
 <th scope="row">{{ row.label }}</th>
-{% for text in row.texts %}<td class="figure">{{ text if text is not none else "" }}</td>
+{% for text in row.texts %}{{ figure(text) }}
 {% endfor %}
 </tr>
 {% endfor %}

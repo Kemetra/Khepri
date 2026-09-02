@@ -61,10 +61,12 @@ from khepri.rra.narrative import (
 from khepri.rra.rendering.charts import ChartView, build_chart
 from khepri.rra.rendering.wording import (
     CHART_DESCRIPTIONS,
+    COMPONENT_STATE_WORDING,
     LABEL_WORDING,
     SECTION_HEADINGS,
     business_metric_name,
     caveat_prose,
+    component_chrome,
     kind_qualifier,
     section_refusal_message,
 )
@@ -174,6 +176,11 @@ _CHROME: dict[str, dict[str, str]] = {
         "sections": SECTION_HEADINGS[LANGUAGE_ENGLISH],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ENGLISH],
         "labels": LABEL_WORDING[LANGUAGE_ENGLISH],
+        # The data-display component layer's own chrome (`RRA-012` FR-095a), and the
+        # word its status badge shows per governed section state. Registered here
+        # because this table is the only path from `wording` to a template.
+        "component": component_chrome(LANGUAGE_ENGLISH),
+        "component_state": COMPONENT_STATE_WORDING[LANGUAGE_ENGLISH],
     },
     LANGUAGE_ARABIC: {
         "title": "تقرير التجزئة",
@@ -217,6 +224,11 @@ _CHROME: dict[str, dict[str, str]] = {
         "sections": SECTION_HEADINGS[LANGUAGE_ARABIC],
         "chart_descriptions": CHART_DESCRIPTIONS[LANGUAGE_ARABIC],
         "labels": LABEL_WORDING[LANGUAGE_ARABIC],
+        # The data-display component layer's own chrome (`RRA-012` FR-095a), and the
+        # word its status badge shows per governed section state. Registered here
+        # because this table is the only path from `wording` to a template.
+        "component": component_chrome(LANGUAGE_ARABIC),
+        "component_state": COMPONENT_STATE_WORDING[LANGUAGE_ARABIC],
     },
 }
 

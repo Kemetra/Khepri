@@ -35,8 +35,11 @@ from khepri.rra.bundle import (
     GOVERNED_CHART_KINDS,
     GOVERNED_FIGURE_LABELS,
     GOVERNED_SECTION_REASONS,
+    GOVERNED_SECTION_STATES,
     KIND_ROWS,
     ORDERED_SECTIONS,
+    SECTION_PRESENT,
+    SECTION_REFUSED,
     CitedFigure,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
@@ -1605,3 +1608,84 @@ def series_description(measure: str, dimension: str, language: str) -> str:
     return _SERIES_DESCRIPTION[language].format(
         measure=measure, dimension=DIMENSION_NAMES[language][dimension]
     )
+
+
+# The data-display component layer's own chrome (`RRA-012` FR-095a): the text a
+# component needs to name a region or state of the interface. Nothing here names or
+# describes a metric, a refusal, a caveat, a population, or a version -- a word that
+# would explain what a figure or code *means* is `RRA-009`'s or `RRA-011`'s and does
+# not belong in this table. One key set per language, asserted at import like the
+# tables above, so a label added to one language cannot render blank in the other.
+COMPONENT_CHROME: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        "quality_summary": "Analysis quality",
+        "quality_answered": "Answered",
+        "quality_caveated": "Answered with caveats",
+        "quality_refused": "Refused",
+        "refusal_label": "Refused",
+        "version_label": "Version",
+        "coverage": "Coverage",
+    },
+    LANGUAGE_ARABIC: {
+        "quality_summary": "جودة التحليل",
+        "quality_answered": "تمت الإجابة",
+        "quality_caveated": "تمت الإجابة مع تحذيرات",
+        "quality_refused": "مرفوض",
+        "refusal_label": "مرفوض",
+        "version_label": "الإصدار",
+        "coverage": "التغطية",
+    },
+}
+
+# The word a status badge shows for each governed section state. Keyed by the
+# bundle's own constants and asserted against `GOVERNED_SECTION_STATES` rather than
+# against this table's keys, so a state admitted there and unnamed here fails at
+# import instead of reaching a badge as an unrenderable code (FR-094).
+COMPONENT_STATE_WORDING: dict[str, dict[str, str]] = {
+    LANGUAGE_ENGLISH: {
+        SECTION_PRESENT: "Answered",
+        SECTION_REFUSED: "Refused",
+    },
+    LANGUAGE_ARABIC: {
+        SECTION_PRESENT: "تمت الإجابة",
+        SECTION_REFUSED: "مرفوض",
+    },
+}
+
+
+def _assert_component_chrome_complete() -> None:
+    """Every component label exists in every language, with one key set."""
+    if set(COMPONENT_CHROME) != _GOVERNED_LANGUAGES:
+        raise RuntimeError("component chrome must cover every governed language")
+    english = set(COMPONENT_CHROME[LANGUAGE_ENGLISH])
+    arabic = set(COMPONENT_CHROME[LANGUAGE_ARABIC])
+    if english != arabic:
+        message = f"component chrome labels differ by language: {sorted(english ^ arabic)}"
+        raise RuntimeError(message)
+
+
+def _assert_component_states_worded() -> None:
+    """Every governed section state has a badge word in every language.
+
+    Read from `GOVERNED_SECTION_STATES` rather than from this table's own keys, for
+    the reason `_assert_dimension_names_complete` gives: the failure this catches is a
+    state admitted there and unworded here, which would reach a badge as a code.
+    """
+    if set(COMPONENT_STATE_WORDING) != _GOVERNED_LANGUAGES:
+        raise RuntimeError("component state words must cover every governed language")
+    wrong = [
+        language
+        for language, entries in COMPONENT_STATE_WORDING.items()
+        if set(entries) != GOVERNED_SECTION_STATES
+    ]
+    if wrong:
+        raise RuntimeError(f"every governed section state needs a badge word: {sorted(wrong)}")
+
+
+_assert_component_chrome_complete()
+_assert_component_states_worded()
+
+
+def component_chrome(language: str) -> dict[str, str]:
+    """The component layer's chrome labels for one language, as `_CHROME` binds them."""
+    return COMPONENT_CHROME[language]

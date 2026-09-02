@@ -194,7 +194,7 @@ class TestASeriesBecomesOneRowPerLabel:
         )
         assert section, "the report must render an overview section"
         rows = re.findall(r"<tr>(.*?)</tr>", section.group(0), re.S)
-        figures = section.group(0).count('<td class="figure">')
+        figures = len(re.findall(r'<td[^>]*\bclass="figure"', section.group(0)))
         assert figures > len(rows), (
             f"{figures} figures in {len(rows)} rows -- nothing was pivoted"
         )

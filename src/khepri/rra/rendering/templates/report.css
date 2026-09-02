@@ -376,3 +376,72 @@ article {
 .colophon p {
   margin-block: 0.25rem;
 }
+
+/*
+ * The data-display component layer (`RRA-012`, `U1-02`). Every rule below styles a
+ * `data-component` the macros in `_components.html.j2` emit, and none of them carries
+ * meaning on its own: each state is also named in words, so a reader who cannot see
+ * the rule or the colour loses nothing (FR-100). Logical properties throughout, like
+ * the rest of this sheet.
+ */
+
+/* A section's state, named. Set small and quiet beside the heading it follows. */
+.badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  padding-block: 0.05rem;
+  padding-inline: 0.5rem;
+  border: 1px solid var(--report-rule);
+  border-radius: 999px;
+  color: var(--report-muted);
+  margin-block-end: var(--report-space);
+}
+
+/* A refused section borrows the refusal's rule colour, which already clears 3:1. */
+.badge--refused {
+  border-color: var(--report-muted);
+  font-style: italic;
+}
+
+/* Three counts, read as one line under the disclosure. */
+.quality-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem calc(var(--report-space) * 1.5);
+  margin-block: 0 var(--report-space);
+  font-size: 0.9rem;
+  color: var(--report-muted);
+}
+
+.quality-summary div {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.quality-summary dd {
+  margin-inline: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--report-ink);
+}
+
+/* The refusal panel's text label, so the state is stated and not only ruled. */
+.refused__label {
+  display: block;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.evidence-link code {
+  color: inherit;
+}
+
+.version-label__name,
+.coverage__label {
+  color: var(--report-muted);
+  font-size: 0.85em;
+  margin-inline-end: 0.4rem;
+}

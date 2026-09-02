@@ -1,3 +1,4 @@
+{% from "_components.html.j2" import figure, evidence_link, version_label, coverage_indicator %}
 {#
   The audit-evidence region, authored once for the standalone Technical Evidence
   page and the printed report appendix. Every value remains autoescaped.
@@ -30,8 +31,8 @@
 <td><code>{{ cell.metric }}</code></td>
 <td><code>{{ cell.kind }}</code></td>
 <td><code>{{ cell.unit_kind }}</code></td>
-<td class="figure">{{ cell.text }}</td>
-<td><code>{{ cell.citation_id }}</code></td>
+{{ figure(cell.text) }}
+<td>{{ evidence_link(cell.citation_id) }}</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -106,10 +107,19 @@
 {% endif %}
 <section id="evidence-provenance" aria-labelledby="evidence-provenance-heading">
 <h2 id="evidence-provenance-heading">{{ chrome.provenance }}</h2>
+{#
+  Every entry is a governed version, a digest, or a count (`_provenance`). The two the
+  component layer names get its component: a version identifier -- every one of which
+  the identity schema names with a `_version` suffix -- renders through the version
+  label, and `row_count`, the one package-level statement of what the report was
+  computed over, through the coverage indicator. A digest is neither and stays as it was.
+  Both live here and not on the business page because `presentation-visibility-matrix.md`
+  §A.5 puts every identity field in tier A.
+#}
 <dl class="provenance">
 {% for name, value in audit.provenance %}
 <dt><code>{{ name }}</code></dt>
-<dd><code>{{ value }}</code></dd>
+<dd>{% if name.endswith("_version") %}{{ version_label(value, chrome) }}{% elif name == "row_count" %}{{ coverage_indicator(value, chrome) }}{% else %}<code>{{ value }}</code>{% endif %}</dd>
 {% endfor %}
 </dl>
 </section>
