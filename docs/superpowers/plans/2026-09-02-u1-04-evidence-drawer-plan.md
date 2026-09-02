@@ -139,3 +139,17 @@ Plus the non-RED guard, `test_no_surface_places_the_drawer_before_its_supply_exi
 - **Escape-to-close** — needs a script no active specification admits on this surface.
 - **Journey adoption** — `RRA-010`:88.
 - **`U1-03`, `U1-05`, `U1-06`, `U1-07`** — excluded from `RRA-012`, still `BLOCKED`.
+
+---
+
+## Status 2026-09-03 -- implemented on `feat/u1-04-evidence-drawer`
+
+All 14 RED tests are green with their markers removed; the placement guard still passes.
+`ruff check` clean; `wording.py`'s Code Health unchanged. The macro, the four labels and the
+stylesheet rules landed exactly as the table above describes, with one addition worth naming:
+an **empty** inputs list renders `chrome.none`, because FR-096a distinguishes an absent field
+(the catalog declined to state it) from an empty one (stated, and empty), and an empty `<dd>`
+would collapse the two. The version label stands above the field list rather than inside a
+`<dt>`/`<dd>` pair, because the component carries its own word and a pair would say it twice.
+The drawer is placed on no page, as planned.
+

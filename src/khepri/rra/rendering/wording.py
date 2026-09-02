@@ -1625,6 +1625,17 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         "refusal_label": "Refused",
         "version_label": "Version",
         "coverage": "Coverage",
+        # The evidence drawer (`U1-04`): its control, two field labels, and the
+        # unavailable-field state FR-096a requires. `unavailable` is not the
+        # refusal label: an absent field is the catalog declining to state
+        # something, not a refusal, and the two must never read the same.
+        "drawer_open": "Evidence for this figure",
+        "definition": "Definition",
+        "inputs": "Inputs",
+        "unavailable": "Not stated",
+        # The second coverage field. A manifest identity with no compatible signature is
+        # unproven coverage, and the empty list has to be stated (`#352` review).
+        "coverage_signatures": "Coverage signatures",
     },
     LANGUAGE_ARABIC: {
         "quality_summary": "جودة التحليل",
@@ -1634,6 +1645,11 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         "refusal_label": "مرفوض",
         "version_label": "الإصدار",
         "coverage": "التغطية",
+        "drawer_open": "الدليل لهذا الرقم",
+        "definition": "التعريف",
+        "inputs": "المدخلات",
+        "unavailable": "غير مذكور",
+        "coverage_signatures": "توقيعات التغطية",
     },
 }
 
