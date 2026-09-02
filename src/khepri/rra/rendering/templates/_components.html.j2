@@ -179,12 +179,18 @@
   version label carries its own word, so it stands above the field list rather than
   inside a `<dt>`/`<dd>` pair that would say "Version" twice.
 
+  **`open` is for paper.** A closed `<details>` prints collapsed, so a drawer in the printed
+  appendix would carry its opener and none of its evidence. The print surface passes
+  `open=true`; the web surfaces leave the default, so a reader opens what they want. This
+  is the one presentation difference between the two, and it is stated as a parameter
+  rather than inferred from a stylesheet no CSS rule could implement.
+
   **Placed on no page in this slice.** Its supply is the deferred slice's subject, and an
   unsupplied drawer would render every field unavailable for a reason FR-096a does not
   mean. `test_no_surface_places_the_drawer_before_its_supply_exists` holds that line.
 #}
-{% macro evidence_drawer(given, chrome) -%}
-<details data-component="evidence-drawer" class="drawer">
+{% macro evidence_drawer(given, chrome, open=false) -%}
+<details data-component="evidence-drawer" class="drawer"{% if open %} open{% endif %}>
 <summary class="drawer__opener">{{ chrome.component.drawer_open }}</summary>
 <div class="drawer__version">{{ version_label(given.formula_version, chrome) }}</div>
 <dl class="drawer__fields">

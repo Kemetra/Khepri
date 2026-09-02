@@ -81,13 +81,15 @@ GIVEN_FIELDS: dict[str, tuple[str, ...]] = {
 ABSENT_FIELDS = ("inputs", "coverage")
 
 
-def render_drawer(given: dict[str, object], language: str = LANGUAGE_ENGLISH) -> str:
+def render_drawer(
+    given: dict[str, object], language: str = LANGUAGE_ENGLISH, *, open: bool = False
+) -> str:
     """The drawer alone, in the production environment, with the real chrome."""
     template = build_environment().from_string(
         f'{{% from "{COMPONENTS_TEMPLATE}" import evidence_drawer %}}'
-        "{{ evidence_drawer(given, chrome) }}"
+        "{{ evidence_drawer(given, chrome, open=open) }}"
     )
-    return template.render(given=given, chrome=_CHROME[language])
+    return template.render(given=given, chrome=_CHROME[language], open=open)
 
 
 def render_or_fail(given: dict[str, object], language: str = LANGUAGE_ENGLISH) -> str:
@@ -212,6 +214,20 @@ def test_the_drawer_opener_is_the_only_control_and_needs_no_script() -> None:
     assert "<summary" in markup, "the drawer has no keyboard-reachable opener"
     assert "tabindex" not in markup, "the drawer body adds a focus stop"
     assert "<script" not in markup, "the drawer relies on a script"
+
+
+def test_the_drawer_opens_for_paper_and_stays_closed_on_the_web() -> None:
+    """A closed `<details>` prints collapsed (`#352` review).
+
+    The print surface will pass `open=true` so the printed appendix carries the evidence
+    and not only the opener; the web leaves the default so a reader opens what they want.
+    Asserted on the element's attribute, which is the only thing that expands it -- no
+    stylesheet can.
+    """
+    closed = render_or_fail(STORED_FIGURE)
+    opened = render_drawer(STORED_FIGURE, open=True)
+    assert re.search(r"<details[^>]*\sopen[\s>]", opened), "open=true did not expand the drawer"
+    assert not re.search(r"<details[^>]*\sopen[\s>]", closed), "the drawer is open by default"
 
 
 # --------------------------------------------------------------------------
