@@ -211,7 +211,7 @@
 {% if given.coverage_manifest_identity is none -%}
 <dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
 {%- else -%}
-<dd><code>{{ given.coverage_manifest_identity }}</code></dd>
+<dd><code>{{ given.coverage_manifest_identity }}</code>{% for signature in given.coverage_signatures %} <code>{{ signature }}</code>{% endfor %}</dd>
 {%- endif %}
 </div>
 <div>

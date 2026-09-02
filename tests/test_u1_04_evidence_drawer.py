@@ -62,14 +62,23 @@ DERIVED_FIGURE = {
     "coverage_signatures": [],
 }
 
-#: The five FR-096 fields, by the value the drawer must show for `STORED_FIGURE`.
-GIVEN_FIELDS = {
-    "definition": STORED_FIGURE["definition"],
-    "version": STORED_FIGURE["formula_version"],
-    "inputs": "quantity",
-    "coverage": STORED_FIGURE["coverage_manifest_identity"],
-    "citation": STORED_FIGURE["citation_id"],
+#: The five FR-096 fields, by **every** value the drawer must show for `STORED_FIGURE`.
+#: Every input and every coverage value, not one representative each: a drawer
+#: rendering the first input only would pass a single-value check (`#351` review).
+GIVEN_FIELDS: dict[str, tuple[str, ...]] = {
+    "definition": (STORED_FIGURE["definition"],),
+    "version": (STORED_FIGURE["formula_version"],),
+    "inputs": tuple(STORED_FIGURE["inputs"]),
+    "coverage": (
+        STORED_FIGURE["coverage_manifest_identity"],
+        *STORED_FIGURE["coverage_signatures"],
+    ),
+    "citation": (STORED_FIGURE["citation_id"],),
 }
+
+#: The fields `DERIVED_FIGURE` leaves absent, each checked on its own (`#351` review):
+#: a drawer stating one as unavailable and the other as blank would pass a global check.
+ABSENT_FIELDS = ("inputs", "coverage")
 
 
 def render_drawer(given: dict[str, object], language: str = LANGUAGE_ENGLISH) -> str:
@@ -109,7 +118,8 @@ def test_the_drawer_renders_every_given_field(field: str) -> None:
     field that renders a label with no value fails too.
     """
     markup = render_or_fail(STORED_FIGURE)
-    assert GIVEN_FIELDS[field] in markup, f"the drawer does not render the {field} it was given"
+    missing = [value for value in GIVEN_FIELDS[field] if value not in markup]
+    assert not missing, f"the drawer drops {field} values it was given: {missing}"
 
 
 def test_the_drawer_reuses_the_version_label_and_evidence_link() -> None:
@@ -128,18 +138,28 @@ def test_the_drawer_reuses_the_version_label_and_evidence_link() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_an_absent_field_renders_the_unavailable_state() -> None:
-    """FR-096a.
+def field_value(markup: str, label: str) -> str:
+    """The `<dd>` that follows the `<dt>` carrying this label, tag and all."""
+    match = re.search(r"<dt>" + re.escape(label) + r"</dt>\s*(<dd[^>]*>.*?</dd>)", markup, re.S)
+    assert match, f"no field labelled {label!r} in the drawer"
+    return match.group(1)
 
-    Driven by the derived-family shape whose `inputs` the catalog returns as `None`.
-    The governed unavailable word must appear, and no field in the drawer may be an
-    empty element -- an empty `<dd>` is a field presented as empty, which the
-    requirement names and refuses.
+
+@pytest.mark.parametrize("field", ABSENT_FIELDS)
+def test_an_absent_field_renders_the_unavailable_state(field: str) -> None:
+    """FR-096a, per absent field.
+
+    Driven by the derived-family shape whose `inputs` and coverage the catalog returns
+    as `None`. Each absent field's own `<dd>` must carry the governed unavailable word
+    and its marker -- a global check would pass a drawer that stated one field
+    unavailable and left the other blank (`#351` review). No field anywhere in the
+    drawer may be an empty element.
     """
     markup = render_or_fail(DERIVED_FIGURE)
-    unavailable = component_chrome(LANGUAGE_ENGLISH)["unavailable"]
-    assert unavailable in markup, "an absent field did not render the unavailable state"
-    assert 'data-state="unavailable"' in markup, "the unavailable state carries no marker"
+    chrome = component_chrome(LANGUAGE_ENGLISH)
+    value = field_value(markup, chrome[field])
+    assert chrome["unavailable"] in value, f"absent {field} did not render the unavailable state"
+    assert 'data-state="unavailable"' in value, f"absent {field} carries no unavailable marker"
     empties = re.findall(r"<dd[^>]*>\s*</dd>", markup)
     assert not empties, f"{len(empties)} fields rendered as empty elements"
 
@@ -210,10 +230,19 @@ def test_the_drawer_chrome_labels_exist_in_both_languages() -> None:
 def test_the_drawer_renders_in_both_languages() -> None:
     """FR-099: the Arabic drawer carries Arabic script, not English under an `ar` label."""
     english = render_or_fail(STORED_FIGURE, LANGUAGE_ENGLISH)
-    arabic = render_or_fail(STORED_FIGURE, LANGUAGE_ARABIC)
+    arabic = render_or_fail(DERIVED_FIGURE, LANGUAGE_ARABIC)
     assert DRAWER_MARKER in english and DRAWER_MARKER in arabic
-    labels_only = re.sub(r"<code>[^<]*</code>", "", arabic)
-    assert ARABIC_SCRIPT.search(labels_only), "the Arabic drawer carries no Arabic script"
+    # Every label the drawer authors, checked one by one rather than "Arabic appears
+    # somewhere": an Arabic opener over English field labels would pass a page-level
+    # search (`#351` review). The derived shape is used so the unavailable state is
+    # among the words checked.
+    labels = re.findall(r"<summary[^>]*>([^<]*)</summary>|<dt>([^<]*)</dt>", arabic)
+    words = [opener or label for opener, label in labels]
+    words += re.findall(r'<dd data-state="unavailable">([^<]*)</dd>', arabic)
+    words += re.findall(r'class="version-label__name">([^<]*)<', arabic)
+    assert len(words) >= 7, f"too few drawer labels found to judge parity: {words}"
+    not_arabic = [word for word in words if not ARABIC_SCRIPT.search(word)]
+    assert not not_arabic, f"drawer labels not in Arabic: {not_arabic}"
 
 
 # --------------------------------------------------------------------------
