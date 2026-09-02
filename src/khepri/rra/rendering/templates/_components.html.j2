@@ -217,7 +217,24 @@
 {% if given.coverage_manifest_identity is none -%}
 <dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
 {%- else -%}
-<dd><code>{{ given.coverage_manifest_identity }}</code>{% for signature in given.coverage_signatures %} <code>{{ signature }}</code>{% endfor %}</dd>
+<dd><code>{{ given.coverage_manifest_identity }}</code></dd>
+{%- endif %}
+</div>
+{#
+  Signatures are a second field, not a suffix of the first. A manifest can be present and
+  cover none of the package's admitted event kinds or statuses -- `_signatures_of` then
+  returns nothing while the identity stays populated -- and folding an empty list into the
+  identity's cell made unproven coverage look present. Stated in three ways: no manifest is
+  unavailable; a manifest with no compatible signature is `chrome.none`; otherwise the list.
+#}
+<div>
+<dt>{{ chrome.component.coverage_signatures }}</dt>
+{% if given.coverage_manifest_identity is none -%}
+<dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
+{%- elif not given.coverage_signatures -%}
+<dd data-state="none">{{ chrome.none }}</dd>
+{%- else -%}
+<dd>{% for signature in given.coverage_signatures %}<code>{{ signature }}</code>{{ " " if not loop.last }}{% endfor %}</dd>
 {%- endif %}
 </div>
 <div>

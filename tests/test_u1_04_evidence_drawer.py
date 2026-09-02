@@ -78,7 +78,11 @@ GIVEN_FIELDS: dict[str, tuple[str, ...]] = {
 
 #: The fields `DERIVED_FIGURE` leaves absent, each checked on its own (`#351` review):
 #: a drawer stating one as unavailable and the other as blank would pass a global check.
-ABSENT_FIELDS = ("inputs", "coverage")
+ABSENT_FIELDS = ("inputs", "coverage", "coverage_signatures")
+
+#: A manifest that covers none of the package's admitted event kinds or statuses:
+#: `_signatures_of` returns no signatures while the identity stays populated.
+UNPROVEN_COVERAGE = {**STORED_FIGURE, "coverage_signatures": []}
 
 
 def render_drawer(
@@ -216,6 +220,25 @@ def test_the_drawer_opener_is_the_only_control_and_needs_no_script() -> None:
     assert "<script" not in markup, "the drawer relies on a script"
 
 
+def test_a_manifest_with_no_compatible_signature_is_stated_not_implied() -> None:
+    """Unproven coverage must not look present (`#352` review).
+
+    A manifest identity can be populated while `coverage_signatures` is empty -- the
+    manifest covered none of the package's admitted event kinds or statuses. The
+    identity is still a fact and renders; the signatures field must say so in words
+    rather than trail off. Empty is a different finding from absent, so it is not the
+    unavailable state either.
+    """
+    markup = render_or_fail(UNPROVEN_COVERAGE)
+    chrome = component_chrome(LANGUAGE_ENGLISH)
+    signatures = field_value(markup, chrome["coverage_signatures"])
+    assert _CHROME[LANGUAGE_ENGLISH]["none"] in signatures, "empty signatures rendered as nothing"
+    assert 'data-state="none"' in signatures, "the empty signature state carries no marker"
+    assert chrome["unavailable"] not in signatures, "empty signatures were called unavailable"
+    identity = field_value(markup, chrome["coverage"])
+    assert STORED_FIGURE["coverage_manifest_identity"] in identity
+
+
 def test_the_drawer_opens_for_paper_and_stays_closed_on_the_web() -> None:
     """A closed `<details>` prints collapsed (`#352` review).
 
@@ -237,7 +260,7 @@ def test_the_drawer_opens_for_paper_and_stays_closed_on_the_web() -> None:
 
 def test_the_drawer_chrome_labels_exist_in_both_languages() -> None:
     """FR-095a: the four labels the drawer needs, in both languages."""
-    needed = {"drawer_open", "definition", "inputs", "unavailable"}
+    needed = {"drawer_open", "definition", "inputs", "unavailable", "coverage_signatures"}
     for language in REQUIRED_LANGUAGES:
         missing = needed - set(component_chrome(language))
         assert not missing, f"drawer chrome missing in {language}: {sorted(missing)}"
@@ -256,7 +279,7 @@ def test_the_drawer_renders_in_both_languages() -> None:
     words = [opener or label for opener, label in labels]
     words += re.findall(r'<dd data-state="unavailable">([^<]*)</dd>', arabic)
     words += re.findall(r'class="version-label__name">([^<]*)<', arabic)
-    assert len(words) >= 7, f"too few drawer labels found to judge parity: {words}"
+    assert len(words) >= 8, f"too few drawer labels found to judge parity: {words}"
     not_arabic = [word for word in words if not ARABIC_SCRIPT.search(word)]
     assert not not_arabic, f"drawer labels not in Arabic: {not_arabic}"
 

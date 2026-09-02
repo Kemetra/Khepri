@@ -1633,6 +1633,9 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         "definition": "Definition",
         "inputs": "Inputs",
         "unavailable": "Not stated",
+        # The second coverage field. A manifest identity with no compatible signature is
+        # unproven coverage, and the empty list has to be stated (`#352` review).
+        "coverage_signatures": "Coverage signatures",
     },
     LANGUAGE_ARABIC: {
         "quality_summary": "جودة التحليل",
@@ -1646,6 +1649,7 @@ COMPONENT_CHROME: dict[str, dict[str, str]] = {
         "definition": "التعريف",
         "inputs": "المدخلات",
         "unavailable": "غير مذكور",
+        "coverage_signatures": "توقيعات التغطية",
     },
 }
 
