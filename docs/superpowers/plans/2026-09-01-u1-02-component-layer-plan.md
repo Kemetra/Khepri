@@ -161,3 +161,62 @@ gap an earlier draft had, covering figure, refusal panel and status badge alone.
   `RRA-010`:88 excludes a new asset filename; that needs an `RRA-010` slice.
 - **`U1-03`, `U1-05`, `U1-06`, `U1-07`** — excluded from `RRA-012` and still `BLOCKED`.
 - **Any new figure, code, or metric wording** — `RRA-004`, `RRA-008`, `RRA-009`, `RRA-011`.
+
+---
+
+## Status 2026-09-02 -- implemented on `feat/u1-02-components`
+
+All 23 RED tests are green with their `xfail` markers removed, plus three added. Full
+suite, `ruff check`, and `khepri-gov validate` pass. The FR-101 mutation check was run:
+a bare `<td class="figure">` appended to `report.pdf.html.j2` -- a template no test names
+-- fails `test_no_scoped_template_renders_a_figure_outside_the_component_layer`.
+
+**What shipped.** `_components.html.j2` with the seven FR-092 macros; `report.html.j2`
+and `_evidence.html.j2` render every figure, refusal, state, version and coverage value
+through them; `report.css` gains the component rules (logical properties only);
+`wording.py` gains `COMPONENT_CHROME` and `COMPONENT_STATE_WORDING` with an import-time
+completeness assertion read from `GOVERNED_SECTION_STATES`; `html.py`'s only change is the
+two `_CHROME` registrations (`component`, `component_state`) precondition 4 permits.
+
+**Four design calls made unattended, recorded here for the owner's review at merge:**
+
+1. **Three components render in the evidence region, not on the business page.** The
+   RED placement tests looked for all seven on the business page. `RRA-009`'s
+   `presentation-visibility-matrix.md` §A.5 puts a citation identifier and every
+   `BundleIdentity` field (versions, `row_count`) in tier A, and `RRA-012` FR-095
+   restates no `RRA-009` rule and relaxes none. So the evidence link, version label and
+   coverage indicator render in `_evidence.html.j2` -- which is both the Technical
+   Evidence page and the printed appendix -- and the placement tests carry a
+   `COMPONENT_REGION` table saying so. A business page with an evidence link would also
+   link to a citation anchor it does not contain, which `report.html.j2:54` already
+   refuses as a dead link. This plan's component table said "the colophon's version
+   text"; the colophon carries no version and never did.
+2. **The colour test was rewritten to render the macros.** As landed it imported
+   `khepri.rra.rendering.components`, the Python module the plan itself records
+   `RRA-012` does not authorize. It now renders `status_badge` for every state in
+   `GOVERNED_SECTION_STATES`, in both languages, and asserts a word survives tag
+   stripping.
+3. **Fail-closed is the environment's refusal.** The RED test accepted `KeyError` and
+   `ValueError`; the layer is macros under `StrictUndefined`, so an unworded state raises
+   `UndefinedError`, which the test now also accepts. Chrome stays pure data because
+   `test_the_page_furniture_is_one_table_with_one_key_set` walks every `_CHROME` value
+   and requires strings or nested tables of strings -- a callable would fail it.
+4. **The quality summary groups what the page renders.** It cannot call
+   `definitions.summarize` (no context key may be added under precondition 4), so it
+   selects with template filters over the section views the page already iterates:
+   refused = state is the governed refused constant, caveated = a present section
+   rendering a section caveat list, answered = the rest. `summarize` partitions a scoped
+   result refusal (`<result>:<reason>` caveat) as answered-with-refused-result rather
+   than as caveated, so the two groupings can differ by that case. The deferred
+   catalog-supply slice, which carries `summarize`'s output into the context, is where
+   the page should switch to the catalog's grouping. Flagged, not hidden.
+
+**Also moved:** `test_rra006_html_surface` and `test_rra006_series_pivot` counted figures
+by the literal `<td class="figure">`; both now count by the class attribute, which is the
+property they asserted. The evidence figures table's citation column is now the
+evidence link (text unchanged: the citation code, now an anchor to its own entry).
+
+**Left out, deliberately:** `U1-04` (the drawer), journey adoption, any print-stylesheet
+rule for the new components (`report.print.css` inherits the screen rules; nothing in
+them depends on background paint), and the §16 header SHA.
+

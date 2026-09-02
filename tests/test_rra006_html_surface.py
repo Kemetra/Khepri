@@ -449,7 +449,10 @@ def test_arabic_and_english_carry_the_same_facts_caveats_and_citations() -> None
     # tooling. Parity is therefore counted on the figure rows the two languages
     # actually render, which is the property the attribute count stood in for.
     rows = {
-        language: document.count('<td class="figure">')
+        # Counted by the class attribute rather than the literal `<td class="figure">`:
+        # the component layer marks every figure cell with `data-component`, and no
+        # attribute order keeps that literal intact. The class is what this asserted.
+        language: len(re.findall(r'<td[^>]*\bclass="figure"', document))
         for language, document in documents.items()
     }
     assert rows[LANGUAGE_ARABIC] == rows[LANGUAGE_ENGLISH]

@@ -1,0 +1,149 @@
+{#
+  The governed data-display component layer (`U1-02`, active `RRA-012`).
+
+  One macro per concept FR-092 names, so a figure reads the same way wherever it
+  appears and a slice adding a customer-visible figure has one place to render it.
+
+  **These are macros rather than a Python module for two reasons, and both are
+  load-bearing.** `RRA-012`'s Scope authorizes the rendering templates, `report.css`,
+  `wording.py`'s chrome labels and one binding point in `html.py` -- and no new Python
+  module; a `components.py` would be outside the specification. And a macro's output is
+  markup because the macro *is* source, while every value inside it still passes through
+  the same unconditional escaping as a bare table cell. A Python string of markup would
+  either reach the reader as `&lt;td` or require `|safe`, and `html.py:23` records why
+  the second is refused: "a page with one `|safe` in it has an escaping convention, not
+  an escaping guarantee." This file adds no `|safe`, exactly as `_chart.svg.j2` does not.
+
+  **No macro here computes, rounds, or reformats anything** (FR-093). Each renders the
+  value it is handed. `FigureCell` carries no `value` field precisely so a renderer
+  cannot format a number itself; these macros keep that guarantee rather than restoring
+  the ability to break it.
+
+  **Every word a macro renders comes from `chrome`** -- the mapping `html.py` binds into
+  the context. Metric, refusal and caveat wording is `RRA-009`'s and `RRA-011`'s and is
+  never authored here; what this layer adds is its own chrome, the text naming a region
+  or state of the interface (FR-095a), registered under `chrome.component` and
+  `chrome.component_state`.
+
+  **Which surface a component appears on is decided by `RRA-009`'s visibility matrix,
+  not by this file.** A citation identifier and every version and count in the bundle
+  identity are tier A, Audit, so the evidence link, version label and coverage
+  indicator render in the evidence region -- the Technical Evidence page and the printed
+  appendix -- and never on the business page. The figure, badge, quality summary and
+  refusal panel render on the business page. One layer, two regions.
+#}
+
+{#
+  A governed figure, as one document prints it.
+
+  `text` arrives already formatted by the analysis that published it, and is emitted
+  unchanged. `data-component` is the marker every surface-inventory guard reads: a
+  figure rendered without it is a figure bypassing this layer, which FR-101 refuses.
+
+  **Two existing tests had to move for this, and the reason is worth recording.**
+  `test_rra006_html_surface` and `test_rra006_series_pivot` counted figures with the
+  literal opening tag, class and closing bracket included, so *no* added attribute
+  could preserve that substring in any order. Both now count by the class attribute,
+  which is the property they were always asserting.
+#}
+{% macro figure(text) -%}
+<td data-component="figure" class="figure">{{ text if text is not none else "" }}</td>
+{%- endmacro %}
+
+{#
+  A section's state, named in words rather than signalled by colour alone (FR-100).
+
+  `state` is a governed section-state constant the caller already holds -- the same
+  one `report.html.j2` compares against `refused_state` to decide whether a section
+  renders figures or a refusal. The audit context carries no state field at all
+  (`html.py:519`, tier Internal), and this macro asks for none: it takes the constant
+  the caller compared and looks up its word.
+
+  An unrecognised state refuses rather than rendering the code string, an empty element,
+  or a blank (FR-094). `chrome.component_state[...]` is a plain mapping lookup, so an
+  unknown key becomes the environment's `StrictUndefined` and raises `UndefinedError`
+  at render -- the refusal is the environment's own, not a message this layer invents.
+
+  No `tabindex`: a badge is read, not operated, and putting it in the tab order would
+  add a focus stop with no action behind it.
+#}
+{% macro status_badge(state, chrome) -%}
+<span data-component="status-badge" class="badge badge--{{ state }}">{{
+  chrome.component_state[state] }}</span>
+{%- endmacro %}
+
+{#
+  What one report answered, answered with a caveat, and refused.
+
+  A grouping of outcomes the page already renders -- three counts of sections, handed
+  in by the caller, which selects them with template filters over the section views it
+  already iterates. Nothing here is a figure: these are counts of headings on this page,
+  and the macro computes none of them. It expresses availability and never certainty,
+  so there is no score, percentage, or confidence anywhere in it.
+#}
+{% macro quality_summary(answered, caveated, refused, chrome) -%}
+<dl data-component="quality-summary" class="quality-summary"
+    aria-label="{{ chrome.component.quality_summary }}">
+<div><dt>{{ chrome.component.quality_answered }}</dt><dd>{{ answered }}</dd></div>
+<div><dt>{{ chrome.component.quality_caveated }}</dt><dd>{{ caveated }}</dd></div>
+<div><dt>{{ chrome.component.quality_refused }}</dt><dd>{{ refused }}</dd></div>
+</dl>
+{%- endmacro %}
+
+{#
+  A refused section's governed reason.
+
+  `prose` is `RRA-009`'s, reaching this macro through `chrome.refusal_prose` exactly as
+  the hand-built paragraph it replaces did. This layer authors no refusal wording; it
+  gives the existing wording one consistent place to appear, and a text label beside
+  it so the state is never carried by the rule colour alone (FR-100).
+#}
+{% macro refusal_panel(prose, chrome) -%}
+<p data-component="refusal-panel" class="refused" role="note">
+<span class="refused__label">{{ chrome.component.refusal_label }}</span>
+{{ prose }}
+</p>
+{%- endmacro %}
+
+{#
+  The link from a figure to the citation that supports it.
+
+  `citation_id` is the identifier the package already published, and the link's text
+  is that identifier: an auditor joins on it, so hiding it behind a label would remove
+  the one value the column exists to show. The target is the citation's own entry in
+  the same document -- `_evidence.html.j2` gives every citation `id="citation-…"` --
+  which is why this component lives in the evidence region only: the business page
+  carries no citation anchors, and a link to an anchor a document lacks is a dead link.
+#}
+{% macro evidence_link(citation_id) -%}
+<a data-component="evidence-link" class="evidence-link"
+   href="#citation-{{ citation_id }}"><code>{{ citation_id }}</code></a>
+{%- endmacro %}
+
+{#
+  A governed version, as the bundle identity records it.
+
+  Rendered as given. A version is an identity, not a number to format.
+#}
+{% macro version_label(version, chrome) -%}
+<span data-component="version-label" class="version-label">
+<span class="version-label__name">{{ chrome.component.version_label }}</span>
+<code>{{ version }}</code>
+</span>
+{%- endmacro %}
+
+{#
+  What the package was computed over, at the package level.
+
+  **Deliberately not per figure** (FR-097). A `Fact` records no population or basis
+  identifier, and `RRA-011` declines to invent that relationship rather than infer it.
+  This states what the report was computed over; it never claims to state what one
+  number was computed over. The value is the identity's own `row_count`, rendered as
+  given.
+#}
+{% macro coverage_indicator(scope, chrome) -%}
+<span data-component="coverage-indicator" class="coverage">
+<span class="coverage__label">{{ chrome.component.coverage }}</span>
+<code>{{ scope }}</code>
+</span>
+{%- endmacro %}
