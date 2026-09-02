@@ -445,3 +445,51 @@ article {
   font-size: 0.85em;
   margin-inline-end: 0.4rem;
 }
+
+/*
+ * The evidence drawer. A native disclosure element, so the browser owns the open state
+ * and the keyboard: the summary is the one focusable control, and its focus ring is
+ * not optional once it is focusable, for the reason `.scroller:focus-visible` gives.
+ */
+.drawer {
+  margin-block: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+.drawer__opener {
+  cursor: pointer;
+  color: var(--report-accent);
+}
+
+.drawer__opener:focus-visible {
+  outline: 3px solid var(--report-accent);
+  outline-offset: 2px;
+}
+
+.drawer__version {
+  margin-block: 0.5rem 0.25rem;
+}
+
+.drawer__fields {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) 1fr;
+  gap: 0.25rem var(--report-space);
+  margin-block: 0;
+}
+
+.drawer__fields div {
+  display: contents;
+}
+
+.drawer__fields dt {
+  color: var(--report-muted);
+}
+
+.drawer__fields dd {
+  margin-inline: 0;
+}
+
+/* Stated in words as well as tone: the word is the signal, the tone is not. */
+.drawer__fields dd[data-state="unavailable"] {
+  color: var(--report-muted);
+}

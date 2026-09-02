@@ -1,12 +1,8 @@
-"""U1-04's RED tests: the evidence drawer's structure does not exist yet.
+"""U1-04: the evidence drawer's structure, proven against the projection it will be handed.
 
-Every RED test here fails on this tree, and each docstring says what it is waiting for.
-They are the deliverable §15 requires before `U1`'s row may read
-`READY_FOR_IMPLEMENTATION`.
-
-**Every RED test is `xfail(strict=True)`**, the pattern `U1-02` used: the day the drawer
-lands, its test stops xfailing and the suite *fails* until the marker is removed, so
-nothing is satisfied quietly.
+These began as the RED tests `#351` landed, every one `xfail(strict=True)`; the strict
+marker did its job and the markers came off when the macro landed. Each docstring still
+says what the test waited for.
 
 **The drawer is driven directly, through the production environment with the real
 chrome**, because it is placed on no page in this slice. Its catalog data supply is
@@ -36,8 +32,6 @@ TEMPLATE_DIR = Path("src/khepri/rra/rendering/templates")
 COMPONENTS_TEMPLATE = "_components.html.j2"
 DRAWER_MARKER = 'data-component="evidence-drawer"'
 ARABIC_SCRIPT = re.compile(r"[\u0600-\u06ff]")
-
-RED = pytest.mark.xfail(strict=True, reason="U1-04 RED: the evidence drawer does not exist yet.")
 
 #: The projection `report_api._cited_figure` builds, for a **stored** fact -- one the
 #: package retains, so `precision` and `inputs` are present. Package-level coverage
@@ -91,7 +85,7 @@ def render_or_fail(given: dict[str, object], language: str = LANGUAGE_ENGLISH) -
     """Render, and turn a missing macro or label into a test failure with the cause."""
     try:
         return render_drawer(given, language)
-    except TemplateError as error:  # pragma: no cover - the RED state
+    except TemplateError as error:  # pragma: no cover - a missing macro or label
         pytest.fail(f"the drawer cannot render: {error}")
 
 
@@ -100,14 +94,12 @@ def render_or_fail(given: dict[str, object], language: str = LANGUAGE_ENGLISH) -
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_the_drawer_component_exists() -> None:
-    """The macro is importable from the component template. RED: it is not defined."""
+    """The macro is importable from the component template and carries its marker."""
     markup = render_or_fail(STORED_FIGURE)
     assert DRAWER_MARKER in markup, "the drawer renders without its component marker"
 
 
-@RED
 @pytest.mark.parametrize("field", sorted(GIVEN_FIELDS))
 def test_the_drawer_renders_every_given_field(field: str) -> None:
     """FR-096, per field.
@@ -120,7 +112,6 @@ def test_the_drawer_renders_every_given_field(field: str) -> None:
     assert GIVEN_FIELDS[field] in markup, f"the drawer does not render the {field} it was given"
 
 
-@RED
 def test_the_drawer_reuses_the_version_label_and_evidence_link() -> None:
     """FR-092: one component per concept.
 
@@ -137,7 +128,6 @@ def test_the_drawer_reuses_the_version_label_and_evidence_link() -> None:
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_an_absent_field_renders_the_unavailable_state() -> None:
     """FR-096a.
 
@@ -154,7 +144,6 @@ def test_an_absent_field_renders_the_unavailable_state() -> None:
     assert not empties, f"{len(empties)} fields rendered as empty elements"
 
 
-@RED
 def test_an_absent_field_is_not_labelled_a_refusal() -> None:
     """FR-096a's last sentence: an absent field is not a refusal."""
     markup = render_or_fail(DERIVED_FIGURE)
@@ -170,7 +159,6 @@ def test_an_absent_field_is_not_labelled_a_refusal() -> None:
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_the_drawer_shows_no_per_figure_population_or_basis() -> None:
     """FR-097.
 
@@ -189,7 +177,6 @@ def test_the_drawer_shows_no_per_figure_population_or_basis() -> None:
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_the_drawer_opener_is_the_only_control_and_needs_no_script() -> None:
     """FR-098, as the plan's check 3 delivers it.
 
@@ -212,7 +199,6 @@ def test_the_drawer_opener_is_the_only_control_and_needs_no_script() -> None:
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_the_drawer_chrome_labels_exist_in_both_languages() -> None:
     """FR-095a: the four labels the drawer needs, in both languages."""
     needed = {"drawer_open", "definition", "inputs", "unavailable"}
@@ -221,7 +207,6 @@ def test_the_drawer_chrome_labels_exist_in_both_languages() -> None:
         assert not missing, f"drawer chrome missing in {language}: {sorted(missing)}"
 
 
-@RED
 def test_the_drawer_renders_in_both_languages() -> None:
     """FR-099: the Arabic drawer carries Arabic script, not English under an `ar` label."""
     english = render_or_fail(STORED_FIGURE, LANGUAGE_ENGLISH)
@@ -236,7 +221,6 @@ def test_the_drawer_renders_in_both_languages() -> None:
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_the_fixture_matches_the_projection_the_drawer_will_be_handed() -> None:
     """The plan's check 1: the fixture stands in for `_cited_figure`, so it must match it.
 
@@ -245,8 +229,8 @@ def test_the_fixture_matches_the_projection_the_drawer_will_be_handed() -> None:
     drawer proven against a shape the supply slice no longer produces. The package-level
     coverage pair is the one addition, exactly as `CitationEvidenceResponse` carries it.
 
-    RED until the drawer exists: a fixture proven honest for a component that is not
-    there would report a green the plan has not earned.
+    The render at the end ties the fixture to the macro, so a fixture proven honest for
+    a component that is not there cannot report a green the plan has not earned.
     """
     source = inspect.getsource(_cited_figure)
     projected = set(re.findall(r'^\s+"([a-z_]+)":', source, re.M))

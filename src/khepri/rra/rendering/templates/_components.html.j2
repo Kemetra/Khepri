@@ -147,3 +147,77 @@
 <code>{{ scope }}</code>
 </span>
 {%- endmacro %}
+
+{#
+  The evidence drawer (`U1-04`): what the governed records say about one figure, beside
+  that figure (FR-096).
+
+  `given` is `report_api._cited_figure`'s projection, taken as-is, with the package-level
+  coverage pair `CitationEvidenceResponse` carries beside it. The macro reads exactly the
+  keys it renders -- definition, formula version, inputs, coverage identity, citation --
+  and nothing else, so a field a future projection adds cannot reach the page through it.
+  It has no population or basis input at all (FR-097): a `Fact` carries no population
+  identifier, and `RRA-011` declines to invent that relationship.
+
+  **An absent field is stated, never blank and never refused (FR-096a).** The catalog
+  returns `inputs: None` for a derived analysis figure because no retained record states
+  them, and `_cited_figure`'s docstring records why re-deriving them is forbidden. Such a
+  field renders `chrome.component.unavailable` with `data-state="unavailable"`. That word
+  is not the refusal label and nothing here carries the `refused` class: the catalog
+  declining to state something is not a refusal. An *empty* inputs list is a different
+  finding again -- stated, and empty -- and renders `chrome.none`.
+
+  **Keyboard behaviour comes from the element, not from a script (FR-098).** `html.py`
+  bundles no JavaScript and a test refuses `<script>`. A native `<details>` is reachable
+  and dismissible from the keyboard through its `<summary>`, and the opener keeps focus
+  when toggled, so "return focus to the opener" holds by construction. The summary is the
+  drawer's only control; nothing in the body carries `tabindex`. Escape-to-close from
+  inside the body would need a script no active specification admits on this surface,
+  and is recorded in the plan as a known limit.
+
+  The version and the citation render through their own `U1-02` components (FR-092): the
+  version label carries its own word, so it stands above the field list rather than
+  inside a `<dt>`/`<dd>` pair that would say "Version" twice.
+
+  **Placed on no page in this slice.** Its supply is the deferred slice's subject, and an
+  unsupplied drawer would render every field unavailable for a reason FR-096a does not
+  mean. `test_no_surface_places_the_drawer_before_its_supply_exists` holds that line.
+#}
+{% macro evidence_drawer(given, chrome) -%}
+<details data-component="evidence-drawer" class="drawer">
+<summary class="drawer__opener">{{ chrome.component.drawer_open }}</summary>
+<div class="drawer__version">{{ version_label(given.formula_version, chrome) }}</div>
+<dl class="drawer__fields">
+<div>
+<dt>{{ chrome.component.definition }}</dt>
+{% if given.definition is none -%}
+<dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
+{%- else -%}
+<dd>{{ given.definition }}</dd>
+{%- endif %}
+</div>
+<div>
+<dt>{{ chrome.component.inputs }}</dt>
+{% if given.inputs is none -%}
+<dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
+{%- elif not given.inputs -%}
+<dd>{{ chrome.none }}</dd>
+{%- else -%}
+<dd>{% for input in given.inputs %}<code>{{ input }}</code>{{ " " if not loop.last }}{% endfor %}</dd>
+{%- endif %}
+</div>
+<div>
+<dt>{{ chrome.component.coverage }}</dt>
+{% if given.coverage_manifest_identity is none -%}
+<dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
+{%- else -%}
+<dd><code>{{ given.coverage_manifest_identity }}</code></dd>
+{%- endif %}
+</div>
+<div>
+<dt>{{ chrome.citation }}</dt>
+<dd>{{ evidence_link(given.citation_id) }}</dd>
+</div>
+</dl>
+</details>
+{%- endmacro %}
