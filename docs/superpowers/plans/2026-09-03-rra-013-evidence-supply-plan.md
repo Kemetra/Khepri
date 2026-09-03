@@ -42,14 +42,16 @@ implementation PR, in the same voice as `v6` and `v7`.
 `FactPackage` is a frozen dataclass, so `dataclasses.replace(package, coverage_manifest_identity=…)`
 gives a RED test two packages identical but for coverage without touching any figure.
 
-### 3. `evidence_open` needs a default, or every template guards it
+### 3. `evidence_open` is absent on the web, and the template must cope
 
 `StrictUndefined` (`html.py:374`) fails a template that reads a key the context lacks. FR-107 says the
-web surface "MUST NOT set it"; read literally, the placement template would need
-`{% if evidence_open is defined and evidence_open %}` on every use. **Resolution: `build_context`
-carries `evidence_open: False`, and `pdf.py:219`'s `_context` overrides it to `True`** beside
-`print_stylesheet_name`, the key it already adds. "Set" in FR-107 means *set true*; the web contexts
-carry the key and it is false, and a RED test asserts exactly that on both surfaces.
+web surface "MUST NOT set it", and an earlier draft of this check read that as *must not set it true*
+and gave `build_context` a `False` default. **That was a plan reinterpreting an active specification,
+and review caught it** (`#354`). The literal text governs: **the web contexts do not carry the key**;
+`pdf.py:219`'s `_context` adds `evidence_open: True` beside `print_stylesheet_name`, the key it
+already adds. The `RRA-012` placement template reads it as `evidence_open | default(false)` — Jinja's
+`default` filter is defined for `StrictUndefined` — which is that slice's concern, not this one's. The
+RED test asserts the key is absent from the web contexts and true in the print context.
 
 ---
 
@@ -66,13 +68,15 @@ carry the key and it is false, and a RED test asserts exactly that on both surfa
   `BundleIdentity.of(package)`, **included in `as_document()`**. `BUNDLE_VERSION = "rra006.bundle.v8"`.
 
 **`html.py`** — `_audit_region` gains two keys. `evidence`: `{citation_id: {…record fields…,
-"definition": metric_description(metric, language)}}`. `coverage`: `{"manifest_identity": …,
-"signatures": [...]}` once. `build_context` gains `evidence_open: False`. **Scope (b) — binding
-`METRIC_DESCRIPTIONS` into `_CHROME` — is not exercised**: the projection already carries the resolved
-definition, and a chrome table no template reads is the defined-but-never-attached defect this
-repository has met before. Recorded here so a reviewer does not read its absence as an omission.
+"definition": definitions.describe_metric(metric, language)}}`. `coverage`: `{"manifest_identity":
+…, "signatures": [...]}` once. `build_context` gains nothing (check 3). **`RRA-013`'s Scope (b) is
+corrected in this PR rather than skipped by this plan**: it named a `_CHROME` binding of
+`METRIC_DESCRIPTIONS`, but a series code such as `revenue_by_period` has no row in that table —
+`describe_metric` composes its description — so a template indexing the binding would fail on every
+series figure. A plan may not narrow an active specification, so the specification is amended, in the
+shape `#348` corrected `RRA-012`'s stylesheet line.
 
-**`pdf.py`** — `_context` sets `context["evidence_open"] = True`.
+**`pdf.py`** — `_context` sets `context["evidence_open"] = True`; no web context carries the key.
 
 **Provenance note.** `_provenance` stringifies every identity field, so the two new identity fields
 appear in the audit provenance table as strings — the signatures as the string form of a list. Tier A,
@@ -86,7 +90,9 @@ triple so the comparison section publishes and all three record shapes are prese
 
 1. `test_every_cited_figure_has_exactly_one_evidence_record` — FR-102, the extent assertion.
 2. `test_a_retained_fact_supplies_its_precision_inputs_and_version` — FR-102 row 1.
-3. `test_a_retained_series_has_no_inputs_and_its_own_version` — FR-102 row 2.
+3. `test_a_retained_series_has_no_inputs_and_its_own_version` and
+   `test_a_retained_comparison_has_no_inputs_and_its_own_version` — FR-102 row 2, both record types,
+   because an implementation treating every retained comparison as derived would pass the extent test.
 4. `test_a_derived_figure_carries_its_family_version_and_absent_records` — FR-102 row 3; asserts
    `comparison.COMPARISON_FORMULA_VERSION` and that it differs from `package.formula_version`.
 5. `test_no_evidence_value_is_a_figure_value` — FR-103/FR-106.
@@ -97,8 +103,9 @@ triple so the comparison section publishes and all three record shapes are prese
 9. `test_the_audit_context_carries_evidence_and_coverage_in_both_languages` — FR-106, with Arabic
    definition text in the Arabic context.
 10. `test_the_business_context_carries_neither_key` — FR-106's tier boundary.
-11. `test_evidence_carries_no_value_and_no_internal_field` — FR-106.
-12. `test_the_print_context_opens_the_drawer_and_the_web_does_not` — FR-107.
+11. `test_evidence_carries_exactly_the_governed_keys` — FR-106, as an allow-list: a denylist of
+    five Internal names cannot see a sixth, and the visibility matrix's Internal tier is open-ended.
+12. `test_the_print_context_opens_the_drawer_and_the_web_does_not_carry_the_key` — FR-107, literally.
 
 Plus one non-RED guard: `test_the_renderer_contract_and_pipeline_call_are_unchanged` (FR-108) reads
 `MaterializedRenderer.render_materialized`'s signature and `pipeline.py`'s call rather than asserting a

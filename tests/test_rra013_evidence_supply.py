@@ -53,9 +53,18 @@ START = date(2026, 1, 1)
 ROWS = [(f"{100 + 10 * index}.00", 2 + index % 3, "Alpha") for index in range(70)]
 ARABIC_SCRIPT = re.compile(r"[\u0600-\u06ff]")
 
-#: Fields the visibility matrix keeps off every customer surface (§A.6), and the
-#: figure's own value, which FR-106 keeps out of the evidence.
-FORBIDDEN_EVIDENCE_KEYS = {"value", "text", "renderings", "state", "narrative_state"}
+#: Exactly the keys an evidence entry may carry (FR-106). An allow-list, because the
+#: visibility matrix's Internal tier is open-ended -- a session id, a storage key, a
+#: lease -- and a denylist of the five names we thought of cannot see the sixth.
+GOVERNED_EVIDENCE_KEYS = {
+    "citation_id",
+    "metric",
+    "unit_kind",
+    "formula_version",
+    "precision",
+    "inputs",
+    "definition",
+}
 
 
 def package_for(rows: list[tuple[str, int, str]]) -> FactPackage:
@@ -154,6 +163,29 @@ def test_a_retained_series_has_no_inputs_and_its_own_version(
         assert record.inputs is None, "inputs were invented for a series record"
         assert record.precision == entry.precision
         assert record.formula_version == entry.formula_version
+
+
+@RED
+def test_a_retained_comparison_has_no_inputs_and_its_own_version(
+    bundle: ReportBundle, package: FactPackage
+) -> None:
+    """FR-102, row 2 for the other retained aggregate (`#354` review).
+
+    A retained `FactComparison` is a stored record with its own precision and version
+    and no `inputs` field. Without this test an implementation could treat every
+    retained comparison as derived -- `None` precision, a family version -- and still
+    satisfy the extent test, which checks citation identifiers alone.
+    """
+    assert package.comparisons, "the fixture carries no retained comparison"
+    evidence = evidence_by_citation(bundle)
+    for entry in package.comparisons:
+        record = evidence[entry.citation_id]
+        assert record.inputs is None, "inputs were invented for a comparison record"
+        assert record.precision == entry.precision
+        assert record.formula_version == entry.formula_version
+        assert record.formula_version != comparison.COMPARISON_FORMULA_VERSION, (
+            "a retained comparison was given the derived family's version"
+        )
 
 
 @RED
@@ -271,20 +303,29 @@ def test_the_business_context_carries_neither_key(bundle: ReportBundle) -> None:
 
 
 @RED
-def test_evidence_carries_no_value_and_no_internal_field(bundle: ReportBundle) -> None:
-    """FR-106: no figure value, no Internal-tier field, in any evidence entry."""
+def test_evidence_carries_exactly_the_governed_keys(bundle: ReportBundle) -> None:
+    """FR-106: no figure value and no Internal-tier field, proven by the exact key set."""
     context = build_context(bundle, LANGUAGE_ENGLISH, build_cells(bundle, LANGUAGE_ENGLISH))
-    for entry in context["audit"]["evidence"].values():
-        leaked = FORBIDDEN_EVIDENCE_KEYS & set(entry)
-        assert not leaked, f"evidence entry carries forbidden keys: {sorted(leaked)}"
+    entries = context["audit"]["evidence"].values()
+    assert entries
+    for entry in entries:
+        assert set(entry) == GOVERNED_EVIDENCE_KEYS, (
+            f"evidence entry keys drifted: {sorted(set(entry) ^ GOVERNED_EVIDENCE_KEYS)}"
+        )
 
 
 @RED
-def test_the_print_context_opens_the_drawer_and_the_web_does_not(bundle: ReportBundle) -> None:
-    """FR-107: a closed `<details>` prints collapsed, so the print surface opens it."""
+def test_the_print_context_opens_the_drawer_and_the_web_does_not_carry_the_key(
+    bundle: ReportBundle,
+) -> None:
+    """FR-107, read literally: the web MUST NOT set `evidence_open`, so the key is absent.
+
+    A closed `<details>` prints collapsed, so the print surface sets it true. The
+    placement template reads `evidence_open | default(false)`; that is its concern.
+    """
     cells = build_cells(bundle, LANGUAGE_ENGLISH)
     web = build_context(bundle, LANGUAGE_ENGLISH, cells)
-    assert web["evidence_open"] is False, "the web surface opens the drawer"
+    assert "evidence_open" not in web, "the web surface sets evidence_open"
     printed = PdfReportRenderer(printer=FakePrinter())._context(bundle, LANGUAGE_ENGLISH, cells)
     assert printed["evidence_open"] is True, "the print surface leaves the drawer closed"
 
