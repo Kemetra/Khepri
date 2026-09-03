@@ -1,0 +1,10 @@
+{
+  "prompt": "COMP B \u2014 THE SANCTUARY. Desktop 1440. No vista: a carved wall. Sandstone texture on the ground with a warm raking light, the winged scarab cut as a glowing seal at right, the claim set left as an inscription with a gold rule. The specimen is a recessed niche INSET into the wall, its shadow falling inward, four figures across gold-walled cells and the refusal on its own withheld rule. Architectural and quiet.",
+  "world": "Egyptian carved sanctuary \u2014 texture, seal, recessed niche",
+  "approved": false,
+  "comp": "comp-b-the-sanctuary.png",
+  "surface": "public landing (/landing) \u2014 Persuade",
+  "direction_seed": "14a23b43",
+  "viewport": "1440x900 desktop, full-page",
+  "assets": "owner-supplied khepri_visual_pack (hero-scene, hero-winged-scarab, texture-sandstone, register-divider); usage rights NOT yet recorded \u2014 comp use only"
+}

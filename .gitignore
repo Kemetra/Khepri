@@ -51,3 +51,19 @@ ops/staging/certs/
 # session UUIDs, meaningless in another checkout. `config.json` beside it is the
 # durable half -- the adjudicated rule suppressions -- and is committed.
 .impeccable/hook.cache.json
+
+# Impeccable design-session artifacts. The decision records, prompt sidecars and the source comp
+# are tracked; the rendered PNGs, the self-contained inlined pages and the staged asset copies are
+# regenerable output and would put tens of megabytes of binaries in history.
+.impeccable/mocks/**/*.png
+.impeccable/mocks/**/*.webp
+.impeccable/mocks/*-inlined.html
+.impeccable/mocks/directions.html
+.impeccable/mocks/assets/
+.impeccable/mocks/kit/
+.impeccable/mocks/fonts/
+.impeccable/kit/
+.impeccable/review/
+
+# Session-local server state (pid/port), not a design record.
+.impeccable/questions/

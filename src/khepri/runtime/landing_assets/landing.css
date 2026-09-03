@@ -215,6 +215,29 @@
   --ease-sun: cubic-bezier(0.16, 0.84, 0.28, 1);
   --dur-slow: 1100ms;
   --dur-mid: 620ms;
+
+  /* ---- Quarried grain: the wall's material, drawn rather than photographed --------------------
+   * The world claimed cut stone and delivered flat fills. The claim was structurally true — bands,
+   * baselines, incised rules — but a visitor reads MATERIAL before it reads composition, so the
+   * page read as dark-mode SaaS with unusually good copy.
+   *
+   * The grain is authored as gradients rather than served as an image, and that is a governance
+   * fact rather than a stylistic one: `landing_api.py` serves an exact allowlist
+   * (`_ASSETS = {"landing.css": ...}`) under a `default-src 'none'` CSP, and the asset kit's own
+   * README requires a recorded licence before any binary becomes a served runtime file. Those
+   * rights are not recorded, so an image here could not ship. Gradients cost no request, no
+   * allowlist entry, and no licence — and they scale to any viewport without a srcset.
+   *
+   * Two layers, because one reads as a pattern and two read as stone: a fine anisotropic tooth at
+   * one angle, and a broader mottle at another. Both are near-threshold ON PURPOSE — they must be
+   * felt as surface, never seen as texture. Neither carries meaning, so neither needs contrast. */
+  --grain-tooth:
+    repeating-linear-gradient(112deg,
+      rgba(237, 228, 211, 0.016) 0 1px,
+      transparent 1px 3px);
+  --grain-mottle:
+    radial-gradient(ellipse 80% 50% at 22% 18%, rgba(237, 228, 211, 0.020), transparent 60%),
+    radial-gradient(ellipse 70% 60% at 78% 72%, rgba(0, 0, 0, 0.20), transparent 62%);
 }
 
 /* ---- Reset ------------------------------------------------------------------------------------ */
@@ -262,10 +285,24 @@ button, a, label { -webkit-tap-highlight-color: transparent; }
 h1, h2, h3, p, ul, ol, figure, dl, dd { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
 
+/* The skip link is hidden by CLIPPING, not by being parked off-screen.
+ *
+ * `inset-inline-start: -9999px` is a logical property and it flipped correctly under RTL — which
+ * is exactly what made it a bug. Off-screen-left and off-screen-right are not equivalent: a
+ * negative inline-start leaves the page, while the RTL resolution places the link 9999px past the
+ * right edge and the document GROWS to contain it. Measured on the Arabic page: `scrollWidth`
+ * 2970px against a 1440px viewport, so every Arabic visitor got a horizontally scrolling page and
+ * ~1530px of empty stone beside every register. The English page measured 1470px and looked fine,
+ * which is why the idiom survived: it is LTR reasoning wearing a logical property's clothes.
+ *
+ * `clip-path: inset(50%)` removes the element from the visual box without moving it anywhere, so
+ * it contributes no scrollable area in either direction while remaining focusable and in the
+ * accessibility tree. The focus rule below restores it to a real position. */
 .skip-link {
   position: absolute;
   inset-block-start: var(--space-3);
-  inset-inline-start: -9999px;
+  inset-inline-start: var(--space-3);
+  clip-path: inset(50%);
   z-index: 30;
   min-block-size: var(--touch-min);
   display: inline-flex;
@@ -278,7 +315,7 @@ ul, ol { padding: 0; list-style: none; }
   text-decoration: none;
 }
 
-.skip-link:focus { inset-inline-start: var(--space-3); }
+.skip-link:focus { clip-path: none; }
 
 /* ---- The wall ---------------------------------------------------------------------------------
  * Every register shares one measure and one gutter, because a register wall's bands share their
@@ -289,6 +326,26 @@ ul, ol { padding: 0; list-style: none; }
 .wall {
   width: min(100% - 2.5rem, var(--wall-width));
   margin-inline: auto;
+}
+
+/* The ground the whole wall is cut into. Fixed attachment so the grain belongs to the STONE and not
+ * to the scroll: the registers travel, the quarry face does not. */
+/* The quarry face. Real carved stone now, not a gradient approximating one: the owner's
+ * `texture-carved` asset, held far back so it is the wall's MATERIAL rather than a picture of a
+ * wall. The mottle stays over it as the light model, and the tooth is gone — the photograph
+ * supplies a truer grain than a repeating gradient could.
+ *
+ * Fixed attachment, so the registers travel across a stationary quarry face: the wall does not
+ * scroll, the courses cut into it do. */
+body {
+  background-color: var(--stone-900);
+  background-image:
+    var(--grain-mottle),
+    linear-gradient(rgba(18, 16, 14, 0.82), rgba(18, 16, 14, 0.85)),
+    url("carved.webp");
+  background-size: auto, auto, 620px auto;
+  background-repeat: no-repeat, no-repeat, repeat;
+  background-attachment: fixed;
 }
 
 /* A register: one horizontal band, cut from the wall by an incised rule at its top edge.
@@ -315,7 +372,57 @@ ul, ol { padding: 0; list-style: none; }
     inset 0 6px 12px -6px rgba(0, 0, 0, 0.55);
 }
 
-.register--deep { background: var(--stone-800); }
+/* A lifted course. The fill alone was the entire difference between one band and the next, and at
+ * #1a1714 against #12100e that is an 8/255 step — under the same perceptual threshold that the
+ * incised rule's first draft failed at. Seven consecutive bands therefore read as one continuous
+ * dark field, which is why the page felt flat despite a correct structure.
+ *
+ * A lifted course now also catches light: raking illumination from the top of the band, falling off
+ * into the stone. The gradient is on `background-image` so the `--stone-800` fill remains the
+ * declared colour underneath it and no contrast figure computed against that token moves. */
+.register--deep {
+  background-color: var(--stone-800);
+  background-image:
+    linear-gradient(180deg,
+      rgba(237, 228, 211, 0.030) 0%,
+      rgba(237, 228, 211, 0.008) 18%,
+      transparent 46%),
+    var(--grain-tooth);
+}
+
+/* The quarry edge. A register is CUT, so its ends are cut too — the band's inline edges darken into
+ * the surrounding stone rather than stopping at an invisible boundary.
+ *
+ * Symmetric by construction, so it is direction-agnostic: an asymmetric relief would need mirroring
+ * under `[dir="rtl"]`, and every physical-property mirror is a future defect.
+ *
+ * Centred with `inset-inline: 0` plus `margin-inline: auto`, NOT with the usual
+ * `inset-inline-start: 50%` + `translateX(-50%)`. That pair is a latent RTL bug: the inset is
+ * logical and resolves from the right edge under `dir="rtl"`, while `translateX` is physical and
+ * always shifts left, so the two compound instead of cancelling. Measured on the Arabic page, the
+ * five elements using it pushed `scrollWidth` to 2970px against a 1440px viewport; the English
+ * page measured 1440px, so the defect was invisible in the language it was authored in.
+ * `margin-inline: auto` centres an element of known inline size in both directions with no
+ * physical property and no transform at all. */
+.register::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  /* `inset-inline: 0` alone stretches this to the register's own width, which is what the quarry
+   * edge should shade. `100vw` was 60px wider than the client area whenever a scrollbar is
+   * present, and that surplus is itself horizontal overflow — the shading does not need to exceed
+   * the page to darken its ends. */
+  inset-inline: 0;
+  background: linear-gradient(90deg,
+    rgba(0, 0, 0, 0.32) 0%,
+    transparent 14%,
+    transparent 86%,
+    rgba(0, 0, 0, 0.32) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.register > * { position: relative; z-index: 1; }
 
 /* The register label. Machine-adjacent, so monospace (the app's rule, kept). Numbered in Roman
  * because the courses of a wall are counted, and the sequence carries real reading order. */
@@ -334,11 +441,27 @@ ul, ol { padding: 0; list-style: none; }
 
 [dir="rtl"] .register-mark { letter-spacing: .1em; }
 
+/* The course rule. It was a flat 1px blue line; a cut in stone has a lit lower lip, and the same
+ * three-part logic the register rule uses applies at this scale too. Drawn with a gradient so the
+ * rule fades INTO the wall at its far end rather than stopping dead — a chisel run, not a divider. */
 .register-mark::before {
   content: "";
   inline-size: clamp(2rem, 6vw, 5rem);
-  block-size: 1px;
-  background: var(--egyptian-blue-dim);
+  block-size: 2px;
+  background: linear-gradient(90deg,
+    var(--egyptian-blue-dim) 0%,
+    var(--egyptian-blue-dim) 55%,
+    rgba(66, 145, 184, 0.15) 100%);
+  box-shadow: 0 1px 0 rgba(237, 228, 211, 0.06);
+}
+
+/* Symmetric under RTL: the gradient's fade must run away from the label in both directions, so the
+ * one physical-axis value on the page is mirrored explicitly rather than left to inherit. */
+[dir="rtl"] .register-mark::before {
+  background: linear-gradient(270deg,
+    var(--egyptian-blue-dim) 0%,
+    var(--egyptian-blue-dim) 55%,
+    rgba(66, 145, 184, 0.15) 100%);
 }
 
 .register-subject {
@@ -417,11 +540,104 @@ ul, ol { padding: 0; list-style: none; }
  * The first viewport. A monumental claim cut into the wall, and immediately beneath it the product
  * doing its job on one real export — including the refusal, set into its own course. */
 
+/* THE PROCESSIONAL AXIS.
+ *
+ * The visitor walks INTO the page rather than reading across it: the claim stands centred on the
+ * axis, the gate opens beneath it, and the argument beyond is a colonnade of bays. The previous
+ * world put the claim left and the bands flat, which read as a document; an axis reads as a
+ * building, and a building is what a monumental Egyptian composition actually is.
+ *
+ * Centred display type is the one place this world spends symmetry. It is also the only
+ * arrangement that is identical in both scripts — an axis has no handedness, so the Arabic page
+ * is the same composition rather than a mirrored one. */
 .register--claim {
-  padding-block: clamp(var(--space-9), 13vh, 11rem) clamp(var(--space-8), 8vw, var(--space-9));
+  padding-block: clamp(var(--space-9), 13vh, 11rem) 0;
   border-block-start: 0;
   box-shadow: none;
+  /* `clip` rather than `visible`: the sun's field is deliberately wider than the viewport
+   * (`min(150vw, 1500px)`), and left unclipped it contributes that surplus as horizontal
+   * overflow. `clip` contains it without creating a scroll container, so the specimen below can
+   * still overlap the gate — which `overflow: hidden` would have cut off. */
+  overflow: clip;
+  text-align: center;
+}
+
+.register--claim h1,
+.register--claim .claim-lede { margin-inline: auto; }
+
+/* ---- THE GATE ---------------------------------------------------------------------------------
+ * A wide cinematic band, full-bleed, carrying the temple at golden hour with the winged scarab on
+ * its horizon. It is the page's one photographic moment, and it earns that by being the thing the
+ * product is named after: Khepri is the scarab that pushes the morning sun over the horizon.
+ *
+ * It is a BAND rather than a full-bleed hero on purpose. A full vista would make the first
+ * viewport a picture with text on it; a band keeps the claim on open stone above and the
+ * specimen's evidence below, so the image sits INSIDE the argument instead of replacing it.
+ *
+ * The scene is masked top and bottom into the stone so it has no hard edges — the wall does not
+ * stop, the light does. */
+.gate {
+  position: relative;
+  margin-block-start: clamp(var(--space-7), 6vw, var(--space-9));
+  block-size: clamp(300px, 34vw, 470px);
   overflow: hidden;
+  isolation: isolate;
+}
+
+.gate-scene {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  object-position: 50% 46%;
+}
+
+/* The band bleeds into the stone at both edges rather than ending at a line. */
+.gate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  /* The mask must let the scene BE a scene. The first draft held 0.22-0.30 opacity across the
+   * middle and pushed the solid stone stop to the very edges, which crushed a golden-hour
+   * photograph into a dark rectangle — the image was loading correctly and simply could not be
+   * seen through its own overlay.
+   *
+   * The stone now closes only in the outer ~14% at each edge, where the band meets the wall, and
+   * the middle is left almost clear so the sun, the obelisks, and the river read. The lower fade
+   * stays heavier than the upper one because the specimen overlaps there and needs a ground. */
+  background: linear-gradient(180deg,
+    var(--stone-900) 0%,
+    rgba(18, 16, 14, 0.55) 9%,
+    rgba(18, 16, 14, 0.06) 26%,
+    rgba(18, 16, 14, 0.04) 54%,
+    rgba(18, 16, 14, 0.42) 78%,
+    rgba(18, 16, 14, 0.88) 93%,
+    var(--stone-900) 100%);
+  pointer-events: none;
+}
+
+/* The scarab rides the horizon on the axis, sized in viewport units so it holds its relationship
+ * to the band at every width rather than shrinking into a sticker. */
+.gate-scarab {
+  position: absolute;
+  z-index: 3;
+  inset-block-end: clamp(var(--space-5), 4vw, var(--space-7));
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: clamp(180px, 27vw, 380px);
+  block-size: auto;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.8));
+}
+
+/* The specimen breaks upward into the band, so the evidence overlaps the gate rather than
+ * sitting politely below it — the artifact is what the page is about. */
+.register--claim .specimen {
+  position: relative;
+  z-index: 4;
+  margin-block-start: clamp(calc(var(--space-8) * -1), -6vw, calc(var(--space-6) * -1));
+  text-align: start;
 }
 
 /* The sun's passage. A single radial field low on the horizon behind the claim — the light the
@@ -431,15 +647,33 @@ ul, ol { padding: 0; list-style: none; }
   content: "";
   position: absolute;
   inset-block-start: -18%;
-  inset-inline-start: 50%;
+  inset-inline: 0;
+  margin-inline: auto;
   inline-size: min(150vw, 1500px);
   block-size: min(150vw, 1500px);
-  transform: translateX(-50%);
+  /* The sun is the world's light source and the reason the product is called Khepri — the scarab
+   * that pushes the morning sun over the horizon. At 0.13 alpha it read as a faint smudge behind
+   * the headline rather than as the light everything else on the page is raked by.
+   *
+   * Raised, and given a hotter core with a longer falloff, so it behaves like a low sun: intense
+   * at the horizon, bleeding warm into the stone for a long way out. The blue mid-band stays —
+   * that is the Egyptian-blue pigment reading in the sun's scatter, and it is what stops the
+   * gradient from looking like a generic orange glow.
+   *
+   * The raise moves the ground under the headline, so every ratio drawn on it was recomputed
+   * against the sun's BRIGHTEST point (#3d3118, the 0.22 core composited over `--stone-900`)
+   * rather than against the page ground the tokens were originally measured on:
+   *   `--papyrus`      10.08:1   (15.04:1 on open stone)
+   *   `--papyrus-dim`   4.81:1   (7.17:1)  — the tightest on the page, and it still clears AA
+   *   `--gold`          5.73:1   (8.55:1)
+   * A brighter core than this would push `--papyrus-dim` under 4.5:1, so 0.22 is a measured
+   * ceiling rather than a chosen value. */
   background: radial-gradient(circle at 50% 50%,
-    rgba(212, 168, 58, 0.13) 0%,
-    rgba(212, 168, 58, 0.05) 32%,
-    rgba(74, 159, 196, 0.028) 52%,
-    transparent 68%);
+    rgba(212, 168, 58, 0.22) 0%,
+    rgba(212, 168, 58, 0.115) 24%,
+    rgba(212, 168, 58, 0.048) 40%,
+    rgba(74, 159, 196, 0.040) 56%,
+    transparent 72%);
   pointer-events: none;
   z-index: 0;
 }
@@ -473,16 +707,41 @@ h1 {
   margin-block-start: clamp(var(--space-5), 3vw, var(--space-6));
   color: var(--papyrus-dim);
   font-size: var(--text-lede);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
 }
 
 /* ---- The specimen: one export, mid-admission ---------------------------------------------------
  * Not a dashboard screenshot. A governed document fragment, banded like the wall it sits on, with
  * every row on a shared baseline. */
 
+/* The specimen is the page's one artifact: a real export, mid-admission. It has to read as an object
+ * SET INTO the wall — a slab seated in the stone — rather than as a div with a border.
+ *
+ * The translucency is kept exactly as it was (the sun's field must still read through it, which is
+ * what puts the specimen IN the wall rather than on top of it). What is added is seating:
+ *   - a cast shadow with a real offset and a soft blur, so it sits above its own ground;
+ *   - an inset lit lip on its top edge and an inset shade on its bottom, which is the same
+ *     three-part cut the incised register rule draws, applied to a raised object instead of a
+ *     recessed line.
+ * No zero-offset halo: that is decoration, and this is a light model. */
 .specimen {
   margin-block-start: clamp(var(--space-8), 7vw, var(--space-9));
   border: 1px solid var(--stone-600);
   background: linear-gradient(180deg, rgba(36, 31, 26, 0.72), rgba(26, 23, 20, 0.72));
+  box-shadow:
+    0 1px 0 rgba(237, 228, 211, 0.07) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.45) inset,
+    0 18px 40px -22px rgba(0, 0, 0, 0.85),
+    0 2px 6px -3px rgba(0, 0, 0, 0.5);
+}
+
+/* The head is the slab's cut face: fractionally lighter than the body, the way a sawn edge catches
+ * more light than the polished face below it. */
+.specimen-head {
+  background: linear-gradient(180deg,
+    rgba(237, 228, 211, 0.035),
+    transparent);
 }
 
 .specimen-head {
@@ -596,14 +855,24 @@ h1 {
  *
  * It stays inside `.course--withheld`, so it inherits the state-bearing rule and the italic. Both
  * carriers still apply, and the state still survives greyscale and print. */
+/* The refusal's reason. This is the single most important paragraph on the page — it is the product
+ * doing the thing the headline claims — and it was set at the same size as a caption, inside the
+ * specimen, as one unbroken block.
+ *
+ * It keeps the withheld colour and the 4px disclosure rule (both governed; neither is negotiable),
+ * and gains the space to be read: a slightly larger tier, real separation between its statements,
+ * and a measure that keeps the line length honest. */
 .course-refusal {
   display: block;
   max-width: var(--measure-note);
   margin-block-start: var(--space-3);
   color: var(--withheld);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   line-height: var(--leading-normal);
+  text-wrap: pretty;
 }
+
+.course-refusal p + p { margin-block-start: var(--space-4); }
 
 .synthetic-note {
   padding: var(--space-3) clamp(var(--space-4), 3vw, var(--space-6));
@@ -747,10 +1016,49 @@ h1 {
 .contrast-quote--ours { color: var(--papyrus); }
 .contrast-quote--ours .claim-mark { color: var(--gold); }
 
+/* ---- THE COLONNADE ----------------------------------------------------------------------------
+ * The page's argument stands in three bays — proven, caveated, withheld — divided by columns of
+ * light, the way a hypostyle hall divides its aisles.
+ *
+ * The column is drawn on the GAP, never as a border on the bay. That distinction is load-bearing:
+ * `.verdict` already carries a 4px `border-inline-start` that IS the governed state (§4.6, raised
+ * to 5.28:1 so it clears WCAG 1.4.11 as a state carrier). A second vertical rule on the same
+ * element would make structure and state indistinguishable — the visitor could not tell which line
+ * means "withheld" and which means "next column". So the column is a separate element on a
+ * separate axis, and it fades at both ends so it reads as light falling down a shaft rather than
+ * as a divider.
+ *
+ * `column-gap` carries the spacing and the columns are absolutely placed against the track edges,
+ * which keeps the whole thing direction-agnostic: no physical offset appears anywhere, so the
+ * Arabic page draws the identical colonnade without a mirror rule. */
 .verdicts {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: clamp(var(--space-6), 4vw, var(--space-7));
+}
+
+/* The shafts. Two of them, one per interior division, drawn only where three bays actually sit
+ * side by side — below that width the grid has reflowed to one column and a vertical shaft would
+ * be pointing at nothing. */
+@media (min-width: 62rem) {
+  .verdicts::before,
+  .verdicts::after {
+    content: "";
+    position: absolute;
+    inset-block: calc(var(--space-5) * -1);
+    inline-size: 1px;
+    background: linear-gradient(180deg,
+      transparent 0%,
+      rgba(217, 172, 60, 0.34) 22%,
+      rgba(217, 172, 60, 0.40) 50%,
+      rgba(217, 172, 60, 0.30) 76%,
+      transparent 100%);
+    pointer-events: none;
+  }
+
+  .verdicts::before { inset-inline-start: calc(33.333% - var(--space-4)); }
+  .verdicts::after  { inset-inline-start: calc(66.666% - var(--space-3)); }
 }
 
 .verdict {
@@ -789,10 +1097,22 @@ h1 {
 
 .verdict--withheld .verdict-claim { color: var(--papyrus-dim); }
 
+/* The three verdicts carry very unequal copy — the withheld one must state a governed reason in
+ * full, so it runs roughly three times the proven one. Left to itself the row reads lopsided and the
+ * eye settles on the refusal rather than on the proof, which inverts the page's argument.
+ *
+ * The fix is rhythm, not truncation: no governed reason may be shortened to balance a layout. The
+ * detail gets its own measure and the paragraphs inside it get real separation, so a long verdict
+ * reads as a sequence of considered statements rather than as an undifferentiated block. */
 .verdict-detail {
+  max-width: 34ch;
   color: var(--papyrus-dim);
   font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
 }
+
+.verdict-detail p + p { margin-block-start: var(--space-4); }
 
 /* The product's own refusal wording, quoted into the withheld verdict.
  *
@@ -825,11 +1145,16 @@ h1 {
 
 .pillar { padding-block-start: var(--space-5); border-block-start: 1px solid var(--stone-600); }
 
+/* The pillars carried `--text-md` (1.25rem) headings — the same tier as the passage terms two
+ * registers above, so the page's argument arrived at its summary and got quieter. A register wall
+ * has FEW sizes used decisively; four consecutive tiers within 0.4rem of each other is the opposite.
+ * These step up to `--text-lg`, which is a real interval the eye reads as a new course. */
 .pillar h3 {
   margin-block-end: var(--space-3);
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   font-weight: 400;
   line-height: var(--leading-tight);
+  letter-spacing: -.012em;
 }
 
 .pillar p { max-width: var(--measure-note); color: var(--papyrus-dim); font-size: var(--text-sm); }
@@ -886,12 +1211,168 @@ h1 {
 
 .script-note { color: var(--papyrus-dim); font-size: var(--text-sm); }
 
+/* ---- A section lede ----------------------------------------------------------------------------
+ * The line under a register mark that says what the course is for. One measure, one tier above the
+ * body text, so a scanning visitor can read only the marks and ledes and still follow the page. */
+.section-lede {
+  max-width: var(--measure-lede);
+  margin-block-end: clamp(var(--space-7), 5vw, var(--space-8));
+  color: var(--papyrus-dim);
+  font-size: var(--text-lede);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+
+/* ---- THE FOUR DELIVERABLES ----------------------------------------------------------------------
+ * Four bays, numbered in Roman like the passage's courses, because they are the same kind of thing:
+ * an ordered set the visitor reads through rather than a grid of interchangeable feature cards.
+ *
+ * Deliberately NOT cards. The craft floor names same-size icon-plus-heading-plus-text cards as the
+ * lazy page scaffold, and this world has a better answer already: a bay divided by an incised rule,
+ * which is what every other course on this wall uses. */
+.deliverables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 0;
+  list-style: none;
+}
+
+.deliverable {
+  padding-block: var(--space-6);
+  padding-inline: 0 var(--space-6);
+  border-block-start: 1px solid var(--stone-600);
+}
+
+/* The dividing rule between bays, on the same logic as the colonnade: it is structure, so it is
+ * a hairline in stone, never the 4px that means a governed state. */
+.deliverable + .deliverable {
+  border-inline-start: 1px solid var(--stone-700);
+  padding-inline-start: var(--space-6);
+}
+
+.deliverable-index {
+  display: block;
+  margin-block-end: var(--space-4);
+  color: var(--gold-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: .28em;
+}
+
+.deliverable-name {
+  margin-block-end: var(--space-3);
+  font-size: var(--text-md);
+  font-weight: 400;
+  line-height: var(--leading-tight);
+  text-wrap: balance;
+}
+
+.deliverable-body {
+  max-width: var(--measure-note);
+  color: var(--papyrus-dim);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+/* ---- THE REFUSAL GALLERY -------------------------------------------------------------------------
+ * The page's strongest section, and the one a competitor cannot copy: six real governed refusals,
+ * each naming its subject, its consequence and its remedy in the product's own words.
+ *
+ * Every entry carries the governed refusal shape — a 4px inline-start rule in `--withheld` plus
+ * italic — because that is what these ARE. `KHEPRI_DESIGN_LANGUAGE.md` 4.6 mandates the treatment
+ * and 4.4 records why 4px rather than a hairline; the colour clears WCAG 1.4.11 as a state carrier
+ * at 5.28-5.86:1 against every ground it is drawn on here. This is the one place on the marketing
+ * page where the product's own law is quoted literally rather than described.
+ *
+ * Two columns at width, because six full refusals in one column is a wall of text and six across a
+ * row is unreadable at this length. */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: clamp(var(--space-5), 3vw, var(--space-6));
+  list-style: none;
+}
+
+.gallery-refusal {
+  padding-inline-start: var(--space-5);
+  padding-block: var(--space-4);
+  border-inline-start: 4px solid var(--withheld);
+  color: var(--withheld);
+  font-size: var(--text-sm);
+  font-style: italic;
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+
+/* ---- QUESTIONS -----------------------------------------------------------------------------------
+ * Answered in the open, not behind an accordion. A disclosure widget is the category's habit and it
+ * exists to make a long page look short; this page is long on purpose and its answers are the
+ * argument, so hiding them would be hiding the evidence. Two columns keep the length honest.
+ *
+ * `<dl>` because these are genuinely term-and-definition pairs, which also gives a screen reader
+ * the question/answer relationship without any ARIA. */
+.questions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  gap: clamp(var(--space-6), 4vw, var(--space-7));
+}
+
+.question {
+  padding-block-start: var(--space-5);
+  border-block-start: 1px solid var(--stone-600);
+}
+
+.question-ask {
+  margin-block-end: var(--space-3);
+  color: var(--papyrus);
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+  text-wrap: balance;
+}
+
+.question-answer {
+  max-width: 46ch;
+  color: var(--papyrus-dim);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+
+/* ---- The carved divider -------------------------------------------------------------------------
+ * The owner's carved register divider, used as STRUCTURE rather than as ornament: it closes the
+ * bilingual register and opens the close, which is exactly the job a carved band does on a real
+ * wall — it marks where one course ends and the next begins.
+ *
+ * Decorative, so it is a background rather than an `<img>`: it carries no information a reader
+ * would lose. It is centred on the processional axis and masked at both ends so it dissolves into
+ * the stone instead of stopping at a hard edge. */
+.register--close::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  margin-inline: auto;
+  transform: translateY(-50%);
+  inline-size: min(90%, 780px);
+  block-size: clamp(38px, 5vw, 62px);
+  background: url("divider.webp") center / contain no-repeat;
+  opacity: .62;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+
 /* ---- Close --------------------------------------------------------------------------------------- */
 
 .register--close {
+  position: relative;
   padding-block: clamp(var(--space-9), 12vw, 12rem);
   text-align: center;
-  overflow: hidden;
+  /* `overflow: hidden` would clip the carved divider, which is deliberately half outside this
+   * register's top edge — it straddles the join because that is what a divider does. The sun's
+   * field below is bounded by its own `inset` values rather than by clipping. */
+  overflow: visible;
 }
 
 /* The sun completes its passage: the light returns at the foot of the wall, now risen. */
@@ -899,10 +1380,10 @@ h1 {
   content: "";
   position: absolute;
   inset-block-end: -55%;
-  inset-inline-start: 50%;
+  inset-inline: 0;
+  margin-inline: auto;
   inline-size: min(140vw, 1300px);
   block-size: min(140vw, 1300px);
-  transform: translateX(-50%);
   background: radial-gradient(circle at 50% 50%,
     rgba(212, 168, 58, 0.115) 0%,
     rgba(212, 168, 58, 0.042) 34%,

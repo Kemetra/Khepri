@@ -1,0 +1,10 @@
+{
+  "prompt": "COMP A \u2014 THE GATE. Desktop 1440. Full-bleed golden-hour Nile temple scene as the first viewport (owner-supplied hero-scene). Gold-and-lapis winged scarab emblem above a monumental claim set low-left on the darkened stone. Specimen slab of one real retail export stands forward of the gate, carrying four admitted figures in gold and one governed refusal on a 4px withheld rule. Imagery leads; structure follows.",
+  "world": "Egyptian cinematic gate \u2014 full-bleed vista, scarab emblem, monumental type",
+  "approved": false,
+  "comp": "comp-a-the-gate.png",
+  "surface": "public landing (/landing) \u2014 Persuade",
+  "direction_seed": "14a23b43",
+  "viewport": "1440x900 desktop, full-page",
+  "assets": "owner-supplied khepri_visual_pack (hero-scene, hero-winged-scarab, texture-sandstone, register-divider); usage rights NOT yet recorded \u2014 comp use only"
+}

@@ -1,0 +1,77 @@
+<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8">
+<link rel="stylesheet" href="_base.css">
+<style>
+/* ---- COMP C — THE PROCESSIONAL.
+ * The temple's axis: you walk INTO the page. The scene is a wide cinematic band, not a
+ * full-bleed vista, with the scarab riding its horizon. Below it the three trust states
+ * stand as a COLONNADE — three bays divided by gold-lit columns, each carrying one state.
+ * The most information-dense of the three: it shows the product's argument, not only its mood. */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:26px 46px}
+.brand{display:flex;align-items:center;gap:13px;font-family:var(--mono);font-size:12px;
+  letter-spacing:.42em;text-transform:uppercase}
+.brand i{width:9px;height:9px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 16px 3px rgba(217,172,60,.6)}
+.claim{padding:40px 0 54px;text-align:center}
+h1{font-size:clamp(3rem,6.2vw,5.3rem);font-weight:400;line-height:.98;letter-spacing:-.035em;
+  max-width:18ch;margin-inline:auto;text-wrap:balance}
+.lede{margin:22px auto 0;max-width:52ch;color:var(--papyrus-dim);font-size:1.12rem;line-height:1.62}
+/* The cinematic band: the horizon you walk toward, with the scarab on its axis. */
+.band{position:relative;height:390px;overflow:hidden;isolation:isolate;
+  border-block:1px solid var(--stone-600)}
+.band img.scene{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 46%}
+.band::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,var(--stone-900) 0%,rgba(13,11,9,.12) 34%,
+    rgba(13,11,9,.30) 60%,var(--stone-900) 100%)}
+.band .scarab{position:absolute;z-index:3;inset-block-end:34px;inset-inline-start:50%;
+  transform:translateX(-50%);width:min(380px,38vw);
+  filter:drop-shadow(0 12px 30px rgba(0,0,0,.8))}
+/* The colonnade: three bays, gold-lit columns between them. */
+.colonnade{display:grid;grid-template-columns:repeat(3,1fr);margin-block-start:78px}
+.bay{position:relative;padding:34px 32px 40px}
+.bay + .bay{border-inline-start:1px solid transparent;
+  border-image:linear-gradient(180deg,transparent,rgba(217,172,60,.42),transparent) 1}
+.bay .state{font-family:var(--mono);font-size:10px;letter-spacing:.3em;text-transform:uppercase;
+  display:block;margin-block-end:16px}
+.bay.proven .state{color:var(--gold)}
+.bay.caveated .state{color:var(--ochre)}
+.bay.withheld .state{color:var(--withheld)}
+.bay h3{font-weight:400;font-size:1.28rem;line-height:1.32;margin-block-end:13px;max-width:22ch}
+.bay.withheld h3{font-style:italic;color:var(--papyrus)}
+.bay p{color:var(--papyrus-dim);font-size:.92rem;line-height:1.64;max-width:34ch}
+.bay .fig{display:block;font-family:var(--mono);font-size:1.75rem;letter-spacing:-.02em;
+  margin-block-end:14px;font-variant-numeric:tabular-nums}
+.bay.proven .fig{color:var(--gold)}
+.bay.caveated .fig{color:var(--ochre)}
+.bay.withheld .fig{color:var(--withheld);font-size:1.1rem;font-style:italic}
+.divider{margin-block-start:70px;width:100%;opacity:.5}
+</style></head><body>
+<div class="wall">
+  <div class="topbar"><span class="brand"><i></i>Khepri</span><span class="lbl">العربية</span></div>
+  <div class="claim">
+    <h1>Retail decisions you can <span class="gold">prove</span>.</h1>
+    <p class="lede">Khepri turns the retail export you already have into analysis that carries
+      its own evidence — and names what it cannot support instead of estimating it.</p>
+  </div>
+</div>
+<div class="band">
+  <img class="scene" src="assets/hero-scene-1440w.webp" alt="">
+  <img class="scarab" src="assets/hero-winged-scarab-720w.webp" alt="">
+</div>
+<div class="wall">
+  <div class="colonnade">
+    <div class="bay proven"><span class="state">Proven</span>
+      <span class="fig">4,182,600 EGP</span>
+      <h3>Revenue reconciles across all 18 stores.</h3>
+      <p>Population and coverage were established first; the figure matches the rows behind it.</p></div>
+    <div class="bay caveated"><span class="state">Caveated</span>
+      <span class="fig">16 of 18</span>
+      <h3>Category performance is reported for 16 of 18 stores.</h3>
+      <p>Two stores did not report category codes for this period. The caveat travels with the figure.</p></div>
+    <div class="bay withheld"><span class="state">Withheld</span>
+      <span class="fig">Not reported</span>
+      <h3>Comparison with an earlier period is not reported here.</h3>
+      <p>Your file covers a single period, so there is no earlier period inside it to compare against.</p></div>
+  </div>
+  <img class="divider" src="assets/register-divider-1080w.webp" alt="">
+</div>
+</body></html>

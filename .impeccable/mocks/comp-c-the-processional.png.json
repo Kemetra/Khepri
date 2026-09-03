@@ -1,0 +1,12 @@
+{
+  "prompt": "COMP C \u2014 THE PROCESSIONAL. Desktop 1440. The temple axis walked front-on: centred monumental claim, then a wide cinematic band of the Nile scene with the winged scarab riding its horizon, then the product's argument as a COLONNADE of three bays \u2014 proven, caveated, withheld \u2014 divided by gold-lit columns, each bay carrying a real figure and its governed reason. Closes on the carved register divider. The most information-dense of the three.",
+  "world": "Egyptian processional axis \u2014 cinematic band, three-bay colonnade",
+  "approved": true,
+  "comp": "comp-c-the-processional.png",
+  "surface": "public landing (/landing) \u2014 Persuade",
+  "direction_seed": "14a23b43",
+  "viewport": "1440x900 desktop, full-page",
+  "assets": "owner-supplied khepri_visual_pack (hero-scene, hero-winged-scarab, texture-sandstone, register-divider); usage rights NOT yet recorded \u2014 comp use only",
+  "approved_by": "owner (Ahmed Shaaban), in session 2026-09-03: \"The Processional is good\"",
+  "owner_note": "Owner also rejected the comps as reading AI-made: the page stopped after three sections, three equal-mass columns, evenly-applied gold, no depth. The build must carry the full page and real material."
+}

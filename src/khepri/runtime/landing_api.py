@@ -45,7 +45,28 @@ LANDING_ASSETS = f"{LANDING_PREFIX}/assets"
 #: specification change, not an implementation detail, which is what the inventory test guards.
 LANDING_PAGES = frozenset({"index"})
 
-_ASSETS = {"landing.css": "text/css; charset=utf-8"}
+#: The exact allowlist of files the public landing route will serve. A name absent here 404s,
+#: so adding an asset is a deliberate act rather than a consequence of dropping a file in the
+#: package directory.
+#:
+#: The images are the owner-supplied `khepri_visual_pack` (see
+#: `docs/assets/landing-kit/README.md` for the SHA-256 integrity record of every source file).
+#: They are served rather than inlined because the public CSP is `default-src 'none'` with
+#: `img-src 'self'`: a self-hosted image loads, a hosted or data-URI-heavy one does not.
+_ASSETS = {
+    "landing.css": "text/css; charset=utf-8",
+    # The gate — the Nile temple scene at golden hour, in three widths for `srcset`.
+    "gate.webp": "image/webp",
+    "gate-960.webp": "image/webp",
+    "gate-640.webp": "image/webp",
+    # The winged scarab pushing the sun disc: Khepri itself, and the page's one emblem.
+    "scarab.webp": "image/webp",
+    "scarab-480.webp": "image/webp",
+    # The carved register divider, used as a structural rule between courses.
+    "divider.webp": "image/webp",
+    # Carved stone, used as the material of the wall rather than as a picture.
+    "carved.webp": "image/webp",
+}
 _TYPEFACES = {face.file_name: face for face in load_report_fonts()}
 _PUBLIC_HEADERS = {**SECURITY_HEADERS, "Cache-Control": "public, max-age=0, must-revalidate"}
 
@@ -53,6 +74,28 @@ _PUBLIC_HEADERS = {**SECURITY_HEADERS, "Cache-Control": "public, max-age=0, must
 #: `REASON_SCOPES`, so it is read at section scope; asking for it at result scope raises.
 _SPECIMEN_REASON = "prior_window_absent"
 _SPECIMEN_REASON_SCOPE = "section"
+
+#: The governed refusals the gallery shows, as `(reason, scope)` pairs.
+#:
+#: This is a SELECTION, not a second source of truth: every string a visitor reads is fetched from
+#: `khepri.rra.rendering.wording` at render time, so the landing can never state a refusal the
+#: product would not state, and a change to the catalog's wording reaches this page without an
+#: edit here (`FR-085`).
+#:
+#: Six were chosen to span the distinct SHAPES a refusal takes rather than to list the catalog:
+#: a period that is absent, an identifier that is missing, a column that is absent, an identity
+#: that is not distinct, an identifier present on only some rows, and a calculation that was
+#: performed and then failed to reconcile. The last is the one a visitor least expects — the
+#: product declining its own completed arithmetic — and it is the strongest single argument the
+#: page can make, so it closes the gallery.
+_GALLERY_REFUSALS = (
+    ("prior_window_absent", "section"),
+    ("transaction_identifier_absent", "section"),
+    ("units_absent", "section"),
+    ("distinct_set_uncomputable", "section"),
+    ("incomplete_transaction_identifiers", "section"),
+    ("decomposition_not_additive", "section"),
+)
 
 #: The caveat the specimen qualifies with, read from the same catalog as the refusal.
 #:
@@ -138,6 +181,23 @@ def specimen_refusal(language: str) -> str:
     )
 
 
+def gallery_refusals(language: str) -> tuple[str, ...]:
+    """The governed refusal texts the gallery displays, in catalog wording.
+
+    Read rather than authored, for the same reason `specimen_refusal` is: a marketing page that
+    paraphrased a governed reason would become a second, drifting definition of what the product
+    refuses and why (`FR-085`).
+
+    Each message already names its own subject ("Basket size - not available"), the consequence
+    ("The rest of the review is unaffected") and the remedy ("Export with the receipt number
+    included"), so the page adds no heading, label, or gloss of its own around them.
+    """
+    return tuple(
+        refusal_message(reason, context=scope, language=language)
+        for reason, scope in _GALLERY_REFUSALS
+    )
+
+
 def specimen_caveat(language: str) -> str:
     """The governed caveat text the specimen qualifies with.
 
@@ -217,6 +277,7 @@ def add_landing_routes(app: FastAPI) -> None:
             faces=tuple(_TYPEFACES.values()),
             courses=specimen(language),
             refusal=specimen_refusal(language),
+            gallery=gallery_refusals(language),
             caveat=specimen_caveat(language),
             panel_metric_en=panel_metric("en"),
             panel_metric_ar=panel_metric("ar"),
@@ -236,6 +297,7 @@ __all__ = [
     "SPECIMEN_AVERAGE_ORDER_VALUE",
     "SPECIMEN_REVENUE",
     "SPECIMEN_ROWS",
+    "gallery_refusals",
     "SPECIMEN_TRANSACTIONS",
     "SpecimenCourse",
     "add_landing_routes",

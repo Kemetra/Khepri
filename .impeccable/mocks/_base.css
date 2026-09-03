@@ -1,0 +1,19 @@
+@font-face{font-family:"Noto Sans Arabic";src:url("fonts/NotoSansArabic-Regular-latin.woff2") format("woff2");font-weight:400;font-display:swap;
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215}
+@font-face{font-family:"Noto Sans Arabic";src:url("fonts/NotoSansArabic-Regular-arabic.woff2") format("woff2");font-weight:400;font-display:swap;
+  unicode-range:U+0600-06FF,U+0750-077F,U+08A0-08FF,U+FB50-FDFF,U+FE70-FEFF}
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --stone-900:#0d0b09; --stone-800:#151210; --stone-700:#1f1a16; --stone-600:#332b23;
+  --gold:#d9ac3c; --gold-hi:#f0cf7a; --gold-dim:#8a6d24;
+  --lapis:#2f6ea8; --lapis-lit:#4a9fc4;
+  --papyrus:#efe6d5; --papyrus-dim:#a89e8c; --withheld:#9a8d7e; --ochre:#c97b5a;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --body:"Noto Sans Arabic","Segoe UI",Tahoma,sans-serif;
+}
+body{background:var(--stone-900);color:var(--papyrus);font-family:var(--body);
+  -webkit-font-smoothing:antialiased}
+.mono{font-family:var(--mono)}
+.lbl{font-family:var(--mono);font-size:10px;letter-spacing:.34em;text-transform:uppercase;color:var(--papyrus-dim)}
+.wall{width:min(100% - 5rem,1240px);margin-inline:auto}
+.gold{color:var(--gold)}

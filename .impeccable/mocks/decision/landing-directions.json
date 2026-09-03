@@ -1,0 +1,131 @@
+{
+  "title": "Choose Khepri's Egyptian design world",
+  "question": "Which ancient-Egyptian visual language makes Khepri feel distinctive, credible, and built around provable retail decisions?",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Temple Axis",
+      "kicker": "THE ROLL",
+      "lineage": "temple axes, carved registers, and monumental Egyptian proportion",
+      "thesis": "Khepri presents every decision on a monumental axis: admitted facts endure, while unsupported claims stop at a visible threshold.",
+      "palette": ["#15191B", "#D8C39B", "#176B87", "#A97837"],
+      "materials": ["basalt", "limestone", "lapis-blue inlay"],
+      "viewport": "A bilingual claim anchors a monumental stone grid while one synthetic export passes through carved registers for proven and withheld results.",
+      "risk": "Monumentality can feel institutional unless the retail evidence stays immediate and legible.",
+      "raised": [
+        {"from": "Silkscreen Loft", "raise": "The same specimen repeats across proven, caveated, and withheld print states."},
+        {"from": "Memory Quilt", "raise": "Every claim has a visible seam back to its evidence."},
+        {"from": "Gravity Garden", "raise": "Admission follows one deterministic motion path and settles without bounce."},
+        {"from": "ANSI Nightboard", "raise": "State is always printed as text and the experience remains keyboard-complete."}
+      ],
+      "comp": ".impeccable/mocks/decision/assigned-proof-sheet.png"
+    },
+    {
+      "id": "model-pick",
+      "label": "The Scribe's Ledger",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "papyrus account rolls, reed-pen grids, and administrative seals",
+      "thesis": "Khepri is a contemporary scribe: every answer is entered with its source, and unsupported lines remain visibly unrecorded.",
+      "palette": ["#102E43", "#E5D1A3", "#B55235", "#1D1A17"],
+      "materials": ["papyrus", "reed-ink rules", "faience seals"],
+      "viewport": "A modern bilingual papyrus ledger records one synthetic sales file, its admitted facts, and an explicitly withheld comparison.",
+      "risk": "Papyrus can become nostalgic or ornamental if the information design is not sharply contemporary.",
+      "comp": ".impeccable/mocks/decision/model-pick-daybook.png"
+    },
+    {
+      "id": "challenger-night-market",
+      "label": "The Nile Market",
+      "verdict": "competitive",
+      "lineage": "Nile trade routes, market tallies, and night-market wayfinding",
+      "thesis": "A Nile-blue route carries one retail export toward the answers that can safely enter the market record.",
+      "palette": ["#081A28", "#D9A441", "#126A83", "#A33E2D"],
+      "materials": ["painted tally boards", "woven awnings", "faience markers"],
+      "viewport": "A Nile-blue signal path links the source file to proven market tallies while one ochre route ends in a named refusal.",
+      "case": "The strongest retail energy and motion, balanced by ancient Egyptian trade cues.",
+      "risk": "It can feel artisanal unless the evidence specimen remains dominant and exact.",
+      "comp": ".impeccable/mocks/decision/challenger-signal-market.png",
+      "hero": ".impeccable/mocks/quality/night-market-hero.webp",
+      "board": ".impeccable/mocks/quality/night-market-board.webp"
+    },
+    {
+      "id": "challenger-cutting-bench",
+      "label": "The Excavated Ledger",
+      "verdict": "competitive",
+      "lineage": "archaeological strata, Egyptian administrative records, and scarab seals",
+      "thesis": "Khepri excavates only what the source can support; each admitted fact appears as a recoverable layer and every refusal remains in situ.",
+      "palette": ["#17191A", "#CDBB93", "#176A87", "#A94B32"],
+      "materials": ["basalt", "layered papyrus", "oxidized copper seals"],
+      "viewport": "A monumental basalt field reveals a stratified papyrus evidence slab, with proven results intact and an unsupported comparison visibly interrupted.",
+      "case": "The most distinctive fusion of ancient Egypt, provenance, and modern evidence behavior.",
+      "risk": "Heavy archaeological texture must be restrained in implementation to protect performance and legibility.",
+      "comp": ".impeccable/mocks/decision/challenger-evidence-rail.png",
+      "hero": ".impeccable/mocks/quality/cutting-bench-hero.webp",
+      "board": ".impeccable/mocks/quality/cutting-bench-board.webp"
+    },
+    {
+      "id": "challenger-silkscreen",
+      "label": "Editioned Evidence",
+      "verdict": "declined",
+      "lineage": "off-register silkscreen editions",
+      "thesis": "One retail fact repeats until its supported and unsupported states become visible differences.",
+      "palette": ["#D9D9D2", "#111111", "#FF4B87", "#E3A728"],
+      "materials": ["silver foil", "halftone ink", "drying-rack repeats"],
+      "viewport": "Repeated specimen frames expose state differences through registration rather than decoration.",
+      "case": "The edition metaphor is visually forceful but does not identify the audience or the product clearly enough.",
+      "kept": "Repeat the same specimen across all three trust states instead of explaining them abstractly.",
+      "risk": "Misregistration can imply error where Khepri needs deterministic precision."
+    },
+    {
+      "id": "challenger-quilt",
+      "label": "The Provenance Seam",
+      "verdict": "declined",
+      "lineage": "memory quilts and stitched cloth labels",
+      "thesis": "Each answer is a block whose visible seam leads back to its source and date.",
+      "palette": ["#315B78", "#E7D8BA", "#B6403A", "#191817"],
+      "materials": ["worn cloth", "visible stitching", "handwritten labels"],
+      "viewport": "Unequal evidence blocks join into one analysis while every seam remains traceable.",
+      "case": "Excellent provenance behavior, but domestic memory does not identify a mixed enterprise retail audience.",
+      "kept": "Make the evidence connection physically visible beside every claim.",
+      "risk": "Soft material cues can weaken the sense of governed, repeatable calculation."
+    },
+    {
+      "id": "challenger-gravity",
+      "label": "The Admission Field",
+      "verdict": "declined",
+      "lineage": "gravity-rain gardens and deterministic vector fields",
+      "thesis": "Every input follows a visible law toward a supported answer or a named stop.",
+      "palette": ["#263A37", "#7EB7D8", "#CC5A4A", "#E8E1D4"],
+      "materials": ["trajectory lines", "water fields", "orbit diagrams"],
+      "viewport": "Rows flow through one visible field and settle into claims, caveats, or refusals.",
+      "case": "The deterministic path is true, but the surreal garden obscures retail context and product clarity.",
+      "kept": "Use one purposeful, deterministic motion path for admission and state changes.",
+      "risk": "Simulation spectacle would compete with comprehension and no-JavaScript resilience."
+    },
+    {
+      "id": "challenger-ansi",
+      "label": "The Night Ledger",
+      "verdict": "declined",
+      "lineage": "ANSI bulletin boards and character-grid interfaces",
+      "thesis": "The entire claim is built from text cells, so state can never hide behind decoration.",
+      "palette": ["#05070A", "#20D6D0", "#D44BC4", "#F1F1EA"],
+      "materials": ["character cells", "box-drawing rules", "phosphor text"],
+      "viewport": "A bilingual 80-column result screen streams one export into explicit textual outcomes.",
+      "case": "Strong technical honesty, but it speaks primarily to engineers and risks retro-terminal novelty.",
+      "kept": "Keep every state textual and every interaction keyboard-operable.",
+      "risk": "The terminal world narrows the audience and undermines premium marketing breadth."
+    }
+  ],
+  "reroll": {"registers": ["safer", "bolder"]},
+  "buildPath": {"value": "comp", "toggle": true},
+  "canon": true,
+  "canonCard": {
+    "label": "Egyptian Modernist",
+    "thesis": "A safer enterprise page using Egyptian color and geometry as a restrained brand layer over a conventional product layout.",
+    "palette": ["#F5F0E6", "#102638", "#176A87", "#B8883C"],
+    "materials": ["clean grid", "limestone tint", "subtle faience rules"],
+    "viewport": "A concise bilingual headline sits beside a clean evidence specimen with restrained Egyptian framing and familiar enterprise navigation.",
+    "risk": "Clear and credible, but less ownable and emotionally transporting than the artifact-led directions.",
+    "comp": ".impeccable/mocks/decision/canon-category-standard.png"
+  },
+  "steer": true
+}

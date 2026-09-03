@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khepri — Verify before you trust</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+   KHEPRI — THE TEMPLE OF RECORD
+   A new landing page. Not a revision of the previous one: new palette, new composition, new
+   ornament system, built from the kit's own drawn assets rather than from CSS approximations
+   of them.
+
+   The previous world refused ornament on the argument that "the layout IS the reference".
+   That was wrong for this brief. Egyptian monumental design is ornamental BY CONSTRUCTION —
+   the frame, the cornice, the winged disc over the doorway and the incised border are the
+   architecture, not decoration applied to it. So the frames, dividers, corner pieces, state
+   glyphs and gold plates here are structural, and the page is built around them.
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+
+@font-face{font-family:"Noto Sans Arabic";src:url("fonts/NotoSansArabic-Regular-latin.woff2") format("woff2");
+  font-weight:400;font-display:swap;
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215}
+@font-face{font-family:"Noto Sans Arabic";src:url("fonts/NotoSansArabic-Regular-arabic.woff2") format("woff2");
+  font-weight:400;font-display:swap;
+  unicode-range:U+0600-06FF,U+0750-077F,U+08A0-08FF,U+FB50-FDFF,U+FE70-FEFF}
+
+:root{
+  color-scheme: dark;
+
+  /* The kit's own palette, taken from board-03's swatch row rather than invented. */
+  --egyptian-blue:#0d2b45;
+  --deep-stone:#0e0f12;
+  --stone-gray:#2a2c31;
+  --sandstone:#c7b089;
+  --sun-amber:#f5a623;
+  --gold:#d4af37;
+  --gold-hi:#f0d284;
+  --gold-dim:#8a6d24;
+  --warning-red:#b63a3a;
+  --success:#1fa661;
+
+  /* Grounds. Deeper and BLUER than the last world's warm stone: the kit's hero is a night
+     scene lit by a low sun, so the page is night with gold in it, not brown. */
+  --night-900:#07090e;
+  --night-800:#0b0f17;
+  --night-700:#101724;
+  --night-600:#1a2434;
+
+  --ink:#f2ead8;
+  --ink-dim:#a9b0bd;
+  --ink-quiet:#7b8494;
+  --withheld:#9a8d7e;
+
+  --mono:ui-monospace,"Cascadia Mono","Segoe UI Mono",Consolas,monospace;
+  --body:"Noto Sans Arabic","Segoe UI",Tahoma,sans-serif;
+
+  --measure:64ch;
+  --wall:1220px;
+  --ease:cubic-bezier(.16,.84,.28,1);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+  background-color:var(--night-900);
+  /* Layered ground: a hieroglyph-carved stone held far back, a blue nocturne wash over it. */
+  background-image:
+    radial-gradient(ellipse 90% 55% at 50% 0%, rgba(13,43,69,.55), transparent 62%),
+    linear-gradient(rgba(7,9,14,.90),rgba(7,9,14,.94)),
+    url("kit/carved.webp");
+  background-size:auto,auto,620px auto;
+  background-repeat:no-repeat,no-repeat,repeat;
+  background-attachment:fixed;
+  color:var(--ink);
+  font-family:var(--body);
+  font-size:17px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+
+.wall{width:min(100% - 3rem, var(--wall));margin-inline:auto}
+.mono{font-family:var(--mono)}
+
+/* A section label: small, gold, letterspaced, with a drawn rule under it. */
+.mark{
+  display:flex;align-items:center;gap:1rem;
+  margin-block-end:1.6rem;
+  color:var(--gold);
+  font-family:var(--mono);font-size:11px;letter-spacing:.34em;text-transform:uppercase;
+}
+.mark::after{content:"";flex:1;height:1px;
+  background:linear-gradient(90deg,rgba(212,175,55,.5),transparent)}
+[dir=rtl] .mark::after{background:linear-gradient(270deg,rgba(212,175,55,.5),transparent)}
+
+h1,h2,h3{font-weight:400;text-wrap:balance}
+
+/* ═══ 1. THE GATE ═══════════════════════════════════════════════════════════════════════════
+   Full-bleed temple at golden hour. The winged scarab stands on the axis over the claim, and
+   the whole viewport is framed by a drawn architectural cornice so the visitor is looking
+   THROUGH a temple doorway rather than at a photograph with text on it. */
+.gate{
+  position:relative;min-height:100svh;display:grid;place-items:center;
+  text-align:center;overflow:hidden;isolation:isolate;
+  padding:6rem 1.5rem 4rem;
+}
+.gate-bg{position:absolute;inset:0;z-index:0}
+.gate-bg img{width:100%;height:100%;object-fit:cover;object-position:50% 44%}
+.gate-bg::after{content:"";position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 62% 48% at 50% 52%, rgba(245,166,35,.16), transparent 66%),
+    linear-gradient(180deg,rgba(7,9,14,.80) 0%,rgba(7,9,14,.28) 30%,
+      rgba(7,9,14,.55) 66%,var(--night-900) 97%)}
+
+.gate-inner{position:relative;z-index:2;max-width:60rem}
+
+/* The scarab: the product's own emblem, and the largest single object on the page. */
+.gate-scarab{
+  width:min(560px,62vw);height:auto;display:block;margin:0 auto 1.6rem;
+  filter:drop-shadow(0 18px 44px rgba(0,0,0,.85)) drop-shadow(0 0 70px rgba(245,166,35,.28));
+  animation:rise 1400ms var(--ease) both;
+}
+@keyframes rise{from{opacity:0;transform:translateY(26px) scale(.97)}to{opacity:1;transform:none}}
+
+.gate h1{
+  font-size:clamp(2.9rem,7vw,6rem);line-height:.96;letter-spacing:-.035em;
+  margin-block-end:1.3rem;
+  text-shadow:0 4px 30px rgba(0,0,0,.7);
+}
+.gate h1 em{font-style:normal;color:var(--gold);
+  text-shadow:0 0 44px rgba(212,175,55,.5),0 4px 30px rgba(0,0,0,.7)}
+
+.gate-lede{max-width:47ch;margin:0 auto 2.4rem;color:var(--ink-dim);font-size:1.16rem}
+
+/* The gold plate. A drawn asset, not a CSS button: the kit's own CTA treatment. */
+/* The gold plate is a DRAWN asset used as a frame, not as a button image.
+ *
+ * The kit's `cta-gold.png` ships with "START YOUR ANALYSIS" baked into its middle, so laying live
+ * text over it double-prints. The label has to be real text — a picture of a label cannot be read
+ * by a screen reader, operated by speech input, or translated into Arabic — so the plate was
+ * rebuilt as `plate-frame.png`: its ornamental end caps and arrow kept, its middle replaced by a
+ * stretch of its own bevel. `border-image` then lets the ends stay unscaled at any label length. */
+.plate{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:56px;padding:0 3.4rem;
+  border:16px solid transparent;
+  border-image:url("kit/plate-frame.png") 16 46 fill round;
+  color:#2a1e07;font-family:var(--mono);font-size:12.5px;letter-spacing:.2em;
+  text-transform:uppercase;text-decoration:none;font-weight:600;
+  transition:transform 280ms var(--ease),filter 280ms var(--ease);
+}
+.plate:hover{transform:translateY(-2px);filter:brightness(1.1) drop-shadow(0 8px 22px rgba(212,175,55,.4))}
+.plate-quiet{
+  display:inline-flex;align-items:center;min-height:56px;padding:0 1.8rem;
+  color:var(--ink-dim);font-family:var(--mono);font-size:12.5px;letter-spacing:.2em;
+  text-transform:uppercase;text-decoration:none;
+  border:1px solid rgba(212,175,55,.32);
+  transition:color 280ms,border-color 280ms}
+.plate-quiet:hover{color:var(--gold);border-color:var(--gold)}
+.gate-actions{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+
+/* Header rides over the gate. */
+.top{position:absolute;inset-block-start:0;inset-inline:0;z-index:5;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1.5rem clamp(1.5rem,4vw,3rem)}
+.brand{display:flex;align-items:center;gap:.75rem;
+  font-family:var(--mono);font-size:13px;letter-spacing:.42em;text-transform:uppercase}
+.brand img{width:34px;height:auto}
+.lang{color:var(--ink-dim);font-family:var(--mono);font-size:11px;letter-spacing:.2em;
+  text-decoration:none;padding:.6rem .9rem;border:1px solid rgba(212,175,55,.25)}
+.lang:hover{color:var(--gold);border-color:var(--gold)}
+
+/* ═══ A DRAWN DIVIDER between registers ════════════════════════════════════════════════════ */
+.divider{display:block;width:min(88%,760px);margin:0 auto;height:auto;opacity:.9}
+.divider-wrap{padding-block:clamp(2rem,4vw,3.4rem)}
+
+/* ═══ 2. THE SPECIMEN, IN A DRAWN FRAME ════════════════════════════════════════════════════
+   The evidence panel sits inside the kit's columned architectural frame. The frame is a real
+   drawn asset with columns and a winged cornice, applied as a nine-slice border-image so it
+   stretches to any content height without distorting its capitals. */
+.register{padding-block:clamp(3rem,5.5vw,5rem);position:relative}
+
+/* The specimen stands inside the temple frame: real columns down its sides and a winged cornice
+ * over it. This is the page's central artifact, so it gets the kit's most architectural asset.
+ *
+ * Nine-sliced with a large inset so the columns and the cornice's scarab stay unscaled. The
+ * `fill` keyword paints the frame's own carved-stone middle behind the content, which is why no
+ * separate background is declared. */
+.specimen{
+  position:relative;
+  border-style:solid;
+  border-width:44px 40px 34px;
+  border-image:url("kit/frame-temple.png") 44 40 34 fill stretch;
+}
+@media (max-width:640px){
+  /* The columns are 40px of a 390px viewport at full width, which eats the content. Below this
+     the frame steps down to the plain gold panel and the columns are dropped rather than
+     squeezed into hairlines. */
+  .specimen{border-width:14px;border-image:url("kit/frame-wide.png") 14 fill stretch}
+}
+
+.specimen-head{
+  display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:1.15rem 1.75rem;border-block-end:1px solid rgba(212,175,55,.22);
+  background:linear-gradient(180deg,rgba(212,175,55,.07),transparent)}
+.file{font-family:var(--mono);font-size:13px;letter-spacing:.06em;color:var(--sandstone)}
+
+/* The state chip uses the kit's drawn glyph, not a CSS dot. */
+.chip{display:inline-flex;align-items:center;gap:.6rem;
+  font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase}
+.chip img{width:26px;height:26px}
+.chip--proven{color:var(--success)}
+.chip--caveated{color:var(--sun-amber)}
+.chip--withheld{color:var(--withheld)}
+
+.rows{padding:.5rem 1.75rem 1.25rem}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:1.5rem;
+  padding-block:1rem;border-block-end:1px solid rgba(255,255,255,.055)}
+.row:last-of-type{border-block-end:0}
+.row dt{color:var(--ink-dim);font-size:.96rem}
+.row dd{font-family:var(--mono);font-size:1.12rem;color:var(--gold);
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.row dd.plain{color:var(--ink-quiet);font-size:.98rem}
+
+/* The governed refusal. 4px inline-start rule + italic — the product's own law, kept. */
+.refusal{margin:0 1.75rem 1.6rem;padding:1.25rem 1.5rem;
+  border-inline-start:4px solid var(--withheld);
+  background:rgba(154,141,126,.055)}
+.refusal-term{display:block;font-style:italic;color:var(--ink);margin-block-end:.5rem}
+.refusal p{color:var(--withheld);font-size:.94rem;line-height:1.66;max-width:66ch}
+.note{padding:0 1.75rem 1.4rem;color:var(--ink-quiet);font-size:.8rem;font-style:italic}
+
+/* ═══ 3. THE THREE STATES, as drawn glyphs in framed bays ══════════════════════════════════ */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(290px,100%),1fr));
+  gap:clamp(1.2rem,2.5vw,2rem)}
+/* Each state stands in a drawn gold panel, nine-sliced from the kit's own frame so its
+ * corner keys stay unscaled while the panel takes any content height. A 1px CSS border was the
+ * first draft and it wasted the kit: the frame IS the Egyptian move here. */
+.state{
+  position:relative;padding:2.6rem 2rem 2.4rem;text-align:center;
+  border:14px solid transparent;
+  /* `stretch`, not `round`, on the middle. `round` tiles the frame's carved centre and leaves a
+   * visible seam every tile-width down the panel; stretching a near-uniform stone field shows
+   * nothing. The corner keys are outside the slice and are unaffected either way. */
+  border-image:url("kit/frame-wide.png") 14 fill stretch;
+  background:linear-gradient(180deg,rgba(16,23,36,.55),rgba(11,15,23,.72));
+  transition:transform 320ms var(--ease),filter 320ms var(--ease);
+}
+.state:hover{transform:translateY(-5px);filter:brightness(1.12)}
+.state img{width:76px;height:76px;margin:0 auto 1.1rem;display:block}
+.state-name{font-family:var(--mono);font-size:11.5px;letter-spacing:.28em;text-transform:uppercase;
+  margin-block-end:.9rem}
+.state--proven .state-name{color:var(--success)}
+.state--caveated .state-name{color:var(--sun-amber)}
+.state--withheld .state-name{color:var(--withheld)}
+.state h3{font-size:1.2rem;line-height:1.35;margin-block-end:.8rem}
+.state--withheld h3{font-style:italic}
+.state p{color:var(--ink-dim);font-size:.92rem;line-height:1.62}
+
+/* ═══ 4. THE KPI CENTREPIECE ═══════════════════════════════════════════════════════════════
+   The kit's winged sun-wheel, used once, as the page's single ceremonial object. */
+.centre{text-align:center;padding-block:clamp(2.2rem,4.5vw,3.6rem)}
+.centre img{width:min(520px,72vw);height:auto;display:block;margin:0 auto 1.4rem;
+  filter:drop-shadow(0 0 50px rgba(212,175,55,.22))}
+.centre-claim{font-size:clamp(1.6rem,3.4vw,2.7rem);line-height:1.2;letter-spacing:-.02em;
+  max-width:24ch;margin-inline:auto}
+.centre-claim em{font-style:italic;color:var(--gold)}
+
+/* ═══ 5. THE PASSAGE — five courses under a columned frame ═════════════════════════════════ */
+.passage{position:relative;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));
+  border-block-start:1px solid rgba(212,175,55,.30);
+  border-block-end:1px solid rgba(212,175,55,.30);
+  padding-inline:.5rem}
+/* Drawn corners on the hall's opening and closing edges. */
+.passage::before,.passage::after{
+  content:"";position:absolute;width:40px;height:38px;pointer-events:none;opacity:.9;
+  background:url("kit/corner-2.png") center/contain no-repeat}
+.passage::before{inset-block-start:-1px;inset-inline-start:-1px}
+.passage::after{inset-block-end:-1px;inset-inline-end:-1px;transform:rotate(180deg)}
+.step{padding:1.9rem 1.4rem;border-block-end:1px solid rgba(255,255,255,.05)}
+.step + .step{border-inline-start:1px solid rgba(255,255,255,.05)}
+.step-i{display:block;color:var(--gold-dim);font-family:var(--mono);font-size:11px;
+  letter-spacing:.26em;margin-block-end:.9rem}
+.step h3{font-size:1.08rem;line-height:1.32;margin-block-end:.55rem}
+.step p{color:var(--ink-dim);font-size:.88rem;line-height:1.6}
+.step-state{display:block;margin-block-start:.9rem;padding-block-start:.9rem;
+  border-block-start:1px solid rgba(255,255,255,.06);
+  color:#5fa8cd;font-family:var(--mono);font-size:11px;letter-spacing:.08em}
+
+/* ═══ 6. WHAT KHEPRI REFUSES — the governed gallery ════════════════════════════════════════ */
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr));
+  gap:1.4rem}
+/* Six grey text blocks was the page's worst dressing on its best content. Each refusal now sits
+ * on a cut stone plate, keeps the governed 4px inline-start rule (the product's own law), and
+ * carries the withheld glyph so the section reads as a gallery of states rather than as prose. */
+.gallery li{
+  list-style:none;position:relative;
+  padding:1.5rem 1.6rem 1.5rem 4.4rem;
+  border-inline-start:4px solid var(--withheld);
+  background:
+    linear-gradient(180deg,rgba(26,36,52,.55),rgba(11,15,23,.72));
+  box-shadow:inset 0 1px 0 rgba(240,210,132,.09), 0 18px 40px -30px #000;
+  color:var(--withheld);font-size:.92rem;font-style:italic;line-height:1.68;
+}
+[dir=rtl] .gallery li{padding:1.5rem 4.4rem 1.5rem 1.6rem}
+.gallery li::before{
+  content:"";position:absolute;inset-block-start:1.4rem;inset-inline-start:1.35rem;
+  width:34px;height:34px;
+  /* The kit ships this glyph in warning red. A refusal is a governed RESULT, not a failure, and
+   * PRODUCT.md forbids it borrowing error styling — so the glyph is recoloured onto the same stone
+   * ramp the withheld text uses. Same drawn linework, correct semantics. */
+  background:url("kit/state-withheld-stone.png") center/contain no-repeat;
+  opacity:.85}
+
+/* ═══ 7. QUESTIONS ═════════════════════════════════════════════════════════════════════════ */
+/* The questions sit between two column shafts: the section is pure text, and without them it
+ * was the one place the page stopped being a building. Hidden below the width where they would
+ * crowd the reading measure. */
+.qs-hall{position:relative}
+.qs-col{position:absolute;inset-block:0;width:34px;height:100%;object-fit:fill;opacity:.5;
+  pointer-events:none}
+.qs-col--a{inset-inline-start:-58px}
+.qs-col--b{inset-inline-end:-58px;transform:scaleX(-1)}
+@media (max-width:1360px){.qs-col{display:none}}
+
+.qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));
+  gap:1.8rem 2.6rem}
+.q{padding-block-start:1.3rem;border-block-start:1px solid rgba(212,175,55,.2)}
+.q dt{font-size:1.08rem;margin-block-end:.6rem;color:var(--ink)}
+.q dd{color:var(--ink-dim);font-size:.9rem;line-height:1.66;max-width:46ch}
+
+/* ═══ 8. THE CLOSE — flanked by drawn reliefs ══════════════════════════════════════════════ */
+.close{position:relative;text-align:center;padding-block:clamp(5rem,11vw,9rem);overflow:hidden}
+.close::before{content:"";position:absolute;inset-block-end:-40%;inset-inline:0;margin-inline:auto;
+  width:min(120vw,1200px);height:min(120vw,1200px);
+  background:radial-gradient(circle,rgba(245,166,35,.15),rgba(212,175,55,.05) 34%,transparent 66%);
+  pointer-events:none}
+.close > *{position:relative;z-index:1}
+.relief{position:absolute;inset-block-end:0;height:min(56%,330px);width:auto;opacity:.30;
+  pointer-events:none;z-index:0}
+.relief--a{inset-inline-start:2%}
+.relief--b{inset-inline-end:2%;transform:scaleX(-1)}
+.close h2{font-size:clamp(2rem,4.6vw,3.6rem);line-height:1.08;letter-spacing:-.03em;
+  max-width:20ch;margin:0 auto 1.2rem}
+.close p{max-width:50ch;margin:0 auto 2.2rem;color:var(--ink-dim);font-size:1rem}
+
+/* ═══ FOOT ═════════════════════════════════════════════════════════════════════════════════ */
+.foot{border-block-start:1px solid rgba(212,175,55,.2);padding-block:2.2rem;
+  color:var(--ink-quiet);font-size:.85rem}
+.foot-row{display:flex;flex-wrap:wrap;gap:1.6rem;align-items:center}
+.foot a{color:var(--ink-quiet);text-decoration:none;min-height:44px;display:inline-flex;
+  align-items:center}
+.foot a:hover{color:var(--gold)}
+.foot-mark{margin-inline-start:auto;display:inline-flex;align-items:center;gap:.6rem;
+  font-family:var(--mono);font-size:11px;letter-spacing:.34em;text-transform:uppercase}
+.foot-mark img{width:22px}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+
+<section class="gate">
+  <div class="gate-bg"><img src="kit/gate.webp" alt=""></div>
+  <header class="top">
+    <span class="brand"><img src="kit/scarab.webp" alt="">Khepri</span>
+    <a class="lang" href="#" lang="ar">العربية</a>
+  </header>
+
+  <div class="gate-inner">
+    <img class="gate-scarab" src="kit/scarab.webp" alt="">
+    <h1>Retail decisions<br>you can <em>prove</em>.</h1>
+    <p class="gate-lede">Khepri turns the retail export you already have into analysis that
+      carries its own evidence — and names what it cannot support instead of estimating it.</p>
+    <div class="gate-actions">
+      <a class="plate" href="#specimen">See a governed result</a>
+      <a class="plate-quiet" href="#refuses">What it refuses</a>
+    </div>
+  </div>
+</section>
+
+<div class="divider-wrap"><img class="divider" src="kit/divider-winged.png" alt=""></div>
+
+<section class="register" id="specimen">
+  <div class="wall">
+    <h2 class="mark">One export, mid-admission</h2>
+
+    <div class="specimen">
+      <div class="specimen-head">
+        <span class="file" dir="auto">q3-sales-export.csv</span>
+        <span class="chip chip--proven"><img src="kit/state-proven.png" alt="">Admitted</span>
+      </div>
+      <dl class="rows">
+        <div class="row"><dt>Population</dt><dd class="plain">18 stores · 1 quarter</dd></div>
+        <div class="row"><dt>Revenue</dt><dd>4,182,600 EGP</dd></div>
+        <div class="row"><dt>Number of sales</dt><dd>30,600</dd></div>
+        <div class="row"><dt>Average sale value</dt><dd>136.69 EGP</dd></div>
+      </dl>
+      <div class="refusal">
+        <span class="refusal-term">Change against the prior quarter</span>
+        <p>Comparison with an earlier period — not available. Your file covers a single period,
+        so there is no earlier period inside it to compare against. Everything else in this
+        review is unaffected and describes the period you supplied.</p>
+      </div>
+      <p class="note">Illustrative export. Not customer data.</p>
+    </div>
+  </div>
+</section>
+
+<section class="register">
+  <div class="wall">
+    <h2 class="mark">What an answer is worth</h2>
+    <div class="states">
+      <article class="state state--proven">
+        <img src="kit/state-proven.png" alt="">
+        <span class="state-name">Proven</span>
+        <h3>Revenue reconciles across all 18 stores.</h3>
+        <p>Population and coverage were established first; the figure matches the rows behind it.</p>
+      </article>
+      <article class="state state--caveated">
+        <img src="kit/state-caveated.png" alt="">
+        <span class="state-name">Caveated</span>
+        <h3>Monthly figures are reported, and qualified.</h3>
+        <p>Some rows carried no date. The figure is still reported, and the qualification travels
+        with it wherever it is read.</p>
+      </article>
+      <article class="state state--withheld">
+        <img src="kit/state-withheld-stone.png" alt="">
+        <span class="state-name">Withheld</span>
+        <h3>Comparison with an earlier period is not reported here.</h3>
+        <p>Khepri states the reason in the place the comparison would have appeared — in the
+        product's own wording, not a marketing paraphrase.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<div class="centre">
+  <img src="kit/kpi-centre.png" alt="">
+  <p class="centre-claim">Refusal is a capability. <em>We would rather refuse than manufacture
+    confidence.</em></p>
+</div>
+
+<section class="register">
+  <div class="wall">
+    <h2 class="mark">The passage of one file</h2>
+    <ol class="passage" style="list-style:none">
+      <li class="step"><span class="step-i">I</span><h3>Operational export</h3>
+        <p>The file the retailer already produces, imperfect as it is.</p>
+        <span class="step-state">41,905 rows · 22 columns</span></li>
+      <li class="step"><span class="step-i">II</span><h3>Semantic admission</h3>
+        <p>Meaning, population and coverage are established and shown back to you before any
+        figure is calculated.</p>
+        <span class="step-state">18 stores · 1 quarter admitted</span></li>
+      <li class="step"><span class="step-i">III</span><h3>Deterministic facts</h3>
+        <p>Versioned retail calculations. The same admissible inputs give the same result.</p></li>
+      <li class="step"><span class="step-i">IV</span><h3>Evidence and refusals</h3>
+        <p>Each figure reconciles with the evidence behind it. What cannot be supported is
+        named, and stays named.</p></li>
+      <li class="step"><span class="step-i">V</span><h3>A result you can defend</h3>
+        <p>The same facts in Arabic and English, carrying their caveats and refusals.</p></li>
+    </ol>
+  </div>
+</section>
+
+<div class="divider-wrap"><img class="divider" src="kit/divider-lotus.png" alt=""></div>
+
+<section class="register" id="refuses">
+  <div class="wall">
+    <h2 class="mark">What Khepri refuses, and why</h2>
+    <ul class="gallery">
+      <li>Comparison with an earlier period — not available. Your file covers a single period, so
+      there is no earlier period inside it to compare against.</li>
+      <li>Basket size — not available. Your file has no receipt or invoice number, so there is no
+      way to tell which rows belong to the same sale.</li>
+      <li>Growth drivers — not available. Splitting growth into price and volume needs a quantity
+      for each sale, and the file has none.</li>
+      <li>Sales concentration — not available. The file does not identify products or branches
+      distinctly enough to separate one from another.</li>
+      <li>Basket size — not available. Some rows carry a receipt number and some do not, so this
+      would describe part of your sales as if it described all of them.</li>
+      <li>Growth drivers — withheld. Price and volume effects were calculated, but they do not add
+      up to the total revenue change. Rather than present a split that does not reconcile, it is
+      withheld.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="register">
+  <div class="wall">
+    <h2 class="mark">Questions</h2>
+    <div class="qs-hall">
+    <img class="qs-col qs-col--a" src="kit/column.png" alt="">
+    <img class="qs-col qs-col--b" src="kit/column.png" alt="">
+    <dl class="qs">
+      <div class="q"><dt>What does Khepri need from me?</dt>
+        <dd>The sales export your point-of-sale system already produces. There is no integration
+        to build and no schema to match first.</dd></div>
+      <div class="q"><dt>What happens when my file cannot answer a question?</dt>
+        <dd>The question is refused by name, in the place the answer would have appeared, with the
+        reason and the file change that would make it available.</dd></div>
+      <div class="q"><dt>Can I check a figure against the rows behind it?</dt>
+        <dd>Yes. Evidence is reached from the claim it supports rather than from a separate
+        archive.</dd></div>
+      <div class="q"><dt>Do Arabic and English readers get the same thing?</dt>
+        <dd>Yes, and it is enforced rather than intended. A missing string fails the build rather
+        than reaching a reader.</dd></div>
+      <div class="q"><dt>Will the same file give the same answer twice?</dt>
+        <dd>Yes. Facts are deterministic and versioned, under a stated calculation version.</dd></div>
+      <div class="q"><dt>How do I get access?</dt>
+        <dd>Khepri is in private beta with a small number of retail operators. Access is arranged
+        directly, and there is no public sign-up.</dd></div>
+    </dl>
+    </div>
+  </div>
+</section>
+
+<section class="close">
+  <img class="relief relief--a" src="kit/relief-anubis.png" alt="">
+  <img class="relief relief--b" src="kit/relief-pharaoh.png" alt="">
+  <div class="wall">
+    <h2>Bring your retail data. Get decisions you can defend.</h2>
+    <p>Khepri is in private beta with a small number of retail operators. Access is arranged
+      directly, and there is no public sign-up.</p>
+    <a class="plate" href="#specimen">See a governed result</a>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wall foot-row">
+    <a href="#">About</a>
+    <a href="#">Legal</a>
+    <a href="#" lang="ar">العربية</a>
+    <span class="foot-mark"><img src="kit/scarab.webp" alt="">Khepri</span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -34,7 +34,33 @@
       </h1>
 
       <p class="claim-lede">{{ copy.claim_lede }}</p>
+    </div>
 
+    {# The gate. The processional band the visitor walks toward: the temple at golden hour, with
+       the winged scarab — Khepri itself, pushing the sun disc — riding its horizon.
+
+       Both images are decorative: the claim above and the specimen below carry every fact, so a
+       reader who never receives them loses nothing. `alt=""` with `role="presentation"` states
+       that, rather than describing a picture at a visitor who came for their figures. #}
+    <div class="gate">
+      <img class="gate-scene"
+           src="{{ assets }}/gate.webp"
+           srcset="{{ assets }}/gate-640.webp 640w,
+                   {{ assets }}/gate-960.webp 960w,
+                   {{ assets }}/gate.webp 1440w"
+           sizes="100vw"
+           width="1440" height="561"
+           alt="" role="presentation" fetchpriority="high" decoding="async">
+      <img class="gate-scarab"
+           src="{{ assets }}/scarab.webp"
+           srcset="{{ assets }}/scarab-480.webp 480w,
+                   {{ assets }}/scarab.webp 720w"
+           sizes="(max-width: 660px) 62vw, 380px"
+           width="720" height="216"
+           alt="" role="presentation" decoding="async">
+    </div>
+
+    <div class="wall">
       <figure class="specimen" aria-labelledby="specimen-title">
         <div class="specimen-head">
           <span class="specimen-file" id="specimen-title" dir="auto">{{ copy.specimen_file }}</span>
@@ -180,6 +206,100 @@
   </section>
 
   {# ══ The two scripts, as equal courses ══════════════════════════════════════════════════ #}
+  {# == The four deliverables. Named in PRODUCT.md; no product is invented here. ============ #}
+  <section class="register register--deep" aria-labelledby="deliverables-title">
+    <div class="wall">
+      <h2 class="register-mark" id="deliverables-title">
+        <span>{{ copy.deliverables_heading }}</span>
+      </h2>
+      <p class="section-lede">{{ copy.deliverables_lede }}</p>
+
+      {# Written out rather than looped over an index. `test_the_template_and_the_copy_module_agree`
+         scans this file for the literal `copy.<key>` form to prove no marketing string is
+         maintained in two languages while reaching no visitor; a computed `copy[...]` lookup is
+         invisible to that scan and would silently disarm the guard for every key it touches. #}
+      <ol class="deliverables">
+        <li class="deliverable">
+          <span class="deliverable-index" aria-hidden="true">I</span>
+          <h3 class="deliverable-name">{{ copy.deliverable_1_name }}</h3>
+          <p class="deliverable-body">{{ copy.deliverable_1_body }}</p>
+        </li>
+        <li class="deliverable">
+          <span class="deliverable-index" aria-hidden="true">II</span>
+          <h3 class="deliverable-name">{{ copy.deliverable_2_name }}</h3>
+          <p class="deliverable-body">{{ copy.deliverable_2_body }}</p>
+        </li>
+        <li class="deliverable">
+          <span class="deliverable-index" aria-hidden="true">III</span>
+          <h3 class="deliverable-name">{{ copy.deliverable_3_name }}</h3>
+          <p class="deliverable-body">{{ copy.deliverable_3_body }}</p>
+        </li>
+        <li class="deliverable">
+          <span class="deliverable-index" aria-hidden="true">IV</span>
+          <h3 class="deliverable-name">{{ copy.deliverable_4_name }}</h3>
+          <p class="deliverable-body">{{ copy.deliverable_4_body }}</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  {# == The refusal gallery. Every message is the product's own governed wording, read from
+       the catalog at render time rather than authored here. ================================ #}
+  <section class="register" aria-labelledby="refusals-title">
+    <div class="wall">
+      <h2 class="register-mark" id="refusals-title">
+        <span>{{ copy.refusals_heading }}</span>
+      </h2>
+      <p class="section-lede">{{ copy.refusals_lede }}</p>
+
+      <ul class="gallery">
+        {% for message in gallery %}
+        <li class="gallery-refusal">{{ message }}</li>
+        {% endfor %}
+      </ul>
+
+      <p class="synthetic-note">{{ copy.refusals_note }}</p>
+    </div>
+  </section>
+
+  {# == Questions. Answered from what the product is, with no claim it cannot support. ======= #}
+  <section class="register register--deep" aria-labelledby="questions-title">
+    <div class="wall">
+      <h2 class="register-mark" id="questions-title">
+        <span>{{ copy.questions_heading }}</span>
+      </h2>
+
+      {# Written out for the same reason the deliverables are: the agreement guard reads this file
+         as text, so every key must appear in it literally. #}
+      <dl class="questions">
+        <div class="question">
+          <dt class="question-ask">{{ copy.question_1 }}</dt>
+          <dd class="question-answer">{{ copy.answer_1 }}</dd>
+        </div>
+        <div class="question">
+          <dt class="question-ask">{{ copy.question_2 }}</dt>
+          <dd class="question-answer">{{ copy.answer_2 }}</dd>
+        </div>
+        <div class="question">
+          <dt class="question-ask">{{ copy.question_3 }}</dt>
+          <dd class="question-answer">{{ copy.answer_3 }}</dd>
+        </div>
+        <div class="question">
+          <dt class="question-ask">{{ copy.question_4 }}</dt>
+          <dd class="question-answer">{{ copy.answer_4 }}</dd>
+        </div>
+        <div class="question">
+          <dt class="question-ask">{{ copy.question_5 }}</dt>
+          <dd class="question-answer">{{ copy.answer_5 }}</dd>
+        </div>
+        <div class="question">
+          <dt class="question-ask">{{ copy.question_6 }}</dt>
+          <dd class="question-answer">{{ copy.answer_6 }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
   <section class="register" aria-labelledby="scripts-title">
     <div class="wall">
       <h2 class="register-mark" id="scripts-title"><span>{{ copy.scripts_heading }}</span></h2>

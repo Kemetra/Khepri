@@ -1,0 +1,84 @@
+<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8">
+<link rel="stylesheet" href="_base.css">
+<style>
+/* ---- COMP B — THE SANCTUARY.
+ * Not a photograph: a CARVED WALL. Real sandstone texture on the ground, the scarab cut
+ * as a seal into the stone, and the claim set beside it in two columns like an inscription.
+ * The specimen is inset INTO the wall — a recessed niche — rather than floating on it.
+ * Quieter and more architectural than A; the material does the work, not the vista. */
+.wall-ground{position:relative;min-height:880px;display:grid;
+  grid-template-columns:1.05fr .95fr;align-items:center;gap:64px;
+  padding:96px 0;overflow:hidden}
+.wall-ground::before{content:"";position:absolute;inset:0;z-index:0;
+  background-image:url("assets/texture-sandstone.webp");background-size:cover;
+  background-position:center;opacity:.30;filter:saturate(.55) brightness(.42)}
+.wall-ground::after{content:"";position:absolute;inset:0;z-index:0;
+  background:radial-gradient(ellipse 74% 62% at 30% 40%,rgba(217,172,60,.13),transparent 66%),
+    linear-gradient(180deg,rgba(13,11,9,.55),rgba(13,11,9,.9))}
+.inner{position:relative;z-index:2}
+.topbar{position:absolute;inset-block-start:0;inset-inline:0;z-index:5;
+  display:flex;align-items:center;justify-content:space-between;padding:26px 46px}
+.brand{display:flex;align-items:center;gap:13px;font-family:var(--mono);font-size:12px;
+  letter-spacing:.42em;text-transform:uppercase}
+.brand i{width:9px;height:9px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 16px 3px rgba(217,172,60,.6)}
+h1{font-size:clamp(2.9rem,5.4vw,4.7rem);font-weight:400;line-height:1.0;
+  letter-spacing:-.032em;max-width:15ch;text-wrap:balance}
+.rule{width:96px;height:2px;margin-block:30px;
+  background:linear-gradient(90deg,var(--gold),rgba(217,172,60,.06))}
+.lede{max-width:46ch;color:var(--papyrus-dim);font-size:1.1rem;line-height:1.66}
+/* The scarab, cut as a seal into the stone rather than laid on top of it. */
+.seal{position:relative;display:flex;align-items:center;justify-content:center}
+.seal img{width:min(100%,540px);
+  filter:drop-shadow(0 20px 40px rgba(0,0,0,.8)) drop-shadow(0 0 60px rgba(217,172,60,.18))}
+.seal::before{content:"";position:absolute;width:min(96%,520px);aspect-ratio:1;
+  border-radius:50%;background:radial-gradient(circle,rgba(217,172,60,.19),transparent 62%)}
+/* The recessed niche: the specimen is CUT INTO the wall, so its shadow falls inward. */
+.niche{position:relative;z-index:2;margin-block-start:-58px;
+  background:linear-gradient(180deg,#100e0c,#171310);
+  border:1px solid #2a231c;
+  box-shadow:inset 0 22px 44px -20px #000,inset 0 -2px 0 rgba(240,207,122,.09),
+    0 30px 70px -46px #000}
+.niche-head{display:flex;justify-content:space-between;align-items:center;
+  padding:19px 32px;border-block-end:1px solid #2a231c}
+.pill{font-family:var(--mono);font-size:10px;letter-spacing:.26em;padding:6px 14px;
+  border:1px solid var(--lapis-lit);color:var(--lapis-lit)}
+.cols{display:grid;grid-template-columns:repeat(4,1fr)}
+.cell{padding:26px 30px;border-inline-end:1px solid #241e19}
+.cell:last-child{border-inline-end:0}
+.cell .lbl{display:block;margin-block-end:12px}
+.cell .v{font-family:var(--mono);font-size:1.5rem;color:var(--gold);
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.cell .v.plain{color:var(--papyrus-dim);font-size:1.05rem}
+.refuse{padding:24px 32px;border-block-start:1px solid #241e19;
+  border-inline-start:4px solid var(--withheld)}
+.refuse i{display:block;font-style:italic;color:var(--papyrus);margin-block-end:9px;font-size:1.04rem}
+.refuse p{color:var(--withheld);font-size:.93rem;line-height:1.62;max-width:70ch}
+</style></head><body>
+<div class="topbar"><span class="brand"><i></i>Khepri</span><span class="lbl">العربية</span></div>
+<section class="wall-ground">
+  <div class="wall" style="display:contents">
+    <div class="inner" style="padding-inline-start:46px">
+      <h1>Retail decisions you can <span class="gold">prove</span>.</h1>
+      <div class="rule"></div>
+      <p class="lede">Khepri turns the retail export you already have into analysis that carries
+        its own evidence — and names what it cannot support instead of estimating it.</p>
+    </div>
+    <div class="inner seal"><img src="assets/hero-winged-scarab-720w.webp" alt=""></div>
+  </div>
+</section>
+<div class="wall">
+  <div class="niche">
+    <div class="niche-head"><span class="mono" style="font-size:12px;letter-spacing:.12em">q3-sales-export.csv</span><span class="pill">ADMITTED</span></div>
+    <div class="cols">
+      <div class="cell"><span class="lbl">Population</span><span class="v plain">18 stores<br>1 quarter</span></div>
+      <div class="cell"><span class="lbl">Revenue</span><span class="v">4,182,600</span></div>
+      <div class="cell"><span class="lbl">Number of sales</span><span class="v">30,600</span></div>
+      <div class="cell"><span class="lbl">Average sale</span><span class="v">136.69</span></div>
+    </div>
+    <div class="refuse"><i>Change against the prior quarter</i>
+      <p>Comparison with an earlier period — not available. Your file covers a single period,
+      so there is no earlier period inside it to compare against.</p></div>
+  </div>
+</div>
+</body></html>

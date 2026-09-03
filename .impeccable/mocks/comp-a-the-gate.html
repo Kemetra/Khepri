@@ -1,0 +1,73 @@
+<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8">
+<link rel="stylesheet" href="_base.css">
+<style>
+/* ---- COMP A — THE GATE.
+ * The visitor arrives at the threshold of the temple. The Nile scene is the FIRST thing,
+ * full-bleed and cinematic; the scarab is the emblem above the claim; the specimen is a
+ * lit slab standing in front of the darkened gate. Imagery leads, structure follows. */
+.hero{position:relative;min-height:1010px;display:flex;flex-direction:column;
+  justify-content:flex-end;overflow:hidden;isolation:isolate}
+.hero-img{position:absolute;inset:0;z-index:0}
+.hero-img img{width:100%;height:100%;object-fit:cover;object-position:50% 42%}
+/* The gate darkens toward the bottom so type sits on stone, not on sky. */
+.hero-img::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(13,11,9,.42) 0%,rgba(13,11,9,.15) 26%,
+    rgba(13,11,9,.72) 62%,var(--stone-900) 97%)}
+.topbar{position:absolute;inset-block-start:0;inset-inline:0;z-index:3;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:26px 46px;backdrop-filter:blur(2px)}
+.brand{display:flex;align-items:center;gap:13px;font-family:var(--mono);
+  font-size:12px;letter-spacing:.42em;text-transform:uppercase;color:var(--papyrus)}
+.brand i{width:9px;height:9px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 16px 3px rgba(217,172,60,.65);display:block}
+.hero-inner{position:relative;z-index:2;padding-block-end:150px}
+.scarab{display:block;width:min(430px,42vw);margin-block-end:26px;
+  filter:drop-shadow(0 14px 34px rgba(0,0,0,.75))}
+h1{font-size:clamp(3rem,6.6vw,5.6rem);font-weight:400;line-height:.98;
+  letter-spacing:-.035em;max-width:17ch;text-wrap:balance}
+.lede{margin-block-start:22px;max-width:50ch;color:var(--papyrus-dim);
+  font-size:1.16rem;line-height:1.62}
+/* The specimen: a lit slab standing forward of the gate. */
+.slab{position:relative;z-index:2;margin-block-start:-64px;
+  border:1px solid var(--stone-600);
+  background:linear-gradient(180deg,rgba(31,26,22,.93),rgba(21,18,16,.97));
+  box-shadow:0 40px 90px -40px #000,0 2px 0 rgba(240,207,122,.13) inset;
+  backdrop-filter:blur(3px)}
+.slab-head{display:flex;justify-content:space-between;align-items:center;
+  padding:19px 30px;border-block-end:1px solid var(--stone-600);
+  background:linear-gradient(180deg,rgba(240,207,122,.055),transparent)}
+.pill{font-family:var(--mono);font-size:10px;letter-spacing:.26em;
+  padding:6px 14px;border:1px solid var(--lapis-lit);color:var(--lapis-lit)}
+.row{display:flex;justify-content:space-between;align-items:baseline;
+  padding:17px 30px;border-block-end:1px solid rgba(51,43,35,.6)}
+.row b{font-weight:400;font-size:.95rem;color:var(--papyrus)}
+.row .v{font-family:var(--mono);font-size:1.02rem;color:var(--gold);font-variant-numeric:tabular-nums}
+.row .v.plain{color:var(--papyrus-dim)}
+.refuse{padding:22px 30px;border-inline-start:4px solid var(--withheld);
+  margin:16px 30px 26px;background:rgba(154,141,126,.045)}
+.refuse i{display:block;font-style:italic;color:var(--papyrus);font-size:1.02rem;margin-block-end:9px}
+.refuse p{color:var(--withheld);font-size:.92rem;line-height:1.62;max-width:62ch}
+</style></head><body>
+<section class="hero">
+  <div class="hero-img"><img src="assets/hero-scene-1440w.webp" alt=""></div>
+  <div class="topbar"><span class="brand"><i></i>Khepri</span><span class="lbl">العربية</span></div>
+  <div class="wall hero-inner">
+    <img class="scarab" src="assets/hero-winged-scarab-720w.webp" alt="">
+    <h1>Retail decisions<br>you can <span class="gold">prove</span>.</h1>
+    <p class="lede">Khepri turns the retail export you already have into analysis that carries
+      its own evidence — and names what it cannot support instead of estimating it.</p>
+  </div>
+</section>
+<div class="wall">
+  <div class="slab">
+    <div class="slab-head"><span class="mono" style="font-size:12px;letter-spacing:.12em">q3-sales-export.csv</span><span class="pill">ADMITTED</span></div>
+    <div class="row"><b>Population</b><span class="v plain">18 stores · 1 quarter</span></div>
+    <div class="row"><b>Revenue</b><span class="v">4,182,600 EGP</span></div>
+    <div class="row"><b>Number of sales</b><span class="v">30,600</span></div>
+    <div class="row"><b>Average sale value</b><span class="v">136.69 EGP</span></div>
+    <div class="refuse"><i>Change against the prior quarter</i>
+      <p>Comparison with an earlier period — not available. Your file covers a single period,
+      so there is no earlier period inside it to compare against.</p></div>
+  </div>
+</div>
+</body></html>
