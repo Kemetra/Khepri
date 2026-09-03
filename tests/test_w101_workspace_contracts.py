@@ -25,6 +25,7 @@ from khepri.rca.workspace.contracts import (
     AnalysisRun,
     ArtifactBinding,
     DatasetVersion,
+    RunOutcome,
     SourceProfile,
 )
 
@@ -286,3 +287,23 @@ def test_the_admitted_source_value_object_carries_no_stored_only_field() -> None
         "mapping_version",
         "admission_outcome",
     }
+
+
+@pytest.mark.parametrize("record_type", [DatasetVersion, AnalysisRun, ArtifactBinding])
+def test_the_shared_builder_cannot_construct_outside_a_door(record_type: type) -> None:
+    """Extracting the duplicated door bodies must not create a fourth construction channel.
+
+    `_build` holds the constructor call both doors share, so a caller reaching it directly would
+    have `create`'s effect without `create`'s signature — the stored-only fields `create` refuses
+    would arrive positionally. It is safe only because it is called *inside* an already-open door
+    and `records.py` refuses a bare constructor call otherwise; this asserts that refusal rather
+    than assuming it, because the guard lives in another module and a change there would disarm
+    this one silently.
+    """
+    arguments = {
+        DatasetVersion: ("dsv_forged", SCOPE, SOURCE, NOW, None),
+        AnalysisRun: ("run_forged", SCOPE, "dsv_abc123", RunOutcome(state="started"), NOW),
+        ArtifactBinding: ("run_abc123", SCOPE, "web", "sha256:" + "d" * 64, NOW),
+    }[record_type]
+    with pytest.raises(TypeError, match="through create"):
+        record_type._build(*arguments)
