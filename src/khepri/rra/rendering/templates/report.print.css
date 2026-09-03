@@ -96,6 +96,16 @@
   }
 
   /*
+   * A figure and the drawer beneath it are two rows, and `tr { break-inside: avoid }`
+   * keeps each whole while the table is allowed to break between them. Refusing a
+   * break after the figure row keeps the pair on one page, so a printed drawer never
+   * opens a page away from the figure it explains.
+   */
+  .evidence-figure-row {
+    break-after: avoid;
+  }
+
+  /*
    * One governed analysis per printed page. On screen the sections scroll past
    * each other and the headings carry the boundary; on paper a section that
    * begins halfway down a page puts two analyses under one glance, and a reader
