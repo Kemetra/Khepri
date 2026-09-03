@@ -118,7 +118,10 @@ def test_the_drawer_reads_coverage_once_from_the_bundle(
     assert drawers
     for drawer in drawers:
         assert identity in drawer, "a drawer states a coverage other than the bundle's"
-        assert "population" not in drawer and "basis" not in drawer
+        # Case-insensitive (`#356` review): a capitalised heading is still a population.
+        assert not re.search(r"population|basis", drawer, re.IGNORECASE), (
+            "a drawer names a per-figure population or basis"
+        )
 
 
 @RED

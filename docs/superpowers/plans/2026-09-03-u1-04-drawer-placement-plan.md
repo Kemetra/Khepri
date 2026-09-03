@@ -48,8 +48,10 @@ strict_undefined` proves before anything depends on it.
   `<td colspan="7">` holding `evidence_drawer(audit.evidence[cell.citation_id], chrome,
   audit.coverage, open=evidence_open | default(false))`. The import line gains `evidence_drawer`.
 - **`_components.html.j2`** — the macro's `coverage` argument (check 2). Nothing else.
-- **`report.css`** — `.evidence-drawer-row td` loses the row rule so the drawer reads as part of the
-  figure above it. Logical properties only.
+- **`report.css`** — the shared `th, td` rule puts the divider under every cell, so the figure row
+  marks itself `evidence-figure-row` and **loses** its bottom rule while the drawer row **keeps**
+  its own: the line then falls under the pair, grouping each drawer with the figure above it and not
+  with the figure below (`#356` review). Logical properties only.
 - **Tests** — `test_no_surface_places_the_drawer_before_its_supply_exists` is **deleted**; this is the
   PR entitled to. The U1-04 fixtures split coverage out of `STORED_FIGURE`/`DERIVED_FIGURE`.
 
