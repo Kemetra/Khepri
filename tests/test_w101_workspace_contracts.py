@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 import pytest
 
 from khepri.rca.workspace.contracts import (
+    RUN_STATES,
     AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
@@ -307,3 +308,39 @@ def test_the_shared_builder_cannot_construct_outside_a_door(record_type: type) -
     }[record_type]
     with pytest.raises(TypeError, match="through create"):
         record_type._build(*arguments)
+
+
+# --- The run-state vocabulary is enforced, not merely published -----------------------------
+
+
+@pytest.mark.parametrize("state", ["started", "completed", "failed"])
+def test_every_published_run_state_is_accepted(state: str) -> None:
+    assert RunOutcome(state=state).state == state
+
+
+@pytest.mark.parametrize("state", ["cancelled", "STARTED", "", "pending", "deleted"])
+def test_a_state_the_domain_does_not_define_is_refused(state: str) -> None:
+    """`RUN_STATES` published a vocabulary and nothing read it (CodeRabbit, #368).
+
+    `RunOutcome(state="cancelled")` was accepted and `_from_storage` copied it into a sealed
+    `AnalysisRun`, so a state no surface can render reached a record that looks authoritative.
+    This is the *defined but never attached* shape: the constraint had a comment claiming the
+    domain, the store and the schema restrict the same values, and no code path enforcing it.
+
+    Sealing could not have caught it. A door proves a record was constructed through it; it
+    never proves the door checked its arguments.
+    """
+    with pytest.raises(ValueError, match="not one of the states"):
+        RunOutcome(state=state)
+
+
+def test_the_refusal_does_not_echo_the_rejected_value() -> None:
+    """Content-free refusals, per `rca/errors.py`: a message must not carry caller input."""
+    with pytest.raises(ValueError) as caught:
+        RunOutcome(state="acme-pharmacy-cancelled")
+    assert "acme" not in str(caught.value).lower()
+
+
+def test_a_started_run_reports_a_state_the_vocabulary_names() -> None:
+    run = AnalysisRun.create(owner_id=SCOPE, version_id="dsv_abc123", now=NOW)
+    assert run.state in RUN_STATES

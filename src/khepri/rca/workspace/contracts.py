@@ -222,6 +222,10 @@ RUN_COMPLETED = "completed"
 RUN_FAILED = "failed"
 RUN_STATES = (RUN_STARTED, RUN_COMPLETED, RUN_FAILED)
 
+# Content-free, per the refusal discipline in `rca/errors.py`: it names the constraint, never
+# the rejected value, so a refusal cannot echo a caller's input back into a log.
+RUN_STATE_FAILURE = "Run state is not one of the states this domain defines."
+
 
 @dataclass(frozen=True, slots=True)
 class RunOutcome:
@@ -240,6 +244,28 @@ class RunOutcome:
     package_version: str | None = None
     formula_version: str | None = None
     completed_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse a state `RUN_STATES` does not name.
+
+        `RUN_STATES` published the vocabulary and nothing read it, so
+        `RunOutcome(state="cancelled")` reached `AnalysisRun._from_storage`
+        and was copied into a sealed record. A tuple that only *documents* its
+        values is the *defined but never attached* defect: the constraint has
+        prose and no code path.
+
+        The check lives here rather than on `AnalysisRun` because `Sealed`
+        rejects a subclass defining `__post_init__` at class-definition time
+        (`records.py`), and because this is the type a caller actually fills
+        in. Validating the argument is a different property from sealing the
+        record: sealing proves a record came through a door, never that the
+        door checked what it was handed.
+
+        Fail-closed per Constitution V — an unrecognized state is refused, not
+        coerced to a default.
+        """
+        if self.state not in RUN_STATES:
+            raise ValueError(RUN_STATE_FAILURE)
 
 
 @register_sealed
