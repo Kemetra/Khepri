@@ -493,3 +493,17 @@ article {
 .drawer__fields dd[data-state="unavailable"] {
   color: var(--report-muted);
 }
+
+/*
+ * The drawer's row in the evidence figures table reads as part of the figure above it:
+ * no rule between them, and the drawer's own top margin dropped so the opener sits
+ * directly under the row it explains.
+ */
+.evidence-drawer-row td {
+  border-block-end: 1px solid var(--report-rule);
+  padding-block-start: 0;
+}
+
+.evidence-drawer-row .drawer {
+  margin-block: 0 0.25rem;
+}

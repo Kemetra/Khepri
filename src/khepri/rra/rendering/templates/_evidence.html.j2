@@ -1,4 +1,4 @@
-{% from "_components.html.j2" import figure, evidence_link, version_label, coverage_indicator %}
+{% from "_components.html.j2" import figure, evidence_link, version_label, coverage_indicator, evidence_drawer %}
 {#
   The audit-evidence region, authored once for the standalone Technical Evidence
   page and the printed report appendix. Every value remains autoescaped.
@@ -6,7 +6,7 @@
   Each caveat keeps its raw audit code beside the localized customer explanation;
   the code remains evidence and the prose makes that evidence readable.
 #}
-{% macro evidence(audit, chrome, caveat_prose) %}
+{% macro evidence(audit, chrome, caveat_prose, evidence_open=false) %}
 <section id="evidence-figures" aria-labelledby="evidence-figures-heading">
 <h2 id="evidence-figures-heading">{{ chrome.figures }}</h2>
 <div class="scroller" role="region" tabindex="0" aria-label="{{ chrome.figures_caption }}">
@@ -33,6 +33,23 @@
 <td><code>{{ cell.unit_kind }}</code></td>
 {{ figure(cell.text) }}
 <td>{{ evidence_link(cell.citation_id) }}</td>
+</tr>
+{#
+  The evidence drawer, beside the figure it explains (`RRA-012` FR-096). One per figure
+  row, not one per citation: several rows cite one record -- every point of a series --
+  and a drawer a reader reaches by leaving the row is not beside it. The repetition is
+  the literal requirement's price; closed by default, it keeps the table readable.
+
+  `audit.evidence` is keyed by citation and `audit.coverage` is the bundle's, handed in
+  separately (`RRA-013` FR-104/FR-106). `evidence_open` exists only in the print context
+  (`RRA-013` FR-107), and a macro imported without context cannot see its caller's
+  variables, so the print template passes it as this macro's fourth argument and the web
+  page leaves the default: a closed `<details>` prints collapsed, and paper gets the
+  drawer open.
+#}
+<tr class="evidence-drawer-row">
+<td colspan="7">{{ evidence_drawer(audit.evidence[cell.citation_id], chrome, audit.coverage,
+                                    open=evidence_open) }}</td>
 </tr>
 {% endfor %}
 </tbody>

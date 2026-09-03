@@ -14,6 +14,7 @@ from khepri.rra.bundle import (
     SECTION_OVERVIEW,
     SECTION_PRESENT,
     SURFACE_PDF,
+    CitedEvidence,
     CitedFigure,
     ReportBundle,
     Section,
@@ -151,11 +152,32 @@ def figure(
     )
 
 
+def _evidence_for(figures: tuple[CitedFigure, ...]) -> tuple[CitedEvidence, ...]:
+    """A derived-shaped evidence record per distinct citation, for a hand-built bundle."""
+    seen: dict[str, CitedEvidence] = {}
+    for figure in figures:
+        seen.setdefault(
+            figure.citation_id,
+            CitedEvidence(
+                citation_id=figure.citation_id,
+                metric=figure.metric,
+                unit_kind=figure.unit_kind,
+                formula_version="rra004.formula.v1",
+                precision=None,
+                inputs=None,
+            ),
+        )
+    return tuple(seen.values())
+
+
 def bundle_with(*figures: CitedFigure, caveats: tuple[str, ...] = ()) -> ReportBundle:
     base = ReportBundle.of(package())
     return ReportBundle(
         identity=base.identity,
         figures=figures,
+        # `RRA-013` FR-102: the evidence region renders a drawer beside every figure row,
+        # so a hand-built bundle carries a record per citation or the template fails closed.
+        evidence=_evidence_for(figures),
         caveats=caveats,
         narrative_state=base.narrative_state,
         # The bundle has to index the figures it carries. A bundle declaring no
