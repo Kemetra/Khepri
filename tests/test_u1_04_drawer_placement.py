@@ -82,8 +82,16 @@ def test_every_evidence_figure_row_is_followed_by_its_drawer(
     assert len(rows) % 2 == 0, "the body does not pair every figure row with a drawer row"
     for figure_row, drawer_row in zip(rows[0::2], rows[1::2], strict=True):
         assert '<th scope="row">' in figure_row and not DRAWER.search(figure_row)
+        # The grouped-row layout, whole (`#356` review): the figure row carries the class
+        # that gives up its divider, and the drawer row is one cell spanning the table.
+        assert figure_row.startswith('<tr class="evidence-figure-row">'), (
+            "a figure row does not mark itself for the grouped layout"
+        )
         assert drawer_row.startswith('<tr class="evidence-drawer-row">'), (
             "the row after a figure row is not its drawer"
+        )
+        assert drawer_row.count("<td") == 1 and 'colspan="7"' in drawer_row, (
+            "a drawer row is not one cell spanning the table"
         )
         citation = re.search(r'href="#citation-([^"]+)"', figure_row)
         assert citation, "a figure row carries no evidence link"
@@ -169,15 +177,18 @@ def test_print_drawers_are_open_and_web_drawers_are_closed(
     surface: HtmlSurface, bundle: ReportBundle
 ) -> None:
     """`RRA-013` FR-107 meets FR-098: a closed `<details>` prints collapsed, so paper opens it."""
-    web = DRAWER.findall(surface.evidence[LANGUAGE_ENGLISH])
-    paper = DRAWER.findall(printed(bundle, LANGUAGE_ENGLISH))
-    assert web and paper
-    assert not any(re.match(r"<details[^>]*\sopen[\s>]", drawer) for drawer in web), (
-        "a web drawer is open by default"
-    )
-    assert all(re.match(r"<details[^>]*\sopen[\s>]", drawer) for drawer in paper), (
-        "a printed drawer is collapsed"
-    )
+    # Both languages (`#356` review): a print flag set for one language only would
+    # leave the other's printed drawers collapsed.
+    for language in REQUIRED_LANGUAGES:
+        web = DRAWER.findall(surface.evidence[language])
+        paper = DRAWER.findall(printed(bundle, language))
+        assert web and paper, f"no drawers rendered for {language}"
+        assert not any(re.match(r"<details[^>]*\sopen[\s>]", drawer) for drawer in web), (
+            f"a web drawer is open by default ({language})"
+        )
+        assert all(re.match(r"<details[^>]*\sopen[\s>]", drawer) for drawer in paper), (
+            f"a printed drawer is collapsed ({language})"
+        )
 
 
 def test_the_default_filter_survives_strict_undefined() -> None:
