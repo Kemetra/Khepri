@@ -674,5 +674,12 @@ def test_the_bundle_version_names_the_document_shape_that_carries_sections() -> 
     # behind them is byte-identical. That is exactly the case the first paragraph
     # of this test names: two bundles from identical inputs must not claim one
     # schema version while having different identities.
-    assert BUNDLE_VERSION == "rra006.bundle.v7"
+    #
+    # v8 widens the identity itself: `coverage_manifest_identity` and the coverage
+    # signature identities join `BundleIdentity.as_document()` (`RRA-013` FR-105).
+    # Two packages built from one upload under different coverage manifests state
+    # identical figures while their evidence differs, and before v8 they shared one
+    # bundle id. A consumer that selected its reader from `v7` would find two fields
+    # it does not know, so the version moves.
+    assert BUNDLE_VERSION == "rra006.bundle.v8"
     assert _identity().as_document()["bundle_version"] == BUNDLE_VERSION

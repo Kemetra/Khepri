@@ -37,6 +37,7 @@ from dataclasses import dataclass
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
+from khepri.rra import definitions
 from khepri.rra.bundle import (
     GOVERNED_FIGURE_LABELS,
     KIND_VALUE,
@@ -550,6 +551,25 @@ def _audit_region(
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
         "provenance": provenance,
+        # `RRA-013` FR-106. What the governed records say about each cited figure,
+        # with its definition in this document's language, and the package's
+        # coverage once -- never copied into an entry (FR-104). Audit-tier both, per
+        # `presentation-visibility-matrix.md` §A.5, which is why neither reaches the
+        # business context. No `value` travels: evidence says what a figure is made
+        # of, never what it measured.
+        # `definitions.describe_metric` is `RRA-011`'s door to the vocabulary: it
+        # composes a series code's description and refuses an unknown code rather
+        # than rendering the code as its own definition.
+        "evidence": {
+            record.citation_id: record.as_entry(
+                definitions.describe_metric(record.metric, language)
+            )
+            for record in bundle.evidence
+        },
+        "coverage": {
+            "manifest_identity": bundle.identity.coverage_manifest_identity,
+            "signatures": list(bundle.identity.coverage_signatures),
+        },
     }
 
 
@@ -601,6 +621,9 @@ def build_context(
         # full identity stays in the audit region, where an auditor needs it.
         "report_reference": _report_reference(bundle),
         "audit": _audit_region(bundle, language, cells, provenance),
+        # No `evidence_open` here. `RRA-013` FR-107 has the print surface set it and
+        # the web surface not set it, read literally: the key is absent on the web,
+        # and a template reads it as `evidence_open | default(false)`.
     }
 
 

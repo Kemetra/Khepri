@@ -64,7 +64,15 @@ from decimal import (
 from typing import Protocol
 
 from khepri.rra.analysis import basket, comparison, concentration, growth
-from khepri.rra.facts import ARITHMETIC_PRECISION, UNIT_RATIO, Fact, FactPackage, RefusedResult
+from khepri.rra.facts import (
+    ARITHMETIC_PRECISION,
+    UNIT_RATIO,
+    Fact,
+    FactComparison,
+    FactPackage,
+    FactSeries,
+    RefusedResult,
+)
 from khepri.rra.facts import (
     REASON_REPEATED_ROW_SIGNATURE as _FACTS_REPEATED_ROW_SIGNATURE,
 )
@@ -99,7 +107,7 @@ from khepri.rra.versions import admits_family
 # one that moves the document earns a version. That is version churn on purpose:
 # every string here named a shape that really existed on `main`, which is worth
 # more than a tidy sequence.
-BUNDLE_VERSION = "rra006.bundle.v7"
+BUNDLE_VERSION = "rra006.bundle.v8"
 
 SURFACE_WEB = "web"
 SURFACE_PDF = "pdf"
@@ -556,6 +564,15 @@ class BundleIdentity:
     source_sha256_hex: str
     monetary_precision: int
     row_count: int
+    #: Coverage provenance (`RRA-013` FR-105): the attestation the package's coverage
+    #: claims rest on, and the identities of the structural signatures it accepted.
+    #: In the identity, and therefore in the digest, because two packages built from
+    #: one upload under different coverage manifests state identical figures while
+    #: their evidence differs -- and a content address that cannot tell them apart is
+    #: not one. Defaulted so a provenance record built by hand, as the section tests
+    #: do, still constructs; `of()` always fills both.
+    coverage_manifest_identity: str | None = None
+    coverage_signatures: tuple[str, ...] = ()
 
     def as_document(self) -> dict[str, object]:
         return {
@@ -568,6 +585,8 @@ class BundleIdentity:
             "source_sha256_hex": self.source_sha256_hex,
             "monetary_precision": self.monetary_precision,
             "row_count": self.row_count,
+            "coverage_manifest_identity": self.coverage_manifest_identity,
+            "coverage_signatures": list(self.coverage_signatures),
         }
 
     @classmethod
@@ -581,6 +600,10 @@ class BundleIdentity:
             source_sha256_hex=package.source_sha256_hex,
             monetary_precision=package.monetary_precision,
             row_count=package.row_count,
+            coverage_manifest_identity=package.coverage_manifest_identity,
+            coverage_signatures=tuple(
+                signature.identity for signature in package.coverage_signatures
+            ),
         )
 
 
@@ -827,6 +850,51 @@ class CitedFigure:
 
 
 @dataclass(frozen=True, slots=True)
+class CitedEvidence:
+    """What the governed records say about one cited figure (`RRA-013` FR-102).
+
+    One record per distinct citation, shaped by what the cited record type carries
+    and nothing more. A retained `Fact` states precision, inputs and its own formula
+    version. A retained `FactSeries` or `FactComparison` states precision and version
+    and has no `inputs` field, so `inputs` is `None` -- a governed absence, not a
+    lookup that failed. A derived analysis figure is retained by no record: precision
+    and inputs are `None`, and its version is the assembling family's own, which
+    `_FAMILIES` already holds; `package.formula_version` names the package formula
+    and would be the wrong answer for it.
+
+    `None` means *no retained record states this* in every case, and nothing here
+    re-derives a value to fill it: `RRA-011`:204 forbids exactly that. There is no
+    coverage on this record (FR-104) -- coverage is the package's and lives on
+    `BundleIdentity`. And there is no `value`: this says what a figure is made of,
+    never what it measured.
+    """
+
+    citation_id: str
+    metric: str
+    unit_kind: str
+    formula_version: str
+    precision: int | None
+    inputs: tuple[str, ...] | None
+
+    def as_entry(self, definition: str) -> dict[str, object]:
+        """This record as the audit context carries it, with its resolved definition.
+
+        The definition is handed in rather than looked up: it is per language and
+        belongs to `RRA-011`'s vocabulary, which this module cannot import. Every
+        other key is the record's own, and there is no `value`.
+        """
+        return {
+            "citation_id": self.citation_id,
+            "metric": self.metric,
+            "unit_kind": self.unit_kind,
+            "formula_version": self.formula_version,
+            "precision": self.precision,
+            "inputs": None if self.inputs is None else list(self.inputs),
+            "definition": definition,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ReportBundle:
     """Everything the three surfaces of one report are allowed to present."""
 
@@ -836,6 +904,12 @@ class ReportBundle:
     narrative_state: str
     sections: tuple[Section, ...] = ()
     narrative: NarrativeDraft | None = None
+    #: `RRA-013`: one evidence record per distinct citation among `figures`. Not in
+    #: `as_document()` -- every field is a function of the figure, the package
+    #: version and the mapping version the identity already digests, so adding it
+    #: would rename every report for no change in what was published. Defaulted so
+    #: a bundle built by hand still constructs.
+    evidence: tuple[CitedEvidence, ...] = ()
 
     def __post_init__(self) -> None:
         _require_governed_section_order(self.sections)
@@ -942,7 +1016,59 @@ class ReportBundle:
             narrative_state=state,
             sections=sections,
             narrative=narrative,
+            evidence=_evidence(package, figures),
         )
+
+
+def _evidence(
+    package: FactPackage,
+    figures: tuple[CitedFigure, ...],
+) -> tuple[CitedEvidence, ...]:
+    """One record per distinct citation, in figure order (`RRA-013` FR-102, FR-103).
+
+    Sources are exactly the three retained collections and, for a citation none of
+    them holds, the family table -- never a rendered surface, a store, a route, or
+    the catalog module, which this module cannot import in any case.
+    """
+    retained: dict[str, Fact | FactSeries | FactComparison] = {
+        record.citation_id: record
+        for record in (*package.facts, *package.series, *package.comparisons)
+    }
+    evidence: dict[str, CitedEvidence] = {}
+    for figure in figures:
+        if figure.citation_id not in evidence:
+            evidence[figure.citation_id] = _cited_evidence(
+                figure, retained.get(figure.citation_id)
+            )
+    return tuple(evidence.values())
+
+
+def _cited_evidence(
+    figure: CitedFigure,
+    record: Fact | FactSeries | FactComparison | None,
+) -> CitedEvidence:
+    """The evidence one citation's record states, or the governed absence."""
+    if record is None:
+        # Derived by a family during assembly and retained by nothing. The family's
+        # version is the figure's; the package formula version is not.
+        return CitedEvidence(
+            citation_id=figure.citation_id,
+            metric=figure.metric,
+            unit_kind=figure.unit_kind,
+            formula_version=_FAMILIES[figure.section].version(),
+            precision=None,
+            inputs=None,
+        )
+    return CitedEvidence(
+        citation_id=figure.citation_id,
+        metric=figure.metric,
+        unit_kind=figure.unit_kind,
+        formula_version=record.formula_version,
+        precision=record.precision,
+        # Only a `Fact` has an `inputs` field. A series or comparison record does
+        # not, and inventing inputs for one would be the re-derivation FR-102 forbids.
+        inputs=tuple(record.inputs) if isinstance(record, Fact) else None,
+    )
 
 
 def _in_section_order(figures: tuple[CitedFigure, ...]) -> tuple[CitedFigure, ...]:

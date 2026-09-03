@@ -217,6 +217,9 @@ class PdfReportRenderer:
             extra_provenance={"pdf_surface_version": PDF_SURFACE_VERSION},
         )
         context["print_stylesheet_name"] = PRINT_STYLESHEET_NAME
+        # `RRA-013` FR-107: a closed `<details>` prints collapsed, and no stylesheet
+        # can open one. Paper gets the drawer open; the web leaves it to the reader.
+        context["evidence_open"] = True
         context["fonts"] = list(self._fonts)
         return context
 
