@@ -8,8 +8,6 @@ import pytest
 from khepri.rra.journey.copy import JOURNEY_COPY
 from tests.test_rra_journey_api import client
 
-RED = pytest.mark.xfail(strict=True, reason="R8-10 RED: the report step renders seven equal cards.")
-
 
 def test_report_links_are_absent_from_initial_html() -> None:
     body = client().get("/beta/en/report").text
@@ -56,7 +54,6 @@ def _report_module() -> str:
     return files("khepri.rra.journey").joinpath("assets", "report.js").read_text(encoding="utf-8")
 
 
-@RED
 @pytest.mark.parametrize("language", ["en", "ar"])
 def test_the_report_step_separates_pages_to_open_from_files_to_download(language: str) -> None:
     """`R8-10`'s journey half: the reader is told where to look first, and what is a file.
@@ -76,7 +73,6 @@ def test_the_report_step_separates_pages_to_open_from_files_to_download(language
     assert holder.count('class="report-grid"') == 2
 
 
-@RED
 def test_the_report_module_files_every_surface_in_its_group() -> None:
     """Pages to open and files to download, decided per link and never by default.
 
@@ -100,7 +96,6 @@ def test_the_report_module_files_every_surface_in_its_group() -> None:
     assert "language" in script.split("report-card--primary")[0]
 
 
-@RED
 def test_the_group_headings_name_an_affordance_and_no_figure() -> None:
     """`RRA-010` admits copy that names an affordance; a heading carrying a figure has left it."""
     for language in ("en", "ar"):
