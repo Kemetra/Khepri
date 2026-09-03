@@ -51,7 +51,11 @@ strict_undefined` proves before anything depends on it.
 - **`report.css`** — the shared `th, td` rule puts the divider under every cell, so the figure row
   marks itself `evidence-figure-row` and **loses** its bottom rule while the drawer row **keeps**
   its own: the line then falls under the pair, grouping each drawer with the figure above it and not
-  with the figure below (`#356` review). Logical properties only.
+  with the figure below (`#356` review). Logical properties only. **`report.print.css`** gains
+  `.evidence-figure-row { break-after: avoid; }`: its `tr { break-inside: avoid }` keeps each row
+  whole and lets the table break, so without this a drawer could open the next page away from its
+  figure (`#356` review). Chromium's actual pagination is exercised only by the local-only browser
+  tests; the RED test reads the rule.
 - **Tests** — `test_no_surface_places_the_drawer_before_its_supply_exists` is **deleted**; this is the
   PR entitled to. The U1-04 fixtures split coverage out of `STORED_FIGURE`/`DERIVED_FIGURE`.
 
@@ -67,7 +71,9 @@ strict_undefined` proves before anything depends on it.
 4. `test_a_derived_figure_drawer_states_absent_inputs` — FR-096a, on the page.
 5. `test_drawers_render_in_arabic_with_arabic_labels` — FR-099.
 6. `test_print_drawers_are_open_and_web_drawers_are_closed` — `RRA-013` FR-107 meets FR-098.
-7. `test_the_default_filter_survives_strict_undefined` — check 3's premise (not RED; holds today).
+7. `test_the_stylesheet_groups_each_row_pair` — the screen rules that group each pair and the print
+   rule that keeps the pair on one page, read from the stylesheets (`#356` review).
+8. `test_the_default_filter_survives_strict_undefined` — check 3's premise (not RED; holds today).
 
 ## Out of scope, and why
 

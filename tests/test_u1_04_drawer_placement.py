@@ -14,6 +14,7 @@ Authority: active `RRA-012` FR-096, FR-096a, FR-097, FR-098, FR-099; `RRA-013` F
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 from jinja2 import StrictUndefined
@@ -189,6 +190,39 @@ def test_print_drawers_are_open_and_web_drawers_are_closed(
         assert all(re.match(r"<details[^>]*\sopen[\s>]", drawer) for drawer in paper), (
             f"a printed drawer is collapsed ({language})"
         )
+
+
+@RED
+def test_the_stylesheet_groups_each_row_pair() -> None:
+    """The grouped layout is a stylesheet fact, so the stylesheets are what is checked.
+
+    Class names and `colspan` alone would pass with the shared `th, td` divider still
+    drawn between a figure and its drawer (`#356` review). On screen, the figure row's
+    cells give up their bottom rule and the drawer row's cell keeps one. On paper, the
+    figure row refuses a page break after itself, so a drawer never opens a new page
+    away from the figure it explains -- the print stylesheet's own `tr { break-inside:
+    avoid }` keeps each row whole but says nothing about the pair. Both are read from
+    the stylesheets rather than assumed from the markup; Chromium's actual pagination
+    is exercised only by the local-only browser tests.
+    """
+    sheet = Path("src/khepri/rra/rendering/templates/report.css").read_text(encoding="utf-8")
+    figure_rule = re.search(
+        r"\.evidence-figure-row th,\s*\.evidence-figure-row td\s*\{([^}]*)\}", sheet
+    )
+    assert figure_rule and re.search(r"border-block-end:\s*0\s*;", figure_rule.group(1)), (
+        "the figure row keeps its divider, so a line falls between it and its drawer"
+    )
+    drawer_rule = re.search(r"\.evidence-drawer-row td\s*\{([^}]*)\}", sheet)
+    assert drawer_rule and re.search(
+        r"border-block-end:\s*1px solid var\(--report-rule\)\s*;", drawer_rule.group(1)
+    ), "the drawer row draws no divider under the pair"
+    printed_sheet = Path("src/khepri/rra/rendering/templates/report.print.css").read_text(
+        encoding="utf-8"
+    )
+    pair_rule = re.search(r"\.evidence-figure-row\s*\{([^}]*)\}", printed_sheet)
+    assert pair_rule and re.search(r"break-after:\s*avoid\s*;", pair_rule.group(1)), (
+        "a printed drawer may open a new page away from its figure"
+    )
 
 
 def test_the_default_filter_survives_strict_undefined() -> None:
