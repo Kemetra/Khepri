@@ -8,6 +8,11 @@ to reflect the `W1-05` navigation conflict now RESOLVED by a companion roadmap/b
 reconciliation; no visual, CSS, or token change. **Per `governance/CONSTITUTION.md` Article II,
 merging #306 to `main` is what makes this resolution governing** — that merge has occurred. Sections
 not touched were not re-verified against `1c51105`.
+**Reconciled again:** `f15c835` (`origin/main`), 2026-09-03, under roadmap `U1-01` — the governed
+data-display component layer (`RRA-012`, `#350`–`#360`) is documented in §4.11, and every row of
+§0's verification table was re-measured against that tree. Registered authority has moved since the
+baseline — `RRA-010`, `RRA-011`, `RRA-012`, `RRA-013` are active — and §2.8, §4.5, §4.7, §8.2, §8.3,
+§8.5 and §9 say what that changed. No visual, CSS, or token change; design direction only.
 
 ## 0. Authority and standing
 
@@ -47,7 +52,8 @@ The authority files, in precedence order within the visual layer:
 | `src/khepri/rra/journey/assets/shell.css` | **The palette and scale. Tokens only — a test asserts it declares no rules.** |
 | `src/khepri/rra/journey/assets/shell-components.css` | The component layer. Consumes tokens, introduces no colour of its own. |
 | `src/khepri/rra/journey/assets/journey.css` | The journey. Predates the token layer; consumes none of it. |
-| `src/khepri/rra/rendering/templates/report.css` + `report.print.css` | The deliverable. A **separate, deliberate** namespace — see §2.6. |
+| `src/khepri/rra/rendering/templates/report.css` + `report.print.css` | The deliverable. A **separate, deliberate** namespace — see §2.6. **Since `#350` also the report namespace's component rules** (`.badge`, `.quality-summary`, `.refused__label`, `.evidence-link`, `.version-label__name`, `.coverage__label`, `.drawer*`), under active `RRA-012`. |
+| `src/khepri/rra/rendering/templates/_components.html.j2` | **The governed data-display component layer** — eight Jinja macros, one per concept, imported by the report and evidence templates. Governed by `RRA-012`; its chrome words live in `rendering/wording.py`. See §4.11. |
 
 **Named anti-reference:** `docs/ui/design_handoff_khepri/`. Dark palette against a shipped light one;
 asset plan names Google Fonts and a unpkg CDN, both forbidden by roadmap:156 and unreachable under
@@ -58,7 +64,7 @@ for values.
 
 The M2 critique reads at `b19f365`. Several of its findings have since shipped. Re-verified here:
 
-| Critique finding | Status at `65579bc` |
+| Critique finding | Status at `65579bc`, re-measured at `f15c835` |
 |---|---|
 | P0 `.refused` has no CSS rule | **RESOLVED** — `report.css:133`, side-rule + italic, `--report-muted` |
 | P2 `.caveats--section` unstyled | **RESOLVED** — `report.css:150`, `report.print.css:150` |
@@ -67,13 +73,13 @@ The M2 critique reads at `b19f365`. Several of its findings have since shipped. 
 | P1 shell has no nav or language switcher | **RESOLVED** — `shell.html.j2` frame carries both |
 | P1 #7 `unavailable` has no exit | **RESOLVED** — `unavailable.html.j2` carries a cause-free exit link |
 | P1 #12 four user strings inlined in JS | **RESOLVED** — all five JS files read copy from `data-*`; 0 hardcoded strings |
-| P2 `--text-*` defined and unused | **LIVE — 0 `var(--text-*)` in all of `src/`** |
-| P1 `.skip-link` is two mechanisms | **LIVE** — `journey.css:39` `fixed`/`translateY(-180%)` vs `shell-components.css:45` `absolute`/`-9999px`, inverted colours |
-| G font-size drift | **LIVE — 12 distinct raw sizes across 17 declarations**, counted over all four rule-bearing sheets (`shell.css` declares tokens only). `.82` `.83` `.84` `.86rem` coexist — four values inside 0.04rem |
-| P1 #16 `aria-current` absent | **LIVE — 0 occurrences in all of `src/`** |
-| P1 #10 refusal shares error paint | **LIVE** — `review.html.j2:7` `#profile-findings` uses `.error-summary`. Its `role="status"` is already correct; the *paint* is the defect |
-| P1 #8 "available on request" for a published URL | **LIVE** — `rendering/html.py:145` |
-| P1 #7 `expired` has no exit | **LIVE** — `expired.html.j2` is prose-only in both branches |
+| P2 `--text-*` defined and unused | **RESOLVED in the shell, MIRRORED in the journey** — `shell-components.css` reads `var(--text-*)` 17 times and the landing sheet 35; `journey.css:59-63` declares four tiers as `--journey-text-*` at identical values and consumes them six times, under active `RRA-010`. The seam §2.8.1 describes is mirrored, not closed |
+| P1 `.skip-link` is two mechanisms | **LIVE** — now `journey.css:75` `fixed`/`translateY(-180%)` vs `shell-components.css:45` `absolute`/`-9999px`, inverted colours. `RRA-010` authorizes the journey to settle on one of its own mechanisms; adopting the shell's is excluded |
+| G font-size drift | **LIVE, not recounted at `f15c835`** — the `65579bc` count was 12 distinct raw sizes across 17 declarations over four rule-bearing sheets, with `.82` `.83` `.84` `.86rem` inside 0.04rem. Four journey tiers have since moved onto `--journey-text-*`; the rest still ship raw |
+| P1 #16 `aria-current` absent | **RESOLVED** — `journey/templates/base.html.j2` marks the current step `aria-current="step"`; `test_step_nav_marks_exactly_the_current_step` asserts exactly one per page in both languages |
+| P1 #10 refusal shares error paint | **RESOLVED** — `#294` (`2e179dd`): `#profile-findings` is `.refusal-summary`, `role="status"`; `test_refusal_and_transport_error_no_longer_share_paint` asserts the two never share a class, in both languages |
+| P1 #8 "available on request" for a published URL | **LIVE** — now `rendering/html.py:148`, and sharper: since `#363` the journey's report step links the evidence surface beside the report, so the sentence contradicts the page the reader came from. Its wording is `RRA-009`'s |
+| P1 #7 `expired` has no exit | **LIVE** — `expired.html.j2` is prose-only in both branches at `f15c835`. `RRA-010` authorizes a recovery affordance to an existing `/beta`-local address, identical across every collapsed cause |
 | F RTL: zero physical directional properties | **LIVE AND INTACT — preserve** |
 
 Every claim of a present-tense defect in this document appears in this table. A claim in body prose
@@ -252,6 +258,15 @@ namespace, the other gets the same role or an explicit note saying why not.
 **Unresolved:** the dark block means a dark-preference OS yields a dark report inside a light app.
 See §8.1.
 
+**The component layer lives in this namespace, by authority and not by accident.** `RRA-012` put the
+governed data-display components in `report.css` rather than a new sheet, because nothing in this
+repository *links* a stylesheet to the report: `report.css` is inlined as template source, and a
+second sheet would have needed a new constant and context key the specification did not permit.
+Every component rule therefore reads `--report-*` tokens and nothing from `shell.css`. The shell's own
+component layer (`shell-components.css`, `R8-07`) is **not** governed by `RRA-012` — its Outcome says
+so, because one specification across two families' surfaces is forbidden — and whether the two layers
+should ever share tokens is the question §8.6 records as open. §4.11 documents the layer itself.
+
 ### 2.7 Layout and target tokens
 
 | Token | Value | Note |
@@ -263,7 +278,10 @@ See §8.1.
 
 ### 2.8 The consumption rule — the largest live seam
 
-**`var(--text-*)` appears 0 times in all of `src/`.** The type scale is **nine `--text-*` tokens plus
+**At `65579bc`, `var(--text-*)` appeared 0 times in all of `src/`. At `f15c835` it appears 17 times in
+`shell-components.css` and 35 in the landing sheet, and `journey.css` consumes four mirrored tiers
+(`--journey-text-*`) six times.** The rest of this section is the `65579bc` reading, kept because the
+seam it names — two sheets that never co-load — is unchanged. The type scale is **nine `--text-*` tokens plus
 two `--leading-*`** — eleven in all. The M2 critique and `shell.css`'s own note both say "ten"; the
 declared count at `shell.css:109-129` is nine, and `tests/test_r801_shell_tokens.py:316` asserts
 `("--text-", 9)`. The test was reading the artifact while the prose repeated itself.
@@ -521,9 +539,16 @@ reading as text, not as colour alone. `.member-state` is the shipped precedent
 
 **Three constraints on anyone implementing this:**
 
-1. **The customer-facing trust vocabulary is PROVISIONAL and gated on `T1`, which has no registry
-   entry.** *verified / caveated / refused / unavailable* are conceptual design vocabulary in the
-   blueprint and are explicitly **not** the shipped words. Design the shape; do not mint the labels.
+1. **The customer-facing trust vocabulary is now partly shipped, and the shipped words are the
+   authority.** `T1` merged under active `RRA-011`, and `RRA-012` FR-095a authorized the component
+   layer's own chrome: the analysis-quality summary reads **Answered / Answered with caveats /
+   Refused** (`COMPONENT_CHROME` in `rendering/wording.py`, both languages, import-time parity), and
+   a section badge reads **Answered** or **Refused** (`COMPONENT_STATE_WORDING`). *verified* and
+   *unavailable* remain conceptual design vocabulary and are **not** shipped words; a drawer field the
+   catalog declines to state reads **Not stated**, which is deliberately not the refusal word. The
+   shape this section designed — a neutral state plus a governed summary — shipped as
+   `quality_summary` at the head of the web report (`#350`). Design the shape; the labels are
+   `RRA-012`'s to extend and `RRA-009`'s / `RRA-011`'s to explain.
 2. **No fixed result count is a LOCKED UX invariant.** The summary derives totals from the current
    governed result set. Today's report structure is an implementation fact, not a durable principle —
    so no layout may assume a section or metric count.
@@ -571,6 +596,17 @@ Evidence detail may carry definition, population, source semantics, coverage, co
 reconciliation, caveats, refusal information, citation identifiers, and governed versions. **Low-level
 formula and version strings must not dominate primary customer pages.**
 
+**Shipped since the baseline, under `RRA-012` and `RRA-013`.** The evidence surface renders an
+`evidence-link` beside every figure and, since `#358`, an `evidence-drawer` in the row beneath it
+carrying the figure's definition, governed version, inputs, and the package's coverage identity —
+the data `RRA-013` puts on the bundle, which the citation route reads from the same projection
+(`#360`). The **web report carries no citation anchors and does not link to the evidence surface**:
+citation identifiers are Audit-tier under `RRA-009`, so the handoff runs through the journey's report
+step, which since `#363` lists *Report and evidence* before *PDF and Excel*. The drawer displays no
+per-figure population (FR-097) and renders an absent field as **Not stated** rather than blank or
+refused (FR-096a). The report's prose still says "available on request" (`html.py:148`) — §0's table
+keeps it LIVE, and its wording is `RRA-009`'s to change.
+
 ### 4.8 Progress and processing
 
 Determinate upload: `.progress-track` with a live `aria-valuenow`. Indeterminate processing:
@@ -608,6 +644,69 @@ text; `shell-components.css:45` is `absolute` + `inset-inline-start: -9999px` wi
 **One mechanism.** The shell's — logical, offset rather than transformed, and sized to the same 44px
 minimum as every other target, because *"a skip link too small to hit is one that only exists for the
 test."* It must be the first focusable element in the body.
+
+### 4.11 The governed data-display component layer (`RRA-012`)
+
+**Shipped, and the authority for how a governed value is presented on the report and evidence
+surfaces.** `#350` (`9e92e73`) landed the layer as eight Jinja macros in
+`rendering/templates/_components.html.j2`, each stamping `data-component` on its root so a test can
+find every instance without knowing a class name. The web report imports four; the evidence surface
+imports the rest. A slice adding a customer-visible figure renders it through one of these or is
+outside `RRA-012`.
+
+| `data-component` | Macro | Surface | Presents |
+|---|---|---|---|
+| `figure` | `figure(text)` | report, evidence | one governed figure, at the precision it arrived with |
+| `status-badge` | `status_badge(state, chrome)` | report | a section state as text — *Answered* / *Refused* — looked up, never echoed |
+| `quality-summary` | `quality_summary(answered, caveated, refused, chrome)` | report head | the three counts §4.5 designed, handed in as counts so the macro cannot regroup them |
+| `refusal-panel` | `refusal_panel(prose, chrome)` | report | a governed refusal where the answer would have been — the §4.6 treatment, with its label |
+| `evidence-link` | `evidence_link(citation_id)` | evidence | the citation anchor beside a figure |
+| `version-label` | `version_label(version, chrome)` | evidence | a governed formula or package version, labelled |
+| `coverage-indicator` | `coverage_indicator(scope, chrome)` | evidence | the package-level coverage scope, labelled |
+| `evidence-drawer` | `evidence_drawer(given, chrome, coverage, open)` | evidence | definition, version, inputs, coverage identity and signatures for one figure, in the row beneath it |
+
+**The rules the layer enforces, each with a test behind it:**
+
+- **Renders what it is given** (FR-093). Precision arrives with the value; no macro rounds, formats,
+  or derives. The layer is exactly where re-rounding would reappear, which is why this is restated.
+- **Fails closed on a code it cannot word** (FR-094). `status_badge` looks its state up in
+  `COMPONENT_STATE_WORDING`; an unknown state raises under `StrictUndefined` rather than printing the
+  code, an empty element, or a blank. `refusal_panel` takes already-worded prose and inspects nothing.
+- **Words come from two places and never a third** (FR-095, FR-095a). What a figure, refusal or caveat
+  *means* is `RRA-009`'s and `RRA-011`'s. What a component calls *itself* — *Analysis quality*,
+  *Evidence for this figure*, *Definition*, *Inputs*, *Coverage*, *Not stated* — is the layer's chrome,
+  in `rendering/wording.py` beside the tables already there, bilingual, with the same import-time
+  completeness assertion. A chrome label names where a reader is looking; the moment it would explain
+  what a figure means it has changed owner.
+- **One component per concept, on every surface in scope** (FR-092, FR-101). A test proves no report or
+  print surface renders a governed figure through hand-built markup, and derives that expectation
+  independently of the layer's own registration.
+- **Never colour alone** (FR-100). Every state carries text; `.badge--refused` and `.refused__label`
+  are decoration over words, not the message.
+- **Keyboard for the drawer only** (FR-098). `<details>/<summary>` gives the opener a tab stop and a
+  dismiss; static components have no action and get no focus stop.
+- **Print opens every drawer.** A closed `<details>` prints collapsed, so `pdf.py` passes
+  `evidence_open=True` and the figure row carries `break-after: avoid`, keeping each figure with its
+  evidence on paper.
+- **An absent field is not a refusal** (FR-096a). A derived figure's `inputs` arrive as `None`; the
+  drawer renders *Not stated* with `data-state="unavailable"`, never blank and never the refusal word.
+- **No per-figure population** (FR-097). Coverage is package-level and is shown once.
+
+**Where the data comes from.** `RRA-013` (`#353`–`#355`) puts one evidence record per citation on the
+`ReportBundle` and into the audit context; the drawer reads that, and since `#360` the catalog's
+citation route reads the same entry rather than assembling a second projection. Supply and
+presentation are governed by different specifications on purpose.
+
+**Two boundaries, both verified rather than assumed.**
+
+- **The journey is not part of this layer, and does not need to be.** `#362`'s filing tabled every
+  `/beta` page: none renders a governed figure, section state, citation, version or coverage, and
+  every journey state is fetched by script after the page is served, so these server-side macros could
+  not render there. The earlier direction that journey adoption "needs an `RRA-010` asset-wiring slice"
+  was true and had nothing to wire. Owner decision pending; no amendment recommended.
+- **The shell's component layer is a sibling, not a subordinate.** `shell-components.css` serves
+  `RCA`'s authenticated surfaces and reads `--text-*` and `--space-*`; this layer reads `--report-*`.
+  Aligning the two is §8.6's open rule, not something either specification grants.
 
 ---
 
@@ -809,19 +908,25 @@ retained only as the internal domain term. **Per `governance/CONSTITUTION.md` Ar
 to `main` at `1c51105` is what makes the resolution governing** — the label set below is settled:
 **Overview · Data · Analyses · Team**, Arabic **الرئيسية · البيانات · التحليلات · الفريق**.
 
-**This does not register any authority.** `governance/registry.yaml` still contains only `FND`,
-`RRA`, `RCA` — `W1`, `T1`, `G2`, `G3`, `U1` have zero entries, unchanged by this reconciliation. No
-M3 navigation slice is implementation-ready; resolving the label conflict removed a contradiction
-between two unregistered documents, nothing more. §3.5's mechanism design (destinations as wrapping
+**This does not register any authority.** `governance/registry.yaml` carries families `FND`, `RRA`,
+`RCA` and their specifications and decisions; it has never carried a program row, and `W1`, `G2`,
+`G3` still have no artifact. **Since the baseline, `T1`'s authority is active `RRA-011` and `U1`'s is
+active `RRA-012` and `RRA-013`** — specifications naming files, which is how authority is registered
+here; a program label is not. No M3 navigation slice is implementation-ready; resolving the label
+conflict removed a contradiction between two unregistered documents, nothing more. §3.5's mechanism design (destinations as wrapping
 text links, `aria-current`, 44px targets, no directional glyph, its own parity label key) is
 unaffected — it was always independent of which four words fill the slots, and now those words are
 also settled.
 
-### 8.3 The trust vocabulary — CONTRACT-BLOCKED on unregistered `T1`
+### 8.3 The trust vocabulary — PARTLY SHIPPED under `RRA-011` and `RRA-012`
 
-*verified / caveated / refused / unavailable* are conceptual design vocabulary, explicitly **not** the
-shipped words. The aggregate states a customer sees depend on the `T1` analysis-quality-summary
-contract — and `T1` has no registry entry. §4.5 designs the shape; the labels stay open.
+`T1` merged under active `RRA-011`, and the aggregate states a customer sees shipped as `RRA-012`
+chrome: **Answered / Answered with caveats / Refused** at the head of the web report, **Answered /
+Refused** on each section badge, **Not stated** for a drawer field the catalog declines to state.
+*verified* and *unavailable* remain conceptual and are not shipped words. What stays open is
+narrower than before: any vocabulary finer than section state — a per-result quality word, a
+caveat class label — has no authority yet, and §4.5's rule holds: design the shape, do not mint
+the labels. See §4.5 constraint 1 and §4.11.
 
 ### 8.4 One primary button — DESIGN DECISION, ready
 
@@ -829,7 +934,7 @@ Journey 46px / transparent / `--accent` versus shell 44px / `--accent-surface` /
 product needs one primary button. Recommended: the journey's transparent treatment (more restrained
 against a single surface colour) at the shell's tokenized 44px. Low-risk and inside `U1-01`.
 
-### 8.5 Token consumption — AUTHORITY-BLOCKED, and the largest live gap
+### 8.5 Token consumption — AUTHORITY NOW EXISTS; the mirrored seam remains
 
 `var(--text-*)` has **0 consumers in `src/`**; 12 distinct raw font sizes across 17 declarations ship
 with `.82/.83/.84/.86rem` coexisting; 17 spacing values are off-scale; `journey.css` re-inlines three
@@ -844,8 +949,18 @@ that was established:
 - **It does need authority.** `RCA-002:132-135` excludes any change to the RRA beta journey's assets,
   no active specification names `journey.css`, and `U1-01` is a roadmap task with no registry entry.
 
-The work itself is designed, measured, and verified — it is blocked on an **active RRA specification
+The work itself is designed, measured, and verified — it was blocked on an **active RRA specification
 naming the journey assets**, not on design. Sequenced journey → shell when that exists.
+
+**At `f15c835` that specification exists.** Active `RRA-010` (`#290`) names `journey.css` in its
+Scope and its Requirements authorize consuming a token *declared in the journey's own stylesheet* in
+place of an equal literal — and forbid resolving a custom property whose sole declaration is
+shell-owned. That is exactly the mirrored shape §2.8.1 called workable, and it has been taken:
+`journey.css:59-63` declares four `--journey-text-*` tiers and one leading at the shell's values and
+consumes them; `shell-components.css` now reads `var(--text-*)` 17 times. **What remains is the seam
+itself** — one value in two files with no test able to see them diverge — and closing it needs a
+shared sheet linked by both templates, which `RRA-010`:88 excludes as a new asset filename and
+allowlist change. That is an owner question, not a slice.
 
 ### 8.6 Report ↔ app relationship — needs a stated rule
 
@@ -870,7 +985,8 @@ anywhere owns it*.
 - **No implementation authority.** Design direction only.
 - **No visual-world replacement.** Three independent sources say the shipped world is the authority.
 - **No new colour, no new typeface, no icon set, no elevation ramp, no dark palette.**
-- **No customer-facing trust labels** — `T1` is unregistered.
+- **No customer-facing trust labels beyond `RRA-012`'s chrome** — *Answered / Answered with caveats /
+  Refused / Not stated* are shipped and governed; nothing finer has authority (§8.3).
 - **Navigation label set (Overview · Data · Analyses · Team) is settled via #306; not registered authority** — see §8.2.
 - **No report redesign** — blueprint §16.
 - **No fixed result counts** anywhere in any composition.
