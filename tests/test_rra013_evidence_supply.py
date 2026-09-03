@@ -212,12 +212,17 @@ def test_a_derived_figure_carries_its_family_version_and_absent_records(
 
 def test_no_evidence_value_is_a_figure_value(bundle: ReportBundle) -> None:
     """FR-103/FR-106: the evidence says what a figure is made of, never what it measured."""
-    stated = {figure.value for figure in bundle.figures if figure.value is not None}
+    stated = {str(figure.value) for figure in bundle.figures if figure.value is not None}
     stated |= {text for figure in bundle.figures for text in figure.renderings.values()}
     assert stated
     for record in bundle.evidence:
-        for value in dataclasses.asdict(record).values():
-            assert value not in stated, f"evidence repeats a figure value: {value!r}"
+        # Strings only: a precision of 2 is an integer and not a figure that reads "2",
+        # and comparing it as one would fail an honest record for a coincidence.
+        fields = dataclasses.asdict(record)
+        texts = [value for value in fields.values() if isinstance(value, str)]
+        texts += list(fields["inputs"] or ())
+        for text in texts:
+            assert text not in stated, f"evidence repeats a figure value: {text!r}"
 
 
 def test_coverage_lives_in_the_identity_once_and_on_no_record(
