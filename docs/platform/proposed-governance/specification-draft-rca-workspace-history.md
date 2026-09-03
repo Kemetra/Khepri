@@ -109,7 +109,7 @@ under a disabled organization follows `[DEC-RETENTION]` OD-4.
 
 ### Surfaces
 
-- **FR-117**: Analyses is the single history spine (blueprint §7.3): newest first; each row states
+- **FR-117**: The Analyses surface is the single history spine (blueprint §7.3): newest first; each row states
   when it ran, which dataset version, operational state, trust state (through `RRA-012`'s components
   where a bundle state is shown), whether artifacts are available, retention state, and the next valid
   action. No filter system, no Compare, no fixed result count.
@@ -129,10 +129,14 @@ under a disabled organization follows `[DEC-RETENTION]` OD-4.
 ### Lifecycle and evidence (`G3-03`)
 
 - **FR-123**: Deletion MUST be owner-only, immediate, idempotent and cascading exactly as
-  `[DEC-RETENTION]` §3 states. A second deletion of the same object succeeds and records nothing new.
-- **FR-124**: Every deletion and every retention sweep MUST record content-free evidence: opaque
-  identifiers, timestamps, digests, locations attempted, outcome, retry state (`RRA-002`), retained
-  for `[DEC-RETENTION]` OD-2.
+  `[DEC-RETENTION]` §3 states. A repeated request for an object already deleted or tombstoned MUST
+  succeed with the same response as the first, MUST create **no new deletion evidence**, and MUST
+  emit **one audit event** (FR-125) with outcome `already_deleted`, so an idempotency test and an
+  evidence consumer read the same contract.
+- **FR-124**: The **first** deletion of an object and every retention-triggered purge MUST record
+  content-free deletion evidence: opaque identifiers, timestamps, digests, locations attempted,
+  outcome, retry state (`RRA-002`), retained for `[DEC-RETENTION]` OD-2. Evidence is written once
+  per object per ending.
 - **FR-125**: Every workspace action — create version, run, delete, sweep, profile reuse — MUST emit
   one content-free audit event carrying opaque actor, opaque organization, object identifiers, action,
   outcome and timestamp, under `KHEPRI-DEC-015` §7's logging rule and its twelve-month horizon.
@@ -155,8 +159,12 @@ specification within the meaning of Constitution IV:
 - Organization deletion, account deletion, cross-organization sharing or transfer, secure share links,
   scheduled or recurring runs, external connectors, raw-row export or preview, file preview.
 - Per-object permissions, a third role, or any membership semantics (`RCA-001`).
-- **Any telemetry event, of any kind.** `W1-11` waits for an owner-authored amendment to
-  `KHEPRI-DEC-015` §3, exactly as `R8-08` does.
+- **Any product-telemetry event.** `W1-11`'s repeat-use telemetry waits for an owner-authored
+  amendment to `KHEPRI-DEC-015` §3, exactly as `R8-08` does. **This exclusion does not reach the
+  audit events FR-125 requires**, which are `KHEPRI-DEC-015` §7 security-and-audit records — opaque
+  identifiers, action, outcome, timestamp — retained under its twelve-month horizon and never used
+  for product analytics. An audit event that begins to carry a product metric has become telemetry
+  and is excluded.
 - Any retention horizon, trigger or post-trigger state not in `[DEC-RETENTION]`'s matrix. This
   specification reads that decision; it does not extend it.
 - Inactivity expiry, unless `[DEC-RETENTION]` OD-3 chooses it.

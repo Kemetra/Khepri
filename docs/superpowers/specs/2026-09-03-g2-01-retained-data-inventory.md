@@ -5,7 +5,8 @@
 `main` at `457f276`, 2026-09-03**, from code — every row cites where the class is defined and what
 ends it. Where `KHEPRI-DEC-015` states a horizon and the code does not enforce it, the row says so.
 
-**Two findings come first, because the retention decision has to be made knowing them.**
+**One finding comes first, because the retention decision has to be made knowing it. A second,
+as first drafted, was wrong and is corrected below — the correction is kept on the record.**
 
 ---
 
@@ -30,33 +31,38 @@ Every horizon `[DEC-RETENTION]` fixes needs `W1-07`'s sweep *and a caller on the
 it is true. **This is also an M2 fact**: the "automatic seven-day expiry" `RRA-002` requires is
 unenforced today.
 
-### F-2 — Deletion deletes objects; two Postgres documents holding customer-derived content are never deleted and never expire
+### F-2 — On-demand deletion is complete; automatic expiry is not; two documents hold customer-derived content in plaintext until then
 
-`DELETE /api/v1/beta/content` (`rra/api.py:415-445`) runs `DeletionService.delete_session_content`,
-which aborts multipart uploads and deletes the object-store prefix
-`owners/{owner_id}/sessions/{session_id}/` (`deletion.py:219-223`, `:257`), records evidence, and marks
-`rra_beta_sessions.content_deleted_at`. **It deletes no Postgres row**, and every RRA foreign key is
-`ondelete="RESTRICT"`. Two tables carry customer-derived content in plaintext JSON with **no expiry
-column and no deleter**:
+**As first drafted this finding said deletion removes object keys and no Postgres row. That was
+wrong**, and review caught it: `SqlDeletionRepository.complete` (`rra/persistence.py:742-775`)
+calls `delete_derived_content`, which deletes the session's `FactPackageRow` and
+`DatasetProfileRow`, and — once evidence is recorded — `delete_object_metadata`, which deletes its
+`ReportArtifactRow` and `UploadRow` (`deletion_persistence.py:138-153`, `:216-226`). The first
+check read `deletion.py` alone, where only the object deletion (`:257`) is visible, and missed the
+repository's completion step. **`DELETE /api/v1/beta/content` therefore ends both the objects and
+every content-bearing row for that session, with content-free evidence, as `RRA-002` requires.**
 
-- `rra_dataset_profiles.document` (`persistence.py:146-181`): per column, `safe_label` is the
-  customer's sanitized, truncated column header (`profiling.py:709-723`) and `minimum`/`maximum` are
-  actual customer values, suppressed only when the personal-data heuristic fires
-  (`profiling.py:339-341`).
-- `rra_fact_packages.document` (`persistence.py:184-234`): derived figures plus customer-derived
-  category labels via `safe_value_label` (`facts.py:2015-2018`), redacted only when `is_personal_value`
-  matches.
+What remains true, and matters to `G2`:
 
-The suppression is a heuristic gate, not a structural one: a commercially sensitive non-personal value
-— a product name, a supplier, a branch — is retained in plaintext with no end. **`RRA-002` requires
-deletion "across input, temporary materializations, facts, narrative, exports, and orphaned objects";
-facts are not deleted.** The catalog routes rebuild a bundle from this retained package
-(`KHEPRI-DEC-032`), which is why it is retained at all; that reading did not consider that the
-package outlives the session's deletion.
+- **Nothing ends these rows except an on-demand deletion.** `rra_dataset_profiles` and
+  `rra_fact_packages` have no expiry column (`rra/persistence.py` declares `expires_at` only on
+  invitations `:50`, sessions `:81`, uploads `:136`), and F-1 means no sweeper would act on one
+  anyway. A session whose customer never presses delete keeps its profile and package
+  indefinitely, past the seven days `RRA-001` promises.
+- **They hold customer-derived content in plaintext, unencrypted at rest.** Per column of
+  `rra_dataset_profiles.document` (`persistence.py:146-181`), `safe_label` is the customer's
+  sanitized, truncated column header (`profiling.py:709-723`) and `minimum`/`maximum` are actual
+  values, suppressed only when the personal-data heuristic fires (`profiling.py:339-341`);
+  `rra_fact_packages.document` carries category labels via `safe_value_label`
+  (`facts.py:2015-2018`), redacted only when `is_personal_value` matches. Object-store content is
+  envelope-encrypted; these JSON columns are not. A commercially sensitive non-personal value — a
+  product, a supplier, a branch — is plaintext in Postgres until the customer deletes.
 
 **Consequence for `G2`:** the retention matrix must give the fact package and the profile an explicit
-row — the draft does — and the M2 defect stands regardless of M3: a session's derived content should
-end when its content does. Filed here for the owner as an `RRA-002` reading, not fixed by this task.
+row with an end that is not the customer's memory — the draft does — and any dataset-version
+tombstone must be an allowlist that excludes every field of these documents. Whether the two JSON
+columns should be encrypted at rest like the objects is an `RRA-002` reading for the owner, filed
+here and not decided.
 
 ---
 
@@ -77,16 +83,16 @@ migrations reconcile with no orphan either way.
 |---|---|---|---|---|---|---|
 | `rra_invitations` | `rra/persistence.py:44` | beta invitation salt + digest | secret digest | `expires_at` `:50` | **nothing** — no sweeper for beta invitations (the RCA one has one) | digest |
 | `rra_beta_sessions` | `:58` | identifiers, consent version and instant, `content_expires_at` `:81`, `content_deleted_at` `:89` | identifiers | expiry clock | **nothing sweeps**; deletion marks `content_deleted_at` | n/a |
-| `rra_uploads` | `:92` | object key, plaintext and ciphertext SHA-256, size, media type | **pointer to raw retail file** | `expires_at` `:136` | object deleted by `deletion.py:219-223`; row remains | AES-256-GCM envelope `:108`, `:141-143` |
-| `rra_dataset_profiles` | `:146` | `document` JSON: column headers (sanitized), min/max values, admission outcome | **customer-derived content** (F-2) | **never** | **nothing** | none |
-| `rra_fact_packages` | `:184` | `document` JSON: facts, series, comparisons, refusals, versions, category labels | **derived figures + customer-derived labels** (F-2) | **never** | **nothing** | none |
+| `rra_uploads` | `:92` | object key, plaintext and ciphertext SHA-256, size, media type | **pointer to raw retail file** | `expires_at` `:136` (unenforced, F-1) | on-demand deletion: object by `deletion.py:257`, row by `delete_object_metadata` (`deletion_persistence.py:147-153`) | AES-256-GCM envelope `:108`, `:141-143` |
+| `rra_dataset_profiles` | `:146` | `document` JSON: column headers (sanitized), min/max values, admission outcome | **customer-derived content** (F-2) | no expiry column | on-demand deletion only: `delete_derived_content` (`deletion_persistence.py:138-144`) | **none** — plaintext JSON |
+| `rra_fact_packages` | `:184` | `document` JSON: facts, series, comparisons, refusals, versions, category labels | **derived figures + customer-derived labels** (F-2) | no expiry column | on-demand deletion only: `delete_derived_content` | **none** — plaintext JSON |
 | `rra_deletion_jobs` | `:237` | state, attempts, retry | operational | never | nothing — evidence | n/a |
 | `rra_deletion_evidence` | `:281` | `location_digest`, `content_digest`, outcome, attempt | **deletion evidence**, content-free | never | nothing — permanent by design | digests |
 | `rra_report_jobs` | `job_persistence.py:49` | state, lease, attempts, idempotency digest | operational | never | nothing | n/a |
 | `rra_report_job_attempts` | `:132` | attempt history | operational | never | nothing | n/a |
 | `rra_report_deliveries` | `delivery_persistence.py:73` | identifiers, `narrative_state`, `expires_at` | identifiers | `expires_at` (indexed) | **no reader of the index** | n/a |
 | `rra_report_delivery_surfaces` | `:113` | per-surface digest evidence | content-free | never | nothing | digest |
-| `rra_report_artifacts` | `artifact_persistence.py:46` | object key, digests, fixed filename constant (`:56-69`) | **pointer to rendered report** | `expires_at` `:119` | object deleted by prefix; row remains | AES-256-GCM `:76-91` |
+| `rra_report_artifacts` | `artifact_persistence.py:46` | object key, digests, fixed filename constant (`:56-69`) | **pointer to rendered report** | `expires_at` `:119` (unenforced, F-1) | on-demand deletion: object by prefix, row by `delete_object_metadata` | AES-256-GCM `:76-91` |
 | `rra_operational_events` | `telemetry_persistence.py:26` | enumerated stage, transition, integers, **banded** size (`:66-68`) | operational, content-free | never | nothing | n/a |
 
 ### Postgres — RCA commercial identity (lifecycle stated by `KHEPRI-DEC-015` §2)
@@ -165,7 +171,10 @@ The roadmap names nine classes. Each maps to the rows above:
 ## Method
 
 One read-only exploration over `src/khepri/{rra,rca,runtime,infra}`, `migrations/`, and
-`pyproject.toml`, followed by a second independent check of the two findings: `deletion.py` deletes
-only object keys (`:257`); `rra/persistence.py` declares `expires_at` on invitations, sessions and
-uploads only (`:50`, `:81`, `:136`); `grep -rn '\.sweep()' src/` outside `khepri/local` returns zero
-callers; `pyproject.toml:78` excludes `khepri/local`.
+`pyproject.toml`, then a second check of both findings. F-1 held: `grep -rn '\.sweep()' src/`
+outside `khepri/local` returns zero callers and `pyproject.toml:78` excludes `khepri/local`. **F-2
+did not hold as first written**: the second check read `deletion.py` (`:257`, objects only) and not
+`deletion_persistence.py:138-153`, where the repository's completion step deletes the four
+content-bearing row classes. Review found it; the corrected finding is above. The lesson is
+recorded: a deletion that spans a service and a repository must be verified at the repository's
+completion step, not at the service's object call.

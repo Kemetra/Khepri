@@ -44,6 +44,9 @@ This is that decision. M3 — *"durable trust workspace beta"* — cannot start 
   decision changes **when** content ends, not **how** it is deleted.
 - `KHEPRI-DEC-032`: no store retains a `ReportBundle`; catalog routes reconstruct one from the
   retained package. A durable workspace changes what is worth retaining (§3, row *Fact package*).
+- `G2-01` F-1 and F-2: no retention sweeper runs on the deployed path, and the profile and
+  fact-package documents end only by on-demand deletion. Every horizon below is a statement of
+  intent until `W1-07` ships a sweep *with a caller in the shipped image*.
 
 ## 2. The governing principle
 
@@ -54,10 +57,16 @@ Every class still has a *bounded* active retention, an *end trigger*, a *post-tr
 *deletion rule*; "kept until deleted" is a lifecycle only when the deleting actor and the backup
 horizon are both named.
 
-Two corollaries the matrix enforces:
+Three kinds of ending, and the matrix names which applies to every row:
 
-- **Deletion is a customer action with evidence, never an inference.** Nothing is deleted because
-  something else was, except where a row says so explicitly (cascade rows name their parent).
+- **Owner-requested deletion** — a customer action, immediate, idempotent, and **evidenced**
+  (`RRA-002`'s content-free evidence). Nothing is deleted by inference from another action.
+- **Named cascade** — a deletion that follows an owner-requested one because a row names its
+  parent (a run follows its dataset version). Evidenced as part of the parent's deletion.
+- **Retention-triggered purge** — the automatic ending of a class whose purpose has elapsed:
+  sealing plus grace, an evidence horizon, backup expiry, an inactivity horizon if OD-3 chooses one.
+  Run by the retention sweep, recorded as a lifecycle audit event, and **not** presented to the
+  customer as a deletion they performed.
 - **Derived content never outlives its input's *right to exist*.** A fact package or report may
   outlive the raw upload it came from (the upload is the bulkiest and least useful class to keep),
   but if the customer deletes the *dataset version*, every derivative of it goes too, because the
@@ -70,9 +79,9 @@ Everything else follows from an active artifact named in the anchor column.
 
 | Data class | Purpose | Active retention | End trigger | Post-trigger state | Deletion rule | Backup rule | Anchor |
 |---|---|---|---|---|---|---|---|
-| **Raw upload** (CSV/XLSX bytes) | Admission, profiling, and re-attestation of a source | **OD-1**: until its dataset version is *sealed* (facts derived and reconciled), plus a short grace — recommended **7 days** after sealing | Sealing + grace; dataset-version deletion; organization closure | **Purged.** The dataset version keeps the upload's digest, size, media type and coverage manifest, never its rows | Immediate on trigger; idempotent | Bounded horizon **OD-5** | `RRA-002`, `RRA-003` |
+| **Raw upload** (CSV/XLSX bytes) | Admission, profiling, and re-attestation of a source | **OD-1**: until its dataset version is *sealed* (facts derived and reconciled), plus a short grace — recommended **7 days** after sealing | Sealing + grace (purge); dataset-version deletion (cascade); organization closure | **Purged.** The *live* dataset version keeps the upload's digests, size and media type and its coverage manifest; the rows are gone | Immediate on trigger; idempotent | Bounded horizon **OD-5** | `RRA-002`, `RRA-003` |
 | **Normalized events** (materialized rows) | Fact derivation | Same as raw upload — a materialization is the upload in another shape | As raw upload | **Purged** | As raw upload | As raw upload | `RRA-002`, `RRA-004` |
-| **Dataset version** (record: digests, mapping, manifest, admission outcome, versions) | The durable identity of one admitted source; what *Remember My Data* re-attests against | While the organization exists, or until the customer deletes it | Customer deletion; organization closure | **Tombstone**: opaque identifiers, creation and deletion timestamps, digests — no filename, no column names, no values | Immediate, cascading to every derivative below; evidence recorded | Bounded horizon **OD-5**; a restored deleted version must not become readable (revocation-ledger pattern, `DEC-015` §8) | `RRA-003`, `KHEPRI-DEC-015` §6 |
+| **Dataset version** (record: digests, mapping, manifest, admission outcome, versions) | The durable identity of one admitted source; what *Remember My Data* re-attests against | While the organization exists, or until the customer deletes it | Customer deletion; organization closure | **Tombstone, by allowlist** (§3a): opaque identifiers, timestamps, digests, version identifiers, admission outcome code. **Everything in the profile document is excluded** — column labels, min/max values, the manifest's text fields | Immediate, cascading to every derivative below; evidence recorded | Bounded horizon **OD-5**; a restored deleted version must not become readable (revocation-ledger pattern, `DEC-015` §8) | `RRA-003`, `KHEPRI-DEC-015` §6 |
 | **Mapping and coverage manifest** | Provenance of admission; reuse as a *source profile* | With the dataset version they describe | As dataset version | Tombstoned with it | Cascade | As dataset version | `RRA-003` |
 | **Fact package** (facts, series, comparisons, refusals, versions) | The analysis; the input every report and catalog read reconstructs from | With the analysis run that produced it, while the organization exists | Analysis-run deletion; dataset-version deletion (cascade); organization closure | **Tombstone**: opaque run identifier, timestamps, formula and package versions, package digest — no figure | Immediate, cascading to reports and evidence | As dataset version | `RRA-004`, `RRA-008`, `KHEPRI-DEC-032` |
 | **Report bundle artifacts** (web, evidence, PDF, Excel) | The deliverable, reopened from Analysis detail | With their analysis run | As fact package | **Purged** — the run's tombstone is the only trace | Cascade from the run | As dataset version | `RRA-006` |
@@ -84,6 +93,22 @@ Everything else follows from an active artifact named in the anchor column.
 | **Retention/lifecycle audit event** (who deleted what, when; sweeps run) | Attribute deletion; investigate a dispute | **12 months** — the `DEC-015` §2a horizon, adopted rather than re-derived | Elapse | Content-free record | Purge on elapse | Bounded backups | `KHEPRI-DEC-015` §2a |
 | **Repeat-use telemetry** (`W1-11`) | Product learning about second analysis, reopen, return, deletion completion | **Not authorized by this decision.** `KHEPRI-DEC-015` §3 forbids product-analytics use of identity data and `RRA-010`/`RCA-003`/`RRA-011`/`RRA-012`/`RRA-013` each exclude new telemetry. `W1-11` needs its own amendment | — | — | — | — | `KHEPRI-DEC-015` §3 |
 | **Backups** of any of the above | Operational recovery | **OD-5**: the bounded purge horizon `DEC-015` left open as `OD-3` | Elapse | Destroyed by the runtime's lifecycle mechanism | — | Must not resurrect deleted content as readable | `KHEPRI-DEC-015` §8 |
+
+### 3a. The tombstone allowlist
+
+A tombstone is defined by what it **may** contain, never by what was removed. `G2-01` F-2 is why:
+the live profile document holds sanitized customer column headers and min/max values, and the
+coverage manifest holds free text (`attested_by`, `aggregate_scope`, exception notes). None of it
+survives.
+
+| Tombstone | May contain | Never contains |
+|---|---|---|
+| Dataset version | opaque version id and organization scope; created, sealed and deleted instants; upload plaintext and ciphertext digests, size, media type; manifest **digest**; `rra003.mapping.*` version; admission outcome **code** | filename, any column label or digest of one, any value, any manifest text field, the mapping itself |
+| Analysis run | opaque run id, version id and scope; started, completed and deleted instants; package digest; `rra004.*`/`rra008.*` versions; per-section state codes (answered / caveated / refused) | any figure, series, label, narrative, refusal prose, artifact bytes or key |
+| Source profile | none — purged, not tombstoned | — |
+
+A test asserts each tombstone's field set equals its allowlist exactly, so a field added to the live
+record cannot leak into the tombstone by default.
 
 **Clock cardinality (blueprint `M3-U6` names this as `G2`'s to decide): one clock per class, anchored
 to that class's own trigger.** A dataset version's clock does not start a run's clock; a run's
