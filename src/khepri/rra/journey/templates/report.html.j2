@@ -5,7 +5,18 @@
   <h1 id="page-title">{{ copy.report_title }}</h1><p class="lede">{{ copy.report_intro }}</p>
   <div id="error-summary" class="error-summary" role="alert" data-temporary="{{ copy.temporary_unavailable }}" hidden></div>
   <dl class="report-meta"><div><dt>{{ copy.dataset }}</dt><dd>{{ copy.uploaded_dataset }}</dd></div><div><dt>{{ copy.rows }}</dt><dd id="row-count" dir="ltr">—</dd></div><div><dt>{{ copy.generated }}</dt><dd id="generated-at" dir="ltr">—</dd></div><div><dt>{{ copy.available_until }}</dt><dd id="expires-at" dir="ltr">—</dd></div></dl>
-  <div id="report-links" class="report-grid" hidden data-web-en="{{ copy.artifact_web_en }}" data-web-ar="{{ copy.artifact_web_ar }}" data-evidence-en="{{ copy.artifact_evidence_en }}" data-evidence-ar="{{ copy.artifact_evidence_ar }}" data-pdf-en="{{ copy.artifact_pdf_en }}" data-pdf-ar="{{ copy.artifact_pdf_ar }}" data-excel="{{ copy.artifact_excel }}"></div>
+  {#
+    `R8-10`'s journey half, under `RRA-010`: seven links in two labelled groups -- the
+    report and its evidence first, the other formats second -- so a reader knows the
+    web report is where to look first. The headings name what each group holds and
+    claim nothing about mechanism: every surface is served as an attachment
+    (`report_api.py:562`), the web report included. They are this page's copy, present
+    before any state loads; `report.js` only files each link into its grid.
+  #}
+  <div id="report-links" class="report-groups" hidden data-web-en="{{ copy.artifact_web_en }}" data-web-ar="{{ copy.artifact_web_ar }}" data-evidence-en="{{ copy.artifact_evidence_en }}" data-evidence-ar="{{ copy.artifact_evidence_ar }}" data-pdf-en="{{ copy.artifact_pdf_en }}" data-pdf-ar="{{ copy.artifact_pdf_ar }}" data-excel="{{ copy.artifact_excel }}">
+    <section class="report-group" aria-labelledby="read-heading"><h2 id="read-heading">{{ copy.report_and_evidence }}</h2><div class="report-grid" data-group="read"></div></section>
+    <section class="report-group" aria-labelledby="formats-heading"><h2 id="formats-heading">{{ copy.other_formats }}</h2><div class="report-grid" data-group="formats"></div></section>
+  </div>
   <button id="delete-content" class="text-button">{{ copy.delete }}</button>
 </section>
 {% endblock %}

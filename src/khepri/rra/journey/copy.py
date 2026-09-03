@@ -86,6 +86,8 @@ _EN = {
     "artifact_pdf_en": "English PDF",
     "artifact_pdf_ar": "Arabic PDF",
     "artifact_excel": "Bilingual Excel",
+    "report_and_evidence": "Report and evidence",
+    "other_formats": "PDF and Excel",
     "deletion_requested_title": "Deletion requested",
     "deletion_requested_intro": (
         "Your content is unavailable and secure deletion will continue automatically."
@@ -257,6 +259,8 @@ _AR = {
     "artifact_pdf_en": "PDF بالإنجليزية",
     "artifact_pdf_ar": "PDF بالعربية",
     "artifact_excel": "Excel ثنائي اللغة",
+    "report_and_evidence": "التقرير والأدلة",
+    "other_formats": "PDF وExcel",
     "deletion_requested_title": "تم طلب الحذف",
     "deletion_requested_intro": "لم يعد محتواك متاحاً، وستستمر عملية الحذف الآمن تلقائياً.",
     "upload_progress": "تقدم رفع الملف",
