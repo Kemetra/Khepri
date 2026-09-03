@@ -637,11 +637,9 @@ def build_context(
         # full identity stays in the audit region, where an auditor needs it.
         "report_reference": _report_reference(bundle),
         "audit": _audit_region(bundle, language, cells, provenance),
-        # `RRA-013` FR-107. A closed `<details>` prints collapsed, so the print
-        # surface sets this true; the web leaves a drawer for the reader to open.
-        # Carried as `False` here rather than omitted because `StrictUndefined`
-        # would otherwise make every template guard the key before reading it.
-        "evidence_open": False,
+        # No `evidence_open` here. `RRA-013` FR-107 has the print surface set it and
+        # the web surface not set it, read literally: the key is absent on the web,
+        # and a template reads it as `evidence_open | default(false)`.
     }
 
 
