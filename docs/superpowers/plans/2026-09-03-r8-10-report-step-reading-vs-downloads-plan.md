@@ -18,13 +18,14 @@ links, and what the step lacks is presentation.
 
 ### 1. The data side of `R8-10`'s journey half is already met
 
-The web report surface opens with the analysis-quality summary — `rendering/templates/report.html.j2:54`
-renders `quality_summary(answered, caveated, refused, chrome)` in the page header since `#350` — and
-every figure on it links to its evidence; the evidence surface carries a drawer beside every figure
-since `#358`. The journey's report step (`report.js:18-24`) links both surfaces, in both languages,
-alongside the PDF and Excel downloads. A reader who opens the web report sees what was computed,
-caveated, and refused before downloading anything. No new read is needed, and `RRA-010`'s third
-bounding test forbids one.
+The web report surface begins with the analysis-quality summary — `rendering/templates/report.html.j2:54`
+renders `quality_summary(answered, caveated, refused, chrome)` in the page header since `#350` — with a
+status badge on every section and a refusal panel on every refused one. The evidence surface, a separate
+document by `RRA-009`'s design, carries a citation link and a drawer beside every figure since `#358`;
+the web report does not link to it, because citation identifiers are Audit-tier. The journey's report
+step (`report.js`) is the one place that links both, in both languages, alongside the PDF and Excel. A
+reader who opens the web report sees what was computed, caveated, and refused; the evidence surface
+says why. No new read is needed, and `RRA-010`'s third bounding test forbids one.
 
 ### 2. What the step lacks is a distinction it can make with what it has
 
