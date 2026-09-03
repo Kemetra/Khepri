@@ -31,9 +31,13 @@ page by page:
 
 Not one governed figure, bundle section state, citation, formula version, or coverage identity
 appears on any of them. The review page's states are `RRA-003`'s mapping states and its refusals are
-admission refusals — a different vocabulary, already worded in `JOURNEY_COPY`, that `status_badge`
-and `refusal_panel` have no governed rendering for and would fail closed on (FR-094). So an asset
-wiring slice would ship a stylesheet to five pages on which none of its selectors ever matches.
+admission refusals — a different vocabulary, already worded in `JOURNEY_COPY`. `status_badge` looks
+its state up in `COMPONENT_STATE_WORDING`, which words only the two bundle section states, so a
+mapping state would fail closed there (FR-094). `refusal_panel` takes already-worded prose and
+inspects no code, so it *could* wrap an admission refusal — but the prose it would wrap is
+`RRA-003`'s and already rendered, and wrapping it changes a class name, not what the reader learns.
+Either way an asset wiring slice would ship a stylesheet to five pages on which none of its
+selectors matches today.
 
 **The component macros could not render there even if the data existed.** The seven macros are
 Jinja, rendered server-side from a bundle at materialization time. Every journey state above is
@@ -47,12 +51,16 @@ change"*.
 **The only real consumer is `R8-10`, and it is already served.** `R8-10` — *"analysis quality and
 evidence entry points to the journey and shell; user understands what was computed, caveated, and
 refused before downloading"* — is the one roadmap task that would put bundle state on a journey page.
-Since `#350`, the **web report surface opens with the quality summary** (`report.html.j2:54`, the
-answered / caveated / refused counts) and links every figure to its evidence; since `#358` the
-evidence surface carries a drawer beside every figure. The journey's report step links both surfaces
-before the PDF and Excel downloads. A customer who opens the web report sees what was computed,
-caveated, and refused before downloading anything. The entry points exist; they are the links the
-report step already renders.
+Since `#350`, the **web report surface begins with the quality summary** (`report.html.j2:54`, the
+answered / caveated / refused counts) and carries a status badge on every section and a refusal
+panel on every refused one; since `#358` the **evidence surface** carries a citation link and a
+drawer beside every figure. The two are separate documents by `RRA-009`'s design — citation
+identifiers are Audit-tier and the business report has no citation anchors — and **the web report
+does not link to the evidence surface**; the journey's report step is the one place that links
+both, alongside the PDF and Excel. A customer who opens the web report sees what was computed,
+caveated, and refused; one who opens the evidence surface sees why. The entry points exist; they
+are the links the report step already renders, and the handoff between the two documents runs
+through that step rather than between them.
 
 What `R8-10`'s journey half still lacks is presentation, not data: the seven links render as equal
 cards, so nothing tells a reader that the web report is where to look first and that three of the
