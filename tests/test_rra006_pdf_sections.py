@@ -373,16 +373,23 @@ def test_arabic_paginates_the_same_sections_onto_distinct_pages() -> None:
     # section per page, which nothing claims and RRA-009 did not ask for.
     #
     # The pagination rule this test defends is about the business report, and it is
-    # still checked: the two languages must produce the same page count and put the
-    # appendix boundary in the same place. That is the shared-template property --
-    # a fork would move one and not the other -- and unlike the section headings it
-    # is recoverable from a Chromium-printed Arabic PDF.
+    # still checked: the two languages must put the appendix boundary in the same
+    # place. That is the shared-template property -- a fork would move one and not
+    # the other -- and unlike the section headings it is recoverable from a
+    # Chromium-printed Arabic PDF.
+    #
+    # **The total page count is no longer compared, and the reason is recorded.** It
+    # was a second proxy for the same property, and it held while the appendix carried
+    # only codes, digits and identifiers -- language-neutral tokens that paginate
+    # identically. `U1-04` (`#358`) placed the evidence drawer beneath every appendix
+    # figure row, open on paper, and a drawer carries `RRA-011`'s metric *definition*
+    # in the reader's language. Arabic and English prose of different lengths wrap
+    # differently, so the appendix runs to a different number of pages per language
+    # (21 against 22 on the first run) while the business body and the boundary do
+    # not move. Equal totals would now assert that two languages' prose is the same
+    # length, which nothing claims.
     arabic_pages = _flattened_pages(arabic_pdf)
     english_pages = _flattened_pages(english_pdf)
-    assert len(arabic_pages) == len(english_pages), (
-        len(arabic_pages),
-        len(english_pages),
-    )
     assert _appendix_page(arabic_pages) == _appendix_page(english_pages), (
         _appendix_page(arabic_pages),
         _appendix_page(english_pages),
