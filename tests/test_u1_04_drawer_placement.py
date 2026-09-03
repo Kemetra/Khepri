@@ -1,8 +1,7 @@
-"""U1-04's placement RED tests: the drawer is not yet beside any figure.
+"""U1-04: the evidence drawer sits beside every figure row of the evidence region.
 
-Every RED test here fails on this tree, and each docstring says what it is waiting for.
-They are the deliverable §15 requires before `U1`'s row may read
-`READY_FOR_IMPLEMENTATION`. Strict `xfail`, as every U1 plan before this one.
+These began as the RED tests `#356` landed, every one `xfail(strict=True)`; the strict
+marker did its job and the markers came off when the placement landed.
 
 **Assertions are on the rendered documents** -- the evidence page, the business page,
 and the printed page -- because placement is a claim about what a reader receives.
@@ -27,8 +26,6 @@ from khepri.rra.rendering.pdf import PdfReportRenderer
 from khepri.rra.rendering.wording import component_chrome
 from tests.test_rra006_pdf_surface import FakePrinter
 from tests.test_rra013_evidence_supply import ROWS, package_for
-
-RED = pytest.mark.xfail(strict=True, reason="U1-04 RED: the drawer is placed on no page yet.")
 
 DRAWER = re.compile(r'<details[^>]*data-component="evidence-drawer"[^>]*>.*?</details>', re.S)
 #: Every `<tr>` of the evidence figures table, in document order, so sibling structure
@@ -63,7 +60,6 @@ def printed(bundle: ReportBundle, language: str) -> str:
 # --------------------------------------------------------------------------
 
 
-@RED
 @pytest.mark.parametrize("language", sorted(REQUIRED_LANGUAGES))
 def test_every_evidence_figure_row_is_followed_by_its_drawer(
     surface: HtmlSurface, language: str
@@ -103,7 +99,6 @@ def test_every_evidence_figure_row_is_followed_by_its_drawer(
         )
 
 
-@RED
 def test_the_business_page_carries_no_drawer(surface: HtmlSurface) -> None:
     """Citation identifiers, versions and coverage are tier A; the business page has none."""
     for language in REQUIRED_LANGUAGES:
@@ -116,7 +111,6 @@ def test_the_business_page_carries_no_drawer(surface: HtmlSurface) -> None:
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_the_drawer_reads_coverage_once_from_the_bundle(
     surface: HtmlSurface, bundle: ReportBundle
 ) -> None:
@@ -133,7 +127,6 @@ def test_the_drawer_reads_coverage_once_from_the_bundle(
         )
 
 
-@RED
 def test_a_derived_figure_drawer_states_absent_inputs(
     surface: HtmlSurface, bundle: ReportBundle
 ) -> None:
@@ -160,7 +153,6 @@ def test_a_derived_figure_drawer_states_absent_inputs(
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_drawers_render_in_arabic_with_arabic_labels(surface: HtmlSurface) -> None:
     """FR-099: every drawer label on the Arabic evidence page is Arabic."""
     drawers = DRAWER.findall(surface.evidence[LANGUAGE_ARABIC])
@@ -173,7 +165,6 @@ def test_drawers_render_in_arabic_with_arabic_labels(surface: HtmlSurface) -> No
         )
 
 
-@RED
 def test_print_drawers_are_open_and_web_drawers_are_closed(
     surface: HtmlSurface, bundle: ReportBundle
 ) -> None:
@@ -192,7 +183,6 @@ def test_print_drawers_are_open_and_web_drawers_are_closed(
         )
 
 
-@RED
 def test_the_stylesheet_groups_each_row_pair() -> None:
     """The grouped layout is a stylesheet fact, so the stylesheets are what is checked.
 

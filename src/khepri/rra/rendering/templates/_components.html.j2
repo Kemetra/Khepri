@@ -152,10 +152,13 @@
   The evidence drawer (`U1-04`): what the governed records say about one figure, beside
   that figure (FR-096).
 
-  `given` is `report_api._cited_figure`'s projection, taken as-is, with the package-level
-  coverage pair `CitationEvidenceResponse` carries beside it. The macro reads exactly the
-  keys it renders -- definition, formula version, inputs, coverage identity, citation --
-  and nothing else, so a field a future projection adds cannot reach the page through it.
+  `given` is one entry of the audit context's `evidence` -- `RRA-013`'s per-citation
+  record with its definition resolved -- taken as-is; `coverage` is the context's
+  bundle-level `coverage`, handed in **separately** because `RRA-013` FR-104 forbids
+  copying it into an entry. The macro reads exactly the keys it renders -- definition,
+  formula version, inputs, citation from `given`; manifest identity and signatures from
+  `coverage` -- and nothing else, so a field a future projection adds cannot reach the
+  page through it.
   It has no population or basis input at all (FR-097): a `Fact` carries no population
   identifier, and `RRA-011` declines to invent that relationship.
 
@@ -185,11 +188,12 @@
   is the one presentation difference between the two, and it is stated as a parameter
   rather than inferred from a stylesheet no CSS rule could implement.
 
-  **Placed on no page in this slice.** Its supply is the deferred slice's subject, and an
-  unsupplied drawer would render every field unavailable for a reason FR-096a does not
-  mean. `test_no_surface_places_the_drawer_before_its_supply_exists` holds that line.
+  **Placed beside every figure row of the evidence region** by `_evidence.html.j2`, once
+  `RRA-013` supplied the data. Until then it was placed nowhere, and a guard held that
+  line: an unsupplied drawer would have rendered every field unavailable for a reason
+  FR-096a does not mean.
 #}
-{% macro evidence_drawer(given, chrome, open=false) -%}
+{% macro evidence_drawer(given, chrome, coverage, open=false) -%}
 <details data-component="evidence-drawer" class="drawer"{% if open %} open{% endif %}>
 <summary class="drawer__opener">{{ chrome.component.drawer_open }}</summary>
 <div class="drawer__version">{{ version_label(given.formula_version, chrome) }}</div>
@@ -214,10 +218,10 @@
 </div>
 <div>
 <dt>{{ chrome.component.coverage }}</dt>
-{% if given.coverage_manifest_identity is none -%}
+{% if coverage.manifest_identity is none -%}
 <dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
 {%- else -%}
-<dd><code>{{ given.coverage_manifest_identity }}</code></dd>
+<dd><code>{{ coverage.manifest_identity }}</code></dd>
 {%- endif %}
 </div>
 {#
@@ -229,12 +233,12 @@
 #}
 <div>
 <dt>{{ chrome.component.coverage_signatures }}</dt>
-{% if given.coverage_manifest_identity is none -%}
+{% if coverage.manifest_identity is none -%}
 <dd data-state="unavailable">{{ chrome.component.unavailable }}</dd>
-{%- elif not given.coverage_signatures -%}
+{%- elif not coverage.signatures -%}
 <dd data-state="none">{{ chrome.none }}</dd>
 {%- else -%}
-<dd>{% for signature in given.coverage_signatures %}<code>{{ signature }}</code>{{ " " if not loop.last }}{% endfor %}</dd>
+<dd>{% for signature in coverage.signatures %}<code>{{ signature }}</code>{{ " " if not loop.last }}{% endfor %}</dd>
 {%- endif %}
 </div>
 <div>
