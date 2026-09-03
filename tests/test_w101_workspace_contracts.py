@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 import pytest
 
 from khepri.rca.workspace.contracts import (
+    AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
     DatasetVersion,
@@ -29,6 +30,16 @@ from khepri.rca.workspace.contracts import (
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 SCOPE = "own_3f7a9c21b4e85d06"
+
+SOURCE = AdmittedSource(
+    plaintext_digest="sha256:" + "a" * 64,
+    ciphertext_digest="sha256:" + "b" * 64,
+    size_bytes=2048,
+    media_type="text/csv",
+    manifest_digest="sha256:" + "c" * 64,
+    mapping_version="rra003.mapping.v3",
+    admission_outcome="admitted",
+)
 
 
 def _field_names(record_type: type) -> set[str]:
@@ -163,17 +174,7 @@ def test_records_the_domain_acts_on_are_sealed(record_type: type) -> None:
 
 
 def test_a_dataset_version_cannot_be_mutated() -> None:
-    version = DatasetVersion.create(
-        owner_id=SCOPE,
-        upload_plaintext_digest="sha256:" + "a" * 64,
-        upload_ciphertext_digest="sha256:" + "b" * 64,
-        upload_size_bytes=2048,
-        upload_media_type="text/csv",
-        manifest_digest="sha256:" + "c" * 64,
-        mapping_version="rra003.mapping.v3",
-        admission_outcome="admitted",
-        now=NOW,
-    )
+    version = DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
     with pytest.raises(FrozenInstanceError):
         version.upload_size_bytes = 4096  # type: ignore[misc]
 
@@ -185,17 +186,7 @@ def test_substitution_is_refused_on_a_sealed_workspace_record() -> None:
     through a door again. A version whose digest could be swapped this way would let a caller
     re-point a sealed dataset at content it never admitted.
     """
-    version = DatasetVersion.create(
-        owner_id=SCOPE,
-        upload_plaintext_digest="sha256:" + "a" * 64,
-        upload_ciphertext_digest="sha256:" + "b" * 64,
-        upload_size_bytes=2048,
-        upload_media_type="text/csv",
-        manifest_digest="sha256:" + "c" * 64,
-        mapping_version="rra003.mapping.v3",
-        admission_outcome="admitted",
-        now=NOW,
-    )
+    version = DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
     with pytest.raises(Exception):  # noqa: B017 - the sealing error type is records.py's to name
         replace(version, upload_plaintext_digest="sha256:" + "f" * 64)
 
@@ -209,20 +200,39 @@ def test_a_created_dataset_version_is_not_yet_sealed() -> None:
     `KHEPRI-DEC-033` starts the raw upload's seven-day purge clock at sealing, so a version that
     arrived already sealed would start that clock before its facts exist.
     """
-    version = DatasetVersion.create(
-        owner_id=SCOPE,
-        upload_plaintext_digest="sha256:" + "a" * 64,
-        upload_ciphertext_digest="sha256:" + "b" * 64,
-        upload_size_bytes=2048,
-        upload_media_type="text/csv",
-        manifest_digest="sha256:" + "c" * 64,
-        mapping_version="rra003.mapping.v3",
-        admission_outcome="admitted",
-        now=NOW,
-    )
+    version = DatasetVersion.create(owner_id=SCOPE, source=SOURCE, now=NOW)
     assert version.sealed_at is None
     assert version.owner_id == SCOPE
     assert version.version_id.startswith("dsv_")
+
+
+def test_create_cannot_be_given_a_seal() -> None:
+    """`create` must have no `sealed_at` parameter at all — not merely default it to `None`.
+
+    Added after a mutation test survived. Giving `create` a `sealed_at=None` keyword and passing
+    it through left every other test in this module green, because they all check the *default*
+    path: `test_a_created_dataset_version_is_not_yet_sealed` calls `create` without the argument
+    and still sees `None`. A caller could then seal a version at creation, and
+    `KHEPRI-DEC-033` starts the raw upload's seven-day purge clock at sealing — so the mutant
+    silently starts a deletion clock for content whose facts do not exist yet.
+
+    Asserted against the signature rather than by calling with the argument, because a `TypeError`
+    from a wrong call is also what an unrelated typo produces; the signature is the property.
+    """
+    import inspect
+
+    assert "sealed_at" not in inspect.signature(DatasetVersion.create).parameters
+
+
+def test_create_cannot_be_given_a_completion() -> None:
+    """The same property for a run: `FR-111` puts the digest and versions on the real pipeline.
+
+    A `create` that accepted `package_digest` would let a run record a result it never derived.
+    """
+    import inspect
+
+    forbidden = {"package_digest", "package_version", "formula_version", "completed_at", "state"}
+    assert set(inspect.signature(AnalysisRun.create).parameters) & forbidden == set()
 
 
 def test_create_has_no_parameter_for_a_stored_only_field() -> None:
@@ -231,13 +241,7 @@ def test_create_has_no_parameter_for_a_stored_only_field() -> None:
         DatasetVersion.create(  # type: ignore[call-arg]
             version_id="dsv_forged",
             owner_id=SCOPE,
-            upload_plaintext_digest="sha256:" + "a" * 64,
-            upload_ciphertext_digest="sha256:" + "b" * 64,
-            upload_size_bytes=2048,
-            upload_media_type="text/csv",
-            manifest_digest="sha256:" + "c" * 64,
-            mapping_version="rra003.mapping.v3",
-            admission_outcome="admitted",
+            source=SOURCE,
             now=NOW,
         )
 
@@ -261,3 +265,24 @@ def test_a_source_profile_is_constructed_without_a_door() -> None:
     )
     assert profile.owner_id == SCOPE
     assert profile.column_labels == ("date", "sku", "qty")
+
+
+def test_the_admitted_source_value_object_carries_no_stored_only_field() -> None:
+    """Grouping parameters must not smuggle back what `create` may not accept.
+
+    `AdmittedSource` exists to keep `create`'s argument count within the
+    repository's threshold, following the value-object grouping the design
+    notes require. That refactor would be a regression if the value object
+    itself could carry `version_id` or `sealed_at`, because a caller would then
+    supply through `source=` exactly what the two-door rule keeps out of
+    `create`.
+    """
+    assert _field_names(AdmittedSource) == {
+        "plaintext_digest",
+        "ciphertext_digest",
+        "size_bytes",
+        "media_type",
+        "manifest_digest",
+        "mapping_version",
+        "admission_outcome",
+    }
