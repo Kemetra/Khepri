@@ -320,6 +320,14 @@ artifacts:
       - RRA-009
       - RRA-011
   - type: specification
+    id: RRA-013
+    state: active
+    document: governance/specifications/RRA-013.md
+    depends_on:
+      - RRA
+      - RRA-011
+      - RRA-012
+  - type: specification
     id: RCA-001
     state: active
     document: governance/specifications/RCA-001.md
