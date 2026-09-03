@@ -206,6 +206,14 @@ artifacts:
     depends_on:
       - KHEPRI-DEC-031
       - RRA-011
+  - type: decision
+    id: KHEPRI-DEC-033
+    state: active
+    document: governance/decisions/KHEPRI-DEC-033-durable-retail-content-retention.md
+    depends_on:
+      - KHEPRI-DEC-014
+      - KHEPRI-DEC-015
+      - RRA-002
 
   - type: specification
     id: FND-001
@@ -358,5 +366,12 @@ artifacts:
     depends_on:
       - RCA
       - RCA-003
+  - type: specification
+    id: RCA-005
+    state: active
+    document: governance/specifications/RCA-005.md
+    depends_on:
+      - RCA
+      - RCA-002
       - RRA-009
       - RRA-011
