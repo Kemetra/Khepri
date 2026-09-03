@@ -35,7 +35,7 @@ wearing this one's name.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated
 
@@ -819,35 +819,6 @@ def _resolved(record: FactPackageRecord | None) -> str:
     return "resolved" if record is None else record.session_id
 
 
-def _stored_fact(package: FactPackage, citation_id: str) -> object | None:
-    """The stored governed record a citation names, or nothing.
-
-    Only the collections a package *retains*. The `RRA-008` analysis facts --
-    comparison, growth, basket, concentration -- are computed during
-    `ReportBundle.of` and stored nowhere, and this deliberately does not
-    recompute them: `RRA-011`'s Exclusions forbid "any calculation,
-    re-derivation, re-rounding, or re-formatting of a published figure", and
-    determinism is not an exemption the text offers. A catalog surface repeats a
-    value; it never recomputes one.
-
-    A derived citation therefore answers from what the bundle and its audit
-    region already hold, with the two fields no readable record carries omitted
-    rather than invented. See `_cited_figure`.
-    """
-    return _by_citation(
-        (*package.facts, *package.series, *package.comparisons),
-        citation_id,
-    )
-
-
-def _by_citation(records: Iterable[object], citation_id: str) -> object | None:
-    """The first record naming this citation, or nothing."""
-    return next(
-        (record for record in records if record.citation_id == citation_id),
-        None,
-    )
-
-
 def _metric_definition_response(code: str, language: str) -> MetricDefinitionResponse:
     definition = _defined(lambda: definitions.define_metric(code))
     return MetricDefinitionResponse(
@@ -995,59 +966,29 @@ def _evidence_response(
     top level and is Internal, so never reaching for it is what keeps it off this
     surface.
 
-    Assembled from three places, each named where it comes from: the audit region
-    for what the report showed, the `Fact` for the unit and precision `RRA-011`
-    puts at package scope, and the package for coverage, filters and
-    reconciliation. None of the three restates another.
+    Assembled from two places, each named where it comes from: the audit region
+    for what the report showed and, since `RRA-013`, for what each cited figure is
+    made of; and the package for coverage, filters and reconciliation. Neither
+    restates the other.
     """
     cells = build_cells(bundle, language)
     audit = build_context(bundle, language, cells)["audit"]
     figures = [cell for cell in audit["figures"] if cell.citation_id == citation_id]
     if not figures:
         raise HTTPException(status_code=404, detail=_NO_CITATION)
+    # The per-figure block IS the audit context's evidence entry -- the projection the
+    # report surfaces render the drawer from (`RRA-013`), read rather than rebuilt.
+    # `RRA-011`:169-170 forbids assembling a second one, and until `RRA-013` there was
+    # no shared one to read; `_cited_figure` re-derived these values and is gone.
+    # `name` is `RRA-009`'s business name and never travelled on the entry.
+    entry = audit["evidence"][citation_id]
     return FactEvidenceResponse(
         figure_ids=[cell.figure_id for cell in figures],
-        **_cited_figure(package, figures[0], language),
+        **entry,
+        name=business_metric_name(entry["metric"], language),
         **_audit_evidence(audit, language),
         **_package_evidence(package),
     )
-
-
-def _cited_figure(
-    package: FactPackage,
-    cell: object,
-    language: str,
-) -> dict[str, object]:
-    """What the governed records together say about one cited figure.
-
-    Two kinds of citation reach here and they carry different evidence, which is
-    stated rather than smoothed over.
-
-    A **stored** fact -- a scalar, a series entry, a comparison the package
-    retains -- carries its own precision and the inputs it was derived from, and
-    `RRA-011` places both at package scope.
-
-    A **derived** analysis fact -- comparison, growth, basket, concentration --
-    is computed while `ReportBundle.of` assembles and is retained by nothing. Its
-    precision and inputs are therefore **absent, not empty and not recomputed**:
-    the Exclusions forbid re-deriving a published figure, so the honest answer is
-    that no readable record states them. Unit kind survives either way, because
-    `CitedFigure` carries it.
-
-    The figure's `value` is absent in both cases. This surface says what a figure
-    is made of and never what it measured.
-    """
-    fact = _stored_fact(package, cell.citation_id)
-    return {
-        "citation_id": cell.citation_id,
-        "metric": cell.metric,
-        "name": business_metric_name(cell.metric, language),
-        "formula_version": definitions.define_metric(cell.metric).formula_version,
-        "definition": definitions.describe_metric(cell.metric, language),
-        "unit_kind": cell.unit_kind,
-        "precision": getattr(fact, "precision", None),
-        "inputs": list(fact.inputs) if hasattr(fact, "inputs") else None,
-    }
 
 
 def _audit_evidence(audit: dict[str, object], language: str) -> dict[str, object]:
