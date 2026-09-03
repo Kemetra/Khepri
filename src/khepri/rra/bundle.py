@@ -876,6 +876,23 @@ class CitedEvidence:
     precision: int | None
     inputs: tuple[str, ...] | None
 
+    def as_entry(self, definition: str) -> dict[str, object]:
+        """This record as the audit context carries it, with its resolved definition.
+
+        The definition is handed in rather than looked up: it is per language and
+        belongs to `RRA-011`'s vocabulary, which this module cannot import. Every
+        other key is the record's own, and there is no `value`.
+        """
+        return {
+            "citation_id": self.citation_id,
+            "metric": self.metric,
+            "unit_kind": self.unit_kind,
+            "formula_version": self.formula_version,
+            "precision": self.precision,
+            "inputs": None if self.inputs is None else list(self.inputs),
+            "definition": definition,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class ReportBundle:

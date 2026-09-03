@@ -46,7 +46,6 @@ from khepri.rra.bundle import (
     SECTION_REASONS,
     SECTION_REFUSED,
     SURFACE_WEB,
-    CitedEvidence,
     CitedFigure,
     ReportBundle,
     Section,
@@ -558,34 +557,19 @@ def _audit_region(
         # `presentation-visibility-matrix.md` §A.5, which is why neither reaches the
         # business context. No `value` travels: evidence says what a figure is made
         # of, never what it measured.
+        # `definitions.describe_metric` is `RRA-011`'s door to the vocabulary: it
+        # composes a series code's description and refuses an unknown code rather
+        # than rendering the code as its own definition.
         "evidence": {
-            record.citation_id: _evidence_entry(record, language)
+            record.citation_id: record.as_entry(
+                definitions.describe_metric(record.metric, language)
+            )
             for record in bundle.evidence
         },
         "coverage": {
             "manifest_identity": bundle.identity.coverage_manifest_identity,
             "signatures": list(bundle.identity.coverage_signatures),
         },
-    }
-
-
-def _evidence_entry(record: CitedEvidence, language: str) -> dict[str, object]:
-    """One citation's evidence as the drawer reads it, definition resolved per language.
-
-    `definitions.describe_metric` is `RRA-011`'s door to the vocabulary: it composes a
-    series code's description from its measure and dimension and refuses an unknown
-    code with `UnknownCode` rather than rendering the code as its own definition.
-    Resolved here rather than by binding a table into `chrome` for a template to
-    index, because no table holds a composed series description to bind.
-    """
-    return {
-        "citation_id": record.citation_id,
-        "metric": record.metric,
-        "unit_kind": record.unit_kind,
-        "formula_version": record.formula_version,
-        "precision": record.precision,
-        "inputs": None if record.inputs is None else list(record.inputs),
-        "definition": definitions.describe_metric(record.metric, language),
     }
 
 
