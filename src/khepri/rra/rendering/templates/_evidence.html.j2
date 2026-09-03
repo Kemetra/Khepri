@@ -25,7 +25,7 @@
 </thead>
 <tbody>
 {% for cell in audit.figures %}
-<tr>
+<tr class="evidence-figure-row">
 <th scope="row"><code>{{ cell.figure_id }}</code></th>
 <td>{% if cell.label is none %}{{ chrome.total }}{% else %}{{ cell.label }}{% endif %}</td>
 <td><code>{{ cell.metric }}</code></td>

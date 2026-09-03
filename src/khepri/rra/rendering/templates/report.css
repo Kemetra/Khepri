@@ -495,10 +495,16 @@ article {
 }
 
 /*
- * The drawer's row in the evidence figures table reads as part of the figure above it:
- * no rule between them, and the drawer's own top margin dropped so the opener sits
- * directly under the row it explains.
+ * The drawer's row in the evidence figures table reads as part of the figure above it.
+ * The shared `th, td` rule draws the divider under every cell, so the figure row gives
+ * up its own and the drawer row keeps one: the line falls under the pair, and a drawer
+ * groups with the figure it explains rather than with the one below.
  */
+.evidence-figure-row th,
+.evidence-figure-row td {
+  border-block-end: 0;
+}
+
 .evidence-drawer-row td {
   border-block-end: 1px solid var(--report-rule);
   padding-block-start: 0;
