@@ -37,6 +37,7 @@ from dataclasses import dataclass
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
+from khepri.rra import definitions
 from khepri.rra.bundle import (
     GOVERNED_FIGURE_LABELS,
     KIND_VALUE,
@@ -45,6 +46,7 @@ from khepri.rra.bundle import (
     SECTION_REASONS,
     SECTION_REFUSED,
     SURFACE_WEB,
+    CitedEvidence,
     CitedFigure,
     ReportBundle,
     Section,
@@ -550,6 +552,40 @@ def _audit_region(
         "citations": sorted({cell.citation_id for cell in cells}),
         "passages": list(_passages(bundle.narrative, language)),
         "provenance": provenance,
+        # `RRA-013` FR-106. What the governed records say about each cited figure,
+        # with its definition in this document's language, and the package's
+        # coverage once -- never copied into an entry (FR-104). Audit-tier both, per
+        # `presentation-visibility-matrix.md` §A.5, which is why neither reaches the
+        # business context. No `value` travels: evidence says what a figure is made
+        # of, never what it measured.
+        "evidence": {
+            record.citation_id: _evidence_entry(record, language)
+            for record in bundle.evidence
+        },
+        "coverage": {
+            "manifest_identity": bundle.identity.coverage_manifest_identity,
+            "signatures": list(bundle.identity.coverage_signatures),
+        },
+    }
+
+
+def _evidence_entry(record: CitedEvidence, language: str) -> dict[str, object]:
+    """One citation's evidence as the drawer reads it, definition resolved per language.
+
+    `definitions.describe_metric` is `RRA-011`'s door to the vocabulary: it composes a
+    series code's description from its measure and dimension and refuses an unknown
+    code with `UnknownCode` rather than rendering the code as its own definition.
+    Resolved here rather than by binding a table into `chrome` for a template to
+    index, because no table holds a composed series description to bind.
+    """
+    return {
+        "citation_id": record.citation_id,
+        "metric": record.metric,
+        "unit_kind": record.unit_kind,
+        "formula_version": record.formula_version,
+        "precision": record.precision,
+        "inputs": None if record.inputs is None else list(record.inputs),
+        "definition": definitions.describe_metric(record.metric, language),
     }
 
 
@@ -601,6 +637,11 @@ def build_context(
         # full identity stays in the audit region, where an auditor needs it.
         "report_reference": _report_reference(bundle),
         "audit": _audit_region(bundle, language, cells, provenance),
+        # `RRA-013` FR-107. A closed `<details>` prints collapsed, so the print
+        # surface sets this true; the web leaves a drawer for the reader to open.
+        # Carried as `False` here rather than omitted because `StrictUndefined`
+        # would otherwise make every template guard the key before reading it.
+        "evidence_open": False,
     }
 
 

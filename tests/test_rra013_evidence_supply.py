@@ -1,9 +1,8 @@
-"""RRA-013's RED tests: the bundle does not yet carry the evidence the drawer needs.
+"""RRA-013: the bundle carries the evidence the drawer needs, and the contexts carry it on.
 
-Every RED test here fails on this tree, and each docstring says what it is waiting for.
-They are the deliverable §15 requires before `U1`'s row may read
-`READY_FOR_IMPLEMENTATION`. Strict `xfail`, the pattern `U1-02` and `U1-04` used: the
-day the supply lands, the suite fails until each marker is removed.
+These began as the RED tests `#354` landed, every one `xfail(strict=True)`; the strict
+marker did its job and the markers came off when the supply landed. Each docstring
+still says what the test waited for.
 
 **The fixture publishes every section.** Built under the published triple so the
 comparison family runs, the package carries all three record shapes `RRA-013` FR-102
@@ -44,8 +43,6 @@ from khepri.rra.rendering.pdf import PdfReportRenderer
 from khepri.rra.report_artifacts import MaterializedRenderer
 from tests.rra003_contract_fixtures import TEST_CONTRACT, manifest_for_csv
 from tests.test_rra006_pdf_surface import FakePrinter
-
-RED = pytest.mark.xfail(strict=True, reason="RRA-013 RED: the bundle carries no evidence yet.")
 
 HEADER = b"date,revenue,units,invoice_no,product\n"
 START = date(2026, 1, 1)
@@ -125,7 +122,6 @@ def retained(package: FactPackage) -> dict[str, object]:
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_every_cited_figure_has_exactly_one_evidence_record(bundle: ReportBundle) -> None:
     """FR-102's extent assertion: the set of citations, not a sample of them."""
     cited = {figure.citation_id for figure in bundle.figures}
@@ -135,7 +131,6 @@ def test_every_cited_figure_has_exactly_one_evidence_record(bundle: ReportBundle
     assert len(records) == len(cited), "a citation carries more than one record"
 
 
-@RED
 def test_a_retained_fact_supplies_its_precision_inputs_and_version(
     bundle: ReportBundle, package: FactPackage
 ) -> None:
@@ -151,7 +146,6 @@ def test_a_retained_fact_supplies_its_precision_inputs_and_version(
         assert record.metric == fact.metric and record.unit_kind == fact.unit_kind
 
 
-@RED
 def test_a_retained_series_has_no_inputs_and_its_own_version(
     bundle: ReportBundle, package: FactPackage
 ) -> None:
@@ -165,7 +159,6 @@ def test_a_retained_series_has_no_inputs_and_its_own_version(
         assert record.formula_version == entry.formula_version
 
 
-@RED
 def test_a_retained_comparison_has_no_inputs_and_its_own_version(
     bundle: ReportBundle, package: FactPackage
 ) -> None:
@@ -188,7 +181,6 @@ def test_a_retained_comparison_has_no_inputs_and_its_own_version(
         )
 
 
-@RED
 def test_a_derived_figure_carries_its_family_version_and_absent_records(
     bundle: ReportBundle, package: FactPackage
 ) -> None:
@@ -218,7 +210,6 @@ def test_a_derived_figure_carries_its_family_version_and_absent_records(
 # --------------------------------------------------------------------------
 
 
-@RED
 def test_no_evidence_value_is_a_figure_value(bundle: ReportBundle) -> None:
     """FR-103/FR-106: the evidence says what a figure is made of, never what it measured."""
     stated = {figure.value for figure in bundle.figures if figure.value is not None}
@@ -229,7 +220,6 @@ def test_no_evidence_value_is_a_figure_value(bundle: ReportBundle) -> None:
             assert value not in stated, f"evidence repeats a figure value: {value!r}"
 
 
-@RED
 def test_coverage_lives_in_the_identity_once_and_on_no_record(
     bundle: ReportBundle, package: FactPackage
 ) -> None:
@@ -245,7 +235,6 @@ def test_coverage_lives_in_the_identity_once_and_on_no_record(
         )
 
 
-@RED
 def test_a_coverage_only_difference_changes_the_bundle_id(package: FactPackage) -> None:
     """FR-105: two packages identical but for their coverage manifest are two reports."""
     other = dataclasses.replace(
@@ -255,7 +244,6 @@ def test_a_coverage_only_difference_changes_the_bundle_id(package: FactPackage) 
     assert ReportBundle.of(package).bundle_id != ReportBundle.of(other).bundle_id
 
 
-@RED
 def test_the_bundle_version_advanced_with_the_identity_shape(bundle: ReportBundle) -> None:
     """FR-105: the identity document gained two fields, so its version moves once."""
     assert BUNDLE_VERSION == "rra006.bundle.v8"
@@ -274,7 +262,6 @@ def test_identical_packages_yield_identical_bundle_ids(package: FactPackage) -> 
 # --------------------------------------------------------------------------
 
 
-@RED
 @pytest.mark.parametrize("language", sorted(REQUIRED_LANGUAGES))
 def test_the_audit_context_carries_evidence_and_coverage_in_both_languages(
     bundle: ReportBundle, language: str
@@ -294,7 +281,6 @@ def test_the_audit_context_carries_evidence_and_coverage_in_both_languages(
     assert coverage["manifest_identity"] == bundle.identity.coverage_manifest_identity
 
 
-@RED
 def test_the_business_context_carries_neither_key(bundle: ReportBundle) -> None:
     """FR-106's tier boundary: citation identifiers, versions and coverage are tier A."""
     context = build_context(bundle, LANGUAGE_ENGLISH, build_cells(bundle, LANGUAGE_ENGLISH))
@@ -302,7 +288,6 @@ def test_the_business_context_carries_neither_key(bundle: ReportBundle) -> None:
     assert "evidence" not in context and "coverage" not in context
 
 
-@RED
 def test_evidence_carries_exactly_the_governed_keys(bundle: ReportBundle) -> None:
     """FR-106: no figure value and no Internal-tier field, proven by the exact key set."""
     context = build_context(bundle, LANGUAGE_ENGLISH, build_cells(bundle, LANGUAGE_ENGLISH))
@@ -314,7 +299,6 @@ def test_evidence_carries_exactly_the_governed_keys(bundle: ReportBundle) -> Non
         )
 
 
-@RED
 def test_the_print_context_opens_the_drawer_and_the_web_does_not_carry_the_key(
     bundle: ReportBundle,
 ) -> None:
