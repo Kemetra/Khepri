@@ -18,7 +18,7 @@ KIT = Path(__file__).parent
 WEB = KIT / "web"
 
 # Quality is set per role. Photographic grounds tolerate more loss than line art,
-# and a texture that tiles must not carry visible block artefacts at its seams.
+# while textures still need to retain their surface detail.
 PHOTO_Q = 82
 ART_Q = 88
 TEXTURE_Q = 86
@@ -46,7 +46,7 @@ PLAN: tuple[Derivative, ...] = (
     Derivative("blueprint-grid.png", (640, 400), ART_Q),
     Derivative("blueprint-orbit.png", (640, 400), ART_Q),
     Derivative("blueprint-radial.png", (640, 400), ART_Q),
-    # Textures tile: emit native size only, resizing would break the seam.
+    # Bordered texture crops are for cover/no-repeat use; retain their native size.
     Derivative("texture-blue-stone.jpg", (512,), TEXTURE_Q),
     Derivative("texture-carved.jpg", (512,), TEXTURE_Q),
     Derivative("texture-dark-stone.jpg", (512,), TEXTURE_Q),
@@ -56,6 +56,7 @@ PLAN: tuple[Derivative, ...] = (
 
 
 def sha256(path: Path) -> str:
+    """Return the uppercase SHA-256 digest of a file."""
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
@@ -119,8 +120,16 @@ def write_manifest(rows: list[tuple[str, int, int, int]]) -> None:
     (WEB / "MANIFEST.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def clear_generated_webps() -> None:
+    """Remove generated WebP files that may no longer appear in the plan."""
+    for path in WEB.glob("*.webp"):
+        path.unlink()
+
+
 def main() -> None:
+    """Rebuild every planned derivative and its integrity manifest."""
     WEB.mkdir(exist_ok=True)
+    clear_generated_webps()
     rows: list[tuple[str, int, int, int]] = []
     src_total = 0
 

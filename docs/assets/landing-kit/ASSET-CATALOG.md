@@ -19,11 +19,11 @@ record.
 | `blueprint-orbit.png` | Technical background overlay | Use at low opacity. |
 | `blueprint-radial.png` | Technical background overlay | Use at low opacity. |
 | `blueprint-side-relief.png` | Side decoration | Place at an outer edge so it does not compete with copy. |
-| `texture-blue-stone.jpg` | Dark surface background | Use as a subtle layer. |
-| `texture-carved.jpg` | Dark surface background | Use as a subtle layer. |
-| `texture-dark-stone.jpg` | Dark surface background | Use as a subtle layer. |
-| `texture-gold.jpg` | Accent surface | Do not use behind body copy. |
-| `texture-sandstone.jpg` | Warm accent surface | Do not use behind body copy. |
+| `texture-blue-stone.jpg` | Dark surface background | Use as a subtle cover/no-repeat layer. |
+| `texture-carved.jpg` | Dark surface background | Use as a subtle cover/no-repeat layer. |
+| `texture-dark-stone.jpg` | Dark surface background | Use as a subtle cover/no-repeat layer. |
+| `texture-gold.jpg` | Accent surface | Use cover/no-repeat; do not use behind body copy. |
+| `texture-sandstone.jpg` | Warm accent surface | Use cover/no-repeat; do not use behind body copy. |
 
 ## Web-delivery derivatives
 
@@ -62,5 +62,5 @@ carry product claims, or replace accessible HTML content.
 quality and SHA-256 — so a served file can be proved to be the reviewed one.
 
 Responsive widths are emitted for the hero, emblem, divider and side relief. Textures
-emit their native 512px only: resizing a tileable image resamples its edge pixels and
-the seam stops matching when it repeats.
+emit their native 512px only to avoid unnecessary resampling. They are bordered crops
+for cover/no-repeat use and must not be tiled.
