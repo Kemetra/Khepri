@@ -32,8 +32,9 @@ divider, and blueprint variants are suitable for `srcset` or CSS media-query sel
 texture variants retain their native dimensions. These are delivery copies, not integrity sources.
 Keep the PNG/JPEG candidates above as the reproducible originals.
 
-The local `optimize.py` helper is intentionally not part of the governed kit because its Pillow
-dependency is not declared by this repository. The checked-in WebP files remain usable without it.
+The local `optimize.py` helper uses the repository's declared development dependencies. From the
+repository root, run `uv run python docs/assets/landing-kit/optimize.py` to reproduce the checked-in
+WebP files.
 
 ## Exact collection archive
 

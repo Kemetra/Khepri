@@ -3,12 +3,14 @@
 Reads only the files listed as production candidates in ASSET-CATALOG.md and writes
 WebP derivatives into `web/`. Source files are never modified.
 
-Run:  python optimize.py
+Run:  uv run python docs/assets/landing-kit/optimize.py
 """
 
 from __future__ import annotations
 
 import hashlib
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +18,7 @@ from PIL import Image
 
 KIT = Path(__file__).parent
 WEB = KIT / "web"
+WEB_BACKUP = KIT / ".web-backup"
 
 # Quality is set per role. Photographic grounds tolerate more loss than line art,
 # while textures still need to retain their surface detail.
@@ -60,7 +63,7 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
-def emit(spec: Derivative) -> list[tuple[str, int, int, int]]:
+def emit(spec: Derivative, output_dir: Path) -> list[tuple[str, int, int, int]]:
     """Write every width for one source. Returns (name, w, h, bytes) per output."""
     src_path = KIT / spec.source
     src = Image.open(src_path)
@@ -76,13 +79,13 @@ def emit(spec: Derivative) -> list[tuple[str, int, int, int]]:
         img = src.resize((width, height), Image.LANCZOS)
         # Widest output keeps the bare stem so callers have a stable default.
         suffix = "" if width == max(spec.widths) else f"-{width}w"
-        out = WEB / f"{stem}{suffix}.webp"
+        out = output_dir / f"{stem}{suffix}.webp"
         img.save(out, "WEBP", quality=spec.quality, method=6)
         written.append((out.name, width, height, out.stat().st_size))
     return written
 
 
-def write_manifest(rows: list[tuple[str, int, int, int]]) -> None:
+def write_manifest(rows: list[tuple[str, int, int, int]], output_dir: Path) -> None:
     """Record an integrity row per derivative.
 
     The kit's README establishes the convention: a shipping raster carries a
@@ -112,36 +115,61 @@ def write_manifest(rows: list[tuple[str, int, int, int]]) -> None:
             if name not in by_name:
                 continue
             _, w, h, size = by_name[name]
-            digest = sha256(WEB / name)
+            digest = sha256(output_dir / name)
             lines.append(
                 f"| `{name}` | `{spec.source}` | {w}×{h} | {size:,} | "
                 f"{spec.quality} | `{digest}` |"
             )
-    (WEB / "MANIFEST.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (output_dir / "MANIFEST.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def clear_generated_webps() -> None:
-    """Remove generated WebP files that may no longer appear in the plan."""
-    for path in WEB.glob("*.webp"):
-        path.unlink()
+def recover_interrupted_publish() -> None:
+    """Restore the prior derivative set after an interrupted directory swap."""
+    if not WEB_BACKUP.exists():
+        return
+    if WEB.exists():
+        raise RuntimeError(f"refusing ambiguous publish state: {WEB} and {WEB_BACKUP} both exist")
+    WEB_BACKUP.rename(WEB)
+
+
+def publish(staged_web: Path) -> None:
+    """Replace the complete derivative set, restoring the prior set on failure."""
+    if WEB_BACKUP.exists():
+        raise RuntimeError(f"refusing to overwrite recovery directory: {WEB_BACKUP}")
+
+    had_previous = WEB.exists()
+    if had_previous:
+        WEB.rename(WEB_BACKUP)
+    try:
+        staged_web.rename(WEB)
+    except BaseException:
+        if had_previous:
+            WEB_BACKUP.rename(WEB)
+        raise
+
+    if had_previous:
+        shutil.rmtree(WEB_BACKUP)
 
 
 def main() -> None:
     """Rebuild every planned derivative and its integrity manifest."""
-    WEB.mkdir(exist_ok=True)
-    clear_generated_webps()
-    rows: list[tuple[str, int, int, int]] = []
-    src_total = 0
+    recover_interrupted_publish()
+    with tempfile.TemporaryDirectory(dir=KIT, prefix=".landing-web-") as temp_dir:
+        staged_web = Path(temp_dir) / "web"
+        staged_web.mkdir()
+        rows: list[tuple[str, int, int, int]] = []
+        src_total = 0
 
-    for spec in PLAN:
-        src_total += (KIT / spec.source).stat().st_size
-        rows.extend(emit(spec))
+        for spec in PLAN:
+            src_total += (KIT / spec.source).stat().st_size
+            rows.extend(emit(spec, staged_web))
+
+        write_manifest(rows, staged_web)
+        publish(staged_web)
 
     out_total = sum(r[3] for r in rows)
     for name, w, h, size in rows:
         print(f"{name:42s} {w:5d}x{h:<5d} {size / 1024:8.1f} KB")
-
-    write_manifest(rows)
 
     print(f"\nsources {src_total / 1024 / 1024:.2f} MB "
           f"-> derivatives {out_total / 1024 / 1024:.2f} MB "
