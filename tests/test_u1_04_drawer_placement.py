@@ -30,7 +30,9 @@ from tests.test_rra013_evidence_supply import ROWS, package_for
 RED = pytest.mark.xfail(strict=True, reason="U1-04 RED: the drawer is placed on no page yet.")
 
 DRAWER = re.compile(r'<details[^>]*data-component="evidence-drawer"[^>]*>.*?</details>', re.S)
-FIGURE_ROW = re.compile(r"<tr>\s*<th scope=\"row\"><code>[^<]+</code></th>.*?</tr>", re.S)
+#: Every `<tr>` of the evidence figures table, in document order, so sibling structure
+#: can be asserted rather than inferred from two independently collected lists.
+TABLE_ROW = re.compile(r"<tr[^>]*>.*?</tr>", re.S)
 ARABIC_SCRIPT = re.compile(r"[\u0600-\u06ff]")
 
 
@@ -45,7 +47,14 @@ def surface(bundle: ReportBundle) -> HtmlSurface:
 
 
 def printed(bundle: ReportBundle, language: str) -> str:
-    return PdfReportRenderer(printer=FakePrinter()).render_pdf(bundle).documents[language]
+    """The document Chromium would have printed, as the fake printer keeps it.
+
+    `PdfSurface.documents` holds the printer's *bytes*; the HTML page it was handed is
+    what `FakePrinter.printed` retains, and that is what the drawer assertions read.
+    """
+    printer = FakePrinter()
+    PdfReportRenderer(printer=printer).render_pdf(bundle)
+    return printer.printed[language]
 
 
 # --------------------------------------------------------------------------
@@ -58,21 +67,30 @@ def printed(bundle: ReportBundle, language: str) -> str:
 def test_every_evidence_figure_row_is_followed_by_its_drawer(
     surface: HtmlSurface, language: str
 ) -> None:
-    """FR-096: one drawer per figure row, carrying the citation of the row above it.
+    """FR-096: the row after every figure row is that figure's drawer, and nothing else.
 
-    Counted against the figure rows rather than against the citations: several rows
-    cite one record, and "beside that figure" is a claim about rows.
+    Asserted on the table's sibling structure rather than on two lists paired by order
+    (`#356` review): the body rows are walked in document order and must alternate
+    figure row, drawer row, with each drawer citing the figure directly above it. An
+    implementation rendering every drawer after the table would match counts and order
+    and still fail here.
     """
     document = surface.evidence[language]
-    rows = FIGURE_ROW.findall(document.split('id="evidence-sections"')[0])
-    drawers = DRAWER.findall(document)
+    table = document.split('id="evidence-figures"')[1].split("</table>")[0]
+    rows = TABLE_ROW.findall(table.split("<tbody>")[1])
     assert rows, "no figure rows -- the fixture proves nothing"
-    assert len(drawers) == len(rows), f"{len(drawers)} drawers for {len(rows)} figure rows"
-    for row, drawer in zip(rows, drawers, strict=True):
-        citation = re.search(r'href="#citation-([^"]+)"', row)
+    assert len(rows) % 2 == 0, "the body does not pair every figure row with a drawer row"
+    for figure_row, drawer_row in zip(rows[0::2], rows[1::2], strict=True):
+        assert '<th scope="row">' in figure_row and not DRAWER.search(figure_row)
+        assert drawer_row.startswith('<tr class="evidence-drawer-row">'), (
+            "the row after a figure row is not its drawer"
+        )
+        citation = re.search(r'href="#citation-([^"]+)"', figure_row)
         assert citation, "a figure row carries no evidence link"
-        assert f'href="#citation-{citation.group(1)}"' in drawer, (
-            "a drawer does not cite the figure it sits beside"
+        drawer = DRAWER.search(drawer_row)
+        assert drawer, "a drawer row carries no drawer"
+        assert f'href="#citation-{citation.group(1)}"' in drawer.group(0), (
+            "a drawer does not cite the figure directly above it"
         )
 
 
