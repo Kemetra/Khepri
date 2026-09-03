@@ -1,5 +1,16 @@
 # G2-01 — Inventory of retained data classes and their purposes
 
+> **Resolution note added 2026-09-03, after promotion.** The two placeholders this document cites
+> now have identifiers, and the drafts it points to are deleted. `[DEC-RETENTION]` is active
+> `KHEPRI-DEC-033`; `[RCA-WORKSPACE]` is active `RCA-005`. The owner approved all eight choices —
+> `OD-1` seven days after sealing, `OD-2` twelve months, `OD-3` no inactivity expiry, `OD-4` freeze
+> then twenty-four months, `OD-5` fourteen days, `OD-6` owners only, `OD-7` no export beyond the
+> governed bundle, `OD-8` organization-as-controller — recorded in `KHEPRI-DEC-033` §4 against the
+> alternatives each beat. The sweep obligation this document raised as F-1 is carried by
+> `KHEPRI-DEC-033` §5 and allocated to `W1-07` in `G3-04`'s plan, which is where the roadmap's own task table already put the retention sweep. **The body below is left as
+> measured on `457f276`** and is not rewritten to use the new identifiers, so it stays a record of
+> what was true when it was taken.
+
 **Roadmap task `G2-01`**, the input to `G2-02` (owner choices), `G2-03` (`[DEC-RETENTION]`) and
 `G3-01` (`[RCA-WORKSPACE]`), both drafted in `docs/platform/proposed-governance/`. **Measured on
 `main` at `457f276`, 2026-09-03**, from code — every row cites where the class is defined and what

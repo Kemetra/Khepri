@@ -4,13 +4,19 @@
 `governance/` was created or modified; no registry entry exists; no identifier is allocated;
 no approval state changed. `uv run khepri-gov validate` passes unchanged.
 
-> **Progress note added 2026-09-03 (`main` @ `457f276`).** Two new drafts for M3's gate, roadmap
-> `G2`/`G3`: `decision-draft-durable-retail-content-retention.md` (`[DEC-RETENTION]`, tasks `G2-02`/`G2-03`,
-> with the owner's choice sheet OD-1..OD-8) and `specification-draft-rca-workspace-history.md`
-> (`[RCA-WORKSPACE]`, tasks `G3-01`..`G3-03`). Both read the `G2-01` inventory at
-> `docs/superpowers/specs/2026-09-03-g2-01-retained-data-inventory.md`, which records two code-level
-> findings the owner should read first. Neither draft allocates an identifier; the workspace draft
-> cannot be activated before the retention decision is.
+> **Progress note added 2026-09-03 (promotion).** Both `G2`/`G3` drafts have been **promoted and
+> removed**, on the `RRA-010` precedent below. The owner approved all eight retention choices in
+> session on 2026-09-03, so `[DEC-RETENTION]` is now
+> `governance/decisions/KHEPRI-DEC-033-durable-retail-content-retention.md`, `active` with
+> `depends_on: [KHEPRI-DEC-014, KHEPRI-DEC-015, RRA-002]`, and `[RCA-WORKSPACE]` is
+> `governance/specifications/RCA-005.md`, `active` with `depends_on: [RCA, RCA-002]` and carrying
+> `FR-109`..`FR-127`. The draft files are deleted rather than retained: every owner choice is
+> recorded *inside* `KHEPRI-DEC-033` §4 against the alternatives it beat, so the drafts add no
+> review record the promoted artifacts lack. `KHEPRI-DEC-033` also closes `KHEPRI-DEC-015` §8's
+> open backup horizon at fourteen days, and its §5 records that no retention sweeper yet has a
+> caller in the shipped image. The `G2-01` inventory stays at
+> `docs/superpowers/specs/2026-09-03-g2-01-retained-data-inventory.md`; the implementation plan is
+> `docs/superpowers/plans/2026-09-03-g3-04-workspace-implementation-plan.md`.
 >
 > **Progress note added 2026-08-26.** `specification-draft-rra-beta-journey-presentation.md` has
 > been **promoted and removed**. `RRA-010` now exists at
@@ -66,8 +72,6 @@ is why none exists.
 | `[FAM-COMMERCIAL]` / `<CODE>` | The commercial product family and its three-letter code |
 | `[PKG-GOV]` | The approval package carrying a governance set |
 | `[PKG-RRA-RENEWAL]` | The renewal package required to change `RRA.md` |
-| `[DEC-RETENTION]` | The decision retaining retail content in an organization scope beyond `RRA-002`'s seven days |
-| `[RCA-WORKSPACE]` | The specification governing the organization workspace, dataset versions, analysis history and deletion |
 
 `KHEPRI-DEC-012` is cited by its real identifier throughout, because it already exists. The
 amendment draft edits an existing artifact and allocates nothing.
@@ -76,8 +80,6 @@ amendment draft edits an existing artifact and allocates nothing.
 
 | Draft | Intended target | Purpose |
 |---|---|---|
-| [`decision-draft-durable-retail-content-retention.md`](decision-draft-durable-retail-content-retention.md) | `governance/decisions/<derived-id>-durable-retail-content-retention.md` | `[DEC-RETENTION]` — the retention matrix for organization-scoped retail content, and the `G2-02` owner choice sheet |
-| [`specification-draft-rca-workspace-history.md`](specification-draft-rca-workspace-history.md) | `governance/specifications/RCA-<next>.md` | `[RCA-WORKSPACE]` — dataset versions, analysis history, reopen, deletion; depends on `[DEC-RETENTION]` |
 | [`identifier-survey.md`](identifier-survey.md) | — | What the registries hold, and what a next value *would* be if derived. Provisional candidates only; nothing reserved. |
 | [`KHEPRI-DEC-012-amendment.md`](KHEPRI-DEC-012-amendment.md) | `governance/decisions/KHEPRI-DEC-012-…md` (edit) | Adds the tooling-runtime vs analytical-contract distinction **before** DEC-012 is accepted |
 | [`decision-draft-seshat-boundary.md`](decision-draft-seshat-boundary.md) | `governance/decisions/<derived-id>-seshat-analytical-boundary.md` | `[DEC-BOUNDARY]` — dependency shape, analytical ownership, the no-package source of truth, and the metric-authority precondition |
