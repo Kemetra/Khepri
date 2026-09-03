@@ -229,16 +229,24 @@ def _flattened_pages(pdf: bytes) -> list[str]:
     return [re.sub(r"[\s_]+", "", page.extract_text() or "") for page in reader.pages]
 
 
-def _appendix_page(pages: list[str]) -> int:
+def _appendix_page(pages: list[str], metrics: dict[str, set[str]]) -> int:
     """The first printed page carrying audit-region content.
 
-    Identified by the bundle identity field, which the provenance table prints and
-    the business body does not. A Latin token, so it survives Chromium's lossy CMap
-    for shaped Arabic where heading text does not -- the same reason this module
-    anchors on metric codes rather than headings.
+    Identified by the first governed metric code on any page: `RRA-009` moved every
+    code to the audit region, so the first page carrying one is the page the
+    appendix begins on. Latin tokens survive Chromium's lossy CMap for shaped Arabic
+    where heading text does not -- the reason this module anchors on codes.
+
+    An earlier version looked for `bundle_id`, which the provenance table prints --
+    and the provenance table is the *last* section of the appendix, so that found the
+    page the appendix ended on. It agreed across languages only while the appendix
+    carried no prose; once `#358` placed the drawer's bilingual definitions beneath
+    every figure row, the two languages' appendices ran to different lengths and the
+    "boundary" moved with the end rather than the start.
     """
+    codes = {code.replace("_", "") for section in metrics.values() for code in section}
     for number, text in enumerate(pages):
-        if "bundleid" in text.lower():
+        if any(code in text for code in codes):
             return number
     raise AssertionError("no printed page carries the provenance table")
 
@@ -373,19 +381,26 @@ def test_arabic_paginates_the_same_sections_onto_distinct_pages() -> None:
     # section per page, which nothing claims and RRA-009 did not ask for.
     #
     # The pagination rule this test defends is about the business report, and it is
-    # still checked: the two languages must produce the same page count and put the
-    # appendix boundary in the same place. That is the shared-template property --
-    # a fork would move one and not the other -- and unlike the section headings it
-    # is recoverable from a Chromium-printed Arabic PDF.
+    # still checked: the two languages must put the appendix boundary in the same
+    # place. That is the shared-template property -- a fork would move one and not
+    # the other -- and unlike the section headings it is recoverable from a
+    # Chromium-printed Arabic PDF.
+    #
+    # **The total page count is no longer compared, and the reason is recorded.** It
+    # was a second proxy for the same property, and it held while the appendix carried
+    # only codes, digits and identifiers -- language-neutral tokens that paginate
+    # identically. `U1-04` (`#358`) placed the evidence drawer beneath every appendix
+    # figure row, open on paper, and a drawer carries `RRA-011`'s metric *definition*
+    # in the reader's language. Arabic and English prose of different lengths wrap
+    # differently, so the appendix runs to a different number of pages per language
+    # (21 against 22 on the first run) while the business body and the boundary do
+    # not move. Equal totals would now assert that two languages' prose is the same
+    # length, which nothing claims.
     arabic_pages = _flattened_pages(arabic_pdf)
     english_pages = _flattened_pages(english_pdf)
-    assert len(arabic_pages) == len(english_pages), (
-        len(arabic_pages),
-        len(english_pages),
-    )
-    assert _appendix_page(arabic_pages) == _appendix_page(english_pages), (
-        _appendix_page(arabic_pages),
-        _appendix_page(english_pages),
+    assert _appendix_page(arabic_pages, metrics) == _appendix_page(english_pages, metrics), (
+        _appendix_page(arabic_pages, metrics),
+        _appendix_page(english_pages, metrics),
     )
     # The appendix does not begin on page one: a printed business report precedes it.
-    assert _appendix_page(arabic_pages) > 0
+    assert _appendix_page(arabic_pages, metrics) > 0
