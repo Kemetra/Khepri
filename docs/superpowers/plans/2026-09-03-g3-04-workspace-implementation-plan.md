@@ -24,7 +24,16 @@ tables, tables before services, services before surfaces.
 
 ## 2. Slices
 
-Nine slices. Each names its requirements, its acceptance, and the one thing most likely to go wrong.
+Ten PRs across eight roadmap tasks, **numbered as the roadmap's `W1` task table numbers them** —
+`W1-07` is lifecycle and `W1-08` is the version diff, not the reverse. `W1-05` is one roadmap task
+delivering three surfaces, split into two PRs for reviewable size.
+
+**Build order is not numeric order.** `W1-08` (the Change Notice) is built before `W1-07` (deletion
+and the sweep), because the Notice is a read over rows `W1-06` already retains, while `W1-07`
+introduces the first destructive path and should land after every read surface it can affect exists.
+The roadmap's dependency column permits both.
+
+Each slice names its requirements, its acceptance, and the one thing most likely to go wrong.
 
 ### `W1-01` — Domain contracts and the source profile
 
@@ -86,7 +95,10 @@ Nine slices. Each names its requirements, its acceptance, and the one thing most
   analyses is a presentation of retained rows rather than a computed metric — state which side of
   that line each element sits on, in the slice's own plan, before building it.
 
-### `W1-06` — The Analyses history spine
+### `W1-05` (continued) — The Analyses history spine
+
+The roadmap's `W1-05` is one task delivering *Overview, Data and Analyses* into one four-item
+navigation. It is split into two PRs here for reviewable size, not into two roadmap tasks.
 
 - **Requirements:** `FR-117`, `FR-121`, `FR-122`.
 - **Delivers:** the Analyses surface, newest first, each row carrying run time, dataset version,
@@ -97,19 +109,29 @@ Nine slices. Each names its requirements, its acceptance, and the one thing most
 - **Risk:** reaching for a second trust vocabulary. Trust state must come through `RRA-012`'s
   components; a new badge here is a duplicate source of truth for the same concept.
 
-### `W1-07` — Analysis detail, the Passport, and artifact access
+### `W1-06` — Analysis detail, provenance, and the Analysis Passport
 
-- **Requirements:** `FR-118`, `FR-119`, `FR-116`.
-- **Delivers:** Analysis detail, the Analysis Passport, artifact links, and the Methodology Change
-  Notice where governed versions differ.
+- **Requirements:** `FR-118`, `FR-119`.
+- **Delivers:** Analysis detail, immutable provenance and fact/artifact bindings, the Analysis
+  Passport, and artifact links.
 - **Acceptance:** artifacts are reachable from nowhere else — a scan proves no second index; the
   Passport leads with period, data reference, coverage, timestamp and methodology, with digests
-  behind contextual detail; the Change Notice presents differing identifiers and no comparison of
-  figures.
-- **Risk:** the Change Notice implying comparability. `FR-116` says it presents the *difference*
-  between versions and computes nothing — no delta, no percentage, no "up from".
+  behind contextual audit detail.
+- **Risk:** the Passport leading with digests. `FR-119` puts machine identifiers behind contextual
+  detail; a passport that opens with a hash reads as provenance for auditors, not for the customer.
 
-### `W1-08` — Deletion, evidence, and the retention sweep
+### `W1-08` — The Methodology Change Notice
+
+- **Requirements:** `FR-116`.
+- **Delivers:** the version and availability diff between two analyses, presented as a Methodology
+  Change Notice where governed mapping, formula or family versions differ.
+- **Acceptance:** the Notice presents the differing identifiers and reaches them; it presents no
+  delta, percentage or "up from", and no figure from either run beside the other.
+- **Risk:** the Notice implying comparability. `FR-116` says it presents the *difference* between
+  versions and computes nothing. This is also the boundary with `G4/C1`: showing that two runs
+  differ is here; putting their figures in one table is not.
+
+### `W1-07` — Deletion, evidence, and the retention sweep
 
 - **Requirements:** `FR-123`, `FR-124`, `FR-126`, and `KHEPRI-DEC-033` §5.
 - **Delivers:** owner-only deletion with cascade, first-deletion evidence, the `already_deleted`
@@ -125,7 +147,7 @@ Nine slices. Each names its requirements, its acceptance, and the one thing most
   product looks finished. `pyproject.toml` excludes `khepri/local` from the wheel — verify against
   the built artifact, not the source tree.
 
-### `W1-09` — Isolation and failure hardening
+### `W1-10` — Isolation and failure hardening
 
 - **Requirements:** `FR-127`, and re-verification of `FR-109`.
 - **Delivers:** the cross-organization, expired, deleted, partial, corrupt, restore and concurrent
@@ -157,7 +179,7 @@ Nine slices. Each names its requirements, its acceptance, and the one thing most
 
 ## 5. One standing caution for every slice
 
-`KHEPRI-DEC-033` §5: no retention horizon is enforced until `W1-08` ships the sweep with a deployed
+`KHEPRI-DEC-033` §5: no retention horizon is enforced until `W1-07` ships the sweep with a deployed
 caller. Until that merges, **no surface built above may tell a customer that content expires
 automatically** — not in copy, not in a retention-state label, not in a tooltip. A surface that says
 "expires in 7 days" before the sweep runs is stating something the image does not do.
