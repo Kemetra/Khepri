@@ -1,11 +1,11 @@
-"""RRA-011's RED tests: the citation route still assembles its own evidence projection.
+"""RRA-011: the citation route reads the bundle's evidence, the projection the surfaces render.
 
 `RRA-011`:169-170 requires a catalog route to read the projection the report surfaces
 already render from, never assemble a second one. Before `RRA-013` there was no shared
 per-citation projection to read; since `#355` the audit context carries one under
 `evidence`, and the route's own `_cited_figure` is the second projection the rule
-forbids. Every RED test here fails on this tree, strict `xfail`, and each docstring says
-what it waits for.
+forbids. These began as strict-xfail RED tests in the same PR; the markers came off when the
+route was rewritten.
 
 Plan: `docs/superpowers/plans/2026-09-03-rra-011-route-reads-bundle-evidence-plan.md`.
 Authority: active `RRA-011`.
@@ -20,8 +20,6 @@ from khepri.rra.bundle import SECTION_COMPARISON, ReportBundle
 from khepri.rra.rendering.html import build_cells, build_context
 from tests.test_rra011_catalog_routes import EVIDENCE, ROWS, _harness, package_for
 
-RED = pytest.mark.xfail(strict=True, reason="RRA-011 RED: the route still assembles its own projection.")
-
 #: The evidence fields the audit entry and the route response must agree on, exactly.
 SHARED_FIELDS = ("metric", "unit_kind", "formula_version", "precision", "inputs", "definition")
 
@@ -30,7 +28,10 @@ def citations_by_shape() -> dict[str, str]:
     """One citation per record shape: a retained fact, a retained series, a derived figure."""
     package = package_for(ROWS, published=True)
     bundle = ReportBundle.of(package)
-    retained = {record.citation_id for record in (*package.facts, *package.series, *package.comparisons)}
+    retained = {
+        record.citation_id
+        for record in (*package.facts, *package.series, *package.comparisons)
+    }
     shapes = {
         "fact": package.facts[0].citation_id,
         "series": package.series[0].citation_id,
@@ -49,7 +50,6 @@ def shared_entry(citation_id: str, language: str = "en") -> dict[str, object]:
     return audit["evidence"][citation_id]
 
 
-@RED
 @pytest.mark.parametrize("shape", ("fact", "series", "derived"))
 def test_the_route_answers_from_the_bundle_evidence_entry(shape: str) -> None:
     """The route's per-figure block equals the shared projection's entry, field by field.
@@ -66,11 +66,14 @@ def test_the_route_answers_from_the_bundle_evidence_entry(shape: str) -> None:
     body = answer.json()
     entry = shared_entry(citation)
     for field in SHARED_FIELDS:
-        assert body[field] == entry[field], f"{shape}.{field}: route {body[field]!r} != entry {entry[field]!r}"
-    assert not hasattr(report_api, "_cited_figure"), "the route still has its own projection to disagree with"
+        assert body[field] == entry[field], (
+            f"{shape}.{field}: route {body[field]!r} != entry {entry[field]!r}"
+        )
+    assert not hasattr(report_api, "_cited_figure"), (
+        "the route still has its own projection to disagree with"
+    )
 
 
-@RED
 def test_the_second_projection_is_gone() -> None:
     """A retired helper that survives is a helper someone will call.
 

@@ -16,17 +16,16 @@ Authority: active `RRA-012` FR-096, FR-096a, FR-097, FR-098.
 
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 
 import pytest
 from jinja2 import TemplateError
 
+from khepri.rra.bundle import CitedEvidence
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH, REQUIRED_LANGUAGES
 from khepri.rra.rendering.html import _CHROME, build_environment
 from khepri.rra.rendering.wording import component_chrome
-from khepri.rra.report_api import _cited_figure
 
 TEMPLATE_DIR = Path("src/khepri/rra/rendering/templates")
 COMPONENTS_TEMPLATE = "_components.html.j2"
@@ -39,7 +38,6 @@ ARABIC_SCRIPT = re.compile(r"[\u0600-\u06ff]")
 STORED_FIGURE = {
     "citation_id": "fact-stored-0001",
     "metric": "revenue",
-    "name": "Revenue",
     "formula_version": "rra004.formula.v1",
     "definition": "Total value of admitted sale rows in the period.",
     "unit_kind": "money",
@@ -299,19 +297,28 @@ def test_the_drawer_renders_in_both_languages() -> None:
 
 
 def test_the_fixture_matches_the_projection_the_drawer_will_be_handed() -> None:
-    """The plan's check 1: the fixture stands in for `_cited_figure`, so it must match it.
+    """The fixture stands in for the audit context's evidence entry, so it must match it.
 
-    The per-figure keys are read from the projection's source rather than restated, so a
-    field added to or removed from `_cited_figure` fails here instead of leaving the
-    drawer proven against a shape the supply no longer produces. Coverage is not among
-    them: `RRA-013` carries it once at bundle level and the drawer takes it separately.
+    The per-figure keys are read from `CitedEvidence.as_entry` -- the projection
+    `RRA-013` supplies and the evidence region hands the drawer -- rather than restated,
+    so a field added to or removed from it fails here instead of leaving the drawer
+    proven against a shape no page produces. Coverage is not among them: `RRA-013`
+    carries it once at bundle level and the drawer takes it separately.
 
     The render at the end ties the fixture to the macro, so a fixture proven honest for
     a component that is not there cannot report a green the plan has not earned.
     """
-    source = inspect.getsource(_cited_figure)
-    projected = set(re.findall(r'^\s+"([a-z_]+)":', source, re.M))
-    assert projected, "no keys read from _cited_figure -- the guard is blind"
+    projected = set(
+        CitedEvidence(
+            citation_id="c",
+            metric="m",
+            unit_kind="u",
+            formula_version="v",
+            precision=None,
+            inputs=None,
+        ).as_entry("d")
+    )
+    assert projected, "no keys read from the evidence entry -- the guard is blind"
     assert set(STORED_FIGURE) == projected, (
         f"fixture drifted from the projection: {set(STORED_FIGURE) ^ projected}"
     )
