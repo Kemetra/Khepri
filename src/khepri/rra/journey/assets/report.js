@@ -15,25 +15,26 @@ const load = async () => {
   // promise cannot say so.
   document.querySelector("#expires-at").textContent = moment(state.content_expires_at);
   const holder = document.querySelector("#report-links");
-  // Pages to open and files to download, each link naming its group, so a surface
-  // added later cannot land ungrouped. The web report in this page's language leads
-  // the pages: it opens with the analysis-quality summary, and is where to look
-  // before downloading anything.
+  // The report and its evidence, then the other formats, each link naming its group
+  // so a surface added later cannot land ungrouped. The web report in this page's
+  // language leads: it begins with the analysis-quality summary and is where to look
+  // first. Every surface is served as an attachment, so the groups name content, not
+  // mechanism.
   const web = [
-    [holder.dataset.webEn, "surfaces/web/en", language, "open"], [holder.dataset.webAr, "surfaces/web/ar", language, "open"],
+    [holder.dataset.webEn, "surfaces/web/en", language, "read"], [holder.dataset.webAr, "surfaces/web/ar", language, "read"],
   ];
   if (language === "ar") web.reverse();
   const links = [
     ...web,
-    [holder.dataset.evidenceEn, "surfaces/evidence/en", language, "open"], [holder.dataset.evidenceAr, "surfaces/evidence/ar", language, "open"],
-    [holder.dataset.pdfEn, "surfaces/pdf/en", language, "download"], [holder.dataset.pdfAr, "surfaces/pdf/ar", language, "download"],
-    [holder.dataset.excel, "surfaces/excel", language, "download"],
+    [holder.dataset.evidenceEn, "surfaces/evidence/en", language, "read"], [holder.dataset.evidenceAr, "surfaces/evidence/ar", language, "read"],
+    [holder.dataset.pdfEn, "surfaces/pdf/en", language, "formats"], [holder.dataset.pdfAr, "surfaces/pdf/ar", language, "formats"],
+    [holder.dataset.excel, "surfaces/excel", language, "formats"],
   ];
   for (const [label, path, direction, group] of links) {
     const link = document.createElement("a"); link.className = "report-card"; link.textContent = label; link.dir = direction === "ar" ? "rtl" : "ltr"; link.href = `/api/v1/beta/reports/${state.job_id}/${path}`;
     holder.querySelector(`[data-group="${group}"]`).append(link);
   }
-  holder.querySelector('[data-group="open"] .report-card').classList.add("report-card--primary");
+  holder.querySelector('[data-group="read"] .report-card').classList.add("report-card--primary");
   holder.hidden = false;
 };
 document.querySelector("#delete-content").addEventListener("click", deleteContent);
