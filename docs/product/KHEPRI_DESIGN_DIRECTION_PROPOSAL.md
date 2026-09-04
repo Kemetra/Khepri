@@ -286,7 +286,7 @@ Each row names the rule, where it lives, why it changes, and what replaces it. *
 | 3 | `border-radius: 0` on the primary button | DL §4.1 | **Retire** | Blueprint §17 says "**small radii**" — mandating radius, forbidding only large. `border-radius: 0` **contradicts the document that outranks it.** Adopt the shipped `--radius-sm: 3px` |
 | 4 | "**Gradients** — nothing in the palette is a gradient stop" | DL §1 rejection table | **Relax, narrowly** | Permitted **only** on brand/hero surfaces that never render a governed figure (§5.4). Blueprint §2 forbids "**decorative** gradients"; a brand surface is not decoration |
 | 5 | "No **elevation ramp**, no **secondary accent**" as *recorded deliberate absences* | DL §9; `shell.css` header | **Retire as doctrine; keep as history** | The recorded reason was "a shadow ramp **with no user**" — contingent. M3 supplies the users. Reclassify from doctrine to superseded rationale |
-| 6 | "No **icon set**" | DL §9 | **NOT relaxed — corrected during review** | An earlier draft relaxed this to "a gate, not a ban" on CSP grounds. **Wrong: `RCA-002`:140–141 and `RRA-012`:221–222 each exclude "any icon, typeface, or third-party asset" by name, and `RRA-010` excludes new asset files.** CSP compatibility is not authority. Icons stay **blocked pending separate asset-admission authority** (§5.6, §10.1 blocker 1) |
+| 6 | "No **icon set**" | DL §9 | **Relaxed on the landing only; NOT relaxed on `/app`, `/beta`, or the report** | Assessed per surface after two review corrections. **Blocked** on the shell (`RCA-002`:140–141), report (`RRA-012`:221–222) and journey (`RRA-010`:88) — each excludes the asset by name, and CSP compatibility is not authority. **Available on the landing**: `RCA-004` `FR-083` permits bundled/local assets, `FR-090` forbids only external ones, and its Exclusions carry no icon ban (§5.6) |
 | 7 | Composition assumed **symmetric, single-column**; "one document per page" | DL §3.4, §7 | **Relax** | Editorial/asymmetric register composition (§5.9, §8.1). Never at the cost of the 320px no-overflow invariant |
 | 8 | "**KPI card walls**" rejected outright | DL §1 rejection table | **Relax, precisely** | Blueprint §20.22 forbids **analytics content on Overview** — revenue, sales, branch, category, basket, concentration. It does **not** forbid analytical *treatment* elsewhere where real capability exists (§5.8). Card *walls* and *fixed counts* stay forbidden |
 | 9 | Motion limited to the single guarded progress animation | DL §4.8 | **Relax** | Purposeful micro-interaction with a stated UX job (§5.7), under the shipped reduced-motion discipline |
@@ -375,25 +375,32 @@ hue-constant derivation and its **measured** ratio against every ground it touch
 section rules, wordmark lockup, hero. **Never** on a state chip, badge, refusal panel, figure, or
 evidence chrome, where it would compete with semantic colour.
 
-### 5.6 Locally bundled curated SVG icons — BLOCKED on every current surface
+### 5.6 Locally bundled curated SVG icons — BLOCKED on three surfaces, AVAILABLE on the landing
 
-**Corrected during review of this proposal. An earlier draft called icons "technically admissible,
-procedurally gated" on the strength of the CSP. That was wrong, and the error is instructive: CSP
-compatibility is not authority.** Every active specification covering a surface that could host an
-icon excludes one by name:
+**Corrected twice during review, and the two errors are opposite mistakes worth naming.** A first
+draft called icons "technically admissible, procedurally gated" on the strength of the CSP — wrong,
+because **CSP compatibility is not authority**. The correction then over-generalized to "every
+current surface" — also wrong, because **an exclusion binds only the surfaces its own specification
+governs.** Assess per surface:
 
-| Surface | Exclusion | Text |
-|---|---|---|
-| Shell (`/app`) | **`RCA-002`:140–141** | "**Any icon, typeface, or third-party asset.** Asset admission is governed separately and is not granted here." |
-| Report / evidence | **`RRA-012`:221–222** | "**Any icon, typeface, or third-party asset.** Asset admission is governed separately, exactly as `RCA-002`:134 records, and is not granted here." |
-| Journey (`/beta`) | **`RRA-010`:88** | A new asset filename or allowlist change is excluded |
+| Surface | Governing spec | Icons | Basis |
+|---|---|---|---|
+| Shell (`/app`) | `RCA-002` | **BLOCKED** | :140–141 — "**Any icon, typeface, or third-party asset.** Asset admission is governed separately and is not granted here." |
+| Report / evidence | `RRA-012` | **BLOCKED** | :221–222 — same clause, citing `RCA-002`:134 |
+| Journey (`/beta`) | `RRA-010` | **BLOCKED** | :88 — a new asset filename or allowlist change is excluded |
+| **Landing** | **`RCA-004`** | **AVAILABLE** | **`FR-083` expressly permits "its route, template, and bundled/local assets"; `FR-090` forbids only *external* fonts, CDN runtime assets, and third-party scripts; and `RCA-004`'s Exclusions contain no icon ban** — verified by reading the Exclusions list in full |
 
-`img-src 'self'` and `style-src 'self'` do mean a bundled SVG set would be **CSP-compatible**, and
-inline SVG in a Jinja partial needs no asset route. **Neither fact overrides an exclusion.** Asset
-admission is governed separately on all three surfaces, so an icon set is **blocked pending separate
-asset-admission authority** — which is a governance artifact the owner merges, not a licence file an
-implementer supplies. The licence-plus-audited-digest process is a *further* requirement after that
-authority exists, not a substitute for it.
+`img-src 'self'` and `style-src 'self'` do mean a bundled SVG set is **CSP-compatible** everywhere,
+and inline SVG in a Jinja partial needs no asset route. **Neither fact overrides an exclusion** on
+the three surfaces that carry one. On those three, an icon set is **blocked pending separate
+asset-admission authority** — a governance artifact the owner merges, not a licence file an
+implementer supplies, with the licence-plus-audited-digest process a *further* requirement after that
+authority exists.
+
+**On the landing, no such artifact is needed.** A bundled, locally served SVG set is admissible today
+under `FR-083`, subject to `FR-090` (local only) and the licence-plus-digest discipline the typeface
+already passed. This is the one surface where the icon freedom the task asks about is genuinely
+available now.
 
 **Recorded so it is not rediscovered:** there are **zero SVG files in `src/`** at `d52f11f`.
 `landing.css` draws its one mark — a gold sun disc in the wordmark — in pure CSS geometry, and its
@@ -698,6 +705,7 @@ execute.
 |---|---|
 | **§17 Visual direction** | Extend to name the two registers (the app world, and the landing world under `RCA-004`), and state that "small radii / not *heavy* shadows" permits restrained elevation and intentional radius. **§20.31's LOCKED status is unaffected** — the shipped light token set remains the app's visual authority |
 | §18 authority matrix | Update the Overview / Data / Analyses / Analysis-detail rows: authority is now **active `RCA-005`** + `KHEPRI-DEC-033`, not unregistered `G2`/`G3` |
+| **§11, §12, §19, §20, §21** | **Same reconciliation, extended during review.** Their AUTHORITY-BLOCKED and CONTRACT-BLOCKED rows for retention display, tombstones, deletion UX, role/capability gating, slice prerequisites and the blocked register predate `d52f11f`. **Active `RCA-005` FR-117–FR-125 and `KHEPRI-DEC-033` §2–§3 now carry them** — deletion is owner-only/immediate/idempotent/cascading, deletion evidence is content-free and twelve-month, tombstone existence and field allowlists are fixed with a test asserting each set. §20's LOCKED *product direction* items stay LOCKED; only their **blocked-status annotations** change |
 
 **§20 Locked decisions register: no edits.** Nothing in this proposal touches a LOCKED item. §20.31
 is preserved — this proposal *extends* that token set additively and proposes no dark app palette.
@@ -743,14 +751,15 @@ Assessed against `governance/registry.yaml` at `d52f11f`, not against prose.
 
 | # | Freedom | Blocker | Nature | Resolution |
 |---|---|---|---|---|
-| **1** | **Any icon set, on every current surface** | **`RCA-002`:140–141** and **`RRA-012`:221–222** each exclude "**Any icon, typeface, or third-party asset.** Asset admission is governed separately and is not granted here." **`RRA-010`:88** excludes new asset filenames and allowlist changes | **HARD BLOCK, active authority on all three surfaces** | A **separate asset-admission artifact** the owner merges. CSP compatibility (`img-src 'self'`) is **not** authority, and the licence-plus-digest process is a further requirement after that authority exists, not a substitute (§5.6) |
+| **1** | **Any icon set on the shell, journey, or report** — **not** the landing | **`RCA-002`:140–141** and **`RRA-012`:221–222** each exclude "**Any icon, typeface, or third-party asset.** Asset admission is governed separately and is not granted here." **`RRA-010`:88** excludes new asset filenames and allowlist changes. **`RCA-004` carries no such exclusion**, so the landing is not blocked | **HARD BLOCK on three surfaces; NOT a blocker on the landing** | A **separate asset-admission artifact** the owner merges, for the three excluded surfaces. CSP compatibility (`img-src 'self'`) is **not** authority, and licence-plus-digest is a further requirement after that authority exists, not a substitute. On the landing, `FR-083` already permits bundled/local assets (§5.6) |
+| **1c** | **Any shell stylesheet edit** (`shell.css`, `shell-components.css`) — including the §8.4 primary button | **No active specification names either file as authorized scope.** `RCA-005`'s Scope names `rca/workspace/`, `shell_api.py`, `shell_templates/`, `migrations/`, object-store namespaces and `tests/` — not the stylesheets. Both files appear in `RRA-010` and `RRA-012` only as **exclusions**. Neither `RCA-002` nor `RCA-005` requires the change. **Roadmap:1767 records `U1` BLOCKED**: after `U1-01`, "no `U1` task can start" | **AUTHORITY-BLOCKED** | An owner-authored specification naming the shell stylesheets as scope — the shape `RRA-010` gave `journey.css` and `RRA-012` gave `report.css`. **Until it exists, every §5 technique is design direction only on `/app`** (§11) |
 | **1b** | **A shared token sheet, or any new asset file, in `/beta`** | **`RRA-010` Exclusions:88** — "a new route, address, or **asset filename**; a change to the asset allowlist"; and no dependency on a property, class, or file "whose authority sits with the shell, **even when the resulting pixels would match**" | **HARD BLOCK, active authority** | Mirror tokens into `journey.css`'s own `:root` (§7.7); or a new `RRA` specification naming journey assets. **Cross-surface visual consistency is explicitly not `RRA-010`'s to deliver** |
 | **2** | **Dark app palette** | Blueprint **§20.31 LOCKED** (the shipped light token set is the visual authority) + `shell.css` `color-scheme: light` + DL §8.1's unresolved dark-report-in-light-app split | **OWNER DECISION** | Not proposed here. §8.1 must resolve first. This proposal keeps the app light |
 | **3** | **Second typeface** | Licence-plus-audited-digest process + roadmap:233 (no external fonts) + CSP `font-src 'self'` | **PROCESS GATE** | Not proposed. One face already covers both scripts from one verified digest |
 | **4** | **Analytical treatment on Overview** | Blueprint **§20.22 LOCKED** — no revenue, sales, branch, category, basket, or concentration content | **LOCKED** | Not proposed. §5.8 confines analytical treatment to surfaces with real capability |
 | **5** | **Comparison / delta / trend UI** | `G4/C1` has **zero registry entries**; **explicitly excluded by `RCA-005`** | **NO AUTHORITY** | M4 direction only. No comparison UI |
 | **6** | **Any external asset, CDN, or web font** | roadmap:233 + runtime CSP `default-src 'none'` | **HARD BLOCK, runtime-enforced** | Bundle locally. Non-negotiable and not contested |
-| **7** | **Deletion UI, tombstone rendering, and workspace role cells** | Blueprint **§21**: deletion authority AUTHORITY-BLOCKED; tombstone fields CONTRACT-BLOCKED; "workspace role cells (list, read, reopen artifacts)" AUTHORITY-BLOCKED on `G3-03` | **AUTHORITY-BLOCKED** | Not designed here. §8.1 covers only the read surfaces `RCA-005` FR-117/FR-120/FR-121 authorize |
+| ~~**7**~~ | ~~Deletion UI, tombstone rendering, workspace role cells~~ | **WITHDRAWN — corrected during review.** Blueprint §21's AUTHORITY-BLOCKED rows predate `d52f11f` and are now stale. **Active `RCA-005` FR-123** (deletion owner-only, immediate, idempotent, cascading), **FR-124** (content-free deletion evidence, twelve months), **FR-125** (one audit event per workspace action) and **FR-117**–**FR-122** authorize member-visible workspace reads, owner-only deletion, tombstone rows and deletion evidence; **`KHEPRI-DEC-033` §2–§3** fix whether tombstones exist and their exact field allowlist, with a test asserting each field set equals its allowlist | **NOT BLOCKED** | Design may proceed on these surfaces. Blueprint §11/§12/§19/§20/§21 need the same reconciliation §9.2 already prescribes for §18 |
 | **8** | **M4 page structure** | Blueprint **§21**: "M4 page structure — FUTURE SHAPING REQUIRED", depending on `SV1`, `C1`, and M3 learnings | **FUTURE SHAPING** | §8.2 supplies visual direction for blueprint §22's already-named content only, and specifies no page |
 
 ### 10.2 Not blockers — three findings that materially widen what is available
@@ -768,10 +777,14 @@ Assessed against `governance/registry.yaml` at `d52f11f`, not against prose.
    names `runtime/shell_api.py` and `shell_templates/`.
    `G2`/`G3`/`W1` remain absent from the registry — **the program labels never registered; their
    substance did.** `PRODUCT.md` and blueprint §18 are both stale on this point.
-   **Two M3 items stay blocked and are not unblocked by this finding:** deletion authority and
-   tombstone fields remain AUTHORITY-BLOCKED per blueprint §21, and "workspace role cells (list, read,
-   reopen artifacts)" is recorded there as AUTHORITY-BLOCKED on `G3-03`. §8.1's guidance is
-   composition for the read surfaces FR-117/FR-120/FR-121 authorize, nothing more.
+   **Deletion, tombstones and role cells are also no longer blocked** — corrected during review.
+   **FR-123** makes deletion owner-only, immediate, idempotent and cascading; **FR-124** requires
+   content-free deletion evidence retained twelve months; **FR-125** requires one content-free audit
+   event per workspace action; and **`KHEPRI-DEC-033` §2–§3** fix tombstone existence and the exact
+   field allowlist, with a test asserting each tombstone's field set equals its allowlist. Blueprint
+   §21's AUTHORITY-BLOCKED rows for deletion authority, tombstone fields and "workspace role cells"
+   **predate `d52f11f` and are stale.** §9.2's reconciliation must therefore extend to blueprint
+   §11, §12, §19, §20 and §21, not only §18.
 3. **The whole technique set already ships under active `RCA-004`.** `landing.css` is owner-approved,
    governed, accessible (`prefers-reduced-motion`, `prefers-contrast`), and bilingual. `FR-091` says
    the landing **MAY** remain distinct and that no app asset **need** change — **permissive, not
@@ -820,11 +833,45 @@ Why this and nothing else first:
   (§0.3). The icon and elevation-ramp claims stay, with their real basis stated (§5.6).
 - It requires **no governance amendment** and touches **no LOCKED blueprint item**.
 
-**The first code slice after it** — and only after it merges — is the shell primary button (DL §8.4):
-adopt `--radius-sm: 3px` at the tokenized 44px with the journey's transparent treatment, in
-`shell-components.css` under active `RCA-002`/`RCA-005`. It is one rule, it retires the
-`border-radius: 0` contradiction with blueprint §17, it consumes an already-shipping token, and it
-proves the doctrine change end-to-end at the smallest possible blast radius.
+### There is no admissible code slice after it, and that is the finding
+
+**Corrected during review. An earlier draft named the shell primary button — `--radius-sm` at 44px in
+`shell-components.css` — as "the first code slice after it, under active `RCA-002`/`RCA-005`." That
+was inadmissible, and the error is the one AGENTS.md names first: it would widen a specification.**
+
+Three facts, each verified:
+
+- **`RCA-005`'s Scope names `src/khepri/rca/workspace/`, `runtime/shell_api.py` and
+  `shell_templates/`, `migrations/`, object-store namespaces, and `tests/`. It does not name
+  `shell-components.css` or `shell.css`.**
+- **No active specification names either stylesheet as authorized scope.** They appear in exactly two
+  active specs — `RRA-010` and `RRA-012` — and in both cases as **exclusions**: `RRA-010` forbids the
+  journey depending on a shell-owned asset, and `RRA-012` records that the shell's component layer is
+  *not* governed by it.
+- **Neither `RCA-002` nor `RCA-005` requires changing the button's radius or paint**, so no
+  requirement carries the change.
+- **Roadmap:1767 records `U1` as BLOCKED**, with `U1-01` delivered and the note "after it, **no `U1`
+  task can start**" — `U1-03`, `U1-05`, `U1-06`, `U1-07` await a specification, and the journey clause
+  awaits an owner decision.
+
+So the button change is **AUTHORITY-BLOCKED, not scheduled.** It stays a recommendation inside DL
+§8.4, and it needs **an active specification that names the shell stylesheets** before any slice may
+touch them. That artifact is the owner's to author and merge; this proposal does not create it and
+must not be read as scheduling work it cannot authorize.
+
+**The honest sequence, therefore:**
+
+1. **Now:** the §9.1 documentation revision above. No code, no new authority needed.
+2. **Then, owner-authored:** a specification naming the shell stylesheets (`shell.css`,
+   `shell-components.css`) as authorized scope — the same shape `RRA-010` provided for `journey.css`
+   and `RRA-012` for `report.css`. **Without it, every §5 technique remains design direction only on
+   `/app`.**
+3. **Only then:** the button, as that specification's first slice.
 
 **Do not start with:** the journey (`RRA-010` is the narrowest regime), the report (blueprint §16 — no
-redesign), a dark palette (§10.1 blocker 2), or a token slice with no consumer (§7.6 obligation 2).
+redesign), a dark palette (§10.1 blocker 2), a token slice with no consumer (§7.6 obligation 2), or
+**any shell stylesheet edit before step 2 exists.**
+
+**One technique is available now without new authority:** icons and the fuller register treatment on
+the **landing**, under active `RCA-004` `FR-083` (§5.6). It is the only surface where this proposal's
+freedoms are already admissible.
