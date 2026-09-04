@@ -132,8 +132,12 @@ def test_retention_state_is_the_only_thing_a_later_operation_changes(
 
     `W1-01`'s `DatasetVersion` deliberately carries no retention field -- its docstring says the
     state "changes, which `W1-02` holds in the store rather than on this record". So the column
-    exists on the table and the transition is a store operation, and the record read back is
-    unchanged by it.
+    exists on the table and the transition is a store operation -- and because the record carries
+    no retention state, a tombstoned row is not read back as a `DatasetVersion` at all:
+    `retention_state()` is the store's answer, and `get_dataset_version()` answers `None`.
+
+    This test used to assert the record *was* read back unchanged after tombstoning, which is the
+    defect review on `#370` found: a caller could keep presenting a version the customer deleted.
     """
     scope = _scope(factory)
     store = SqlWorkspaceStore(factory)
@@ -144,7 +148,10 @@ def test_retention_state_is_the_only_thing_a_later_operation_changes(
     store.tombstone_dataset_version(version.version_id, now=LATER)
 
     assert store.retention_state(version.version_id) == RETENTION_TOMBSTONED
-    assert store.get_dataset_version(version.version_id) == version
+    # A tombstoned version is not read back as live: the record carries no retention state,
+    # so returning it would be indistinguishable from a live one. Review on `#370` found
+    # this line asserting the opposite.
+    assert store.get_dataset_version(version.version_id) is None
 
 
 def test_a_retention_state_the_domain_does_not_define_is_refused(factory: sessionmaker) -> None:
@@ -647,7 +654,10 @@ def test_tombstoning_remains_the_way_a_record_leaves_use(factory: sessionmaker) 
     store.tombstone_dataset_version(version.version_id, now=LATER)
 
     assert store.retention_state(version.version_id) == RETENTION_TOMBSTONED
-    assert store.get_dataset_version(version.version_id) == version
+    # A tombstoned version is not read back as live: the record carries no retention state,
+    # so returning it would be indistinguishable from a live one. Review on `#370` found
+    # this line asserting the opposite.
+    assert store.get_dataset_version(version.version_id) is None
 
 
 # --- Round seven: what the schema constrains, and what a guard freezes -------------------------
@@ -1064,3 +1074,63 @@ def test_the_scope_listing_survives_every_run_a_writer_can_commit(
     listed = store.analysis_runs_for_scope(scope)
 
     assert [entry.run_id for entry in listed] == [run.run_id]
+
+
+# --- Live reads exclude tombstoned rows --------------------------------------------------------
+
+
+def test_a_tombstoned_version_is_absent_from_every_live_read(factory: sessionmaker) -> None:
+    """`DatasetVersion` carries no retention state by `W1-01`'s design, so a tombstoned row read
+    back is indistinguishable from a live one and a caller may keep presenting or reusing it.
+    Review on `#370` found all four read paths filtering by scope alone. The store still answers
+    `retention_state()`; the live reads answer nothing.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    kept = _version(store, scope)
+    deleted = _version(store, scope)
+
+    store.tombstone_dataset_version(deleted.version_id, now=LATER)
+
+    assert store.get_dataset_version(deleted.version_id) is None
+    assert store.get_dataset_version(kept.version_id) == kept
+    assert [v.version_id for v in store.dataset_versions_for_scope(scope)] == [kept.version_id]
+    assert store.retention_state(deleted.version_id) == RETENTION_TOMBSTONED
+
+
+def test_a_tombstoned_run_is_absent_from_every_live_read(factory: sessionmaker) -> None:
+    """The same hole on the run side, which the finding did not name -- a loop cannot miss what it
+    never names, and neither can a review; the fix covers every read, not the two reported."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    kept = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    deleted = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=LATER)
+    )
+    with factory.begin() as database:
+        row = database.get(AnalysisRunRow, deleted.run_id)
+        row.retention_state = RETENTION_TOMBSTONED
+        row.retention_changed_at = LATER
+
+    assert store.get_analysis_run(deleted.run_id) is None
+    assert store.get_analysis_run(kept.run_id) == kept
+    assert [r.run_id for r in store.analysis_runs_for_scope(scope)] == [kept.run_id]
+
+
+def test_the_transitions_still_reach_a_tombstoned_row(factory: sessionmaker) -> None:
+    """The read filter must not have broken the idempotent retry: `tombstone_dataset_version` on
+    an already-tombstoned row returns early *by reading it*, so it needs the weaker predicate."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    store.tombstone_dataset_version(version.version_id, now=NOW)
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+
+    with factory() as database:
+        row = database.get(DatasetVersionRow, version.version_id)
+        assert row.retention_changed_at is not None
+        assert row.retention_state == RETENTION_TOMBSTONED

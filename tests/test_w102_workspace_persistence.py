@@ -36,6 +36,7 @@ from khepri.rca.workspace.persistence import (
     COMPLETION_COLUMNS,
     RETENTION_ACTIVE,
     RETENTION_TOMBSTONED,
+    SECTION_COLUMNS,
     TOMBSTONE_SUBJECTS,
     AnalysisRunRow,
     DatasetVersionRow,
@@ -768,7 +769,7 @@ def test_the_tombstone_columns_are_exactly_the_two_allowlists(factory: sessionma
         "package_digest",
         "package_version",
         "formula_version",
-        "section_states",
+        *SECTION_COLUMNS,
     }
 
     assert columns == identity | version_allowlist | run_allowlist

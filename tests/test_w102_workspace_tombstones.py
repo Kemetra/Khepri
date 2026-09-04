@@ -9,10 +9,11 @@ and the section-state shape.
 
 from __future__ import annotations
 
-import json
+import re
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -24,16 +25,16 @@ from khepri.rca.workspace.contracts import (
     DatasetVersion,
 )
 from khepri.rca.workspace.persistence import (
-    GOVERNED_SECTION_IDS,
     GOVERNED_SECTION_STATE_CODES,
-    MAX_SECTION_STATES,
     RETENTION_TOMBSTONED,
     RUN_TOMBSTONE_COLUMNS,
+    SECTION_COLUMNS,
+    SECTION_STATE_CODES,
+    TOMBSTONE_SECTIONS,
     VERSION_TOMBSTONE_COLUMNS,
     DatasetVersionRow,
     SqlWorkspaceStore,
     WorkspaceTombstoneRow,
-    validate_section_states,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -149,7 +150,7 @@ def test_a_version_tombstone_cannot_carry_a_runs_fields(factory: sessionmaker) -
             factory,
             scope,
             tombstone_id="tmb_mixed1",
-            section_states='{"average_order_value": "answered"}',
+            section_overview="answered",
         )
 
 
@@ -178,7 +179,7 @@ def test_each_subject_persists_its_own_allowlist(factory: sessionmaker) -> None:
         tombstone_id="tmb_okruns",
         subject_kind="run",
         subject_id="run_abc123",
-        section_states='{"average_order_value": "answered"}',
+        section_overview="answered",
     )
 
     with factory() as database:
@@ -302,136 +303,120 @@ def test_the_tombstoning_update_itself_still_passes(factory: sessionmaker) -> No
         assert row.retention_changed_at is not None
 
 
-@pytest.mark.parametrize("state", sorted(GOVERNED_SECTION_STATE_CODES))
-def test_every_governed_state_code_is_accepted(state: str) -> None:
-    """The union of both governed vocabularies, so `W1-03` can emit either and narrow it.
+# --- Section states: one column per report section, one CHECK per column -----------------------
+
+
+@pytest.mark.parametrize("column", SECTION_COLUMNS)
+@pytest.mark.parametrize("state", SECTION_STATE_CODES)
+def test_every_section_column_accepts_every_governed_state(
+    factory: sessionmaker, column: str, state: str
+) -> None:
+    """Twenty cells: five report sections by the union of both governed state vocabularies.
 
     `KHEPRI-DEC-033` §3 names `(answered, caveated, refused)` as retention outcomes;
-    `rra/bundle.py`'s `GOVERNED_SECTION_STATES` names `{present, refused}` for whether a surface
-    renders a chart or a refusal notice. Both are real and neither subsumes the other, so this
-    accepts the union -- closed either way, and not a choice made on `W1-03`'s behalf.
-
-    Parametrized over the constant rather than a literal list, so a code added to either source
-    reaches this test without an edit.
+    `rra/bundle.py`'s `GOVERNED_SECTION_STATES` names `{present, refused}` for rendering. Both
+    are real, so a run tombstone accepts the union and `W1-03` narrows it.
     """
-    section = sorted(GOVERNED_SECTION_IDS)[0]
+    scope = _scope(factory)
+    _tombstone(
+        factory,
+        scope,
+        tombstone_id=f"tmb_{column[8:13]}{state[:3]}",
+        subject_kind="run",
+        subject_id="run_abc123",
+        **{column: state},
+    )
 
-    validate_section_states(json.dumps({section: state}))
-
-
-@pytest.mark.parametrize("section", sorted(GOVERNED_SECTION_IDS))
-def test_every_governed_section_identifier_is_accepted(section: str) -> None:
-    """All 22, derived from each `RRA-008` family's own `GOVERNED_METRICS` via `FAMILY_METRICS`.
-
-    Asserted over the set so a metric added to a governed contract is admissible here without an
-    edit -- and so no name this module invented can pass, which was the defect.
-    """
-    validate_section_states(json.dumps({section: "answered"}))
-
-
-def test_a_multi_section_document_is_accepted() -> None:
-    """More than one entry, since a run answers several sections."""
-    sections = sorted(GOVERNED_SECTION_IDS)[:3]
-    states = ("answered", "caveated", "refused")
-
-    validate_section_states(json.dumps(dict(zip(sections, states, strict=True))))
+    with factory() as database:
+        rows = database.execute(select(WorkspaceTombstoneRow)).scalars().all()
+        assert getattr(rows[0], column) == state
 
 
-def test_an_absent_document_is_accepted() -> None:
-    """A version's tombstone carries no section states at all."""
-    validate_section_states(None)
-
-
+@pytest.mark.parametrize("column", SECTION_COLUMNS)
 @pytest.mark.parametrize(
-    ("document", "why"),
-    [
-        ('{"average_order_value": "Sales fell 12% in Q3 on supply"}', "narrative as a state"),
-        ('{"Acme Pharmacy Ltd": "answered"}', "a customer label as a section key"),
-        # The two the structural regex accepted. `acme_pharmacy` is a short lowercase identifier
-        # and matched the pattern perfectly -- which is why a shape check cannot do this job:
-        # it has no way to tell a governed metric from a pharmacy's name.
-        ('{"acme_pharmacy": "made_up"}', "a customer label that looks like a code"),
-        ('{"dr_smith_clinic": "answered"}', "a practice name with a governed state"),
-        ('{"average_order_value": "invented"}', "an ungoverned state on a governed section"),
-        ('{"revenue_for_acme_ltd": "answered"}', "a customer name inside a plausible metric"),
-        ('["answered", "refused"]', "a list, so no section is named"),
-        ('"answered"', "a bare string"),
-        ("not json at all", "unparseable"),
-        ('{"revenue": 42}', "a non-string state"),
-        ('{"revenue": {"nested": "answered"}}', "a nested document"),
-    ],
+    "value",
+    ["Sales fell 12% in Q3 on supply issues", "made_up", "Acme Pharmacy Ltd", "ANSWERED", ""],
 )
-def test_ungoverned_section_state_content_is_refused(document: str, why: str) -> None:
-    """§3 excludes "any figure, series, label, narrative, refusal prose" from a tombstone.
-
-    A `Text` column accepting anything let all of it become an immutable retained deletion record,
-    and the two allowlist `CHECK`s could not see it -- they only decide whether a column must be
-    *null* for the other subject. Review on `#370` found it.
-    """
-    with pytest.raises(ValueError, match="short codes"):
-        validate_section_states(document)
-
-
-def test_too_many_section_states_is_refused() -> None:
-    """A cap a narrative cannot slip under by splitting itself across valid-looking entries."""
-    crowded = json.dumps({f"s{index}": "answered" for index in range(MAX_SECTION_STATES + 1)})
-
-    with pytest.raises(ValueError, match="short codes"):
-        validate_section_states(crowded)
-
-
-def test_the_tombstone_refuses_ungoverned_section_states_at_insert(
-    factory: sessionmaker,
+def test_a_section_column_refuses_an_ungoverned_state(
+    factory: sessionmaker, column: str, value: str
 ) -> None:
-    """Wired, not merely written: the validator runs on the real insert path.
+    """Refused by the database, not by Python -- `IntegrityError`, on every section column.
 
-    `before_insert` rather than `before_update`, because `_refuse_any_update` already refuses every
-    update -- insertion is the only moment this column can be written.
+    §3 excludes "any figure, series, label, narrative, refusal prose". The previous design held a
+    JSON document that only a mapper `before_insert` listener validated, and a Core or raw-SQL
+    insert never fires one. Review on `#370` found that gap; a `CHECK` per column closes it for
+    every writer.
     """
     scope = _scope(factory)
 
-    with pytest.raises(ValueError, match="short codes"):
+    with pytest.raises(IntegrityError):
         _tombstone(
             factory,
             scope,
-            tombstone_id="tmb_prose1",
+            tombstone_id="tmb_badstate",
             subject_kind="run",
             subject_id="run_abc123",
-            section_states='{"revenue": "Sales fell 12% in Q3"}',
+            **{column: value},
         )
 
 
-def test_the_section_identifiers_match_the_contracts_that_publish_them() -> None:
-    """The restated allowlist must equal what `RRA-008`'s families actually govern.
+def test_a_core_insert_meets_the_same_rule_as_the_orm(factory: sessionmaker) -> None:
+    """The finding, exactly: a Core `insert()` bypasses every mapper listener.
 
-    `GOVERNED_SECTION_IDS` is written out in `persistence.py` rather than read from
-    `rra/definitions.py`, and not by preference: `R7-01` §3 forbids any module under `khepri.rca`
-    importing `khepri.rra`, so that every RCA test does not transitively depend on RRA.
-    `test_r707_commercial_bridge.py` enforces it in both directions, and caught the import that
-    first read this from source.
-
-    A restated list drifts, so this is where the drift is caught. **A test may import both
-    packages where a source module may not** -- a cross-package agreement check is exactly the
-    thing that belongs in a test rather than in either package.
-
-    My first attempt at the list was wrong in eight of twenty-two entries, guessed from memory of
-    the naming style. That is the failure mode this asserts against.
+    Under the JSON design this statement committed prose into an immutable deletion record. Now
+    the rule is the column's `CHECK`, and Core, bulk and raw SQL all meet it.
     """
-    from khepri.rra.definitions import FAMILY_METRICS
+    scope = _scope(factory)
 
-    published = {metric for metrics in FAMILY_METRICS.values() for metric in metrics}
+    with pytest.raises(IntegrityError), factory.begin() as database:
+        database.execute(
+            insert(WorkspaceTombstoneRow.__table__).values(
+                tombstone_id="tmb_coreins",
+                subject_kind="run",
+                subject_id="run_abc123",
+                owner_id=scope,
+                deleted_at=NOW,
+                section_overview="Sales fell 12% in Q3",
+            )
+        )
 
-    assert published == GOVERNED_SECTION_IDS, (
-        "a metric added to a governed RRA-008 contract must be added to GOVERNED_SECTION_IDS, "
-        "or a run tombstone cannot record that section's state"
+
+def test_a_section_that_is_not_a_report_section_is_unrepresentable() -> None:
+    """`acme_pharmacy` is not a section, and there is no column to put it in.
+
+    The JSON design's last leak was a customer label that *looked* like a code. With one column per
+    section, the section vocabulary is the column set: nothing to validate, because nothing else
+    can be named.
+    """
+    columns = {column.key for column in WorkspaceTombstoneRow.__table__.columns}
+
+    assert set(SECTION_COLUMNS) <= columns
+    assert "section_acme_pharmacy" not in columns
+    assert not any(
+        column.startswith("section_") and column not in SECTION_COLUMNS for column in columns
     )
+
+
+def test_the_section_columns_match_the_report_sections_the_bundle_publishes() -> None:
+    """`TOMBSTONE_SECTIONS` must equal `rra/bundle.py`'s `ORDERED_SECTIONS`, in content.
+
+    Restated in `persistence.py` because `R7-01` §3 forbids `khepri.rca` importing `khepri.rra`;
+    a test may import both, so this is where drift is caught. The previous constant restated the
+    wrong vocabulary entirely -- 22 metric names where §3 means the five report sections -- and
+    passed its own drift test because that test compared it to the wrong source too. This one
+    compares to what a `Section.section_id` actually is.
+    """
+    from khepri.rra.bundle import ORDERED_SECTIONS
+
+    assert set(TOMBSTONE_SECTIONS) == set(ORDERED_SECTIONS)
+    assert tuple(f"section_{section}" for section in TOMBSTONE_SECTIONS) == SECTION_COLUMNS
 
 
 def test_the_state_codes_cover_both_governed_vocabularies() -> None:
     """The union, asserted against both sources rather than restated as a literal.
 
     `rra/bundle.py`'s `GOVERNED_SECTION_STATES` is checked from the source module for the same
-    reason as the identifiers; `KHEPRI-DEC-033` §3's three are named here because a decision
+    reason as the sections; `KHEPRI-DEC-033` §3's three are named here because a decision
     document is not importable.
     """
     from khepri.rra.bundle import GOVERNED_SECTION_STATES
@@ -439,3 +424,20 @@ def test_the_state_codes_cover_both_governed_vocabularies() -> None:
     dec033 = {"answered", "caveated", "refused"}
 
     assert dec033 | GOVERNED_SECTION_STATES == GOVERNED_SECTION_STATE_CODES
+
+
+def test_the_migration_states_the_same_section_columns_and_states() -> None:
+    """The migration restates both vocabularies as literals; they must agree with the constants."""
+    import pathlib as _pathlib
+
+    root = _pathlib.Path(__file__).resolve().parents[1]
+    source = (root / "migrations" / "versions" / "20260904_0021_rca_workspace.py").read_text(
+        encoding="utf-8"
+    )
+    literal_columns = set(re.findall(r'"(section_[a-z]+)"', source))
+    states_clause = re.search(r"_SECTION_STATES = \"\((.*?)\)\"", source)
+    assert states_clause is not None
+    literal_states = set(re.findall(r"'([a-z]+)'", states_clause.group(1)))
+
+    assert literal_columns == set(SECTION_COLUMNS)
+    assert literal_states == set(SECTION_STATE_CODES)

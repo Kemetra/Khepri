@@ -27,8 +27,6 @@ constraint with prose and no code path.
 
 from __future__ import annotations
 
-import json
-import re
 from datetime import datetime
 
 from sqlalchemy import (
@@ -81,7 +79,7 @@ PROFILE_IDENTITY_COLUMNS = frozenset({"profile_id", "owner_id", "source_version_
 
 #: `KHEPRI-DEC-033` §3's two allowlists, as the column names this table gives them. A row must
 #: leave every column outside its own subject's allowlist null -- otherwise `subject_kind="version"`
-#: could carry a run's `section_states`, and the schema would not enforce the allowlists it claims
+#: could carry a run's section states, and the schema would not enforce the allowlists it claims
 #: to represent. Review on `#370` found the `CHECK` validating only the discriminator.
 #:
 #: **They overlap, and `version_id` is the overlap.** §3 gives it to both rows: a dataset version's
@@ -107,93 +105,43 @@ VERSION_TOMBSTONE_COLUMNS = (
     "mapping_version",
     "admission_outcome",
 )
-#: The section identifiers a tombstone may name. `KHEPRI-DEC-033` §3 admits "per-section state
-#: codes" and excludes "any figure, series, label, narrative" -- and a structural pattern cannot
-#: tell those apart: `{"acme_pharmacy": "made_up"}` is a short lowercase identifier and matched the
-#: first attempt perfectly, while `acme_pharmacy` is exactly the customer-derived label §3
-#: excludes. Only an allowlist separates a governed metric from a pharmacy's name. Review on `#370`
-#: found the regex insufficient, having found the free-text version the round before.
+#: The report sections a run's tombstone records a state for -- `rra/bundle.py`'s
+#: `ORDERED_SECTIONS`, restated. `KHEPRI-DEC-033` §3 admits "per-section state codes", and a
+#: *section* is one of the five parts of a report, not a metric: the previous draft allowlisted the
+#: 22 `GOVERNED_METRICS` names, which would have refused every real section key `W1-03` emits
+#: while admitting keys that are not sections. Review on `#370` found it. Finding *a* closed set
+#: in the producing module is not the same as finding *the* one the decision names.
 #:
-#: **Restated rather than imported, and that is a boundary, not laziness.** These names are
-#: published by each `RRA-008` family's `GOVERNED_METRICS`, which `rra/definitions.py` collects as
-#: `FAMILY_METRICS` -- but `R7-01` §3 forbids any module under `khepri.rca` importing
-#: `khepri.rra`, in both directions, so that every RCA test does not transitively depend on RRA.
-#: `test_r707_commercial_bridge.py` enforces it and caught the import that read this from source.
+#: **One column per section, rather than a JSON document.** The document form had two defects no
+#: patch could close: its vocabulary was enforced only by a mapper listener, which Core and raw SQL
+#: inserts bypass, and a `CHECK` cannot validate JSON portably across SQLite and PostgreSQL. Five
+#: nullable columns make both vocabularies a property of the *schema*: a section that is not a
+#: column is unrepresentable, and each column's `CHECK` names the states it may hold. That is the
+#: "normalized constrained representation" the review asked for, and it needs no listener.
 #:
-#: A restated list drifts, so the drift is asserted instead of hoped for:
-#: `test_w102_workspace_tombstones.py` compares this set against `FAMILY_METRICS` -- a *test* may
-#: import both packages where a source module may not, which is where a cross-package agreement
-#: check belongs. A metric added to a governed contract fails that test until it is added here.
-GOVERNED_SECTION_IDS: frozenset[str] = frozenset(
-    {
-        "average_order_value",
-        "average_selling_price",
-        "basket_attach_rate",
-        "basket_items_per_transaction",
-        "concentration_curve",
-        "concentration_distinct_values",
-        "concentration_ranked_values",
-        "concentration_top_decile_share",
-        "concentration_top_quartile_share",
-        "cost",
-        "discount",
-        "gross_margin",
-        "gross_profit",
-        "growth_price_effect",
-        "growth_revenue_change",
-        "growth_volume_effect",
-        "returns",
-        "revenue",
-        "revenue_delta_absolute",
-        "revenue_delta_percent",
-        "transactions",
-        "units",
-    }
-)
+#: Restated rather than imported because `R7-01` §3 forbids `khepri.rca` importing `khepri.rra`
+#: in either direction; `test_w102_workspace_tombstones.py` asserts agreement with
+#: `ORDERED_SECTIONS` from the one place that may import both.
+TOMBSTONE_SECTIONS = ("overview", "comparison", "concentration", "growth", "basket")
+SECTION_COLUMNS = tuple(f"section_{section}" for section in TOMBSTONE_SECTIONS)
 
 #: The state codes a section may carry: the union of the two governed sets, because both are real
 #: and neither subsumes the other. `KHEPRI-DEC-033` §3 names `(answered, caveated, refused)` as
 #: retention outcomes; `rra/bundle.py`'s `GOVERNED_SECTION_STATES` names `{present, refused}` for
 #: whether a surface renders a chart or a refusal notice. A closed union is still closed, and
 #: `W1-03` narrows it to whichever half its projection emits -- the choice this slice should not
-#: make for it, while still refusing everything outside both.
-#:
-#: Restated for the same `R7-01` §3 reason as `GOVERNED_SECTION_IDS`, and drift-checked the same
-#: way.
+#: make for it, while still refusing everything outside both. Drift-checked the same way.
 SECTION_STATE_ANSWERED = "answered"
 SECTION_STATE_CAVEATED = "caveated"
 SECTION_STATE_PRESENT = "present"
 SECTION_STATE_REFUSED = "refused"
-GOVERNED_SECTION_STATE_CODES: frozenset[str] = frozenset(
-    {
-        SECTION_STATE_ANSWERED,
-        SECTION_STATE_CAVEATED,
-        SECTION_STATE_PRESENT,
-        SECTION_STATE_REFUSED,
-    }
+SECTION_STATE_CODES = (
+    SECTION_STATE_ANSWERED,
+    SECTION_STATE_CAVEATED,
+    SECTION_STATE_PRESENT,
+    SECTION_STATE_REFUSED,
 )
-
-#: What a section-state entry may look like, structurally: a short lowercase code, never prose.
-#: `KHEPRI-DEC-033` §3's run row admits "per-section state codes" and excludes "any figure, series,
-#: label, narrative, refusal prose". A `Text` column accepting anything let all of that become an
-#: immutable retained deletion record -- review on `#370` found it, and the two allowlist `CHECK`s
-#: could not see it because they only decide whether a column must be *null* for the other subject.
-#:
-#: **Structural, not a code set, and deliberately so.** §3 names `(answered, caveated, refused)`;
-#: `rra/bundle.py` already enforces `GOVERNED_SECTION_STATES = {present, refused}` for a different
-#: purpose -- whether a surface renders a chart or a refusal notice, which is a rendering concern
-#: rather than a retention one. Two vocabularies for one phrase. `W1-03` builds the projection that
-#: writes this column and `KHEPRI-DEC-033` §3 assigns it the allowlist equality test, so the code
-#: set is its choice to make; pinning one here would hand it a constraint to match instead. What
-#: this refuses is the *shape* that admits prose at all, which is the whole of the defect.
-SECTION_CODE_PATTERN = r"^[a-z][a-z0-9_]{0,31}$"
-
-#: One run has few sections. A cap this low cannot hold a narrative even if every entry validated.
-MAX_SECTION_STATES = 64
-
-SECTION_STATES_FAILURE = (
-    "a tombstone's section states must be a mapping of short codes, never free text"
-)
+GOVERNED_SECTION_STATE_CODES: frozenset[str] = frozenset(SECTION_STATE_CODES)
 
 RUN_TOMBSTONE_COLUMNS = (
     # Shared with `VERSION_TOMBSTONE_COLUMNS`: §3 puts a version id on both rows. On a version's
@@ -204,7 +152,7 @@ RUN_TOMBSTONE_COLUMNS = (
     "package_digest",
     "package_version",
     "formula_version",
-    "section_states",
+    *SECTION_COLUMNS,
 )
 
 # Content-free, per the refusal discipline in `rca/errors.py`: it names the constraint, never the
@@ -249,6 +197,23 @@ def _completion_provenance_check(name: str) -> CheckConstraint:
         "package_digest IS NOT NULL AND package_version IS NOT NULL "
         "AND formula_version IS NOT NULL AND completed_at IS NOT NULL)",
         name=name,
+    )
+
+
+def _section_state_checks() -> tuple[CheckConstraint, ...]:
+    """One `CHECK` per section column: null, or one of the governed state codes.
+
+    `IS NULL OR` is written out although SQL's three-valued `IN` would admit null on its own,
+    because a reader should not need to know that to see the rule. Built from the same constants
+    the migration restates as literals, and the drift test compares the two.
+    """
+    states = ", ".join(f"'{code}'" for code in SECTION_STATE_CODES)
+    return tuple(
+        CheckConstraint(
+            f"{column} IS NULL OR {column} IN ({states})",
+            name=f"ck_rca_workspace_tombstone_{column}",
+        )
+        for column in SECTION_COLUMNS
     )
 
 
@@ -543,6 +508,7 @@ class WorkspaceTombstoneRow(Base):
             VERSION_TOMBSTONE_COLUMNS,
             "ck_rca_workspace_tombstone_run_fields",
         ),
+        *_section_state_checks(),
     )
 
     tombstone_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -569,10 +535,14 @@ class WorkspaceTombstoneRow(Base):
     package_digest: Mapped[str | None] = mapped_column(String, nullable=True)
     package_version: Mapped[str | None] = mapped_column(String, nullable=True)
     formula_version: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Length-bounded as the backstop `validate_section_states` cannot be for a row arriving
-    # outside the ORM. 64 entries of a 32-character code and a 32-character state, with JSON
-    # punctuation, cannot exceed this; a narrative would.
-    section_states: Mapped[str | None] = mapped_column(String(4096), nullable=True)
+    # One column per report section (`TOMBSTONE_SECTIONS`), each holding one governed state code
+    # or null. The section vocabulary is the column set; the state vocabulary is each column's
+    # `CHECK`. Neither depends on a listener, so a Core or raw-SQL insert meets the same rule.
+    section_overview: Mapped[str | None] = mapped_column(String, nullable=True)
+    section_comparison: Mapped[str | None] = mapped_column(String, nullable=True)
+    section_concentration: Mapped[str | None] = mapped_column(String, nullable=True)
+    section_growth: Mapped[str | None] = mapped_column(String, nullable=True)
+    section_basket: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 def _changed_columns(target: object, among: frozenset[str] | None) -> set[str]:
@@ -623,62 +593,6 @@ def _check_completion(changed: set[str]) -> None:
     """
     if not changed <= COMPLETION_COLUMNS:
         raise ValueError(APPEND_ONLY_FAILURE)
-
-
-def validate_section_states(document: str | None) -> None:
-    """Refuse a `section_states` document that is not a mapping of short codes.
-
-    Checked here rather than only in the database because a `CHECK` cannot express it portably:
-    SQLite and PostgreSQL disagree on JSON functions, and the migration's convention is literal
-    SQL. So the shape is enforced at the one door that writes tombstones, and the column keeps a
-    length bound as the backstop for a row arriving another way.
-
-    `FR-112`'s reasoning applies with more force here than anywhere else in this module: a
-    tombstone is immutable once written, so content that gets in cannot be taken out.
-    """
-    if document is None:
-        return
-    for section, state in _parsed_section_states(document).items():
-        _check_governed(section, GOVERNED_SECTION_IDS)
-        _check_governed(state, GOVERNED_SECTION_STATE_CODES)
-
-
-def _parsed_section_states(document: str) -> dict[str, str]:
-    """The document as a mapping, or a refusal. Shape only; the vocabulary check follows.
-
-    Split from `validate_section_states`, which CodeScene put at cyclomatic 14 against a threshold
-    of 9. The seam is the one a reader wants: *is this a mapping at all* is a different question
-    from *is this name governed*.
-    """
-    try:
-        parsed = json.loads(document)
-    except (TypeError, ValueError) as error:
-        raise ValueError(SECTION_STATES_FAILURE) from error
-    if not isinstance(parsed, dict) or len(parsed) > MAX_SECTION_STATES:
-        raise ValueError(SECTION_STATES_FAILURE)
-    return parsed
-
-
-def _check_governed(value: object, governed: frozenset[str]) -> None:
-    """One name, against the set that publishes it.
-
-    The structural pattern is still checked first, and not redundantly: it bounds the *length* of
-    whatever reaches the failure path, so a megabyte of prose is refused before it is compared
-    against the governed set.
-    """
-    if not isinstance(value, str) or not re.match(SECTION_CODE_PATTERN, value):
-        raise ValueError(SECTION_STATES_FAILURE)
-    if value not in governed:
-        raise ValueError(SECTION_STATES_FAILURE)
-
-
-def _refuse_ungoverned_section_states(_mapper, _connection, target: object) -> None:
-    """`before_insert` on the tombstone: the shape is checked before the row exists.
-
-    On insert rather than update, because `_refuse_any_update` already refuses every update -- so
-    insertion is the only moment this column can be written, and the only moment worth checking.
-    """
-    validate_section_states(target.section_states)
 
 
 def _check_terminal_state(target: object, changed: set[str]) -> None:
@@ -832,6 +746,20 @@ def _visible_in(row: object | None, owner_id: str | None) -> bool:
     return owner_id is None or row.owner_id == owner_id
 
 
+def _live_in(row: object | None, owner_id: str | None) -> bool:
+    """Whether a *read* may return this row as a live record: visible, and not tombstoned.
+
+    Separate from `_visible_in` because the transitions need the weaker predicate -- an idempotent
+    tombstone must reach its own row to return early, and the terminal-state guard must see the row
+    it refuses. A read is different: `DatasetVersion` and `AnalysisRun` carry no retention state by
+    `W1-01`'s design, so a tombstoned row read back is indistinguishable from a live one, and a
+    caller could keep presenting or reusing a record the customer deleted. Review on `#370` found
+    the four read paths filtering by scope alone. `retention_state()` is the store's answer for the
+    row's state; these return `None` or omit it.
+    """
+    return _visible_in(row, owner_id) and row.retention_state == RETENTION_ACTIVE
+
+
 # Every workspace row is append-only, so every one carries both guards. `ArtifactBindingRow` was
 # missing from the update listener until review on `#370` asked why: a binding is immutable under
 # `RCA-005`, and a caller changing `artifact_digest` would silently repoint a retained result at
@@ -870,10 +798,6 @@ for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():
     event.listen(_row_class, "before_update", _on_update)
     if _on_delete is not None:
         event.listen(_row_class, "before_delete", _on_delete)
-
-#: The one column whose *content* is governed rather than its mutability, so it needs the one
-#: `before_insert` listener in this module. See `_refuse_ungoverned_section_states`.
-event.listen(WorkspaceTombstoneRow, "before_insert", _refuse_ungoverned_section_states)
 
 
 def _version_from_row(row: DatasetVersionRow) -> DatasetVersion:
@@ -991,7 +915,7 @@ class SqlWorkspaceStore:
     ) -> DatasetVersion | None:
         with self._factory() as database:
             row = database.get(DatasetVersionRow, version_id)
-            if not _visible_in(row, owner_id):
+            if not _live_in(row, owner_id):
                 return None
             return _version_from_row(row)
 
@@ -1001,6 +925,7 @@ class SqlWorkspaceStore:
             rows = database.execute(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
+                .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
                 .order_by(DatasetVersionRow.created_at.desc(), DatasetVersionRow.version_id.desc())
             ).scalars()
             return tuple(_version_from_row(row) for row in rows)
@@ -1061,7 +986,7 @@ class SqlWorkspaceStore:
     def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
         with self._factory() as database:
             row = database.get(AnalysisRunRow, run_id)
-            if not _visible_in(row, owner_id):
+            if not _live_in(row, owner_id):
                 return None
             return _run_from_row(row)
 
@@ -1070,6 +995,7 @@ class SqlWorkspaceStore:
             rows = database.execute(
                 select(AnalysisRunRow)
                 .where(AnalysisRunRow.owner_id == owner_id)
+                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
                 .order_by(AnalysisRunRow.started_at.desc(), AnalysisRunRow.run_id.desc())
             ).scalars()
             return tuple(_run_from_row(row) for row in rows)
@@ -1190,11 +1116,9 @@ class SqlWorkspaceStore:
 __all__ = [
     "APPEND_ONLY_FAILURE",
     "GOVERNED_SECTION_STATE_CODES",
-    "GOVERNED_SECTION_IDS",
-    "validate_section_states",
-    "SECTION_STATES_FAILURE",
-    "SECTION_CODE_PATTERN",
-    "MAX_SECTION_STATES",
+    "SECTION_COLUMNS",
+    "SECTION_STATE_CODES",
+    "TOMBSTONE_SECTIONS",
     "TOMBSTONED_FROZEN_FAILURE",
     "VERSION_TOMBSTONE_COLUMNS",
     "TOMBSTONE_IMMUTABLE_FAILURE",

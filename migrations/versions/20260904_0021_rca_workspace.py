@@ -102,7 +102,7 @@ _TOMBSTONE_SUBJECT_CHECK = "subject_kind IN ('version', 'run')"
 
 #: `KHEPRI-DEC-033` §3's two allowlists. A version's tombstone must leave every run-only column
 #: null and a run's tombstone every version-only column, or the table would admit content §3 says
-#: never survives a deletion -- a `subject_kind='version'` row carrying a run's `section_states`.
+#: never survives a deletion -- a `subject_kind='version'` row carrying a run's section states.
 #: Written as implications because that is what a row-level `CHECK` can evaluate.
 #:
 #: Literal strings, like every other constraint here, following this file's convention: a migration
@@ -112,7 +112,22 @@ _TOMBSTONE_SUBJECT_CHECK = "subject_kind IN ('version', 'run')"
 _TOMBSTONE_VERSION_FIELDS_CHECK = (
     "subject_kind <> 'version' OR ("
     "started_at IS NULL AND completed_at IS NULL AND package_digest IS NULL "
-    "AND package_version IS NULL AND formula_version IS NULL AND section_states IS NULL)"
+    "AND package_version IS NULL AND formula_version IS NULL "
+    "AND section_overview IS NULL AND section_comparison IS NULL "
+    "AND section_concentration IS NULL AND section_growth IS NULL AND section_basket IS NULL)"
+)
+
+#: One `CHECK` per section column: null, or a governed state code. The section vocabulary is the
+#: column set itself -- a section that is not a column is unrepresentable -- and the state
+#: vocabulary is this clause, so neither depends on a listener a Core or raw-SQL insert would skip.
+#: `IS NULL OR` is spelled out although SQL's three-valued `IN` would admit null by itself.
+_SECTION_STATES = "('answered', 'caveated', 'present', 'refused')"
+_SECTION_COLUMNS = (
+    "section_overview",
+    "section_comparison",
+    "section_concentration",
+    "section_growth",
+    "section_basket",
 )
 # `version_id` is absent from this clause on purpose: `KHEPRI-DEC-033` §3 puts a version id on
 # *both* tombstone rows -- the version's own identity, and the run's link to the dataset it derived
@@ -323,12 +338,11 @@ def _tombstone_columns() -> tuple[sa.Column, ...]:
         sa.Column("package_digest", sa.String(), nullable=True),
         sa.Column("package_version", sa.String(), nullable=True),
         sa.Column("formula_version", sa.String(), nullable=True),
-        # Bounded rather than free `Text`: `KHEPRI-DEC-033` §3 admits "per-section state codes"
-        # and excludes "any figure, series, label, narrative, refusal prose", and a tombstone is
-        # immutable once written -- content that gets in cannot be taken out. The store validates
-        # the JSON shape (`validate_section_states`); this length is the backstop for a row
-        # arriving outside the ORM. 64 entries of two 32-character codes cannot exceed it.
-        sa.Column("section_states", sa.String(length=4096), nullable=True),
+        # One column per report section, replacing a JSON document that only a mapper listener
+        # validated. `KHEPRI-DEC-033` §3 admits "per-section state codes" and excludes narrative
+        # and labels; here the section is the column and the state is its `CHECK`, so the rule
+        # holds for every writer, not only the ORM.
+        *(sa.Column(column, sa.String(), nullable=True) for column in _SECTION_COLUMNS),
     )
 
 
@@ -342,6 +356,13 @@ def _tombstone_constraints() -> tuple[sa.schema.SchemaItem, ...]:
         ),
         sa.CheckConstraint(
             _TOMBSTONE_RUN_FIELDS_CHECK, name="ck_rca_workspace_tombstone_run_fields"
+        ),
+        *(
+            sa.CheckConstraint(
+                f"{column} IS NULL OR {column} IN {_SECTION_STATES}",
+                name=f"ck_rca_workspace_tombstone_{column}",
+            )
+            for column in _SECTION_COLUMNS
         ),
     )
 
