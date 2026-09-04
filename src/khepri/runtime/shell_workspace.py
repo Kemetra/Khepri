@@ -39,6 +39,19 @@ from typing import Any
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_FAILED, RUN_STARTED
 from khepri.runtime.workspace import ADMISSION_ADMITTED
 
+
+class UnrenderableRecord(ValueError):
+    """A retained row carries a code this surface has no governed word for.
+
+    `RRA-012` `FR-094`'s rule, applied to the shell: a code without a rendering fails closed rather
+    than reaching the reader as the code string, a blank, or -- the case review on `#373` found --
+    a plausible neighbouring word. The dispatcher turns it into the uniform unavailable surface.
+    The message names the constraint and never the value, per `rca/errors.py`'s discipline.
+    """
+
+
+UNRENDERABLE_FAILURE = "a retained row carries a code this surface cannot word"
+
 #: The copy key for each operational state a run can hold. A mapping rather than string
 #: concatenation so a state the copy does not name fails here, at the row, and not as a
 #: `StrictUndefined` inside the template.
@@ -47,6 +60,12 @@ RUN_STATE_COPY = {
     RUN_COMPLETED: "run_state_completed",
     RUN_FAILED: "run_state_failed",
 }
+
+#: The copy key for each admission outcome a version can carry. One entry, because `W1-04` refuses
+#: an inadmissible source before a version exists, so the only outcome a row can hold is the one
+#: that admitted it. The column accepts any string; this mapping is what makes a typo, a corrupt
+#: value or a future code a refusal rather than a fabricated "Not admitted" (review on `#373`).
+ADMISSION_COPY = {ADMISSION_ADMITTED: "data_admitted"}
 
 #: How a timestamp reads. One format for both languages, in UTC and marked as such, because the
 #: product has no user time-zone setting and a localized date is a decision `RRA-012`'s wording
@@ -103,8 +122,24 @@ def moment(instant: datetime) -> Moment:
     return Moment(at=utc.isoformat(), text=utc.strftime(_MOMENT_TEXT))
 
 
+def _worded(table: dict[str, str], code: str) -> str:
+    """A copy key for a governed code, or the refusal `UnrenderableRecord`."""
+    try:
+        return table[code]
+    except KeyError:
+        raise UnrenderableRecord(UNRENDERABLE_FAILURE) from None
+
+
 def work_row(run: Any) -> WorkRow:
-    return WorkRow(state_key=RUN_STATE_COPY[run.state], started=moment(run.started_at))
+    return WorkRow(state_key=_worded(RUN_STATE_COPY, run.state), started=moment(run.started_at))
+
+
+def _uses_by_version(runs: Iterable[Any]) -> dict[str, tuple[WorkRow, ...]]:
+    """Every run as a row, grouped under its version in one pass, in the reader's order."""
+    grouped: dict[str, list[WorkRow]] = {}
+    for run in runs:
+        grouped.setdefault(run.version_id, []).append(work_row(run))
+    return {version_id: tuple(rows) for version_id, rows in grouped.items()}
 
 
 def _readiness(version: Any, uses: tuple[WorkRow, ...]) -> str:
@@ -120,18 +155,13 @@ def _readiness(version: Any, uses: tuple[WorkRow, ...]) -> str:
     return "data_analysis_started" if uses else "data_awaiting"
 
 
-def data_row(version: Any, runs: Iterable[Any]) -> DataRow:
-    """One version's row. `runs` is the whole scope; the ones that used this version are kept, in
-    the order the reader returned them, and they decide the row's readiness with the record."""
-    uses = tuple(work_row(run) for run in runs if run.version_id == version.version_id)
+def data_row(version: Any, uses: tuple[WorkRow, ...]) -> DataRow:
+    """One version's row, with the runs that used it -- already matched to it by `version_id` --
+    beneath it. They decide the row's readiness together with the record."""
     return DataRow(
         submitted=moment(version.created_at),
         media_type=str(version.upload_media_type),
-        admission_key=(
-            "data_admitted"
-            if version.admission_outcome == ADMISSION_ADMITTED
-            else "data_not_admitted"
-        ),
+        admission_key=_worded(ADMISSION_COPY, version.admission_outcome),
         readiness_key=_readiness(version, uses),
         retention_key="retention_kept",
         uses=uses,
@@ -139,9 +169,13 @@ def data_row(version: Any, runs: Iterable[Any]) -> DataRow:
 
 
 def data_rows(versions: Iterable[Any], runs: Iterable[Any]) -> tuple[DataRow, ...]:
-    """Every version in the scope as a row, in the reader's order."""
-    scope_runs = tuple(runs)
-    return tuple(data_row(version, scope_runs) for version in versions)
+    """Every version in the scope as a row, in the reader's order.
+
+    The runs are grouped under their versions once, so a long history costs one pass over the
+    runs and one over the versions rather than one over the runs *per* version (review on `#373`).
+    """
+    uses = _uses_by_version(runs)
+    return tuple(data_row(version, uses.get(version.version_id, ())) for version in versions)
 
 
 def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
@@ -153,15 +187,23 @@ def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
     """
     first_versions = tuple(versions)
     scope_runs = tuple(runs)
+    latest_data = None
+    if first_versions:
+        first = first_versions[0]
+        latest_data = data_row(
+            first, tuple(work_row(run) for run in scope_runs if run.version_id == first.version_id)
+        )
     return OverviewView(
         latest_work=work_row(scope_runs[0]) if scope_runs else None,
-        latest_data=data_row(first_versions[0], scope_runs) if first_versions else None,
+        latest_data=latest_data,
         attention=tuple(work_row(run) for run in scope_runs if run.state == RUN_FAILED),
     )
 
 
 __all__ = [
+    "ADMISSION_COPY",
     "RUN_STATE_COPY",
+    "UnrenderableRecord",
     "DataRow",
     "Moment",
     "OverviewView",

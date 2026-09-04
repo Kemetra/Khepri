@@ -54,7 +54,7 @@ from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import organization_frame
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
-from khepri.runtime.shell_workspace import data_rows, overview_view
+from khepri.runtime.shell_workspace import UnrenderableRecord, data_rows, overview_view
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -66,13 +66,20 @@ SHELL_ASSETS = f"{SHELL_PREFIX}/assets"
 
 _DEFAULT_LANGUAGE = "en"
 
-#: What the shell serves, by exact name. `shell.css` ships from `R8-01` and lives beside the
-#: journey's assets; it is read from there rather than copied, because two copies of a stylesheet
-#: are two things to keep in step and `test_r801_shell_tokens.py` asserts against the original.
+#: What the shell serves, by exact name, and the package and directory each is read from.
+#: `shell.css` and `shell-components.css` ship from `R8-01` and `R8-07` beside the journey's
+#: assets and are read from there rather than copied, because two copies of a stylesheet are two
+#: things to keep in step and `test_r801_shell_tokens.py` asserts against the original.
+#: `workspace.css` is `W1-05`'s and lives here, in the runtime package: `RCA-005` names
+#: `src/khepri/rra/journey/` as not in its scope, so a slice under it may not write into that tree
+#: (review on `#373`). Every entry is a stylesheet; the allowlist is a `dict` rather than a
+#: directory listing so a file dropped into either package is not served by arriving.
 _ASSETS = {
-    "shell.css": "text/css; charset=utf-8",
-    "shell-components.css": "text/css; charset=utf-8",
+    "shell.css": ("khepri.rra.journey", "assets"),
+    "shell-components.css": ("khepri.rra.journey", "assets"),
+    "workspace.css": ("khepri.runtime", "shell_assets"),
 }
+_STYLESHEET = "text/css; charset=utf-8"
 
 
 class ActorResolver(Protocol):
@@ -518,18 +525,19 @@ def add_shell_routes(
         `dict` rather than a directory listing so a file dropped into the package is not served by
         arriving, and the name is never joined onto a path from the request.
         """
-        media_type = _ASSETS.get(name)
-        if media_type is None:
+        home = _ASSETS.get(name)
+        if home is None:
             # No language control: the one refusal rendered without resolving the actor, so the
             # canonical tail is not a refusal for every reader who could reach it. See
             # `_unavailable`.
             return _unavailable(
                 environment, language=_DEFAULT_LANGUAGE, language_switch=False
             )
-        content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
+        package, directory = home
+        content = files(package).joinpath(directory, name).read_bytes()
         return Response(
             content=content,
-            media_type=media_type,
+            media_type=_STYLESHEET,
             headers=dict(SECURITY_HEADERS),
         )
 
@@ -591,9 +599,12 @@ def add_shell_routes(
                 return _WORKSPACE_SURFACES[surface](
                     services, environment, language=language, context=context
                 )
-            except PermissionError:
+            except (PermissionError, UnrenderableRecord):
                 # The scope door refused -- a disabled account, a membership gone since the
-                # session was resolved. `FR-050`: the same surface as every other refusal.
+                # session was resolved -- or a retained row carries a code the surface has no
+                # governed word for and must not dress up as one (review on `#373`). `FR-050`:
+                # the same surface as every other refusal, and a fault to investigate, not a
+                # page to read.
                 return _unavailable(environment, language=language)
         # The chooser answers the language address and nothing else. `surface` is read at index 2,
         # so it is also `""` for `/{language}/{anything}` -- and testing that name alone made an

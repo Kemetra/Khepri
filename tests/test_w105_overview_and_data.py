@@ -596,11 +596,13 @@ class TestScopeComesFromTheSession:
 
         assert response.status_code == 404
 
-    def test_a_version_that_was_not_admitted_says_so(self) -> None:
-        """The admission outcome is read from the record, not assumed: `W1-04` refuses an
-        inadmissible source before a version exists, but the contract allows any outcome and a
-        row that always said "Admitted" would be a claim the record did not make."""
-        refused = DatasetVersion._from_storage(
+    @pytest.mark.parametrize("outcome", ["refused", "ADMITTED", "admitted "])
+    def test_an_unknown_admission_outcome_refuses_the_surface(self, outcome: str) -> None:
+        """The column accepts any string and `W1-04` only ever writes the admitting code, so any
+        other value is a corrupt or foreign row. It is not read as "Not admitted" -- a word the
+        record did not say (review on `#373`) -- and not as a blank: the surface refuses, the way
+        `RRA-012` `FR-094` has a component refuse a code it cannot word."""
+        odd = DatasetVersion._from_storage(
             version_id="ver-r",
             owner_id=ORGANIZATION,
             source=AdmittedSource(
@@ -610,20 +612,62 @@ class TestScopeComesFromTheSession:
                 media_type="application/vnd.ms-excel",
                 manifest_digest=DIGEST,
                 mapping_version=MAPPING_VERSION,
-                admission_outcome="refused",
+                admission_outcome=outcome,
             ),
             lifecycle=VersionLifecycle(created_at=EARLIER),
         )
+        shell = _shell(_StubRecords(versions=(odd,)))
 
-        html = (
-            _shell(_StubRecords(versions=(refused,)))
-            .get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/data")
-            .text
+        for surface in ("data", "overview"):
+            response = shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}")
+
+            assert response.status_code == 404, surface
+            assert SHELL_COPY["en"]["unavailable_title"] in response.text
+            assert "application/vnd.ms-excel" not in response.text
+            assert "admitted" not in response.text.lower()
+
+
+class TestTheWorkspaceSheetLivesInTheRuntime:
+    """`RCA-005` names `src/khepri/rra/journey/` as not in its scope, so `W1-05`'s rules may not
+    live in the shell stylesheets that `R8-01`/`R8-07` placed there (review on `#373`)."""
+
+    def test_the_sheet_is_served_by_the_shell_and_linked_by_the_frame(self) -> None:
+        shell = _shell(_StubRecords())
+
+        sheet = shell.get(f"{SHELL_PREFIX}/assets/workspace.css")
+        html = shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/overview").text
+
+        assert sheet.status_code == 200
+        assert sheet.headers["content-type"].startswith("text/css")
+        assert ".data-item" in sheet.text and ".retention-notice" in sheet.text
+        assert f'href="{SHELL_PREFIX}/assets/workspace.css"' in html
+
+    def test_the_journeys_tree_carries_none_of_this_slices_rules(self) -> None:
+        components = (
+            files("khepri.rra.journey")
+            .joinpath("assets", "shell-components.css")
+            .read_text(encoding="utf-8")
         )
 
-        assert SHELL_COPY["en"]["data_not_admitted"] in html
-        assert SHELL_COPY["en"]["data_admitted"] not in html
-        assert "application/vnd.ms-excel" in html
+        for selector in (".data-", ".region-label", ".latest-", ".attention-", ".retention-"):
+            assert selector not in components, selector
+
+    def test_the_sheet_keeps_the_component_layers_discipline(self) -> None:
+        """No colour of its own, no external reference, logical properties only."""
+        sheet = files("khepri.runtime").joinpath("shell_assets", "workspace.css").read_text("utf-8")
+        rules = re.sub(r"/\*.*?\*/", "", sheet, flags=re.DOTALL)
+
+        assert "@import" not in rules and "url(" not in rules
+        assert re.search(r"#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(", rules) is None
+        for physical in (
+            "margin-left",
+            "margin-right",
+            "padding-left",
+            "padding-right",
+            "left:",
+            "right:",
+        ):
+            assert physical not in rules, physical
 
 
 class TestMoments:

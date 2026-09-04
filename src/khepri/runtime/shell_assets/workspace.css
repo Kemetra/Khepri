@@ -1,0 +1,94 @@
+/* The workspace surfaces' component rules (`W1-05`, `RCA-005`): Overview and Data.
+ *
+ * **Why a third sheet, and why here.** `shell.css` and `shell-components.css` ship from
+ * `khepri.rra.journey.assets` (`R8-01`, `R8-07`, under `RCA-002`), and `RCA-005` names
+ * `src/khepri/rra/journey/` as not in its scope. A slice under `RCA-005` may not write into that
+ * tree, so its rules live in the runtime package the shell itself lives in, and are served by the
+ * shell's own asset route from here. This sheet consumes the tokens `shell.css` declares and
+ * introduces no colour, no `@import`, no `url()` and no font of its own -- the same discipline the
+ * component sheet holds itself to.
+ *
+ * **Logical properties only**, so the Arabic layout mirrors without a second rule. **States read as
+ * words in `--muted`**, never as colour alone (`FR-122`). Regions are separated by a hairline and a
+ * small uppercase label rather than by cards -- design language §7 -- because with one surface
+ * colour a card inside a card is two hairlines and no information.
+ */
+
+.data-list,
+.data-uses,
+.attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.data-use,
+.attention-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  min-height: 44px;
+  padding-block: var(--space-2, 0.5rem);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.region-label {
+  margin-block: var(--space-4, 1rem) var(--space-2, 0.5rem);
+  padding-block-start: var(--space-3, 0.75rem);
+  border-block-start: 1px solid var(--line);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.latest-work,
+.latest-data,
+.data-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3, 0.75rem);
+  margin: 0;
+}
+
+.data-item {
+  padding-block: var(--space-3, 0.75rem);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.data-item .region-label {
+  border-block-start: 0;
+  margin-block-start: var(--space-2, 0.5rem);
+  padding-block-start: 0;
+}
+
+.row-label,
+.row-state,
+.row-format {
+  color: var(--muted);
+}
+
+.row-format {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+/* Blueprint §7.1's attention rule: a 4px muted rule and italic wording, neutral because the state
+ * proves neither the actor nor the cause. */
+.attention-item {
+  padding-inline-start: var(--space-3, 0.75rem);
+  border-inline-start: 4px solid var(--muted);
+  border-block-end: 0;
+  font-style: italic;
+}
+
+.retention-notice {
+  margin-block-start: var(--space-4, 1rem);
+  padding-block-start: var(--space-3, 0.75rem);
+  border-block-start: 1px solid var(--line);
+  color: var(--muted);
+}
