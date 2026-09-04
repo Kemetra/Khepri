@@ -197,6 +197,24 @@ class ArtifactBindingRow(Base):
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+def _visible_in(row: object | None, owner_id: str | None) -> bool:
+    """Whether a read may return this row: it exists, and it is not another scope's.
+
+    Extracted from the two `get_*` methods rather than inlined, because
+    `row is None or (owner_id is not None and row.owner_id != owner_id)` fuses two unrelated
+    questions -- does it exist, and is it mine -- into one three-clause predicate that a reader has
+    to disentangle before seeing the isolation rule inside it. `FR-109` isolation is the load-
+    bearing half, so it gets a name and one place to be wrong.
+
+    A `None` `owner_id` means the caller is not narrowing by scope: `W1-04` performs its own
+    authorization before reading, and an internal read that has already established the scope
+    should not have to restate it. Narrowing here is a filter, never a grant.
+    """
+    if row is None:
+        return False
+    return owner_id is None or row.owner_id == owner_id
+
+
 def _version_from_row(row: DatasetVersionRow) -> DatasetVersion:
     return DatasetVersion._from_storage(
         version_id=row.version_id,
@@ -281,7 +299,7 @@ class SqlWorkspaceStore:
     ) -> DatasetVersion | None:
         with self._factory() as database:
             row = database.get(DatasetVersionRow, version_id)
-            if row is None or (owner_id is not None and row.owner_id != owner_id):
+            if not _visible_in(row, owner_id):
                 return None
             return _version_from_row(row)
 
@@ -319,7 +337,7 @@ class SqlWorkspaceStore:
     def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
         with self._factory() as database:
             row = database.get(AnalysisRunRow, run_id)
-            if row is None or (owner_id is not None and row.owner_id != owner_id):
+            if not _visible_in(row, owner_id):
                 return None
             return _run_from_row(row)
 
