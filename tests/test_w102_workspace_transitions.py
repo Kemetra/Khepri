@@ -20,11 +20,14 @@ from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore, _utc
 from khepri.rca.workspace.contracts import (
     AdmittedSource,
     AnalysisRun,
+    ArtifactBinding,
     DatasetVersion,
+    PublishedArtifact,
     RunOutcome,
 )
 from khepri.rca.workspace.persistence import (
     COMPLETION_COLUMNS,
+    RETENTION_TOMBSTONED,
     AnalysisRunRow,
     DatasetVersionRow,
     SqlWorkspaceStore,
@@ -341,3 +344,110 @@ def test_a_real_transition_does_move_the_clock(factory: sessionmaker) -> None:
     with factory() as database:
         stored = database.get(DatasetVersionRow, version.version_id).retention_changed_at
     assert _utc(stored) == LATER
+
+
+# --- A version's deletion cascades to every derivative below (`KHEPRI-DEC-033` §3) ----------------
+
+
+def test_tombstoning_a_version_tombstones_its_live_runs(factory: sessionmaker) -> None:
+    """A run that existed *before* the deletion kept `active` and stayed readable, completable and
+    able to receive bindings while its source version was gone. `add_analysis_run`'s parent check
+    covered only runs created after. Review on `#370` found the pre-existing case.
+
+    Asserted through every door the run had: both reads, completion, and binding -- each now
+    behaves as it does for any tombstoned run, because it *is* one. An unrelated version's run is
+    untouched, so the cascade is by parent and not by scope.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    deleted = _version(store, scope)
+    other = _version(store, scope)
+    doomed = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=deleted.version_id, now=NOW)
+    )
+    spared = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=other.version_id, now=NOW)
+    )
+
+    store.tombstone_dataset_version(deleted.version_id, now=LATER)
+
+    assert store.get_analysis_run(doomed.run_id) is None
+    assert [run.run_id for run in store.analysis_runs_for_scope(scope)] == [spared.run_id]
+    with pytest.raises(ValueError, match="accepts no further update"):
+        store.complete_analysis_run(
+            doomed.run_id,
+            RunOutcome(
+                state="completed",
+                package_digest="sha256:abc",
+                package_version="1.0.0",
+                formula_version="1.0.0",
+                completed_at=LATER,
+            ),
+        )
+    with pytest.raises(ValueError, match="has been deleted"):
+        store.add_artifact_binding(
+            ArtifactBinding.create(
+                owner_id=scope,
+                run_id=doomed.run_id,
+                artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "c" * 64),
+                now=LATER,
+            )
+        )
+    with factory() as database:
+        row = database.get(AnalysisRunRow, doomed.run_id)
+        assert row.retention_state == RETENTION_TOMBSTONED
+        assert _utc(row.retention_changed_at) == LATER, (
+            "a cascaded run's clock is the deletion instant"
+        )
+
+
+def test_the_cascade_skips_a_run_already_tombstoned(factory: sessionmaker) -> None:
+    """Only *live* runs are cascaded, and not as an optimisation.
+
+    `_check_terminal_state` refuses every update to a tombstoned row, so a run already tombstoned
+    on its own would make the whole cascade raise -- and roll back the version's deletion with it.
+    The filter is what keeps the cascade able to run at all; this test is what keeps the filter.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    earlier = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    later = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    with factory.begin() as database:
+        row = database.get(AnalysisRunRow, earlier.run_id)
+        row.retention_state = RETENTION_TOMBSTONED
+        row.retention_changed_at = NOW
+
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+
+    with factory() as database:
+        assert database.get(DatasetVersionRow, version.version_id).retention_state == (
+            RETENTION_TOMBSTONED
+        )
+        assert database.get(AnalysisRunRow, later.run_id).retention_state == RETENTION_TOMBSTONED
+        # The run tombstoned earlier keeps its own clock; the cascade did not touch it.
+        assert _utc(database.get(AnalysisRunRow, earlier.run_id).retention_changed_at) == NOW
+
+
+def test_a_repeated_version_deletion_does_not_move_a_cascaded_runs_clock(
+    factory: sessionmaker,
+) -> None:
+    """`FR-123`'s idempotent retry, one level down: the second call returns at the version and the
+    cascade does not run again, so no child clock moves either."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    much_later = LATER.replace(hour=LATER.hour + 5)
+
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+    store.tombstone_dataset_version(version.version_id, now=much_later)
+
+    with factory() as database:
+        assert _utc(database.get(AnalysisRunRow, run.run_id).retention_changed_at) == LATER

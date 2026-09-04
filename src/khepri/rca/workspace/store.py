@@ -186,6 +186,41 @@ def _refuse_tombstoned_parent(parent: object | None) -> None:
         raise ValueError(PARENT_TOMBSTONED_FAILURE)
 
 
+def _cascade_tombstone_to_runs(database, version: DatasetVersionRow, now: datetime) -> None:
+    """Tombstone every live run of a version being tombstoned, in the same transaction.
+
+    `KHEPRI-DEC-033` §3: a dataset version's deletion is "immediate, cascading to every derivative
+    below". Without this a run that existed *before* the deletion kept `retention_state = active` --
+    readable through both run reads, completable, and able to receive bindings -- while its source
+    version was no longer readable. `add_analysis_run`'s parent check covers only runs created
+    *after*. Review on `#370` found the pre-existing case.
+
+    Bindings need nothing here: they have no retention state and are read through their run, which
+    `artifact_bindings_for_run` joins to and requires live.
+
+    **Only live runs**, and not as an optimisation: `_check_terminal_state` refuses *every*
+    update to a tombstoned row, so a run already tombstoned on its own would make the whole
+    cascade raise and roll back the version's deletion with it. The filter is what keeps the
+    cascade able to run.
+
+    Row by row through the ORM rather than bulk `UPDATE`, so the guards see each transition -- the
+    same reason `seal_dataset_version` stopped using bulk DML. The version row is already locked by
+    the caller, which is what serialises this against `add_analysis_run` and a concurrent cascade.
+
+    Each run's clock is set to the deletion instant. §3 gives a run's tombstone its own clock
+    "anchored to that class's own trigger", and a cascaded deletion *is* the run's trigger.
+    """
+    live_runs = database.scalars(
+        select(AnalysisRunRow)
+        .where(AnalysisRunRow.version_id == version.version_id)
+        .where(AnalysisRunRow.owner_id == version.owner_id)
+        .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+    )
+    for run in live_runs:
+        run.retention_state = RETENTION_TOMBSTONED
+        run.retention_changed_at = now
+
+
 class SqlWorkspaceStore:
     """Rows for the workspace records, and the one transition `FR-112` permits.
 
@@ -303,7 +338,7 @@ class SqlWorkspaceStore:
         if outcome.state == RUN_STARTED:
             raise ValueError(RECOMPLETE_FAILURE)
         with self._factory.begin() as database:
-            row = database.scalars(run_for_update(run_id)).one_or_none()
+            row = database.scalars(run_for_update(run_id, owner_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.state != RUN_STARTED:
                 return False
             row.state = outcome.state
@@ -415,7 +450,7 @@ class SqlWorkspaceStore:
             # No test here could have caught it. SQLite serializes writes, so the two calls run in
             # sequence and the second genuinely does read `tombstoned` -- the environment supplies
             # the property the assertion checks. Two reviewers found it independently on `#370`.
-            row = database.scalars(version_for_update(version_id)).one_or_none()
+            row = database.scalars(version_for_update(version_id, owner_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.retention_state == state:
                 # A repeat of the state the row already holds is `FR-123`'s idempotent retry, and
                 # it must not move the clock. `KHEPRI-DEC-033` §5 anchors a deletion horizon to
@@ -427,6 +462,8 @@ class SqlWorkspaceStore:
                 return
             row.retention_state = state
             row.retention_changed_at = now
+            if state == RETENTION_TOMBSTONED:
+                _cascade_tombstone_to_runs(database, row, now)
 
     def seal_dataset_version(
         self, version_id: str, *, now: datetime, owner_id: str | None = None
@@ -452,7 +489,7 @@ class SqlWorkspaceStore:
         reversal is visible, and this method needs no exemption.
         """
         with self._factory.begin() as database:
-            row = database.scalars(version_for_update(version_id)).one_or_none()
+            row = database.scalars(version_for_update(version_id, owner_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.sealed_at is not None:
                 return False
             row.sealed_at = now

@@ -189,3 +189,26 @@ def test_adding_a_derivative_locks_its_parent(factory: sessionmaker) -> None:
     # tenant's row for the transaction, and no SQLite test can observe that lock either.
     assert "version_for_update(run.version_id, run.owner_id)" in run_source
     assert "run_for_update(binding.run_id, binding.owner_id)" in binding_source
+
+
+def test_the_transition_locks_are_scoped() -> None:
+    """`complete_analysis_run`, `seal_dataset_version` and `set_retention_state` pass `owner_id`
+    into their lock statements, so a foreign identifier selects and locks no row.
+
+    The statements have accepted the scope since the derivative guards needed it; these three call
+    sites did not pass it, so `SELECT ... FOR UPDATE` locked another tenant's row *before*
+    `_visible_in` rejected it -- and could block on that tenant's transaction. Review on `#370`
+    found the omission. Asserted on the source, for the reason every lock in this module is: SQLite
+    cannot show a lock, let alone one held across tenants.
+    """
+    import inspect as py_inspect
+
+    complete = py_inspect.getsource(SqlWorkspaceStore.complete_analysis_run)
+    seal = py_inspect.getsource(SqlWorkspaceStore.seal_dataset_version)
+    retention = py_inspect.getsource(SqlWorkspaceStore.set_retention_state)
+
+    assert "run_for_update(run_id, owner_id)" in complete
+    assert "version_for_update(version_id, owner_id)" in seal
+    assert "version_for_update(version_id, owner_id)" in retention
+    assert "run_for_update(run_id)" not in complete
+    assert "version_for_update(version_id)" not in seal + retention
