@@ -27,6 +27,8 @@ constraint with prose and no code path.
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime
 
 from sqlalchemy import (
@@ -103,6 +105,28 @@ VERSION_TOMBSTONE_COLUMNS = (
     "mapping_version",
     "admission_outcome",
 )
+#: What a section-state entry may look like, structurally: a short lowercase code, never prose.
+#: `KHEPRI-DEC-033` §3's run row admits "per-section state codes" and excludes "any figure, series,
+#: label, narrative, refusal prose". A `Text` column accepting anything let all of that become an
+#: immutable retained deletion record -- review on `#370` found it, and the two allowlist `CHECK`s
+#: could not see it because they only decide whether a column must be *null* for the other subject.
+#:
+#: **Structural, not a code set, and deliberately so.** §3 names `(answered, caveated, refused)`;
+#: `rra/bundle.py` already enforces `GOVERNED_SECTION_STATES = {present, refused}` for a different
+#: purpose -- whether a surface renders a chart or a refusal notice, which is a rendering concern
+#: rather than a retention one. Two vocabularies for one phrase. `W1-03` builds the projection that
+#: writes this column and `KHEPRI-DEC-033` §3 assigns it the allowlist equality test, so the code
+#: set is its choice to make; pinning one here would hand it a constraint to match instead. What
+#: this refuses is the *shape* that admits prose at all, which is the whole of the defect.
+SECTION_CODE_PATTERN = r"^[a-z][a-z0-9_]{0,31}$"
+
+#: One run has few sections. A cap this low cannot hold a narrative even if every entry validated.
+MAX_SECTION_STATES = 64
+
+SECTION_STATES_FAILURE = (
+    "a tombstone's section states must be a mapping of short codes, never free text"
+)
+
 RUN_TOMBSTONE_COLUMNS = (
     # Shared with `VERSION_TOMBSTONE_COLUMNS`: §3 puts a version id on both rows. On a version's
     # tombstone it restates `subject_id`; on a run's it is the dataset the run derived from.
@@ -456,7 +480,10 @@ class WorkspaceTombstoneRow(Base):
     package_digest: Mapped[str | None] = mapped_column(String, nullable=True)
     package_version: Mapped[str | None] = mapped_column(String, nullable=True)
     formula_version: Mapped[str | None] = mapped_column(String, nullable=True)
-    section_states: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Length-bounded as the backstop `validate_section_states` cannot be for a row arriving
+    # outside the ORM. 64 entries of a 32-character code and a 32-character state, with JSON
+    # punctuation, cannot exceed this; a narrative would.
+    section_states: Mapped[str | None] = mapped_column(String(4096), nullable=True)
 
 
 def _changed_columns(target: object, among: frozenset[str] | None) -> set[str]:
@@ -488,6 +515,41 @@ def _check_completion(changed: set[str]) -> None:
     """
     if not changed <= COMPLETION_COLUMNS:
         raise ValueError(APPEND_ONLY_FAILURE)
+
+
+def validate_section_states(document: str | None) -> None:
+    """Refuse a `section_states` document that is not a mapping of short codes.
+
+    Checked here rather than only in the database because a `CHECK` cannot express it portably:
+    SQLite and PostgreSQL disagree on JSON functions, and the migration's convention is literal
+    SQL. So the shape is enforced at the one door that writes tombstones, and the column keeps a
+    length bound as the backstop for a row arriving another way.
+
+    `FR-112`'s reasoning applies with more force here than anywhere else in this module: a
+    tombstone is immutable once written, so content that gets in cannot be taken out.
+    """
+    if document is None:
+        return
+    try:
+        parsed = json.loads(document)
+    except (TypeError, ValueError) as error:
+        raise ValueError(SECTION_STATES_FAILURE) from error
+    if not isinstance(parsed, dict) or len(parsed) > MAX_SECTION_STATES:
+        raise ValueError(SECTION_STATES_FAILURE)
+    for section, state in parsed.items():
+        if not isinstance(section, str) or not re.match(SECTION_CODE_PATTERN, section):
+            raise ValueError(SECTION_STATES_FAILURE)
+        if not isinstance(state, str) or not re.match(SECTION_CODE_PATTERN, state):
+            raise ValueError(SECTION_STATES_FAILURE)
+
+
+def _refuse_ungoverned_section_states(_mapper, _connection, target: object) -> None:
+    """`before_insert` on the tombstone: the shape is checked before the row exists.
+
+    On insert rather than update, because `_refuse_any_update` already refuses every update -- so
+    insertion is the only moment this column can be written, and the only moment worth checking.
+    """
+    validate_section_states(target.section_states)
 
 
 def _check_terminal_state(target: object, changed: set[str]) -> None:
@@ -664,6 +726,10 @@ for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():
     event.listen(_row_class, "before_update", _on_update)
     if _on_delete is not None:
         event.listen(_row_class, "before_delete", _on_delete)
+
+#: The one column whose *content* is governed rather than its mutability, so it needs the one
+#: `before_insert` listener in this module. See `_refuse_ungoverned_section_states`.
+event.listen(WorkspaceTombstoneRow, "before_insert", _refuse_ungoverned_section_states)
 
 
 def _version_from_row(row: DatasetVersionRow) -> DatasetVersion:
@@ -979,6 +1045,10 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "validate_section_states",
+    "SECTION_STATES_FAILURE",
+    "SECTION_CODE_PATTERN",
+    "MAX_SECTION_STATES",
     "TOMBSTONED_FROZEN_FAILURE",
     "VERSION_TOMBSTONE_COLUMNS",
     "TOMBSTONE_IMMUTABLE_FAILURE",

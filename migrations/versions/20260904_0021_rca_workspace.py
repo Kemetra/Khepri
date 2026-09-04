@@ -309,7 +309,12 @@ def _tombstone_columns() -> tuple[sa.Column, ...]:
         sa.Column("package_digest", sa.String(), nullable=True),
         sa.Column("package_version", sa.String(), nullable=True),
         sa.Column("formula_version", sa.String(), nullable=True),
-        sa.Column("section_states", sa.Text(), nullable=True),
+        # Bounded rather than free `Text`: `KHEPRI-DEC-033` §3 admits "per-section state codes"
+        # and excludes "any figure, series, label, narrative, refusal prose", and a tombstone is
+        # immutable once written -- content that gets in cannot be taken out. The store validates
+        # the JSON shape (`validate_section_states`); this length is the backstop for a row
+        # arriving outside the ORM. 64 entries of two 32-character codes cannot exceed it.
+        sa.Column("section_states", sa.String(length=4096), nullable=True),
     )
 
 

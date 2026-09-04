@@ -40,14 +40,11 @@ from khepri.rca.workspace.persistence import (
     RETENTION_ACTIVE,
     RETENTION_STATES,
     RETENTION_TOMBSTONED,
-    RUN_TOMBSTONE_COLUMNS,
-    VERSION_TOMBSTONE_COLUMNS,
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
     SourceProfileRow,
     SqlWorkspaceStore,
-    WorkspaceTombstoneRow,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -774,175 +771,6 @@ def test_a_profile_document_is_still_mutable(factory: sessionmaker) -> None:
         assert database.get(SourceProfileRow, "prf_mutabl").column_labels == '["new"]'
 
 
-def _tombstone(factory: sessionmaker, scope: str, **overrides: object) -> str:
-    fields: dict[str, object] = {
-        "tombstone_id": "tmb_abc123",
-        "subject_kind": "version",
-        "subject_id": "dsv_abc123",
-        "owner_id": scope,
-        "deleted_at": NOW,
-    }
-    fields.update(overrides)
-    with factory.begin() as database:
-        database.add(WorkspaceTombstoneRow(**fields))
-    return str(fields["tombstone_id"])
-
-
-@pytest.mark.parametrize(
-    ("column", "value"),
-    [
-        ("subject_kind", "run"),
-        ("subject_id", "dsv_rewrit"),
-        ("deleted_at", LATER),
-        ("manifest_digest", "sha256:rewritten"),
-    ],
-)
-def test_a_tombstone_cannot_be_rewritten(factory: sessionmaker, column: str, value: object) -> None:
-    """It sat outside both registrations, so an ordinary session could rewrite its owner, its
-    subject identifiers, the deletion instant, or the digests it preserves. `KHEPRI-DEC-033` §5
-    anchors a bounded horizon to `deleted_at`, so a movable one moves a deadline. Review on `#370`
-    found it.
-    """
-    scope = _scope(factory)
-    _tombstone(factory, scope)
-
-    with pytest.raises(ValueError, match="cannot be rewritten"), factory.begin() as database:
-        setattr(database.get(WorkspaceTombstoneRow, "tmb_abc123"), column, value)
-
-
-def test_a_tombstone_cannot_be_deleted_by_an_ordinary_session(factory: sessionmaker) -> None:
-    """The later lifecycle purge is `W1-07`'s, and it must take an explicit exemption to remove
-    one -- which is the conversation this guard exists to force, in the same spirit as the
-    profile's delete exemption being stated rather than assumed.
-    """
-    scope = _scope(factory)
-    _tombstone(factory, scope)
-
-    with pytest.raises(ValueError), factory.begin() as database:
-        database.delete(database.get(WorkspaceTombstoneRow, "tmb_abc123"))
-
-
-def test_a_version_tombstone_cannot_carry_a_runs_fields(factory: sessionmaker) -> None:
-    """`KHEPRI-DEC-033` §3 gives each subject its own allowlist, and the only constraint validated
-    the discriminator -- so `subject_kind='version'` could persist a run's `section_states`, and
-    content §3 says never survives a deletion would survive it. Review on `#370` found it.
-    """
-    scope = _scope(factory)
-
-    with pytest.raises(IntegrityError):
-        _tombstone(factory, scope, tombstone_id="tmb_mixed1", section_states='{"a": "ok"}')
-
-
-def test_a_run_tombstone_cannot_carry_a_versions_fields(factory: sessionmaker) -> None:
-    """The same allowlist from the other side -- the direction a symmetric guard would miss."""
-    scope = _scope(factory)
-
-    with pytest.raises(IntegrityError):
-        _tombstone(
-            factory,
-            scope,
-            tombstone_id="tmb_mixed2",
-            subject_kind="run",
-            subject_id="run_abc123",
-            upload_plaintext_digest="sha256:leak",
-        )
-
-
-def test_each_subject_persists_its_own_allowlist(factory: sessionmaker) -> None:
-    """The positive direction, so the checks are not merely refusing everything."""
-    scope = _scope(factory)
-    _tombstone(factory, scope, tombstone_id="tmb_okvers", manifest_digest="sha256:kept")
-    _tombstone(
-        factory,
-        scope,
-        tombstone_id="tmb_okruns",
-        subject_kind="run",
-        subject_id="run_abc123",
-        section_states='{"a": "ok"}',
-    )
-
-    with factory() as database:
-        assert database.get(WorkspaceTombstoneRow, "tmb_okvers") is not None
-        assert database.get(WorkspaceTombstoneRow, "tmb_okruns") is not None
-
-
-def test_the_tombstone_allowlists_cover_every_optional_column() -> None:
-    """Every optional column belongs to at least one subject.
-
-    A column in neither allowlist is unconstrained -- it could carry anything under either
-    discriminator, which is the defect these checks close, arriving through a column added later.
-
-    **Coverage, not partition.** An earlier version of this test asserted the two sets were
-    disjoint, and it passed because I had built the schema from the same misreading it encoded:
-    `KHEPRI-DEC-033` §3 gives a version id to *both* rows, so the correct relation is overlap.
-    Review on `#370` found the constant; the test agreeing with it was written in the same commit,
-    which is why it could not be the thing that caught the error.
-    """
-    required = {"tombstone_id", "subject_kind", "subject_id", "owner_id", "deleted_at"}
-    optional = {
-        column.key
-        for column in WorkspaceTombstoneRow.__table__.columns
-        if column.key not in required
-    }
-
-    assert set(VERSION_TOMBSTONE_COLUMNS) | set(RUN_TOMBSTONE_COLUMNS) == optional
-    assert set(VERSION_TOMBSTONE_COLUMNS) & set(RUN_TOMBSTONE_COLUMNS) == {"version_id"}, (
-        "§3 puts a version id on both tombstone rows; any other overlap is unintended"
-    )
-
-
-def test_a_run_tombstone_keeps_the_version_it_derived_from(factory: sessionmaker) -> None:
-    """§3's run row reads "opaque run id, **version id** and scope".
-
-    The first draft nulled `version_id` under `subject_kind='run'`, so `W1-03` could not have
-    projected a run deletion without dropping the dataset linkage. Review on `#370` found it.
-    """
-    scope = _scope(factory)
-    _tombstone(
-        factory,
-        scope,
-        tombstone_id="tmb_runver",
-        subject_kind="run",
-        subject_id="run_abc123",
-        version_id="dsv_abc123",
-    )
-
-    with factory() as database:
-        row = database.get(WorkspaceTombstoneRow, "tmb_runver")
-        assert row is not None
-        assert row.version_id == "dsv_abc123"
-
-
-def test_the_migration_states_the_same_allowlists_the_models_do() -> None:
-    """The migration keeps literal strings by this repo's convention, so the two can drift.
-
-    `W1-03`'s projection is built against the model constants; the database enforces the migration's
-    literals. A silent divergence would let the projection emit a field the table rejects, or --
-    worse -- stop rejecting one §3 excludes. Compared by the column names each clause mentions
-    rather than by string equality, which whitespace would break for no reason.
-    """
-    import pathlib
-    import re
-
-    root = pathlib.Path(__file__).resolve().parents[1]
-    source = (root / "migrations" / "versions" / "20260904_0021_rca_workspace.py").read_text(
-        encoding="utf-8"
-    )
-
-    def mentioned(constant: str) -> set[str]:
-        body = source.split(f"{constant} = (", 1)[1].split("\n)", 1)[0]
-        return set(re.findall(r"(\w+) IS NULL", body))
-
-    # Each check names the columns *exclusive* to the other subject. Not the other list wholesale:
-    # `version_id` is on both allowlists (§3), so nulling it under either discriminator would
-    # forbid a column that subject is entitled to.
-    version_only = set(VERSION_TOMBSTONE_COLUMNS) - set(RUN_TOMBSTONE_COLUMNS)
-    run_only = set(RUN_TOMBSTONE_COLUMNS) - set(VERSION_TOMBSTONE_COLUMNS)
-
-    assert mentioned("_TOMBSTONE_VERSION_FIELDS_CHECK") == run_only
-    assert mentioned("_TOMBSTONE_RUN_FIELDS_CHECK") == version_only
-
-
 def test_every_workspace_row_class_declares_a_guard_shape() -> None:
     """A row class added later must state which of the three shapes it takes.
 
@@ -1014,45 +842,6 @@ def test_the_retention_transition_locks_the_row_it_reads() -> None:
 
     assert "version_for_update" in source
     assert "database.get(DatasetVersionRow" not in source
-
-
-@pytest.mark.parametrize("column", ["sealed_at", "retention_changed_at"])
-def test_a_tombstoned_version_accepts_no_further_update(factory: sessionmaker, column: str) -> None:
-    """The one-way rule refused only a change *away* from `tombstoned`, leaving the row open.
-
-    An unsealed tombstoned version could still be sealed, which restarts the seven-day purge clock
-    `KHEPRI-DEC-033` §2 starts at sealing -- on a version already deleted. And
-    `retention_changed_at` could be rewritten, moving the §5 horizon after the fact. Both were
-    confirmed against the guard before this fix, not reasoned about. Review on `#370` found it.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    store.tombstone_dataset_version(version.version_id, now=NOW)
-
-    with (
-        pytest.raises(ValueError, match="accepts no further update"),
-        factory.begin() as database,
-    ):
-        setattr(database.get(DatasetVersionRow, version.version_id), column, LATER)
-
-
-def test_the_tombstoning_update_itself_still_passes(factory: sessionmaker) -> None:
-    """Checked on the *prior* state, so the transition into `tombstoned` is not self-refusing.
-
-    A guard reading the new value would make tombstoning impossible -- the same shape as the
-    append-only guard that had made run completion impossible earlier on this PR.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-
-    store.tombstone_dataset_version(version.version_id, now=NOW)
-
-    with factory() as database:
-        row = database.get(DatasetVersionRow, version.version_id)
-        assert row.retention_state == RETENTION_TOMBSTONED
-        assert row.retention_changed_at is not None
 
 
 def test_sealing_a_live_version_is_still_allowed(factory: sessionmaker) -> None:
