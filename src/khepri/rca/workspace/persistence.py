@@ -464,16 +464,28 @@ def _check_completion(changed: set[str]) -> None:
         raise ValueError(APPEND_ONLY_FAILURE)
 
 
+def _check_one_way_transitions(target: object, changed: set[str]) -> None:
+    """The two mutable columns that may each move in one direction only.
+
+    Split from `_check_append_only`, which had grown to four rules of two kinds -- *which* columns
+    an update may touch, and *which way* the two mutable ones may move. CodeScene put the combined
+    function at cyclomatic 11 against a threshold of 9 on `#370`, and the split is the honest one:
+    a reader asking "can this column change at all?" and one asking "can it change back?" are
+    asking different questions.
+    """
+    if "sealed_at" in changed and not _one_way(target, "sealed_at", None):
+        raise ValueError(RESEAL_FAILURE)
+    if "retention_state" in changed and _one_way(target, "retention_state", RETENTION_TOMBSTONED):
+        raise ValueError(TOMBSTONE_FAILURE)
+
+
 def _check_append_only(target: object, changed: set[str]) -> None:
     """Every update that is not a completion: content is frozen and one-way stays one-way."""
     if changed & COMPLETION_COLUMNS:
         raise ValueError(RECOMPLETE_FAILURE)
     if not changed <= MUTABLE_COLUMNS:
         raise ValueError(APPEND_ONLY_FAILURE)
-    if "sealed_at" in changed and not _one_way(target, "sealed_at", None):
-        raise ValueError(RESEAL_FAILURE)
-    if "retention_state" in changed and _one_way(target, "retention_state", RETENTION_TOMBSTONED):
-        raise ValueError(TOMBSTONE_FAILURE)
+    _check_one_way_transitions(target, changed)
 
 
 def _refuse_identity_change(_mapper, _connection, target: object) -> None:
