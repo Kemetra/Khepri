@@ -1,12 +1,12 @@
 """What the `W1-02` workspace schema and its guards refuse (`FR-112`, `KHEPRI-DEC-033` §3).
 
-Split from `test_w102_workspace_persistence.py`, which had grown to thirteen responsibilities
-across eighty functions -- CodeScene flagged it three ways on `#370` and all three were the same
-observation. The seam is what each half asserts about: this file covers what the *schema* and the
-ORM guards refuse, and the other covers what the store *does*.
+Split twice on `#370`: first from `test_w102_workspace_persistence.py` (what the store *does*),
+then `test_w102_workspace_isolation.py` and `test_w102_workspace_completion.py` were taken out of
+this file. What remains is the guard mechanics -- append-only, the retention and run-state
+vocabularies, one-way transitions, immutability and deletion, and the guard-shape mapping itself.
 
-The split preserved every test: no function was renamed, merged or dropped, and the counts before
-and after are asserted in the commit that made it.
+Each split preserved every test, verified by diffing the collected test IDs rather than function
+names -- a `parametrize` decorator is a separate node and had once migrated to the wrong function.
 """
 
 from __future__ import annotations
@@ -24,14 +24,12 @@ from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.records import Sealed
 from khepri.rca.workspace.contracts import (
     RUN_COMPLETED,
-    RUN_FAILED,
     RUN_STATES,
     AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
     DatasetVersion,
     PublishedArtifact,
-    RunOutcome,
 )
 from khepri.rca.workspace.persistence import (
     _ROW_GUARDS,
@@ -43,7 +41,6 @@ from khepri.rca.workspace.persistence import (
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
-    SourceProfileRow,
     SqlWorkspaceStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
@@ -98,6 +95,24 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
 
 def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
+
+
+def _published(store: SqlWorkspaceStore, scope: str) -> tuple[str, str]:
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    store.add_artifact_binding(
+        ArtifactBinding.create(
+            owner_id=scope,
+            run_id=run.run_id,
+            artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "a" * 64),
+            now=NOW,
+        )
+    )
+    with store._factory() as database:
+        binding_id = database.execute(select(ArtifactBindingRow.binding_id)).scalars().one()
+    return version.version_id, binding_id
 
 
 # --- FR-112: append-only, and the one thing that may change ----------------------------------
@@ -189,60 +204,6 @@ def test_the_refusal_does_not_echo_the_rejected_value(factory: sessionmaker) -> 
     with pytest.raises(ValueError) as caught:
         store.set_retention_state(version.version_id, "acme-pharmacy-archived", now=LATER)
     assert "acme" not in str(caught.value).lower()
-
-
-# --- Cross-scope children, which independent foreign keys allowed ---------------------------
-
-
-def test_a_run_cannot_claim_one_scope_while_naming_another_scopes_version(
-    factory: sessionmaker,
-) -> None:
-    """`FR-109`: two independent foreign keys are checked independently.
-
-    Found by review on `#370`, and the isolation tests above could not see it: each of them writes
-    one scope's rows *consistently*, so none ever constructs the mismatched pair. A run naming
-    `owner_id=A` and a version belonging to `B` satisfied both constraints separately, appeared in
-    A's listing, and pointed into B's data.
-
-    The parent key is now composite -- `(owner_id, version_id)` -- so the mismatch is not a row the
-    database will store, rather than one no test happened to build.
-    """
-    first = _scope(factory)
-    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
-    theirs = store.add_dataset_version(
-        DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
-    )
-
-    with pytest.raises(IntegrityError):
-        store.add_analysis_run(
-            AnalysisRun.create(owner_id=first, version_id=theirs.version_id, now=NOW)
-        )
-
-
-def test_a_binding_cannot_claim_one_scope_while_naming_another_scopes_run(
-    factory: sessionmaker,
-) -> None:
-    """The same defect one level down: `(owner_id, run_id)` is the binding's parent key."""
-    first = _scope(factory)
-    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
-    theirs = store.add_dataset_version(
-        DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
-    )
-    their_run = store.add_analysis_run(
-        AnalysisRun.create(owner_id=second, version_id=theirs.version_id, now=NOW)
-    )
-
-    with pytest.raises(IntegrityError):
-        store.add_artifact_binding(
-            ArtifactBinding.create(
-                owner_id=first,
-                run_id=their_run.run_id,
-                artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "f" * 64),
-                now=NOW,
-            )
-        )
 
 
 def test_one_run_may_hold_two_bindings_for_the_same_surface(factory: sessionmaker) -> None:
@@ -337,30 +298,6 @@ def test_a_content_field_cannot_be_changed_after_the_row_is_written(
         row.upload_plaintext_digest = "sha256:" + "9" * 64
 
     assert store.get_dataset_version(version.version_id) == version
-
-
-def test_a_run_that_never_completed_cannot_have_a_package_written_to_it(
-    factory: sessionmaker,
-) -> None:
-    """`FR-111` puts the digest on the pipeline, and only the completion transition records it.
-
-    Writing a package field without moving the state is not a completion -- it is a run claiming a
-    result it never declared finishing -- so it is refused even while the run is still `started`.
-    `complete_analysis_run` is the one path that writes these columns.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    run = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-
-    with (
-        pytest.raises(ValueError, match="cannot be completed again"),
-        factory.begin() as database,
-    ):
-        row = database.get(AnalysisRunRow, run.run_id)
-        row.package_digest = "sha256:" + "8" * 64
 
 
 def test_the_guard_permits_exactly_the_retention_columns(factory: sessionmaker) -> None:
@@ -558,24 +495,6 @@ def test_sealing_is_refused_by_the_guard_and_not_only_by_the_store(
 # --- A binding is immutable, and no workspace row is deleted -----------------------------------
 
 
-def _published(store: SqlWorkspaceStore, scope: str) -> tuple[str, str]:
-    version = _version(store, scope)
-    run = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-    store.add_artifact_binding(
-        ArtifactBinding.create(
-            owner_id=scope,
-            run_id=run.run_id,
-            artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "a" * 64),
-            now=NOW,
-        )
-    )
-    with store._factory() as database:
-        binding_id = database.execute(select(ArtifactBindingRow.binding_id)).scalars().one()
-    return version.version_id, binding_id
-
-
 def test_a_published_binding_cannot_be_repointed_at_other_content(
     factory: sessionmaker,
 ) -> None:
@@ -660,127 +579,6 @@ def test_tombstoning_remains_the_way_a_record_leaves_use(factory: sessionmaker) 
     assert store.get_dataset_version(version.version_id) is None
 
 
-# --- Round seven: what the schema constrains, and what a guard freezes -------------------------
-
-
-def test_a_profile_cannot_name_a_version_in_another_scope(factory: sessionmaker) -> None:
-    """`owner_id` alone was the only validation, so a profile could claim scope A while naming a
-    version belonging to scope B -- a cross-tenant source association the reuse surface would read
-    as its own. Review on `#370` found the new table short of the composite key runs and bindings
-    already carried.
-    """
-    other = _scope(factory, email="other@example.test")
-    mine = _scope(factory)
-    theirs = _version(SqlWorkspaceStore(factory), other)
-
-    with pytest.raises(IntegrityError), factory.begin() as database:
-        database.add(
-            SourceProfileRow(
-                profile_id="prf_cross1",
-                owner_id=mine,
-                source_version_id=theirs.version_id,
-                column_labels="[]",
-                proposed_mapping="[]",
-                created_at=NOW,
-            )
-        )
-
-
-def test_a_profile_cannot_name_a_version_that_does_not_exist(factory: sessionmaker) -> None:
-    """The other half of the same key: a dangling association is as unusable as a cross-tenant
-    one -- the reuse surface would offer a profile whose source no longer exists.
-    """
-    scope = _scope(factory)
-
-    with pytest.raises(IntegrityError), factory.begin() as database:
-        database.add(
-            SourceProfileRow(
-                profile_id="prf_anglin",
-                owner_id=scope,
-                source_version_id="dsv_nothere",
-                column_labels="[]",
-                proposed_mapping="[]",
-                created_at=NOW,
-            )
-        )
-
-
-def test_a_profile_cannot_be_reassigned_to_another_scope(factory: sessionmaker) -> None:
-    """Loading a profile from scope A and assigning a valid scope-B `owner_id` committed, because
-    the foreign key verifies only that B exists. Scope B's next read would then return scope A's
-    column labels. Review on `#370` found it, and the exemption that let it through was real but
-    narrower than I had applied it: `KHEPRI-DEC-033` §3 exempts the profile from *deletion*
-    guarding, never from ownership immutability.
-    """
-    scope = _scope(factory)
-    other = _scope(factory, email="other@example.test")
-    version = _version(SqlWorkspaceStore(factory), scope)
-    with factory.begin() as database:
-        database.add(
-            SourceProfileRow(
-                profile_id="prf_reassn",
-                owner_id=scope,
-                source_version_id=version.version_id,
-                column_labels='["sku"]',
-                proposed_mapping="[]",
-                created_at=NOW,
-            )
-        )
-
-    with pytest.raises(ValueError, match="cannot be reassigned"), factory.begin() as database:
-        database.get(SourceProfileRow, "prf_reassn").owner_id = other
-
-
-def test_a_profile_cannot_be_repointed_at_another_version(factory: sessionmaker) -> None:
-    """`source_version_id` is identity too, and no constraint can pin it to its original value:
-    repointing within the same scope satisfies the composite key perfectly.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    first = _version(store, scope)
-    second = _version(store, scope)
-    with factory.begin() as database:
-        database.add(
-            SourceProfileRow(
-                profile_id="prf_repoin",
-                owner_id=scope,
-                source_version_id=first.version_id,
-                column_labels="[]",
-                proposed_mapping="[]",
-                created_at=NOW,
-            )
-        )
-
-    with pytest.raises(ValueError, match="cannot be reassigned"), factory.begin() as database:
-        database.get(SourceProfileRow, "prf_repoin").source_version_id = second.version_id
-
-
-def test_a_profile_document_is_still_mutable(factory: sessionmaker) -> None:
-    """The freeze covers identity only. `FR-115` makes the document metadata a surface reads to
-    pre-fill a form -- it carries no authority, and freezing it would protect nothing. A guard that
-    froze the whole row would have made the profile useless for the thing it exists to do.
-    """
-    scope = _scope(factory)
-    version = _version(SqlWorkspaceStore(factory), scope)
-    with factory.begin() as database:
-        database.add(
-            SourceProfileRow(
-                profile_id="prf_mutabl",
-                owner_id=scope,
-                source_version_id=version.version_id,
-                column_labels='["old"]',
-                proposed_mapping="[]",
-                created_at=NOW,
-            )
-        )
-
-    with factory.begin() as database:
-        database.get(SourceProfileRow, "prf_mutabl").column_labels = '["new"]'
-
-    with factory() as database:
-        assert database.get(SourceProfileRow, "prf_mutabl").column_labels == '["new"]'
-
-
 def test_every_workspace_row_class_declares_a_guard_shape() -> None:
     """A row class added later must state which of the three shapes it takes.
 
@@ -793,44 +591,6 @@ def test_every_workspace_row_class_declares_a_guard_shape() -> None:
     declared = {name for name in Base.metadata.tables if name.startswith("rca_workspace_")}
 
     assert guarded == declared
-
-
-def test_a_completion_must_carry_the_provenance_fr_111_requires() -> None:
-    """`RunOutcome(state="completed")` validated with every provenance field `None`.
-
-    `complete_analysis_run` then wrote it permanently and the append-only guard refused to fill
-    the digest in later, leaving an immutable completed run naming no package. `FR-111` binds a run
-    to what it produced, so an outcome that cannot name it is not a completion. Review on `#370`
-    found it.
-    """
-    with pytest.raises(ValueError, match="must carry the package digest"):
-        RunOutcome(state=RUN_COMPLETED)
-
-
-@pytest.mark.parametrize(
-    "missing", ["package_digest", "package_version", "formula_version", "completed_at"]
-)
-def test_a_completion_needs_every_provenance_field(missing: str) -> None:
-    """One case per field, because a check reading only the digest passes three of these.
-
-    Verified as a mutant: narrowing `_has_provenance` to `package_digest` alone leaves the
-    single-case version of this test green.
-    """
-    complete = {
-        "package_digest": "sha256:abc",
-        "package_version": "1.0.0",
-        "formula_version": "1.0.0",
-        "completed_at": LATER,
-    }
-    complete[missing] = None
-
-    with pytest.raises(ValueError, match="must carry the package digest"):
-        RunOutcome(state=RUN_COMPLETED, **complete)
-
-
-def test_a_failed_run_needs_no_provenance() -> None:
-    """State-specific, not blanket: `failed` produced no package, so it names none."""
-    assert RunOutcome(state=RUN_FAILED).package_digest is None
 
 
 def test_the_retention_transition_locks_the_row_it_reads() -> None:
@@ -863,63 +623,6 @@ def test_sealing_a_live_version_is_still_allowed(factory: sessionmaker) -> None:
     assert store.seal_dataset_version(version.version_id, now=LATER) is True
 
 
-def test_a_tombstoned_run_cannot_be_completed(factory: sessionmaker) -> None:
-    """The terminal check ran *inside* the completion branch's alternative, so it never fired.
-
-    A tombstoned run still reads `started`, so `_refuse_content_update` took the completion branch
-    and returned before `_check_terminal_state` -- and a deleted run could be given a package
-    digest and a completion instant. Confirmed against the guard before fixing. Review on `#370`
-    found it, and the fix is ordering: terminal state is a precondition on every path, not one
-    more append-only rule.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    run = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-    with factory.begin() as database:
-        database.get(AnalysisRunRow, run.run_id).retention_state = RETENTION_TOMBSTONED
-
-    with (
-        pytest.raises(ValueError, match="accepts no further update"),
-        factory.begin() as database,
-    ):
-        row = database.get(AnalysisRunRow, run.run_id)
-        row.state = RUN_COMPLETED
-        row.package_digest = "sha256:abc"
-        row.package_version = "1.0.0"
-        row.formula_version = "1.0.0"
-        row.completed_at = LATER
-
-
-def test_a_live_run_can_still_be_completed(factory: sessionmaker) -> None:
-    """The ordering fix must not have made completion itself unreachable.
-
-    The append-only guard had already made run completion impossible once on this PR; a check
-    hoisted to run before every branch is exactly the shape that does it again.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    run = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-
-    completed = store.complete_analysis_run(
-        run.run_id,
-        RunOutcome(
-            state=RUN_COMPLETED,
-            package_digest="sha256:abc",
-            package_version="1.0.0",
-            formula_version="1.0.0",
-            completed_at=LATER,
-        ),
-    )
-
-    assert completed is True
-
-
 def test_a_binding_has_no_retention_lifecycle_and_the_guard_tolerates_it(
     factory: sessionmaker,
 ) -> None:
@@ -931,206 +634,3 @@ def test_a_binding_has_no_retention_lifecycle_and_the_guard_tolerates_it(
     property of the table, not a guard's precondition.
     """
     assert "retention_state" not in ArtifactBindingRow.__table__.columns
-
-
-@pytest.mark.parametrize(
-    "missing", ["package_digest", "package_version", "formula_version", "completed_at"]
-)
-def test_a_completed_row_without_provenance_is_refused_by_the_schema(
-    factory: sessionmaker,
-    missing: str,
-) -> None:
-    """Stated in the schema as well as in `RunOutcome`, and the duplication is the point.
-
-    Enforced only in the dataclass, a malformed row still reaches the database -- and then raises
-    on *read*, when `_run_from_row` constructs the `RunOutcome`. `analysis_runs_for_scope` fails
-    for the whole scope, so one bad row becomes an outage for every run in the organization.
-    Review on `#370` traced that path.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-
-    provenance = {
-        "package_digest": "sha256:abc",
-        "package_version": "1.0.0",
-        "formula_version": "1.0.0",
-        "completed_at": LATER,
-    }
-    provenance[missing] = None
-
-    # One case per field: a `CHECK` naming only `package_digest` satisfies three of these, and a
-    # single all-fields-null case cannot tell that apart. Confirmed as mutant `K3`, which survived
-    # the unparametrized version of this test.
-    with pytest.raises(IntegrityError), factory.begin() as database:
-        database.add(
-            AnalysisRunRow(
-                run_id=f"run_no{missing[:5]}",
-                version_id=version.version_id,
-                owner_id=scope,
-                state=RUN_COMPLETED,
-                started_at=NOW,
-                retention_state=RETENTION_ACTIVE,
-                **provenance,
-            )
-        )
-
-
-@pytest.mark.parametrize("state", ["started", "failed"])
-def test_a_non_completed_row_needs_no_provenance(factory: sessionmaker, state: str) -> None:
-    """Conditional rather than `NOT NULL`: those states produced no package."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-
-    with factory.begin() as database:
-        database.add(
-            AnalysisRunRow(
-                run_id=f"run_{state}p",
-                version_id=version.version_id,
-                owner_id=scope,
-                state=state,
-                started_at=NOW,
-                retention_state=RETENTION_ACTIVE,
-            )
-        )
-
-    with factory() as database:
-        assert database.get(AnalysisRunRow, f"run_{state}p") is not None
-
-
-@pytest.mark.parametrize(
-    "missing", ["package_digest", "package_version", "formula_version", "completed_at"]
-)
-def test_an_orm_writer_cannot_complete_a_run_without_provenance(
-    factory: sessionmaker,
-    missing: str,
-) -> None:
-    """The third layer, and the one the other two miss.
-
-    `RunOutcome.__post_init__` guards the door and `ck_rca_workspace_run_completion_provenance`
-    guards the schema, but an ORM writer can load a `started` row and assign **only**
-    `state = "completed"` -- which satisfies `_check_completion`'s changed-column allowlist while
-    every provenance column stays null, and the `CHECK` is not re-evaluated for columns the
-    statement does not touch. The row commits, then raises on *read* when `_run_from_row` builds
-    the outcome, failing the whole scope's listing. Review on `#370` found it after the
-    `RunOutcome` fix -- the same rule, one layer up.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    run = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-
-    provenance = {
-        "package_digest": "sha256:abc",
-        "package_version": "1.0.0",
-        "formula_version": "1.0.0",
-        "completed_at": LATER,
-    }
-    provenance.pop(missing)
-
-    # One case per field. This is the third place the same rule lives and the third time a single
-    # all-fields-missing case proved too weak to pin it: mutant `L7`, narrowing the guard to
-    # `package_digest` alone, survived that version. Any multi-field requirement needs a case per
-    # field, because one omission cannot distinguish "checks one" from "checks all".
-    with (
-        pytest.raises(ValueError, match="must carry the package digest"),
-        factory.begin() as database,
-    ):
-        row = database.get(AnalysisRunRow, run.run_id)
-        row.state = RUN_COMPLETED
-        for column, value in provenance.items():
-            setattr(row, column, value)
-
-
-def test_the_scope_listing_survives_every_run_a_writer_can_commit(
-    factory: sessionmaker,
-) -> None:
-    """The consequence the finding named, asserted rather than reasoned about.
-
-    A malformed completed row makes `analysis_runs_for_scope` raise for *every* run in the
-    organization -- one bad row becomes an outage. With all three layers in place no writer can
-    commit one, so the listing is total.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    run = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-    store.complete_analysis_run(
-        run.run_id,
-        RunOutcome(
-            state=RUN_COMPLETED,
-            package_digest="sha256:abc",
-            package_version="1.0.0",
-            formula_version="1.0.0",
-            completed_at=LATER,
-        ),
-    )
-
-    listed = store.analysis_runs_for_scope(scope)
-
-    assert [entry.run_id for entry in listed] == [run.run_id]
-
-
-# --- Live reads exclude tombstoned rows --------------------------------------------------------
-
-
-def test_a_tombstoned_version_is_absent_from_every_live_read(factory: sessionmaker) -> None:
-    """`DatasetVersion` carries no retention state by `W1-01`'s design, so a tombstoned row read
-    back is indistinguishable from a live one and a caller may keep presenting or reusing it.
-    Review on `#370` found all four read paths filtering by scope alone. The store still answers
-    `retention_state()`; the live reads answer nothing.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    kept = _version(store, scope)
-    deleted = _version(store, scope)
-
-    store.tombstone_dataset_version(deleted.version_id, now=LATER)
-
-    assert store.get_dataset_version(deleted.version_id) is None
-    assert store.get_dataset_version(kept.version_id) == kept
-    assert [v.version_id for v in store.dataset_versions_for_scope(scope)] == [kept.version_id]
-    assert store.retention_state(deleted.version_id) == RETENTION_TOMBSTONED
-
-
-def test_a_tombstoned_run_is_absent_from_every_live_read(factory: sessionmaker) -> None:
-    """The same hole on the run side, which the finding did not name -- a loop cannot miss what it
-    never names, and neither can a review; the fix covers every read, not the two reported."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    kept = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-    deleted = store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=LATER)
-    )
-    with factory.begin() as database:
-        row = database.get(AnalysisRunRow, deleted.run_id)
-        row.retention_state = RETENTION_TOMBSTONED
-        row.retention_changed_at = LATER
-
-    assert store.get_analysis_run(deleted.run_id) is None
-    assert store.get_analysis_run(kept.run_id) == kept
-    assert [r.run_id for r in store.analysis_runs_for_scope(scope)] == [kept.run_id]
-
-
-def test_the_transitions_still_reach_a_tombstoned_row(factory: sessionmaker) -> None:
-    """The read filter must not have broken the idempotent retry: `tombstone_dataset_version` on
-    an already-tombstoned row returns early *by reading it*, so it needs the weaker predicate."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-
-    store.tombstone_dataset_version(version.version_id, now=NOW)
-    store.tombstone_dataset_version(version.version_id, now=LATER)
-
-    with factory() as database:
-        row = database.get(DatasetVersionRow, version.version_id)
-        assert row.retention_changed_at is not None
-        assert row.retention_state == RETENTION_TOMBSTONED
