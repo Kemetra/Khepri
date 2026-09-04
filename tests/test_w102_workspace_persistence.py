@@ -32,10 +32,13 @@ from khepri.rca.workspace.contracts import (
     PublishedArtifact,
 )
 from khepri.rca.workspace.persistence import (
+    MUTABLE_COLUMNS,
     RETENTION_ACTIVE,
     RETENTION_STATES,
     RETENTION_TOMBSTONED,
+    AnalysisRunRow,
     ArtifactBindingRow,
+    DatasetVersionRow,
     SqlWorkspaceStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
@@ -511,3 +514,148 @@ def test_a_binding_identifier_is_allocated_rather_than_derived(factory: sessionm
     assert stored[0].startswith("abn_")
     assert run.run_id not in stored[0]
     assert "web" not in stored[0]
+
+
+# --- FR-112 enforced, not merely claimed ------------------------------------------------------
+
+
+def test_a_content_field_cannot_be_changed_after_the_row_is_written(
+    factory: sessionmaker,
+) -> None:
+    """`FR-112`: "a change to any content field after sealing or completion is refused".
+
+    Nothing in this slice refused one until review on `#370` said so.
+    `test_writing_the_same_version_twice_is_refused` covers a second *insert* under one identifier
+    -- the primary key does that -- but a session that loads the row and commits a changed digest
+    rewrites provenance through an ordinary `UPDATE`, and the append-only claim was resting on a
+    test that never exercised it.
+
+    The same shape `W1-01` paid for one layer up: sealing proves a record came through a door,
+    never that anything refuses a later write.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    with (
+        pytest.raises(ValueError, match="cannot change after it is written"),
+        factory.begin() as database,
+    ):
+        row = database.get(DatasetVersionRow, version.version_id)
+        row.upload_plaintext_digest = "sha256:" + "9" * 64
+
+    assert store.get_dataset_version(version.version_id) == version
+
+
+def test_a_completed_run_cannot_have_its_package_rewritten(factory: sessionmaker) -> None:
+    """The same guard on runs: `FR-111` puts the digest on the pipeline, and it stays where it
+    was put."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+
+    with (
+        pytest.raises(ValueError, match="cannot change after it is written"),
+        factory.begin() as database,
+    ):
+        row = database.get(AnalysisRunRow, run.run_id)
+        row.package_digest = "sha256:" + "8" * 64
+
+
+def test_the_guard_permits_exactly_the_retention_columns(factory: sessionmaker) -> None:
+    """The allowlist is asserted as an equality, not as "retention still works".
+
+    A guard widened to admit one more column would keep every other test here green, because they
+    all exercise the *permitted* path. This names the extent, the way `W1-01`'s field-set tests do.
+    """
+    assert {"retention_state", "retention_changed_at"} == MUTABLE_COLUMNS
+
+
+def test_the_append_only_refusal_does_not_echo_the_rejected_content(
+    factory: sessionmaker,
+) -> None:
+    """Content-free per `rca/errors.py`: refusing a write must not log what was being written."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    with pytest.raises(ValueError) as caught, factory.begin() as database:
+        row = database.get(DatasetVersionRow, version.version_id)
+        row.upload_media_type = "text/acme-pharmacy-secret"
+    assert "acme" not in str(caught.value).lower()
+
+
+# --- Every read narrows by scope, asserted over the API rather than one example ---------------
+
+
+SCOPED_READS = (
+    "get_dataset_version",
+    "get_analysis_run",
+    "artifact_bindings_for_run",
+    "retention_state",
+    "set_retention_state",
+    "tombstone_dataset_version",
+)
+
+
+@pytest.mark.parametrize("method_name", SCOPED_READS)
+def test_every_scoped_method_accepts_an_owner(method_name: str) -> None:
+    """Asserted over the named set rather than one hand-picked method.
+
+    `test_a_foreign_scope_reads_nothing_by_identifier` proved the property for
+    `get_dataset_version` alone, and three other methods took no `owner_id` at all -- the module
+    stating one isolation rule and implementing it in half its reads, which review on `#370`
+    caught. A per-method assertion is what makes the *next* unscoped read fail rather than pass
+    unnoticed.
+    """
+    import inspect as py_inspect
+
+    signature = py_inspect.signature(getattr(SqlWorkspaceStore, method_name))
+    assert "owner_id" in signature.parameters, f"{method_name} cannot be narrowed by scope"
+
+
+def test_a_foreign_scope_cannot_read_or_change_retention(factory: sessionmaker) -> None:
+    """Reading and writing retention are both scoped.
+
+    **A foreign-scope write returns silently rather than raising**, matching what the method
+    already does for a version that does not exist: from the caller's side those are the same
+    answer -- no such row here -- and distinguishing them would confirm that an identifier from
+    another scope is real. `W1-04` decides what a *user* is told; this is a filter, not a grant.
+    """
+    first = _scope(factory)
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
+    store = SqlWorkspaceStore(factory)
+    mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
+
+    assert store.retention_state(mine.version_id, owner_id=second) is None
+    assert store.retention_state(mine.version_id, owner_id=first) == RETENTION_ACTIVE
+
+    store.tombstone_dataset_version(mine.version_id, now=LATER, owner_id=second)
+    assert store.retention_state(mine.version_id, owner_id=first) == RETENTION_ACTIVE
+
+    store.tombstone_dataset_version(mine.version_id, now=LATER, owner_id=first)
+    assert store.retention_state(mine.version_id, owner_id=first) == RETENTION_TOMBSTONED
+
+
+def test_a_foreign_scope_lists_none_of_another_scopes_bindings(factory: sessionmaker) -> None:
+    first = _scope(factory)
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, first)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=first, version_id=version.version_id, now=NOW)
+    )
+    store.add_artifact_binding(
+        ArtifactBinding.create(
+            owner_id=first,
+            run_id=run.run_id,
+            artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "7" * 64),
+            now=NOW,
+        )
+    )
+
+    assert store.artifact_bindings_for_run(run.run_id, owner_id=second) == ()
+    assert len(store.artifact_bindings_for_run(run.run_id, owner_id=first)) == 1

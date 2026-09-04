@@ -36,8 +36,10 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    event,
     select,
 )
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 
 from khepri.rca.persistence import Base, _utc
@@ -197,6 +199,40 @@ class ArtifactBindingRow(Base):
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+# The only columns an `UPDATE` may touch after a row is written. `FR-112`: dataset versions and
+# runs are append-only, and "only retention state and tombstoning may change a row".
+MUTABLE_COLUMNS = frozenset({"retention_state", "retention_changed_at"})
+
+APPEND_ONLY_FAILURE = "A workspace record's content cannot change after it is written."
+
+
+def _refuse_content_update(_mapper, _connection, target: object) -> None:
+    """Refuse an `UPDATE` that touches anything but retention state.
+
+    **Why a guard exists at all.** Nothing else refuses one. The primary key stops a *second
+    insert* under the same identifier, which is what `test_writing_the_same_version_twice_is_
+    refused` asserts -- but a session that loads a row and commits a changed
+    `upload_plaintext_digest` rewrites provenance through a perfectly ordinary `UPDATE`. Review on
+    `#370` named this: duplicate-key testing does not satisfy `FR-112`, whose text is "a change to
+    any content field after sealing or completion is refused".
+
+    This is the lesson `W1-01` already paid for, one layer down: sealing proves a record was
+    constructed through a door, never that anything refuses a later write. Those are separate
+    properties and this slice had again asserted the first while claiming the second.
+
+    **In the store rather than in `W1-04`.** A service-layer check binds only callers who go
+    through that service; this binds every session that maps these rows, which is what an
+    append-only claim has to mean.
+
+    Registered on the two row classes rather than on `Base`, so no other RCA table is affected.
+    """
+    changed = {
+        attribute.key for attribute in sa_inspect(target).attrs if attribute.history.has_changes()
+    }
+    if not changed <= MUTABLE_COLUMNS:
+        raise ValueError(APPEND_ONLY_FAILURE)
+
+
 def _visible_in(row: object | None, owner_id: str | None) -> bool:
     """Whether a read may return this row: it exists, and it is not another scope's.
 
@@ -213,6 +249,10 @@ def _visible_in(row: object | None, owner_id: str | None) -> bool:
     if row is None:
         return False
     return owner_id is None or row.owner_id == owner_id
+
+
+event.listen(DatasetVersionRow, "before_update", _refuse_content_update)
+event.listen(AnalysisRunRow, "before_update", _refuse_content_update)
 
 
 def _version_from_row(row: DatasetVersionRow) -> DatasetVersion:
@@ -367,24 +407,33 @@ class SqlWorkspaceStore:
             )
         return binding
 
-    def artifact_bindings_for_run(self, run_id: str) -> tuple[ArtifactBinding, ...]:
-        """Every surface this run published, which is the set `FR-111` reads for completeness."""
+    def artifact_bindings_for_run(
+        self, run_id: str, owner_id: str | None = None
+    ) -> tuple[ArtifactBinding, ...]:
+        """Every surface this run published, which is the set `FR-111` reads for completeness.
+
+        Narrowed by scope for the same reason as the `get_*` reads: an identifier that leaks
+        should not become data that leaks. Review on `#370` found this method, `retention_state`
+        and `set_retention_state` taking no `owner_id` while the two `get_*` methods did -- the
+        module stating one rule and implementing it in half its reads.
+        """
         with self._factory() as database:
-            rows = database.execute(
-                select(ArtifactBindingRow)
-                .where(ArtifactBindingRow.run_id == run_id)
-                .order_by(ArtifactBindingRow.surface)
-            ).scalars()
+            query = select(ArtifactBindingRow).where(ArtifactBindingRow.run_id == run_id)
+            if owner_id is not None:
+                query = query.where(ArtifactBindingRow.owner_id == owner_id)
+            rows = database.execute(query.order_by(ArtifactBindingRow.surface)).scalars()
             return tuple(_binding_from_row(row) for row in rows)
 
     # --- retention, the one thing `FR-112` lets a later operation change -----------------
 
-    def retention_state(self, version_id: str) -> str | None:
+    def retention_state(self, version_id: str, owner_id: str | None = None) -> str | None:
         with self._factory() as database:
             row = database.get(DatasetVersionRow, version_id)
-            return None if row is None else row.retention_state
+            return row.retention_state if _visible_in(row, owner_id) else None
 
-    def set_retention_state(self, version_id: str, state: str, *, now: datetime) -> None:
+    def set_retention_state(
+        self, version_id: str, state: str, *, now: datetime, owner_id: str | None = None
+    ) -> None:
         """Move a version's retention state, refusing a state the domain does not name.
 
         Refused in the store as well as by the `CHECK` constraint, and the duplication is the
@@ -395,16 +444,20 @@ class SqlWorkspaceStore:
             raise ValueError(RETENTION_STATE_FAILURE)
         with self._factory.begin() as database:
             row = database.get(DatasetVersionRow, version_id)
-            if row is None:
+            if not _visible_in(row, owner_id):
                 return
             row.retention_state = state
             row.retention_changed_at = now
 
-    def tombstone_dataset_version(self, version_id: str, *, now: datetime) -> None:
-        self.set_retention_state(version_id, RETENTION_TOMBSTONED, now=now)
+    def tombstone_dataset_version(
+        self, version_id: str, *, now: datetime, owner_id: str | None = None
+    ) -> None:
+        self.set_retention_state(version_id, RETENTION_TOMBSTONED, now=now, owner_id=owner_id)
 
 
 __all__ = [
+    "APPEND_ONLY_FAILURE",
+    "MUTABLE_COLUMNS",
     "RETENTION_ACTIVE",
     "RETENTION_STATES",
     "RETENTION_STATE_FAILURE",
