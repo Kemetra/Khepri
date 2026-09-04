@@ -36,7 +36,7 @@ from khepri.rca.workspace.persistence import (
     SECTION_COLUMNS,
     TOMBSTONE_SUBJECTS,
     SourceProfileRow,
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
     WorkspaceTombstoneRow,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
@@ -89,7 +89,7 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
@@ -153,7 +153,7 @@ def test_a_row_cannot_name_a_scope_that_does_not_exist(factory: sessionmaker) ->
     the engine does not enforce is the shape `build_factory`'s `PRAGMA foreign_keys=ON` exists to
     prevent -- and a test that only read the declaration would pass with the pragma removed.
     """
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     with pytest.raises(IntegrityError):
         store.add_dataset_version(
             DatasetVersion.create(owner_id="own_never_provisioned", source=SOURCE, now=NOW)
@@ -165,7 +165,7 @@ def test_a_row_cannot_name_a_scope_that_does_not_exist(factory: sessionmaker) ->
 
 def test_a_dataset_version_round_trips_through_the_store(factory: sessionmaker) -> None:
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     written = _version(store, scope)
 
     read = store.get_dataset_version(written.version_id)
@@ -181,7 +181,7 @@ def test_a_dataset_version_preserves_its_admission(factory: sessionmaker) -> Non
     this test also built would pass if both sides dropped the same field.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     read = store.get_dataset_version(_version(store, scope).version_id)
 
     assert read is not None
@@ -195,7 +195,7 @@ def test_a_dataset_version_preserves_its_admission(factory: sessionmaker) -> Non
 
 def test_an_analysis_run_round_trips_and_names_its_version(factory: sessionmaker) -> None:
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     written = store.add_analysis_run(
@@ -212,7 +212,7 @@ def test_an_analysis_run_round_trips_and_names_its_version(factory: sessionmaker
 def test_a_run_cannot_name_a_dataset_version_that_does_not_exist(factory: sessionmaker) -> None:
     """`FR-111`: a run is a derivation *over a version*, so an orphan run is not a run."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     with pytest.raises(IntegrityError):
         store.add_analysis_run(
             AnalysisRun.create(owner_id=scope, version_id="dsv_never_written", now=NOW)
@@ -221,7 +221,7 @@ def test_a_run_cannot_name_a_dataset_version_that_does_not_exist(factory: sessio
 
 def test_an_artifact_binding_round_trips_and_binds_by_digest(factory: sessionmaker) -> None:
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -244,7 +244,7 @@ def test_an_artifact_binding_round_trips_and_binds_by_digest(factory: sessionmak
 
 def test_a_binding_cannot_name_a_run_that_does_not_exist(factory: sessionmaker) -> None:
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     with pytest.raises(IntegrityError):
         store.add_artifact_binding(
             ArtifactBinding.create(
@@ -268,7 +268,7 @@ def test_listing_is_scoped_and_returns_newest_first(factory: sessionmaker) -> No
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     mine_early = store.add_dataset_version(
         DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW)
     )
@@ -289,7 +289,7 @@ def test_runs_are_listed_only_within_their_own_scope(factory: sessionmaker) -> N
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
     theirs = store.add_dataset_version(
         DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
@@ -308,7 +308,7 @@ def test_a_foreign_scope_reads_nothing_by_identifier(factory: sessionmaker) -> N
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
 
     assert store.get_dataset_version(mine.version_id, owner_id=second) is None
@@ -340,7 +340,7 @@ def test_every_scoped_method_accepts_an_owner(method_name: str) -> None:
     """
     import inspect as py_inspect
 
-    signature = py_inspect.signature(getattr(SqlWorkspaceStore, method_name))
+    signature = py_inspect.signature(getattr(SqlWorkspaceRecordStore, method_name))
     assert "owner_id" in signature.parameters, f"{method_name} cannot be narrowed by scope"
 
 
@@ -354,7 +354,7 @@ def test_a_foreign_scope_cannot_read_or_change_retention(factory: sessionmaker) 
     """
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
 
     assert store.retention_state(mine.version_id, owner_id=second) is None
@@ -370,7 +370,7 @@ def test_a_foreign_scope_cannot_read_or_change_retention(factory: sessionmaker) 
 def test_a_foreign_scope_lists_none_of_another_scopes_bindings(factory: sessionmaker) -> None:
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, first)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=first, version_id=version.version_id, now=NOW)
@@ -407,12 +407,15 @@ def test_the_slice_delivers_every_table_its_plan_assigns() -> None:
     from khepri.rca.persistence import Base
 
     declared = {name for name in Base.metadata.tables if name.startswith("rca_workspace_")}
-    assert declared == set(WORKSPACE_TABLES)
+    # `W1-04` added the sixth, `rca_workspace_audit_events` (`FR-125`), in the same module so the
+    # guard-shape test sees every workspace table; it is named here rather than folded into
+    # `WORKSPACE_TABLES`, which the isolation tests read as *this* slice's five.
+    assert declared == set(WORKSPACE_TABLES) | {"rca_workspace_audit_events"}
 
 
 def test_a_source_profile_row_round_trips(factory: sessionmaker) -> None:
     scope = _scope(factory)
-    version = _version(SqlWorkspaceStore(factory), scope)
+    version = _version(SqlWorkspaceRecordStore(factory), scope)
     with factory.begin() as database:
         database.add(
             SourceProfileRow(
@@ -450,7 +453,7 @@ def test_a_source_profile_is_deletable(factory: sessionmaker) -> None:
     `test_a_profile_document_is_still_mutable`.
     """
     scope = _scope(factory)
-    version = _version(SqlWorkspaceStore(factory), scope)
+    version = _version(SqlWorkspaceRecordStore(factory), scope)
     with factory.begin() as database:
         database.add(
             SourceProfileRow(

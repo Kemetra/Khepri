@@ -23,7 +23,7 @@ from khepri.rca.workspace.contracts import (
     DatasetVersion,
 )
 from khepri.rca.workspace.persistence import (
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
     run_for_update,
     version_for_update,
 )
@@ -77,7 +77,7 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
@@ -121,7 +121,7 @@ def test_completing_a_run_locks_the_row_it_reads(factory: sessionmaker) -> None:
     """
     import inspect as py_inspect
 
-    source = py_inspect.getsource(SqlWorkspaceStore.complete_analysis_run)
+    source = py_inspect.getsource(SqlWorkspaceRecordStore.complete_analysis_run)
 
     assert "run_for_update" in source
     assert "database.get(AnalysisRunRow" not in source
@@ -165,7 +165,7 @@ def test_the_retention_transition_locks_the_row_it_reads() -> None:
     """
     import inspect as py_inspect
 
-    source = py_inspect.getsource(SqlWorkspaceStore.set_retention_state)
+    source = py_inspect.getsource(SqlWorkspaceRecordStore.set_retention_state)
 
     assert "version_for_update" in source
     assert "database.get(DatasetVersionRow" not in source
@@ -182,8 +182,8 @@ def test_adding_a_derivative_locks_its_parent(factory: sessionmaker) -> None:
     """
     import inspect as py_inspect
 
-    run_source = py_inspect.getsource(SqlWorkspaceStore.add_analysis_run)
-    binding_source = py_inspect.getsource(SqlWorkspaceStore.add_artifact_binding)
+    run_source = py_inspect.getsource(SqlWorkspaceRecordStore.add_analysis_run)
+    binding_source = py_inspect.getsource(SqlWorkspaceRecordStore.add_artifact_binding)
 
     # The scope argument is asserted too: without it a cross-tenant identifier would hold another
     # tenant's row for the transaction, and no SQLite test can observe that lock either.
@@ -203,9 +203,9 @@ def test_the_transition_locks_are_scoped() -> None:
     """
     import inspect as py_inspect
 
-    complete = py_inspect.getsource(SqlWorkspaceStore.complete_analysis_run)
-    seal = py_inspect.getsource(SqlWorkspaceStore.seal_dataset_version)
-    retention = py_inspect.getsource(SqlWorkspaceStore.set_retention_state)
+    complete = py_inspect.getsource(SqlWorkspaceRecordStore.complete_analysis_run)
+    seal = py_inspect.getsource(SqlWorkspaceRecordStore.seal_dataset_version)
+    retention = py_inspect.getsource(SqlWorkspaceRecordStore.set_retention_state)
 
     assert "run_for_update(run_id, owner_id)" in complete
     assert "version_for_update(version_id, owner_id)" in seal

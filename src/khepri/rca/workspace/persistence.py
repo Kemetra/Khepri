@@ -62,7 +62,7 @@ from khepri.rca.workspace.schema import (
     SourceProfileRow,
     WorkspaceTombstoneRow,
 )
-from khepri.rca.workspace.store import SqlWorkspaceStore
+from khepri.rca.workspace.store import SqlWorkspaceRecordStore
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
@@ -95,5 +95,5 @@ __all__ = [
     "AnalysisRunRow",
     "ArtifactBindingRow",
     "DatasetVersionRow",
-    "SqlWorkspaceStore",
+    "SqlWorkspaceRecordStore",
 ]

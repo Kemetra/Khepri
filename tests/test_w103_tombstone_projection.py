@@ -53,7 +53,7 @@ from khepri.rca.workspace.persistence import (
     TOMBSTONE_SECTIONS,
     VERSION_TOMBSTONE_COLUMNS,
     AnalysisRunRow,
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
     WorkspaceTombstoneRow,
 )
 from khepri.rca.workspace.tombstones import (
@@ -337,12 +337,12 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _stored_version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _stored_version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
 def _stored_run(
-    store: SqlWorkspaceStore, scope: str, version: DatasetVersion, *, complete: bool
+    store: SqlWorkspaceRecordStore, scope: str, version: DatasetVersion, *, complete: bool
 ) -> AnalysisRun:
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -364,7 +364,7 @@ def test_tombstoning_a_version_writes_its_tombstone(factory: sessionmaker) -> No
     """The row `W1-02` left empty, now written -- and read back equal to the projection, so the
     store's row mapping and the projection agree field for field."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _stored_version(store, scope)
     assert store.tombstones_for_scope(scope) == ()
 
@@ -386,7 +386,7 @@ def test_a_cascaded_run_gets_its_own_tombstone_with_the_callers_sections(
     every clock is the deletion instant (§3: a cascaded deletion is the run's own trigger).
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _stored_version(store, scope)
     finished = _stored_run(store, scope, version, complete=True)
     unfinished = _stored_run(store, scope, version, complete=False)
@@ -417,7 +417,7 @@ def test_the_written_rows_hold_nothing_outside_their_subjects_allowlist(
     satisfies them -- this asserts the mapping filled the right side rather than none. The version
     is sealed and the run completed first, so every column on each side has a value to carry."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _stored_version(store, scope)
     assert store.seal_dataset_version(version.version_id, now=COMPLETED)
     run = _stored_run(store, scope, version, complete=True)
@@ -443,7 +443,7 @@ def test_a_run_already_tombstoned_gets_no_second_tombstone(factory: sessionmaker
     of the same thing. Here the run was tombstoned by a raw write and has no row at all -- the
     cascade must still not write one, because it was not this deletion that ended it."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _stored_version(store, scope)
     earlier = _stored_run(store, scope, version, complete=False)
     later = _stored_run(store, scope, version, complete=False)
@@ -462,7 +462,7 @@ def test_a_repeated_deletion_writes_no_second_tombstone(factory: sessionmaker) -
     """`FR-123`: a repeated request "MUST create no new deletion evidence". The tombstone is the
     record that survives the deletion, and there is one deletion."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _stored_version(store, scope)
     _stored_run(store, scope, version, complete=True)
 
@@ -478,7 +478,7 @@ def test_tombstones_are_read_by_scope(factory: sessionmaker) -> None:
     """Two scopes, one read -- the only shape that can see a missing `WHERE`."""
     ours = _scope(factory)
     theirs = _scope(factory, email="other@example.com", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     our_version = _stored_version(store, ours)
     their_version = _stored_version(store, theirs)
     store.tombstone_dataset_version(our_version.version_id, now=LATER)
@@ -491,7 +491,7 @@ def test_tombstones_are_read_by_scope(factory: sessionmaker) -> None:
 def test_a_deletion_under_a_foreign_scope_writes_nothing(factory: sessionmaker) -> None:
     ours = _scope(factory)
     theirs = _scope(factory, email="other@example.com", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _stored_version(store, ours)
 
     store.tombstone_dataset_version(version.version_id, now=LATER, owner_id=theirs)

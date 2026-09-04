@@ -30,7 +30,7 @@ from khepri.rca.workspace.persistence import (
     RETENTION_TOMBSTONED,
     AnalysisRunRow,
     DatasetVersionRow,
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -82,11 +82,11 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
-def _started_run(store: SqlWorkspaceStore, scope: str) -> AnalysisRun:
+def _started_run(store: SqlWorkspaceRecordStore, scope: str) -> AnalysisRun:
     version = _version(store, scope)
     return store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -114,7 +114,7 @@ def test_a_version_can_be_sealed_once(factory: sessionmaker) -> None:
     the missing half of a transition this repository had already reasoned about carefully.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     assert version.sealed_at is None
@@ -134,7 +134,7 @@ def test_sealing_twice_is_refused_rather_than_moving_the_instant(factory: sessio
     returned `False` while still writing would pass a return-only test.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     store.seal_dataset_version(version.version_id, now=NOW)
 
@@ -148,7 +148,7 @@ def test_sealing_twice_is_refused_rather_than_moving_the_instant(factory: sessio
 def test_a_foreign_scope_cannot_seal_a_version(factory: sessionmaker) -> None:
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
 
     assert store.seal_dataset_version(mine.version_id, now=LATER, owner_id=second) is False
@@ -162,7 +162,7 @@ def test_sealing_changes_nothing_else_about_the_record(factory: sessionmaker) ->
     """Sealing is one column. A transition that rewrote content would defeat `FR-112` from the
     inside -- through the one operation permitted to write."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     store.seal_dataset_version(version.version_id, now=LATER)
 
@@ -186,7 +186,7 @@ def test_a_started_run_can_record_what_it_produced(factory: sessionmaker) -> Non
     writing" where its text says "after sealing or completion". Review on `#370` found it.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     run = _started_run(store, scope)
 
     assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME) is True
@@ -203,7 +203,7 @@ def test_a_started_run_can_record_what_it_produced(factory: sessionmaker) -> Non
 def test_a_run_can_also_record_that_it_failed(factory: sessionmaker) -> None:
     """`failed` is a terminal state the domain publishes, so it is a completion like any other."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     run = _started_run(store, scope)
 
     assert store.complete_analysis_run(run.run_id, RunOutcome(state="failed")) is True
@@ -217,7 +217,7 @@ def test_a_run_can_also_record_that_it_failed(factory: sessionmaker) -> None:
 def test_completing_twice_is_refused(factory: sessionmaker) -> None:
     """One way, like sealing: a completed run does not re-derive a different result."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     run = _started_run(store, scope)
     store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME)
 
@@ -238,7 +238,7 @@ def test_a_completed_run_is_immutable_through_the_orm_too(factory: sessionmaker)
     return-value test cannot see one.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     run = _started_run(store, scope)
     store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME)
 
@@ -266,7 +266,7 @@ def test_completion_cannot_smuggle_a_content_change(factory: sessionmaker) -> No
     } == COMPLETION_COLUMNS
 
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     run = _started_run(store, scope)
 
     with (
@@ -281,7 +281,7 @@ def test_completion_cannot_smuggle_a_content_change(factory: sessionmaker) -> No
 def test_a_foreign_scope_cannot_complete_a_run(factory: sessionmaker) -> None:
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     run = _started_run(store, first)
 
     assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME, owner_id=second) is False
@@ -294,7 +294,7 @@ def test_a_foreign_scope_cannot_complete_a_run(factory: sessionmaker) -> None:
 def test_completing_into_the_started_state_is_refused(factory: sessionmaker) -> None:
     """`started` is not a completion, so passing it is a caller error rather than a no-op."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     run = _started_run(store, scope)
 
     with pytest.raises(ValueError, match="cannot be completed again"):
@@ -313,7 +313,7 @@ def test_an_idempotent_tombstone_does_not_move_the_deletion_clock(
     `_one_way` has nothing to refuse. Review on `#370` found it.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     store.tombstone_dataset_version(version.version_id, now=NOW)
@@ -331,7 +331,7 @@ def test_an_idempotent_tombstone_does_not_move_the_deletion_clock(
 def test_a_real_transition_does_move_the_clock(factory: sessionmaker) -> None:
     """The no-op check must not have frozen the timestamp for an actual state change."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with factory() as database:
@@ -359,7 +359,7 @@ def test_tombstoning_a_version_tombstones_its_live_runs(factory: sessionmaker) -
     untouched, so the cascade is by parent and not by scope.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     deleted = _version(store, scope)
     other = _version(store, scope)
     doomed = store.add_analysis_run(
@@ -409,7 +409,7 @@ def test_the_cascade_skips_a_run_already_tombstoned(factory: sessionmaker) -> No
     The filter is what keeps the cascade able to run at all; this test is what keeps the filter.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     earlier = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -439,7 +439,7 @@ def test_a_repeated_version_deletion_does_not_move_a_cascaded_runs_clock(
     """`FR-123`'s idempotent retry, one level down: the second call returns at the version and the
     cascade does not run again, so no child clock moves either."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)

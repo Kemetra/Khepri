@@ -240,6 +240,12 @@ _MAY_LOCK = frozenset(
         # `set_retention_state`'s transaction, under the version lock it already holds.
         "_tombstone_version",
         "_cascade_tombstone_to_runs",
+        # `W1-04`: completion, its seven bindings and the version's seal are one transaction
+        # (`FR-111` -- a completed run naming no artifacts must never be readable), under the
+        # version lock and then the run lock -- `set_retention_state`'s order, so a completion
+        # and a deletion cannot each hold one row and wait for the other. Review on `#372` found
+        # the first draft taking them the other way round.
+        "record_completion",
     }
 )
 

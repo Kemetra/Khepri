@@ -29,7 +29,7 @@ from khepri.rca.workspace.persistence import (
     RETENTION_ACTIVE,
     RETENTION_TOMBSTONED,
     AnalysisRunRow,
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -81,7 +81,7 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
@@ -98,7 +98,7 @@ def test_a_run_that_never_completed_cannot_have_a_package_written_to_it(
     `complete_analysis_run` is the one path that writes these columns.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -160,7 +160,7 @@ def test_a_tombstoned_run_cannot_be_completed(factory: sessionmaker) -> None:
     more append-only rule.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -187,7 +187,7 @@ def test_a_live_run_can_still_be_completed(factory: sessionmaker) -> None:
     hoisted to run before every branch is exactly the shape that does it again.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -222,7 +222,7 @@ def test_a_completed_row_without_provenance_is_refused_by_the_schema(
     Review on `#370` traced that path.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     provenance = {
@@ -254,7 +254,7 @@ def test_a_completed_row_without_provenance_is_refused_by_the_schema(
 def test_a_non_completed_row_needs_no_provenance(factory: sessionmaker, state: str) -> None:
     """Conditional rather than `NOT NULL`: those states produced no package."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with factory.begin() as database:
@@ -291,7 +291,7 @@ def test_an_orm_writer_cannot_complete_a_run_without_provenance(
     `RunOutcome` fix -- the same rule, one layer up.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -329,7 +329,7 @@ def test_the_scope_listing_survives_every_run_a_writer_can_commit(
     commit one, so the listing is total.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)

@@ -27,6 +27,9 @@ from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventSto
 from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
 from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
+from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
+from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
+from khepri.rca.workspace.profile_store import SqlSourceProfileStore
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -75,6 +78,7 @@ from khepri.runtime.external_auth_api import (
 from khepri.runtime.landing_api import add_landing_routes
 from khepri.runtime.legal_api import add_legal_routes
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
+from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
 
 # The web role publishes but never claims, so this identity appears in no lease. It
 # is required because `ClaimPolicy` refuses an anonymous worker, and a name that is
@@ -263,6 +267,37 @@ def build_commercial_services(stack: RuntimeStack) -> CommercialServices:
             store=SqlSessionStore(stack.factory),
         ),
         consent=InvitationService(SqlSessionStore(stack.factory)),
+    )
+
+
+def build_workspace_actions(stack: RuntimeStack) -> WorkspaceActions:
+    """Pair the workspace records with the `RRA` products they are made from (`W1-04`).
+
+    The `RRA` side is read from the stack as built -- the same `ProfilingService` and
+    `FactPackageService` the beta routes use, and the same delivery and artifact repositories the
+    report publisher writes -- so the workspace records what those services decided and never a
+    second reading of it. The `RCA` side is built here, as `build_commercial_services` builds its
+    half. No route mounts these yet; `W1-05` ships the surfaces and their links together
+    (`FR-121`).
+    """
+    accounts = SqlAccountStore(stack.factory)
+    organizations = SqlOrganizationStore(stack.factory)
+    return WorkspaceActions(
+        isolation=IsolationService(organizations, accounts),
+        rra=WorkspacePorts(
+            sessions=SqlSessionStore(stack.factory),
+            uploads=SqlUploadRepository(stack.factory),
+            profiling=stack.services.profiling,
+            packages=stack.services.packages,
+            deliveries=stack.reports.deliveries,
+            artifacts=stack.reports.artifacts,
+        ),
+        rca=RecordStores(
+            workspace=SqlWorkspaceRecordStore(stack.factory),
+            profiles=SqlSourceProfileStore(stack.factory),
+            audit=SqlWorkspaceAuditStore(stack.factory),
+            factory=stack.factory,
+        ),
     )
 
 

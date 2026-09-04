@@ -33,7 +33,7 @@ from khepri.rca.workspace.persistence import (
     TOMBSTONE_SECTIONS,
     VERSION_TOMBSTONE_COLUMNS,
     DatasetVersionRow,
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
     WorkspaceTombstoneRow,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
@@ -86,7 +86,7 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
@@ -278,7 +278,7 @@ def test_a_tombstoned_version_accepts_no_further_update(factory: sessionmaker, c
     confirmed against the guard before this fix, not reasoned about. Review on `#370` found it.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     store.tombstone_dataset_version(version.version_id, now=NOW)
 
@@ -296,7 +296,7 @@ def test_the_tombstoning_update_itself_still_passes(factory: sessionmaker) -> No
     append-only guard that had made run completion impossible earlier on this PR.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     store.tombstone_dataset_version(version.version_id, now=NOW)

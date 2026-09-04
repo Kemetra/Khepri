@@ -30,6 +30,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column
 
 from khepri.rca.persistence import Base
+from khepri.rca.workspace.audit import AUDIT_ACTIONS, AUDIT_OBJECTS, AUDIT_OUTCOMES
 from khepri.rca.workspace.contracts import (
     RUN_COMPLETED,
     RUN_PROVENANCE_FAILURE,
@@ -250,7 +251,9 @@ def _states_check(column: str, states: tuple[str, ...], name: str) -> CheckConst
     written by any path other than this store could hold a state the domain does not name, and the
     read that rebuilt it would raise, breaking a whole scoped listing rather than the one row.
     """
-    assert all(state.isalpha() for state in states), f"states must be plain identifiers: {states}"
+    assert all(state.replace("_", "").isalpha() for state in states), (
+        f"states must be plain identifiers: {states}"
+    )
     assert column.replace("_", "").isalpha(), f"column must be an identifier: {column!r}"
     values = ", ".join(f"'{state}'" for state in states)
     return CheckConstraint(f"{column} IN ({values})", name=name)
@@ -386,6 +389,7 @@ RECOMPLETE_FAILURE = "A run that has left the started state cannot be completed 
 DELETE_FAILURE = "A workspace record is removed through its retention lifecycle, not deleted."
 PROFILE_IDENTITY_FAILURE = "a source profile's identity and isolation scope cannot be reassigned"
 TOMBSTONE_IMMUTABLE_FAILURE = "a deletion record cannot be rewritten"
+AUDIT_IMMUTABLE_FAILURE = "an audit event cannot be rewritten"
 TOMBSTONED_FROZEN_FAILURE = "a tombstoned record accepts no further update"
 PARENT_TOMBSTONED_FAILURE = "a derivative cannot be added under a record that has been deleted"
 TOMBSTONE_FAILURE = "A tombstoned record cannot return to an earlier retention state."
@@ -546,6 +550,42 @@ class WorkspaceTombstoneRow(Base):
     section_basket: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class WorkspaceAuditEventRow(Base):
+    """One workspace action, content-free (`W1-04`; `RCA-005` `FR-125`). See `audit.py`.
+
+    **The one workspace table with no foreign key onto the scope, deliberately**, and for
+    `rca_membership_events`' reason: the event has its own twelve-month horizon (`KHEPRI-DEC-015`
+    §2a) and must outlive the organization it describes until then, while a `RESTRICT` key would
+    enforce the opposite ordering. The scope column is indexed instead, because every read is by it.
+
+    `object_kind` and `object_id` are null together -- a refusal that produced no object names
+    none -- and the pairing is a `CHECK`, so a kind without an identifier is unrepresentable here as
+    it is in `AuditSubject`. Both vocabularies are `CHECK`s too, on `W1-02`'s reasoning.
+    """
+
+    __tablename__ = "rca_workspace_audit_events"
+    __table_args__ = (
+        _states_check("action", AUDIT_ACTIONS, "ck_rca_workspace_audit_action"),
+        _states_check("outcome", AUDIT_OUTCOMES, "ck_rca_workspace_audit_outcome"),
+        _states_check("object_kind", AUDIT_OBJECTS, "ck_rca_workspace_audit_object"),
+        CheckConstraint(
+            "(object_kind IS NULL) = (object_id IS NULL)",
+            name="ck_rca_workspace_audit_subject_pair",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    actor_account_id: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    outcome: Mapped[str] = mapped_column(String, nullable=False)
+    object_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    object_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+
+
 def _changed_columns(target: object, among: frozenset[str] | None) -> set[str]:
     """Columns this update actually assigns a new value to, optionally narrowed to `among`.
 
@@ -686,6 +726,15 @@ def _refuse_any_update(_mapper, _connection, target: object) -> None:
         raise ValueError(TOMBSTONE_IMMUTABLE_FAILURE)
 
 
+def _refuse_audit_update(_mapper, _connection, target: object) -> None:
+    """An audit event is evidence of what happened; a rewritable one is not. Frozen entirely, like
+    the tombstone, and for the same reason. Its purge at the twelve-month horizon is a *delete*,
+    which is left open for `W1-07`'s sweep -- `KHEPRI-DEC-015` §2a bounds the event, so a delete
+    guard here would make the horizon unenforceable."""
+    if _changed_columns(target, None):
+        raise ValueError(AUDIT_IMMUTABLE_FAILURE)
+
+
 def _refuse_content_update(_mapper, _connection, target: object) -> None:
     """Refuse an `UPDATE` that changes content, or that reverses a one-way transition.
 
@@ -750,6 +799,9 @@ _ROW_GUARDS = {
     ArtifactBindingRow: (_refuse_content_update, _refuse_delete),
     SourceProfileRow: (_refuse_identity_change, None),
     WorkspaceTombstoneRow: (_refuse_any_update, _refuse_delete),
+    # Frozen, but deletable: `KHEPRI-DEC-015` §2a bounds an audit event at twelve months and
+    # `W1-07`'s sweep purges it, so no delete guard -- the source profile's asymmetry, inverted.
+    WorkspaceAuditEventRow: (_refuse_audit_update, None),
 }
 
 for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():

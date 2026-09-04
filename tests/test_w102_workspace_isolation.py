@@ -28,7 +28,7 @@ from khepri.rca.workspace.persistence import (
     AnalysisRunRow,
     DatasetVersionRow,
     SourceProfileRow,
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -80,7 +80,7 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
@@ -102,7 +102,7 @@ def test_a_run_cannot_claim_one_scope_while_naming_another_scopes_version(
     """
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     theirs = store.add_dataset_version(
         DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
     )
@@ -119,7 +119,7 @@ def test_a_binding_cannot_claim_one_scope_while_naming_another_scopes_run(
     """The same defect one level down: `(owner_id, run_id)` is the binding's parent key."""
     first = _scope(factory)
     second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     theirs = store.add_dataset_version(
         DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
     )
@@ -146,7 +146,7 @@ def test_a_profile_cannot_name_a_version_in_another_scope(factory: sessionmaker)
     """
     other = _scope(factory, email="other@example.test")
     mine = _scope(factory)
-    theirs = _version(SqlWorkspaceStore(factory), other)
+    theirs = _version(SqlWorkspaceRecordStore(factory), other)
 
     with pytest.raises(IntegrityError), factory.begin() as database:
         database.add(
@@ -189,7 +189,7 @@ def test_a_profile_cannot_be_reassigned_to_another_scope(factory: sessionmaker) 
     """
     scope = _scope(factory)
     other = _scope(factory, email="other@example.test")
-    version = _version(SqlWorkspaceStore(factory), scope)
+    version = _version(SqlWorkspaceRecordStore(factory), scope)
     with factory.begin() as database:
         database.add(
             SourceProfileRow(
@@ -211,7 +211,7 @@ def test_a_profile_cannot_be_repointed_at_another_version(factory: sessionmaker)
     repointing within the same scope satisfies the composite key perfectly.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     first = _version(store, scope)
     second = _version(store, scope)
     with factory.begin() as database:
@@ -236,7 +236,7 @@ def test_a_profile_document_is_still_mutable(factory: sessionmaker) -> None:
     froze the whole row would have made the profile useless for the thing it exists to do.
     """
     scope = _scope(factory)
-    version = _version(SqlWorkspaceStore(factory), scope)
+    version = _version(SqlWorkspaceRecordStore(factory), scope)
     with factory.begin() as database:
         database.add(
             SourceProfileRow(
@@ -263,7 +263,7 @@ def test_a_tombstoned_version_is_absent_from_every_live_read(factory: sessionmak
     `retention_state()`; the live reads answer nothing.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     kept = _version(store, scope)
     deleted = _version(store, scope)
 
@@ -279,7 +279,7 @@ def test_a_tombstoned_run_is_absent_from_every_live_read(factory: sessionmaker) 
     """The same hole on the run side, which the finding did not name -- a loop cannot miss what it
     never names, and neither can a review; the fix covers every read, not the two reported."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     kept = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -301,7 +301,7 @@ def test_the_transitions_still_reach_a_tombstoned_row(factory: sessionmaker) -> 
     """The read filter must not have broken the idempotent retry: `tombstone_dataset_version` on
     an already-tombstoned row returns early *by reading it*, so it needs the weaker predicate."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     store.tombstone_dataset_version(version.version_id, now=NOW)
@@ -325,7 +325,7 @@ def test_a_run_cannot_be_added_under_a_tombstoned_version(factory: sessionmaker)
     on `#370` found it. Refused with a content-free message, like every other refusal here.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     store.tombstone_dataset_version(version.version_id, now=NOW)
 
@@ -344,7 +344,7 @@ def test_a_binding_cannot_be_added_under_a_tombstoned_run(factory: sessionmaker)
     was caught on with the read filter: the finding named two of four paths. Both parents now.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -378,7 +378,7 @@ def test_a_missing_or_foreign_parent_is_still_the_foreign_keys_to_refuse(
     the foreign key cannot see -- a parent that is real, ours, and deleted.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
 
     with pytest.raises(IntegrityError):
         store.add_analysis_run(
@@ -396,7 +396,7 @@ def test_bindings_of_a_tombstoned_run_are_absent_from_live_reads(factory: sessio
     the join has not emptied the read.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     kept = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
