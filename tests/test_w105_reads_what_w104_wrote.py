@@ -70,6 +70,25 @@ def _shell(w: World, account_id: str, organization_id: str) -> TestClient:
     return client
 
 
+def _admitted_version(w: World, who, content: bytes | None = None):
+    """One version, created by the real actions from a session the real admission admitted."""
+    session_id = (
+        admitted_session(w, who.owner_id)
+        if content is None
+        else admitted_session(w, who.owner_id, content)
+    )
+    return w.services.create_dataset_version(who.caller, session_id=session_id, now=NOW)
+
+
+def _page(w: World, who, surface: str) -> str:
+    """The surface as the member sees it, addressed by their own organization."""
+    return (
+        _shell(w, who.account_id, who.organization_id)
+        .get(f"{SHELL_PREFIX}/en/{who.organization_id}/{surface}")
+        .text
+    )
+
+
 def test_the_scope_is_not_the_organization() -> None:
     """The premise every case below rests on, stated as its own assertion so a future change that
     made the two identifiers coincide would fail here rather than silently weaken the others."""
@@ -82,14 +101,9 @@ def test_the_scope_is_not_the_organization() -> None:
 def test_data_shows_the_version_the_actions_recorded() -> None:
     w = world()
     who = member(w)
-    session_id = admitted_session(w, who.owner_id)
-    w.services.create_dataset_version(who.caller, session_id=session_id, now=NOW)
+    _admitted_version(w, who)
 
-    html = (
-        _shell(w, who.account_id, who.organization_id)
-        .get(f"{SHELL_PREFIX}/en/{who.organization_id}/data")
-        .text
-    )
+    html = _page(w, who, "data")
 
     assert html.count('class="data-item"') == 1
     assert SHELL_COPY["en"]["data_admitted"] in html
@@ -99,15 +113,10 @@ def test_data_shows_the_version_the_actions_recorded() -> None:
 def test_overview_shows_the_run_the_actions_started() -> None:
     w = world()
     who = member(w)
-    session_id = admitted_session(w, who.owner_id)
-    version = w.services.create_dataset_version(who.caller, session_id=session_id, now=NOW)
+    version = _admitted_version(w, who)
     w.services.start_analysis_run(who.caller, version_id=version.version_id, now=LATER)
 
-    html = (
-        _shell(w, who.account_id, who.organization_id)
-        .get(f"{SHELL_PREFIX}/en/{who.organization_id}/overview")
-        .text
-    )
+    html = _page(w, who, "overview")
 
     assert html.count('class="latest-work"') == 1
     assert SHELL_COPY["en"]["run_state_started"] in html
@@ -120,14 +129,9 @@ def test_another_organization_on_the_same_engine_sees_nothing() -> None:
     w = world()
     who = member(w)
     other = member(w, email="other@example.test", name="Other")
-    session_id = admitted_session(w, who.owner_id, OTHER_CSV)
-    w.services.create_dataset_version(who.caller, session_id=session_id, now=NOW)
+    _admitted_version(w, who, OTHER_CSV)
 
-    html = (
-        _shell(w, other.account_id, other.organization_id)
-        .get(f"{SHELL_PREFIX}/en/{other.organization_id}/data")
-        .text
-    )
+    html = _page(w, other, "data")
 
     assert "data-item" not in html
     assert SHELL_COPY["en"]["data_empty"] in html
