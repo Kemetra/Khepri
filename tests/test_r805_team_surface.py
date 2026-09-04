@@ -234,20 +234,25 @@ class TestTheTeamSurface:
         assert response.status_code == 200
         assert "member@example.test" in response.text
 
-    def test_it_reads_the_session_organization_not_the_address(self) -> None:
-        """`FR-042`. The path names one organization; the session names another.
+    def test_an_address_naming_another_organization_is_refused_before_any_read(self) -> None:
+        """`FR-042` scenario 3. The path names one organization; the session names another.
 
-        Asserted on what the reader was asked, because a surface reading the address would still
-        render a page and would still look right in a screenshot.
+        This case once asserted that the surface rendered the *session's* team under the other
+        organization's address. `FR-042`'s text requires the two to be compared and the request
+        to fail closed on disagreement, which review on `#373` read correctly; the pin is replaced.
+        Asserted on what the reader was asked as well as on the status, because a surface that
+        refused after reading would still have consulted the membership list for a page it did
+        not show.
         """
         reader = _StubOrganizations(
             organizations=[_organization("org-acme", "Acme")], members=[]
         )
-        _shell(context=_Context("acct-1", "org-acme"), reader=reader).get(
+        response = _shell(context=_Context("acct-1", "org-acme"), reader=reader).get(
             f"{SHELL_PREFIX}/en/org-someone-else/team"
         )
 
-        assert reader.member_calls == ["org-acme"]
+        assert response.status_code == 404
+        assert reader.member_calls == []
 
     def test_a_refused_actor_reaches_the_unavailable_surface(self) -> None:
         """`FR-050`: the team surface adds no new refusal of its own."""

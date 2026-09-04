@@ -223,22 +223,26 @@ class TestTheOrganizationIsNamedWhereItIsResolved:
 
         assert ORGANIZATION_NAME in html
 
-    def test_the_name_follows_the_session_not_the_address(self) -> None:
-        """`FR-042` gives the address no authority over scope, so neither may the frame.
+    def test_an_address_naming_another_organization_fails_closed(self) -> None:
+        """`FR-042` scenario 3: the address names one organization and the session another.
 
-        The address names one organization and the session another; the frame must show the
-        session's. A frame reading the path would show `org-other` here.
+        This case once asserted the opposite -- that the frame rendered the session's
+        organization under the other's address -- and the dispatcher was written to match it.
+        `FR-042`'s text is "MUST be compared against the session's active organization and MUST
+        fail closed on disagreement", which review on `#373` read correctly. The refusal is the
+        uniform one and names neither organization (`FR-051`, `FR-052`).
         """
-        html = _shell(
+        response = _shell(
             context=_Context("acct-1", "org-acme"),
             organizations=[
                 _organization("org-acme", ORGANIZATION_NAME),
                 _organization("org-other", "Someone Else Entirely"),
             ],
-        ).get(f"{SHELL_PREFIX}/en/org-other/team").text
+        ).get(f"{SHELL_PREFIX}/en/org-other/team")
 
-        assert ORGANIZATION_NAME in html
-        assert "Someone Else Entirely" not in html
+        assert response.status_code == 404
+        assert ORGANIZATION_NAME not in response.text
+        assert "Someone Else Entirely" not in response.text
 
     @pytest.mark.parametrize(
         "name",
@@ -413,7 +417,16 @@ class TestTheRefusalKeepsItsSurfaceAcrossLanguages:
 
     @pytest.mark.parametrize(
         "tail",
-        ["/no-such-surface", "/org-acme/no-such-surface", "/a/b/c/d"],
+        [
+            "/no-such-surface",
+            "/org-acme/no-such-surface",
+            "/a/b/c/d",
+            # `FR-046`: a surface is an exact address. A path that begins with one and carries
+            # more is an unknown path, not the surface it begins with (`#373` review).
+            "/org-acme/team/extra",
+            "/org-acme/overview/extra",
+            "/org-acme/data/no-such-object",
+        ],
     )
     def test_an_unknown_address_of_any_shape_reaches_the_refusal(self, tail: str) -> None:
         """`FR-046` is about the address being unknown, not about how many segments it has.

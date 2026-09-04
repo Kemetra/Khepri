@@ -481,6 +481,17 @@ def _team_response(
     )
 
 
+def _names_the_active_organization(segments: list[str], context: Any) -> bool:
+    """`FR-042`'s comparison: the address names the session's own organization, and there is one.
+
+    The session decides the scope; the address may only agree with it. A session with no active
+    organization agrees with nothing, so every scoped surface is denied (`FR-048` scenario 4).
+    """
+    return context.organization_id is not None and (
+        len(segments) > 1 and segments[1] == context.organization_id
+    )
+
+
 def add_shell_routes(
     app: FastAPI,
     *,
@@ -540,9 +551,15 @@ def add_shell_routes(
         """Resolve the actor, then dispatch on the surface the address names.
 
         **The address supplies the surface name and the language, never the scope.** `FR-042`
-        gives the session's active organization that job, so the organization segment of the path
-        is not read at all -- there is no parameter on which the comparison could be skipped
-        because nothing here consults one.
+        gives the session's active organization that job. Where the address also names an
+        organization, `FR-042` requires it to be *compared* with the session's and to fail closed
+        on disagreement (scenario 3) -- so a scoped surface renders only when the two agree, and
+        a disagreement is one more cause the uniform refusal absorbs. Review on `#373` found the
+        segment ignored, which rendered the session's organization under another's address.
+
+        **A surface is an exact address.** `FR-046` closes the surface set, so `/{surface}/more`
+        is an unknown path and reaches `unavailable` like any other; it does not render the
+        surface it begins with. The trailing slash is the one tolerated tail, as on the chooser.
 
         A surface this slice does not deliver falls through to `unavailable`, which is `FR-046`
         holding by construction: an unknown surface and a forbidden one are the same response
@@ -562,14 +579,14 @@ def add_shell_routes(
             return _no_membership(environment, language=language)
 
         surface = segments[2] if len(segments) > 2 else ""
-        if surface == "team" and context.organization_id is not None:
+        scoped = _names_the_active_organization(segments, context) and not any(segments[3:])
+        if surface == "team" and scoped:
             return _team_response(
                 services, environment, language=language, context=context
             )
         # `W1-05`. Dispatched only when a reader is wired, so a shell without one has no such
         # surface -- the address falls through to `unavailable` like any other unknown name.
-        workspace_ready = _offers_workspace(services) and context.organization_id is not None
-        if surface in _WORKSPACE_SURFACES and workspace_ready:
+        if surface in _WORKSPACE_SURFACES and scoped and _offers_workspace(services):
             try:
                 return _WORKSPACE_SURFACES[surface](
                     services, environment, language=language, context=context

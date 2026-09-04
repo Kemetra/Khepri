@@ -107,9 +107,23 @@ def work_row(run: Any) -> WorkRow:
     return WorkRow(state_key=RUN_STATE_COPY[run.state], started=moment(run.started_at))
 
 
+def _readiness(version: Any, uses: tuple[WorkRow, ...]) -> str:
+    """What has happened to this data, from the record and the runs together.
+
+    Sealing happens on the first *completion* (`record_completion`), so a version whose only run
+    started or failed is unsealed while a run of it is listed right beneath -- and "awaiting its
+    first analysis" over a row that says "Processing" is the contradiction review on `#373` found.
+    Three words, then: used (sealed), analysis started (unsealed, runs), awaiting (nothing yet).
+    """
+    if version.sealed_at is not None:
+        return "data_in_use"
+    return "data_analysis_started" if uses else "data_awaiting"
+
+
 def data_row(version: Any, runs: Iterable[Any]) -> DataRow:
     """One version's row. `runs` is the whole scope; the ones that used this version are kept, in
-    the order the reader returned them."""
+    the order the reader returned them, and they decide the row's readiness with the record."""
+    uses = tuple(work_row(run) for run in runs if run.version_id == version.version_id)
     return DataRow(
         submitted=moment(version.created_at),
         media_type=str(version.upload_media_type),
@@ -118,9 +132,9 @@ def data_row(version: Any, runs: Iterable[Any]) -> DataRow:
             if version.admission_outcome == ADMISSION_ADMITTED
             else "data_not_admitted"
         ),
-        readiness_key="data_in_use" if version.sealed_at is not None else "data_awaiting",
+        readiness_key=_readiness(version, uses),
         retention_key="retention_kept",
-        uses=tuple(work_row(run) for run in runs if run.version_id == version.version_id),
+        uses=uses,
     )
 
 
@@ -141,7 +155,7 @@ def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
     scope_runs = tuple(runs)
     return OverviewView(
         latest_work=work_row(scope_runs[0]) if scope_runs else None,
-        latest_data=data_row(first_versions[0], ()) if first_versions else None,
+        latest_data=data_row(first_versions[0], scope_runs) if first_versions else None,
         attention=tuple(work_row(run) for run in scope_runs if run.state == RUN_FAILED),
     )
 

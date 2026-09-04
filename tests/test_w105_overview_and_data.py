@@ -461,6 +461,28 @@ class TestData:
         assert copy["retention_kept"] in html
         assert "text/csv" in html
 
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    @pytest.mark.parametrize("state", [RUN_STARTED, RUN_FAILED])
+    def test_an_unsealed_version_with_a_run_says_the_analysis_started(
+        self, state: str, language: str
+    ) -> None:
+        """Sealing happens on the first completion, so a version whose only run started or failed
+        is unsealed while that run is listed beneath it. "Awaiting its first analysis" over a row
+        that says "Processing" was the contradiction review on `#373` found."""
+        records = _StubRecords(
+            versions=(_version("ver-b", created_at=EARLIER),),
+            runs=(_run("run-c", "ver-b", state=state, started_at=NOW),),
+        )
+        copy = SHELL_COPY[language]
+
+        data = _shell(records).get(f"{SHELL_PREFIX}/{language}/{ORGANIZATION}/data").text
+        overview = _shell(records).get(f"{SHELL_PREFIX}/{language}/{ORGANIZATION}/overview").text
+
+        for html in (data, overview):
+            assert copy["data_analysis_started"] in html
+            assert copy["data_awaiting"] not in html
+            assert copy["data_in_use"] not in html
+
     def test_no_row_leads_with_an_internal_identifier(self) -> None:
         """§7.2: digests, mapping versions and contract identifiers belong to audit detail, which
         is `W1-06`'s. Here they do not appear at all, and neither does the domain term."""
@@ -512,14 +534,38 @@ class TestScopeComesFromTheSession:
         records = _StubRecords()
         isolation = _StubIsolation()
 
-        _shell(records, isolation=isolation).get(
-            f"{SHELL_PREFIX}/en/{OTHER_ORGANIZATION}/{surface}"
-        )
+        _shell(records, isolation=isolation).get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}")
 
         assert isolation.asked == [("acct-a", ORGANIZATION)]
         assert records.asked, "the reader was never consulted"
         assert set(records.asked) == {SCOPE}
         assert ORGANIZATION not in records.asked
+
+    @pytest.mark.parametrize("surface", ["overview", "data"])
+    def test_an_address_naming_another_organization_fails_closed(self, surface: str) -> None:
+        """`FR-042` scenario 3. The reader and the scope door are never consulted: a disagreement
+        is refused before any read, so nothing about the session's organization is rendered under
+        another's address (`#373` review)."""
+        records = _worked_scope()
+        isolation = _StubIsolation()
+
+        response = _shell(records, isolation=isolation).get(
+            f"{SHELL_PREFIX}/en/{OTHER_ORGANIZATION}/{surface}"
+        )
+
+        assert response.status_code == 404
+        assert SHELL_COPY["en"]["unavailable_title"] in response.text
+        assert records.asked == [] and isolation.asked == []
+
+    @pytest.mark.parametrize("tail", ["/extra", "/no-such-object", "/x/y"])
+    @pytest.mark.parametrize("surface", ["overview", "data"])
+    def test_a_surface_is_an_exact_address(self, surface: str, tail: str) -> None:
+        """`FR-046`: `/data/no-such-object` is an unknown path, not the Data surface (`#373`
+        review). The trailing slash is the one tolerated tail, as on the chooser."""
+        shell = _shell(_worked_scope())
+
+        assert shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}{tail}").status_code == 404
+        assert shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}/").status_code == 200
 
     @pytest.mark.parametrize("surface", ["overview", "data"])
     def test_a_refused_scope_reaches_the_uniform_refusal(self, surface: str) -> None:
