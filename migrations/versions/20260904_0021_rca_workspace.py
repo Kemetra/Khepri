@@ -18,7 +18,10 @@ the schema became on a given day, and importing a module constant into one would
 that constant silently rewrite history. The model does the opposite, rendering the constraint from
 `RETENTION_STATES` so the domain and the column cannot drift.
 `test_the_retention_check_agrees_between_the_migration_and_the_model` is what keeps the two
-spellings honest.
+spellings honest. `state` carries the same treatment: `W1-01` published `RUN_STATES` and
+nothing constrained the column, so a row written by any path other than the store could hold
+a state the domain does not name -- and the read that rebuilt it would raise, breaking a whole
+scoped listing rather than the one row.
 
 **The scope foreign key targets `rca_isolation_scopes.owner_id`, a `UNIQUE` column rather than that
 table's primary key.** `organization_id` is the primary key there, and `RCA-001` `FR-033` forbids a
@@ -71,6 +74,7 @@ depends_on: str | Sequence[str] | None = None
 
 # Spelled literally rather than imported -- see the module docstring.
 _RETENTION_CHECK = "retention_state IN ('active', 'tombstoned')"
+_RUN_STATE_CHECK = "state IN ('started', 'completed', 'failed')"
 
 
 def upgrade() -> None:
@@ -174,6 +178,7 @@ def _run_constraints() -> tuple[sa.schema.SchemaItem, ...]:
             ondelete="RESTRICT",
         ),
         sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_run_retention"),
+        sa.CheckConstraint(_RUN_STATE_CHECK, name="ck_rca_workspace_run_state"),
         sa.UniqueConstraint("owner_id", "run_id", name="uq_rca_workspace_run_scope"),
     )
 

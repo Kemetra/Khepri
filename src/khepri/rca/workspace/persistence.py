@@ -38,6 +38,7 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
     select,
+    update,
 )
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
@@ -45,6 +46,7 @@ from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 from khepri.rca.persistence import Base, _utc
 from khepri.rca.records import assert_sealed
 from khepri.rca.workspace.contracts import (
+    RUN_STATES,
     AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
@@ -88,6 +90,27 @@ def _scope_foreign_key(name: str) -> ForeignKeyConstraint:
     )
 
 
+def _states_check(column: str, states: tuple[str, ...], name: str) -> CheckConstraint:
+    """Render a vocabulary CHECK from the declared states, for the named column.
+
+    Built from the domain's own tuple rather than spelled out, following `_role_in` in
+    `rca/persistence.py`: adding a state without a migration then fails against the constraint
+    rather than silently widening it. The migration spells the same values literally, because a
+    migration is a historical record and importing a constant into one would let a later edit
+    rewrite history.
+
+    `column` exists because two vocabularies need this -- `retention_state`, which this slice
+    introduces, and `state`, which `W1-01` published as `RUN_STATES`. The second had no schema
+    constraint until review on `#370` asked for one, and the asymmetry was the defect: a row
+    written by any path other than this store could hold a state the domain does not name, and the
+    read that rebuilt it would raise, breaking a whole scoped listing rather than the one row.
+    """
+    assert all(state.isalpha() for state in states), f"states must be plain identifiers: {states}"
+    assert column.replace("_", "").isalpha(), f"column must be an identifier: {column!r}"
+    values = ", ".join(f"'{state}'" for state in states)
+    return CheckConstraint(f"{column} IN ({values})", name=name)
+
+
 def _retention_check(states: tuple[str, ...], name: str) -> CheckConstraint:
     """Render the retention CHECK from the declared states, for the named constraint.
 
@@ -97,9 +120,7 @@ def _retention_check(states: tuple[str, ...], name: str) -> CheckConstraint:
     same values literally, because a migration is a historical record and importing a constant into
     one would let a later edit rewrite history -- and a test asserts the two spellings agree.
     """
-    assert all(state.isalpha() for state in states), f"states must be plain identifiers: {states}"
-    values = ", ".join(f"'{state}'" for state in states)
-    return CheckConstraint(f"retention_state IN ({values})", name=name)
+    return _states_check("retention_state", states, name)
 
 
 class DatasetVersionRow(Base):
@@ -150,6 +171,7 @@ class AnalysisRunRow(Base):
             ondelete="RESTRICT",
         ),
         _retention_check(RETENTION_STATES, "ck_rca_workspace_run_retention"),
+        _states_check("state", RUN_STATES, "ck_rca_workspace_run_state"),
         UniqueConstraint("owner_id", "run_id", name="uq_rca_workspace_run_scope"),
     )
 
@@ -448,6 +470,40 @@ class SqlWorkspaceStore:
                 return
             row.retention_state = state
             row.retention_changed_at = now
+
+    def seal_dataset_version(
+        self, version_id: str, *, now: datetime, owner_id: str | None = None
+    ) -> bool:
+        """Record that a version is sealed. One way, and never twice.
+
+        `DatasetVersion.create` cannot take a `sealed_at` -- `W1-01` made sealing an event rather
+        than a creation argument, and two of its tests assert that against the signature. But no
+        operation ever *performed* the event, so every stored version stayed unsealed and
+        `KHEPRI-DEC-033`'s seven-day raw-upload purge clock could never start. Review on `#370`
+        found the missing half.
+
+        Returns whether this call sealed it. A second call is refused rather than silently moving
+        the instant, because the purge clock starts at the first: re-sealing would extend a
+        deletion deadline, which is the one direction `KHEPRI-DEC-033` cannot tolerate. A version
+        that does not exist, or belongs to another scope, returns `False` for the reason
+        `set_retention_state` returns silently -- those are the same answer from the caller's side.
+
+        `sealed_at` is not in `MUTABLE_COLUMNS`, so `_refuse_content_update` would reject this
+        write like any other. It is applied through an `UPDATE` statement rather than by mutating
+        a loaded row, which is the same reason the guard sits on the ORM event: this is the one
+        transition the domain defines, and it says so by not going through the object.
+        """
+        with self._factory.begin() as database:
+            row = database.get(DatasetVersionRow, version_id)
+            if not _visible_in(row, owner_id) or row.sealed_at is not None:
+                return False
+            database.execute(
+                update(DatasetVersionRow)
+                .where(DatasetVersionRow.version_id == version_id)
+                .where(DatasetVersionRow.sealed_at.is_(None))
+                .values(sealed_at=now)
+            )
+        return True
 
     def tombstone_dataset_version(
         self, version_id: str, *, now: datetime, owner_id: str | None = None

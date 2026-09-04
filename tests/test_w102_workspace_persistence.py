@@ -13,6 +13,7 @@ duplicates. A second head test would be a second place to forget.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import UTC, datetime
 
 import pytest
@@ -25,6 +26,7 @@ from khepri.rca.organizations import OrganizationService
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.records import Sealed
 from khepri.rca.workspace.contracts import (
+    RUN_STATES,
     AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
@@ -686,3 +688,139 @@ def test_a_foreign_scope_lists_none_of_another_scopes_bindings(factory: sessionm
 
     assert store.artifact_bindings_for_run(run.run_id, owner_id=second) == ()
     assert len(store.artifact_bindings_for_run(run.run_id, owner_id=first)) == 1
+
+
+# --- Sealing, the transition `W1-01` defined and nothing performed ----------------------------
+
+
+def test_a_version_can_be_sealed_once(factory: sessionmaker) -> None:
+    """`W1-01` made sealing an event rather than a creation argument, and nothing performed it.
+
+    Two of its tests assert `create` has no `sealed_at` parameter, which is right -- but no
+    operation ever set the column, so every stored version stayed unsealed and
+    `KHEPRI-DEC-033`'s seven-day raw-upload purge clock could never start. Review on `#370` found
+    the missing half of a transition this repository had already reasoned about carefully.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    assert version.sealed_at is None
+    assert store.seal_dataset_version(version.version_id, now=LATER) is True
+
+    sealed = store.get_dataset_version(version.version_id)
+    assert sealed is not None
+    assert sealed.sealed_at == LATER
+
+
+def test_sealing_twice_is_refused_rather_than_moving_the_instant(factory: sessionmaker) -> None:
+    """The purge clock starts at the first sealing, so a second must not extend it.
+
+    Re-sealing would push a deletion deadline outward, which is the one direction
+    `KHEPRI-DEC-033` cannot tolerate -- an object staying retrievable longer than the decision
+    allows. Asserted on both the return value and the stored instant, because a method that
+    returned `False` while still writing would pass a return-only test.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    store.seal_dataset_version(version.version_id, now=NOW)
+
+    assert store.seal_dataset_version(version.version_id, now=LATER) is False
+
+    sealed = store.get_dataset_version(version.version_id)
+    assert sealed is not None
+    assert sealed.sealed_at == NOW
+
+
+def test_a_foreign_scope_cannot_seal_a_version(factory: sessionmaker) -> None:
+    first = _scope(factory)
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
+    store = SqlWorkspaceStore(factory)
+    mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
+
+    assert store.seal_dataset_version(mine.version_id, now=LATER, owner_id=second) is False
+
+    unsealed = store.get_dataset_version(mine.version_id)
+    assert unsealed is not None
+    assert unsealed.sealed_at is None
+
+
+def test_sealing_changes_nothing_else_about_the_record(factory: sessionmaker) -> None:
+    """Sealing is one column. A transition that rewrote content would defeat `FR-112` from the
+    inside -- through the one operation permitted to write."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    store.seal_dataset_version(version.version_id, now=LATER)
+
+    sealed = store.get_dataset_version(version.version_id)
+    assert sealed is not None
+
+    # Compared field by field rather than through `dataclasses.replace`, which `records.py`
+    # refuses on a sealed record -- correctly: substitution is one of the construction bypasses it
+    # exists to close, and a test may not open it to make an assertion convenient.
+    unchanged = {field.name for field in fields(DatasetVersion) if field.name != "sealed_at"}
+    for name in unchanged:
+        assert getattr(sealed, name) == getattr(version, name), name
+
+
+# --- The run-state vocabulary is enforced at the schema boundary too --------------------------
+
+
+def test_the_run_state_column_refuses_a_state_the_domain_does_not_name(
+    factory: sessionmaker,
+) -> None:
+    """`W1-01` enforced `RUN_STATES` in `RunOutcome.__post_init__`; the column had no constraint.
+
+    The asymmetry was the defect, and this module's own docstring had claimed the vocabulary was
+    "enforced twice" while saying so only about retention. A row written by any path other than
+    this store could hold an unnamed state, and the read that rebuilt it would raise inside
+    `RunOutcome` -- so one malformed row broke a whole scoped listing rather than itself.
+
+    Written through the row class directly, because that is the path a constraint has to cover:
+    the store cannot produce this row, which is exactly why the store is not where the check
+    belongs.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    with pytest.raises(IntegrityError), factory.begin() as database:
+        database.add(
+            AnalysisRunRow(
+                run_id="run_forged",
+                version_id=version.version_id,
+                owner_id=scope,
+                state="cancelled",
+                started_at=NOW,
+                retention_state=RETENTION_ACTIVE,
+            )
+        )
+
+
+@pytest.mark.parametrize("state", RUN_STATES)
+def test_the_column_accepts_every_state_the_domain_publishes(
+    factory: sessionmaker, state: str
+) -> None:
+    """Asserted over `RUN_STATES` rather than a hand-picked value, so a constraint narrower than
+    the domain fails here rather than at the first run that reaches it."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    with factory.begin() as database:
+        database.add(
+            AnalysisRunRow(
+                run_id=f"run_{state}",
+                version_id=version.version_id,
+                owner_id=scope,
+                state=state,
+                started_at=NOW,
+                retention_state=RETENTION_ACTIVE,
+            )
+        )
+
+    read = store.get_analysis_run(f"run_{state}")
+    assert read is not None
+    assert read.state == state
