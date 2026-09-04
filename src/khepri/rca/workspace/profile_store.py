@@ -26,6 +26,7 @@ from sqlalchemy.orm import sessionmaker
 from khepri.rca.persistence import _utc
 from khepri.rca.workspace.contracts import SourceProfile
 from khepri.rca.workspace.schema import RETENTION_ACTIVE, DatasetVersionRow, SourceProfileRow
+from khepri.rca.workspace.unit_of_work import reading, writing
 
 
 def _profile_from_row(row: SourceProfileRow) -> SourceProfile:
@@ -63,7 +64,7 @@ class SqlSourceProfileStore:
 
     def add(self, profile: SourceProfile) -> SourceProfile:
         """Store one profile under a version that exists in its scope, or refuse."""
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             database.add(
                 SourceProfileRow(
                     profile_id=profile.profile_id,
@@ -77,7 +78,7 @@ class SqlSourceProfileStore:
         return profile
 
     def get(self, profile_id: str, owner_id: str) -> SourceProfile | None:
-        with self._factory() as database:
+        with reading(self._factory) as database:
             row = database.scalars(
                 _live_profiles(owner_id).where(SourceProfileRow.profile_id == profile_id)
             ).one_or_none()
@@ -85,7 +86,7 @@ class SqlSourceProfileStore:
 
     def for_scope(self, owner_id: str) -> tuple[SourceProfile, ...]:
         """Newest first, within one scope, over live versions only."""
-        with self._factory() as database:
+        with reading(self._factory) as database:
             rows = database.scalars(
                 _live_profiles(owner_id).order_by(
                     SourceProfileRow.created_at.desc(), SourceProfileRow.profile_id.desc()

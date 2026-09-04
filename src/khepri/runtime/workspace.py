@@ -53,6 +53,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from sqlalchemy.orm import sessionmaker
+
 from khepri.rca.isolation import IsolationService
 from khepri.rca.workspace.audit import (
     ACTION_PROFILE_REMEMBERED,
@@ -85,6 +87,7 @@ from khepri.rca.workspace.contracts import (
 )
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
+from khepri.rca.workspace.unit_of_work import unit_of_work
 from khepri.rra.datasets import DatasetProfileRecord, ProfilingService, document_digest
 from khepri.rra.datasets import stored_manifest as _stored_manifest
 from khepri.rra.intake import UploadMetadata, UploadRepository
@@ -149,11 +152,40 @@ class WorkspacePorts:
 
 @dataclass(frozen=True, slots=True)
 class RecordStores:
-    """The `RCA` side: where the workspace records and their audit trail live."""
+    """The `RCA` side: where the workspace records and their audit trail live.
+
+    `factory` is the one the three stores were built over. The service opens one unit of work on
+    it around every action, so the action's write and its audit event commit together -- see
+    `rca/workspace/unit_of_work.py` for the window that closes.
+    """
 
     workspace: SqlWorkspaceRecordStore
     profiles: SqlSourceProfileStore
     audit: SqlWorkspaceAuditStore
+    factory: sessionmaker
+
+
+@dataclass(frozen=True, slots=True)
+class Caller:
+    """Who is asking, and about which organization -- the `RCA` vocabulary that stops at
+    `resolve_scope`. Paired at the type so a service call cannot name one account's identifier
+    beside another organization's one argument at a time."""
+
+    account_id: str
+    organization_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReportLocator:
+    """Where the pipeline left a report: the analysis session and the job that delivered it.
+
+    Two `RRA` object identifiers that confer nothing (`FR-023`) and are checked, never trusted --
+    the delivery must name the session, the session must belong to the caller's scope. Grouped
+    because they are one address and never travel apart.
+    """
+
+    session_id: str
+    job_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,10 +210,10 @@ class WorkspaceActions:
     # --- FR-110: a version records the admission the session holds ----------------------------
 
     def create_dataset_version(
-        self, *, account_id: str, organization_id: str, session_id: str, now: datetime
+        self, caller: Caller, *, session_id: str, now: datetime
     ) -> DatasetVersion:
         """Record the session's `RRA-003` admission as a dataset version, once."""
-        actor = self._actor(account_id, organization_id)
+        actor = self._actor(caller)
         return self._perform(
             actor,
             ACTION_VERSION_CREATED,
@@ -229,24 +261,33 @@ class WorkspaceActions:
         read through `ProfilingService`, which is the admission entry point -- this module holds no
         other way to a profile, and `test_w104_workspace_services.py` asserts that on its source.
         """
-        if self._rra.sessions.get_session_for_owner(owner_id, session_id) is None:
-            raise WorkspaceRefused(NO_SESSION_FAILURE)
+        self._require_owned_session(owner_id, session_id)
         upload = self._rra.uploads.get_upload_for_session(session_id)
-        try:
-            profile = self._rra.profiling.get_session_profile(session_id=session_id, now=now)
-        except PermissionError as refused:
-            raise WorkspaceRefused(NO_ADMISSION_FAILURE) from refused
-        if upload is None or profile is None or profile.source_sha256_hex != upload.sha256_hex:
+        profile = self._session_profile(session_id, now)
+        if upload is None or profile is None:
+            raise WorkspaceRefused(NO_ADMISSION_FAILURE)
+        if profile.source_sha256_hex != upload.sha256_hex:
             raise WorkspaceRefused(NO_ADMISSION_FAILURE)
         return upload, profile
 
+    def _require_owned_session(self, owner_id: str, session_id: str) -> None:
+        """Refuse a session that is not this scope's, indistinguishably from one that is absent."""
+        if self._rra.sessions.get_session_for_owner(owner_id, session_id) is None:
+            raise WorkspaceRefused(NO_SESSION_FAILURE)
+
+    def _session_profile(self, session_id: str, now: datetime) -> DatasetProfileRecord | None:
+        """The admission `ProfilingService` recorded, or `None`. An expired or unconsented session
+        is a refusal here rather than the `PermissionError` the service raises for its routes."""
+        try:
+            return self._rra.profiling.get_session_profile(session_id=session_id, now=now)
+        except PermissionError as refused:
+            raise WorkspaceRefused(NO_ADMISSION_FAILURE) from refused
+
     # --- FR-111: a run is produced by the pipeline and bound to its artifacts by digest ---------
 
-    def start_analysis_run(
-        self, *, account_id: str, organization_id: str, version_id: str, now: datetime
-    ) -> AnalysisRun:
+    def start_analysis_run(self, caller: Caller, *, version_id: str, now: datetime) -> AnalysisRun:
         """Open a run over a live version. Incomplete by construction; the pipeline fills it."""
-        actor = self._actor(account_id, organization_id)
+        actor = self._actor(caller)
         return self._perform(
             actor,
             ACTION_RUN_STARTED,
@@ -266,41 +307,33 @@ class WorkspaceActions:
         return Performed(run, OUTCOME_COMPLETED, _subject_of_run(run))
 
     def complete_analysis_run(
-        self,
-        *,
-        account_id: str,
-        organization_id: str,
-        run_id: str,
-        session_id: str,
-        job_id: str,
-        now: datetime,
+        self, caller: Caller, *, run_id: str, report: ReportLocator, now: datetime
     ) -> AnalysisRun:
         """Record what the pipeline produced for a run: its package and every artifact, by digest.
 
-        `session_id` and `job_id` say where to look; they are checked, never trusted. The package
-        must derive from the run's own version, the delivery must belong to the session, and every
-        required artifact kind must be present -- or the run stays `started` and nothing is bound.
+        `report` says where to look; it is checked, never trusted. The package must derive from the
+        run's own version, the delivery must belong to the session, and every required artifact
+        kind must be present -- or the run stays `started` and nothing is bound.
         """
-        actor = self._actor(account_id, organization_id)
+        actor = self._actor(caller)
         return self._perform(
             actor,
             ACTION_RUN_COMPLETED,
-            lambda: self._complete_run(actor.owner_id, run_id, (session_id, job_id), now),
+            lambda: self._complete_run(actor.owner_id, run_id, report, now),
             now=now,
         )
 
     def _complete_run(
-        self, owner_id: str, run_id: str, where: tuple[str, str], now: datetime
+        self, owner_id: str, run_id: str, report: ReportLocator, now: datetime
     ) -> Performed[AnalysisRun]:
-        session_id, job_id = where
         run, version = self._awaiting_run(owner_id, run_id)
-        package = self._derivation(owner_id, session_id, now)
+        package = self._derivation(owner_id, report.session_id, now)
         if (package.source_sha256_hex, package.mapping_version) != (
             version.upload_plaintext_digest,
             version.mapping_version,
         ):
             raise WorkspaceRefused(PROVENANCE_FAILURE)
-        artifacts = self._published_artifacts(session_id, job_id, now)
+        artifacts = self._published_artifacts(report, now)
         outcome = RunOutcome(
             state=RUN_COMPLETED,
             package_digest=package.package_digest,
@@ -325,8 +358,7 @@ class WorkspaceActions:
 
     def _derivation(self, owner_id: str, session_id: str, now: datetime) -> FactPackageRecord:
         """The session's `RRA-004` package, read through the service that validates it."""
-        if self._rra.sessions.get_session_for_owner(owner_id, session_id) is None:
-            raise WorkspaceRefused(NO_SESSION_FAILURE)
+        self._require_owned_session(owner_id, session_id)
         try:
             package = self._rra.packages.get_session_package(session_id=session_id, now=now)
         except PermissionError as refused:
@@ -336,27 +368,25 @@ class WorkspaceActions:
         return package
 
     def _published_artifacts(
-        self, session_id: str, job_id: str, now: datetime
+        self, report: ReportLocator, now: datetime
     ) -> tuple[PublishedArtifact, ...]:
         """Every required artifact kind, each with its own digest, or a refusal (`FR-111`)."""
-        delivery = self._rra.deliveries.find_delivery(job_id)
-        if delivery is None or delivery.session_id != session_id:
+        delivery = self._rra.deliveries.find_delivery(report.job_id)
+        if delivery is None or delivery.session_id != report.session_id:
             raise WorkspaceRefused(NO_DELIVERY_FAILURE)
         published = []
         for kind in REQUIRED_ARTIFACT_KINDS:
             stored = self._rra.artifacts.find_in_session(
-                session_id=session_id, job_id=job_id, artifact_kind=kind, now=now
+                session_id=report.session_id, job_id=report.job_id, artifact_kind=kind, now=now
             )
             if stored is None:
                 raise WorkspaceRefused(BUNDLE_INCOMPLETE_FAILURE)
             published.append(PublishedArtifact(surface=kind, artifact_digest=stored.sha256_hex))
         return tuple(published)
 
-    def fail_analysis_run(
-        self, *, account_id: str, organization_id: str, run_id: str, now: datetime
-    ) -> AnalysisRun:
+    def fail_analysis_run(self, caller: Caller, *, run_id: str, now: datetime) -> AnalysisRun:
         """End a run the pipeline did not deliver, as `failed`: a real state, with no provenance."""
-        actor = self._actor(account_id, organization_id)
+        actor = self._actor(caller)
         return self._perform(
             actor, ACTION_RUN_FAILED, lambda: self._fail_run(actor.owner_id, run_id, now), now=now
         )
@@ -378,13 +408,7 @@ class WorkspaceActions:
     # --- FR-114 / FR-115: the source profile, remembered and offered ----------------------------
 
     def remember_source_profile(
-        self,
-        *,
-        account_id: str,
-        organization_id: str,
-        version_id: str,
-        session_id: str,
-        now: datetime,
+        self, caller: Caller, *, version_id: str, session_id: str, now: datetime
     ) -> SourceProfile:
         """Keep the admitted mapping's shape beside its version, as metadata a form can read.
 
@@ -392,7 +416,7 @@ class WorkspaceActions:
         `(semantic, safe label)` pairs the admitted mapping placed -- what pre-fills a form -- and
         nothing a check could be read from. `SourceProfile`'s field set is `W1-01`'s equality.
         """
-        actor = self._actor(account_id, organization_id)
+        actor = self._actor(caller)
         return self._perform(
             actor,
             ACTION_PROFILE_REMEMBERED,
@@ -423,16 +447,14 @@ class WorkspaceActions:
         self._rca.profiles.add(remembered)
         return Performed(remembered, OUTCOME_COMPLETED, _subject_of_profile(remembered))
 
-    def propose_reuse(
-        self, *, account_id: str, organization_id: str, profile_id: str, now: datetime
-    ) -> SourceProfile:
+    def propose_reuse(self, caller: Caller, *, profile_id: str, now: datetime) -> SourceProfile:
         """Offer a remembered profile for the customer to see before confirming (`FR-114`).
 
         Audited although it writes nothing: `FR-125` names profile reuse, and the showing is the
         action. The proposal pre-fills a form; the admission that follows runs on what the customer
         submits, against the new source, and refuses on its own terms.
         """
-        actor = self._actor(account_id, organization_id)
+        actor = self._actor(caller)
         return self._perform(
             actor,
             ACTION_PROFILE_REUSED,
@@ -448,26 +470,43 @@ class WorkspaceActions:
 
     # --- authorization and the audit trail -----------------------------------------------------
 
-    def _actor(self, account_id: str, organization_id: str) -> AuditActor:
+    def _actor(self, caller: Caller) -> AuditActor:
         """Resolve the scope -- the one authorization door -- and name the actor within it."""
-        owner_id = self._isolation.resolve_scope(account_id, organization_id)
-        return AuditActor(owner_id=owner_id, actor_account_id=account_id)
+        owner_id = self._isolation.resolve_scope(caller.account_id, caller.organization_id)
+        return AuditActor(owner_id=owner_id, actor_account_id=caller.account_id)
 
     def _perform[T](
         self, actor: AuditActor, action: str, act: Callable[[], Performed[T]], *, now: datetime
     ) -> T:
-        """Run one action and record exactly one event for it, whichever way it ends."""
-        try:
-            performed = act()
-        except WorkspaceRefused:
-            self._rca.audit.record(WorkspaceAuditEvent.refused(actor, action, None, now=now))
-            raise
-        door = (
-            WorkspaceAuditEvent.already_recorded
-            if performed.outcome == OUTCOME_ALREADY_RECORDED
-            else WorkspaceAuditEvent.completed
-        )
-        self._rca.audit.record(door(actor, action, performed.subject, now=now))
+        """Run one action and record exactly one event for it, in one transaction.
+
+        The action's writes and its event share a unit of work, so a fault in either leaves neither
+        behind: the first draft committed the action and then opened a second transaction for the
+        event, and a fault between the two persisted a version with no record of who created it.
+        Review on `#372` found the window.
+
+        A refusal is recorded and the unit is committed -- every action refuses before it writes,
+        so there is nothing to roll back and the event is what must survive. The refusal is then
+        re-raised outside the unit, because an exception leaving the block would roll the event
+        back with it. Any other exception is a fault, not an outcome: the unit rolls back and
+        nothing is recorded, which is the same absence a reader sees for an action never attempted.
+        """
+        refusal: WorkspaceRefused | None = None
+        with unit_of_work(self._rca.factory):
+            try:
+                performed = act()
+            except WorkspaceRefused as refused:
+                refusal = refused
+                self._rca.audit.record(WorkspaceAuditEvent.refused(actor, action, None, now=now))
+            else:
+                door = (
+                    WorkspaceAuditEvent.already_recorded
+                    if performed.outcome == OUTCOME_ALREADY_RECORDED
+                    else WorkspaceAuditEvent.completed
+                )
+                self._rca.audit.record(door(actor, action, performed.subject, now=now))
+        if refusal is not None:
+            raise refusal
         return performed.result
 
 

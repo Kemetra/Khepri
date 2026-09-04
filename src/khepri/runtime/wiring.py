@@ -296,6 +296,7 @@ def build_workspace_actions(stack: RuntimeStack) -> WorkspaceActions:
             workspace=SqlWorkspaceRecordStore(stack.factory),
             profiles=SqlSourceProfileStore(stack.factory),
             audit=SqlWorkspaceAuditStore(stack.factory),
+            factory=stack.factory,
         ),
     )
 

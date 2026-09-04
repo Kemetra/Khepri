@@ -52,6 +52,7 @@ from khepri.rca.workspace.schema import (
 )
 from khepri.rca.workspace.tombstone_rows import tombstone_from_row, tombstone_row
 from khepri.rca.workspace.tombstones import RunTombstone, SectionStates, VersionTombstone
+from khepri.rca.workspace.unit_of_work import reading, writing
 
 #: How a deleting caller tells the cascade each run's section states. The live run record carries
 #: none and the bundle that does is `khepri.rra`'s (see `tombstones.py`), so the store asks rather
@@ -242,7 +243,7 @@ class SqlWorkspaceRecordStore:
     def add_dataset_version(self, version: DatasetVersion) -> DatasetVersion:
         """Append one version. A second write under the same identifier raises."""
         assert_sealed(version)
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             database.add(
                 DatasetVersionRow(
                     version_id=version.version_id,
@@ -264,7 +265,7 @@ class SqlWorkspaceRecordStore:
     def get_dataset_version(
         self, version_id: str, owner_id: str | None = None
     ) -> DatasetVersion | None:
-        with self._factory() as database:
+        with reading(self._factory) as database:
             row = database.get(DatasetVersionRow, version_id)
             if not _live_in(row, owner_id):
                 return None
@@ -280,7 +281,7 @@ class SqlWorkspaceRecordStore:
         not. That lets `W1-04` make version creation idempotent without the workspace holding an
         upload or session identifier, which `KHEPRI-DEC-015` §7 keeps out of every record it logs.
         """
-        with self._factory() as database:
+        with reading(self._factory) as database:
             row = database.scalars(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
@@ -291,7 +292,7 @@ class SqlWorkspaceRecordStore:
 
     def dataset_versions_for_scope(self, owner_id: str) -> tuple[DatasetVersion, ...]:
         """Newest first, within one scope only."""
-        with self._factory() as database:
+        with reading(self._factory) as database:
             rows = database.execute(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
@@ -318,7 +319,7 @@ class SqlWorkspaceRecordStore:
         reason.
         """
         assert_sealed(run)
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             parent = database.scalars(
                 version_for_update(run.version_id, run.owner_id)
             ).one_or_none()
@@ -360,7 +361,7 @@ class SqlWorkspaceRecordStore:
         """
         if outcome.state == RUN_STARTED:
             raise ValueError(RECOMPLETE_FAILURE)
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             row = database.scalars(run_for_update(run_id, owner_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.state != RUN_STARTED:
                 return False
@@ -394,15 +395,30 @@ class SqlWorkspaceRecordStore:
         re-sealing would extend a deletion deadline, which `seal_dataset_version` refuses for the
         same reason.
 
-        Returns whether this call completed the run, on `complete_analysis_run`'s reasoning. The
-        version lock is taken after the run's, in the same order `add_analysis_run` takes them, so
-        the two cannot deadlock against a concurrent deletion.
+        Returns whether this call completed the run, on `complete_analysis_run`'s reasoning.
+
+        **The version is locked before the run.** `set_retention_state` locks the version and then,
+        in the cascade, its live runs; a completion that locked the run first and then its version
+        could hold one row each with a concurrent deletion and wait forever. The first draft did
+        exactly that, and its docstring claimed the opposite. Review on `#372` found it. The run is
+        read once unlocked to learn its version, then both are locked in the deletion's order and
+        the run is re-checked under its lock -- its version cannot have changed (`FR-112`), but its
+        state and retention can have.
+
+        A run the cascade has already tombstoned is refused rather than completed: the guard would
+        refuse the update anyway, and a refusal here is the content-free answer the caller expects.
         """
         if outcome.state != RUN_COMPLETED:
             raise ValueError(RECOMPLETE_FAILURE)
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
+            peek = database.get(AnalysisRunRow, run_id)
+            if not _visible_in(peek, owner_id) or peek.state != RUN_STARTED:
+                return False
+            version = database.scalars(
+                version_for_update(peek.version_id, peek.owner_id)
+            ).one_or_none()
             row = database.scalars(run_for_update(run_id, owner_id)).one_or_none()
-            if not _visible_in(row, owner_id) or row.state != RUN_STARTED:
+            if not _live_in(row, owner_id) or row.state != RUN_STARTED:
                 return False
             row.state = outcome.state
             row.package_digest = outcome.package_digest
@@ -420,22 +436,19 @@ class SqlWorkspaceRecordStore:
                         published_at=now,
                     )
                 )
-            version = database.scalars(
-                version_for_update(row.version_id, row.owner_id)
-            ).one_or_none()
             if version is not None and version.sealed_at is None:
                 version.sealed_at = now
         return True
 
     def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
-        with self._factory() as database:
+        with reading(self._factory) as database:
             row = database.get(AnalysisRunRow, run_id)
             if not _live_in(row, owner_id):
                 return None
             return _run_from_row(row)
 
     def analysis_runs_for_scope(self, owner_id: str) -> tuple[AnalysisRun, ...]:
-        with self._factory() as database:
+        with reading(self._factory) as database:
             rows = database.execute(
                 select(AnalysisRunRow)
                 .where(AnalysisRunRow.owner_id == owner_id)
@@ -454,7 +467,7 @@ class SqlWorkspaceRecordStore:
         is the kind of asymmetry this module has already been caught on once.
         """
         assert_sealed(binding)
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             parent = database.scalars(
                 run_for_update(binding.run_id, binding.owner_id)
             ).one_or_none()
@@ -481,7 +494,7 @@ class SqlWorkspaceRecordStore:
         and `set_retention_state` taking no `owner_id` while the two `get_*` methods did -- the
         module stating one rule and implementing it in half its reads.
         """
-        with self._factory() as database:
+        with reading(self._factory) as database:
             # Joined to the parent run and narrowed to a live one. A binding has no retention state
             # of its own; it is read *through* its run, so a run tombstoned while its bindings
             # remain -- a partial, restored or concurrent deletion -- would otherwise hand back the
@@ -502,7 +515,7 @@ class SqlWorkspaceRecordStore:
     # --- retention, the one thing `FR-112` lets a later operation change -----------------
 
     def retention_state(self, version_id: str, owner_id: str | None = None) -> str | None:
-        with self._factory() as database:
+        with reading(self._factory) as database:
             row = database.get(DatasetVersionRow, version_id)
             return row.retention_state if _visible_in(row, owner_id) else None
 
@@ -523,7 +536,7 @@ class SqlWorkspaceRecordStore:
         """
         if state not in RETENTION_STATES:
             raise ValueError(RETENTION_STATE_FAILURE)
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             # Locked, and the argument for *not* locking is worth recording because I made it on
             # this PR and it was wrong. I reasoned that concurrent tombstones agree on the state
             # they want, so last-write-wins is harmless. They do not agree on
@@ -573,7 +586,7 @@ class SqlWorkspaceRecordStore:
         guard's own coverage claim false. The one-way rule now lives in the guard, where the
         reversal is visible, and this method needs no exemption.
         """
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             row = database.scalars(version_for_update(version_id, owner_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.sealed_at is not None:
                 return False
@@ -605,7 +618,7 @@ class SqlWorkspaceRecordStore:
         of the record that ended (`FR-117`), so it is read the way live records are -- by scope --
         and never by a filter a caller could widen. Ordered so a listing is stable across reads.
         """
-        with self._factory() as database:
+        with reading(self._factory) as database:
             rows = database.scalars(
                 select(WorkspaceTombstoneRow)
                 .where(WorkspaceTombstoneRow.owner_id == owner_id)

@@ -25,6 +25,7 @@ from khepri.rca.workspace.audit import (
     WorkspaceAuditEvent,
 )
 from khepri.rca.workspace.schema import WorkspaceAuditEventRow
+from khepri.rca.workspace.unit_of_work import reading, writing
 
 __all__ = ["SqlWorkspaceAuditStore", "WorkspaceAuditEventRow"]
 
@@ -55,7 +56,7 @@ class SqlWorkspaceAuditStore:
     def record(self, event: WorkspaceAuditEvent) -> WorkspaceAuditEvent:
         """Append one event. A second write under the same identifier raises."""
         assert_sealed(event)
-        with self._factory.begin() as database:
+        with writing(self._factory) as database:
             database.add(
                 WorkspaceAuditEventRow(
                     event_id=event.event_id,
@@ -72,7 +73,7 @@ class SqlWorkspaceAuditStore:
 
     def events_for_scope(self, owner_id: str) -> tuple[WorkspaceAuditEvent, ...]:
         """Every event in one scope, oldest first. Keyed by the scope and nothing else."""
-        with self._factory() as database:
+        with reading(self._factory) as database:
             rows = database.scalars(
                 select(WorkspaceAuditEventRow)
                 .where(WorkspaceAuditEventRow.owner_id == owner_id)
