@@ -66,7 +66,7 @@ from khepri.rca.workspace.contracts import (
     RUN_STARTED,
     SourceProfile,
 )
-from khepri.rca.workspace.persistence import SqlWorkspaceStore
+from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
 from khepri.rra.coverage_request import CoverageManifestBody
 from khepri.rra.datasets import ProfilingService, document_digest, stored_manifest
@@ -84,10 +84,10 @@ from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.rra.sessions import InvitationService, open_commercial_session
 from khepri.runtime.workspace import (
     ADMISSION_ADMITTED,
+    RecordStores,
+    WorkspaceActions,
     WorkspacePorts,
     WorkspaceRefused,
-    WorkspaceServices,
-    WorkspaceStores,
 )
 from tests.rra003_contract_fixtures import TEST_CONTRACT
 
@@ -193,10 +193,10 @@ class World:
     packages: FactPackageService
     deliveries: FakeDeliveries
     artifacts: FakeArtifacts
-    store: SqlWorkspaceStore
+    store: SqlWorkspaceRecordStore
     profiles: SqlSourceProfileStore
     audit: SqlWorkspaceAuditStore
-    services: WorkspaceServices
+    services: WorkspaceActions
 
 
 def world() -> World:
@@ -236,10 +236,10 @@ def world() -> World:
     )
     deliveries = FakeDeliveries()
     artifacts = FakeArtifacts()
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     profile_store = SqlSourceProfileStore(factory)
     audit = SqlWorkspaceAuditStore(factory)
-    services = WorkspaceServices(
+    services = WorkspaceActions(
         isolation=IsolationService(organizations, accounts),
         rra=WorkspacePorts(
             sessions=sessions,
@@ -249,7 +249,7 @@ def world() -> World:
             deliveries=deliveries,
             artifacts=artifacts,
         ),
-        rca=WorkspaceStores(workspace=store, profiles=profile_store, audit=audit),
+        rca=RecordStores(workspace=store, profiles=profile_store, audit=audit),
     )
     return World(
         factory=factory,
@@ -479,7 +479,7 @@ def test_a_version_needs_an_admission_the_session_actually_holds() -> None:
     member = _member(w)
     session_id = _session_with_upload(w, member.owner_id, GOLDEN_CSV)
 
-    with pytest.raises(WorkspaceRefused):
+    with pytest.raises(WorkspaceRefused, match="No admission"):
         w.services.create_dataset_version(
             account_id=member.account_id,
             organization_id=member.organization_id,
@@ -511,9 +511,12 @@ def test_a_refused_admission_creates_no_version_and_no_run() -> None:
         now=NOW,
     )
     runs_before = w.store.analysis_runs_for_scope(member.owner_id)
-    again = _admitted_session(w, member.owner_id, NO_MEASURE_CSV, attest=False)
+    # Attested, so the one thing wrong with this source is that `RRA-003` did not admit it. The
+    # first draft left it unattested and the refusal came from the missing manifest instead --
+    # the mutant that dropped the admissibility check survived. Assert the reason, not the type.
+    again = _admitted_session(w, member.owner_id, NO_MEASURE_CSV, attest=True)
 
-    with pytest.raises(WorkspaceRefused):
+    with pytest.raises(WorkspaceRefused, match="not admitted"):
         w.services.create_dataset_version(
             account_id=member.account_id,
             organization_id=member.organization_id,
@@ -534,7 +537,7 @@ def test_an_admission_without_a_coverage_attestation_creates_no_version() -> Non
     member = _member(w)
     session_id = _admitted_session(w, member.owner_id, attest=False)
 
-    with pytest.raises(WorkspaceRefused):
+    with pytest.raises(WorkspaceRefused, match="attestation"):
         w.services.create_dataset_version(
             account_id=member.account_id,
             organization_id=member.organization_id,
@@ -563,6 +566,35 @@ def test_creating_a_version_twice_for_one_session_returns_the_first() -> None:
     assert w.store.dataset_versions_for_scope(member.owner_id) == (first,)
     outcomes = [e.outcome for e in _events(w, member)]
     assert outcomes == [OUTCOME_COMPLETED, OUTCOME_ALREADY_RECORDED]
+
+
+def test_the_retry_lookup_never_crosses_scopes() -> None:
+    """Two organizations admit the same bytes. In production `RRA-002`'s randomised encryption
+    gives the two copies different ciphertext digests; the test object store does not, which is
+    what makes this the case that can see a missing `WHERE` -- a retry lookup unscoped by owner
+    would hand the second organization the first's version as `already_recorded`."""
+    w = world()
+    ours, theirs = _member(w), _member(w, "other@example.test", "Other")
+    our_version = w.services.create_dataset_version(
+        account_id=ours.account_id,
+        organization_id=ours.organization_id,
+        session_id=_admitted_session(w, ours.owner_id),
+        now=NOW,
+    )
+
+    their_version = w.services.create_dataset_version(
+        account_id=theirs.account_id,
+        organization_id=theirs.organization_id,
+        session_id=_admitted_session(w, theirs.owner_id),
+        now=NOW,
+    )
+
+    assert their_version.owner_id == theirs.owner_id
+    assert their_version.version_id != our_version.version_id
+    assert their_version.upload_ciphertext_digest == our_version.upload_ciphertext_digest
+    assert w.store.dataset_versions_for_scope(theirs.owner_id) == (their_version,)
+    assert w.store.dataset_versions_for_scope(ours.owner_id) == (our_version,)
+    assert [e.outcome for e in _events(w, theirs)] == [OUTCOME_COMPLETED]
 
 
 def test_a_version_cannot_be_created_from_another_scopes_session() -> None:
@@ -655,7 +687,10 @@ def test_starting_a_run_needs_a_live_version_in_scope() -> None:
     session_id, version_id, run_id = _version_and_run(w, member)
     run = w.store.get_analysis_run(run_id)
     assert run is not None and run.state == RUN_STARTED and run.version_id == version_id
-    assert [e.action for e in _events(w, member)] == [ACTION_VERSION_CREATED, ACTION_RUN_STARTED]
+    # Two events at one instant order arbitrarily; the assertion is which actions occurred.
+    assert sorted(e.action for e in _events(w, member)) == sorted(
+        [ACTION_VERSION_CREATED, ACTION_RUN_STARTED]
+    )
 
     w.store.tombstone_dataset_version(version_id, now=LATER)
     with pytest.raises(WorkspaceRefused):
@@ -830,7 +865,8 @@ def test_a_second_completion_is_refused_and_binds_nothing_twice() -> None:
         w.services.complete_analysis_run(**kwargs, now=LATER)
 
     assert len(w.store.artifact_bindings_for_run(run_id)) == len(REQUIRED_ARTIFACT_KINDS)
-    assert [e.outcome for e in _events(w, member)[-2:]] == [OUTCOME_COMPLETED, OUTCOME_REFUSED]
+    completions = [e for e in _events(w, member) if e.action == ACTION_RUN_COMPLETED]
+    assert sorted(e.outcome for e in completions) == sorted([OUTCOME_COMPLETED, OUTCOME_REFUSED])
 
 
 def test_failing_a_run_records_the_real_state_and_no_provenance() -> None:
@@ -950,8 +986,9 @@ def test_proposing_reuse_returns_the_profile_and_emits_one_event() -> None:
     )
 
     assert proposed == profile
-    recorded = _events(w, member)[-1]
-    assert (recorded.action, recorded.outcome) == (ACTION_PROFILE_REUSED, OUTCOME_COMPLETED)
+    (recorded,) = [e for e in _events(w, member) if e.action == ACTION_PROFILE_REUSED]
+    assert recorded.outcome == OUTCOME_COMPLETED
+    assert (recorded.object_kind, recorded.object_id) == (OBJECT_PROFILE, profile.profile_id)
     assert len(_events(w, member)) == before + 1
 
 
@@ -972,7 +1009,8 @@ def test_a_profile_of_a_deleted_version_is_not_offered() -> None:
             profile_id=profile.profile_id,
             now=LATER,
         )
-    assert _events(w, member)[-1].outcome == OUTCOME_REFUSED
+    (recorded,) = [e for e in _events(w, member) if e.action == ACTION_PROFILE_REUSED]
+    assert (recorded.outcome, recorded.object_id) == (OUTCOME_REFUSED, None)
 
 
 def test_a_profile_is_read_by_scope() -> None:

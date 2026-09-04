@@ -1,8 +1,9 @@
 """The `W1-02` workspace store: reads narrowed by scope and liveness, transitions, and their locks.
 
 Split from `persistence.py` alongside `schema.py`. This module holds the operations -- `_visible_in`
-and `_live_in`, the row-to-record projections, and `SqlWorkspaceStore` -- and imports the rows and
-vocabularies it operates on from `schema` and its named `FOR UPDATE` statements from `locks`.
+and `_live_in`, the row-to-record projections, and `SqlWorkspaceRecordStore` -- and imports the
+rows and vocabularies it operates on from `schema` and its named `FOR UPDATE` statements from
+`locks`.
 
 Every public name is re-exported from `persistence.py`; import from there.
 """
@@ -20,6 +21,7 @@ from sqlalchemy.orm import sessionmaker
 from khepri.rca.persistence import _utc
 from khepri.rca.records import assert_sealed
 from khepri.rca.workspace.contracts import (
+    RUN_COMPLETED,
     RUN_STARTED,
     AdmittedSource,
     AnalysisRun,
@@ -223,7 +225,7 @@ def _cascade_tombstone_to_runs(
         run.retention_changed_at = now
 
 
-class SqlWorkspaceStore:
+class SqlWorkspaceRecordStore:
     """Rows for the workspace records, and the one transition `FR-112` permits.
 
     Nothing here authorizes. A caller reaching this store has already been authorized by `W1-04`,
@@ -267,6 +269,25 @@ class SqlWorkspaceStore:
             if not _live_in(row, owner_id):
                 return None
             return _version_from_row(row)
+
+    def dataset_version_for_upload(
+        self, owner_id: str, ciphertext_digest: str
+    ) -> DatasetVersion | None:
+        """The live version recorded for one stored upload, if any -- the retry lookup.
+
+        The ciphertext digest identifies one stored copy of one upload: `RRA-002`'s encryption is
+        randomised, so two uploads of identical bytes differ here while one upload's retry does
+        not. That lets `W1-04` make version creation idempotent without the workspace holding an
+        upload or session identifier, which `KHEPRI-DEC-015` §7 keeps out of every record it logs.
+        """
+        with self._factory() as database:
+            row = database.scalars(
+                select(DatasetVersionRow)
+                .where(DatasetVersionRow.owner_id == owner_id)
+                .where(DatasetVersionRow.upload_ciphertext_digest == ciphertext_digest)
+                .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+            ).first()
+            return None if row is None else _version_from_row(row)
 
     def dataset_versions_for_scope(self, owner_id: str) -> tuple[DatasetVersion, ...]:
         """Newest first, within one scope only."""
@@ -348,6 +369,62 @@ class SqlWorkspaceStore:
             row.package_version = outcome.package_version
             row.formula_version = outcome.formula_version
             row.completed_at = outcome.completed_at
+        return True
+
+    def record_completion(
+        self,
+        run_id: str,
+        outcome: RunOutcome,
+        artifacts: tuple[PublishedArtifact, ...],
+        *,
+        now: datetime,
+        owner_id: str,
+    ) -> bool:
+        """Complete a run, bind every artifact it published, and seal its version -- as one write.
+
+        `FR-111` binds a completed run to its artifacts by digest, and `complete_analysis_run`
+        followed by seven `add_artifact_binding` calls would leave a window in which a completed
+        run names none of them: a crash between the two, or a reader between them, sees exactly
+        the incomplete run `FR-111` says must not be presented as completed. One transaction, or
+        neither. `W1-04` calls this and nothing else for completion.
+
+        Sealing rides along because it is the same event: `KHEPRI-DEC-033` starts the raw upload's
+        purge clock at "facts derived and reconciled", and the first completion over a version is
+        that instant. A later completion finds the version sealed and leaves the instant alone --
+        re-sealing would extend a deletion deadline, which `seal_dataset_version` refuses for the
+        same reason.
+
+        Returns whether this call completed the run, on `complete_analysis_run`'s reasoning. The
+        version lock is taken after the run's, in the same order `add_analysis_run` takes them, so
+        the two cannot deadlock against a concurrent deletion.
+        """
+        if outcome.state != RUN_COMPLETED:
+            raise ValueError(RECOMPLETE_FAILURE)
+        with self._factory.begin() as database:
+            row = database.scalars(run_for_update(run_id, owner_id)).one_or_none()
+            if not _visible_in(row, owner_id) or row.state != RUN_STARTED:
+                return False
+            row.state = outcome.state
+            row.package_digest = outcome.package_digest
+            row.package_version = outcome.package_version
+            row.formula_version = outcome.formula_version
+            row.completed_at = outcome.completed_at
+            for artifact in artifacts:
+                database.add(
+                    ArtifactBindingRow(
+                        binding_id=_identifier("abn"),
+                        run_id=row.run_id,
+                        owner_id=row.owner_id,
+                        surface=artifact.surface,
+                        artifact_digest=artifact.artifact_digest,
+                        published_at=now,
+                    )
+                )
+            version = database.scalars(
+                version_for_update(row.version_id, row.owner_id)
+            ).one_or_none()
+            if version is not None and version.sealed_at is None:
+                version.sealed_at = now
         return True
 
     def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:

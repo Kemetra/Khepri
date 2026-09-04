@@ -23,6 +23,7 @@ from khepri.runtime.wiring import (
     build_report_services,
     build_stack,
     build_web_app,
+    build_workspace_actions,
 )
 
 _MASTER_KEY = MasterKey(material=b"k" * 32)
@@ -193,3 +194,19 @@ def test_runtime_app_exposes_public_legal_routes_without_commercial_context() ->
     assert privacy.status_code == 503
     assert "organization" not in about.text.lower()
     assert "organization" not in privacy.text.lower()
+
+
+def test_the_workspace_services_read_the_stacks_own_rra_services() -> None:
+    """`W1-04`: the workspace records what the stack's `ProfilingService` and
+    `FactPackageService` decided -- the very instances the beta routes use -- and reads deliveries
+    and artifacts from the repositories the publisher writes. A second instance of any of them
+    would be a second reading of the same decision."""
+    stack = runtime_stack()
+
+    services = build_workspace_actions(stack)
+
+    ports = services._rra
+    assert ports.profiling is stack.services.profiling
+    assert ports.packages is stack.services.packages
+    assert ports.deliveries is stack.reports.deliveries
+    assert ports.artifacts is stack.reports.artifacts

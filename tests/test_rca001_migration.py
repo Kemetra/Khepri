@@ -61,6 +61,8 @@ RCA_REVISIONS = (
     # the revision, which is what the `#240` note above asks for: a table absent from
     # this list is a table every `_run`-driven test stops short of.
     ("20260904_0021", "rca_workspace", "20260822_0020"),
+    # `W1-04`'s audit event table (`FR-125`), registered in the commit that adds it.
+    ("20260905_0022", "rca_workspace_audit_events", "20260904_0021"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -86,6 +88,7 @@ RCA_TABLES = {
     # again -- missing from the models *and* from this set, so the equality held over both.
     "rca_workspace_source_profiles",
     "rca_workspace_tombstones",
+    "rca_workspace_audit_events",
 }
 
 

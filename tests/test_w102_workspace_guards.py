@@ -41,7 +41,7 @@ from khepri.rca.workspace.persistence import (
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
-    SqlWorkspaceStore,
+    SqlWorkspaceRecordStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -93,11 +93,11 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
-def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
+def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
     return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
 
 
-def _published(store: SqlWorkspaceStore, scope: str) -> tuple[str, str]:
+def _published(store: SqlWorkspaceRecordStore, scope: str) -> tuple[str, str]:
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -121,7 +121,7 @@ def _published(store: SqlWorkspaceStore, scope: str) -> tuple[str, str]:
 def test_a_stored_dataset_version_is_returned_sealed(factory: sessionmaker) -> None:
     """What comes back is a record the domain trusts, reconstructed through `_from_storage`."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     read = store.get_dataset_version(_version(store, scope).version_id)
 
     assert read is not None
@@ -133,7 +133,7 @@ def test_writing_the_same_version_twice_is_refused(factory: sessionmaker) -> Non
     route -- the row would be replaced rather than appended -- so it is refused rather than
     silently upserted."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with pytest.raises(IntegrityError):
@@ -155,7 +155,7 @@ def test_retention_state_is_the_only_thing_a_later_operation_changes(
     defect review on `#370` found: a caller could keep presenting a version the customer deleted.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     assert store.retention_state(version.version_id) == RETENTION_ACTIVE
@@ -177,7 +177,7 @@ def test_a_retention_state_the_domain_does_not_define_is_refused(factory: sessio
     constraint is that path.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with pytest.raises(ValueError, match="not one of the retention states"):
@@ -187,7 +187,7 @@ def test_a_retention_state_the_domain_does_not_define_is_refused(factory: sessio
 @pytest.mark.parametrize("state", RETENTION_STATES)
 def test_every_published_retention_state_is_accepted(factory: sessionmaker, state: str) -> None:
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     store.set_retention_state(version.version_id, state, now=LATER)
@@ -198,7 +198,7 @@ def test_every_published_retention_state_is_accepted(factory: sessionmaker, stat
 def test_the_refusal_does_not_echo_the_rejected_value(factory: sessionmaker) -> None:
     """Content-free refusals per `rca/errors.py`: a message must not carry caller input."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with pytest.raises(ValueError) as caught:
@@ -219,7 +219,7 @@ def test_one_run_may_hold_two_bindings_for_the_same_surface(factory: sessionmake
     place.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -246,7 +246,7 @@ def test_a_binding_identifier_is_allocated_rather_than_derived(factory: sessionm
     identifier must not make its subject recoverable from the key.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     run = store.add_analysis_run(
         AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
@@ -287,7 +287,7 @@ def test_a_content_field_cannot_be_changed_after_the_row_is_written(
     never that anything refuses a later write.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with (
@@ -330,7 +330,7 @@ def test_the_append_only_refusal_is_the_constant_and_nothing_else(
     constant is the only form of this test a message-shaped mutant cannot slip past.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with pytest.raises(ValueError) as caught, factory.begin() as database:
@@ -345,7 +345,7 @@ def test_the_append_only_refusal_does_not_echo_the_rejected_content(
 ) -> None:
     """Content-free per `rca/errors.py`: refusing a write must not log what was being written."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with pytest.raises(ValueError) as caught, factory.begin() as database:
@@ -372,7 +372,7 @@ def test_the_run_state_column_refuses_a_state_the_domain_does_not_name(
     belongs.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     with pytest.raises(IntegrityError), factory.begin() as database:
@@ -400,7 +400,7 @@ def test_the_column_accepts_every_state_the_domain_publishes(
     written here without it was one the domain says cannot exist, which the new rule caught.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     provenance = (
         {
@@ -444,7 +444,7 @@ def test_a_tombstoned_version_cannot_return_to_active(factory: sessionmaker) -> 
     had reasoned about.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     store.tombstone_dataset_version(version.version_id, now=LATER)
 
@@ -463,7 +463,7 @@ def test_a_tombstone_may_be_repeated(factory: sessionmaker) -> None:
     check is on the *direction* rather than on the prior state alone.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     store.tombstone_dataset_version(version.version_id, now=NOW)
     store.tombstone_dataset_version(version.version_id, now=LATER)
@@ -483,7 +483,7 @@ def test_sealing_is_refused_by_the_guard_and_not_only_by_the_store(
     guard rather than the method.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
     store.seal_dataset_version(version.version_id, now=NOW)
 
@@ -506,7 +506,7 @@ def test_a_published_binding_cannot_be_repointed_at_other_content(
     the omission, and it is the kind a parity check between two of three tables would miss.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     _, binding_id = _published(store, scope)
 
     with (
@@ -521,7 +521,7 @@ def test_no_field_of_a_binding_may_change(factory: sessionmaker, column: str) ->
     """Asserted per column rather than on the digest alone: repointing the *surface* or the
     parent run rewrites the same provenance from a different direction."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     _, binding_id = _published(store, scope)
 
     with (
@@ -547,7 +547,7 @@ def test_no_workspace_row_can_be_deleted(factory: sessionmaker, row_class: type)
     a guard applied to a subset is how this class of gap appears.
     """
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version_id, binding_id = _published(store, scope)
     identifier = {
         DatasetVersionRow: version_id,
@@ -567,7 +567,7 @@ def test_no_workspace_row_can_be_deleted(factory: sessionmaker, row_class: type)
 def test_tombstoning_remains_the_way_a_record_leaves_use(factory: sessionmaker) -> None:
     """The delete guard must not have closed the path `KHEPRI-DEC-033` actually prescribes."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     store.tombstone_dataset_version(version.version_id, now=LATER)
@@ -596,7 +596,7 @@ def test_every_workspace_row_class_declares_a_guard_shape() -> None:
 def test_sealing_a_live_version_is_still_allowed(factory: sessionmaker) -> None:
     """The freeze is terminal-state-specific, not a blanket ban on sealing."""
     scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
+    store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
     assert store.seal_dataset_version(version.version_id, now=LATER) is True
