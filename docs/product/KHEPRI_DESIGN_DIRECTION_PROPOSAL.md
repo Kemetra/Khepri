@@ -34,7 +34,7 @@ decide the question.
 
 | Document | Precedence | What it actually says about elevation, radius, gradient |
 |---|---|---|
-| `governance/registry.yaml` + active specs | **Authority** | **Nothing.** No active specification constrains elevation, radius, gradient, motion, or icon style. Verified by search across `governance/`. |
+| `governance/registry.yaml` + active specs | **Authority** | **Nothing.** No active specification constrains elevation, radius, gradient, or motion. Verified by search across `governance/`. **Icons are the exception and are excluded by name** — `RCA-002`:140–141, `RRA-012`:221–222 (§5.6). |
 | Master Product Roadmap | Outranks blueprint | **No prohibition.** Its only binding UI guardrails are roadmap:232–233 — server-rendered Jinja2 with **bundled** CSS/JS, and **no external fonts, CDNs, analytics scripts, or runtime assets.** |
 | Product UX Blueprint §17 | Product UX reference | "Small radii. Borders and rules rather than **heavy** shadows." §2 avoids "**decorative** gradients", nested cards, badge soup. |
 | **Design Language §1, §2.7** | **Lowest — grants no authority** | **`--shadow: none`. `border-radius: 0`. "A shadow ramp, a raised card, or a gradient would each break the law."** |
@@ -60,9 +60,10 @@ re-states the same absence as thesis: "This is not an unfinished figure/ground �
 **Both cannot be true.** M3 supplies the missing consumers (Overview, Data, Analyses, Analysis
 detail), which discharges the contingent reason without contradicting anything.
 
-The two genuinely principled absences — no second typeface, no icon set — rest on a real process
-gate (licence + audited digest), not on taste, and are treated here as gates to satisfy rather than
-doctrine to repeal.
+The two genuinely principled absences — no second typeface, no icon set — do **not** rest on taste.
+Both are **excluded by name in active specifications** (`RCA-002`:140–141, `RRA-012`:221–222: "any
+icon, typeface, or third-party asset"), *and* gated by the licence-plus-audited-digest process. They
+are preserved here as blockers, not repealed (§5.6, §10.1 blocker 1).
 
 ### 0.3 The requested freedom set already ships on `main`, under active authority
 
@@ -70,16 +71,17 @@ doctrine to repeal.
 repository) ships **today**, served at `/landing/assets/landing.css` under **active `RCA-004`**
 (`LAND1-01`):
 
-| Requested freedom | Already shipping in `landing.css` |
+| Requested freedom | What `landing.css` actually contains |
 |---|---|
 | Secondary brand accents | `--gold #d4a83a`, `--ochre #c97b5a`, `--egyptian-blue #4a9fc4`, `--papyrus #ede4d3` |
 | Multiple surface levels | `--stone-900/-800/-700/-600/-500` — an explicit five-step ground ramp |
 | Limited gradients, brand/hero only | Three: two `radial-gradient`, one `linear-gradient` (`:438`, `:485`, `:906`) |
-| Restrained glow / elevation | `box-shadow: 0 0 14px rgba(212,168,58,.55)` |
+| Restrained glow | `box-shadow: 0 0 14px rgba(212,168,58,.55)` — **an isolated glow effect, not an elevation ramp.** No named `--shadow-*` steps exist here |
 | Purposeful motion | `--ease-sun: cubic-bezier(.16,.84,.28,1)`, `--dur-slow: 1100ms`, `--dur-mid: 620ms` |
 | Richer typography hierarchy | `--text-monument: clamp(2.6rem,7.2vw,6.5rem)`, `--text-register` |
-| Intentional radius | `border-radius: 50%` |
+| Intentional radius | `border-radius: 50%` on the sun disc |
 | Egyptian geometry, abstract not literal | Tomb-wall **register** composition |
+| ~~Curated SVG icon set~~ | **Not present.** Zero SVG files in `src/`; the one mark is CSS-drawn geometry, described in the file as "the one piece of iconography on the page" (§5.6) |
 
 Its header records the owner decision and the rationale, and pre-empts the pastiche risk exactly as
 this task's brief demands:
@@ -106,6 +108,12 @@ the document only twice, as token-consumption counts, never as a visual world. A
 takes "no new colour, no icon set, no elevation ramp" as a product-wide doctrine when it is a
 two-surface one. **The edit is to state §9's scope and cross-reference the landing world, not to call
 §9 false** (§9.1).
+
+**And the precedent is narrower than "all three".** Corrected during review: the landing ships new
+colour, isolated effects (one glow, three gradients), motion tokens, and a display type scale. It
+does **not** ship an icon set (§5.6) and does **not** ship an elevation *ramp* — it has a five-step
+*ground* ramp and one glow, which is not the same thing as named elevation steps. The §9 edit at §9.1
+must therefore be scoped to what the code contains, not to a blanket contradiction.
 
 What the precedent does establish — and this is sufficient — is that **the owner has already approved
 a richer governed visual world for this product, with a recorded rationale, under active
@@ -278,7 +286,7 @@ Each row names the rule, where it lives, why it changes, and what replaces it. *
 | 3 | `border-radius: 0` on the primary button | DL §4.1 | **Retire** | Blueprint §17 says "**small radii**" — mandating radius, forbidding only large. `border-radius: 0` **contradicts the document that outranks it.** Adopt the shipped `--radius-sm: 3px` |
 | 4 | "**Gradients** — nothing in the palette is a gradient stop" | DL §1 rejection table | **Relax, narrowly** | Permitted **only** on brand/hero surfaces that never render a governed figure (§5.4). Blueprint §2 forbids "**decorative** gradients"; a brand surface is not decoration |
 | 5 | "No **elevation ramp**, no **secondary accent**" as *recorded deliberate absences* | DL §9; `shell.css` header | **Retire as doctrine; keep as history** | The recorded reason was "a shadow ramp **with no user**" — contingent. M3 supplies the users. Reclassify from doctrine to superseded rationale |
-| 6 | "No **icon set**" | DL §9 | **Relax to a gate, not a ban** | The ban conflates two things. **CSP permits it** — `img-src 'self'` — so a locally bundled curated SVG set is technically admissible. The real constraint is the **licence-plus-audited-digest process**, a gate to satisfy rather than a prohibition (§5.6) |
+| 6 | "No **icon set**" | DL §9 | **NOT relaxed — corrected during review** | An earlier draft relaxed this to "a gate, not a ban" on CSP grounds. **Wrong: `RCA-002`:140–141 and `RRA-012`:221–222 each exclude "any icon, typeface, or third-party asset" by name, and `RRA-010` excludes new asset files.** CSP compatibility is not authority. Icons stay **blocked pending separate asset-admission authority** (§5.6, §10.1 blocker 1) |
 | 7 | Composition assumed **symmetric, single-column**; "one document per page" | DL §3.4, §7 | **Relax** | Editorial/asymmetric register composition (§5.9, §8.1). Never at the cost of the 320px no-overflow invariant |
 | 8 | "**KPI card walls**" rejected outright | DL §1 rejection table | **Relax, precisely** | Blueprint §20.22 forbids **analytics content on Overview** — revenue, sales, branch, category, basket, concentration. It does **not** forbid analytical *treatment* elsewhere where real capability exists (§5.8). Card *walls* and *fixed counts* stay forbidden |
 | 9 | Motion limited to the single guarded progress animation | DL §4.8 | **Relax** | Purposeful micro-interaction with a stated UX job (§5.7), under the shipped reduced-motion discipline |
@@ -367,17 +375,35 @@ hue-constant derivation and its **measured** ratio against every ground it touch
 section rules, wordmark lockup, hero. **Never** on a state chip, badge, refusal panel, figure, or
 evidence chrome, where it would compete with semantic colour.
 
-### 5.6 Locally bundled curated SVG icons — technically admissible, procedurally gated
+### 5.6 Locally bundled curated SVG icons — BLOCKED on every current surface
 
-`img-src 'self'` and `style-src 'self'` mean a bundled SVG set is **CSP-permitted**; inline SVG in a
-Jinja partial needs no asset route at all. Requirements: licence + audited SHA-256 digest (the same
-process the typeface passed); **icon never alone** — always paired with text, since `RRA-012` FR-100
-already forbids colour alone and an icon is a weaker signal than colour; **no directional glyph** (an
-arrow does not mirror); `aria-hidden` when decorative; mirrored or direction-neutral in RTL.
+**Corrected during review of this proposal. An earlier draft called icons "technically admissible,
+procedurally gated" on the strength of the CSP. That was wrong, and the error is instructive: CSP
+compatibility is not authority.** Every active specification covering a surface that could host an
+icon excludes one by name:
 
-**Journey blocker:** an icon *file* is a new asset filename and an allowlist change — **excluded by
-`RRA-010`**. Inline SVG inside an existing journey template avoids that. In the shell, `RCA-005`'s
-Scope covers its templates.
+| Surface | Exclusion | Text |
+|---|---|---|
+| Shell (`/app`) | **`RCA-002`:140–141** | "**Any icon, typeface, or third-party asset.** Asset admission is governed separately and is not granted here." |
+| Report / evidence | **`RRA-012`:221–222** | "**Any icon, typeface, or third-party asset.** Asset admission is governed separately, exactly as `RCA-002`:134 records, and is not granted here." |
+| Journey (`/beta`) | **`RRA-010`:88** | A new asset filename or allowlist change is excluded |
+
+`img-src 'self'` and `style-src 'self'` do mean a bundled SVG set would be **CSP-compatible**, and
+inline SVG in a Jinja partial needs no asset route. **Neither fact overrides an exclusion.** Asset
+admission is governed separately on all three surfaces, so an icon set is **blocked pending separate
+asset-admission authority** — which is a governance artifact the owner merges, not a licence file an
+implementer supplies. The licence-plus-audited-digest process is a *further* requirement after that
+authority exists, not a substitute for it.
+
+**Recorded so it is not rediscovered:** there are **zero SVG files in `src/`** at `d52f11f`.
+`landing.css` draws its one mark — a gold sun disc in the wordmark — in pure CSS geometry, and its
+own comment calls it "the one piece of iconography on the page." **The landing is not a precedent for
+an icon set**, and this proposal does not claim it is.
+
+**When authority exists, these design requirements apply:** icon **never alone** — always paired with
+text, since `RRA-012` FR-100 forbids colour alone and an icon is a weaker signal than colour; **no
+directional glyph** (an arrow does not mirror); `aria-hidden` when decorative; mirrored or
+direction-neutral in RTL.
 
 ### 5.7 Purposeful micro-interactions and motion
 
@@ -644,7 +670,7 @@ execute.
 | §0 verification table | Re-measure every row at `d52f11f`; the last re-measure was `f15c835` |
 | **§1 "The sentence"** | **Replace** with the new thesis (§1 above) |
 | **§1 "The five laws"** | **Rewrite laws 1, 2, and 4.** Laws 3 and 5 unchanged |
-| **§1 rejection table** | Rewrite the **Gradients**, **KPI card walls**, and **icon set** rows; keep and strengthen **Nested cards**; keep **Generic SaaS dashboard**, **Giant sidebar**, **Badge soup**, **Fake capability**, **Coming Soon nav** |
+| **§1 rejection table** | Rewrite the **Gradients** and **KPI card walls** rows; **keep the icon-set row and strengthen it** with its two governance citations (§5.6); keep and strengthen **Nested cards**; keep **Generic SaaS dashboard**, **Giant sidebar**, **Badge soup**, **Fake capability**, **Coming Soon nav** |
 | §2.1 | Note the token layer now spans **two** visual worlds under two authorities |
 | §2.2 | Add the surface ramp; **retain the `--line`/`--muted` rule verbatim** |
 | §2.3 | Add brand accents **with derivations and measured ratios** |
@@ -664,7 +690,7 @@ execute.
 | §8.1 | **Re-open**: the dark report/app split must resolve **before** any dark work |
 | §8.4 | Resolve to `--radius-sm` + 44px with the journey's transparent treatment |
 | **§8 (new)** | **Record: is `landing.css` a sibling world or the direction of travel?** The most consequential open question, and an owner decision (§10.3) |
-| **§9** | **State its scope and cross-reference the landing world.** Its claims ("no new colour, no icon set, no elevation ramp, no dark palette") are **true as scoped to `/app` and `/beta`** and must say so — unscoped, they read as product-wide doctrine while `landing.css` ships all three under active `RCA-004` (§0.3) |
+| **§9** | **State its scope and cross-reference the landing world**, narrowed to what the code contains. Its claims are **true as scoped to `/app` and `/beta`** and must say so. Against `landing.css` specifically: **new colour and a dark palette are contradicted** at product scope; **"no icon set" is not** (zero SVG files; one CSS-drawn mark); and **"no elevation ramp" is not** (a five-step *ground* ramp plus one glow is not an elevation ramp). **"No icon set" stays true for `/app` and `/beta` as governance, not just as taste** — `RCA-002`:140–141 and `RRA-012`:221–222 exclude it (§5.6) |
 
 ### 9.2 `docs/product/KHEPRI_PRODUCT_UX_BLUEPRINT.md` — two edits only
 
@@ -717,7 +743,8 @@ Assessed against `governance/registry.yaml` at `d52f11f`, not against prose.
 
 | # | Freedom | Blocker | Nature | Resolution |
 |---|---|---|---|---|
-| **1** | **Icon file, any new asset file, or a shared token sheet, in `/beta`** | **`RRA-010` Exclusions:88** — "a new route, address, or **asset filename**; a change to the asset allowlist"; and no dependency on a property, class, or file "whose authority sits with the shell, **even when the resulting pixels would match**" | **HARD BLOCK, active authority** | Inline SVG inside an existing journey template (no new file); or a new `RRA` specification naming journey assets. **Cross-surface visual consistency is explicitly not `RRA-010`'s to deliver** |
+| **1** | **Any icon set, on every current surface** | **`RCA-002`:140–141** and **`RRA-012`:221–222** each exclude "**Any icon, typeface, or third-party asset.** Asset admission is governed separately and is not granted here." **`RRA-010`:88** excludes new asset filenames and allowlist changes | **HARD BLOCK, active authority on all three surfaces** | A **separate asset-admission artifact** the owner merges. CSP compatibility (`img-src 'self'`) is **not** authority, and the licence-plus-digest process is a further requirement after that authority exists, not a substitute (§5.6) |
+| **1b** | **A shared token sheet, or any new asset file, in `/beta`** | **`RRA-010` Exclusions:88** — "a new route, address, or **asset filename**; a change to the asset allowlist"; and no dependency on a property, class, or file "whose authority sits with the shell, **even when the resulting pixels would match**" | **HARD BLOCK, active authority** | Mirror tokens into `journey.css`'s own `:root` (§7.7); or a new `RRA` specification naming journey assets. **Cross-surface visual consistency is explicitly not `RRA-010`'s to deliver** |
 | **2** | **Dark app palette** | Blueprint **§20.31 LOCKED** (the shipped light token set is the visual authority) + `shell.css` `color-scheme: light` + DL §8.1's unresolved dark-report-in-light-app split | **OWNER DECISION** | Not proposed here. §8.1 must resolve first. This proposal keeps the app light |
 | **3** | **Second typeface** | Licence-plus-audited-digest process + roadmap:233 (no external fonts) + CSP `font-src 'self'` | **PROCESS GATE** | Not proposed. One face already covers both scripts from one verified digest |
 | **4** | **Analytical treatment on Overview** | Blueprint **§20.22 LOCKED** — no revenue, sales, branch, category, basket, or concentration content | **LOCKED** | Not proposed. §5.8 confines analytical treatment to surfaces with real capability |
@@ -728,7 +755,7 @@ Assessed against `governance/registry.yaml` at `d52f11f`, not against prose.
 
 ### 10.2 Not blockers — three findings that materially widen what is available
 
-1. **No active specification constrains elevation, radius, gradient, motion, or icon style.**
+1. **No active specification constrains elevation, radius, gradient, or motion** (icons excepted — §5.6).
    Verified by search across `governance/`. The strictest visual rules are **self-imposed by
    `KHEPRI_DESIGN_LANGUAGE.md`, the lowest-precedence document, which grants no authority.** Most of
    §5 is therefore unlocked by an owner-merged doc edit — **no governance amendment required.**
@@ -788,8 +815,9 @@ Why this and nothing else first:
   currently blocked by that document alone (§10.2 finding 1).
 - It is **verifiable in isolation**: no CSS diff, so no contrast, RTL, 44px, or parity risk, and
   `khepri-gov validate` is unaffected.
-- It **fixes a false statement on `main`** — §9's "no new colour, no icon set, no elevation ramp"
-  against a shipped `landing.css` that has all three (§0.3).
+- It **fixes an unscoped statement on `main`** — §9 reads as product-wide doctrine while a shipped
+  `landing.css` under active `RCA-004` contradicts its colour and dark-palette claims at that scope
+  (§0.3). The icon and elevation-ramp claims stay, with their real basis stated (§5.6).
 - It requires **no governance amendment** and touches **no LOCKED blueprint item**.
 
 **The first code slice after it** — and only after it merges — is the shell primary button (DL §8.4):
