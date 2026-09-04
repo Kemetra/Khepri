@@ -403,10 +403,12 @@ def test_the_written_rows_hold_nothing_outside_their_subjects_allowlist(
 ) -> None:
     """Read at the row, below the projection: the `CHECK` constraints `W1-02` wrote refuse a
     run-only column on a version row and vice versa, so a row that reached the table already
-    satisfies them -- this asserts the mapping filled the right side rather than none."""
+    satisfies them -- this asserts the mapping filled the right side rather than none. The version
+    is sealed and the run completed first, so every column on each side has a value to carry."""
     scope = _scope(factory)
     store = SqlWorkspaceStore(factory)
     version = _stored_version(store, scope)
+    assert store.seal_dataset_version(version.version_id, now=COMPLETED)
     run = _stored_run(store, scope, version, complete=True)
 
     store.tombstone_dataset_version(
@@ -472,9 +474,7 @@ def test_tombstones_are_read_by_scope(factory: sessionmaker) -> None:
     store.tombstone_dataset_version(their_version.version_id, now=LATER)
 
     assert [t.version_id for t in store.tombstones_for_scope(ours)] == [our_version.version_id]
-    assert [t.version_id for t in store.tombstones_for_scope(theirs)] == [
-        their_version.version_id
-    ]
+    assert [t.version_id for t in store.tombstones_for_scope(theirs)] == [their_version.version_id]
 
 
 def test_a_deletion_under_a_foreign_scope_writes_nothing(factory: sessionmaker) -> None:
