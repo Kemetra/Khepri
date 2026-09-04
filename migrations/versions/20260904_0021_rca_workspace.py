@@ -81,18 +81,14 @@ def upgrade() -> None:
     each table's columns and constraints readable as one unit, which is what a reader auditing a
     schema change is looking for.
     """
-    op.create_table(
-        "rca_workspace_dataset_versions", *_version_columns(), *_version_constraints()
-    )
+    op.create_table("rca_workspace_dataset_versions", *_version_columns(), *_version_constraints())
     _index("rca_workspace_dataset_versions", "owner_id")
 
     op.create_table("rca_workspace_analysis_runs", *_run_columns(), *_run_constraints())
     _index("rca_workspace_analysis_runs", "owner_id")
     _index("rca_workspace_analysis_runs", "version_id")
 
-    op.create_table(
-        "rca_workspace_artifact_bindings", *_binding_columns(), *_binding_constraints()
-    )
+    op.create_table("rca_workspace_artifact_bindings", *_binding_columns(), *_binding_constraints())
     _index("rca_workspace_artifact_bindings", "owner_id")
     _index("rca_workspace_artifact_bindings", "run_id")
 
