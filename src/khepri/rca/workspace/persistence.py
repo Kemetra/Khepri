@@ -45,6 +45,7 @@ from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 from khepri.rca.persistence import Base, _utc
 from khepri.rca.records import assert_sealed
 from khepri.rca.workspace.contracts import (
+    RUN_STARTED,
     RUN_STATES,
     AdmittedSource,
     AnalysisRun,
@@ -224,9 +225,42 @@ class ArtifactBindingRow(Base):
 # runs are append-only, and "only retention state and tombstoning may change a row".
 MUTABLE_COLUMNS = frozenset({"retention_state", "retention_changed_at", "sealed_at"})
 
+# What `complete_analysis_run` writes, and nothing else may. `FR-112` makes content immutable
+# "after sealing or completion" -- not after writing -- and `W1-01` creates a run *incomplete* by
+# design, because `FR-111` puts the digest and the governed versions on the real pipeline. So the
+# transition from `started` to a terminal state is required rather than a violation, and these are
+# the only columns it may touch.
+COMPLETION_COLUMNS = frozenset(
+    {"state", "package_digest", "package_version", "formula_version", "completed_at"}
+)
+
 APPEND_ONLY_FAILURE = "A workspace record's content cannot change after it is written."
 RESEAL_FAILURE = "A sealed version cannot be sealed again."
+RECOMPLETE_FAILURE = "A run that has left the started state cannot be completed again."
+DELETE_FAILURE = "A workspace record is removed through its retention lifecycle, not deleted."
 TOMBSTONE_FAILURE = "A tombstoned record cannot return to an earlier retention state."
+
+
+def _refuse_delete(_mapper, _connection, _target: object) -> None:
+    """Refuse an ordinary `DELETE`, which `RESTRICT` does not cover.
+
+    `ondelete="RESTRICT"` protects a row that something *references*. A dataset version with no
+    runs, or any binding, has no referent and deletes cleanly -- so the append-only guarantee held
+    only for rows that happened to have children. Review on `#370` found it.
+
+    `FR-112` makes these rows append-only and `KHEPRI-DEC-033` moves them out of use by
+    tombstoning rather than erasure, because deletion has to leave evidence. A row erased by an
+    ordinary `DELETE` leaves none, and the retention state this slice added would have nothing to
+    describe.
+
+    `W1-07` writes the lifecycle that legitimately removes rows -- the retention sweep and the
+    backup-aware purge. It will need an exemption from this listener, which is the right shape: an
+    operation that deletes should have to say so, rather than every session being able to.
+
+    Like `_refuse_content_update`, this is a mapper event: it binds ORM deletes, not bulk DML or
+    raw SQL, and database-boundary enforcement belongs with `W1-07`.
+    """
+    raise ValueError(DELETE_FAILURE)
 
 
 def _one_way(target: object, column: str, forbidden_prior: object) -> bool:
@@ -272,6 +306,14 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
     changed = {
         attribute.key for attribute in sa_inspect(target).attrs if attribute.history.has_changes()
     }
+    if "state" in changed and _one_way(target, "state", RUN_STARTED):
+        # The completion transition, taken once out of `started`. Every column it writes is then
+        # immutable, because the branch below refuses any later change to them.
+        if not changed <= COMPLETION_COLUMNS:
+            raise ValueError(APPEND_ONLY_FAILURE)
+        return
+    if changed & COMPLETION_COLUMNS:
+        raise ValueError(RECOMPLETE_FAILURE)
     if not changed <= MUTABLE_COLUMNS:
         raise ValueError(APPEND_ONLY_FAILURE)
     if "sealed_at" in changed and not _one_way(target, "sealed_at", None):
@@ -298,8 +340,15 @@ def _visible_in(row: object | None, owner_id: str | None) -> bool:
     return owner_id is None or row.owner_id == owner_id
 
 
-event.listen(DatasetVersionRow, "before_update", _refuse_content_update)
-event.listen(AnalysisRunRow, "before_update", _refuse_content_update)
+# Every workspace row is append-only, so every one carries both guards. `ArtifactBindingRow` was
+# missing from the update listener until review on `#370` asked why: a binding is immutable under
+# `RCA-005`, and a caller changing `artifact_digest` would silently repoint a retained result at
+# different content, which is exactly the provenance `FR-111` binds by digest to prevent.
+#
+# Registered per class rather than on `Base`, so no other RCA table is affected.
+for _row_class in (DatasetVersionRow, AnalysisRunRow, ArtifactBindingRow):
+    event.listen(_row_class, "before_update", _refuse_content_update)
+    event.listen(_row_class, "before_delete", _refuse_delete)
 
 
 def _version_from_row(row: DatasetVersionRow) -> DatasetVersion:
@@ -421,6 +470,38 @@ class SqlWorkspaceStore:
             )
         return run
 
+    def complete_analysis_run(
+        self, run_id: str, outcome: RunOutcome, *, owner_id: str | None = None
+    ) -> bool:
+        """Record what a run produced, once, moving it out of `started`.
+
+        `W1-01` creates a run incomplete on purpose -- `FR-111` puts the digest and the governed
+        versions on the real pipeline rather than on whoever starts the run -- so the pipeline
+        needs a way to record its result. Review on `#370` found that the append-only guard had
+        made this impossible: a run written through this store could never reach a terminal state,
+        and `FR-112`'s "after sealing or completion" had been implemented as "after writing".
+
+        One way, like sealing. `RunOutcome.__post_init__` already refuses a state the domain does
+        not name, so this refuses only the *second* completion: the guard treats every column this
+        writes as immutable once the run has left `started`.
+
+        Returns whether this call completed it, on the same reasoning as `seal_dataset_version`:
+        a run that does not exist, belongs to another scope, or has already finished are the same
+        answer from the caller's side.
+        """
+        if outcome.state == RUN_STARTED:
+            raise ValueError(RECOMPLETE_FAILURE)
+        with self._factory.begin() as database:
+            row = database.get(AnalysisRunRow, run_id)
+            if not _visible_in(row, owner_id) or row.state != RUN_STARTED:
+                return False
+            row.state = outcome.state
+            row.package_digest = outcome.package_digest
+            row.package_version = outcome.package_version
+            row.formula_version = outcome.formula_version
+            row.completed_at = outcome.completed_at
+        return True
+
     def get_analysis_run(self, run_id: str, owner_id: str | None = None) -> AnalysisRun | None:
         with self._factory() as database:
             row = database.get(AnalysisRunRow, run_id)
@@ -534,6 +615,9 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "DELETE_FAILURE",
+    "COMPLETION_COLUMNS",
+    "RECOMPLETE_FAILURE",
     "RESEAL_FAILURE",
     "TOMBSTONE_FAILURE",
     "MUTABLE_COLUMNS",

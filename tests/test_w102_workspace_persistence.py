@@ -32,9 +32,11 @@ from khepri.rca.workspace.contracts import (
     ArtifactBinding,
     DatasetVersion,
     PublishedArtifact,
+    RunOutcome,
 )
 from khepri.rca.workspace.persistence import (
     APPEND_ONLY_FAILURE,
+    COMPLETION_COLUMNS,
     MUTABLE_COLUMNS,
     RETENTION_ACTIVE,
     RETENTION_STATES,
@@ -550,9 +552,15 @@ def test_a_content_field_cannot_be_changed_after_the_row_is_written(
     assert store.get_dataset_version(version.version_id) == version
 
 
-def test_a_completed_run_cannot_have_its_package_rewritten(factory: sessionmaker) -> None:
-    """The same guard on runs: `FR-111` puts the digest on the pipeline, and it stays where it
-    was put."""
+def test_a_run_that_never_completed_cannot_have_a_package_written_to_it(
+    factory: sessionmaker,
+) -> None:
+    """`FR-111` puts the digest on the pipeline, and only the completion transition records it.
+
+    Writing a package field without moving the state is not a completion -- it is a run claiming a
+    result it never declared finishing -- so it is refused even while the run is still `started`.
+    `complete_analysis_run` is the one path that writes these columns.
+    """
     scope = _scope(factory)
     store = SqlWorkspaceStore(factory)
     version = _version(store, scope)
@@ -561,7 +569,7 @@ def test_a_completed_run_cannot_have_its_package_rewritten(factory: sessionmaker
     )
 
     with (
-        pytest.raises(ValueError, match="cannot change after it is written"),
+        pytest.raises(ValueError, match="cannot be completed again"),
         factory.begin() as database,
     ):
         row = database.get(AnalysisRunRow, run.run_id)
@@ -890,3 +898,248 @@ def test_sealing_is_refused_by_the_guard_and_not_only_by_the_store(
     with pytest.raises(ValueError, match="cannot be sealed again"), factory.begin() as database:
         row = database.get(DatasetVersionRow, version.version_id)
         row.sealed_at = LATER
+
+
+# --- Completion: the transition `FR-111` requires and the guard had made impossible ------------
+
+
+def _started_run(store: SqlWorkspaceStore, scope: str) -> AnalysisRun:
+    version = _version(store, scope)
+    return store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+
+
+COMPLETED_OUTCOME = RunOutcome(
+    state="completed",
+    package_digest="sha256:" + "c" * 64,
+    package_version="rra008.package.v2",
+    formula_version="rra004.formula.v5",
+    completed_at=LATER,
+)
+
+
+def test_a_started_run_can_record_what_it_produced(factory: sessionmaker) -> None:
+    """The defect this closes: a run written through this store could never be completed.
+
+    `W1-01` creates a run incomplete on purpose, because `FR-111` puts the digest and the governed
+    versions on the real pipeline. The append-only guard then refused every write that would fill
+    them, so the record had fields no operation could ever set -- `FR-112` enforced as "after
+    writing" where its text says "after sealing or completion". Review on `#370` found it.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    run = _started_run(store, scope)
+
+    assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME) is True
+
+    completed = store.get_analysis_run(run.run_id)
+    assert completed is not None
+    assert completed.state == "completed"
+    assert completed.package_digest == COMPLETED_OUTCOME.package_digest
+    assert completed.package_version == COMPLETED_OUTCOME.package_version
+    assert completed.formula_version == COMPLETED_OUTCOME.formula_version
+    assert completed.completed_at == LATER
+
+
+def test_a_run_can_also_record_that_it_failed(factory: sessionmaker) -> None:
+    """`failed` is a terminal state the domain publishes, so it is a completion like any other."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    run = _started_run(store, scope)
+
+    assert store.complete_analysis_run(run.run_id, RunOutcome(state="failed")) is True
+
+    failed = store.get_analysis_run(run.run_id)
+    assert failed is not None
+    assert failed.state == "failed"
+    assert failed.package_digest is None
+
+
+def test_completing_twice_is_refused(factory: sessionmaker) -> None:
+    """One way, like sealing: a completed run does not re-derive a different result."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    run = _started_run(store, scope)
+    store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME)
+
+    other = RunOutcome(state="failed", completed_at=LATER)
+    assert store.complete_analysis_run(run.run_id, other) is False
+
+    unchanged = store.get_analysis_run(run.run_id)
+    assert unchanged is not None
+    assert unchanged.state == "completed"
+    assert unchanged.package_digest == COMPLETED_OUTCOME.package_digest
+
+
+def test_a_completed_run_is_immutable_through_the_orm_too(factory: sessionmaker) -> None:
+    """The store returning `False` is politeness; the guard refusing the write is the property.
+
+    Asserted through a loaded row rather than only through the method, for the reason the sealing
+    equivalent is: an earlier version of this module had a path that wrote around the guard, and a
+    return-value test cannot see one.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    run = _started_run(store, scope)
+    store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME)
+
+    with (
+        pytest.raises(ValueError, match="cannot be completed again"),
+        factory.begin() as database,
+    ):
+        row = database.get(AnalysisRunRow, run.run_id)
+        row.package_digest = "sha256:" + "0" * 64
+
+
+def test_completion_cannot_smuggle_a_content_change(factory: sessionmaker) -> None:
+    """The transition writes its own columns and no others.
+
+    A completion permitted to touch `version_id` would rewrite which dataset a run derived from --
+    provenance, changed through the one write the guard allows. `COMPLETION_COLUMNS` is asserted
+    as an equality for the same reason `MUTABLE_COLUMNS` is.
+    """
+    assert {
+        "state",
+        "package_digest",
+        "package_version",
+        "formula_version",
+        "completed_at",
+    } == COMPLETION_COLUMNS
+
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    run = _started_run(store, scope)
+
+    with (
+        pytest.raises(ValueError, match="cannot change after it is written"),
+        factory.begin() as database,
+    ):
+        row = database.get(AnalysisRunRow, run.run_id)
+        row.state = "completed"
+        row.version_id = "dsv_somewhere_else"
+
+
+def test_a_foreign_scope_cannot_complete_a_run(factory: sessionmaker) -> None:
+    first = _scope(factory)
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
+    store = SqlWorkspaceStore(factory)
+    run = _started_run(store, first)
+
+    assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME, owner_id=second) is False
+
+    untouched = store.get_analysis_run(run.run_id)
+    assert untouched is not None
+    assert untouched.state == "started"
+
+
+def test_completing_into_the_started_state_is_refused(factory: sessionmaker) -> None:
+    """`started` is not a completion, so passing it is a caller error rather than a no-op."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    run = _started_run(store, scope)
+
+    with pytest.raises(ValueError, match="cannot be completed again"):
+        store.complete_analysis_run(run.run_id, RunOutcome(state="started"))
+
+
+# --- A binding is immutable, and no workspace row is deleted -----------------------------------
+
+
+def _published(store: SqlWorkspaceStore, scope: str) -> tuple[str, str]:
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    store.add_artifact_binding(
+        ArtifactBinding.create(
+            owner_id=scope,
+            run_id=run.run_id,
+            artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "a" * 64),
+            now=NOW,
+        )
+    )
+    with store._factory() as database:
+        binding_id = database.execute(select(ArtifactBindingRow.binding_id)).scalars().one()
+    return version.version_id, binding_id
+
+
+def test_a_published_binding_cannot_be_repointed_at_other_content(
+    factory: sessionmaker,
+) -> None:
+    """`FR-111` binds a retained artifact *by digest*, so the digest is the provenance.
+
+    The update guard was registered on dataset versions and runs and not on bindings -- so a
+    caller could change `artifact_digest` and silently repoint a published result at different
+    content, which is precisely what binding by digest exists to prevent. Review on `#370` found
+    the omission, and it is the kind a parity check between two of three tables would miss.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    _, binding_id = _published(store, scope)
+
+    with (
+        pytest.raises(ValueError, match="cannot change after it is written"),
+        factory.begin() as database,
+    ):
+        database.get(ArtifactBindingRow, binding_id).artifact_digest = "sha256:" + "b" * 64
+
+
+@pytest.mark.parametrize("column", ["surface", "run_id", "owner_id"])
+def test_no_field_of_a_binding_may_change(factory: sessionmaker, column: str) -> None:
+    """Asserted per column rather than on the digest alone: repointing the *surface* or the
+    parent run rewrites the same provenance from a different direction."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    _, binding_id = _published(store, scope)
+
+    with (
+        pytest.raises(ValueError, match="cannot change after it is written"),
+        factory.begin() as database,
+    ):
+        setattr(database.get(ArtifactBindingRow, binding_id), column, "reassigned")
+
+
+@pytest.mark.parametrize(
+    "row_class",
+    [DatasetVersionRow, AnalysisRunRow, ArtifactBindingRow],
+)
+def test_no_workspace_row_can_be_deleted(factory: sessionmaker, row_class: type) -> None:
+    """`ondelete="RESTRICT"` protects a *referenced* row, and an unreferenced one deleted cleanly.
+
+    A dataset version with no runs, or any binding, has no referent -- so the append-only
+    guarantee held only for rows that happened to have children, which review on `#370` named.
+    `KHEPRI-DEC-033` moves a record out of use by tombstoning rather than erasure, because
+    deletion has to leave evidence and an erased row leaves none.
+
+    Parameterized over all three tables because the earlier update guard covered two of them, and
+    a guard applied to a subset is how this class of gap appears.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version_id, binding_id = _published(store, scope)
+    identifier = {
+        DatasetVersionRow: version_id,
+        ArtifactBindingRow: binding_id,
+    }.get(row_class)
+    if identifier is None:
+        with factory() as database:
+            identifier = database.execute(select(AnalysisRunRow.run_id)).scalars().one()
+
+    with (
+        pytest.raises(ValueError, match="removed through its retention lifecycle"),
+        factory.begin() as database,
+    ):
+        database.delete(database.get(row_class, identifier))
+
+
+def test_tombstoning_remains_the_way_a_record_leaves_use(factory: sessionmaker) -> None:
+    """The delete guard must not have closed the path `KHEPRI-DEC-033` actually prescribes."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+
+    assert store.retention_state(version.version_id) == RETENTION_TOMBSTONED
+    assert store.get_dataset_version(version.version_id) == version
