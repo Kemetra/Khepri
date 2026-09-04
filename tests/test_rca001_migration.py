@@ -14,6 +14,11 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from khepri.rca.persistence import Base as RcaBase
+from khepri.rca.workspace.persistence import (  # noqa: F401 -- registers the tables
+    AnalysisRunRow,
+    ArtifactBindingRow,
+    DatasetVersionRow,
+)
 from tests.local_stack_support import requires_local_stack
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +57,10 @@ RCA_REVISIONS = (
     # was absent from *both* sides of the comparison and the equality held vacuously. A drift guard
     # whose inputs depend on import order can pass while covering nothing.
     ("20260821_0019", "rca_recovery_security_events", "20260818_0018"),
+    # `W1-02`'s three workspace tables. Registered here in the same commit that adds
+    # the revision, which is what the `#240` note above asks for: a table absent from
+    # this list is a table every `_run`-driven test stops short of.
+    ("20260904_0021", "rca_workspace", "20260822_0020"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -70,6 +79,9 @@ RCA_TABLES = {
     # `#240`'s table, omitted from this set for the same reason it was missing from
     # `RCA_REVISIONS` above.
     "rca_recovery_security_events",
+    "rca_workspace_dataset_versions",
+    "rca_workspace_analysis_runs",
+    "rca_workspace_artifact_bindings",
 }
 
 

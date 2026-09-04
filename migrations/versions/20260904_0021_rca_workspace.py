@@ -1,0 +1,185 @@
+"""Add the three workspace tables (`W1-02`, `RCA-005` `FR-109`--`FR-113`).
+
+`W1-01` wrote the domain contracts and held no persistence. This revision gives them rows:
+`rca_workspace_dataset_versions`, `rca_workspace_analysis_runs` and
+`rca_workspace_artifact_bindings`.
+
+**`down_revision` is `20260822_0020`**, the `KHEPRI-DEC-008` portability revision, which is the head
+this slice inherits. `FR-113` requires one Alembic head and
+`tests/test_rca001_session_persistence.py` pins the identifier deliberately rather than counting
+heads generically -- a count alone would pass for a revision chained onto the wrong parent. That pin
+and the head stated in `specs/001-rca-001-commercial-identity/STATUS.md` are updated in this same
+commit, because both are assertions about what the head *is* and a stale one sends the next slice to
+the wrong parent.
+
+**Values are spelled literally here and built from `RETENTION_STATES` in the model, deliberately.**
+The same split as `20260814_0015` and `20260818_0018`: a migration is a historical record of what
+the schema became on a given day, and importing a module constant into one would let a later edit to
+that constant silently rewrite history. The model does the opposite, rendering the constraint from
+`RETENTION_STATES` so the domain and the column cannot drift.
+`test_the_retention_check_agrees_between_the_migration_and_the_model` is what keeps the two
+spellings honest.
+
+**The scope foreign key targets `rca_isolation_scopes.owner_id`, a `UNIQUE` column rather than that
+table's primary key.** `organization_id` is the primary key there, and `RCA-001` `FR-033` forbids a
+commercial identifier appearing in or being derivable from a workspace key -- an `organization_id`
+column on these tables would be that identifier arriving by another name. PostgreSQL admits a
+foreign key onto any uniquely-constrained column, and `uq_rca_scope_owner` is that constraint.
+
+**Constraints considered and refused, per `KHEPRI-DEC-020` §4:**
+
+*No `UNIQUE (run_id, surface)` on the bindings table.* It reads as the obvious constraint --
+one web artifact per run -- but `RRA-006` publishes a bundle together or not at all, and
+`FR-111` reads a run naming fewer than every required surface as incomplete. Completeness is
+a property of the *set* a run names, which per-row uniqueness cannot express and would only
+appear to. Encoding a cardinality nobody requires is the defect `R7-02` spent a slice
+unwinding; `W1-04` reads the set.
+
+*No `UNIQUE (owner_id, ...)` anywhere.* One scope holds many dataset versions and many runs by
+design -- that is what a history spine is (`FR-117`) -- and `20260817_0017` exists precisely because
+an earlier `UNIQUE (owner_id)` had to be dropped so one commercial scope could hold more than one
+analysis. Restating that mistake in a new table would be a regression with a migration number.
+
+*`ON DELETE RESTRICT`, never `CASCADE`, on all five foreign keys.* `FR-112` makes these rows
+append-only. A cascade would delete workspace history as a silent side effect of a delete elsewhere,
+where `KHEPRI-DEC-033` requires deletion to be an operation that records evidence -- which `W1-07`
+writes. `RESTRICT` turns an unconsidered delete into a failure rather than a silent loss.
+
+**Nothing to backfill.** None of the three tables has existed before and no earlier column holds
+workspace state, so the upgrade creates and the downgrade drops. No data is at risk in either
+direction. The drops are ordered child-first, because the foreign keys are `RESTRICT`.
+"""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "20260904_0021"
+down_revision: str | None = "20260822_0020"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+# Spelled literally rather than imported -- see the module docstring.
+_RETENTION_CHECK = "retention_state IN ('active', 'tombstoned')"
+
+
+def upgrade() -> None:
+    op.create_table(
+        "rca_workspace_dataset_versions",
+        sa.Column("version_id", sa.String(), nullable=False),
+        sa.Column("owner_id", sa.String(), nullable=False),
+        sa.Column("upload_plaintext_digest", sa.String(), nullable=False),
+        sa.Column("upload_ciphertext_digest", sa.String(), nullable=False),
+        sa.Column("upload_size_bytes", sa.Integer(), nullable=False),
+        sa.Column("upload_media_type", sa.String(), nullable=False),
+        sa.Column("manifest_digest", sa.String(), nullable=False),
+        sa.Column("mapping_version", sa.String(), nullable=False),
+        sa.Column("admission_outcome", sa.String(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        # Nullable because sealing is an event, not a creation argument: `KHEPRI-DEC-033` starts
+        # the raw upload's seven-day purge clock at sealing, so a version sealed at creation would
+        # start a deletion clock for content whose facts do not exist yet.
+        sa.Column("sealed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("retention_state", sa.String(), nullable=False),
+        sa.Column("retention_changed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("version_id"),
+        sa.ForeignKeyConstraint(
+            ["owner_id"],
+            ["rca_isolation_scopes.owner_id"],
+            name="fk_rca_workspace_version_scope",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_version_retention"),
+    )
+    op.create_index(
+        "ix_rca_workspace_dataset_versions_owner_id",
+        "rca_workspace_dataset_versions",
+        ["owner_id"],
+    )
+
+    op.create_table(
+        "rca_workspace_analysis_runs",
+        sa.Column("run_id", sa.String(), nullable=False),
+        sa.Column("version_id", sa.String(), nullable=False),
+        sa.Column("owner_id", sa.String(), nullable=False),
+        # Nullable together: a run is created incomplete, because `FR-111` puts the digest and the
+        # governed versions on the real pipeline rather than on whoever starts the run.
+        sa.Column("package_digest", sa.String(), nullable=True),
+        sa.Column("package_version", sa.String(), nullable=True),
+        sa.Column("formula_version", sa.String(), nullable=True),
+        sa.Column("state", sa.String(), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("retention_state", sa.String(), nullable=False),
+        sa.Column("retention_changed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("run_id"),
+        sa.ForeignKeyConstraint(
+            ["owner_id"],
+            ["rca_isolation_scopes.owner_id"],
+            name="fk_rca_workspace_run_scope",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["version_id"],
+            ["rca_workspace_dataset_versions.version_id"],
+            name="fk_rca_workspace_run_version",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_run_retention"),
+    )
+    op.create_index(
+        "ix_rca_workspace_analysis_runs_owner_id",
+        "rca_workspace_analysis_runs",
+        ["owner_id"],
+    )
+    op.create_index(
+        "ix_rca_workspace_analysis_runs_version_id",
+        "rca_workspace_analysis_runs",
+        ["version_id"],
+    )
+
+    op.create_table(
+        "rca_workspace_artifact_bindings",
+        sa.Column("binding_id", sa.String(), nullable=False),
+        sa.Column("run_id", sa.String(), nullable=False),
+        sa.Column("owner_id", sa.String(), nullable=False),
+        sa.Column("surface", sa.String(), nullable=False),
+        sa.Column("artifact_digest", sa.String(), nullable=False),
+        sa.Column("published_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("binding_id"),
+        sa.ForeignKeyConstraint(
+            ["owner_id"],
+            ["rca_isolation_scopes.owner_id"],
+            name="fk_rca_workspace_binding_scope",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["run_id"],
+            ["rca_workspace_analysis_runs.run_id"],
+            name="fk_rca_workspace_binding_run",
+            ondelete="RESTRICT",
+        ),
+    )
+    op.create_index(
+        "ix_rca_workspace_artifact_bindings_owner_id",
+        "rca_workspace_artifact_bindings",
+        ["owner_id"],
+    )
+    op.create_index(
+        "ix_rca_workspace_artifact_bindings_run_id",
+        "rca_workspace_artifact_bindings",
+        ["run_id"],
+    )
+
+
+def downgrade() -> None:
+    """Child-first, because every foreign key here is `RESTRICT`.
+
+    Dropping the versions table before the runs that reference it would fail on the constraint
+    rather than cascade -- which is the same property that makes `RESTRICT` the right choice for
+    the upgrade, seen from the other direction.
+    """
+    op.drop_table("rca_workspace_artifact_bindings")
+    op.drop_table("rca_workspace_analysis_runs")
+    op.drop_table("rca_workspace_dataset_versions")

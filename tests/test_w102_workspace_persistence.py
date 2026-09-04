@@ -20,25 +20,21 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from khepri.rca.organizations import IsolationScope, Organization, OrganizationService
-from khepri.rca.persistence import SqlOrganizationStore
+from khepri.rca.accounts import AccountService
+from khepri.rca.organizations import OrganizationService
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.records import Sealed
 from khepri.rca.workspace.contracts import (
     AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
     DatasetVersion,
     PublishedArtifact,
-    RunOutcome,
-    RunSubject,
-    VersionLifecycle,
 )
 from khepri.rca.workspace.persistence import (
     RETENTION_ACTIVE,
     RETENTION_STATES,
     RETENTION_TOMBSTONED,
-    AnalysisRunRow,
-    ArtifactBindingRow,
-    DatasetVersionRow,
     SqlWorkspaceStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
@@ -67,23 +63,26 @@ WORKSPACE_TABLES = (
 )
 
 
-def _scope(factory: sessionmaker) -> str:
+def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy") -> str:
     """One organization, returning the opaque isolation scope every workspace row is keyed by.
 
     Built through the real service rather than by inserting a row, because the workspace tables
     carry a foreign key onto `rca_isolation_scopes.owner_id` and a hand-made scope would not
     satisfy it -- which is the constraint several tests here are about.
-    """
-    from khepri.rca.accounts import AccountService
-    from khepri.rca.persistence import SqlAccountStore
 
+    Parameterized by email so an isolation test can raise a *second* scope, which is the only way
+    to see a missing `WHERE`: with one organization's rows in the table, an unfiltered query
+    returns exactly what a filtered one does.
+    """
     accounts = SqlAccountStore(factory)
-    account = AccountService(accounts).create_account(EMAIL, CREDENTIAL)
+    account = AccountService(accounts).create_account(email, CREDENTIAL)
     organizations = SqlOrganizationStore(factory)
     organization = OrganizationService(organizations).create_organization(
-        "Acme Pharmacy", account.account_id
+        name, account.account_id, now=NOW
     )
-    return organizations.isolation_scope(organization.organization_id).owner_id
+    scope = organizations.get_scope(organization.organization_id)
+    assert scope is not None, "creating an organization allocates its isolation scope"
+    return scope.owner_id
 
 
 def _version(store: SqlWorkspaceStore, scope: str) -> DatasetVersion:
@@ -258,14 +257,12 @@ def test_a_binding_cannot_name_a_run_that_does_not_exist(factory: sessionmaker) 
 
 def test_a_stored_dataset_version_is_returned_sealed(factory: sessionmaker) -> None:
     """What comes back is a record the domain trusts, reconstructed through `_from_storage`."""
-    from khepri.rca.records import is_sealed
-
     scope = _scope(factory)
     store = SqlWorkspaceStore(factory)
     read = store.get_dataset_version(_version(store, scope).version_id)
 
     assert read is not None
-    assert is_sealed(read)
+    assert isinstance(read, Sealed)
 
 
 def test_writing_the_same_version_twice_is_refused(factory: sessionmaker) -> None:
@@ -318,9 +315,7 @@ def test_a_retention_state_the_domain_does_not_define_is_refused(factory: sessio
 
 
 @pytest.mark.parametrize("state", RETENTION_STATES)
-def test_every_published_retention_state_is_accepted(
-    factory: sessionmaker, state: str
-) -> None:
+def test_every_published_retention_state_is_accepted(factory: sessionmaker, state: str) -> None:
     scope = _scope(factory)
     store = SqlWorkspaceStore(factory)
     version = _version(store, scope)
@@ -350,17 +345,8 @@ def test_listing_is_scoped_and_returns_newest_first(factory: sessionmaker) -> No
     A single-scope test cannot see a missing `WHERE`: with one organization's rows in the table,
     an unfiltered query returns exactly the same result as a filtered one.
     """
-    from khepri.rca.accounts import AccountService
-    from khepri.rca.persistence import SqlAccountStore
-
     first = _scope(factory)
-    accounts = SqlAccountStore(factory)
-    other_account = AccountService(accounts).create_account("other@example.test", CREDENTIAL)
-    organizations = SqlOrganizationStore(factory)
-    other_organization = OrganizationService(organizations).create_organization(
-        "Other Pharmacy", other_account.account_id
-    )
-    second = organizations.isolation_scope(other_organization.organization_id).owner_id
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
     store = SqlWorkspaceStore(factory)
     mine_early = store.add_dataset_version(
@@ -380,26 +366,15 @@ def test_listing_is_scoped_and_returns_newest_first(factory: sessionmaker) -> No
 
 
 def test_runs_are_listed_only_within_their_own_scope(factory: sessionmaker) -> None:
-    from khepri.rca.accounts import AccountService
-    from khepri.rca.persistence import SqlAccountStore
-
     first = _scope(factory)
-    accounts = SqlAccountStore(factory)
-    other_account = AccountService(accounts).create_account("other@example.test", CREDENTIAL)
-    organizations = SqlOrganizationStore(factory)
-    other_organization = OrganizationService(organizations).create_organization(
-        "Other Pharmacy", other_account.account_id
-    )
-    second = organizations.isolation_scope(other_organization.organization_id).owner_id
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
     store = SqlWorkspaceStore(factory)
     mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
     theirs = store.add_dataset_version(
         DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
     )
-    store.add_analysis_run(
-        AnalysisRun.create(owner_id=first, version_id=mine.version_id, now=NOW)
-    )
+    store.add_analysis_run(AnalysisRun.create(owner_id=first, version_id=mine.version_id, now=NOW))
     store.add_analysis_run(
         AnalysisRun.create(owner_id=second, version_id=theirs.version_id, now=NOW)
     )
@@ -410,17 +385,8 @@ def test_runs_are_listed_only_within_their_own_scope(factory: sessionmaker) -> N
 
 def test_a_foreign_scope_reads_nothing_by_identifier(factory: sessionmaker) -> None:
     """Reading by identifier is scoped too, or an identifier leak becomes a data leak."""
-    from khepri.rca.accounts import AccountService
-    from khepri.rca.persistence import SqlAccountStore
-
     first = _scope(factory)
-    accounts = SqlAccountStore(factory)
-    other_account = AccountService(accounts).create_account("other@example.test", CREDENTIAL)
-    organizations = SqlOrganizationStore(factory)
-    other_organization = OrganizationService(organizations).create_organization(
-        "Other Pharmacy", other_account.account_id
-    )
-    second = organizations.isolation_scope(other_organization.organization_id).owner_id
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
 
     store = SqlWorkspaceStore(factory)
     mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
