@@ -8,6 +8,11 @@ from sqlalchemy import engine_from_config, pool
 
 from khepri.rca.persistence import Base as RcaBase
 from khepri.rca.recovery_security_persistence import RecoverySecurityEventRow
+from khepri.rca.workspace.persistence import (  # noqa: F401 -- registers the tables
+    AnalysisRunRow,
+    ArtifactBindingRow,
+    DatasetVersionRow,
+)
 from khepri.rra.delivery_persistence import ReportDeliveryRow
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import Base

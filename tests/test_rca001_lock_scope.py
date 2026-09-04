@@ -120,9 +120,24 @@ def _rca_modules() -> list[str]:
     """
     return [path.read_text(encoding="utf-8") for path in sorted(_RCA_PACKAGE.rglob("*.py"))]
 
+
 #: The two module-level statements that carry `FOR UPDATE`, plus the raw SQLAlchemy call, so a
 #: method reaching for the lock by any of the three routes is caught.
-_LOCK_ROUTES = frozenset({"owner_memberships_for_update", "organization_owners_for_update"})
+#: The named locking statements, listed here rather than in `_MAY_LOCK` because this frozenset has
+#: a second job: `_lock_aliases` seeds itself from it, so a statement named here is still detected
+#: when a caller imports it under an alias. `W1-02`'s two lock a single workspace row by primary
+#: key -- the narrowest scope a lock can have -- and
+#: `test_w102_workspace_persistence.py` compiles each against the PostgreSQL dialect to assert the
+#: `FOR UPDATE` clause and its table, which is the `W1-02` counterpart of the paired-predicate
+#: tests below.
+_LOCK_ROUTES = frozenset(
+    {
+        "owner_memberships_for_update",
+        "organization_owners_for_update",
+        "run_for_update",
+        "version_for_update",
+    }
+)
 
 #: `with_for_update` reaches SQLAlchemy two ways and both must be scanned: as a method
 #: (`select(...).with_for_update()`) and as a **keyword argument**
@@ -191,6 +206,30 @@ _MAY_LOCK = frozenset(
         # `R4-05`'s service verb, listed because the scan follows delegation: `redeem` reaches
         # `redeem_into_membership`, which constructs the lock.
         "redeem",
+        # `W1-02` workspace transitions. Each reads a column and then decides on it, and the
+        # decision is what the lock protects. `complete_analysis_run` and `seal_dataset_version`
+        # report **whether this call** performed the transition: without the lock two callers can
+        # both read the pre-state, both write, and both be told `True`, and completion
+        # additionally discards the first writer's package digest and version provenance, which
+        # `FR-111` binds to the run.
+        #
+        # `set_retention_state` is here after being removed and put back on the same PR, which is
+        # worth the sentence. I argued it needed no lock because concurrent tombstones agree on
+        # the state they want. They do not agree on `retention_changed_at`: both read `active`,
+        # both find the no-op check false, and the second overwrites the first deletion instant --
+        # moving the horizon `KHEPRI-DEC-033` §5 anchors to it. Two reviewers found it
+        # independently. `tombstone_dataset_version` reaches it by delegation.
+        "complete_analysis_run",
+        "seal_dataset_version",
+        "set_retention_state",
+        "tombstone_dataset_version",
+        # Adding a derivative locks its *parent*: `add_analysis_run` takes `version_for_update`
+        # and `add_artifact_binding` takes `run_for_update`, each requiring the parent still live
+        # in the same transaction. The guard is the liveness check; the lock is what stops a
+        # concurrent tombstone landing between the check and the insert, which would leave a live
+        # derivative of a deleted input that no cascade reaches. Review on `#370` found the window.
+        "add_analysis_run",
+        "add_artifact_binding",
     }
 )
 
@@ -318,9 +357,7 @@ def _functions_in(tree: ast.Module) -> list[_AnyFunction]:
     does.
     """
     return [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     ]
 
 
@@ -433,7 +470,7 @@ def test_the_two_locking_statements_still_lock() -> None:
 
 
 def test_the_owner_lock_is_scoped_to_one_organization() -> None:
-    """"Leave unrelated organizations independent" (`R1` design requirements).
+    """ "Leave unrelated organizations independent" (`R1` design requirements).
 
     `organization_owners_for_update` locks by organization, so two organizations' owner-reducing
     operations do not contend. A statement that dropped the predicate would serialize every

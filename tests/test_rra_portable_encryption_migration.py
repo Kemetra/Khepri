@@ -42,6 +42,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -84,7 +85,6 @@ requires_postgres = pytest.mark.skipif(
     not DATABASE_URL,
     reason=f"{DATABASE_URL_VARIABLE} is unset; this DDL cannot be proved on SQLite",
 )
-
 
 
 def _drop_public_schema(engine) -> None:
@@ -153,12 +153,35 @@ def _columns(engine, table: str) -> set[str]:
 
 
 @requires_postgres
-def test_the_chain_reaches_this_revision_as_head(migrated) -> None:
+def test_the_chain_reaches_this_revision(migrated) -> None:
+    """This revision is applied on the way to head -- not that it *is* head.
+
+    It asserted equality with `REVISION` until `W1-02` added `20260904_0021` and the equality
+    failed. That was the right failure for the wrong reason: the fixture upgrades to `"head"`, so
+    the assertion was never about this module's revision at all. It was a third place recording
+    which revision is head, in a file scoped to one revision's DDL -- and a global claim that any
+    later migration falsifies.
+
+    Two guards already own that claim and are updated by each slice that adds a migration:
+    `test_the_head_is_the_session_revision` pins the identifier, and
+    `test_the_stated_migration_head_is_the_real_head` compares the documented head to the tree's.
+    This module's own docstring claims no head guardianship.
+
+    What it needs is ancestry: `20260822_0020` must be in the chain the fixture actually ran, or
+    the constraints the rest of this file asserts were never created. `REVISION` stays a literal
+    because `test_the_downgrade_restores_the_prior_schema` downgrades to `PARENT` and back to it --
+    bumping the constant would silently retarget this file's DDL evidence at a later revision.
+    """
     config, engine = migrated
     with engine.connect() as connection:
         current = connection.execute(text("select version_num from alembic_version")).scalar()
 
-    assert current == REVISION
+    applied = {
+        revision.revision
+        for revision in ScriptDirectory.from_config(config).iterate_revisions(current, "base")
+    }
+
+    assert REVISION in applied, f"{REVISION} is not an ancestor of {current}"
 
 
 @requires_postgres
