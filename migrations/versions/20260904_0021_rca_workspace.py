@@ -1,8 +1,20 @@
 """Add the three workspace tables (`W1-02`, `RCA-005` `FR-109`--`FR-113`).
 
 `W1-01` wrote the domain contracts and held no persistence. This revision gives them rows:
-`rca_workspace_dataset_versions`, `rca_workspace_analysis_runs` and
-`rca_workspace_artifact_bindings`.
+`rca_workspace_dataset_versions`, `rca_workspace_analysis_runs`, `rca_workspace_artifact_bindings`,
+`rca_workspace_source_profiles` and `rca_workspace_tombstones` -- the five the `W1-02` plan assigns
+("tables for dataset versions, runs, artifact bindings, source profiles and tombstones").
+
+**The tombstone table is this slice's; the projection that fills it is `W1-03`'s.** The plan splits
+them, and the split matters: `KHEPRI-DEC-033` §3 defines a tombstone by what it **may** contain,
+never by what was removed, and promises a test asserting each tombstone's field set *equals* its
+allowlist. That test belongs with the projection `W1-03` builds. Nothing here projects anything --
+these are the columns the allowlist will fill.
+
+One table for both subjects rather than two, because §3's two allowlists differ only in which
+optional columns they populate, and a nullable union is smaller to keep correct than two tables that
+must not drift. A source profile has no row here at all: §3 says "none -- purged, not tombstoned",
+which is also why `SourceProfileRow` is the one workspace table exempt from the delete guard.
 
 **`down_revision` is `20260822_0020`**, the `KHEPRI-DEC-008` portability revision, which is the head
 this slice inherits. `FR-113` requires one Alembic head and
@@ -75,6 +87,7 @@ depends_on: str | Sequence[str] | None = None
 # Spelled literally rather than imported -- see the module docstring.
 _RETENTION_CHECK = "retention_state IN ('active', 'tombstoned')"
 _RUN_STATE_CHECK = "state IN ('started', 'completed', 'failed')"
+_TOMBSTONE_SUBJECT_CHECK = "subject_kind IN ('version', 'run')"
 
 
 def upgrade() -> None:
@@ -95,6 +108,12 @@ def upgrade() -> None:
     op.create_table("rca_workspace_artifact_bindings", *_binding_columns(), *_binding_constraints())
     _index("rca_workspace_artifact_bindings", "owner_id")
     _index("rca_workspace_artifact_bindings", "run_id")
+
+    op.create_table("rca_workspace_source_profiles", *_profile_columns(), *_profile_constraints())
+    _index("rca_workspace_source_profiles", "owner_id")
+
+    op.create_table("rca_workspace_tombstones", *_tombstone_columns(), *_tombstone_constraints())
+    _index("rca_workspace_tombstones", "owner_id")
 
 
 def _index(table: str, column: str) -> None:
@@ -207,6 +226,63 @@ def _binding_constraints() -> tuple[sa.schema.SchemaItem, ...]:
     )
 
 
+def _profile_columns() -> tuple[sa.Column, ...]:
+    return (
+        sa.Column("profile_id", sa.String(), nullable=False),
+        sa.Column("owner_id", sa.String(), nullable=False),
+        sa.Column("source_version_id", sa.String(), nullable=False),
+        # JSON text rather than a column per field: a caller-shaped mapping whose keys are not
+        # knowable at migration time, and never read as authority -- `RRA-003` admits the new
+        # submission, so it needs no queryable structure.
+        sa.Column("column_labels", sa.Text(), nullable=False),
+        sa.Column("proposed_mapping", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+    )
+
+
+def _profile_constraints() -> tuple[sa.schema.SchemaItem, ...]:
+    return (
+        sa.PrimaryKeyConstraint("profile_id"),
+        _scope_foreign_key("fk_rca_workspace_profile_scope"),
+    )
+
+
+def _tombstone_columns() -> tuple[sa.Column, ...]:
+    return (
+        sa.Column("tombstone_id", sa.String(), nullable=False),
+        sa.Column("subject_kind", sa.String(), nullable=False),
+        sa.Column("subject_id", sa.String(), nullable=False),
+        sa.Column("owner_id", sa.String(), nullable=False),
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=False),
+        # A dataset version's allowlist (`KHEPRI-DEC-033` §3, row one).
+        sa.Column("version_id", sa.String(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("sealed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("upload_plaintext_digest", sa.String(), nullable=True),
+        sa.Column("upload_ciphertext_digest", sa.String(), nullable=True),
+        sa.Column("upload_size_bytes", sa.Integer(), nullable=True),
+        sa.Column("upload_media_type", sa.String(), nullable=True),
+        sa.Column("manifest_digest", sa.String(), nullable=True),
+        sa.Column("mapping_version", sa.String(), nullable=True),
+        sa.Column("admission_outcome", sa.String(), nullable=True),
+        # An analysis run's allowlist (§3, row two).
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("package_digest", sa.String(), nullable=True),
+        sa.Column("package_version", sa.String(), nullable=True),
+        sa.Column("formula_version", sa.String(), nullable=True),
+        sa.Column("section_states", sa.Text(), nullable=True),
+    )
+
+
+def _tombstone_constraints() -> tuple[sa.schema.SchemaItem, ...]:
+    return (
+        sa.PrimaryKeyConstraint("tombstone_id"),
+        _scope_foreign_key("fk_rca_workspace_tombstone_scope"),
+        sa.CheckConstraint(_TOMBSTONE_SUBJECT_CHECK, name="ck_rca_workspace_tombstone_subject"),
+    )
+
+
 def downgrade() -> None:
     """Child-first, because every foreign key here is `RESTRICT`.
 
@@ -214,6 +290,8 @@ def downgrade() -> None:
     rather than cascade -- which is the same property that makes `RESTRICT` the right choice for
     the upgrade, seen from the other direction.
     """
+    op.drop_table("rca_workspace_tombstones")
+    op.drop_table("rca_workspace_source_profiles")
     op.drop_table("rca_workspace_artifact_bindings")
     op.drop_table("rca_workspace_analysis_runs")
     op.drop_table("rca_workspace_dataset_versions")

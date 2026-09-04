@@ -41,10 +41,13 @@ from khepri.rca.workspace.persistence import (
     RETENTION_ACTIVE,
     RETENTION_STATES,
     RETENTION_TOMBSTONED,
+    TOMBSTONE_SUBJECTS,
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
+    SourceProfileRow,
     SqlWorkspaceStore,
+    WorkspaceTombstoneRow,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -69,6 +72,8 @@ WORKSPACE_TABLES = (
     "rca_workspace_dataset_versions",
     "rca_workspace_analysis_runs",
     "rca_workspace_artifact_bindings",
+    "rca_workspace_source_profiles",
+    "rca_workspace_tombstones",
 )
 
 
@@ -1143,3 +1148,190 @@ def test_tombstoning_remains_the_way_a_record_leaves_use(factory: sessionmaker) 
 
     assert store.retention_state(version.version_id) == RETENTION_TOMBSTONED
     assert store.get_dataset_version(version.version_id) == version
+
+
+# --- The two tables the `W1-02` plan assigns and the first draft omitted -----------------------
+
+
+def test_the_slice_delivers_every_table_its_plan_assigns() -> None:
+    """The `W1-02` plan names five tables; the first draft of this slice delivered three.
+
+    Review on `#370` found it against
+    `docs/superpowers/plans/2026-09-03-g3-04-workspace-implementation-plan.md`, which assigns
+    "tables for dataset versions, runs, artifact bindings, source profiles and tombstones". I had
+    argued on an earlier thread that the profile table belonged to `W1-04` because nothing reads
+    it yet -- which confused "no consumer" with "no table". A persistence slice delivering storage
+    ahead of its reader is the normal shape.
+
+    Asserted against the emitted metadata rather than by listing names in prose, so a table
+    dropped later fails here.
+    """
+    from khepri.rca.persistence import Base
+
+    declared = {name for name in Base.metadata.tables if name.startswith("rca_workspace_")}
+    assert declared == set(WORKSPACE_TABLES)
+
+
+def test_a_source_profile_row_round_trips(factory: sessionmaker) -> None:
+    scope = _scope(factory)
+    with factory.begin() as database:
+        database.add(
+            SourceProfileRow(
+                profile_id="prf_abc123",
+                owner_id=scope,
+                source_version_id="dsv_abc123",
+                column_labels='["date", "sku", "qty"]',
+                proposed_mapping='[["date", "transaction_date"]]',
+                created_at=NOW,
+            )
+        )
+
+    with factory() as database:
+        row = database.get(SourceProfileRow, "prf_abc123")
+        assert row is not None
+        assert row.owner_id == scope
+        assert row.source_version_id == "dsv_abc123"
+
+
+def test_a_source_profile_is_mutable_and_deletable(factory: sessionmaker) -> None:
+    """The one workspace table exempt from both guards, and the exemption is the decision.
+
+    `KHEPRI-DEC-033` §3's tombstone table gives a row to dataset versions and to runs, and for a
+    source profile says **"none -- purged, not tombstoned"** -- because the live profile holds
+    sanitized customer column headers and min/max values, none of which may survive. A blanket
+    delete guard would have made the purge the decision prescribes impossible, which is the same
+    shape as the guard that had made run completion impossible.
+
+    It is mutable for a separate reason: `FR-115` makes a profile descriptive metadata a surface
+    reads, never authority, so freezing it would protect nothing.
+    """
+    scope = _scope(factory)
+    with factory.begin() as database:
+        database.add(
+            SourceProfileRow(
+                profile_id="prf_mutable",
+                owner_id=scope,
+                source_version_id="dsv_abc123",
+                column_labels="[]",
+                proposed_mapping="[]",
+                created_at=NOW,
+            )
+        )
+
+    with factory.begin() as database:
+        database.get(SourceProfileRow, "prf_mutable").source_version_id = "dsv_later"
+
+    with factory.begin() as database:
+        database.delete(database.get(SourceProfileRow, "prf_mutable"))
+
+    with factory() as database:
+        assert database.get(SourceProfileRow, "prf_mutable") is None
+
+
+@pytest.mark.parametrize("subject", TOMBSTONE_SUBJECTS)
+def test_a_tombstone_row_round_trips_for_each_subject(factory: sessionmaker, subject: str) -> None:
+    scope = _scope(factory)
+    with factory.begin() as database:
+        database.add(
+            WorkspaceTombstoneRow(
+                tombstone_id=f"tmb_{subject}",
+                subject_kind=subject,
+                subject_id="dsv_abc123",
+                owner_id=scope,
+                deleted_at=LATER,
+            )
+        )
+
+    with factory() as database:
+        row = database.get(WorkspaceTombstoneRow, f"tmb_{subject}")
+        assert row is not None
+        assert row.subject_kind == subject
+
+
+def test_a_tombstone_cannot_be_about_a_source_profile(factory: sessionmaker) -> None:
+    """`KHEPRI-DEC-033` §3: a source profile is "none -- purged, not tombstoned".
+
+    So there are deliberately two subjects and not three, and the `CHECK` says so rather than the
+    comment alone. A `profile` tombstone would be sanitized customer headers surviving a deletion
+    that was supposed to erase them.
+    """
+    scope = _scope(factory)
+
+    with pytest.raises(IntegrityError), factory.begin() as database:
+        database.add(
+            WorkspaceTombstoneRow(
+                tombstone_id="tmb_profile",
+                subject_kind="profile",
+                subject_id="prf_abc123",
+                owner_id=scope,
+                deleted_at=LATER,
+            )
+        )
+
+
+def test_the_tombstone_columns_are_exactly_the_two_allowlists(factory: sessionmaker) -> None:
+    """`KHEPRI-DEC-033` §3 defines a tombstone by what it **may** contain, never by what was
+    removed -- so the column set is asserted as an equality against §3's two rows.
+
+    `W1-03` builds the projection and writes the field-set equality test §3 promises against it.
+    This asserts the *table* it will fill, which is what this slice owns: a column arriving here
+    without an entry in §3 is content surviving a deletion, and the equality fails before the
+    projection can carry it.
+    """
+    columns = {
+        column["name"]
+        for column in inspect(factory.kw["bind"]).get_columns("rca_workspace_tombstones")
+    }
+
+    identity = {"tombstone_id", "subject_kind", "subject_id", "owner_id", "deleted_at"}
+    version_allowlist = {
+        "version_id",
+        "created_at",
+        "sealed_at",
+        "upload_plaintext_digest",
+        "upload_ciphertext_digest",
+        "upload_size_bytes",
+        "upload_media_type",
+        "manifest_digest",
+        "mapping_version",
+        "admission_outcome",
+    }
+    run_allowlist = {
+        "started_at",
+        "completed_at",
+        "package_digest",
+        "package_version",
+        "formula_version",
+        "section_states",
+    }
+
+    assert columns == identity | version_allowlist | run_allowlist
+
+
+def test_no_tombstone_column_can_hold_free_text_from_the_live_record(
+    factory: sessionmaker,
+) -> None:
+    """`KHEPRI-DEC-033` §3 names what never survives: filenames, column labels, values, manifest
+    text, the mapping itself, figures, narrative and refusal prose.
+
+    The live profile holds sanitized customer column headers and the coverage manifest holds free
+    text (`attested_by`, `aggregate_scope`, exception notes). A column named for any of them here
+    would be that content outliving the deletion that was meant to erase it.
+    """
+    forbidden = {
+        "filename",
+        "column_labels",
+        "proposed_mapping",
+        "attested_by",
+        "aggregate_scope",
+        "exception_notes",
+        "narrative",
+        "refusal_reason",
+        "figures",
+    }
+    columns = {
+        column["name"]
+        for column in inspect(factory.kw["bind"]).get_columns("rca_workspace_tombstones")
+    }
+
+    assert columns & forbidden == set()

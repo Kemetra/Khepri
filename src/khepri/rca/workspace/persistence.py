@@ -35,6 +35,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     event,
     select,
@@ -64,6 +65,12 @@ from khepri.rca.workspace.contracts import (
 RETENTION_ACTIVE = "active"
 RETENTION_TOMBSTONED = "tombstoned"
 RETENTION_STATES = (RETENTION_ACTIVE, RETENTION_TOMBSTONED)
+
+# What a tombstone row may be about. `KHEPRI-DEC-033` §3 gives two allowlists and states that a
+# source profile is purged rather than tombstoned, so there is deliberately no third value.
+TOMBSTONE_VERSION = "version"
+TOMBSTONE_RUN = "run"
+TOMBSTONE_SUBJECTS = (TOMBSTONE_VERSION, TOMBSTONE_RUN)
 
 # Content-free, per the refusal discipline in `rca/errors.py`: it names the constraint, never the
 # rejected value, so a refusal cannot echo a caller's input back into a log.
@@ -277,6 +284,116 @@ def _one_way(target: object, column: str, forbidden_prior: object) -> bool:
     return history.deleted == [forbidden_prior]
 
 
+class SourceProfileRow(Base):
+    """Descriptive metadata from a prior version, offered for re-attestation (`FR-115`).
+
+    **Mutable, and not append-only.** Every other table here holds a record the domain acts on;
+    a profile is metadata a surface reads to pre-fill a form. `FR-115` says the check runs on what
+    is submitted, so a profile carries no authority and freezing it would protect nothing.
+
+    **Purged rather than tombstoned**, which is `KHEPRI-DEC-033` §3 stating it outright: the
+    tombstone table has rows for dataset versions and runs and the profile row reads
+    "none -- purged, not tombstoned". §3 gives the reason -- the live profile holds sanitized
+    customer column headers and min/max values, and none of it may survive a deletion. So this is
+    the one workspace table exempt from `_refuse_delete`; a blanket guard would have made the purge
+    the decision prescribes impossible.
+
+    `proposed_mapping` is stored as JSON text rather than as a column per field, because it is a
+    caller-shaped mapping whose keys are not knowable at migration time. It is never read as
+    authority -- `RRA-003` admits the new submission -- so it needs no queryable structure.
+    """
+
+    __tablename__ = "rca_workspace_source_profiles"
+    __table_args__ = (_scope_foreign_key("fk_rca_workspace_profile_scope"),)
+
+    profile_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    source_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    column_labels: Mapped[str] = mapped_column(Text, nullable=False)
+    proposed_mapping: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WorkspaceTombstoneRow(Base):
+    """What remains after a deletion: `KHEPRI-DEC-033` §3's allowlist, and nothing else.
+
+    **Defined by what it may contain, never by what was removed.** §3 is explicit about why -- the
+    live records hold sanitized column headers, free text and figures, and a tombstone built by
+    *removing* fields would let a new field on the live record arrive here by default.
+
+    One table for both subjects rather than two, because §3's two allowlists differ only in which
+    optional columns they populate, and the nullable union is the smaller thing to keep correct
+    than two tables that must not drift. `subject_kind` says which allowlist a row belongs to, and
+    `W1-03` builds the projection that fills it.
+
+    **`W1-03` owns the allowlist, this slice owns the table.** The plan splits them deliberately:
+    the equality test that `KHEPRI-DEC-033` §3 promises -- each tombstone's field set equals its
+    allowlist exactly -- is `W1-03`'s to write against the projection it builds. Nothing here
+    projects anything.
+
+    A source profile has no row here at all. §3: "none -- purged, not tombstoned".
+    """
+
+    __tablename__ = "rca_workspace_tombstones"
+    __table_args__ = (
+        _scope_foreign_key("fk_rca_workspace_tombstone_scope"),
+        _states_check("subject_kind", TOMBSTONE_SUBJECTS, "ck_rca_workspace_tombstone_subject"),
+    )
+
+    tombstone_id: Mapped[str] = mapped_column(String, primary_key=True)
+    subject_kind: Mapped[str] = mapped_column(String, nullable=False)
+    subject_id: Mapped[str] = mapped_column(String, nullable=False)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # A dataset version's allowlist (§3, row one). Null on a run's tombstone.
+    version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    upload_plaintext_digest: Mapped[str | None] = mapped_column(String, nullable=True)
+    upload_ciphertext_digest: Mapped[str | None] = mapped_column(String, nullable=True)
+    upload_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    upload_media_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    manifest_digest: Mapped[str | None] = mapped_column(String, nullable=True)
+    mapping_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    admission_outcome: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # An analysis run's allowlist (§3, row two). Null on a version's tombstone.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    package_digest: Mapped[str | None] = mapped_column(String, nullable=True)
+    package_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    formula_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    section_states: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+def _leaving_started(target: object, changed: set[str]) -> bool:
+    """Whether this update is the completion transition, taken once out of `started`."""
+    return "state" in changed and _one_way(target, "state", RUN_STARTED)
+
+
+def _check_completion(changed: set[str]) -> None:
+    """A completion writes its own columns and no others.
+
+    A completion permitted to touch `version_id` would rewrite which dataset a run derived from --
+    provenance changed through the one write the guard allows.
+    """
+    if not changed <= COMPLETION_COLUMNS:
+        raise ValueError(APPEND_ONLY_FAILURE)
+
+
+def _check_append_only(target: object, changed: set[str]) -> None:
+    """Every update that is not a completion: content is frozen and one-way stays one-way."""
+    if changed & COMPLETION_COLUMNS:
+        raise ValueError(RECOMPLETE_FAILURE)
+    if not changed <= MUTABLE_COLUMNS:
+        raise ValueError(APPEND_ONLY_FAILURE)
+    if "sealed_at" in changed and not _one_way(target, "sealed_at", None):
+        raise ValueError(RESEAL_FAILURE)
+    if "retention_state" in changed and _one_way(target, "retention_state", RETENTION_TOMBSTONED):
+        raise ValueError(TOMBSTONE_FAILURE)
+
+
 def _refuse_content_update(_mapper, _connection, target: object) -> None:
     """Refuse an `UPDATE` that changes content, or that reverses a one-way transition.
 
@@ -306,20 +423,10 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
     changed = {
         attribute.key for attribute in sa_inspect(target).attrs if attribute.history.has_changes()
     }
-    if "state" in changed and _one_way(target, "state", RUN_STARTED):
-        # The completion transition, taken once out of `started`. Every column it writes is then
-        # immutable, because the branch below refuses any later change to them.
-        if not changed <= COMPLETION_COLUMNS:
-            raise ValueError(APPEND_ONLY_FAILURE)
+    if _leaving_started(target, changed):
+        _check_completion(changed)
         return
-    if changed & COMPLETION_COLUMNS:
-        raise ValueError(RECOMPLETE_FAILURE)
-    if not changed <= MUTABLE_COLUMNS:
-        raise ValueError(APPEND_ONLY_FAILURE)
-    if "sealed_at" in changed and not _one_way(target, "sealed_at", None):
-        raise ValueError(RESEAL_FAILURE)
-    if "retention_state" in changed and _one_way(target, "retention_state", RETENTION_TOMBSTONED):
-        raise ValueError(TOMBSTONE_FAILURE)
+    _check_append_only(target, changed)
 
 
 def _visible_in(row: object | None, owner_id: str | None) -> bool:
@@ -346,6 +453,11 @@ def _visible_in(row: object | None, owner_id: str | None) -> bool:
 # different content, which is exactly the provenance `FR-111` binds by digest to prevent.
 #
 # Registered per class rather than on `Base`, so no other RCA table is affected.
+# `SourceProfileRow` is deliberately absent from both: `FR-115` makes a profile descriptive
+# metadata a surface reads rather than a record the domain acts on, and `KHEPRI-DEC-033` §3 says it
+# is "purged, not tombstoned" -- so a blanket delete guard would forbid the very operation the
+# decision prescribes. `WorkspaceTombstoneRow` is absent for the opposite reason: it is what
+# *survives* a deletion, and `W1-07`'s retention sweep must be able to purge it at its horizon.
 for _row_class in (DatasetVersionRow, AnalysisRunRow, ArtifactBindingRow):
     event.listen(_row_class, "before_update", _refuse_content_update)
     event.listen(_row_class, "before_delete", _refuse_delete)
@@ -615,6 +727,9 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "TOMBSTONE_SUBJECTS",
+    "SourceProfileRow",
+    "WorkspaceTombstoneRow",
     "DELETE_FAILURE",
     "COMPLETION_COLUMNS",
     "RECOMPLETE_FAILURE",
