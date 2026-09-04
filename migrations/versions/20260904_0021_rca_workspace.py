@@ -89,6 +89,29 @@ _RETENTION_CHECK = "retention_state IN ('active', 'tombstoned')"
 _RUN_STATE_CHECK = "state IN ('started', 'completed', 'failed')"
 _TOMBSTONE_SUBJECT_CHECK = "subject_kind IN ('version', 'run')"
 
+#: `KHEPRI-DEC-033` §3's two allowlists. A version's tombstone must leave every run-only column
+#: null and a run's tombstone every version-only column, or the table would admit content §3 says
+#: never survives a deletion -- a `subject_kind='version'` row carrying a run's `section_states`.
+#: Written as implications because that is what a row-level `CHECK` can evaluate.
+#:
+#: Literal strings, like every other constraint here, following this file's convention: a migration
+#: states the schema it created, and importing the model constants would let a later edit to them
+#: silently change what this revision claims to have built. `test_w102_workspace_persistence.py`
+#: asserts the constants and these clauses agree.
+_TOMBSTONE_VERSION_FIELDS_CHECK = (
+    "subject_kind <> 'version' OR ("
+    "started_at IS NULL AND completed_at IS NULL AND package_digest IS NULL "
+    "AND package_version IS NULL AND formula_version IS NULL AND section_states IS NULL)"
+)
+_TOMBSTONE_RUN_FIELDS_CHECK = (
+    "subject_kind <> 'run' OR ("
+    "version_id IS NULL AND created_at IS NULL AND sealed_at IS NULL "
+    "AND upload_plaintext_digest IS NULL AND upload_ciphertext_digest IS NULL "
+    "AND upload_size_bytes IS NULL AND upload_media_type IS NULL "
+    "AND manifest_digest IS NULL AND mapping_version IS NULL "
+    "AND admission_outcome IS NULL)"
+)
+
 
 def upgrade() -> None:
     """Three tables and their indexes.
@@ -244,6 +267,17 @@ def _profile_constraints() -> tuple[sa.schema.SchemaItem, ...]:
     return (
         sa.PrimaryKeyConstraint("profile_id"),
         _scope_foreign_key("fk_rca_workspace_profile_scope"),
+        # The composite key runs and bindings already carry. `owner_id` alone lets a profile claim
+        # one scope while naming a version in another, or none at all.
+        sa.ForeignKeyConstraint(
+            ["owner_id", "source_version_id"],
+            [
+                "rca_workspace_dataset_versions.owner_id",
+                "rca_workspace_dataset_versions.version_id",
+            ],
+            name="fk_rca_workspace_profile_version",
+            ondelete="RESTRICT",
+        ),
     )
 
 
@@ -280,6 +314,12 @@ def _tombstone_constraints() -> tuple[sa.schema.SchemaItem, ...]:
         sa.PrimaryKeyConstraint("tombstone_id"),
         _scope_foreign_key("fk_rca_workspace_tombstone_scope"),
         sa.CheckConstraint(_TOMBSTONE_SUBJECT_CHECK, name="ck_rca_workspace_tombstone_subject"),
+        sa.CheckConstraint(
+            _TOMBSTONE_VERSION_FIELDS_CHECK, name="ck_rca_workspace_tombstone_version_fields"
+        ),
+        sa.CheckConstraint(
+            _TOMBSTONE_RUN_FIELDS_CHECK, name="ck_rca_workspace_tombstone_run_fields"
+        ),
     )
 
 

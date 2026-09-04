@@ -57,7 +57,7 @@ RCA_REVISIONS = (
     # was absent from *both* sides of the comparison and the equality held vacuously. A drift guard
     # whose inputs depend on import order can pass while covering nothing.
     ("20260821_0019", "rca_recovery_security_events", "20260818_0018"),
-    # `W1-02`'s three workspace tables. Registered here in the same commit that adds
+    # `W1-02`'s five workspace tables. Registered here in the same commit that adds
     # the revision, which is what the `#240` note above asks for: a table absent from
     # this list is a table every `_run`-driven test stops short of.
     ("20260904_0021", "rca_workspace", "20260822_0020"),
@@ -82,6 +82,10 @@ RCA_TABLES = {
     "rca_workspace_dataset_versions",
     "rca_workspace_analysis_runs",
     "rca_workspace_artifact_bindings",
+    # The two tables the first `W1-02` draft omitted. Their absence here was the `#240` shape
+    # again -- missing from the models *and* from this set, so the equality held over both.
+    "rca_workspace_source_profiles",
+    "rca_workspace_tombstones",
 }
 
 
@@ -100,15 +104,8 @@ def _rca_migration_module(revision: str = RCA_REVISION, slug: str = "rca_identit
 
 
 def _artifact_migration_module():
-    path = (
-        REPO_ROOT
-        / "migrations"
-        / "versions"
-        / f"{ARTIFACT_REVISION}_rra_report_artifacts.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        f"rra_migration_{ARTIFACT_REVISION}", path
-    )
+    path = REPO_ROOT / "migrations" / "versions" / f"{ARTIFACT_REVISION}_rra_report_artifacts.py"
+    spec = importlib.util.spec_from_file_location(f"rra_migration_{ARTIFACT_REVISION}", path)
     assert spec is not None and spec.loader is not None, f"cannot load {path}"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -161,7 +158,6 @@ def _run(database_url: str, direction: str, *, through: str | None = None) -> No
                 getattr(module, direction)()  # noqa: B009 — direction is a runtime parameter
             finally:
                 module.op = token
-
 
 
 def _run_artifact(database_url: str, direction: str) -> None:
@@ -237,10 +233,7 @@ def test_report_artifact_migration_matches_its_declared_columns(sqlite_url: str)
 
     _run_artifact(sqlite_url, "upgrade")
     inspector = inspect(create_engine(sqlite_url))
-    created = {
-        column["name"]
-        for column in inspector.get_columns(ReportArtifactRow.__tablename__)
-    }
+    created = {column["name"] for column in inspector.get_columns(ReportArtifactRow.__tablename__)}
     # The delta must actually apply to what `0012` created, or this guard would pass
     # while describing a migration that could not run.
     assert created >= _PORTABLE_ENCRYPTION_REMOVES
@@ -403,9 +396,7 @@ def test_the_backfill_synthesizes_one_creation_event_per_existing_membership(
             )
         )
         connection.execute(
-            text(
-                "INSERT INTO rca_accounts (account_id, email) VALUES ('acc_a', 'a@example.test')"
-            )
+            text("INSERT INTO rca_accounts (account_id, email) VALUES ('acc_a', 'a@example.test')")
         )
         connection.execute(
             text(
@@ -464,9 +455,7 @@ def test_the_backfill_is_idempotent(sqlite_url: str) -> None:
             )
         )
         connection.execute(
-            text(
-                "INSERT INTO rca_accounts (account_id, email) VALUES ('acc_b', 'b@example.test')"
-            )
+            text("INSERT INTO rca_accounts (account_id, email) VALUES ('acc_b', 'b@example.test')")
         )
         connection.execute(
             text(
@@ -494,9 +483,7 @@ def test_the_backfill_is_idempotent(sqlite_url: str) -> None:
         replay()
 
     with engine.begin() as connection:
-        count = connection.execute(
-            text("SELECT COUNT(*) FROM rca_membership_events")
-        ).scalar()
+        count = connection.execute(text("SELECT COUNT(*) FROM rca_membership_events")).scalar()
     assert count == 1, "one membership, one creation event, however many replays"
 
 
@@ -569,17 +556,12 @@ def test_the_downgrade_reconstructs_attribution_from_the_events(sqlite_url: str)
             module.op = token
 
     with engine.begin() as connection:
-        row = connection.execute(
-            text("SELECT changed_by, changed_at FROM rca_memberships")
-        ).one()
+        row = connection.execute(text("SELECT changed_by, changed_at FROM rca_memberships")).one()
 
     assert row.changed_by == "acc_actor", "the event's actor becomes the row's attribution again"
     assert "2026-02-03" in str(row.changed_at), "the event's timestamp comes back with it"
 
-    nullable = {
-        c["name"]: c["nullable"]
-        for c in inspect(engine).get_columns("rca_memberships")
-    }
+    nullable = {c["name"]: c["nullable"] for c in inspect(engine).get_columns("rca_memberships")}
     assert nullable["changed_by"] is False, "20260812_0010 declares it NOT NULL"
     assert nullable["changed_at"] is False, "20260812_0010 declares it NOT NULL"
 
@@ -629,9 +611,7 @@ def test_the_downgrade_marks_attribution_it_cannot_reconstruct(sqlite_url: str) 
             module.op = token
 
     with engine.begin() as connection:
-        row = connection.execute(
-            text("SELECT changed_by, changed_at FROM rca_memberships")
-        ).one()
+        row = connection.execute(text("SELECT changed_by, changed_at FROM rca_memberships")).one()
 
     assert row.changed_by == module._UNKNOWN_ACTOR, (  # noqa: SLF001
         "a swept event must downgrade to the placeholder, not to a plausible account identifier"

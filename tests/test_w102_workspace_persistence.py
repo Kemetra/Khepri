@@ -35,13 +35,16 @@ from khepri.rca.workspace.contracts import (
     RunOutcome,
 )
 from khepri.rca.workspace.persistence import (
+    _ROW_GUARDS,
     APPEND_ONLY_FAILURE,
     COMPLETION_COLUMNS,
     MUTABLE_COLUMNS,
     RETENTION_ACTIVE,
     RETENTION_STATES,
     RETENTION_TOMBSTONED,
+    RUN_TOMBSTONE_COLUMNS,
     TOMBSTONE_SUBJECTS,
+    VERSION_TOMBSTONE_COLUMNS,
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
@@ -1176,12 +1179,13 @@ def test_the_slice_delivers_every_table_its_plan_assigns() -> None:
 
 def test_a_source_profile_row_round_trips(factory: sessionmaker) -> None:
     scope = _scope(factory)
+    version = _version(SqlWorkspaceStore(factory), scope)
     with factory.begin() as database:
         database.add(
             SourceProfileRow(
                 profile_id="prf_abc123",
                 owner_id=scope,
-                source_version_id="dsv_abc123",
+                source_version_id=version.version_id,
                 column_labels='["date", "sku", "qty"]',
                 proposed_mapping='[["date", "transaction_date"]]',
                 created_at=NOW,
@@ -1192,11 +1196,11 @@ def test_a_source_profile_row_round_trips(factory: sessionmaker) -> None:
         row = database.get(SourceProfileRow, "prf_abc123")
         assert row is not None
         assert row.owner_id == scope
-        assert row.source_version_id == "dsv_abc123"
+        assert row.source_version_id == version.version_id
 
 
-def test_a_source_profile_is_mutable_and_deletable(factory: sessionmaker) -> None:
-    """The one workspace table exempt from both guards, and the exemption is the decision.
+def test_a_source_profile_is_deletable(factory: sessionmaker) -> None:
+    """The one workspace table exempt from the *delete* guard, and the exemption is the decision.
 
     `KHEPRI-DEC-033` §3's tombstone table gives a row to dataset versions and to runs, and for a
     source profile says **"none -- purged, not tombstoned"** -- because the live profile holds
@@ -1204,24 +1208,27 @@ def test_a_source_profile_is_mutable_and_deletable(factory: sessionmaker) -> Non
     delete guard would have made the purge the decision prescribes impossible, which is the same
     shape as the guard that had made run completion impossible.
 
-    It is mutable for a separate reason: `FR-115` makes a profile descriptive metadata a surface
-    reads, never authority, so freezing it would protect nothing.
+    **This test previously asserted the defect.** It was called "mutable and deletable" and it
+    reassigned `source_version_id` to prove the point -- so the guard gap and the test agreeing
+    with it arrived in the same commit, which is exactly the pair that cannot corroborate itself.
+    Review on `#370` read §3 more carefully than I had: the exemption is from *deletion*, and it
+    never extended to identity. `test_a_profile_cannot_be_repointed_at_another_version` is now the
+    assertion this line used to contradict, and the document stays mutable under `FR-115` in
+    `test_a_profile_document_is_still_mutable`.
     """
     scope = _scope(factory)
+    version = _version(SqlWorkspaceStore(factory), scope)
     with factory.begin() as database:
         database.add(
             SourceProfileRow(
                 profile_id="prf_mutable",
                 owner_id=scope,
-                source_version_id="dsv_abc123",
+                source_version_id=version.version_id,
                 column_labels="[]",
                 proposed_mapping="[]",
                 created_at=NOW,
             )
         )
-
-    with factory.begin() as database:
-        database.get(SourceProfileRow, "prf_mutable").source_version_id = "dsv_later"
 
     with factory.begin() as database:
         database.delete(database.get(SourceProfileRow, "prf_mutable"))
@@ -1428,3 +1435,273 @@ def test_a_real_transition_does_move_the_clock(factory: sessionmaker) -> None:
     with factory() as database:
         stored = database.get(DatasetVersionRow, version.version_id).retention_changed_at
     assert _utc(stored) == LATER
+
+
+# --- Round seven: what the schema constrains, and what a guard freezes -------------------------
+
+
+def test_a_profile_cannot_name_a_version_in_another_scope(factory: sessionmaker) -> None:
+    """`owner_id` alone was the only validation, so a profile could claim scope A while naming a
+    version belonging to scope B -- a cross-tenant source association the reuse surface would read
+    as its own. Review on `#370` found the new table short of the composite key runs and bindings
+    already carried.
+    """
+    other = _scope(factory, email="other@example.test")
+    mine = _scope(factory)
+    theirs = _version(SqlWorkspaceStore(factory), other)
+
+    with pytest.raises(IntegrityError), factory.begin() as database:
+        database.add(
+            SourceProfileRow(
+                profile_id="prf_cross1",
+                owner_id=mine,
+                source_version_id=theirs.version_id,
+                column_labels="[]",
+                proposed_mapping="[]",
+                created_at=NOW,
+            )
+        )
+
+
+def test_a_profile_cannot_name_a_version_that_does_not_exist(factory: sessionmaker) -> None:
+    """The other half of the same key: a dangling association is as unusable as a cross-tenant
+    one -- the reuse surface would offer a profile whose source no longer exists.
+    """
+    scope = _scope(factory)
+
+    with pytest.raises(IntegrityError), factory.begin() as database:
+        database.add(
+            SourceProfileRow(
+                profile_id="prf_anglin",
+                owner_id=scope,
+                source_version_id="dsv_nothere",
+                column_labels="[]",
+                proposed_mapping="[]",
+                created_at=NOW,
+            )
+        )
+
+
+def test_a_profile_cannot_be_reassigned_to_another_scope(factory: sessionmaker) -> None:
+    """Loading a profile from scope A and assigning a valid scope-B `owner_id` committed, because
+    the foreign key verifies only that B exists. Scope B's next read would then return scope A's
+    column labels. Review on `#370` found it, and the exemption that let it through was real but
+    narrower than I had applied it: `KHEPRI-DEC-033` §3 exempts the profile from *deletion*
+    guarding, never from ownership immutability.
+    """
+    scope = _scope(factory)
+    other = _scope(factory, email="other@example.test")
+    version = _version(SqlWorkspaceStore(factory), scope)
+    with factory.begin() as database:
+        database.add(
+            SourceProfileRow(
+                profile_id="prf_reassn",
+                owner_id=scope,
+                source_version_id=version.version_id,
+                column_labels='["sku"]',
+                proposed_mapping="[]",
+                created_at=NOW,
+            )
+        )
+
+    with pytest.raises(ValueError, match="cannot be reassigned"), factory.begin() as database:
+        database.get(SourceProfileRow, "prf_reassn").owner_id = other
+
+
+def test_a_profile_cannot_be_repointed_at_another_version(factory: sessionmaker) -> None:
+    """`source_version_id` is identity too, and no constraint can pin it to its original value:
+    repointing within the same scope satisfies the composite key perfectly.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    first = _version(store, scope)
+    second = _version(store, scope)
+    with factory.begin() as database:
+        database.add(
+            SourceProfileRow(
+                profile_id="prf_repoin",
+                owner_id=scope,
+                source_version_id=first.version_id,
+                column_labels="[]",
+                proposed_mapping="[]",
+                created_at=NOW,
+            )
+        )
+
+    with pytest.raises(ValueError, match="cannot be reassigned"), factory.begin() as database:
+        database.get(SourceProfileRow, "prf_repoin").source_version_id = second.version_id
+
+
+def test_a_profile_document_is_still_mutable(factory: sessionmaker) -> None:
+    """The freeze covers identity only. `FR-115` makes the document metadata a surface reads to
+    pre-fill a form -- it carries no authority, and freezing it would protect nothing. A guard that
+    froze the whole row would have made the profile useless for the thing it exists to do.
+    """
+    scope = _scope(factory)
+    version = _version(SqlWorkspaceStore(factory), scope)
+    with factory.begin() as database:
+        database.add(
+            SourceProfileRow(
+                profile_id="prf_mutabl",
+                owner_id=scope,
+                source_version_id=version.version_id,
+                column_labels='["old"]',
+                proposed_mapping="[]",
+                created_at=NOW,
+            )
+        )
+
+    with factory.begin() as database:
+        database.get(SourceProfileRow, "prf_mutabl").column_labels = '["new"]'
+
+    with factory() as database:
+        assert database.get(SourceProfileRow, "prf_mutabl").column_labels == '["new"]'
+
+
+def _tombstone(factory: sessionmaker, scope: str, **overrides: object) -> str:
+    fields: dict[str, object] = {
+        "tombstone_id": "tmb_abc123",
+        "subject_kind": "version",
+        "subject_id": "dsv_abc123",
+        "owner_id": scope,
+        "deleted_at": NOW,
+    }
+    fields.update(overrides)
+    with factory.begin() as database:
+        database.add(WorkspaceTombstoneRow(**fields))
+    return str(fields["tombstone_id"])
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("subject_kind", "run"),
+        ("subject_id", "dsv_rewrit"),
+        ("deleted_at", LATER),
+        ("manifest_digest", "sha256:rewritten"),
+    ],
+)
+def test_a_tombstone_cannot_be_rewritten(factory: sessionmaker, column: str, value: object) -> None:
+    """It sat outside both registrations, so an ordinary session could rewrite its owner, its
+    subject identifiers, the deletion instant, or the digests it preserves. `KHEPRI-DEC-033` §5
+    anchors a bounded horizon to `deleted_at`, so a movable one moves a deadline. Review on `#370`
+    found it.
+    """
+    scope = _scope(factory)
+    _tombstone(factory, scope)
+
+    with pytest.raises(ValueError, match="cannot be rewritten"), factory.begin() as database:
+        setattr(database.get(WorkspaceTombstoneRow, "tmb_abc123"), column, value)
+
+
+def test_a_tombstone_cannot_be_deleted_by_an_ordinary_session(factory: sessionmaker) -> None:
+    """The later lifecycle purge is `W1-07`'s, and it must take an explicit exemption to remove
+    one -- which is the conversation this guard exists to force, in the same spirit as the
+    profile's delete exemption being stated rather than assumed.
+    """
+    scope = _scope(factory)
+    _tombstone(factory, scope)
+
+    with pytest.raises(ValueError), factory.begin() as database:
+        database.delete(database.get(WorkspaceTombstoneRow, "tmb_abc123"))
+
+
+def test_a_version_tombstone_cannot_carry_a_runs_fields(factory: sessionmaker) -> None:
+    """`KHEPRI-DEC-033` §3 gives each subject its own allowlist, and the only constraint validated
+    the discriminator -- so `subject_kind='version'` could persist a run's `section_states`, and
+    content §3 says never survives a deletion would survive it. Review on `#370` found it.
+    """
+    scope = _scope(factory)
+
+    with pytest.raises(IntegrityError):
+        _tombstone(factory, scope, tombstone_id="tmb_mixed1", section_states='{"a": "ok"}')
+
+
+def test_a_run_tombstone_cannot_carry_a_versions_fields(factory: sessionmaker) -> None:
+    """The same allowlist from the other side -- the direction a symmetric guard would miss."""
+    scope = _scope(factory)
+
+    with pytest.raises(IntegrityError):
+        _tombstone(
+            factory,
+            scope,
+            tombstone_id="tmb_mixed2",
+            subject_kind="run",
+            subject_id="run_abc123",
+            upload_plaintext_digest="sha256:leak",
+        )
+
+
+def test_each_subject_persists_its_own_allowlist(factory: sessionmaker) -> None:
+    """The positive direction, so the checks are not merely refusing everything."""
+    scope = _scope(factory)
+    _tombstone(factory, scope, tombstone_id="tmb_okvers", manifest_digest="sha256:kept")
+    _tombstone(
+        factory,
+        scope,
+        tombstone_id="tmb_okruns",
+        subject_kind="run",
+        subject_id="run_abc123",
+        section_states='{"a": "ok"}',
+    )
+
+    with factory() as database:
+        assert database.get(WorkspaceTombstoneRow, "tmb_okvers") is not None
+        assert database.get(WorkspaceTombstoneRow, "tmb_okruns") is not None
+
+
+def test_the_tombstone_allowlists_partition_its_optional_columns() -> None:
+    """Every optional column belongs to exactly one subject.
+
+    A column in neither allowlist is unconstrained -- it could carry anything under either
+    discriminator, which is the defect these checks close, arriving through a column added later.
+    A column in both would make the two checks contradict, so no row could be written at all.
+    """
+    required = {"tombstone_id", "subject_kind", "subject_id", "owner_id", "deleted_at"}
+    optional = {
+        column.key
+        for column in WorkspaceTombstoneRow.__table__.columns
+        if column.key not in required
+    }
+
+    assert set(VERSION_TOMBSTONE_COLUMNS) & set(RUN_TOMBSTONE_COLUMNS) == set()
+    assert set(VERSION_TOMBSTONE_COLUMNS) | set(RUN_TOMBSTONE_COLUMNS) == optional
+
+
+def test_the_migration_states_the_same_allowlists_the_models_do() -> None:
+    """The migration keeps literal strings by this repo's convention, so the two can drift.
+
+    `W1-03`'s projection is built against the model constants; the database enforces the migration's
+    literals. A silent divergence would let the projection emit a field the table rejects, or --
+    worse -- stop rejecting one §3 excludes. Compared by the column names each clause mentions
+    rather than by string equality, which whitespace would break for no reason.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    source = (root / "migrations" / "versions" / "20260904_0021_rca_workspace.py").read_text(
+        encoding="utf-8"
+    )
+
+    def mentioned(constant: str) -> set[str]:
+        body = source.split(f"{constant} = (", 1)[1].split("\n)", 1)[0]
+        return set(re.findall(r"(\w+) IS NULL", body))
+
+    # Each check names the *other* subject's columns: a version's row nulls the run's fields.
+    assert mentioned("_TOMBSTONE_VERSION_FIELDS_CHECK") == set(RUN_TOMBSTONE_COLUMNS)
+    assert mentioned("_TOMBSTONE_RUN_FIELDS_CHECK") == set(VERSION_TOMBSTONE_COLUMNS)
+
+
+def test_every_workspace_row_class_declares_a_guard_shape() -> None:
+    """A row class added later must state which of the three shapes it takes.
+
+    The single registration loop this replaced was how two tables arrived unguarded: it named three
+    classes and nothing noticed the other two were absent. Review on `#370` found both.
+    """
+    from khepri.rca.persistence import Base
+
+    guarded = {row_class.__tablename__ for row_class in _ROW_GUARDS}
+    declared = {name for name in Base.metadata.tables if name.startswith("rca_workspace_")}
+
+    assert guarded == declared

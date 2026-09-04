@@ -72,6 +72,38 @@ TOMBSTONE_VERSION = "version"
 TOMBSTONE_RUN = "run"
 TOMBSTONE_SUBJECTS = (TOMBSTONE_VERSION, TOMBSTONE_RUN)
 
+#: What a source profile *is*, as opposed to what it says. Frozen by `_refuse_identity_change`.
+PROFILE_IDENTITY_COLUMNS = frozenset({"profile_id", "owner_id", "source_version_id"})
+
+#: `KHEPRI-DEC-033` §3's two allowlists, as the column names this table gives them. Every optional
+#: column belongs to exactly one subject, and a row must leave the other subject's columns null --
+#: otherwise `subject_kind="version"` could carry a run's `section_states`, and the schema would
+#: not enforce the allowlists it claims to represent. Review on `#370` found the `CHECK` validating
+#: only the discriminator.
+#:
+#: These are also what `W1-03`'s projection must agree with. The drift test asserts the constants
+#: and the emitted `CHECK` clauses match, so the two allowlists cannot diverge silently.
+VERSION_TOMBSTONE_COLUMNS = (
+    "version_id",
+    "created_at",
+    "sealed_at",
+    "upload_plaintext_digest",
+    "upload_ciphertext_digest",
+    "upload_size_bytes",
+    "upload_media_type",
+    "manifest_digest",
+    "mapping_version",
+    "admission_outcome",
+)
+RUN_TOMBSTONE_COLUMNS = (
+    "started_at",
+    "completed_at",
+    "package_digest",
+    "package_version",
+    "formula_version",
+    "section_states",
+)
+
 # Content-free, per the refusal discipline in `rca/errors.py`: it names the constraint, never the
 # rejected value, so a refusal cannot echo a caller's input back into a log.
 RETENTION_STATE_FAILURE = "Retention state is not one of the retention states this domain defines."
@@ -95,6 +127,17 @@ def _scope_foreign_key(name: str) -> ForeignKeyConstraint:
         name=name,
         ondelete="RESTRICT",
     )
+
+
+def _subject_allowlist_check(subject: str, foreign: tuple[str, ...], name: str) -> CheckConstraint:
+    """One subject's row must leave every column outside its own allowlist null.
+
+    Written as an implication -- `subject_kind <> '<subject>' OR (every foreign column IS NULL)` --
+    because that is the form SQL `CHECK` evaluates per row without a subquery. `NULL` cannot appear
+    in `subject_kind`, which is `nullable=False`, so the disjunction has no three-valued gap.
+    """
+    nulls = " AND ".join(f"{column} IS NULL" for column in foreign)
+    return CheckConstraint(f"subject_kind <> '{subject}' OR ({nulls})", name=name)
 
 
 def _states_check(column: str, states: tuple[str, ...], name: str) -> CheckConstraint:
@@ -245,6 +288,8 @@ APPEND_ONLY_FAILURE = "A workspace record's content cannot change after it is wr
 RESEAL_FAILURE = "A sealed version cannot be sealed again."
 RECOMPLETE_FAILURE = "A run that has left the started state cannot be completed again."
 DELETE_FAILURE = "A workspace record is removed through its retention lifecycle, not deleted."
+PROFILE_IDENTITY_FAILURE = "a source profile's identity and isolation scope cannot be reassigned"
+TOMBSTONE_IMMUTABLE_FAILURE = "a deletion record cannot be rewritten"
 TOMBSTONE_FAILURE = "A tombstoned record cannot return to an earlier retention state."
 
 
@@ -304,7 +349,22 @@ class SourceProfileRow(Base):
     """
 
     __tablename__ = "rca_workspace_source_profiles"
-    __table_args__ = (_scope_foreign_key("fk_rca_workspace_profile_scope"),)
+    __table_args__ = (
+        _scope_foreign_key("fk_rca_workspace_profile_scope"),
+        # The same composite key runs and bindings carry. Validating `owner_id` alone lets a row
+        # claim scope A while naming a version that does not exist, or one belonging to scope B --
+        # a dangling or cross-tenant source association the reuse surface would then read. Review
+        # on `#370` found the new table short of the pattern its siblings already followed.
+        ForeignKeyConstraint(
+            ["owner_id", "source_version_id"],
+            [
+                "rca_workspace_dataset_versions.owner_id",
+                "rca_workspace_dataset_versions.version_id",
+            ],
+            name="fk_rca_workspace_profile_version",
+            ondelete="RESTRICT",
+        ),
+    )
 
     profile_id: Mapped[str] = mapped_column(String, primary_key=True)
     owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
@@ -338,6 +398,12 @@ class WorkspaceTombstoneRow(Base):
     __table_args__ = (
         _scope_foreign_key("fk_rca_workspace_tombstone_scope"),
         _states_check("subject_kind", TOMBSTONE_SUBJECTS, "ck_rca_workspace_tombstone_subject"),
+        _subject_allowlist_check(
+            TOMBSTONE_VERSION, RUN_TOMBSTONE_COLUMNS, "ck_rca_workspace_tombstone_version_fields"
+        ),
+        _subject_allowlist_check(
+            TOMBSTONE_RUN, VERSION_TOMBSTONE_COLUMNS, "ck_rca_workspace_tombstone_run_fields"
+        ),
     )
 
     tombstone_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -367,6 +433,22 @@ class WorkspaceTombstoneRow(Base):
     section_states: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+def _changed_columns(target: object, among: frozenset[str] | None) -> set[str]:
+    """Columns this update actually assigns a new value to, optionally narrowed to `among`.
+
+    Assigning a column its existing value is not a change -- SQLAlchemy records no `deleted` history
+    for it -- which is the same reason `set_retention_state` needs its own no-op check rather than
+    relying on a guard.
+    """
+    state = sa_inspect(target)
+    columns = (
+        among
+        if among is not None
+        else frozenset(column.key for column in state.mapper.column_attrs)
+    )
+    return {column for column in columns if state.attrs[column].history.has_changes()}
+
+
 def _leaving_started(target: object, changed: set[str]) -> bool:
     """Whether this update is the completion transition, taken once out of `started`."""
     return "state" in changed and _one_way(target, "state", RUN_STARTED)
@@ -392,6 +474,40 @@ def _check_append_only(target: object, changed: set[str]) -> None:
         raise ValueError(RESEAL_FAILURE)
     if "retention_state" in changed and _one_way(target, "retention_state", RETENTION_TOMBSTONED):
         raise ValueError(TOMBSTONE_FAILURE)
+
+
+def _refuse_identity_change(_mapper, _connection, target: object) -> None:
+    """A profile's document may change; the row it *is* may not.
+
+    `FR-115` makes the profile metadata a surface reads to pre-fill a form, carrying no authority --
+    so `column_labels` and `proposed_mapping` are deliberately mutable. But loading a profile from
+    scope A and assigning it a valid scope-B `owner_id` committed successfully, because the foreign
+    key checks only that B exists: scope B's next read would then return scope A's column labels.
+    Review on `#370` found it. The composite foreign key added in the same round makes the pair
+    unrepresentable at the schema level; this refuses the reassignment one statement earlier, and
+    covers `source_version_id` too, which no constraint can pin to its original value.
+    """
+    changed = _changed_columns(target, PROFILE_IDENTITY_COLUMNS)
+    if changed:
+        raise ValueError(PROFILE_IDENTITY_FAILURE)
+
+
+def _refuse_any_update(_mapper, _connection, target: object) -> None:
+    """A tombstone records that something was deleted. Nothing about it may be rewritten.
+
+    It sat outside both registrations, so an ordinary session could rewrite its owner, its subject
+    identifiers, the deletion instant, or the digests it preserves -- and `KHEPRI-DEC-033` §5
+    anchors a bounded horizon to `deleted_at`. A mutable deletion record is not a deletion record.
+    Review on `#370` found it.
+
+    Frozen entirely rather than append-only, because a tombstone has no lifecycle: it is written
+    once by the deletion and read thereafter. The later lifecycle purge that removes expired
+    tombstones is a *delete*, which `_refuse_delete` still refuses -- `W1-07` owns that operation
+    and must take an explicit exemption when it arrives, which is the conversation this guard
+    exists to force.
+    """
+    if _changed_columns(target, None):
+        raise ValueError(TOMBSTONE_IMMUTABLE_FAILURE)
 
 
 def _refuse_content_update(_mapper, _connection, target: object) -> None:
@@ -458,9 +574,33 @@ def _visible_in(row: object | None, owner_id: str | None) -> bool:
 # is "purged, not tombstoned" -- so a blanket delete guard would forbid the very operation the
 # decision prescribes. `WorkspaceTombstoneRow` is absent for the opposite reason: it is what
 # *survives* a deletion, and `W1-07`'s retention sweep must be able to purge it at its horizon.
-for _row_class in (DatasetVersionRow, AnalysisRunRow, ArtifactBindingRow):
-    event.listen(_row_class, "before_update", _refuse_content_update)
-    event.listen(_row_class, "before_delete", _refuse_delete)
+#: Three guard shapes, side by side, because this table is the only place they are comparable.
+#: A single loop over every row class had encoded one shape and left the other two unguarded --
+#: review on `#370` found a profile's scope reassignable and a tombstone freely rewritable.
+#:
+#: ======================  ==========================================  ===================
+#: rows                    update                                      delete
+#: ======================  ==========================================  ===================
+#: versions/runs/bindings  append-only, one-way transitions preserved  refused
+#: source profiles         identity frozen, document free (`FR-115`)   **allowed** (§3 purge)
+#: tombstones              frozen entirely                             refused
+#: ======================  ==========================================  ===================
+#:
+#: The profile's delete is the one exemption, and `KHEPRI-DEC-033` §3 is why: its row reads
+#: "none -- purged, not tombstoned", so a blanket guard would forbid the purge the decision
+#: prescribes. That exemption covers deletion only -- it never licensed a scope reassignment.
+_ROW_GUARDS = {
+    DatasetVersionRow: (_refuse_content_update, _refuse_delete),
+    AnalysisRunRow: (_refuse_content_update, _refuse_delete),
+    ArtifactBindingRow: (_refuse_content_update, _refuse_delete),
+    SourceProfileRow: (_refuse_identity_change, None),
+    WorkspaceTombstoneRow: (_refuse_any_update, _refuse_delete),
+}
+
+for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():
+    event.listen(_row_class, "before_update", _on_update)
+    if _on_delete is not None:
+        event.listen(_row_class, "before_delete", _on_delete)
 
 
 def _version_from_row(row: DatasetVersionRow) -> DatasetVersion:
@@ -772,6 +912,11 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "VERSION_TOMBSTONE_COLUMNS",
+    "TOMBSTONE_IMMUTABLE_FAILURE",
+    "RUN_TOMBSTONE_COLUMNS",
+    "PROFILE_IDENTITY_FAILURE",
+    "PROFILE_IDENTITY_COLUMNS",
     "run_for_update",
     "version_for_update",
     "TOMBSTONE_SUBJECTS",
