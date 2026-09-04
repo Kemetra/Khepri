@@ -1,14 +1,15 @@
 """The `W1-02` workspace store: reads narrowed by scope and liveness, transitions, and their locks.
 
 Split from `persistence.py` alongside `schema.py`. This module holds the operations -- `_visible_in`
-and `_live_in`, the row-to-record projections, the two named `FOR UPDATE` statements, and
-`SqlWorkspaceStore` -- and imports the rows and vocabularies it operates on from `schema`.
+and `_live_in`, the row-to-record projections, and `SqlWorkspaceStore` -- and imports the rows and
+vocabularies it operates on from `schema` and its named `FOR UPDATE` statements from `locks`.
 
 Every public name is re-exported from `persistence.py`; import from there.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 
 from sqlalchemy import (
@@ -30,6 +31,7 @@ from khepri.rca.workspace.contracts import (
     VersionLifecycle,
     _identifier,
 )
+from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, version_for_update
 
 # The retention states a stored object may be in. `KHEPRI-DEC-033` governs the transitions; this
 # slice holds only the vocabulary and the column, because a transition is an operation and `W1-07`
@@ -44,7 +46,20 @@ from khepri.rca.workspace.schema import (
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
+    WorkspaceTombstoneRow,
 )
+from khepri.rca.workspace.tombstone_rows import tombstone_from_row, tombstone_row
+from khepri.rca.workspace.tombstones import RunTombstone, SectionStates, VersionTombstone
+
+#: How a deleting caller tells the cascade each run's section states. The live run record carries
+#: none and the bundle that does is `khepri.rra`'s (see `tombstones.py`), so the store asks rather
+#: than reads. Called once per live run, inside the deletion's transaction, with the run as stored.
+SectionsOf = Callable[[AnalysisRun], SectionStates | None]
+
+
+def _no_sections(_run: AnalysisRun) -> SectionStates | None:
+    """The default: no caller supplied section states, so none are recorded (§3: *may* contain)."""
+    return None
 
 
 def _visible_in(row: object | None, owner_id: str | None) -> bool:
@@ -133,44 +148,6 @@ def _binding_from_row(row: ArtifactBindingRow) -> ArtifactBinding:
     )
 
 
-def run_for_update(run_id: str, owner_id: str | None = None):
-    """Lock one run row for the duration of the caller's transaction.
-
-    A **module-level named statement** rather than an inline `.with_for_update()`, following
-    `account_for_update` in `rca/persistence.py` and for the reason stated there: SQLite emits no
-    `FOR UPDATE` and SQLAlchemy silently omits it for that dialect, so an inline lock someone later
-    removed would leave the whole suite green. Being named, a test compiles it against the
-    PostgreSQL dialect and asserts `FOR UPDATE` is present without needing a database.
-
-    `complete_analysis_run` needs it because read-then-write is not atomic: two workers can both
-    read `started`, both pass the check, and the second overwrite the first's package digest and
-    version provenance while both report success. Review on `#370` found that; `FR-111` binds a run
-    to the versions it actually derived under, so a lost write there is lost provenance.
-    """
-    statement = select(AnalysisRunRow).where(AnalysisRunRow.run_id == run_id)
-    if owner_id is not None:
-        # Scoped when the caller knows the scope, so a cross-tenant identifier locks *nothing*:
-        # `FOR UPDATE` over an empty result acquires no lock, and the insert that follows meets the
-        # composite foreign key exactly as it would have without this call. Without the predicate a
-        # caller naming another tenant's row would hold that row for the transaction -- contention
-        # across the isolation boundary, which `FR-109` forbids in spirit if not in letter.
-        statement = statement.where(AnalysisRunRow.owner_id == owner_id)
-    return statement.with_for_update()
-
-
-def version_for_update(version_id: str, owner_id: str | None = None):
-    """Lock one dataset version row. See `run_for_update`.
-
-    `seal_dataset_version` needs it for the reason `run_for_update` states: it reports whether
-    *this* call sealed the version, and two callers must not both be told they did.
-    `set_retention_state` deliberately does **not** take it -- see the comment there.
-    """
-    statement = select(DatasetVersionRow).where(DatasetVersionRow.version_id == version_id)
-    if owner_id is not None:
-        statement = statement.where(DatasetVersionRow.owner_id == owner_id)  # see `run_for_update`
-    return statement.with_for_update()
-
-
 def _refuse_tombstoned_parent(parent: object | None) -> None:
     """Refuse a derivative whose parent exists, is in scope, and has been deleted.
 
@@ -186,7 +163,28 @@ def _refuse_tombstoned_parent(parent: object | None) -> None:
         raise ValueError(PARENT_TOMBSTONED_FAILURE)
 
 
-def _cascade_tombstone_to_runs(database, version: DatasetVersionRow, now: datetime) -> None:
+def _tombstone_version(
+    database, version: DatasetVersionRow, now: datetime, sections_of: SectionsOf
+) -> None:
+    """Write the version's tombstone, then cascade to its live runs, each with its own.
+
+    `W1-02` flipped the retention state and wrote nothing into `rca_workspace_tombstones`; this is
+    the projection its `WorkspaceTombstoneRow` docstring left to `W1-03`. The projection reads the
+    row through `_version_from_row`, so it sees the same record a reader would have, and the row it
+    writes is added to the same session as the state change: one transaction ends the version and
+    records what may survive it, or neither happens.
+
+    Called only from `set_retention_state`, *after* its idempotency return -- a repeated deletion
+    reaches neither this nor the cascade, which is `FR-123`'s "no new deletion evidence".
+    """
+    tombstone = VersionTombstone.project(_version_from_row(version), deleted_at=now)
+    database.add(tombstone_row(tombstone))
+    _cascade_tombstone_to_runs(database, version, now, sections_of)
+
+
+def _cascade_tombstone_to_runs(
+    database, version: DatasetVersionRow, now: datetime, sections_of: SectionsOf
+) -> None:
     """Tombstone every live run of a version being tombstoned, in the same transaction.
 
     `KHEPRI-DEC-033` §3: a dataset version's deletion is "immediate, cascading to every derivative
@@ -206,17 +204,21 @@ def _cascade_tombstone_to_runs(database, version: DatasetVersionRow, now: dateti
     Row by row through the ORM rather than bulk `UPDATE`, so the guards see each transition -- the
     same reason `seal_dataset_version` stopped using bulk DML. The version row is already locked by
     the caller, which is what serialises this against `add_analysis_run` and a concurrent cascade.
+    The *run* rows are locked here, by `live_runs_for_update`, which is what serialises the
+    projection against a concurrent `complete_analysis_run` -- see that statement for the race.
 
     Each run's clock is set to the deletion instant. §3 gives a run's tombstone its own clock
     "anchored to that class's own trigger", and a cascaded deletion *is* the run's trigger.
+
+    Each run also gets its tombstone (`W1-03`), projected from the run as stored and with the
+    section states `sections_of` supplies for it. Only the runs this deletion ends get one: a run
+    the liveness filter skips was ended by its own trigger, and its record is that trigger's.
     """
-    live_runs = database.scalars(
-        select(AnalysisRunRow)
-        .where(AnalysisRunRow.version_id == version.version_id)
-        .where(AnalysisRunRow.owner_id == version.owner_id)
-        .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
-    )
+    live_runs = database.scalars(live_runs_for_update(version.version_id, version.owner_id)).all()
     for run in live_runs:
+        record = _run_from_row(run)
+        tombstone = RunTombstone.project(record, sections=sections_of(record), deleted_at=now)
+        database.add(tombstone_row(tombstone))
         run.retention_state = RETENTION_TOMBSTONED
         run.retention_changed_at = now
 
@@ -428,7 +430,13 @@ class SqlWorkspaceStore:
             return row.retention_state if _visible_in(row, owner_id) else None
 
     def set_retention_state(
-        self, version_id: str, state: str, *, now: datetime, owner_id: str | None = None
+        self,
+        version_id: str,
+        state: str,
+        *,
+        now: datetime,
+        owner_id: str | None = None,
+        sections_of: SectionsOf = _no_sections,
     ) -> None:
         """Move a version's retention state, refusing a state the domain does not name.
 
@@ -463,7 +471,7 @@ class SqlWorkspaceStore:
             row.retention_state = state
             row.retention_changed_at = now
             if state == RETENTION_TOMBSTONED:
-                _cascade_tombstone_to_runs(database, row, now)
+                _tombstone_version(database, row, now, sections_of)
 
     def seal_dataset_version(
         self, version_id: str, *, now: datetime, owner_id: str | None = None
@@ -496,6 +504,38 @@ class SqlWorkspaceStore:
         return True
 
     def tombstone_dataset_version(
-        self, version_id: str, *, now: datetime, owner_id: str | None = None
+        self,
+        version_id: str,
+        *,
+        now: datetime,
+        owner_id: str | None = None,
+        sections_of: SectionsOf = _no_sections,
     ) -> None:
-        self.set_retention_state(version_id, RETENTION_TOMBSTONED, now=now, owner_id=owner_id)
+        """Delete a version as `KHEPRI-DEC-033` §1-§3 describe: one way, cascading, recorded.
+
+        `sections_of` is how the caller supplies each cascaded run's section states -- see
+        `SectionsOf`. Left at its default, every run is recorded with no section states, which is
+        what a `started` or `failed` run has and what a caller without the bundle can say.
+        """
+        self.set_retention_state(
+            version_id, RETENTION_TOMBSTONED, now=now, owner_id=owner_id, sections_of=sections_of
+        )
+
+    def tombstones_for_scope(self, owner_id: str) -> tuple[VersionTombstone | RunTombstone, ...]:
+        """Every deletion record in one scope, oldest deletion first, a version before its runs.
+
+        Keyed by the scope and nothing else: a tombstone is what the history spine shows in place
+        of the record that ended (`FR-117`), so it is read the way live records are -- by scope --
+        and never by a filter a caller could widen. Ordered so a listing is stable across reads.
+        """
+        with self._factory() as database:
+            rows = database.scalars(
+                select(WorkspaceTombstoneRow)
+                .where(WorkspaceTombstoneRow.owner_id == owner_id)
+                .order_by(
+                    WorkspaceTombstoneRow.deleted_at,
+                    WorkspaceTombstoneRow.subject_kind.desc(),
+                    WorkspaceTombstoneRow.subject_id,
+                )
+            )
+            return tuple(tombstone_from_row(row) for row in rows)
