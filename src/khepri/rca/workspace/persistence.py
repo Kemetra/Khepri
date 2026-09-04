@@ -526,8 +526,9 @@ def run_for_update(run_id: str):
 def version_for_update(version_id: str):
     """Lock one dataset version row. See `run_for_update`.
 
-    Sealing and the retention transitions read a column and then decide on it, which is the same
-    read-then-write window.
+    `seal_dataset_version` needs it for the reason `run_for_update` states: it reports whether
+    *this* call sealed the version, and two callers must not both be told they did.
+    `set_retention_state` deliberately does **not** take it -- see the comment there.
     """
     return (
         select(DatasetVersionRow)
@@ -713,7 +714,14 @@ class SqlWorkspaceStore:
         if state not in RETENTION_STATES:
             raise ValueError(RETENTION_STATE_FAILURE)
         with self._factory.begin() as database:
-            row = database.scalars(version_for_update(version_id)).one_or_none()
+            # No row lock, unlike `seal_dataset_version` and `complete_analysis_run`, which share
+            # this read-then-write shape. Those two return *whether this call* performed the
+            # transition, and two concurrent callers must not both be told `True`. This returns
+            # nothing, and `tombstoned` is terminal over a two-state domain -- so a row makes at
+            # most one real transition, concurrent tombstones agree on the state they want, and
+            # `_one_way` refuses the reverse from either order. `R1-05` forbids a lock with no
+            # guard behind it: it would imply a decision boundary here that does not exist.
+            row = database.get(DatasetVersionRow, version_id)
             if not _visible_in(row, owner_id) or row.retention_state == state:
                 # A repeat of the state the row already holds is `FR-123`'s idempotent retry, and
                 # it must not move the clock. `KHEPRI-DEC-033` §5 anchors a deletion horizon to

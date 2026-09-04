@@ -120,9 +120,24 @@ def _rca_modules() -> list[str]:
     """
     return [path.read_text(encoding="utf-8") for path in sorted(_RCA_PACKAGE.rglob("*.py"))]
 
+
 #: The two module-level statements that carry `FOR UPDATE`, plus the raw SQLAlchemy call, so a
 #: method reaching for the lock by any of the three routes is caught.
-_LOCK_ROUTES = frozenset({"owner_memberships_for_update", "organization_owners_for_update"})
+#: The named locking statements, listed here rather than in `_MAY_LOCK` because this frozenset has
+#: a second job: `_lock_aliases` seeds itself from it, so a statement named here is still detected
+#: when a caller imports it under an alias. `W1-02`'s two lock a single workspace row by primary
+#: key -- the narrowest scope a lock can have -- and
+#: `test_w102_workspace_persistence.py` compiles each against the PostgreSQL dialect to assert the
+#: `FOR UPDATE` clause and its table, which is the `W1-02` counterpart of the paired-predicate
+#: tests below.
+_LOCK_ROUTES = frozenset(
+    {
+        "owner_memberships_for_update",
+        "organization_owners_for_update",
+        "run_for_update",
+        "version_for_update",
+    }
+)
 
 #: `with_for_update` reaches SQLAlchemy two ways and both must be scanned: as a method
 #: (`select(...).with_for_update()`) and as a **keyword argument**
@@ -191,6 +206,16 @@ _MAY_LOCK = frozenset(
         # `R4-05`'s service verb, listed because the scan follows delegation: `redeem` reaches
         # `redeem_into_membership`, which constructs the lock.
         "redeem",
+        # `W1-02` workspace transitions. Both report **whether this call** performed the
+        # transition, and that boolean is the guard the lock protects: without it two callers can
+        # both read the pre-state, both write, and both be told `True`. `complete_analysis_run`
+        # additionally loses the first writer's package digest and version provenance, which
+        # `FR-111` binds to the run. Their sibling `set_retention_state` returns nothing and is
+        # deliberately **not** here -- `tombstoned` is terminal over a two-state domain, so it
+        # makes at most one real transition and needs no lock. That asymmetry is the allowlist
+        # doing its job: a lock arrived on all three, and only two could name a guard.
+        "complete_analysis_run",
+        "seal_dataset_version",
     }
 )
 
@@ -318,9 +343,7 @@ def _functions_in(tree: ast.Module) -> list[_AnyFunction]:
     does.
     """
     return [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     ]
 
 
@@ -433,7 +456,7 @@ def test_the_two_locking_statements_still_lock() -> None:
 
 
 def test_the_owner_lock_is_scoped_to_one_organization() -> None:
-    """"Leave unrelated organizations independent" (`R1` design requirements).
+    """ "Leave unrelated organizations independent" (`R1` design requirements).
 
     `organization_owners_for_update` locks by organization, so two organizations' owner-reducing
     operations do not contend. A statement that dropped the predicate would serialize every
