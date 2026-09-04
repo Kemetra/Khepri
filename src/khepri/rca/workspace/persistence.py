@@ -48,6 +48,7 @@ from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 from khepri.rca.persistence import Base, _utc
 from khepri.rca.records import assert_sealed
 from khepri.rca.workspace.contracts import (
+    RUN_COMPLETED,
     RUN_STARTED,
     RUN_STATES,
     AdmittedSource,
@@ -164,6 +165,26 @@ def _scope_foreign_key(name: str) -> ForeignKeyConstraint:
     )
 
 
+def _completion_provenance_check(name: str) -> CheckConstraint:
+    """A row in `completed` carries the four things `FR-111` says it produced.
+
+    The same rule `RunOutcome.__post_init__` enforces, stated where a writer outside the ORM also
+    meets it -- and the duplication has a specific reason. Enforced only in the dataclass, a bad
+    row reaches the database, and then `_run_from_row` raises constructing the `RunOutcome` on
+    *read*: `analysis_runs_for_scope` fails for the whole scope, so one malformed row becomes an
+    outage for every run in the organization. Review on `#370` traced that path.
+
+    Nullable columns with a state-conditional requirement, rather than `NOT NULL`: `failed` and
+    `started` carry no package because none was produced.
+    """
+    return CheckConstraint(
+        f"state <> '{RUN_COMPLETED}' OR ("
+        "package_digest IS NOT NULL AND package_version IS NOT NULL "
+        "AND formula_version IS NOT NULL AND completed_at IS NOT NULL)",
+        name=name,
+    )
+
+
 def _subject_allowlist_check(
     subject: str, own: tuple[str, ...], foreign: tuple[str, ...], name: str
 ) -> CheckConstraint:
@@ -265,6 +286,7 @@ class AnalysisRunRow(Base):
         ),
         _retention_check(RETENTION_STATES, "ck_rca_workspace_run_retention"),
         _states_check("state", RUN_STATES, "ck_rca_workspace_run_state"),
+        _completion_provenance_check("ck_rca_workspace_run_completion_provenance"),
         UniqueConstraint("owner_id", "run_id", name="uq_rca_workspace_run_scope"),
     )
 
@@ -565,10 +587,18 @@ def _check_terminal_state(target: object, changed: set[str]) -> None:
     columns may still move?" has the answer "none". Checked on the *prior* state rather than the
     new one, so the tombstoning update itself passes.
     """
+    state = sa_inspect(target)
+    if "retention_state" not in state.attrs:
+        # `ArtifactBindingRow` has no retention state -- it is immutable outright, which
+        # `_refuse_content_update`'s other rules already enforce. Hoisting this check to run on
+        # every path exposed the assumption that all three guarded classes share the column; they
+        # do not. Returning here rather than adding the column keeps "which rows have a retention
+        # lifecycle" a property of the schema instead of a guard's precondition.
+        return
     if _one_way(target, "retention_state", RETENTION_TOMBSTONED):
         return  # this update *is* the reversal; `_check_one_way_transitions` refuses it with a
         # message naming the reversal, which is the more specific answer.
-    prior = sa_inspect(target).attrs["retention_state"]
+    prior = state.attrs["retention_state"]
     was_tombstoned = (
         prior.history.deleted[0] if prior.history.deleted else target.retention_state
     ) == RETENTION_TOMBSTONED
@@ -598,7 +628,6 @@ def _check_append_only(target: object, changed: set[str]) -> None:
     if not changed <= MUTABLE_COLUMNS:
         raise ValueError(APPEND_ONLY_FAILURE)
     _check_one_way_transitions(target, changed)
-    _check_terminal_state(target, changed)
 
 
 def _refuse_identity_change(_mapper, _connection, target: object) -> None:
@@ -664,6 +693,13 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
     changed = {
         attribute.key for attribute in sa_inspect(target).attrs if attribute.history.has_changes()
     }
+    # Terminal state first, and unconditionally. It was called from inside `_check_append_only`,
+    # which reads as "one more append-only rule" -- but it is a *precondition on every path*, and
+    # putting it in a branch made it conditional on not taking the other one. A tombstoned run
+    # still reads `started`, so it took the completion branch and returned before the terminal
+    # check ever ran: a deleted run could be completed. Confirmed against the guard, then fixed.
+    # Review on `#370` found it.
+    _check_terminal_state(target, changed)
     if _leaving_started(target, changed):
         _check_completion(changed)
         return

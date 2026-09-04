@@ -851,3 +851,139 @@ def test_sealing_a_live_version_is_still_allowed(factory: sessionmaker) -> None:
     version = _version(store, scope)
 
     assert store.seal_dataset_version(version.version_id, now=LATER) is True
+
+
+def test_a_tombstoned_run_cannot_be_completed(factory: sessionmaker) -> None:
+    """The terminal check ran *inside* the completion branch's alternative, so it never fired.
+
+    A tombstoned run still reads `started`, so `_refuse_content_update` took the completion branch
+    and returned before `_check_terminal_state` -- and a deleted run could be given a package
+    digest and a completion instant. Confirmed against the guard before fixing. Review on `#370`
+    found it, and the fix is ordering: terminal state is a precondition on every path, not one
+    more append-only rule.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    with factory.begin() as database:
+        database.get(AnalysisRunRow, run.run_id).retention_state = RETENTION_TOMBSTONED
+
+    with (
+        pytest.raises(ValueError, match="accepts no further update"),
+        factory.begin() as database,
+    ):
+        row = database.get(AnalysisRunRow, run.run_id)
+        row.state = RUN_COMPLETED
+        row.package_digest = "sha256:abc"
+        row.package_version = "1.0.0"
+        row.formula_version = "1.0.0"
+        row.completed_at = LATER
+
+
+def test_a_live_run_can_still_be_completed(factory: sessionmaker) -> None:
+    """The ordering fix must not have made completion itself unreachable.
+
+    The append-only guard had already made run completion impossible once on this PR; a check
+    hoisted to run before every branch is exactly the shape that does it again.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+
+    completed = store.complete_analysis_run(
+        run.run_id,
+        RunOutcome(
+            state=RUN_COMPLETED,
+            package_digest="sha256:abc",
+            package_version="1.0.0",
+            formula_version="1.0.0",
+            completed_at=LATER,
+        ),
+    )
+
+    assert completed is True
+
+
+def test_a_binding_has_no_retention_lifecycle_and_the_guard_tolerates_it(
+    factory: sessionmaker,
+) -> None:
+    """`ArtifactBindingRow` carries no `retention_state`, and it must not need one.
+
+    Hoisting the terminal check to every path exposed the assumption that all three guarded row
+    classes share the column. They do not, and the fix is for the guard to notice rather than for
+    the schema to grow a column no rule reads -- "which rows have a retention lifecycle" is a
+    property of the table, not a guard's precondition.
+    """
+    assert "retention_state" not in ArtifactBindingRow.__table__.columns
+
+
+@pytest.mark.parametrize(
+    "missing", ["package_digest", "package_version", "formula_version", "completed_at"]
+)
+def test_a_completed_row_without_provenance_is_refused_by_the_schema(
+    factory: sessionmaker,
+    missing: str,
+) -> None:
+    """Stated in the schema as well as in `RunOutcome`, and the duplication is the point.
+
+    Enforced only in the dataclass, a malformed row still reaches the database -- and then raises
+    on *read*, when `_run_from_row` constructs the `RunOutcome`. `analysis_runs_for_scope` fails
+    for the whole scope, so one bad row becomes an outage for every run in the organization.
+    Review on `#370` traced that path.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    provenance = {
+        "package_digest": "sha256:abc",
+        "package_version": "1.0.0",
+        "formula_version": "1.0.0",
+        "completed_at": LATER,
+    }
+    provenance[missing] = None
+
+    # One case per field: a `CHECK` naming only `package_digest` satisfies three of these, and a
+    # single all-fields-null case cannot tell that apart. Confirmed as mutant `K3`, which survived
+    # the unparametrized version of this test.
+    with pytest.raises(IntegrityError), factory.begin() as database:
+        database.add(
+            AnalysisRunRow(
+                run_id=f"run_no{missing[:5]}",
+                version_id=version.version_id,
+                owner_id=scope,
+                state=RUN_COMPLETED,
+                started_at=NOW,
+                retention_state=RETENTION_ACTIVE,
+                **provenance,
+            )
+        )
+
+
+@pytest.mark.parametrize("state", ["started", "failed"])
+def test_a_non_completed_row_needs_no_provenance(factory: sessionmaker, state: str) -> None:
+    """Conditional rather than `NOT NULL`: those states produced no package."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    with factory.begin() as database:
+        database.add(
+            AnalysisRunRow(
+                run_id=f"run_{state}p",
+                version_id=version.version_id,
+                owner_id=scope,
+                state=state,
+                started_at=NOW,
+                retention_state=RETENTION_ACTIVE,
+            )
+        )
+
+    with factory() as database:
+        assert database.get(AnalysisRunRow, f"run_{state}p") is not None

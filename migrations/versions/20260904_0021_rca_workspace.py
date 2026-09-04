@@ -87,6 +87,17 @@ depends_on: str | Sequence[str] | None = None
 # Spelled literally rather than imported -- see the module docstring.
 _RETENTION_CHECK = "retention_state IN ('active', 'tombstoned')"
 _RUN_STATE_CHECK = "state IN ('started', 'completed', 'failed')"
+
+#: `FR-111` binds a completed run to the package it produced. Stated in the schema as well as in
+#: `RunOutcome.__post_init__`, because enforced only in the dataclass a bad row still reaches the
+#: database -- and then raises on *read*, failing `analysis_runs_for_scope` for the whole scope.
+#: One malformed row becomes an outage for every run in the organization. Review on `#370` traced
+#: it. Conditional rather than `NOT NULL`: `failed` and `started` produced no package.
+_RUN_COMPLETION_PROVENANCE_CHECK = (
+    "state <> 'completed' OR ("
+    "package_digest IS NOT NULL AND package_version IS NOT NULL "
+    "AND formula_version IS NOT NULL AND completed_at IS NOT NULL)"
+)
 _TOMBSTONE_SUBJECT_CHECK = "subject_kind IN ('version', 'run')"
 
 #: `KHEPRI-DEC-033` §3's two allowlists. A version's tombstone must leave every run-only column
@@ -225,6 +236,9 @@ def _run_constraints() -> tuple[sa.schema.SchemaItem, ...]:
         ),
         sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_run_retention"),
         sa.CheckConstraint(_RUN_STATE_CHECK, name="ck_rca_workspace_run_state"),
+        sa.CheckConstraint(
+            _RUN_COMPLETION_PROVENANCE_CHECK, name="ck_rca_workspace_run_completion_provenance"
+        ),
         sa.UniqueConstraint("owner_id", "run_id", name="uq_rca_workspace_run_scope"),
     )
 
