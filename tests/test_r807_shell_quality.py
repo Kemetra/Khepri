@@ -136,6 +136,11 @@ class _StubInvitations:
         raise AssertionError("the browser cases drive GETs only")
 
 
+class _StubIsolation:
+    def resolve_scope(self, account_id: str, organization_id: str) -> str:
+        return f"scope-{organization_id}"
+
+
 class _StubRecords:
     """One admitted data version with one completed analysis, so both new surfaces render rows
     rather than their empty states."""
@@ -186,6 +191,7 @@ def _client(surface: str) -> TestClient:
             organizations=_StubOrganizations(memberships=surface != "no_membership"),
             invitations=_StubInvitations(),
             records=_StubRecords(),
+            isolation=_StubIsolation(),
         ),
         clock=lambda: NOW,
     )

@@ -39,6 +39,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from khepri.rca.errors import SCOPE_FAILURE, ScopeAccessDenied
 from khepri.rca.organizations import Organization
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rca.workspace.contracts import (
@@ -64,6 +65,10 @@ EARLIEST = datetime(2026, 9, 3, 8, 0, tzinfo=UTC)
 #: surface rendered and not an identifier it echoed.
 ORGANIZATION = "org-acme"
 OTHER_ORGANIZATION = "org-other"
+#: What the isolation door returns for the session's organization. Distinct from the organization
+#: identifier on purpose: the store is keyed by this and not by that (`FR-031`), which is the
+#: defect review on `#373` found.
+SCOPE = "scope-acme"
 DIGEST = "d" * 64
 MAPPING_VERSION = "mapping-v-alpha"
 
@@ -98,6 +103,20 @@ class _StubOrganizations:
 
     def memberships_for_organization(self, organization_id: str) -> list[object]:
         return []
+
+
+@dataclass
+class _StubIsolation:
+    """The one scope door, recording what it was asked and answering one scope for one pair."""
+
+    asked: list[tuple[str, str]] = field(default_factory=list)
+    refuse: bool = False
+
+    def resolve_scope(self, account_id: str, organization_id: str) -> str:
+        self.asked.append((account_id, organization_id))
+        if self.refuse:
+            raise ScopeAccessDenied(SCOPE_FAILURE)
+        return SCOPE if organization_id == ORGANIZATION else f"scope-{organization_id}"
 
 
 class _StubBridge:
@@ -165,7 +184,12 @@ def _shell(
     *,
     bridge: bool = False,
     context: _Context | None = None,
+    isolation: _StubIsolation | None | str = "default",
 ) -> TestClient:
+    """`isolation` defaults to a stub whenever a reader is given, so the ordinary case is the
+    fully wired one; pass `None` to build a shell with a reader and no scope door."""
+    if isolation == "default":
+        isolation = _StubIsolation() if records is not None else None
     app = FastAPI()
     add_shell_routes(
         app,
@@ -174,6 +198,7 @@ def _shell(
             organizations=_StubOrganizations(),
             bridge=_StubBridge() if bridge else None,
             records=records,
+            isolation=isolation,
         ),
         clock=lambda: NOW,
     )
@@ -480,13 +505,42 @@ class TestScopeComesFromTheSession:
     """`RCA-002` `FR-042`: the address names a surface and a language, never the scope."""
 
     @pytest.mark.parametrize("surface", ["overview", "data"])
-    def test_the_reader_is_asked_about_the_sessions_organization(self, surface: str) -> None:
+    def test_the_reader_is_asked_about_the_sessions_scope(self, surface: str) -> None:
+        """The store is keyed by the opaque scope. It is asked about the scope the isolation door
+        returned for the *session's* account and organization -- never the organization
+        identifier itself, and never the one in the address."""
         records = _StubRecords()
+        isolation = _StubIsolation()
 
-        _shell(records).get(f"{SHELL_PREFIX}/en/{OTHER_ORGANIZATION}/{surface}")
+        _shell(records, isolation=isolation).get(
+            f"{SHELL_PREFIX}/en/{OTHER_ORGANIZATION}/{surface}"
+        )
 
+        assert isolation.asked == [("acct-a", ORGANIZATION)]
         assert records.asked, "the reader was never consulted"
-        assert set(records.asked) == {ORGANIZATION}
+        assert set(records.asked) == {SCOPE}
+        assert ORGANIZATION not in records.asked
+
+    @pytest.mark.parametrize("surface", ["overview", "data"])
+    def test_a_refused_scope_reaches_the_uniform_refusal(self, surface: str) -> None:
+        """`FR-050`: the isolation door refusing -- a disabled account, a membership gone since
+        the session resolved -- is one more collapsed cause, not a 500 and not an empty page."""
+        shell = _shell(_worked_scope(), isolation=_StubIsolation(refuse=True))
+
+        response = shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}")
+
+        assert response.status_code == 404
+        assert SHELL_COPY["en"]["unavailable_title"] in response.text
+        assert SHELL_COPY["en"]["run_state_started"] not in response.text
+
+    def test_a_reader_without_a_scope_door_offers_nothing(self) -> None:
+        """Half a wiring is no wiring (`FR-049`): a reader with no way to resolve the scope could
+        only be asked the wrong question, so the surfaces and their links are absent."""
+        shell = _shell(_worked_scope(), isolation=None)
+
+        nav = _nav(shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/team").text)
+        assert _link("en", "overview") not in nav and _link("en", "data") not in nav
+        assert shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/overview").status_code == 404
 
     @pytest.mark.parametrize("surface", ["overview", "data"])
     def test_a_session_with_no_active_organization_reaches_the_refusal(self, surface: str) -> None:

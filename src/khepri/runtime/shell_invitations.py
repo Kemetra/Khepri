@@ -158,7 +158,7 @@ def add_invitation_routes(
             services.organizations.organizations_for_account(context.account_id),
             context.organization_id,
             surface="team",
-            offers_records=services.records is not None,
+            offers_records=services.records is not None and services.isolation is not None,
         )
 
         now = clock()

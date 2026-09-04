@@ -139,6 +139,11 @@ class _StubInvitations:
         return "inv_a-one-time-token"
 
 
+class _StubIsolation:
+    def resolve_scope(self, account_id: str, organization_id: str) -> str:
+        return f"scope-{organization_id}"
+
+
 class _StubRecords:
     """An empty workspace, so the frame under test is the one with every built destination."""
 
@@ -183,6 +188,7 @@ def _shell(
             ),
             invitations=invitations,
             records=_StubRecords(),
+            isolation=_StubIsolation(),
         ),
         clock=lambda: NOW,
     )

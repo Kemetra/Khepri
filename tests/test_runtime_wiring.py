@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from khepri.rca.identity import IdentityProvider
+from khepri.rca.isolation import IsolationService
 from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
@@ -224,3 +225,6 @@ def test_the_shell_reads_the_record_store_the_workspace_actions_write() -> None:
 
     assert shell is not None
     assert isinstance(shell.records, SqlWorkspaceRecordStore)
+    # The store is keyed by the opaque scope, so the shell must resolve the session's
+    # organization through the same door the actions write under (`#373` review).
+    assert isinstance(shell.isolation, IsolationService)

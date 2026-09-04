@@ -166,13 +166,30 @@ class WorkspaceReader(Protocol):
     ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
 
 
+class ScopeResolver(Protocol):
+    """Resolves an organization to the opaque scope the workspace rows are keyed by (`FR-031`).
+
+    `IsolationService.resolve_scope` is the implementation and the one door: the workspace store
+    filters on `owner_id`, which is *not* the commercial `organization_id` the session carries,
+    and `WorkspaceActions` writes every row under the scope this same call returns. Review on
+    `#373` found the shell passing the organization identifier to the store, so both surfaces
+    would have rendered their empty states over a scope full of rows. Reading through the same
+    door the writer used is what makes the shell show what the actions recorded.
+    """
+
+    def resolve_scope(
+        self, account_id: str, organization_id: str
+    ) -> str: ...  # pragma: no cover -- Protocol
+
+
 @dataclass(frozen=True, slots=True)
 class ShellServices:
     """What the shell needs to render an authenticated frame, and nothing more.
 
-    `records` is optional the way `invitations` and `bridge` are: a shell wired without it has no
-    Overview and no Data surface and no link to either (`FR-049`), rather than two surfaces that
-    exist and refuse.
+    `records` and `isolation` are optional the way `invitations` and `bridge` are, and they come
+    as a pair: a shell wired without both has no Overview and no Data surface and no link to
+    either (`FR-049`), rather than two surfaces that exist and refuse -- or, worse, two surfaces
+    that read a scope the session does not own.
     """
 
     resolver: ActorResolver
@@ -180,6 +197,12 @@ class ShellServices:
     invitations: InvitationGateway | None = None
     bridge: AnalysisOpener | None = None
     records: WorkspaceReader | None = None
+    isolation: ScopeResolver | None = None
+
+
+def _offers_workspace(services: ShellServices) -> bool:
+    """Whether Overview and Data exist on this shell: both halves of the read are wired."""
+    return services.records is not None and services.isolation is not None
 
 
 
@@ -350,11 +373,17 @@ def _switcher(
 def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> dict[str, Any]:
     """What Overview and Data both need: the frame, and the scope's versions and runs.
 
-    `FR-042`: the reader is asked about `context.organization_id`, which the resolver returned
-    from the session; the address's organization segment was never read. Both surfaces read both
-    tables because Overview shows the latest of each and Data shows which runs used which data.
+    `FR-042`: the scope is resolved from `context.organization_id`, which the resolver returned
+    from the session; the address's organization segment was never read. The resolution goes
+    through `ScopeResolver` -- the same door `WorkspaceActions` writes under -- because the store
+    is keyed by the opaque `owner_id` and not by the organization. A refusal there is a
+    `PermissionError` and reaches the reader as the one uniform unavailable surface.
+
+    Both surfaces read both tables because Overview shows the latest of each and Data shows
+    which runs used which data.
     """
-    assert services.records is not None  # dispatched only when wired
+    assert services.records is not None and services.isolation is not None  # dispatched wired
+    owner_id = services.isolation.resolve_scope(context.account_id, context.organization_id)
     frame = organization_frame(
         services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
@@ -364,8 +393,8 @@ def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> 
     return {
         **frame,
         "organization_id": context.organization_id,
-        "versions": services.records.dataset_versions_for_scope(context.organization_id),
-        "runs": services.records.analysis_runs_for_scope(context.organization_id),
+        "versions": services.records.dataset_versions_for_scope(owner_id),
+        "runs": services.records.analysis_runs_for_scope(owner_id),
     }
 
 
@@ -421,7 +450,7 @@ def _team_response(
         services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
         surface="team",
-        offers_records=services.records is not None,
+        offers_records=_offers_workspace(services),
     )
     invitations: tuple[Any, ...] = ()
     if services.invitations is not None:
@@ -539,11 +568,16 @@ def add_shell_routes(
             )
         # `W1-05`. Dispatched only when a reader is wired, so a shell without one has no such
         # surface -- the address falls through to `unavailable` like any other unknown name.
-        workspace_ready = services.records is not None and context.organization_id is not None
+        workspace_ready = _offers_workspace(services) and context.organization_id is not None
         if surface in _WORKSPACE_SURFACES and workspace_ready:
-            return _WORKSPACE_SURFACES[surface](
-                services, environment, language=language, context=context
-            )
+            try:
+                return _WORKSPACE_SURFACES[surface](
+                    services, environment, language=language, context=context
+                )
+            except PermissionError:
+                # The scope door refused -- a disabled account, a membership gone since the
+                # session was resolved. `FR-050`: the same surface as every other refusal.
+                return _unavailable(environment, language=language)
         # The chooser answers the language address and nothing else. `surface` is read at index 2,
         # so it is also `""` for `/{language}/{anything}` -- and testing that name alone made an
         # unknown two-segment path render the chooser at `200`, the one answer `FR-046` says an
@@ -555,7 +589,7 @@ def add_shell_routes(
                 language=language,
                 organizations=organizations,
                 active_organization_id=context.organization_id,
-                entry_surface="overview" if services.records is not None else "team",
+                entry_surface="overview" if _offers_workspace(services) else "team",
             )
         return _unavailable(environment, language=language)
 
@@ -564,6 +598,7 @@ __all__ = [
     "SHELL_ASSETS",
     "SHELL_PREFIX",
     "ActorResolver",
+    "ScopeResolver",
     "ShellServices",
     "WorkspaceReader",
     "add_shell_routes",
