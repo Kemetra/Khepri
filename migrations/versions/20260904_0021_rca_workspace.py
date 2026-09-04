@@ -74,8 +74,52 @@ _RETENTION_CHECK = "retention_state IN ('active', 'tombstoned')"
 
 
 def upgrade() -> None:
+    """Three tables and their indexes.
+
+    Delegating to per-table helpers rather than spelling the DDL inline, following
+    `20260812_0010`, which creates four tables the same way. The shape is not cosmetic: it keeps
+    each table's columns and constraints readable as one unit, which is what a reader auditing a
+    schema change is looking for.
+    """
     op.create_table(
-        "rca_workspace_dataset_versions",
+        "rca_workspace_dataset_versions", *_version_columns(), *_version_constraints()
+    )
+    _index("rca_workspace_dataset_versions", "owner_id")
+
+    op.create_table("rca_workspace_analysis_runs", *_run_columns(), *_run_constraints())
+    _index("rca_workspace_analysis_runs", "owner_id")
+    _index("rca_workspace_analysis_runs", "version_id")
+
+    op.create_table(
+        "rca_workspace_artifact_bindings", *_binding_columns(), *_binding_constraints()
+    )
+    _index("rca_workspace_artifact_bindings", "owner_id")
+    _index("rca_workspace_artifact_bindings", "run_id")
+
+
+def _index(table: str, column: str) -> None:
+    op.create_index(f"ix_{table}_{column}", table, [column])
+
+
+def _scope_foreign_key(name: str) -> sa.ForeignKeyConstraint:
+    """`owner_id` onto the isolation scope. `RESTRICT` -- see the module docstring."""
+    return sa.ForeignKeyConstraint(
+        ["owner_id"],
+        ["rca_isolation_scopes.owner_id"],
+        name=name,
+        ondelete="RESTRICT",
+    )
+
+
+def _retention_columns() -> tuple[sa.Column, ...]:
+    return (
+        sa.Column("retention_state", sa.String(), nullable=False),
+        sa.Column("retention_changed_at", sa.DateTime(timezone=True), nullable=True),
+    )
+
+
+def _version_columns() -> tuple[sa.Column, ...]:
+    return (
         sa.Column("version_id", sa.String(), nullable=False),
         sa.Column("owner_id", sa.String(), nullable=False),
         sa.Column("upload_plaintext_digest", sa.String(), nullable=False),
@@ -90,26 +134,21 @@ def upgrade() -> None:
         # the raw upload's seven-day purge clock at sealing, so a version sealed at creation would
         # start a deletion clock for content whose facts do not exist yet.
         sa.Column("sealed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("retention_state", sa.String(), nullable=False),
-        sa.Column("retention_changed_at", sa.DateTime(timezone=True), nullable=True),
+        *_retention_columns(),
+    )
+
+
+def _version_constraints() -> tuple[sa.schema.SchemaItem, ...]:
+    return (
         sa.PrimaryKeyConstraint("version_id"),
-        sa.ForeignKeyConstraint(
-            ["owner_id"],
-            ["rca_isolation_scopes.owner_id"],
-            name="fk_rca_workspace_version_scope",
-            ondelete="RESTRICT",
-        ),
+        _scope_foreign_key("fk_rca_workspace_version_scope"),
         sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_version_retention"),
         sa.UniqueConstraint("owner_id", "version_id", name="uq_rca_workspace_version_scope"),
     )
-    op.create_index(
-        "ix_rca_workspace_dataset_versions_owner_id",
-        "rca_workspace_dataset_versions",
-        ["owner_id"],
-    )
 
-    op.create_table(
-        "rca_workspace_analysis_runs",
+
+def _run_columns() -> tuple[sa.Column, ...]:
+    return (
         sa.Column("run_id", sa.String(), nullable=False),
         sa.Column("version_id", sa.String(), nullable=False),
         sa.Column("owner_id", sa.String(), nullable=False),
@@ -121,15 +160,14 @@ def upgrade() -> None:
         sa.Column("state", sa.String(), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("retention_state", sa.String(), nullable=False),
-        sa.Column("retention_changed_at", sa.DateTime(timezone=True), nullable=True),
+        *_retention_columns(),
+    )
+
+
+def _run_constraints() -> tuple[sa.schema.SchemaItem, ...]:
+    return (
         sa.PrimaryKeyConstraint("run_id"),
-        sa.ForeignKeyConstraint(
-            ["owner_id"],
-            ["rca_isolation_scopes.owner_id"],
-            name="fk_rca_workspace_run_scope",
-            ondelete="RESTRICT",
-        ),
+        _scope_foreign_key("fk_rca_workspace_run_scope"),
         sa.ForeignKeyConstraint(
             ["owner_id", "version_id"],
             [
@@ -142,48 +180,29 @@ def upgrade() -> None:
         sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_run_retention"),
         sa.UniqueConstraint("owner_id", "run_id", name="uq_rca_workspace_run_scope"),
     )
-    op.create_index(
-        "ix_rca_workspace_analysis_runs_owner_id",
-        "rca_workspace_analysis_runs",
-        ["owner_id"],
-    )
-    op.create_index(
-        "ix_rca_workspace_analysis_runs_version_id",
-        "rca_workspace_analysis_runs",
-        ["version_id"],
-    )
 
-    op.create_table(
-        "rca_workspace_artifact_bindings",
+
+def _binding_columns() -> tuple[sa.Column, ...]:
+    return (
         sa.Column("binding_id", sa.String(), nullable=False),
         sa.Column("run_id", sa.String(), nullable=False),
         sa.Column("owner_id", sa.String(), nullable=False),
         sa.Column("surface", sa.String(), nullable=False),
         sa.Column("artifact_digest", sa.String(), nullable=False),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=False),
+    )
+
+
+def _binding_constraints() -> tuple[sa.schema.SchemaItem, ...]:
+    return (
         sa.PrimaryKeyConstraint("binding_id"),
-        sa.ForeignKeyConstraint(
-            ["owner_id"],
-            ["rca_isolation_scopes.owner_id"],
-            name="fk_rca_workspace_binding_scope",
-            ondelete="RESTRICT",
-        ),
+        _scope_foreign_key("fk_rca_workspace_binding_scope"),
         sa.ForeignKeyConstraint(
             ["owner_id", "run_id"],
             ["rca_workspace_analysis_runs.owner_id", "rca_workspace_analysis_runs.run_id"],
             name="fk_rca_workspace_binding_run",
             ondelete="RESTRICT",
         ),
-    )
-    op.create_index(
-        "ix_rca_workspace_artifact_bindings_owner_id",
-        "rca_workspace_artifact_bindings",
-        ["owner_id"],
-    )
-    op.create_index(
-        "ix_rca_workspace_artifact_bindings_run_id",
-        "rca_workspace_artifact_bindings",
-        ["run_id"],
     )
 
 
