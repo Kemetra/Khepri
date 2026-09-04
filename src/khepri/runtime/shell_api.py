@@ -54,6 +54,7 @@ from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import organization_frame
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
+from khepri.runtime.shell_workspace import data_rows, overview_view
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -148,14 +149,38 @@ class AnalysisOpener(Protocol):
     ) -> Any: ...  # pragma: no cover -- Protocol
 
 
+class WorkspaceReader(Protocol):
+    """Reads one scope's data versions and analysis runs (`W1-05`).
+
+    `SqlWorkspaceRecordStore` is the implementation; this names the two reads Overview and Data
+    make and none of the writes. The shell presents retained rows and creates, completes and
+    deletes nothing, and a reader that could write would make that a convention.
+    """
+
+    def dataset_versions_for_scope(
+        self, owner_id: str
+    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+
+    def analysis_runs_for_scope(
+        self, owner_id: str
+    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+
+
 @dataclass(frozen=True, slots=True)
 class ShellServices:
-    """What the shell needs to render an authenticated frame, and nothing more."""
+    """What the shell needs to render an authenticated frame, and nothing more.
+
+    `records` is optional the way `invitations` and `bridge` are: a shell wired without it has no
+    Overview and no Data surface and no link to either (`FR-049`), rather than two surfaces that
+    exist and refuse.
+    """
 
     resolver: ActorResolver
     organizations: OrganizationReader
     invitations: InvitationGateway | None = None
     bridge: AnalysisOpener | None = None
+    records: WorkspaceReader | None = None
+
 
 
 def shell_environment() -> Environment:
@@ -298,6 +323,7 @@ def _switcher(
     language: str,
     organizations: list[Any],
     active_organization_id: str | None,
+    entry_surface: str,
 ) -> Response:
     """`FR-051`: only what the reader returned, which is only current memberships.
 
@@ -315,9 +341,64 @@ def _switcher(
         status_code=200,
         organizations=organizations,
         active_organization_id=active_organization_id,
+        entry_surface=entry_surface,
         # The chooser is where the frame's organization control leads, so the control is not
         # rendered here: a link to the surface you are on is a control that does nothing.
     )
+
+
+def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> dict[str, Any]:
+    """What Overview and Data both need: the frame, and the scope's versions and runs.
+
+    `FR-042`: the reader is asked about `context.organization_id`, which the resolver returned
+    from the session; the address's organization segment was never read. Both surfaces read both
+    tables because Overview shows the latest of each and Data shows which runs used which data.
+    """
+    assert services.records is not None  # dispatched only when wired
+    frame = organization_frame(
+        services.organizations.organizations_for_account(context.account_id),
+        context.organization_id,
+        surface=surface,
+        offers_records=True,
+    )
+    return {
+        **frame,
+        "organization_id": context.organization_id,
+        "versions": services.records.dataset_versions_for_scope(context.organization_id),
+        "runs": services.records.analysis_runs_for_scope(context.organization_id),
+    }
+
+
+def _overview_response(
+    services: ShellServices, environment: Environment, *, language: str, context: Any
+) -> Response:
+    """`FR-120`. The rows are shaped in `shell_workspace.py`; the template can only iterate."""
+    reads = _workspace_reads(services, context, surface="overview")
+    view = overview_view(reads.pop("versions"), reads.pop("runs"))
+    return _render(
+        environment,
+        "overview.html.j2",
+        language=language,
+        status_code=200,
+        view=view,
+        bridge_available=services.bridge is not None,
+        **reads,
+    )
+
+
+def _data_response(
+    services: ShellServices, environment: Environment, *, language: str, context: Any
+) -> Response:
+    """Blueprint §7.2, with `FR-117`'s row vocabulary."""
+    reads = _workspace_reads(services, context, surface="data")
+    rows = data_rows(reads.pop("versions"), reads.pop("runs"))
+    return _render(
+        environment, "data.html.j2", language=language, status_code=200, rows=rows, **reads
+    )
+
+
+#: The two surfaces `records` delivers, by the name the address carries, and what renders each.
+_WORKSPACE_SURFACES = {"overview": _overview_response, "data": _data_response}
 
 
 def _team_response(
@@ -339,6 +420,8 @@ def _team_response(
     frame = organization_frame(
         services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
+        surface="team",
+        offers_records=services.records is not None,
     )
     invitations: tuple[Any, ...] = ()
     if services.invitations is not None:
@@ -454,6 +537,13 @@ def add_shell_routes(
             return _team_response(
                 services, environment, language=language, context=context
             )
+        # `W1-05`. Dispatched only when a reader is wired, so a shell without one has no such
+        # surface -- the address falls through to `unavailable` like any other unknown name.
+        workspace_ready = services.records is not None and context.organization_id is not None
+        if surface in _WORKSPACE_SURFACES and workspace_ready:
+            return _WORKSPACE_SURFACES[surface](
+                services, environment, language=language, context=context
+            )
         # The chooser answers the language address and nothing else. `surface` is read at index 2,
         # so it is also `""` for `/{language}/{anything}` -- and testing that name alone made an
         # unknown two-segment path render the chooser at `200`, the one answer `FR-046` says an
@@ -465,6 +555,7 @@ def add_shell_routes(
                 language=language,
                 organizations=organizations,
                 active_organization_id=context.organization_id,
+                entry_surface="overview" if services.records is not None else "team",
             )
         return _unavailable(environment, language=language)
 
@@ -474,6 +565,7 @@ __all__ = [
     "SHELL_PREFIX",
     "ActorResolver",
     "ShellServices",
+    "WorkspaceReader",
     "add_shell_routes",
     "shell_environment",
 ]

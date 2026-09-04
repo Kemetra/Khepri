@@ -1,0 +1,70 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.overview_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  `RCA-005` FR-120: latest work, data state, and items needing attention, drawn from rows the
+  specification retains. Blueprint §7.1 calls this operational orientation, not analytics.
+
+  Nothing here is a figure. No count, no chart, no total -- `M3-U5` forbids them by name and
+  `test_overview_carries_no_figure` asserts the rendered text has no digit outside `<time>`. The
+  rows arrive shaped from `shell_workspace.py`; this template decides nothing about them, and the
+  scan in `test_no_shell_template_computes` holds it to that.
+
+  The attention region is rendered only when non-empty. An always-present "no issues" panel is
+  decoration, not reassurance (§7.1).
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.overview_title }}</h1>
+  <p class="lede">{{ copy.overview_intro }}</p>
+
+  <h2 class="region-label">{{ copy.latest_work_title }}</h2>
+  {% if view.latest_work %}
+  <p class="latest-work">
+    <span class="row-state">{{ copy[view.latest_work.state_key] }}</span>
+    <time datetime="{{ view.latest_work.started.at }}" dir="ltr">{{ view.latest_work.started.text }}</time>
+  </p>
+  {% else %}
+  <p class="empty-state">{{ copy.overview_no_work }}</p>
+  {% endif %}
+
+  <h2 class="region-label">{{ copy.data_title }}</h2>
+  {% if view.latest_data %}
+  <p class="latest-data">
+    <span class="row-state">{{ copy[view.latest_data.admission_key] }}</span>
+    <span class="row-state">{{ copy[view.latest_data.readiness_key] }}</span>
+    <time datetime="{{ view.latest_data.submitted.at }}" dir="ltr">{{ view.latest_data.submitted.text }}</time>
+  </p>
+  {% else %}
+  <p class="empty-state">{{ copy.overview_no_data }}</p>
+  {% endif %}
+
+  {% if view.attention %}
+  <h2 class="region-label">{{ copy.attention_title }}</h2>
+  <ul class="attention-list">
+    {% for item in view.attention %}
+    <li class="attention-item">
+      <span>{{ copy.attention_run_failed }}</span>
+      <time datetime="{{ item.started.at }}" dir="ltr">{{ item.started.text }}</time>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {#
+    The one dominant action (§7.1), posting to `R8-06`'s route exactly as the chooser's active row
+    does. Offered only when a bridge is wired: a form whose every submission the shell refuses
+    reads as a fault, not as a capability nobody installed.
+  #}
+  {% if bridge_available %}
+  <form method="post" action="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses">
+    <button type="submit">{{ copy.new_analysis }}</button>
+  </form>
+  {% endif %}
+
+  {#
+    `KHEPRI-DEC-033` §5: until `W1-07` ships the sweep, no surface may say content expires
+    automatically. This states what is true of the store today and claims nothing about a purge.
+  #}
+  <p class="retention-notice">{{ copy.retention_notice }}</p>
+</section>
+{% endblock %}

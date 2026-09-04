@@ -818,7 +818,8 @@ class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
         the needle rather than the address.
         """
         issued = self._issued("en")
-        nav = issued[issued.index('class="frame-surfaces"') :][:300]
+        start = issued.index('class="frame-surfaces"')
+        nav = issued[start : issued.index("</nav>", start)]
 
         assert f'href="{SHELL_PREFIX}/en/org-acme/team"' in nav
 

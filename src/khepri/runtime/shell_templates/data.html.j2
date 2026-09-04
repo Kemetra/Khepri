@@ -1,0 +1,49 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.data_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  Blueprint §7.2: what was submitted, when, whether it was admitted, whether it is in use, which
+  analyses used it, and its retention state -- in the customer's words. No digest, mapping version
+  or internal identifier is rendered, because `DataRow` carries none; contextual audit detail is
+  `W1-06`'s.
+
+  This template filters and orders nothing (`RCA-002` FR-051's discipline, applied to data). The
+  rows are the reader's, newest first, and the runs beneath each row were matched to it in
+  `shell_workspace.py`, where the match is tested.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.data_title }}</h1>
+  <p class="lede">{{ copy.data_intro }}</p>
+  {% if rows %}
+  <ul class="data-list">
+    {% for row in rows %}
+    <li class="data-item">
+      <p class="data-summary">
+        <span class="row-label">{{ copy.data_submitted }}</span>
+        <time datetime="{{ row.submitted.at }}" dir="ltr">{{ row.submitted.text }}</time>
+        <span class="row-state">{{ copy[row.admission_key] }}</span>
+        <span class="row-state">{{ copy[row.readiness_key] }}</span>
+        <span class="row-state">{{ copy[row.retention_key] }}</span>
+        <span class="row-format" dir="ltr">{{ row.media_type }}</span>
+      </p>
+      <h2 class="region-label">{{ copy.data_uses_title }}</h2>
+      {% if row.uses %}
+      <ul class="data-uses">
+        {% for use in row.uses %}
+        <li class="data-use">
+          <span class="row-state">{{ copy[use.state_key] }}</span>
+          <time datetime="{{ use.started.at }}" dir="ltr">{{ use.started.text }}</time>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state">{{ copy.data_no_uses }}</p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ copy.data_empty }}</p>
+  {% endif %}
+</section>
+{% endblock %}

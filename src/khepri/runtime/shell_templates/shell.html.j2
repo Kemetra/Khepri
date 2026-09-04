@@ -20,8 +20,9 @@
     by construction rather than by care: `unavailable` never receives the context, so its frame is
     the same whichever cause brought the reader there.
 
-    `Team` is the only destination. `FR-049` forbids rendering an entry for a surface with no
-    implementation, and the dispatcher answers exactly two.
+    The destinations are `organization_frame`'s, decided in Python once. `FR-049` forbids
+    rendering an entry for a surface with no implementation, so Overview and Data are in the tuple
+    only when the shell holds a reader for them, and Analyses is not in it until its PR ships.
   #}
   <header class="shell-identity">
     {#
@@ -68,8 +69,10 @@
     <a class="frame-organization-fallback"
        href="{{ prefix }}/{{ language }}">{{ copy.frame_organization_label }}</a>
     {% endif %}
-    <nav class="frame-surfaces" aria-label="{{ copy.team_title }}">
-      <a href="{{ prefix }}/{{ language }}/{{ organization_id }}/team">{{ copy.team_title }}</a>
+    <nav class="frame-surfaces" aria-label="{{ copy.frame_surfaces_label }}">
+      {% for label, tail in destinations %}
+      <a href="{{ prefix }}/{{ language }}{{ tail }}"{% if tail == surface_path %} aria-current="page"{% endif %}>{{ copy[label] }}</a>
+      {% endfor %}
     </nav>
     {% endif %}
     {#

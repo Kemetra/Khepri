@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from html import unescape
 from importlib.resources import files
 
@@ -54,6 +54,7 @@ from khepri.rca.workspace.contracts import (
 )
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 from khepri.runtime.shell_copy import SHELL_COPY
+from khepri.runtime.shell_workspace import moment
 
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 EARLIER = datetime(2026, 9, 4, 9, 30, tzinfo=UTC)
@@ -494,6 +495,53 @@ class TestScopeComesFromTheSession:
         response = shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}")
 
         assert response.status_code == 404
+
+    def test_a_version_that_was_not_admitted_says_so(self) -> None:
+        """The admission outcome is read from the record, not assumed: `W1-04` refuses an
+        inadmissible source before a version exists, but the contract allows any outcome and a
+        row that always said "Admitted" would be a claim the record did not make."""
+        refused = DatasetVersion._from_storage(
+            version_id="ver-r",
+            owner_id=ORGANIZATION,
+            source=AdmittedSource(
+                plaintext_digest=DIGEST,
+                ciphertext_digest=DIGEST,
+                size_bytes=4096,
+                media_type="application/vnd.ms-excel",
+                manifest_digest=DIGEST,
+                mapping_version=MAPPING_VERSION,
+                admission_outcome="refused",
+            ),
+            lifecycle=VersionLifecycle(created_at=EARLIER),
+        )
+
+        html = (
+            _shell(_StubRecords(versions=(refused,)))
+            .get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/data")
+            .text
+        )
+
+        assert SHELL_COPY["en"]["data_not_admitted"] in html
+        assert SHELL_COPY["en"]["data_admitted"] not in html
+        assert "application/vnd.ms-excel" in html
+
+
+class TestMoments:
+    """A stored instant is stated in UTC whatever offset it arrived with, and a naive value is
+    read as UTC rather than guessed to be local."""
+
+    def test_an_offset_instant_is_restated_in_utc(self) -> None:
+        cairo = datetime(2026, 9, 4, 12, 30, tzinfo=timezone(timedelta(hours=3)))
+
+        stated = moment(cairo)
+
+        assert stated.at == "2026-09-04T09:30:00+00:00"
+        assert stated.text == "2026-09-04 09:30 UTC"
+
+    def test_a_naive_instant_is_read_as_utc(self) -> None:
+        stated = moment(datetime(2026, 9, 4, 9, 30))
+
+        assert stated.at == "2026-09-04T09:30:00+00:00"
 
 
 # --- templates do not compute -----------------------------------------------------------------
