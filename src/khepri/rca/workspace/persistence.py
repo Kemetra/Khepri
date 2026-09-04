@@ -35,6 +35,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Integer,
     String,
+    UniqueConstraint,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
@@ -50,6 +51,7 @@ from khepri.rca.workspace.contracts import (
     RunOutcome,
     RunSubject,
     VersionLifecycle,
+    _identifier,
 )
 
 # The retention states a stored object may be in. `KHEPRI-DEC-033` governs the transitions; this
@@ -105,6 +107,11 @@ class DatasetVersionRow(Base):
     __table_args__ = (
         _scope_foreign_key("fk_rca_workspace_version_scope"),
         _retention_check(RETENTION_STATES, "ck_rca_workspace_version_retention"),
+        # The target a child's composite foreign key needs. Not a cardinality claim: `version_id`
+        # is already unique alone as the primary key, so this constrains nothing new -- it exists
+        # so `(owner_id, version_id)` is referenceable, which is what makes a cross-scope child
+        # unrepresentable rather than merely untested.
+        UniqueConstraint("owner_id", "version_id", name="uq_rca_workspace_version_scope"),
     )
 
     version_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -132,12 +139,16 @@ class AnalysisRunRow(Base):
     __table_args__ = (
         _scope_foreign_key("fk_rca_workspace_run_scope"),
         ForeignKeyConstraint(
-            ["version_id"],
-            ["rca_workspace_dataset_versions.version_id"],
+            ["owner_id", "version_id"],
+            [
+                "rca_workspace_dataset_versions.owner_id",
+                "rca_workspace_dataset_versions.version_id",
+            ],
             name="fk_rca_workspace_run_version",
             ondelete="RESTRICT",
         ),
         _retention_check(RETENTION_STATES, "ck_rca_workspace_run_retention"),
+        UniqueConstraint("owner_id", "run_id", name="uq_rca_workspace_run_scope"),
     )
 
     run_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -171,8 +182,8 @@ class ArtifactBindingRow(Base):
     __table_args__ = (
         _scope_foreign_key("fk_rca_workspace_binding_scope"),
         ForeignKeyConstraint(
-            ["run_id"],
-            ["rca_workspace_analysis_runs.run_id"],
+            ["owner_id", "run_id"],
+            ["rca_workspace_analysis_runs.owner_id", "rca_workspace_analysis_runs.run_id"],
             name="fk_rca_workspace_binding_run",
             ondelete="RESTRICT",
         ),
@@ -328,7 +339,7 @@ class SqlWorkspaceStore:
         with self._factory.begin() as database:
             database.add(
                 ArtifactBindingRow(
-                    binding_id=f"{binding.run_id}:{binding.surface}",
+                    binding_id=_identifier("abn"),
                     run_id=binding.run_id,
                     owner_id=binding.owner_id,
                     surface=binding.surface,

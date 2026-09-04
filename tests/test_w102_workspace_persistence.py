@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -35,6 +35,7 @@ from khepri.rca.workspace.persistence import (
     RETENTION_ACTIVE,
     RETENTION_STATES,
     RETENTION_TOMBSTONED,
+    ArtifactBindingRow,
     SqlWorkspaceStore,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
@@ -393,3 +394,120 @@ def test_a_foreign_scope_reads_nothing_by_identifier(factory: sessionmaker) -> N
 
     assert store.get_dataset_version(mine.version_id, owner_id=second) is None
     assert store.get_dataset_version(mine.version_id, owner_id=first) == mine
+
+
+# --- Cross-scope children, which independent foreign keys allowed ---------------------------
+
+
+def test_a_run_cannot_claim_one_scope_while_naming_another_scopes_version(
+    factory: sessionmaker,
+) -> None:
+    """`FR-109`: two independent foreign keys are checked independently.
+
+    Found by review on `#370`, and the isolation tests above could not see it: each of them writes
+    one scope's rows *consistently*, so none ever constructs the mismatched pair. A run naming
+    `owner_id=A` and a version belonging to `B` satisfied both constraints separately, appeared in
+    A's listing, and pointed into B's data.
+
+    The parent key is now composite -- `(owner_id, version_id)` -- so the mismatch is not a row the
+    database will store, rather than one no test happened to build.
+    """
+    first = _scope(factory)
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
+    store = SqlWorkspaceStore(factory)
+    theirs = store.add_dataset_version(
+        DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
+    )
+
+    with pytest.raises(IntegrityError):
+        store.add_analysis_run(
+            AnalysisRun.create(owner_id=first, version_id=theirs.version_id, now=NOW)
+        )
+
+
+def test_a_binding_cannot_claim_one_scope_while_naming_another_scopes_run(
+    factory: sessionmaker,
+) -> None:
+    """The same defect one level down: `(owner_id, run_id)` is the binding's parent key."""
+    first = _scope(factory)
+    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
+    store = SqlWorkspaceStore(factory)
+    theirs = store.add_dataset_version(
+        DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW)
+    )
+    their_run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=second, version_id=theirs.version_id, now=NOW)
+    )
+
+    with pytest.raises(IntegrityError):
+        store.add_artifact_binding(
+            ArtifactBinding.create(
+                owner_id=first,
+                run_id=their_run.run_id,
+                artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "f" * 64),
+                now=NOW,
+            )
+        )
+
+
+def test_one_run_may_hold_two_bindings_for_the_same_surface(factory: sessionmaker) -> None:
+    """The refusal the migration documents must hold in the code that writes the row.
+
+    The docstring says there is no `UNIQUE (run_id, surface)` "and that is the decision rather than
+    an omission" -- and the first version of `add_artifact_binding` then derived `binding_id` from
+    exactly that pair, reimposing the constraint through the primary key. Prose and code
+    contradicted each other and the code won silently, which review on `#370` caught.
+
+    A republished surface is the case that matters: `FR-111` reads completeness from the *set* a
+    run names, and a store that refused the second row would decide that question in the wrong
+    place.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+
+    for digest in ("sha256:" + "1" * 64, "sha256:" + "2" * 64):
+        store.add_artifact_binding(
+            ArtifactBinding.create(
+                owner_id=scope,
+                run_id=run.run_id,
+                artifact=PublishedArtifact(surface="web", artifact_digest=digest),
+                now=NOW,
+            )
+        )
+
+    assert len(store.artifact_bindings_for_run(run.run_id)) == 2
+
+
+def test_a_binding_identifier_is_allocated_rather_than_derived(factory: sessionmaker) -> None:
+    """A derived key is the uniqueness constraint again, wearing a different name.
+
+    Asserted against the stored identifier rather than only through the two-row case above,
+    because a key derived from any caller-supplied value is also the `FR-109` question: an opaque
+    identifier must not make its subject recoverable from the key.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    store.add_artifact_binding(
+        ArtifactBinding.create(
+            owner_id=scope,
+            run_id=run.run_id,
+            artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "3" * 64),
+            now=NOW,
+        )
+    )
+
+    with factory() as database:
+        stored = database.execute(select(ArtifactBindingRow.binding_id)).scalars().all()
+
+    assert len(stored) == 1
+    assert stored[0].startswith("abn_")
+    assert run.run_id not in stored[0]
+    assert "web" not in stored[0]

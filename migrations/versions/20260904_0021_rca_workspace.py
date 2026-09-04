@@ -26,6 +26,15 @@ commercial identifier appearing in or being derivable from a workspace key -- an
 column on these tables would be that identifier arriving by another name. PostgreSQL admits a
 foreign key onto any uniquely-constrained column, and `uq_rca_scope_owner` is that constraint.
 
+**A child's parent key is composite, so a cross-scope row is unrepresentable.** `owner_id` and
+`version_id` as two independent foreign keys are checked independently, which lets a run claim one
+scope while pointing at another scope's dataset version -- both constraints satisfied, the row
+appearing in the child's scope and referencing a foreign tenant. `FR-109` isolation cannot rest on
+callers pairing them correctly, so the run references `(owner_id, version_id)` and the binding
+references `(owner_id, run_id)`. The two `UNIQUE (owner_id, <id>)` constraints exist only to give
+those composite references a target: each `<id>` is already unique alone as a primary key, so
+neither constrains anything new.
+
 **Constraints considered and refused, per `KHEPRI-DEC-020` §4:**
 
 *No `UNIQUE (run_id, surface)` on the bindings table.* It reads as the obvious constraint --
@@ -91,6 +100,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_version_retention"),
+        sa.UniqueConstraint("owner_id", "version_id", name="uq_rca_workspace_version_scope"),
     )
     op.create_index(
         "ix_rca_workspace_dataset_versions_owner_id",
@@ -121,12 +131,16 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["version_id"],
-            ["rca_workspace_dataset_versions.version_id"],
+            ["owner_id", "version_id"],
+            [
+                "rca_workspace_dataset_versions.owner_id",
+                "rca_workspace_dataset_versions.version_id",
+            ],
             name="fk_rca_workspace_run_version",
             ondelete="RESTRICT",
         ),
         sa.CheckConstraint(_RETENTION_CHECK, name="ck_rca_workspace_run_retention"),
+        sa.UniqueConstraint("owner_id", "run_id", name="uq_rca_workspace_run_scope"),
     )
     op.create_index(
         "ix_rca_workspace_analysis_runs_owner_id",
@@ -155,8 +169,8 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["run_id"],
-            ["rca_workspace_analysis_runs.run_id"],
+            ["owner_id", "run_id"],
+            ["rca_workspace_analysis_runs.owner_id", "rca_workspace_analysis_runs.run_id"],
             name="fk_rca_workspace_binding_run",
             ondelete="RESTRICT",
         ),
