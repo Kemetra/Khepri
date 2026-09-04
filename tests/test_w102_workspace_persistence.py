@@ -32,6 +32,7 @@ from khepri.rca.workspace.contracts import (
     PublishedArtifact,
 )
 from khepri.rca.workspace.persistence import (
+    APPEND_ONLY_FAILURE,
     MUTABLE_COLUMNS,
     RETENTION_ACTIVE,
     RETENTION_STATES,
@@ -572,6 +573,32 @@ def test_the_guard_permits_exactly_the_retention_columns(factory: sessionmaker) 
     all exercise the *permitted* path. This names the extent, the way `W1-01`'s field-set tests do.
     """
     assert {"retention_state", "retention_changed_at"} == MUTABLE_COLUMNS
+
+
+def test_the_append_only_refusal_is_the_constant_and_nothing_else(
+    factory: sessionmaker,
+) -> None:
+    """The message is exactly `APPEND_ONLY_FAILURE`, with nothing appended.
+
+    Added because a mutant survived: appending `changed={...}` -- the set of column names the
+    caller touched -- left all forty tests green. The content-free test below could not see it,
+    because it asserts the absence of caller *values* and column names are not values, so it
+    passed for a reason unrelated to what the mutant did.
+
+    Column names are schema rather than customer data, so this is a weaker leak than echoing a
+    value. But `rca/errors.py`'s discipline is that a refusal names the constraint, and a message
+    that varies with what the caller touched says more than that. Asserting equality with the
+    constant is the only form of this test a message-shaped mutant cannot slip past.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    with pytest.raises(ValueError) as caught, factory.begin() as database:
+        row = database.get(DatasetVersionRow, version.version_id)
+        row.upload_media_type = "text/plain"
+
+    assert str(caught.value) == APPEND_ONLY_FAILURE
 
 
 def test_the_append_only_refusal_does_not_echo_the_rejected_content(
