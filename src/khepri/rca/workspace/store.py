@@ -35,6 +35,7 @@ from khepri.rca.workspace.contracts import (
 # slice holds only the vocabulary and the column, because a transition is an operation and `W1-07`
 # is where the lifecycle that drives it is written.
 from khepri.rca.workspace.schema import (
+    PARENT_TOMBSTONED_FAILURE,
     RECOMPLETE_FAILURE,
     RETENTION_ACTIVE,
     RETENTION_STATE_FAILURE,
@@ -132,7 +133,7 @@ def _binding_from_row(row: ArtifactBindingRow) -> ArtifactBinding:
     )
 
 
-def run_for_update(run_id: str):
+def run_for_update(run_id: str, owner_id: str | None = None):
     """Lock one run row for the duration of the caller's transaction.
 
     A **module-level named statement** rather than an inline `.with_for_update()`, following
@@ -146,21 +147,43 @@ def run_for_update(run_id: str):
     version provenance while both report success. Review on `#370` found that; `FR-111` binds a run
     to the versions it actually derived under, so a lost write there is lost provenance.
     """
-    return select(AnalysisRunRow).where(AnalysisRunRow.run_id == run_id).with_for_update()
+    statement = select(AnalysisRunRow).where(AnalysisRunRow.run_id == run_id)
+    if owner_id is not None:
+        # Scoped when the caller knows the scope, so a cross-tenant identifier locks *nothing*:
+        # `FOR UPDATE` over an empty result acquires no lock, and the insert that follows meets the
+        # composite foreign key exactly as it would have without this call. Without the predicate a
+        # caller naming another tenant's row would hold that row for the transaction -- contention
+        # across the isolation boundary, which `FR-109` forbids in spirit if not in letter.
+        statement = statement.where(AnalysisRunRow.owner_id == owner_id)
+    return statement.with_for_update()
 
 
-def version_for_update(version_id: str):
+def version_for_update(version_id: str, owner_id: str | None = None):
     """Lock one dataset version row. See `run_for_update`.
 
     `seal_dataset_version` needs it for the reason `run_for_update` states: it reports whether
     *this* call sealed the version, and two callers must not both be told they did.
     `set_retention_state` deliberately does **not** take it -- see the comment there.
     """
-    return (
-        select(DatasetVersionRow)
-        .where(DatasetVersionRow.version_id == version_id)
-        .with_for_update()
-    )
+    statement = select(DatasetVersionRow).where(DatasetVersionRow.version_id == version_id)
+    if owner_id is not None:
+        statement = statement.where(DatasetVersionRow.owner_id == owner_id)  # see `run_for_update`
+    return statement.with_for_update()
+
+
+def _refuse_tombstoned_parent(parent: object | None) -> None:
+    """Refuse a derivative whose parent exists, is in scope, and has been deleted.
+
+    Deliberately *not* `_live_in`: a parent that is missing or belongs to another scope is left to
+    the composite foreign key, which refuses the insert with `IntegrityError` as it always did. Two
+    reasons. The schema tests for those constraints must keep exercising them -- a store check that
+    intercepted first would let a dropped foreign key pass unnoticed. And the lock statement is
+    scoped by `owner_id`, so a foreign parent was never locked and is `None` here by construction.
+    What this adds is the one case the foreign key cannot see: the row is real and ours, and the
+    customer deleted it.
+    """
+    if parent is not None and parent.retention_state != RETENTION_ACTIVE:
+        raise ValueError(PARENT_TOMBSTONED_FAILURE)
 
 
 class SqlWorkspaceStore:
@@ -222,8 +245,26 @@ class SqlWorkspaceStore:
     # --- analysis runs ------------------------------------------------------------------
 
     def add_analysis_run(self, run: AnalysisRun) -> AnalysisRun:
+        """Store a run under a version that is still live, or refuse.
+
+        The composite foreign key proves the version exists in this scope and nothing more. A
+        pipeline racing a deletion could therefore create a new *live* derivative of an input the
+        customer had just withdrawn -- inserted after the tombstone, returned by
+        `analysis_runs_for_scope`, and `KHEPRI-DEC-033` §3's cascade would never reach it because
+        it did not exist when the cascade ran. Review on `#370` found it.
+
+        The parent is locked for the transaction, not merely read: `tombstone_dataset_version`
+        takes the same `version_for_update`, so the two serialize and a run is added either before
+        the deletion -- and cascades with it -- or refused after. A read without the lock leaves
+        the window this exists to close. `test_rca001_lock_scope.py` names this method for that
+        reason.
+        """
         assert_sealed(run)
         with self._factory.begin() as database:
+            parent = database.scalars(
+                version_for_update(run.version_id, run.owner_id)
+            ).one_or_none()
+            _refuse_tombstoned_parent(parent)
             database.add(
                 AnalysisRunRow(
                     run_id=run.run_id,
@@ -292,8 +333,18 @@ class SqlWorkspaceStore:
     # --- artifact bindings --------------------------------------------------------------
 
     def add_artifact_binding(self, binding: ArtifactBinding) -> ArtifactBinding:
+        """Bind an artifact to a run that is still live, or refuse. See `add_analysis_run`.
+
+        The same shape one level down. The review named runs under versions; a binding under a
+        tombstoned run is the identical window, and a rule that covers one parent and not the other
+        is the kind of asymmetry this module has already been caught on once.
+        """
         assert_sealed(binding)
         with self._factory.begin() as database:
+            parent = database.scalars(
+                run_for_update(binding.run_id, binding.owner_id)
+            ).one_or_none()
+            _refuse_tombstoned_parent(parent)
             database.add(
                 ArtifactBindingRow(
                     binding_id=_identifier("abn"),

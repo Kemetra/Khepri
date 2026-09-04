@@ -311,3 +311,96 @@ def test_the_transitions_still_reach_a_tombstoned_row(factory: sessionmaker) -> 
         row = database.get(DatasetVersionRow, version.version_id)
         assert row.retention_changed_at is not None
         assert row.retention_state == RETENTION_TOMBSTONED
+
+
+# --- A deleted input gains no new derivatives ---------------------------------------------------
+
+
+def test_a_run_cannot_be_added_under_a_tombstoned_version(factory: sessionmaker) -> None:
+    """The composite foreign key proves the version exists in this scope, and nothing more.
+
+    A pipeline racing a deletion could create a new *live* run of an input the customer had just
+    withdrawn -- inserted after the tombstone, listed by `analysis_runs_for_scope`, and never
+    reached by `KHEPRI-DEC-033` §3's cascade because it did not exist when the cascade ran. Review
+    on `#370` found it. Refused with a content-free message, like every other refusal here.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    store.tombstone_dataset_version(version.version_id, now=NOW)
+
+    with pytest.raises(ValueError, match="has been deleted"):
+        store.add_analysis_run(
+            AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=LATER)
+        )
+
+    assert store.analysis_runs_for_scope(scope) == ()
+
+
+def test_a_binding_cannot_be_added_under_a_tombstoned_run(factory: sessionmaker) -> None:
+    """The same window one level down, which the review did not name.
+
+    A rule covering runs-under-versions and not bindings-under-runs is the asymmetry this module
+    was caught on with the read filter: the finding named two of four paths. Both parents now.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    with factory.begin() as database:
+        row = database.get(AnalysisRunRow, run.run_id)
+        row.retention_state = RETENTION_TOMBSTONED
+        row.retention_changed_at = LATER
+
+    with pytest.raises(ValueError, match="has been deleted"):
+        store.add_artifact_binding(
+            ArtifactBinding.create(
+                owner_id=scope,
+                run_id=run.run_id,
+                artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "a" * 64),
+                now=LATER,
+            )
+        )
+
+    assert store.artifact_bindings_for_run(run.run_id) == ()
+
+
+def test_adding_a_derivative_locks_its_parent(factory: sessionmaker) -> None:
+    """The liveness check is a read-then-insert, and only a lock closes that window.
+
+    Asserted on the source, for the reason recorded at `account_for_update` and at every other
+    lock in this slice: SQLite serializes writes, so a two-session race here passes with the lock
+    removed. `tombstone_dataset_version` takes the same `version_for_update`, so the two serialize
+    -- a run lands either before the deletion, and cascades with it, or is refused after.
+    `test_rca001_lock_scope.py` names both methods for this.
+    """
+    import inspect as py_inspect
+
+    run_source = py_inspect.getsource(SqlWorkspaceStore.add_analysis_run)
+    binding_source = py_inspect.getsource(SqlWorkspaceStore.add_artifact_binding)
+
+    # The scope argument is asserted too: without it a cross-tenant identifier would hold another
+    # tenant's row for the transaction, and no SQLite test can observe that lock either.
+    assert "version_for_update(run.version_id, run.owner_id)" in run_source
+    assert "run_for_update(binding.run_id, binding.owner_id)" in binding_source
+
+
+def test_a_missing_or_foreign_parent_is_still_the_foreign_keys_to_refuse(
+    factory: sessionmaker,
+) -> None:
+    """The liveness check must not have swallowed the schema's own refusals.
+
+    A store check that intercepted a missing or cross-scope parent with `ValueError` would leave the
+    composite foreign key unexercised by any test, so dropping it would pass unnoticed. Those two
+    cases still reach the database and still fail as `IntegrityError`; the store adds only the case
+    the foreign key cannot see -- a parent that is real, ours, and deleted.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+
+    with pytest.raises(IntegrityError):
+        store.add_analysis_run(
+            AnalysisRun.create(owner_id=scope, version_id="dsv_nothere", now=NOW)
+        )

@@ -121,7 +121,9 @@ _TOMBSTONE_VERSION_FIELDS_CHECK = (
 #: column set itself -- a section that is not a column is unrepresentable -- and the state
 #: vocabulary is this clause, so neither depends on a listener a Core or raw-SQL insert would skip.
 #: `IS NULL OR` is spelled out although SQL's three-valued `IN` would admit null by itself.
-_SECTION_STATES = "('answered', 'caveated', 'present', 'refused')"
+# `KHEPRI-DEC-033` §3's three, exactly. `present` is `rra/bundle.py`'s rendering state and was
+# once admitted here as a "union"; a rendering vocabulary does not widen a retention allowlist.
+_SECTION_STATES = "('answered', 'caveated', 'refused')"
 _SECTION_COLUMNS = (
     "section_overview",
     "section_comparison",

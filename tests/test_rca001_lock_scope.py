@@ -223,6 +223,13 @@ _MAY_LOCK = frozenset(
         "seal_dataset_version",
         "set_retention_state",
         "tombstone_dataset_version",
+        # Adding a derivative locks its *parent*: `add_analysis_run` takes `version_for_update`
+        # and `add_artifact_binding` takes `run_for_update`, each requiring the parent still live
+        # in the same transaction. The guard is the liveness check; the lock is what stops a
+        # concurrent tombstone landing between the check and the insert, which would leave a live
+        # derivative of a deleted input that no cascade reaches. Review on `#370` found the window.
+        "add_analysis_run",
+        "add_artifact_binding",
     }
 )
 

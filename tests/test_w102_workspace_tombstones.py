@@ -311,11 +311,10 @@ def test_the_tombstoning_update_itself_still_passes(factory: sessionmaker) -> No
 def test_every_section_column_accepts_every_governed_state(
     factory: sessionmaker, column: str, state: str
 ) -> None:
-    """Twenty cells: five report sections by the union of both governed state vocabularies.
+    """Fifteen cells: five report sections by `KHEPRI-DEC-033` §3's three retention outcomes.
 
-    `KHEPRI-DEC-033` §3 names `(answered, caveated, refused)` as retention outcomes;
-    `rra/bundle.py`'s `GOVERNED_SECTION_STATES` names `{present, refused}` for rendering. Both
-    are real, so a run tombstone accepts the union and `W1-03` narrows it.
+    Parametrized over `SECTION_STATE_CODES` rather than a literal list, so the cells follow the
+    constant -- which is also why this test shrank from twenty when `present` left it.
     """
     scope = _scope(factory)
     _tombstone(
@@ -335,7 +334,17 @@ def test_every_section_column_accepts_every_governed_state(
 @pytest.mark.parametrize("column", SECTION_COLUMNS)
 @pytest.mark.parametrize(
     "value",
-    ["Sales fell 12% in Q3 on supply issues", "made_up", "Acme Pharmacy Ltd", "ANSWERED", ""],
+    [
+        "Sales fell 12% in Q3 on supply issues",
+        "made_up",
+        "Acme Pharmacy Ltd",
+        "ANSWERED",
+        "",
+        # `rra/bundle.py`'s rendering state. Admitted by an earlier draft as a "union" of two
+        # governed vocabularies; §3's allowlist is exhaustive and a rendering code is not a
+        # retention outcome. Refused at the database like every other ungoverned value.
+        "present",
+    ],
 )
 def test_a_section_column_refuses_an_ungoverned_state(
     factory: sessionmaker, column: str, value: str
@@ -412,18 +421,22 @@ def test_the_section_columns_match_the_report_sections_the_bundle_publishes() ->
     assert tuple(f"section_{section}" for section in TOMBSTONE_SECTIONS) == SECTION_COLUMNS
 
 
-def test_the_state_codes_cover_both_governed_vocabularies() -> None:
-    """The union, asserted against both sources rather than restated as a literal.
+def test_the_state_codes_are_exactly_dec033s_three() -> None:
+    """`KHEPRI-DEC-033` §3's allowlist, exhaustively -- and the rendering vocabulary kept out.
 
-    `rra/bundle.py`'s `GOVERNED_SECTION_STATES` is checked from the source module for the same
-    reason as the sections; `KHEPRI-DEC-033` §3's three are named here because a decision
-    document is not importable.
+    This test used to assert the *union* with `rra/bundle.py`'s `GOVERNED_SECTION_STATES`, on the
+    argument that both sets were real. Review on `#370` read §3 more strictly than I had: "per-
+    section state codes (answered, caveated, refused)" is the whole list, and `present` -- a surface
+    drew a chart -- is not a retention outcome. A test that had encoded the widening is why it is
+    asserted in both directions now: the three are present, and the rendering code is not.
     """
-    from khepri.rra.bundle import GOVERNED_SECTION_STATES
+    from khepri.rra.bundle import GOVERNED_SECTION_STATES, SECTION_PRESENT
 
-    dec033 = {"answered", "caveated", "refused"}
-
-    assert dec033 | GOVERNED_SECTION_STATES == GOVERNED_SECTION_STATE_CODES
+    assert {"answered", "caveated", "refused"} == GOVERNED_SECTION_STATE_CODES
+    assert SECTION_PRESENT not in GOVERNED_SECTION_STATE_CODES
+    # `refused` is in both vocabularies; it is admitted because §3 names it, and this line only
+    # records that the two sets do overlap there, so a future reader does not "fix" it.
+    assert {"refused"} == GOVERNED_SECTION_STATES & GOVERNED_SECTION_STATE_CODES
 
 
 def test_the_migration_states_the_same_section_columns_and_states() -> None:

@@ -102,20 +102,22 @@ VERSION_TOMBSTONE_COLUMNS = (
 TOMBSTONE_SECTIONS = ("overview", "comparison", "concentration", "growth", "basket")
 SECTION_COLUMNS = tuple(f"section_{section}" for section in TOMBSTONE_SECTIONS)
 
-#: The state codes a section may carry: the union of the two governed sets, because both are real
-#: and neither subsumes the other. `KHEPRI-DEC-033` §3 names `(answered, caveated, refused)` as
-#: retention outcomes; `rra/bundle.py`'s `GOVERNED_SECTION_STATES` names `{present, refused}` for
-#: whether a surface renders a chart or a refusal notice. A closed union is still closed, and
-#: `W1-03` narrows it to whichever half its projection emits -- the choice this slice should not
-#: make for it, while still refusing everything outside both. Drift-checked the same way.
+#: The state codes a section may carry: `KHEPRI-DEC-033` §3's three, exactly. "Per-section state
+#: codes (answered, caveated, refused)" is an exhaustive allowlist, not an example.
+#:
+#: An earlier draft admitted the union with `rra/bundle.py`'s `GOVERNED_SECTION_STATES`
+#: (`present`, `refused`) on the argument that both sets were "real" and `W1-03` could narrow. That
+#: was the retention allowlist being widened by a *rendering* vocabulary -- `present` says a surface
+#: drew a chart, which is not a retention outcome and not something §3 permits a deletion record to
+#: keep. Review on `#370` found it. `W1-03` translates `present` to the retention outcome it means
+#: before projecting; this schema does not accept it. `refused` appears in both vocabularies and is
+#: admitted because §3 names it, not because `bundle.py` does.
 SECTION_STATE_ANSWERED = "answered"
 SECTION_STATE_CAVEATED = "caveated"
-SECTION_STATE_PRESENT = "present"
 SECTION_STATE_REFUSED = "refused"
 SECTION_STATE_CODES = (
     SECTION_STATE_ANSWERED,
     SECTION_STATE_CAVEATED,
-    SECTION_STATE_PRESENT,
     SECTION_STATE_REFUSED,
 )
 GOVERNED_SECTION_STATE_CODES: frozenset[str] = frozenset(SECTION_STATE_CODES)
@@ -365,6 +367,7 @@ DELETE_FAILURE = "A workspace record is removed through its retention lifecycle,
 PROFILE_IDENTITY_FAILURE = "a source profile's identity and isolation scope cannot be reassigned"
 TOMBSTONE_IMMUTABLE_FAILURE = "a deletion record cannot be rewritten"
 TOMBSTONED_FROZEN_FAILURE = "a tombstoned record accepts no further update"
+PARENT_TOMBSTONED_FAILURE = "a derivative cannot be added under a record that has been deleted"
 TOMBSTONE_FAILURE = "A tombstoned record cannot return to an earlier retention state."
 
 

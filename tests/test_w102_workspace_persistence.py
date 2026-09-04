@@ -893,3 +893,26 @@ def test_a_real_transition_does_move_the_clock(factory: sessionmaker) -> None:
     with factory() as database:
         stored = database.get(DatasetVersionRow, version.version_id).retention_changed_at
     assert _utc(stored) == LATER
+
+
+@pytest.mark.parametrize(
+    ("statement", "table"),
+    [
+        (run_for_update("run_abc123", "own_abc123"), "rca_workspace_analysis_runs"),
+        (version_for_update("dsv_abc123", "own_abc123"), "rca_workspace_dataset_versions"),
+    ],
+)
+def test_a_scoped_lock_names_the_scope_in_its_predicate(statement, table: str) -> None:
+    """When the caller passes `owner_id`, the lock statement constrains it -- so a cross-tenant
+    identifier locks nothing rather than holding another tenant's row for the transaction.
+
+    Compiled against PostgreSQL like its unscoped sibling above, and asserted on the predicate's
+    presence: SQLite cannot show a lock, and a race across two tenants here would pass regardless.
+    """
+    from sqlalchemy.dialects import postgresql
+
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "FOR UPDATE" in compiled
+    assert table in compiled
+    assert "owner_id =" in compiled
