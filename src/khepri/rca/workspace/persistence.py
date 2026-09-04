@@ -38,7 +38,6 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
     select,
-    update,
 )
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
@@ -223,13 +222,29 @@ class ArtifactBindingRow(Base):
 
 # The only columns an `UPDATE` may touch after a row is written. `FR-112`: dataset versions and
 # runs are append-only, and "only retention state and tombstoning may change a row".
-MUTABLE_COLUMNS = frozenset({"retention_state", "retention_changed_at"})
+MUTABLE_COLUMNS = frozenset({"retention_state", "retention_changed_at", "sealed_at"})
 
 APPEND_ONLY_FAILURE = "A workspace record's content cannot change after it is written."
+RESEAL_FAILURE = "A sealed version cannot be sealed again."
+TOMBSTONE_FAILURE = "A tombstoned record cannot return to an earlier retention state."
+
+
+def _one_way(target: object, column: str, forbidden_prior: object) -> bool:
+    """Whether a change to `column` moves it away from a value it may only leave once.
+
+    The listener sees both sides of the change, so a one-way transition is expressible here rather
+    than by writing around the guard. `sealed_at` may go from `None` to an instant and never move
+    again -- `KHEPRI-DEC-033` starts the seven-day raw-upload purge clock at the first sealing, and
+    re-sealing would push a deletion deadline outward. `retention_state` may not leave
+    `tombstoned`, or a tombstone is an undoable soft delete and a later read presents a row the
+    decision says is gone.
+    """
+    history = sa_inspect(target).attrs[column].history
+    return history.deleted == [forbidden_prior]
 
 
 def _refuse_content_update(_mapper, _connection, target: object) -> None:
-    """Refuse an `UPDATE` that touches anything but retention state.
+    """Refuse an `UPDATE` that changes content, or that reverses a one-way transition.
 
     **Why a guard exists at all.** Nothing else refuses one. The primary key stops a *second
     insert* under the same identifier, which is what `test_writing_the_same_version_twice_is_
@@ -239,12 +254,18 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
     any content field after sealing or completion is refused".
 
     This is the lesson `W1-01` already paid for, one layer down: sealing proves a record was
-    constructed through a door, never that anything refuses a later write. Those are separate
-    properties and this slice had again asserted the first while claiming the second.
+    constructed through a door, never that anything refuses a later write.
 
-    **In the store rather than in `W1-04`.** A service-layer check binds only callers who go
-    through that service; this binds every session that maps these rows, which is what an
-    append-only claim has to mean.
+    **What this covers, stated exactly.** It is a mapper event, so it fires for changes made to a
+    *loaded object*. It does **not** fire for bulk DML (`session.execute(update(...))`) or for raw
+    SQL, and a claim that it binds every write would be false -- review on `#370` caught an earlier
+    version of this docstring making it, while `seal_dataset_version` itself used bulk DML to get
+    around the guard. That bypass is gone: sealing now mutates the object like any other write, and
+    the one-way rule lives here where the reversal is visible.
+
+    Enforcement at the database boundary -- a trigger, or column privileges -- would bind every
+    path, and belongs with `W1-07`'s lifecycle work where the deletion operations that must be
+    exempt from it are written. This binds the ORM, which is every path in this repository today.
 
     Registered on the two row classes rather than on `Base`, so no other RCA table is affected.
     """
@@ -253,6 +274,10 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
     }
     if not changed <= MUTABLE_COLUMNS:
         raise ValueError(APPEND_ONLY_FAILURE)
+    if "sealed_at" in changed and not _one_way(target, "sealed_at", None):
+        raise ValueError(RESEAL_FAILURE)
+    if "retention_state" in changed and _one_way(target, "retention_state", RETENTION_TOMBSTONED):
+        raise ValueError(TOMBSTONE_FAILURE)
 
 
 def _visible_in(row: object | None, owner_id: str | None) -> bool:
@@ -488,21 +513,17 @@ class SqlWorkspaceStore:
         that does not exist, or belongs to another scope, returns `False` for the reason
         `set_retention_state` returns silently -- those are the same answer from the caller's side.
 
-        `sealed_at` is not in `MUTABLE_COLUMNS`, so `_refuse_content_update` would reject this
-        write like any other. It is applied through an `UPDATE` statement rather than by mutating
-        a loaded row, which is the same reason the guard sits on the ORM event: this is the one
-        transition the domain defines, and it says so by not going through the object.
+        It mutates the loaded row like any other write. An earlier version used bulk DML to get
+        around `_refuse_content_update`, which review on `#370` correctly read as a hole rather
+        than a design: a mapper listener does not fire for bulk DML, so the bypass proved the
+        guard's own coverage claim false. The one-way rule now lives in the guard, where the
+        reversal is visible, and this method needs no exemption.
         """
         with self._factory.begin() as database:
             row = database.get(DatasetVersionRow, version_id)
             if not _visible_in(row, owner_id) or row.sealed_at is not None:
                 return False
-            database.execute(
-                update(DatasetVersionRow)
-                .where(DatasetVersionRow.version_id == version_id)
-                .where(DatasetVersionRow.sealed_at.is_(None))
-                .values(sealed_at=now)
-            )
+            row.sealed_at = now
         return True
 
     def tombstone_dataset_version(
@@ -513,6 +534,8 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "RESEAL_FAILURE",
+    "TOMBSTONE_FAILURE",
     "MUTABLE_COLUMNS",
     "RETENTION_ACTIVE",
     "RETENTION_STATES",

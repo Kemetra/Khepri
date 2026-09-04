@@ -573,8 +573,13 @@ def test_the_guard_permits_exactly_the_retention_columns(factory: sessionmaker) 
 
     A guard widened to admit one more column would keep every other test here green, because they
     all exercise the *permitted* path. This names the extent, the way `W1-01`'s field-set tests do.
+
+    `sealed_at` is in the set and is not a loosening: it is writable *once*, and
+    `_refuse_content_update` refuses the second change through `_one_way`. The unconditional
+    allowlist and the one-way rules are separate properties, so they get separate tests --
+    collapsing them would let a mutant that dropped the one-way check pass on this one.
     """
-    assert {"retention_state", "retention_changed_at"} == MUTABLE_COLUMNS
+    assert {"retention_state", "retention_changed_at", "sealed_at"} == MUTABLE_COLUMNS
 
 
 def test_the_append_only_refusal_is_the_constant_and_nothing_else(
@@ -824,3 +829,64 @@ def test_the_column_accepts_every_state_the_domain_publishes(
     read = store.get_analysis_run(f"run_{state}")
     assert read is not None
     assert read.state == state
+
+
+# --- One-way transitions, which an allowlist alone does not express ---------------------------
+
+
+def test_a_tombstoned_version_cannot_return_to_active(factory: sessionmaker) -> None:
+    """`KHEPRI-DEC-033`: a tombstone is not an undoable soft delete.
+
+    `set_retention_state` accepted any member of `RETENTION_STATES`, so `active` after
+    `tombstoned` un-deleted the row and a later read presented something the decision says is
+    gone. Review on `#370` found it -- the same shape as re-sealing, which this slice already
+    refused for the same reason, applied to the transition it had shipped rather than the one it
+    had reasoned about.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+
+    with pytest.raises(ValueError, match="cannot return to an earlier retention state"):
+        store.set_retention_state(version.version_id, RETENTION_ACTIVE, now=LATER)
+
+    assert store.retention_state(version.version_id) == RETENTION_TOMBSTONED
+
+
+def test_a_tombstone_may_be_repeated(factory: sessionmaker) -> None:
+    """Setting `tombstoned` on a tombstoned row is not a reversal, so it is not refused.
+
+    `FR-123` requires deletion to be idempotent -- "a repeated request for an object already
+    deleted or tombstoned MUST succeed with the same response as the first". A guard that refused
+    every write to a tombstoned row would satisfy the one-way rule and break idempotency, so the
+    check is on the *direction* rather than on the prior state alone.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    store.tombstone_dataset_version(version.version_id, now=NOW)
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+
+    assert store.retention_state(version.version_id) == RETENTION_TOMBSTONED
+
+
+def test_sealing_is_refused_by_the_guard_and_not_only_by_the_store(
+    factory: sessionmaker,
+) -> None:
+    """The one-way rule holds for a caller who does not use `seal_dataset_version`.
+
+    `seal_dataset_version` returns `False` on a second call, which is the store being polite. The
+    property that matters is that the *guard* refuses the write, because an earlier version of
+    this code used bulk DML to write around the guard -- and a mapper listener does not fire for
+    bulk DML, which made the guard's coverage claim false. That bypass is gone; this asserts the
+    guard rather than the method.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    store.seal_dataset_version(version.version_id, now=NOW)
+
+    with pytest.raises(ValueError, match="cannot be sealed again"), factory.begin() as database:
+        row = database.get(DatasetVersionRow, version.version_id)
+        row.sealed_at = LATER
