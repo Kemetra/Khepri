@@ -49,6 +49,7 @@ from khepri.rca.persistence import Base, _utc
 from khepri.rca.records import assert_sealed
 from khepri.rca.workspace.contracts import (
     RUN_COMPLETED,
+    RUN_PROVENANCE_FAILURE,
     RUN_STARTED,
     RUN_STATES,
     AdmittedSource,
@@ -106,6 +107,72 @@ VERSION_TOMBSTONE_COLUMNS = (
     "mapping_version",
     "admission_outcome",
 )
+#: The section identifiers a tombstone may name. `KHEPRI-DEC-033` §3 admits "per-section state
+#: codes" and excludes "any figure, series, label, narrative" -- and a structural pattern cannot
+#: tell those apart: `{"acme_pharmacy": "made_up"}` is a short lowercase identifier and matched the
+#: first attempt perfectly, while `acme_pharmacy` is exactly the customer-derived label §3
+#: excludes. Only an allowlist separates a governed metric from a pharmacy's name. Review on `#370`
+#: found the regex insufficient, having found the free-text version the round before.
+#:
+#: **Restated rather than imported, and that is a boundary, not laziness.** These names are
+#: published by each `RRA-008` family's `GOVERNED_METRICS`, which `rra/definitions.py` collects as
+#: `FAMILY_METRICS` -- but `R7-01` §3 forbids any module under `khepri.rca` importing
+#: `khepri.rra`, in both directions, so that every RCA test does not transitively depend on RRA.
+#: `test_r707_commercial_bridge.py` enforces it and caught the import that read this from source.
+#:
+#: A restated list drifts, so the drift is asserted instead of hoped for:
+#: `test_w102_workspace_tombstones.py` compares this set against `FAMILY_METRICS` -- a *test* may
+#: import both packages where a source module may not, which is where a cross-package agreement
+#: check belongs. A metric added to a governed contract fails that test until it is added here.
+GOVERNED_SECTION_IDS: frozenset[str] = frozenset(
+    {
+        "average_order_value",
+        "average_selling_price",
+        "basket_attach_rate",
+        "basket_items_per_transaction",
+        "concentration_curve",
+        "concentration_distinct_values",
+        "concentration_ranked_values",
+        "concentration_top_decile_share",
+        "concentration_top_quartile_share",
+        "cost",
+        "discount",
+        "gross_margin",
+        "gross_profit",
+        "growth_price_effect",
+        "growth_revenue_change",
+        "growth_volume_effect",
+        "returns",
+        "revenue",
+        "revenue_delta_absolute",
+        "revenue_delta_percent",
+        "transactions",
+        "units",
+    }
+)
+
+#: The state codes a section may carry: the union of the two governed sets, because both are real
+#: and neither subsumes the other. `KHEPRI-DEC-033` §3 names `(answered, caveated, refused)` as
+#: retention outcomes; `rra/bundle.py`'s `GOVERNED_SECTION_STATES` names `{present, refused}` for
+#: whether a surface renders a chart or a refusal notice. A closed union is still closed, and
+#: `W1-03` narrows it to whichever half its projection emits -- the choice this slice should not
+#: make for it, while still refusing everything outside both.
+#:
+#: Restated for the same `R7-01` §3 reason as `GOVERNED_SECTION_IDS`, and drift-checked the same
+#: way.
+SECTION_STATE_ANSWERED = "answered"
+SECTION_STATE_CAVEATED = "caveated"
+SECTION_STATE_PRESENT = "present"
+SECTION_STATE_REFUSED = "refused"
+GOVERNED_SECTION_STATE_CODES: frozenset[str] = frozenset(
+    {
+        SECTION_STATE_ANSWERED,
+        SECTION_STATE_CAVEATED,
+        SECTION_STATE_PRESENT,
+        SECTION_STATE_REFUSED,
+    }
+)
+
 #: What a section-state entry may look like, structurally: a short lowercase code, never prose.
 #: `KHEPRI-DEC-033` §3's run row admits "per-section state codes" and excludes "any figure, series,
 #: label, narrative, refusal prose". A `Text` column accepting anything let all of that become an
@@ -529,6 +596,25 @@ def _leaving_started(target: object, changed: set[str]) -> bool:
     return "state" in changed and _one_way(target, "state", RUN_STARTED)
 
 
+def _check_completion_provenance(target: object) -> None:
+    """A row leaving `started` for `completed` carries what `FR-111` says it produced.
+
+    The `CHECK` constraint states this at the schema boundary and `RunOutcome` states it at the
+    door, and neither covers this path: an ORM writer can load a `started` row and assign *only*
+    `state = "completed"`, which satisfies `_check_completion`'s changed-column allowlist while
+    every provenance column stays null. The row commits and then raises later on *read*, when
+    `_run_from_row` builds the outcome -- failing the whole scope's listing. Review on `#370`
+    found it after the `RunOutcome` fix, which is the same rule one layer up.
+    """
+    if getattr(target, "state", None) != RUN_COMPLETED:
+        return
+    if any(
+        getattr(target, column, None) is None
+        for column in ("package_digest", "package_version", "formula_version", "completed_at")
+    ):
+        raise ValueError(RUN_PROVENANCE_FAILURE)
+
+
 def _check_completion(changed: set[str]) -> None:
     """A completion writes its own columns and no others.
 
@@ -552,17 +638,38 @@ def validate_section_states(document: str | None) -> None:
     """
     if document is None:
         return
+    for section, state in _parsed_section_states(document).items():
+        _check_governed(section, GOVERNED_SECTION_IDS)
+        _check_governed(state, GOVERNED_SECTION_STATE_CODES)
+
+
+def _parsed_section_states(document: str) -> dict[str, str]:
+    """The document as a mapping, or a refusal. Shape only; the vocabulary check follows.
+
+    Split from `validate_section_states`, which CodeScene put at cyclomatic 14 against a threshold
+    of 9. The seam is the one a reader wants: *is this a mapping at all* is a different question
+    from *is this name governed*.
+    """
     try:
         parsed = json.loads(document)
     except (TypeError, ValueError) as error:
         raise ValueError(SECTION_STATES_FAILURE) from error
     if not isinstance(parsed, dict) or len(parsed) > MAX_SECTION_STATES:
         raise ValueError(SECTION_STATES_FAILURE)
-    for section, state in parsed.items():
-        if not isinstance(section, str) or not re.match(SECTION_CODE_PATTERN, section):
-            raise ValueError(SECTION_STATES_FAILURE)
-        if not isinstance(state, str) or not re.match(SECTION_CODE_PATTERN, state):
-            raise ValueError(SECTION_STATES_FAILURE)
+    return parsed
+
+
+def _check_governed(value: object, governed: frozenset[str]) -> None:
+    """One name, against the set that publishes it.
+
+    The structural pattern is still checked first, and not redundantly: it bounds the *length* of
+    whatever reaches the failure path, so a megabyte of prose is refused before it is compared
+    against the governed set.
+    """
+    if not isinstance(value, str) or not re.match(SECTION_CODE_PATTERN, value):
+        raise ValueError(SECTION_STATES_FAILURE)
+    if value not in governed:
+        raise ValueError(SECTION_STATES_FAILURE)
 
 
 def _refuse_ungoverned_section_states(_mapper, _connection, target: object) -> None:
@@ -702,6 +809,7 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
     _check_terminal_state(target, changed)
     if _leaving_started(target, changed):
         _check_completion(changed)
+        _check_completion_provenance(target)
         return
     _check_append_only(target, changed)
 
@@ -1081,6 +1189,8 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "GOVERNED_SECTION_STATE_CODES",
+    "GOVERNED_SECTION_IDS",
     "validate_section_states",
     "SECTION_STATES_FAILURE",
     "SECTION_CODE_PATTERN",

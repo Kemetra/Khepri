@@ -24,6 +24,8 @@ from khepri.rca.workspace.contracts import (
     DatasetVersion,
 )
 from khepri.rca.workspace.persistence import (
+    GOVERNED_SECTION_IDS,
+    GOVERNED_SECTION_STATE_CODES,
     MAX_SECTION_STATES,
     RETENTION_TOMBSTONED,
     RUN_TOMBSTONE_COLUMNS,
@@ -143,7 +145,12 @@ def test_a_version_tombstone_cannot_carry_a_runs_fields(factory: sessionmaker) -
     scope = _scope(factory)
 
     with pytest.raises(IntegrityError):
-        _tombstone(factory, scope, tombstone_id="tmb_mixed1", section_states='{"a": "ok"}')
+        _tombstone(
+            factory,
+            scope,
+            tombstone_id="tmb_mixed1",
+            section_states='{"average_order_value": "answered"}',
+        )
 
 
 def test_a_run_tombstone_cannot_carry_a_versions_fields(factory: sessionmaker) -> None:
@@ -171,7 +178,7 @@ def test_each_subject_persists_its_own_allowlist(factory: sessionmaker) -> None:
         tombstone_id="tmb_okruns",
         subject_kind="run",
         subject_id="run_abc123",
-        section_states='{"a": "ok"}',
+        section_states='{"average_order_value": "answered"}',
     )
 
     with factory() as database:
@@ -295,32 +302,58 @@ def test_the_tombstoning_update_itself_still_passes(factory: sessionmaker) -> No
         assert row.retention_changed_at is not None
 
 
-@pytest.mark.parametrize(
-    "document",
-    [
-        None,
-        '{"revenue": "answered"}',
-        '{"revenue": "answered", "margin": "caveated", "cohort": "refused"}',
-        '{"revenue": "present"}',
-    ],
-)
-def test_a_governed_section_state_document_is_accepted(document: str | None) -> None:
-    """Both candidate vocabularies validate, which is the point of checking shape rather than codes.
+@pytest.mark.parametrize("state", sorted(GOVERNED_SECTION_STATE_CODES))
+def test_every_governed_state_code_is_accepted(state: str) -> None:
+    """The union of both governed vocabularies, so `W1-03` can emit either and narrow it.
 
-    `KHEPRI-DEC-033` §3 names `(answered, caveated, refused)`; `rra/bundle.py` enforces
-    `{present, refused}` for whether a surface renders a chart or a refusal notice -- a rendering
-    concern, not a retention one. `W1-03` builds the projection that writes this column and §3
-    gives it the allowlist equality test, so the code set is its choice. Constraining shape here
-    closes the leak without handing `W1-03` a constraint it must match.
+    `KHEPRI-DEC-033` §3 names `(answered, caveated, refused)` as retention outcomes;
+    `rra/bundle.py`'s `GOVERNED_SECTION_STATES` names `{present, refused}` for whether a surface
+    renders a chart or a refusal notice. Both are real and neither subsumes the other, so this
+    accepts the union -- closed either way, and not a choice made on `W1-03`'s behalf.
+
+    Parametrized over the constant rather than a literal list, so a code added to either source
+    reaches this test without an edit.
     """
-    validate_section_states(document)
+    section = sorted(GOVERNED_SECTION_IDS)[0]
+
+    validate_section_states(json.dumps({section: state}))
+
+
+@pytest.mark.parametrize("section", sorted(GOVERNED_SECTION_IDS))
+def test_every_governed_section_identifier_is_accepted(section: str) -> None:
+    """All 22, derived from each `RRA-008` family's own `GOVERNED_METRICS` via `FAMILY_METRICS`.
+
+    Asserted over the set so a metric added to a governed contract is admissible here without an
+    edit -- and so no name this module invented can pass, which was the defect.
+    """
+    validate_section_states(json.dumps({section: "answered"}))
+
+
+def test_a_multi_section_document_is_accepted() -> None:
+    """More than one entry, since a run answers several sections."""
+    sections = sorted(GOVERNED_SECTION_IDS)[:3]
+    states = ("answered", "caveated", "refused")
+
+    validate_section_states(json.dumps(dict(zip(sections, states, strict=True))))
+
+
+def test_an_absent_document_is_accepted() -> None:
+    """A version's tombstone carries no section states at all."""
+    validate_section_states(None)
 
 
 @pytest.mark.parametrize(
     ("document", "why"),
     [
-        ('{"revenue": "Sales fell 12% in Q3 on supply issues"}', "narrative as a state"),
+        ('{"average_order_value": "Sales fell 12% in Q3 on supply"}', "narrative as a state"),
         ('{"Acme Pharmacy Ltd": "answered"}', "a customer label as a section key"),
+        # The two the structural regex accepted. `acme_pharmacy` is a short lowercase identifier
+        # and matched the pattern perfectly -- which is why a shape check cannot do this job:
+        # it has no way to tell a governed metric from a pharmacy's name.
+        ('{"acme_pharmacy": "made_up"}', "a customer label that looks like a code"),
+        ('{"dr_smith_clinic": "answered"}', "a practice name with a governed state"),
+        ('{"average_order_value": "invented"}', "an ungoverned state on a governed section"),
+        ('{"revenue_for_acme_ltd": "answered"}', "a customer name inside a plausible metric"),
         ('["answered", "refused"]', "a list, so no section is named"),
         ('"answered"', "a bare string"),
         ("not json at all", "unparseable"),
@@ -366,3 +399,43 @@ def test_the_tombstone_refuses_ungoverned_section_states_at_insert(
             subject_id="run_abc123",
             section_states='{"revenue": "Sales fell 12% in Q3"}',
         )
+
+
+def test_the_section_identifiers_match_the_contracts_that_publish_them() -> None:
+    """The restated allowlist must equal what `RRA-008`'s families actually govern.
+
+    `GOVERNED_SECTION_IDS` is written out in `persistence.py` rather than read from
+    `rra/definitions.py`, and not by preference: `R7-01` §3 forbids any module under `khepri.rca`
+    importing `khepri.rra`, so that every RCA test does not transitively depend on RRA.
+    `test_r707_commercial_bridge.py` enforces it in both directions, and caught the import that
+    first read this from source.
+
+    A restated list drifts, so this is where the drift is caught. **A test may import both
+    packages where a source module may not** -- a cross-package agreement check is exactly the
+    thing that belongs in a test rather than in either package.
+
+    My first attempt at the list was wrong in eight of twenty-two entries, guessed from memory of
+    the naming style. That is the failure mode this asserts against.
+    """
+    from khepri.rra.definitions import FAMILY_METRICS
+
+    published = {metric for metrics in FAMILY_METRICS.values() for metric in metrics}
+
+    assert published == GOVERNED_SECTION_IDS, (
+        "a metric added to a governed RRA-008 contract must be added to GOVERNED_SECTION_IDS, "
+        "or a run tombstone cannot record that section's state"
+    )
+
+
+def test_the_state_codes_cover_both_governed_vocabularies() -> None:
+    """The union, asserted against both sources rather than restated as a literal.
+
+    `rra/bundle.py`'s `GOVERNED_SECTION_STATES` is checked from the source module for the same
+    reason as the identifiers; `KHEPRI-DEC-033` §3's three are named here because a decision
+    document is not importable.
+    """
+    from khepri.rra.bundle import GOVERNED_SECTION_STATES
+
+    dec033 = {"answered", "caveated", "refused"}
+
+    assert dec033 | GOVERNED_SECTION_STATES == GOVERNED_SECTION_STATE_CODES

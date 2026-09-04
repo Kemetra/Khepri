@@ -987,3 +987,80 @@ def test_a_non_completed_row_needs_no_provenance(factory: sessionmaker, state: s
 
     with factory() as database:
         assert database.get(AnalysisRunRow, f"run_{state}p") is not None
+
+
+@pytest.mark.parametrize(
+    "missing", ["package_digest", "package_version", "formula_version", "completed_at"]
+)
+def test_an_orm_writer_cannot_complete_a_run_without_provenance(
+    factory: sessionmaker,
+    missing: str,
+) -> None:
+    """The third layer, and the one the other two miss.
+
+    `RunOutcome.__post_init__` guards the door and `ck_rca_workspace_run_completion_provenance`
+    guards the schema, but an ORM writer can load a `started` row and assign **only**
+    `state = "completed"` -- which satisfies `_check_completion`'s changed-column allowlist while
+    every provenance column stays null, and the `CHECK` is not re-evaluated for columns the
+    statement does not touch. The row commits, then raises on *read* when `_run_from_row` builds
+    the outcome, failing the whole scope's listing. Review on `#370` found it after the
+    `RunOutcome` fix -- the same rule, one layer up.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+
+    provenance = {
+        "package_digest": "sha256:abc",
+        "package_version": "1.0.0",
+        "formula_version": "1.0.0",
+        "completed_at": LATER,
+    }
+    provenance.pop(missing)
+
+    # One case per field. This is the third place the same rule lives and the third time a single
+    # all-fields-missing case proved too weak to pin it: mutant `L7`, narrowing the guard to
+    # `package_digest` alone, survived that version. Any multi-field requirement needs a case per
+    # field, because one omission cannot distinguish "checks one" from "checks all".
+    with (
+        pytest.raises(ValueError, match="must carry the package digest"),
+        factory.begin() as database,
+    ):
+        row = database.get(AnalysisRunRow, run.run_id)
+        row.state = RUN_COMPLETED
+        for column, value in provenance.items():
+            setattr(row, column, value)
+
+
+def test_the_scope_listing_survives_every_run_a_writer_can_commit(
+    factory: sessionmaker,
+) -> None:
+    """The consequence the finding named, asserted rather than reasoned about.
+
+    A malformed completed row makes `analysis_runs_for_scope` raise for *every* run in the
+    organization -- one bad row becomes an outage. With all three layers in place no writer can
+    commit one, so the listing is total.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    run = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    store.complete_analysis_run(
+        run.run_id,
+        RunOutcome(
+            state=RUN_COMPLETED,
+            package_digest="sha256:abc",
+            package_version="1.0.0",
+            formula_version="1.0.0",
+            completed_at=LATER,
+        ),
+    )
+
+    listed = store.analysis_runs_for_scope(scope)
+
+    assert [entry.run_id for entry in listed] == [run.run_id]
