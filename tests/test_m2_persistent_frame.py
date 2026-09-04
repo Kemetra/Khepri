@@ -139,6 +139,16 @@ class _StubInvitations:
         return "inv_a-one-time-token"
 
 
+class _StubRecords:
+    """An empty workspace, so the frame under test is the one with every built destination."""
+
+    def dataset_versions_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
+
+    def analysis_runs_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
+
+
 class _UnreadableOrganizations(_StubOrganizations):
     """A listing read that fails the way a transient database fault would."""
 
@@ -172,6 +182,7 @@ def _shell(
                 else [_organization("org-acme", ORGANIZATION_NAME)]
             ),
             invitations=invitations,
+            records=_StubRecords(),
         ),
         clock=lambda: NOW,
     )
@@ -259,8 +270,13 @@ class TestTheOrganizationIsNamedWhereItIsResolved:
         assert SHELL_COPY["en"]["frame_organization_label"] not in html
 
 
-class TestTeamIsTheOnlyDestination:
-    """`FR-049`: a navigation entry MUST NOT be rendered for a surface with no implementation."""
+class TestOnlyBuiltDestinationsAreOffered:
+    """`FR-049`: a navigation entry MUST NOT be rendered for a surface with no implementation.
+
+    Team was the only destination until `W1-05` shipped Overview and Data with their links; the
+    rule the class asserts is unchanged, and `test_w105_overview_and_data.py` asserts the two new
+    links appear only when their reader is wired.
+    """
 
     def test_the_frame_offers_team(self) -> None:
         html = _shell().get(f"{SHELL_PREFIX}/en/org-acme/team").text
@@ -286,7 +302,9 @@ class TestTheLanguageControlPreservesPosition:
     """`FR-047` plus scenario 11: "Language switch mid-surface | Position preserved"."""
 
     @pytest.mark.parametrize("language", ["en", "ar"])
-    @pytest.mark.parametrize("path", ["/", "/org-acme/team"])
+    @pytest.mark.parametrize(
+        "path", ["/", "/org-acme/team", "/org-acme/overview", "/org-acme/data"]
+    )
     def test_every_surface_the_frame_may_name_offers_the_control(
         self, path: str, language: str
     ) -> None:
@@ -327,7 +345,8 @@ class TestEverySurfaceCarriesTheFrame:
 
     @pytest.mark.parametrize("language", ["en", "ar"])
     @pytest.mark.parametrize(
-        "path", ["/", "/org-acme/team", UNKNOWN_SURFACE]
+        "path",
+        ["/", "/org-acme/team", "/org-acme/overview", "/org-acme/data", UNKNOWN_SURFACE],
     )
     def test_the_frame_renders_without_a_500(self, path: str, language: str) -> None:
         """`StrictUndefined` turns a missing variable into a render failure, not a blank."""
