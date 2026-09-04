@@ -123,7 +123,9 @@ def _run_from_row(row: WorkspaceTombstoneRow) -> RunTombstone:
             package_digest=row.package_digest,
             package_version=row.package_version,
             formula_version=row.formula_version,
+            sections={
+                section: getattr(row, f"section_{section}") for section in TOMBSTONE_SECTIONS
+            },
         ),
-        codes={section: getattr(row, f"section_{section}") for section in TOMBSTONE_SECTIONS},
         deleted_at=_utc(row.deleted_at),
     )

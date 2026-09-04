@@ -129,13 +129,16 @@ def _rca_modules() -> list[str]:
 #: key -- the narrowest scope a lock can have -- and
 #: `test_w102_workspace_persistence.py` compiles each against the PostgreSQL dialect to assert the
 #: `FOR UPDATE` clause and its table, which is the `W1-02` counterpart of the paired-predicate
-#: tests below.
+#: tests below. `W1-03`'s `live_runs_for_update` locks a *set* -- every live run of one version in
+#: one scope -- so the cascade projects each run's tombstone from the row a concurrent completion
+#: left rather than the one it is about to replace; `test_w103_tombstone_projection.py` compiles it.
 _LOCK_ROUTES = frozenset(
     {
         "owner_memberships_for_update",
         "organization_owners_for_update",
         "run_for_update",
         "version_for_update",
+        "live_runs_for_update",
     }
 )
 
@@ -230,6 +233,13 @@ _MAY_LOCK = frozenset(
         # derivative of a deleted input that no cascade reaches. Review on `#370` found the window.
         "add_analysis_run",
         "add_artifact_binding",
+        # `W1-03`: the deletion's cascade locks the live runs it is about to project and tombstone
+        # (`live_runs_for_update`), because a plain read there races `complete_analysis_run`'s
+        # `run_for_update`: the cascade would project an immutable tombstone from the
+        # pre-completion row and then commit over the completion. Both helpers run inside
+        # `set_retention_state`'s transaction, under the version lock it already holds.
+        "_tombstone_version",
+        "_cascade_tombstone_to_runs",
     }
 )
 

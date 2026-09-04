@@ -70,6 +70,7 @@ RENDERED_STATES = (RENDERED_PRESENT, RENDERED_REFUSED)
 SECTION_STATE_FAILURE = "Section state is not one of the states KHEPRI-DEC-033 section 3 names."
 RENDERED_STATE_FAILURE = "Rendered section state is not one the report bundle publishes."
 SECTIONS_FAILURE = "Section states must name every report section, and no other."
+CAVEATED_FAILURE = "A caveated section must be a report section."
 
 
 def _retention_code(rendered: str, caveated: bool) -> str:
@@ -123,9 +124,16 @@ class SectionStates:
         sections a section-scoped caveat qualifies. Every section is required and no other is
         admitted: a report that says nothing about a section has not answered it, and this
         projection does not invent an answer for it.
+
+        `caveated` is checked against the same set, and not only for symmetry. Unchecked, a
+        misspelt name is silently *not in* the set, so the section it meant is recorded as
+        `answered` -- into an immutable deletion record. Review on `#371` found it: an input that
+        can only lower a section's caution must fail closed, not fall through.
         """
         if set(rendered) != set(TOMBSTONE_SECTIONS):
             raise ValueError(SECTIONS_FAILURE)
+        if not set(caveated) <= set(TOMBSTONE_SECTIONS):
+            raise ValueError(CAVEATED_FAILURE)
 
         def code(section: str) -> str:
             return _retention_code(rendered[section], section in caveated)
@@ -242,9 +250,14 @@ class VersionTombstone(Sealed):
 class RunTrace:
     """What §3 lets a run's tombstone keep of its execution, as one value.
 
-    The instants and `FR-111`'s provenance -- and not the operational `state`, which is the live
-    record's and stays there. Grouped for the reason `RunOutcome` is, and distinct from it because
-    `RunOutcome` requires a state and a tombstone has none to give it.
+    The instants, `FR-111`'s provenance, and how each section came out -- and not the operational
+    `state`, which is the live record's and stays there. Grouped for the reason `RunOutcome` is,
+    and distinct from it because `RunOutcome` requires a state and a tombstone has none to give it.
+
+    `sections` is keyed by report section and holds a governed code or `None` per section. It is a
+    mapping rather than a `SectionStates` so the reconstruction door can carry back whatever a row
+    holds without validating it on read -- the same reason `_run_from_row` in `store.py` must not
+    raise for one malformed row and fail a whole scope's listing.
     """
 
     started_at: datetime
@@ -252,6 +265,7 @@ class RunTrace:
     package_digest: str | None
     package_version: str | None
     formula_version: str | None
+    sections: Mapping[str, str | None]
 
 
 @register_sealed
@@ -281,13 +295,8 @@ class RunTombstone(Sealed):
     section_basket: str | None
 
     @staticmethod
-    def _build(
-        subject: RunSubject,
-        trace: RunTrace,
-        codes: Mapping[str, str | None],
-        deleted_at: datetime,
-    ) -> RunTombstone:
-        """The constructor call both doors share. `codes` is keyed by report section."""
+    def _build(subject: RunSubject, trace: RunTrace, deleted_at: datetime) -> RunTombstone:
+        """The constructor call both doors share."""
         return RunTombstone(
             run_id=subject.run_id,
             version_id=subject.version_id,
@@ -298,11 +307,11 @@ class RunTombstone(Sealed):
             package_digest=trace.package_digest,
             package_version=trace.package_version,
             formula_version=trace.formula_version,
-            section_overview=codes["overview"],
-            section_comparison=codes["comparison"],
-            section_concentration=codes["concentration"],
-            section_growth=codes["growth"],
-            section_basket=codes["basket"],
+            section_overview=trace.sections["overview"],
+            section_comparison=trace.sections["comparison"],
+            section_concentration=trace.sections["concentration"],
+            section_growth=trace.sections["growth"],
+            section_basket=trace.sections["basket"],
         )
 
     @classmethod
@@ -318,18 +327,14 @@ class RunTombstone(Sealed):
             package_digest=run.package_digest,
             package_version=run.package_version,
             formula_version=run.formula_version,
+            sections=section_codes(sections),
         )
         with through_door():
-            return cls._build(subject, trace, section_codes(sections), deleted_at)
+            return cls._build(subject, trace, deleted_at)
 
     @classmethod
     def _from_storage(
-        cls,
-        *,
-        subject: RunSubject,
-        trace: RunTrace,
-        codes: Mapping[str, str | None],
-        deleted_at: datetime,
+        cls, *, subject: RunSubject, trace: RunTrace, deleted_at: datetime
     ) -> RunTombstone:
         with through_door():
-            return cls._build(subject, trace, codes, deleted_at)
+            return cls._build(subject, trace, deleted_at)

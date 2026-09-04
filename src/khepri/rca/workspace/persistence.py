@@ -31,6 +31,7 @@ it previously defined, so nothing that imported from here changed. See each modu
 
 from __future__ import annotations
 
+from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, version_for_update
 from khepri.rca.workspace.schema import (
     _ROW_GUARDS,  # noqa: F401 -- the guard-shape test asserts this mapping's keys
     APPEND_ONLY_FAILURE,
@@ -61,11 +62,7 @@ from khepri.rca.workspace.schema import (
     SourceProfileRow,
     WorkspaceTombstoneRow,
 )
-from khepri.rca.workspace.store import (
-    SqlWorkspaceStore,
-    run_for_update,
-    version_for_update,
-)
+from khepri.rca.workspace.store import SqlWorkspaceStore
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
@@ -81,6 +78,7 @@ __all__ = [
     "PROFILE_IDENTITY_COLUMNS",
     "run_for_update",
     "version_for_update",
+    "live_runs_for_update",
     "TOMBSTONE_SUBJECTS",
     "SourceProfileRow",
     "WorkspaceTombstoneRow",

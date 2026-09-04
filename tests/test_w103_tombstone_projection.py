@@ -45,6 +45,7 @@ from khepri.rca.workspace.contracts import (
     RunOutcome,
     RunSubject,
 )
+from khepri.rca.workspace.locks import live_runs_for_update
 from khepri.rca.workspace.persistence import (
     RETENTION_TOMBSTONED,
     RUN_TOMBSTONE_COLUMNS,
@@ -302,6 +303,16 @@ def test_from_rendering_refuses_a_state_the_bundle_does_not_publish(code: str) -
         SectionStates.from_rendering(rendered)
 
 
+@pytest.mark.parametrize("name", ["comparision", "narrative", ""])
+def test_from_rendering_refuses_a_caveated_name_that_is_not_a_report_section(name: str) -> None:
+    """Unchecked, a misspelt caveat name is silently *not in* the set and the section it meant is
+    recorded as `answered` -- into an immutable deletion record. An input that can only lower a
+    section's caution fails closed. Review on `#371` found it."""
+    rendered = dict.fromkeys(TOMBSTONE_SECTIONS, RENDERED_PRESENT)
+    with pytest.raises(ValueError, match="report section"):
+        SectionStates.from_rendering(rendered, caveated={"comparison", name})
+
+
 def test_the_rendering_vocabulary_matches_the_bundles() -> None:
     """Restated in `khepri.rca` rather than imported, because `R7-01` §3 forbids the import in
     either direction. This is the drift test that makes the restatement safe, from the one module
@@ -487,3 +498,40 @@ def test_a_deletion_under_a_foreign_scope_writes_nothing(factory: sessionmaker) 
 
     assert _rows(factory) == []
     assert store.get_dataset_version(version.version_id) == version
+
+
+# --- The cascade locks the runs it projects ------------------------------------------------------
+
+
+def test_the_live_runs_lock_emits_for_update_with_every_predicate() -> None:
+    """Compiled against PostgreSQL, because SQLite emits no `FOR UPDATE` and would pass a statement
+    with the clause deleted. The version, the scope and the liveness filter are all in the
+    statement: a run another deletion already ended is neither locked nor re-projected."""
+    from sqlalchemy.dialects import postgresql
+
+    compiled = str(
+        live_runs_for_update("dsv_abc123", "own_abc123").compile(dialect=postgresql.dialect())
+    )
+
+    assert "FOR UPDATE" in compiled
+    assert "FROM rca_workspace_analysis_runs" in compiled
+    assert "rca_workspace_analysis_runs.version_id = " in compiled
+    assert "rca_workspace_analysis_runs.owner_id = " in compiled
+    assert "rca_workspace_analysis_runs.retention_state = " in compiled
+
+
+def test_the_cascade_reads_its_runs_through_the_lock() -> None:
+    """A plain `SELECT` in the cascade races `complete_analysis_run`'s `run_for_update`: it does
+    not wait, reads the `started` row, projects an immutable tombstone without the completion
+    instant or the package provenance `FR-111` bound to the run, blocks on its own `UPDATE`, and
+    commits over the completion. Two reviewers found it independently on `#371`. Asserted on the
+    source, positively and negatively, because SQLite serializes writers and cannot show it."""
+    import inspect as py_inspect
+
+    from khepri.rca.workspace.store import _cascade_tombstone_to_runs
+
+    cascade = py_inspect.getsource(_cascade_tombstone_to_runs)
+    body = cascade.split('"""')[-1]  # the code after the docstring
+
+    assert "live_runs_for_update(version.version_id, version.owner_id)" in body
+    assert "select(" not in body
