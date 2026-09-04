@@ -53,6 +53,7 @@ SHELL_SURFACES = {
     "team": "/org-acme/team",
     "overview": "/org-acme/overview",
     "data": "/org-acme/data",
+    "analyses": "/org-acme/analyses",
 }
 
 #: Templates that render inside another and are never a surface of their own.
@@ -177,6 +178,12 @@ class _StubRecords:
                 started_at=NOW,
             ),
         )
+
+    def tombstones_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
+
+    def artifact_bindings_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
 
 
 def _client(surface: str) -> TestClient:

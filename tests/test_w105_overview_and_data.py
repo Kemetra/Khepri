@@ -140,6 +140,12 @@ class _StubRecords:
         self.asked.append(owner_id)
         return self.runs
 
+    def tombstones_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
+
+    def artifact_bindings_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
+
 
 def _version(
     version_id: str, *, created_at: datetime, sealed_at: datetime | None = None
@@ -758,7 +764,9 @@ def test_no_shell_template_computes() -> None:
     """
     directory = files("khepri.runtime").joinpath("shell_templates")
     templates = [entry for entry in directory.iterdir() if entry.name.endswith(".html.j2")]
-    assert {"overview.html.j2", "data.html.j2"} <= {entry.name for entry in templates}
+    assert {"overview.html.j2", "data.html.j2", "analyses.html.j2"} <= {
+        entry.name for entry in templates
+    }
 
     for entry in templates:
         for match in _EXPRESSIONS.finditer(entry.read_text(encoding="utf-8")):
