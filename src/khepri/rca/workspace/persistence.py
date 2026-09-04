@@ -506,6 +506,36 @@ def _binding_from_row(row: ArtifactBindingRow) -> ArtifactBinding:
     )
 
 
+def run_for_update(run_id: str):
+    """Lock one run row for the duration of the caller's transaction.
+
+    A **module-level named statement** rather than an inline `.with_for_update()`, following
+    `account_for_update` in `rca/persistence.py` and for the reason stated there: SQLite emits no
+    `FOR UPDATE` and SQLAlchemy silently omits it for that dialect, so an inline lock someone later
+    removed would leave the whole suite green. Being named, a test compiles it against the
+    PostgreSQL dialect and asserts `FOR UPDATE` is present without needing a database.
+
+    `complete_analysis_run` needs it because read-then-write is not atomic: two workers can both
+    read `started`, both pass the check, and the second overwrite the first's package digest and
+    version provenance while both report success. Review on `#370` found that; `FR-111` binds a run
+    to the versions it actually derived under, so a lost write there is lost provenance.
+    """
+    return select(AnalysisRunRow).where(AnalysisRunRow.run_id == run_id).with_for_update()
+
+
+def version_for_update(version_id: str):
+    """Lock one dataset version row. See `run_for_update`.
+
+    Sealing and the retention transitions read a column and then decide on it, which is the same
+    read-then-write window.
+    """
+    return (
+        select(DatasetVersionRow)
+        .where(DatasetVersionRow.version_id == version_id)
+        .with_for_update()
+    )
+
+
 class SqlWorkspaceStore:
     """Rows for the workspace records, and the one transition `FR-112` permits.
 
@@ -604,7 +634,7 @@ class SqlWorkspaceStore:
         if outcome.state == RUN_STARTED:
             raise ValueError(RECOMPLETE_FAILURE)
         with self._factory.begin() as database:
-            row = database.get(AnalysisRunRow, run_id)
+            row = database.scalars(run_for_update(run_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.state != RUN_STARTED:
                 return False
             row.state = outcome.state
@@ -683,8 +713,15 @@ class SqlWorkspaceStore:
         if state not in RETENTION_STATES:
             raise ValueError(RETENTION_STATE_FAILURE)
         with self._factory.begin() as database:
-            row = database.get(DatasetVersionRow, version_id)
-            if not _visible_in(row, owner_id):
+            row = database.scalars(version_for_update(version_id)).one_or_none()
+            if not _visible_in(row, owner_id) or row.retention_state == state:
+                # A repeat of the state the row already holds is `FR-123`'s idempotent retry, and
+                # it must not move the clock. `KHEPRI-DEC-033` §5 anchors a deletion horizon to
+                # `retention_changed_at`, so overwriting it on every retry would let repeated
+                # requests extend a deadline outward -- the same defect re-sealing was guarded
+                # against, arriving through the timestamp instead of the state. Review on `#370`
+                # found it, and the guard could not: assigning an equal value is not a change, so
+                # `_one_way` sees nothing to refuse.
                 return
             row.retention_state = state
             row.retention_changed_at = now
@@ -713,7 +750,7 @@ class SqlWorkspaceStore:
         reversal is visible, and this method needs no exemption.
         """
         with self._factory.begin() as database:
-            row = database.get(DatasetVersionRow, version_id)
+            row = database.scalars(version_for_update(version_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.sealed_at is not None:
                 return False
             row.sealed_at = now
@@ -727,6 +764,8 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "run_for_update",
+    "version_for_update",
     "TOMBSTONE_SUBJECTS",
     "SourceProfileRow",
     "WorkspaceTombstoneRow",

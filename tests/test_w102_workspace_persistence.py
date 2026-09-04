@@ -23,7 +23,7 @@ from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
 from khepri.rca.organizations import OrganizationService
-from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore, _utc
 from khepri.rca.records import Sealed
 from khepri.rca.workspace.contracts import (
     RUN_STATES,
@@ -48,6 +48,8 @@ from khepri.rca.workspace.persistence import (
     SourceProfileRow,
     SqlWorkspaceStore,
     WorkspaceTombstoneRow,
+    run_for_update,
+    version_for_update,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -1335,3 +1337,94 @@ def test_no_tombstone_column_can_hold_free_text_from_the_live_record(
     }
 
     assert columns & forbidden == set()
+
+
+# --- Read-then-write windows, and a clock that must not move -----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("statement", "table"),
+    [
+        (run_for_update("run_abc123"), "rca_workspace_analysis_runs"),
+        (version_for_update("dsv_abc123"), "rca_workspace_dataset_versions"),
+    ],
+)
+def test_the_locking_statements_emit_for_update_on_postgres(statement, table: str) -> None:
+    """Compiled against the PostgreSQL dialect, because SQLite cannot show this.
+
+    `rca/persistence.py` states the reason at `account_for_update`: SQLite emits no `FOR UPDATE`
+    and SQLAlchemy silently omits it for that dialect, so a lock someone later removed would leave
+    the whole suite green. Naming the statement is what makes it compilable here without a
+    database, and this test is the half that makes the naming worth anything.
+    """
+    from sqlalchemy.dialects import postgresql
+
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "FOR UPDATE" in compiled
+    assert table in compiled
+
+
+def test_completing_a_run_locks_the_row_it_reads(factory: sessionmaker) -> None:
+    """`complete_analysis_run` reads the state and then writes on it, which is not atomic.
+
+    Two workers could both read `started`, both pass the check, and the second overwrite the
+    first's package digest and version provenance while both reported success. `FR-111` binds a run
+    to the versions it actually derived under, so a lost write there is lost provenance. Review on
+    `#370` found it.
+
+    Asserted on the *statement* rather than by racing two threads, because SQLite serializes writes
+    anyway and a concurrency test on this engine would pass with the lock removed -- the guard
+    would be green against the defect it exists to catch.
+    """
+    import inspect as py_inspect
+
+    source = py_inspect.getsource(SqlWorkspaceStore.complete_analysis_run)
+
+    assert "run_for_update" in source
+    assert "database.get(AnalysisRunRow" not in source
+
+
+def test_an_idempotent_tombstone_does_not_move_the_deletion_clock(
+    factory: sessionmaker,
+) -> None:
+    """`FR-123` requires a repeated deletion to succeed; `KHEPRI-DEC-033` §5 anchors a horizon to
+    `retention_changed_at`. Both, so a retry must succeed *without* moving the clock.
+
+    Overwriting the timestamp on every retry would let repeated requests extend a deletion deadline
+    outward -- the same defect re-sealing was guarded against, arriving through the timestamp
+    instead of the state. The guard could not see it: assigning an equal value is not a change, so
+    `_one_way` has nothing to refuse. Review on `#370` found it.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    store.tombstone_dataset_version(version.version_id, now=NOW)
+    with factory() as database:
+        first = database.get(DatasetVersionRow, version.version_id).retention_changed_at
+
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+    with factory() as database:
+        after_retry = database.get(DatasetVersionRow, version.version_id).retention_changed_at
+
+    assert first is not None
+    assert after_retry == first, "an idempotent retry moved the deletion clock"
+
+
+def test_a_real_transition_does_move_the_clock(factory: sessionmaker) -> None:
+    """The no-op check must not have frozen the timestamp for an actual state change."""
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+
+    with factory() as database:
+        assert database.get(DatasetVersionRow, version.version_id).retention_changed_at is None
+
+    store.tombstone_dataset_version(version.version_id, now=LATER)
+
+    # Compared through `_utc` because SQLite hands back a naive datetime; the store applies it on
+    # every read path and this test reads the raw row to see the column rather than the record.
+    with factory() as database:
+        stored = database.get(DatasetVersionRow, version.version_id).retention_changed_at
+    assert _utc(stored) == LATER
