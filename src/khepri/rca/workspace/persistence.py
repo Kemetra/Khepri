@@ -75,11 +75,19 @@ TOMBSTONE_SUBJECTS = (TOMBSTONE_VERSION, TOMBSTONE_RUN)
 #: What a source profile *is*, as opposed to what it says. Frozen by `_refuse_identity_change`.
 PROFILE_IDENTITY_COLUMNS = frozenset({"profile_id", "owner_id", "source_version_id"})
 
-#: `KHEPRI-DEC-033` §3's two allowlists, as the column names this table gives them. Every optional
-#: column belongs to exactly one subject, and a row must leave the other subject's columns null --
-#: otherwise `subject_kind="version"` could carry a run's `section_states`, and the schema would
-#: not enforce the allowlists it claims to represent. Review on `#370` found the `CHECK` validating
-#: only the discriminator.
+#: `KHEPRI-DEC-033` §3's two allowlists, as the column names this table gives them. A row must
+#: leave every column outside its own subject's allowlist null -- otherwise `subject_kind="version"`
+#: could carry a run's `section_states`, and the schema would not enforce the allowlists it claims
+#: to represent. Review on `#370` found the `CHECK` validating only the discriminator.
+#:
+#: **They overlap, and `version_id` is the overlap.** §3 gives it to both rows: a dataset version's
+#: tombstone keeps "opaque version id and organization scope", and an analysis run's keeps "opaque
+#: run id, **version id** and scope" -- the run's link to the dataset it derived from. A first
+#: draft here partitioned them and put `version_id` on the version side alone, which would have
+#: made `W1-03` unable to project a run deletion without losing that provenance. Review on `#370`
+#: found it, and the test that agreed with the partition was mine too: I had asserted a *stronger*
+#: property than §3 states, and it passed because the schema and the assertion were written
+#: together from the same misreading.
 #:
 #: These are also what `W1-03`'s projection must agree with. The drift test asserts the constants
 #: and the emitted `CHECK` clauses match, so the two allowlists cannot diverge silently.
@@ -96,6 +104,9 @@ VERSION_TOMBSTONE_COLUMNS = (
     "admission_outcome",
 )
 RUN_TOMBSTONE_COLUMNS = (
+    # Shared with `VERSION_TOMBSTONE_COLUMNS`: §3 puts a version id on both rows. On a version's
+    # tombstone it restates `subject_id`; on a run's it is the dataset the run derived from.
+    "version_id",
     "started_at",
     "completed_at",
     "package_digest",
@@ -129,14 +140,22 @@ def _scope_foreign_key(name: str) -> ForeignKeyConstraint:
     )
 
 
-def _subject_allowlist_check(subject: str, foreign: tuple[str, ...], name: str) -> CheckConstraint:
+def _subject_allowlist_check(
+    subject: str, own: tuple[str, ...], foreign: tuple[str, ...], name: str
+) -> CheckConstraint:
     """One subject's row must leave every column outside its own allowlist null.
+
+    `foreign` minus `own`, because the two allowlists overlap: §3 puts a version id on both rows,
+    and a check built from the other list wholesale would forbid the column its own subject is
+    entitled to. Taking the difference is what makes the overlap expressible rather than a
+    contradiction that no row could satisfy.
 
     Written as an implication -- `subject_kind <> '<subject>' OR (every foreign column IS NULL)` --
     because that is the form SQL `CHECK` evaluates per row without a subquery. `NULL` cannot appear
     in `subject_kind`, which is `nullable=False`, so the disjunction has no three-valued gap.
     """
-    nulls = " AND ".join(f"{column} IS NULL" for column in foreign)
+    exclusive = tuple(column for column in foreign if column not in own)
+    nulls = " AND ".join(f"{column} IS NULL" for column in exclusive)
     return CheckConstraint(f"subject_kind <> '{subject}' OR ({nulls})", name=name)
 
 
@@ -290,6 +309,7 @@ RECOMPLETE_FAILURE = "A run that has left the started state cannot be completed 
 DELETE_FAILURE = "A workspace record is removed through its retention lifecycle, not deleted."
 PROFILE_IDENTITY_FAILURE = "a source profile's identity and isolation scope cannot be reassigned"
 TOMBSTONE_IMMUTABLE_FAILURE = "a deletion record cannot be rewritten"
+TOMBSTONED_FROZEN_FAILURE = "a tombstoned record accepts no further update"
 TOMBSTONE_FAILURE = "A tombstoned record cannot return to an earlier retention state."
 
 
@@ -399,10 +419,16 @@ class WorkspaceTombstoneRow(Base):
         _scope_foreign_key("fk_rca_workspace_tombstone_scope"),
         _states_check("subject_kind", TOMBSTONE_SUBJECTS, "ck_rca_workspace_tombstone_subject"),
         _subject_allowlist_check(
-            TOMBSTONE_VERSION, RUN_TOMBSTONE_COLUMNS, "ck_rca_workspace_tombstone_version_fields"
+            TOMBSTONE_VERSION,
+            VERSION_TOMBSTONE_COLUMNS,
+            RUN_TOMBSTONE_COLUMNS,
+            "ck_rca_workspace_tombstone_version_fields",
         ),
         _subject_allowlist_check(
-            TOMBSTONE_RUN, VERSION_TOMBSTONE_COLUMNS, "ck_rca_workspace_tombstone_run_fields"
+            TOMBSTONE_RUN,
+            RUN_TOMBSTONE_COLUMNS,
+            VERSION_TOMBSTONE_COLUMNS,
+            "ck_rca_workspace_tombstone_run_fields",
         ),
     )
 
@@ -464,6 +490,30 @@ def _check_completion(changed: set[str]) -> None:
         raise ValueError(APPEND_ONLY_FAILURE)
 
 
+def _check_terminal_state(target: object, changed: set[str]) -> None:
+    """A tombstoned row accepts no further update at all.
+
+    The one-way rule refused only a change *away* from `tombstoned`, so the row stayed otherwise
+    open: an unsealed tombstoned version could still be sealed -- restarting the seven-day purge
+    clock `KHEPRI-DEC-033` §2 starts at sealing, on a version already deleted -- and
+    `retention_changed_at` could be rewritten, moving the §5 horizon after the fact. Both verified
+    against the guard before fixing. Review on `#370` found it.
+
+    Terminal means terminal: `tombstoned` is the end of the row's life, so the question "which
+    columns may still move?" has the answer "none". Checked on the *prior* state rather than the
+    new one, so the tombstoning update itself passes.
+    """
+    if _one_way(target, "retention_state", RETENTION_TOMBSTONED):
+        return  # this update *is* the reversal; `_check_one_way_transitions` refuses it with a
+        # message naming the reversal, which is the more specific answer.
+    prior = sa_inspect(target).attrs["retention_state"]
+    was_tombstoned = (
+        prior.history.deleted[0] if prior.history.deleted else target.retention_state
+    ) == RETENTION_TOMBSTONED
+    if was_tombstoned and changed:
+        raise ValueError(TOMBSTONED_FROZEN_FAILURE)
+
+
 def _check_one_way_transitions(target: object, changed: set[str]) -> None:
     """The two mutable columns that may each move in one direction only.
 
@@ -486,6 +536,7 @@ def _check_append_only(target: object, changed: set[str]) -> None:
     if not changed <= MUTABLE_COLUMNS:
         raise ValueError(APPEND_ONLY_FAILURE)
     _check_one_way_transitions(target, changed)
+    _check_terminal_state(target, changed)
 
 
 def _refuse_identity_change(_mapper, _connection, target: object) -> None:
@@ -866,14 +917,18 @@ class SqlWorkspaceStore:
         if state not in RETENTION_STATES:
             raise ValueError(RETENTION_STATE_FAILURE)
         with self._factory.begin() as database:
-            # No row lock, unlike `seal_dataset_version` and `complete_analysis_run`, which share
-            # this read-then-write shape. Those two return *whether this call* performed the
-            # transition, and two concurrent callers must not both be told `True`. This returns
-            # nothing, and `tombstoned` is terminal over a two-state domain -- so a row makes at
-            # most one real transition, concurrent tombstones agree on the state they want, and
-            # `_one_way` refuses the reverse from either order. `R1-05` forbids a lock with no
-            # guard behind it: it would imply a decision boundary here that does not exist.
-            row = database.get(DatasetVersionRow, version_id)
+            # Locked, and the argument for *not* locking is worth recording because I made it on
+            # this PR and it was wrong. I reasoned that concurrent tombstones agree on the state
+            # they want, so last-write-wins is harmless. They do not agree on
+            # `retention_changed_at`: both read `active`, both find the equality check false, and
+            # the second overwrites the first deletion instant -- moving the horizon
+            # `KHEPRI-DEC-033` §5 anchors to it, which is the defect the early return was added to
+            # close. The early return only ever protected a *sequential* retry.
+            #
+            # No test here could have caught it. SQLite serializes writes, so the two calls run in
+            # sequence and the second genuinely does read `tombstoned` -- the environment supplies
+            # the property the assertion checks. Two reviewers found it independently on `#370`.
+            row = database.scalars(version_for_update(version_id)).one_or_none()
             if not _visible_in(row, owner_id) or row.retention_state == state:
                 # A repeat of the state the row already holds is `FR-123`'s idempotent retry, and
                 # it must not move the clock. `KHEPRI-DEC-033` §5 anchors a deletion horizon to
@@ -924,6 +979,7 @@ class SqlWorkspaceStore:
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
+    "TOMBSTONED_FROZEN_FAILURE",
     "VERSION_TOMBSTONE_COLUMNS",
     "TOMBSTONE_IMMUTABLE_FAILURE",
     "RUN_TOMBSTONE_COLUMNS",

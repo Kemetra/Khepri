@@ -103,9 +103,13 @@ _TOMBSTONE_VERSION_FIELDS_CHECK = (
     "started_at IS NULL AND completed_at IS NULL AND package_digest IS NULL "
     "AND package_version IS NULL AND formula_version IS NULL AND section_states IS NULL)"
 )
+# `version_id` is absent from this clause on purpose: `KHEPRI-DEC-033` §3 puts a version id on
+# *both* tombstone rows -- the version's own identity, and the run's link to the dataset it derived
+# from -- so a run's tombstone is entitled to it. Review on `#370` found the first draft nulling it
+# here, which would have made a projected run deletion lose that provenance.
 _TOMBSTONE_RUN_FIELDS_CHECK = (
     "subject_kind <> 'run' OR ("
-    "version_id IS NULL AND created_at IS NULL AND sealed_at IS NULL "
+    "created_at IS NULL AND sealed_at IS NULL "
     "AND upload_plaintext_digest IS NULL AND upload_ciphertext_digest IS NULL "
     "AND upload_size_bytes IS NULL AND upload_media_type IS NULL "
     "AND manifest_digest IS NULL AND mapping_version IS NULL "

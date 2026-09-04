@@ -206,16 +206,23 @@ _MAY_LOCK = frozenset(
         # `R4-05`'s service verb, listed because the scan follows delegation: `redeem` reaches
         # `redeem_into_membership`, which constructs the lock.
         "redeem",
-        # `W1-02` workspace transitions. Both report **whether this call** performed the
-        # transition, and that boolean is the guard the lock protects: without it two callers can
-        # both read the pre-state, both write, and both be told `True`. `complete_analysis_run`
-        # additionally loses the first writer's package digest and version provenance, which
-        # `FR-111` binds to the run. Their sibling `set_retention_state` returns nothing and is
-        # deliberately **not** here -- `tombstoned` is terminal over a two-state domain, so it
-        # makes at most one real transition and needs no lock. That asymmetry is the allowlist
-        # doing its job: a lock arrived on all three, and only two could name a guard.
+        # `W1-02` workspace transitions. Each reads a column and then decides on it, and the
+        # decision is what the lock protects. `complete_analysis_run` and `seal_dataset_version`
+        # report **whether this call** performed the transition: without the lock two callers can
+        # both read the pre-state, both write, and both be told `True`, and completion
+        # additionally discards the first writer's package digest and version provenance, which
+        # `FR-111` binds to the run.
+        #
+        # `set_retention_state` is here after being removed and put back on the same PR, which is
+        # worth the sentence. I argued it needed no lock because concurrent tombstones agree on
+        # the state they want. They do not agree on `retention_changed_at`: both read `active`,
+        # both find the no-op check false, and the second overwrites the first deletion instant --
+        # moving the horizon `KHEPRI-DEC-033` §5 anchors to it. Two reviewers found it
+        # independently. `tombstone_dataset_version` reaches it by delegation.
         "complete_analysis_run",
         "seal_dataset_version",
+        "set_retention_state",
+        "tombstone_dataset_version",
     }
 )
 

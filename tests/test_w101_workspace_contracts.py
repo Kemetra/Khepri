@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 import pytest
 
 from khepri.rca.workspace.contracts import (
+    RUN_COMPLETED,
     RUN_STATES,
     AdmittedSource,
     AnalysisRun,
@@ -327,7 +328,38 @@ def test_the_shared_builder_cannot_construct_outside_a_door(record_type: type) -
 
 @pytest.mark.parametrize("state", ["started", "completed", "failed"])
 def test_every_published_run_state_is_accepted(state: str) -> None:
-    assert RunOutcome(state=state).state == state
+    """Each state, carrying the minimum that state legally requires.
+
+    Not a bare `RunOutcome(state=...)` for all three: `#370` added an `FR-111` rule that a
+    `completed` outcome must name the package it produced, so the bare form is refused for that
+    one. Passing the provenance keeps this assertion about the *vocabulary* -- is this state
+    named? -- rather than silently also asserting that every state is constructible empty, which
+    is a different and now false claim.
+    """
+    provenance = (
+        {
+            "package_digest": "sha256:abc",
+            "package_version": "1.0.0",
+            "formula_version": "1.0.0",
+            "completed_at": datetime(2026, 9, 4, 13, 0, tzinfo=UTC),
+        }
+        if state == RUN_COMPLETED
+        else {}
+    )
+
+    assert RunOutcome(state=state, **provenance).state == state
+
+
+def test_a_completed_outcome_without_provenance_is_refused() -> None:
+    """The other half of the state check, added on `#370`.
+
+    A state being *named* and an outcome being *complete* are different properties, and the
+    vocabulary test above asserts only the first. `FR-111` binds a run to the package it produced,
+    so a `completed` outcome that names none cannot be constructed -- the store writes it
+    permanently and the append-only guard then refuses to fill the digest in later.
+    """
+    with pytest.raises(ValueError, match="must carry the package digest"):
+        RunOutcome(state=RUN_COMPLETED)
 
 
 @pytest.mark.parametrize("state", ["cancelled", "STARTED", "", "pending", "deleted"])

@@ -255,6 +255,9 @@ RUN_STATES = (RUN_STARTED, RUN_COMPLETED, RUN_FAILED)
 
 # Content-free, per the refusal discipline in `rca/errors.py`: it names the constraint, never
 # the rejected value, so a refusal cannot echo a caller's input back into a log.
+RUN_PROVENANCE_FAILURE = (
+    "a completed run must carry the package digest, versions and instant FR-111 requires"
+)
 RUN_STATE_FAILURE = "Run state is not one of the states this domain defines."
 
 
@@ -297,6 +300,31 @@ class RunOutcome:
         """
         if self.state not in RUN_STATES:
             raise ValueError(RUN_STATE_FAILURE)
+        if self.state == RUN_COMPLETED and not self._has_provenance():
+            raise ValueError(RUN_PROVENANCE_FAILURE)
+
+    def _has_provenance(self) -> bool:
+        """Whether a completion carries the four things `FR-111` says it produced.
+
+        `RunOutcome(state="completed")` validated, because every provenance field is optional --
+        and `complete_analysis_run` writes it permanently, so the append-only guard then refuses
+        to fill the digest in later. An immutable completed run naming no package is worse than a
+        refused one. Review on `#370` found it.
+
+        State-specific rather than blanket: `failed` legitimately carries no package, because none
+        was produced. Optional on the dataclass and required for one state is the shape `FR-111`
+        describes -- the pipeline fills these, and a caller that has not run the pipeline has a
+        `started` run, not a completed one.
+        """
+        return all(
+            field is not None
+            for field in (
+                self.package_digest,
+                self.package_version,
+                self.formula_version,
+                self.completed_at,
+            )
+        )
 
 
 @dataclass(frozen=True, slots=True)
