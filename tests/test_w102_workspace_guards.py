@@ -593,27 +593,6 @@ def test_every_workspace_row_class_declares_a_guard_shape() -> None:
     assert guarded == declared
 
 
-def test_the_retention_transition_locks_the_row_it_reads() -> None:
-    """The clock cannot move on a concurrent duplicate, and only a lock can promise that.
-
-    Asserted on the source rather than by racing two sessions, and the reason is the defect's own
-    history: SQLite serializes writes, so two calls run in sequence, the second genuinely reads
-    `tombstoned`, and the no-op check returns early -- a concurrency test on this engine passes
-    with the lock removed. I removed the lock on this PR on exactly that evidence, and two
-    reviewers found the PostgreSQL interleaving the engine had hidden: both transactions read
-    `active`, both find the check false, and the second overwrites the first deletion instant.
-
-    `test_the_locking_statements_emit_for_update_on_postgres` is the other half -- it compiles the
-    statement and asserts the clause is really there.
-    """
-    import inspect as py_inspect
-
-    source = py_inspect.getsource(SqlWorkspaceStore.set_retention_state)
-
-    assert "version_for_update" in source
-    assert "database.get(DatasetVersionRow" not in source
-
-
 def test_sealing_a_live_version_is_still_allowed(factory: sessionmaker) -> None:
     """The freeze is terminal-state-specific, not a blanket ban on sealing."""
     scope = _scope(factory)

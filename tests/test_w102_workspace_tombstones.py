@@ -99,6 +99,10 @@ def _tombstone(factory: sessionmaker, scope: str, **overrides: object) -> str:
         "deleted_at": NOW,
     }
     fields.update(overrides)
+    # A version's tombstone restates its subject in `version_id`; the schema requires the two to
+    # agree, so the helper supplies it unless a test sets it explicitly (including to `None`).
+    if fields["subject_kind"] == "version":
+        fields.setdefault("version_id", fields["subject_id"])
     with factory.begin() as database:
         database.add(WorkspaceTombstoneRow(**fields))
     return str(fields["tombstone_id"])
@@ -454,3 +458,65 @@ def test_the_migration_states_the_same_section_columns_and_states() -> None:
 
     assert literal_columns == set(SECTION_COLUMNS)
     assert literal_states == set(SECTION_STATE_CODES)
+
+
+# --- A version tombstone's two identifiers agree ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("version_id", "why"),
+    [(None, "null, so nothing restates the subject"), ("dsv_other99", "a different version")],
+)
+def test_a_version_tombstone_must_restate_its_subject(
+    factory: sessionmaker, version_id: str | None, why: str
+) -> None:
+    """`subject_id` is the discriminated identity; on a version's row `version_id` restates it.
+
+    Independently writable, it let a projection or direct insert persist `subject_id=A` with
+    `version_id=B` or `NULL` -- in an immutable row, so history and revocation consumers could
+    permanently disagree about which version was deleted. Review on `#370` found it. The null case
+    is the one a naive `version_id = subject_id` would have admitted: unknown passes a `CHECK`.
+    """
+    scope = _scope(factory)
+
+    with pytest.raises(IntegrityError):
+        _tombstone(factory, scope, tombstone_id="tmb_mismatch", version_id=version_id)
+
+
+def test_a_run_tombstones_version_id_is_its_parent_and_need_not_match(
+    factory: sessionmaker,
+) -> None:
+    """The rule is discriminator-specific: on a run's row `version_id` is the dataset it derived
+    from, which is a different identifier from the run itself and is still required by §3."""
+    scope = _scope(factory)
+    _tombstone(
+        factory,
+        scope,
+        tombstone_id="tmb_runpar",
+        subject_kind="run",
+        subject_id="run_abc123",
+        version_id="dsv_abc123",
+    )
+
+    with factory() as database:
+        assert database.get(WorkspaceTombstoneRow, "tmb_runpar").version_id == "dsv_abc123"
+
+
+def test_the_migration_states_the_same_identity_rule() -> None:
+    """Literal in the migration, built from the constant in the model; they must say the same."""
+    import pathlib as _pathlib
+
+    root = _pathlib.Path(__file__).resolve().parents[1]
+    source = (root / "migrations" / "versions" / "20260904_0021_rca_workspace.py").read_text(
+        encoding="utf-8"
+    )
+
+    # Adjacent string literals are one string to Python; join them the same way before looking,
+    # so a line wrapped for length still reads as the clause it is.
+    joined = re.sub(r'"\s*\n\s*"', "", source)
+
+    assert (
+        "subject_kind <> 'version' OR (version_id IS NOT NULL AND version_id = subject_id)"
+        in joined
+    )
+    assert "ck_rca_workspace_tombstone_version_identity" in joined

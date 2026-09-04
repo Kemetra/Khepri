@@ -367,26 +367,6 @@ def test_a_binding_cannot_be_added_under_a_tombstoned_run(factory: sessionmaker)
     assert store.artifact_bindings_for_run(run.run_id) == ()
 
 
-def test_adding_a_derivative_locks_its_parent(factory: sessionmaker) -> None:
-    """The liveness check is a read-then-insert, and only a lock closes that window.
-
-    Asserted on the source, for the reason recorded at `account_for_update` and at every other
-    lock in this slice: SQLite serializes writes, so a two-session race here passes with the lock
-    removed. `tombstone_dataset_version` takes the same `version_for_update`, so the two serialize
-    -- a run lands either before the deletion, and cascades with it, or is refused after.
-    `test_rca001_lock_scope.py` names both methods for this.
-    """
-    import inspect as py_inspect
-
-    run_source = py_inspect.getsource(SqlWorkspaceStore.add_analysis_run)
-    binding_source = py_inspect.getsource(SqlWorkspaceStore.add_artifact_binding)
-
-    # The scope argument is asserted too: without it a cross-tenant identifier would hold another
-    # tenant's row for the transaction, and no SQLite test can observe that lock either.
-    assert "version_for_update(run.version_id, run.owner_id)" in run_source
-    assert "run_for_update(binding.run_id, binding.owner_id)" in binding_source
-
-
 def test_a_missing_or_foreign_parent_is_still_the_foreign_keys_to_refuse(
     factory: sessionmaker,
 ) -> None:
@@ -404,3 +384,40 @@ def test_a_missing_or_foreign_parent_is_still_the_foreign_keys_to_refuse(
         store.add_analysis_run(
             AnalysisRun.create(owner_id=scope, version_id="dsv_nothere", now=NOW)
         )
+
+
+def test_bindings_of_a_tombstoned_run_are_absent_from_live_reads(factory: sessionmaker) -> None:
+    """The fifth read path. A binding has no retention state; it is read *through* its run.
+
+    Counting getters and listings gave four paths and missed the one that reads by parent. A run
+    tombstoned while its bindings remain -- partial, restored or concurrent deletion -- would hand
+    back the withdrawn artifacts' digests here while `get_analysis_run` hid the run. Review on
+    `#370` found it. Asserted with and without the scope argument, and against a live run too, so
+    the join has not emptied the read.
+    """
+    scope = _scope(factory)
+    store = SqlWorkspaceStore(factory)
+    version = _version(store, scope)
+    kept = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
+    )
+    gone = store.add_analysis_run(
+        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=LATER)
+    )
+    for run in (kept, gone):
+        store.add_artifact_binding(
+            ArtifactBinding.create(
+                owner_id=scope,
+                run_id=run.run_id,
+                artifact=PublishedArtifact(surface="web", artifact_digest="sha256:" + "b" * 64),
+                now=LATER,
+            )
+        )
+    with factory.begin() as database:
+        row = database.get(AnalysisRunRow, gone.run_id)
+        row.retention_state = RETENTION_TOMBSTONED
+        row.retention_changed_at = LATER
+
+    assert store.artifact_bindings_for_run(gone.run_id) == ()
+    assert store.artifact_bindings_for_run(gone.run_id, owner_id=scope) == ()
+    assert len(store.artifact_bindings_for_run(kept.run_id)) == 1

@@ -368,7 +368,18 @@ class SqlWorkspaceStore:
         module stating one rule and implementing it in half its reads.
         """
         with self._factory() as database:
-            query = select(ArtifactBindingRow).where(ArtifactBindingRow.run_id == run_id)
+            # Joined to the parent run and narrowed to a live one. A binding has no retention state
+            # of its own; it is read *through* its run, so a run tombstoned while its bindings
+            # remain -- a partial, restored or concurrent deletion -- would otherwise hand back the
+            # withdrawn artifacts' digests here while `get_analysis_run` hid the run itself. The
+            # fifth read path; the earlier count of four missed the one that reads by parent.
+            # Review on `#370` found it.
+            query = (
+                select(ArtifactBindingRow)
+                .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
+                .where(ArtifactBindingRow.run_id == run_id)
+                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+            )
             if owner_id is not None:
                 query = query.where(ArtifactBindingRow.owner_id == owner_id)
             rows = database.execute(query.order_by(ArtifactBindingRow.surface)).scalars()

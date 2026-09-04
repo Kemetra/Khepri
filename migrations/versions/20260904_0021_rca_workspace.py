@@ -316,6 +316,14 @@ def _profile_constraints() -> tuple[sa.schema.SchemaItem, ...]:
     )
 
 
+#: A version's tombstone restates its subject in `version_id`; the two must agree and neither
+#: may be null. `IS NOT NULL` is explicit because `NULL = subject_id` is unknown, and a `CHECK`
+#: passes unknown.
+_TOMBSTONE_VERSION_IDENTITY_CHECK = (
+    "subject_kind <> 'version' OR (version_id IS NOT NULL AND version_id = subject_id)"
+)
+
+
 def _tombstone_columns() -> tuple[sa.Column, ...]:
     return (
         sa.Column("tombstone_id", sa.String(), nullable=False),
@@ -365,6 +373,10 @@ def _tombstone_constraints() -> tuple[sa.schema.SchemaItem, ...]:
                 name=f"ck_rca_workspace_tombstone_{column}",
             )
             for column in _SECTION_COLUMNS
+        ),
+        sa.CheckConstraint(
+            _TOMBSTONE_VERSION_IDENTITY_CHECK,
+            name="ck_rca_workspace_tombstone_version_identity",
         ),
     )
 

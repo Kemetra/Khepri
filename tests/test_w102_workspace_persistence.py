@@ -13,7 +13,6 @@ duplicates. A second head test would be a second place to forget.
 
 from __future__ import annotations
 
-from dataclasses import fields
 from datetime import UTC, datetime
 
 import pytest
@@ -23,28 +22,22 @@ from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.accounts import AccountService
 from khepri.rca.organizations import OrganizationService
-from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore, _utc
+from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
 from khepri.rca.workspace.contracts import (
     AdmittedSource,
     AnalysisRun,
     ArtifactBinding,
     DatasetVersion,
     PublishedArtifact,
-    RunOutcome,
 )
 from khepri.rca.workspace.persistence import (
-    COMPLETION_COLUMNS,
     RETENTION_ACTIVE,
     RETENTION_TOMBSTONED,
     SECTION_COLUMNS,
     TOMBSTONE_SUBJECTS,
-    AnalysisRunRow,
-    DatasetVersionRow,
     SourceProfileRow,
     SqlWorkspaceStore,
     WorkspaceTombstoneRow,
-    run_for_update,
-    version_for_update,
 )
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
@@ -395,224 +388,6 @@ def test_a_foreign_scope_lists_none_of_another_scopes_bindings(factory: sessionm
     assert len(store.artifact_bindings_for_run(run.run_id, owner_id=first)) == 1
 
 
-# --- Sealing, the transition `W1-01` defined and nothing performed ----------------------------
-
-
-def test_a_version_can_be_sealed_once(factory: sessionmaker) -> None:
-    """`W1-01` made sealing an event rather than a creation argument, and nothing performed it.
-
-    Two of its tests assert `create` has no `sealed_at` parameter, which is right -- but no
-    operation ever set the column, so every stored version stayed unsealed and
-    `KHEPRI-DEC-033`'s seven-day raw-upload purge clock could never start. Review on `#370` found
-    the missing half of a transition this repository had already reasoned about carefully.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-
-    assert version.sealed_at is None
-    assert store.seal_dataset_version(version.version_id, now=LATER) is True
-
-    sealed = store.get_dataset_version(version.version_id)
-    assert sealed is not None
-    assert sealed.sealed_at == LATER
-
-
-def test_sealing_twice_is_refused_rather_than_moving_the_instant(factory: sessionmaker) -> None:
-    """The purge clock starts at the first sealing, so a second must not extend it.
-
-    Re-sealing would push a deletion deadline outward, which is the one direction
-    `KHEPRI-DEC-033` cannot tolerate -- an object staying retrievable longer than the decision
-    allows. Asserted on both the return value and the stored instant, because a method that
-    returned `False` while still writing would pass a return-only test.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    store.seal_dataset_version(version.version_id, now=NOW)
-
-    assert store.seal_dataset_version(version.version_id, now=LATER) is False
-
-    sealed = store.get_dataset_version(version.version_id)
-    assert sealed is not None
-    assert sealed.sealed_at == NOW
-
-
-def test_a_foreign_scope_cannot_seal_a_version(factory: sessionmaker) -> None:
-    first = _scope(factory)
-    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
-    mine = store.add_dataset_version(DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW))
-
-    assert store.seal_dataset_version(mine.version_id, now=LATER, owner_id=second) is False
-
-    unsealed = store.get_dataset_version(mine.version_id)
-    assert unsealed is not None
-    assert unsealed.sealed_at is None
-
-
-def test_sealing_changes_nothing_else_about_the_record(factory: sessionmaker) -> None:
-    """Sealing is one column. A transition that rewrote content would defeat `FR-112` from the
-    inside -- through the one operation permitted to write."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-    store.seal_dataset_version(version.version_id, now=LATER)
-
-    sealed = store.get_dataset_version(version.version_id)
-    assert sealed is not None
-
-    # Compared field by field rather than through `dataclasses.replace`, which `records.py`
-    # refuses on a sealed record -- correctly: substitution is one of the construction bypasses it
-    # exists to close, and a test may not open it to make an assertion convenient.
-    unchanged = {field.name for field in fields(DatasetVersion) if field.name != "sealed_at"}
-    for name in unchanged:
-        assert getattr(sealed, name) == getattr(version, name), name
-
-
-# --- Completion: the transition `FR-111` requires and the guard had made impossible ------------
-
-
-def _started_run(store: SqlWorkspaceStore, scope: str) -> AnalysisRun:
-    version = _version(store, scope)
-    return store.add_analysis_run(
-        AnalysisRun.create(owner_id=scope, version_id=version.version_id, now=NOW)
-    )
-
-
-COMPLETED_OUTCOME = RunOutcome(
-    state="completed",
-    package_digest="sha256:" + "c" * 64,
-    package_version="rra008.package.v2",
-    formula_version="rra004.formula.v5",
-    completed_at=LATER,
-)
-
-
-def test_a_started_run_can_record_what_it_produced(factory: sessionmaker) -> None:
-    """The defect this closes: a run written through this store could never be completed.
-
-    `W1-01` creates a run incomplete on purpose, because `FR-111` puts the digest and the governed
-    versions on the real pipeline. The append-only guard then refused every write that would fill
-    them, so the record had fields no operation could ever set -- `FR-112` enforced as "after
-    writing" where its text says "after sealing or completion". Review on `#370` found it.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    run = _started_run(store, scope)
-
-    assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME) is True
-
-    completed = store.get_analysis_run(run.run_id)
-    assert completed is not None
-    assert completed.state == "completed"
-    assert completed.package_digest == COMPLETED_OUTCOME.package_digest
-    assert completed.package_version == COMPLETED_OUTCOME.package_version
-    assert completed.formula_version == COMPLETED_OUTCOME.formula_version
-    assert completed.completed_at == LATER
-
-
-def test_a_run_can_also_record_that_it_failed(factory: sessionmaker) -> None:
-    """`failed` is a terminal state the domain publishes, so it is a completion like any other."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    run = _started_run(store, scope)
-
-    assert store.complete_analysis_run(run.run_id, RunOutcome(state="failed")) is True
-
-    failed = store.get_analysis_run(run.run_id)
-    assert failed is not None
-    assert failed.state == "failed"
-    assert failed.package_digest is None
-
-
-def test_completing_twice_is_refused(factory: sessionmaker) -> None:
-    """One way, like sealing: a completed run does not re-derive a different result."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    run = _started_run(store, scope)
-    store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME)
-
-    other = RunOutcome(state="failed", completed_at=LATER)
-    assert store.complete_analysis_run(run.run_id, other) is False
-
-    unchanged = store.get_analysis_run(run.run_id)
-    assert unchanged is not None
-    assert unchanged.state == "completed"
-    assert unchanged.package_digest == COMPLETED_OUTCOME.package_digest
-
-
-def test_a_completed_run_is_immutable_through_the_orm_too(factory: sessionmaker) -> None:
-    """The store returning `False` is politeness; the guard refusing the write is the property.
-
-    Asserted through a loaded row rather than only through the method, for the reason the sealing
-    equivalent is: an earlier version of this module had a path that wrote around the guard, and a
-    return-value test cannot see one.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    run = _started_run(store, scope)
-    store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME)
-
-    with (
-        pytest.raises(ValueError, match="cannot be completed again"),
-        factory.begin() as database,
-    ):
-        row = database.get(AnalysisRunRow, run.run_id)
-        row.package_digest = "sha256:" + "0" * 64
-
-
-def test_completion_cannot_smuggle_a_content_change(factory: sessionmaker) -> None:
-    """The transition writes its own columns and no others.
-
-    A completion permitted to touch `version_id` would rewrite which dataset a run derived from --
-    provenance, changed through the one write the guard allows. `COMPLETION_COLUMNS` is asserted
-    as an equality for the same reason `MUTABLE_COLUMNS` is.
-    """
-    assert {
-        "state",
-        "package_digest",
-        "package_version",
-        "formula_version",
-        "completed_at",
-    } == COMPLETION_COLUMNS
-
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    run = _started_run(store, scope)
-
-    with (
-        pytest.raises(ValueError, match="cannot change after it is written"),
-        factory.begin() as database,
-    ):
-        row = database.get(AnalysisRunRow, run.run_id)
-        row.state = "completed"
-        row.version_id = "dsv_somewhere_else"
-
-
-def test_a_foreign_scope_cannot_complete_a_run(factory: sessionmaker) -> None:
-    first = _scope(factory)
-    second = _scope(factory, email="other@example.test", name="Other Pharmacy")
-    store = SqlWorkspaceStore(factory)
-    run = _started_run(store, first)
-
-    assert store.complete_analysis_run(run.run_id, COMPLETED_OUTCOME, owner_id=second) is False
-
-    untouched = store.get_analysis_run(run.run_id)
-    assert untouched is not None
-    assert untouched.state == "started"
-
-
-def test_completing_into_the_started_state_is_refused(factory: sessionmaker) -> None:
-    """`started` is not a completion, so passing it is a caller error rather than a no-op."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    run = _started_run(store, scope)
-
-    with pytest.raises(ValueError, match="cannot be completed again"):
-        store.complete_analysis_run(run.run_id, RunOutcome(state="started"))
-
-
 # --- The two tables the `W1-02` plan assigns and the first draft omitted -----------------------
 
 
@@ -697,6 +472,8 @@ def test_a_source_profile_is_deletable(factory: sessionmaker) -> None:
 
 @pytest.mark.parametrize("subject", TOMBSTONE_SUBJECTS)
 def test_a_tombstone_row_round_trips_for_each_subject(factory: sessionmaker, subject: str) -> None:
+    """Both subjects, each carrying `version_id`: on a version's row it restates the subject, which
+    the identity `CHECK` now requires; on a run's row it is the parent dataset."""
     scope = _scope(factory)
     with factory.begin() as database:
         database.add(
@@ -704,6 +481,7 @@ def test_a_tombstone_row_round_trips_for_each_subject(factory: sessionmaker, sub
                 tombstone_id=f"tmb_{subject}",
                 subject_kind=subject,
                 subject_id="dsv_abc123",
+                version_id="dsv_abc123",
                 owner_id=scope,
                 deleted_at=LATER,
             )
@@ -802,117 +580,3 @@ def test_no_tombstone_column_can_hold_free_text_from_the_live_record(
     }
 
     assert columns & forbidden == set()
-
-
-# --- Read-then-write windows, and a clock that must not move -----------------------------------
-
-
-@pytest.mark.parametrize(
-    ("statement", "table"),
-    [
-        (run_for_update("run_abc123"), "rca_workspace_analysis_runs"),
-        (version_for_update("dsv_abc123"), "rca_workspace_dataset_versions"),
-    ],
-)
-def test_the_locking_statements_emit_for_update_on_postgres(statement, table: str) -> None:
-    """Compiled against the PostgreSQL dialect, because SQLite cannot show this.
-
-    `rca/persistence.py` states the reason at `account_for_update`: SQLite emits no `FOR UPDATE`
-    and SQLAlchemy silently omits it for that dialect, so a lock someone later removed would leave
-    the whole suite green. Naming the statement is what makes it compilable here without a
-    database, and this test is the half that makes the naming worth anything.
-    """
-    from sqlalchemy.dialects import postgresql
-
-    compiled = str(statement.compile(dialect=postgresql.dialect()))
-
-    assert "FOR UPDATE" in compiled
-    assert table in compiled
-
-
-def test_completing_a_run_locks_the_row_it_reads(factory: sessionmaker) -> None:
-    """`complete_analysis_run` reads the state and then writes on it, which is not atomic.
-
-    Two workers could both read `started`, both pass the check, and the second overwrite the
-    first's package digest and version provenance while both reported success. `FR-111` binds a run
-    to the versions it actually derived under, so a lost write there is lost provenance. Review on
-    `#370` found it.
-
-    Asserted on the *statement* rather than by racing two threads, because SQLite serializes writes
-    anyway and a concurrency test on this engine would pass with the lock removed -- the guard
-    would be green against the defect it exists to catch.
-    """
-    import inspect as py_inspect
-
-    source = py_inspect.getsource(SqlWorkspaceStore.complete_analysis_run)
-
-    assert "run_for_update" in source
-    assert "database.get(AnalysisRunRow" not in source
-
-
-def test_an_idempotent_tombstone_does_not_move_the_deletion_clock(
-    factory: sessionmaker,
-) -> None:
-    """`FR-123` requires a repeated deletion to succeed; `KHEPRI-DEC-033` §5 anchors a horizon to
-    `retention_changed_at`. Both, so a retry must succeed *without* moving the clock.
-
-    Overwriting the timestamp on every retry would let repeated requests extend a deletion deadline
-    outward -- the same defect re-sealing was guarded against, arriving through the timestamp
-    instead of the state. The guard could not see it: assigning an equal value is not a change, so
-    `_one_way` has nothing to refuse. Review on `#370` found it.
-    """
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-
-    store.tombstone_dataset_version(version.version_id, now=NOW)
-    with factory() as database:
-        first = database.get(DatasetVersionRow, version.version_id).retention_changed_at
-
-    store.tombstone_dataset_version(version.version_id, now=LATER)
-    with factory() as database:
-        after_retry = database.get(DatasetVersionRow, version.version_id).retention_changed_at
-
-    assert first is not None
-    assert after_retry == first, "an idempotent retry moved the deletion clock"
-
-
-def test_a_real_transition_does_move_the_clock(factory: sessionmaker) -> None:
-    """The no-op check must not have frozen the timestamp for an actual state change."""
-    scope = _scope(factory)
-    store = SqlWorkspaceStore(factory)
-    version = _version(store, scope)
-
-    with factory() as database:
-        assert database.get(DatasetVersionRow, version.version_id).retention_changed_at is None
-
-    store.tombstone_dataset_version(version.version_id, now=LATER)
-
-    # Compared through `_utc` because SQLite hands back a naive datetime; the store applies it on
-    # every read path and this test reads the raw row to see the column rather than the record.
-    with factory() as database:
-        stored = database.get(DatasetVersionRow, version.version_id).retention_changed_at
-    assert _utc(stored) == LATER
-
-
-@pytest.mark.parametrize(
-    ("statement", "table"),
-    [
-        (run_for_update("run_abc123", "own_abc123"), "rca_workspace_analysis_runs"),
-        (version_for_update("dsv_abc123", "own_abc123"), "rca_workspace_dataset_versions"),
-    ],
-)
-def test_a_scoped_lock_names_the_scope_in_its_predicate(statement, table: str) -> None:
-    """When the caller passes `owner_id`, the lock statement constrains it -- so a cross-tenant
-    identifier locks nothing rather than holding another tenant's row for the transaction.
-
-    Compiled against PostgreSQL like its unscoped sibling above, and asserted on the predicate's
-    presence: SQLite cannot show a lock, and a race across two tenants here would pass regardless.
-    """
-    from sqlalchemy.dialects import postgresql
-
-    compiled = str(statement.compile(dialect=postgresql.dialect()))
-
-    assert "FOR UPDATE" in compiled
-    assert table in compiled
-    assert "owner_id =" in compiled

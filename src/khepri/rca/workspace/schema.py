@@ -179,6 +179,26 @@ def _completion_provenance_check(name: str) -> CheckConstraint:
     )
 
 
+def _version_identity_check() -> CheckConstraint:
+    """A version's tombstone names the version it is *for* in both places, identically.
+
+    `subject_id` is the discriminated identity; `version_id` is the allowlist column that, on a
+    version's row, restates it (on a run's row it is the parent dataset instead). Nullable and
+    independently writable, it let a projection or direct insert persist `subject_id=A` with
+    `version_id=B` or `NULL` -- and the row is immutable once written, so history and revocation
+    consumers could permanently disagree about which version was deleted. Review on `#370` found
+    it.
+
+    `IS NOT NULL` is spelled out because `NULL = subject_id` is `NULL`, and a `CHECK` treats
+    unknown as pass: without it the constraint would admit exactly the null it exists to refuse.
+    """
+    return CheckConstraint(
+        f"subject_kind <> '{TOMBSTONE_VERSION}' "
+        "OR (version_id IS NOT NULL AND version_id = subject_id)",
+        name="ck_rca_workspace_tombstone_version_identity",
+    )
+
+
 def _section_state_checks() -> tuple[CheckConstraint, ...]:
     """One `CHECK` per section column: null, or one of the governed state codes.
 
@@ -489,6 +509,7 @@ class WorkspaceTombstoneRow(Base):
             "ck_rca_workspace_tombstone_run_fields",
         ),
         *_section_state_checks(),
+        _version_identity_check(),
     )
 
     tombstone_id: Mapped[str] = mapped_column(String, primary_key=True)
