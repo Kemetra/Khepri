@@ -26,8 +26,11 @@ from khepri.rca.workspace.contracts import (
     AnalysisRun,
     ArtifactBinding,
     DatasetVersion,
+    PublishedArtifact,
     RunOutcome,
+    RunSubject,
     SourceProfile,
+    VersionLifecycle,
 )
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
@@ -302,9 +305,18 @@ def test_the_shared_builder_cannot_construct_outside_a_door(record_type: type) -
     this one silently.
     """
     arguments = {
-        DatasetVersion: ("dsv_forged", SCOPE, SOURCE, NOW, None),
-        AnalysisRun: ("run_forged", SCOPE, "dsv_abc123", RunOutcome(state="started"), NOW),
-        ArtifactBinding: ("run_abc123", SCOPE, "web", "sha256:" + "d" * 64, NOW),
+        DatasetVersion: ("dsv_forged", SCOPE, SOURCE, VersionLifecycle(created_at=NOW)),
+        AnalysisRun: (
+            RunSubject(run_id="run_forged", owner_id=SCOPE, version_id="dsv_abc123"),
+            RunOutcome(state="started"),
+            NOW,
+        ),
+        ArtifactBinding: (
+            "run_abc123",
+            SCOPE,
+            PublishedArtifact(surface="web", artifact_digest="sha256:" + "d" * 64),
+            NOW,
+        ),
     }[record_type]
     with pytest.raises(TypeError, match="through create"):
         record_type._build(*arguments)
@@ -344,3 +356,63 @@ def test_the_refusal_does_not_echo_the_rejected_value() -> None:
 def test_a_started_run_reports_a_state_the_vocabulary_names() -> None:
     run = AnalysisRun.create(owner_id=SCOPE, version_id="dsv_abc123", now=NOW)
     assert run.state in RUN_STATES
+
+
+# --- The grouping value objects are held to the same field-set equality --------------------
+
+
+def test_the_version_lifecycle_value_object_carries_only_its_two_instants() -> None:
+    """`VersionLifecycle` groups `created_at` and `sealed_at` to keep `_build` at four arguments.
+
+    Asserted as an equality rather than an absence, for the reason this whole module is written
+    that way: an absence test cannot see a field *added*. A `VersionLifecycle` that grew a
+    `purged_at` or a `retention_state` would be `W1-02`'s store state arriving through a door
+    that only allocates, and the equality fails before such a field can be read.
+    """
+    assert _field_names(VersionLifecycle) == {"created_at", "sealed_at"}
+
+
+def test_the_run_subject_value_object_carries_no_outcome() -> None:
+    """`RunSubject` names which run over which version in which scope -- never what it produced.
+
+    `FR-111` puts the package digest and the versions on the real pipeline. If this value object
+    could carry one, `AnalysisRun.create` would accept a completed run through `subject=` exactly
+    as `test_create_cannot_be_given_a_completion` forbids through a flat parameter -- which is the
+    regression a grouping refactor is capable of introducing silently.
+    """
+    assert _field_names(RunSubject) == {"run_id", "owner_id", "version_id"}
+
+
+def test_the_published_artifact_value_object_cannot_backdate_a_publication() -> None:
+    """`PublishedArtifact` pairs a surface with its digest, and carries no instant.
+
+    `published_at` stays a parameter of the door. A value object that carried it would let a
+    caller supply a publication time through `artifact=`, and `ArtifactBinding.create` is a real
+    door rather than an internal helper -- so this is the one grouping where a smuggled field
+    would be reachable from outside the module.
+    """
+    assert _field_names(PublishedArtifact) == {"surface", "artifact_digest"}
+
+
+def test_grouping_did_not_widen_what_a_creation_door_accepts() -> None:
+    """The refactor's own risk, asserted directly: no door gained a stored-only parameter.
+
+    Parameter grouping was applied to bring eleven functions within the repository's
+    four-argument threshold. The threshold is a code-health measure and the two-door rule is a
+    correctness one, so satisfying the first must not spend the second. Each creation door is
+    re-checked here against the field sets its value objects can express.
+    """
+    import inspect
+
+    creation_parameters = {
+        name
+        for door in (DatasetVersion.create, AnalysisRun.create, ArtifactBinding.create)
+        for name in inspect.signature(door).parameters
+    }
+    reachable = set(creation_parameters)
+    for group in (AdmittedSource, PublishedArtifact):
+        reachable |= _field_names(group)
+
+    assert "sealed_at" not in reachable
+    assert "version_id" not in _field_names(AdmittedSource)
+    assert reachable & {"package_digest", "package_version", "formula_version"} == set()

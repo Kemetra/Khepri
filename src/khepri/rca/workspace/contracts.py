@@ -53,6 +53,22 @@ def _identifier(prefix: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class VersionLifecycle:
+    """When a version was allocated and, if it has been, when it was sealed.
+
+    One fact, not two: `KHEPRI-DEC-033` measures the raw upload's seven-day
+    purge window *between* these instants, so a caller holding one without the
+    other holds half of a retention clock. Grouping them keeps `_build` within
+    the four-argument threshold without giving `create` a way to express a
+    seal -- `create` constructs this itself with `sealed_at` left `None`, and
+    `test_create_cannot_be_given_a_seal` asserts that against its signature.
+    """
+
+    created_at: datetime
+    sealed_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AdmittedSource:
     """What admission established about one file, as one value.
 
@@ -100,8 +116,7 @@ class DatasetVersion(Sealed):
         version_id: str,
         owner_id: str,
         source: AdmittedSource,
-        created_at: datetime,
-        sealed_at: datetime | None,
+        lifecycle: VersionLifecycle,
     ) -> DatasetVersion:
         """The constructor call both doors share.
 
@@ -128,14 +143,16 @@ class DatasetVersion(Sealed):
             manifest_digest=source.manifest_digest,
             mapping_version=source.mapping_version,
             admission_outcome=source.admission_outcome,
-            created_at=created_at,
-            sealed_at=sealed_at,
+            created_at=lifecycle.created_at,
+            sealed_at=lifecycle.sealed_at,
         )
 
     @classmethod
     def create(cls, *, owner_id: str, source: AdmittedSource, now: datetime) -> DatasetVersion:
         with through_door():
-            return cls._build(_identifier("dsv"), owner_id, source, now, None)
+            return cls._build(
+                _identifier("dsv"), owner_id, source, VersionLifecycle(created_at=now)
+            )
 
     @classmethod
     def _from_storage(
@@ -144,11 +161,28 @@ class DatasetVersion(Sealed):
         version_id: str,
         owner_id: str,
         source: AdmittedSource,
-        created_at: datetime,
-        sealed_at: datetime | None,
+        lifecycle: VersionLifecycle,
     ) -> DatasetVersion:
         with through_door():
-            return cls._build(version_id, owner_id, source, created_at, sealed_at)
+            return cls._build(version_id, owner_id, source, lifecycle)
+
+
+@dataclass(frozen=True, slots=True)
+class RunSubject:
+    """Which run, over which version, in which scope.
+
+    The three identifiers a run is keyed by, and never held apart: a run over
+    another scope's version is the isolation failure `RCA-001` `FR-031` exists
+    to prevent, so pairing them at the type rather than at three call sites is
+    what stops a caller assembling a mismatched triple. It carries no field
+    `create` may not accept -- `run_id` is allocated *inside* the door by
+    `_identifier`, never supplied -- and the field set is asserted as an
+    equality in `test_w101_workspace_contracts.py`.
+    """
+
+    run_id: str
+    owner_id: str
+    version_id: str
 
 
 @register_sealed
@@ -174,17 +208,15 @@ class AnalysisRun(Sealed):
 
     @staticmethod
     def _build(
-        run_id: str,
-        owner_id: str,
-        version_id: str,
+        subject: RunSubject,
         outcome: RunOutcome,
         started_at: datetime,
     ) -> AnalysisRun:
         """The constructor call both doors share. See `DatasetVersion._build`."""
         return AnalysisRun(
-            run_id=run_id,
-            version_id=version_id,
-            owner_id=owner_id,
+            run_id=subject.run_id,
+            version_id=subject.version_id,
+            owner_id=subject.owner_id,
             package_digest=outcome.package_digest,
             package_version=outcome.package_version,
             formula_version=outcome.formula_version,
@@ -196,22 +228,21 @@ class AnalysisRun(Sealed):
     @classmethod
     def create(cls, *, owner_id: str, version_id: str, now: datetime) -> AnalysisRun:
         with through_door():
-            return cls._build(
-                _identifier("run"), owner_id, version_id, RunOutcome(state=RUN_STARTED), now
+            subject = RunSubject(
+                run_id=_identifier("run"), owner_id=owner_id, version_id=version_id
             )
+            return cls._build(subject, RunOutcome(state=RUN_STARTED), now)
 
     @classmethod
     def _from_storage(
         cls,
         *,
-        run_id: str,
-        owner_id: str,
-        version_id: str,
+        subject: RunSubject,
         outcome: RunOutcome,
         started_at: datetime,
     ) -> AnalysisRun:
         with through_door():
-            return cls._build(run_id, owner_id, version_id, outcome, started_at)
+            return cls._build(subject, outcome, started_at)
 
 
 # The operational states of a run. Named as a tuple so the domain, the store and the schema
@@ -268,6 +299,22 @@ class RunOutcome:
             raise ValueError(RUN_STATE_FAILURE)
 
 
+@dataclass(frozen=True, slots=True)
+class PublishedArtifact:
+    """One surface of a bundle and the digest that is it.
+
+    A surface without its digest names nothing and a digest without its surface
+    binds nothing, so `RRA-006`'s "published together or not at all" is already
+    a statement that these two travel as one. Grouping them keeps
+    `ArtifactBinding.create` -- a real door, unlike the `_build` helpers -- at
+    four arguments without admitting a stored-only field: `published_at` stays
+    the door's own parameter, so a caller cannot backdate a publication.
+    """
+
+    surface: str
+    artifact_digest: str
+
+
 @register_sealed
 @dataclass(frozen=True, slots=True)
 class ArtifactBinding(Sealed):
@@ -289,16 +336,15 @@ class ArtifactBinding(Sealed):
     def _build(
         run_id: str,
         owner_id: str,
-        surface: str,
-        artifact_digest: str,
+        artifact: PublishedArtifact,
         published_at: datetime,
     ) -> ArtifactBinding:
         """The constructor call both doors share. See `DatasetVersion._build`."""
         return ArtifactBinding(
             run_id=run_id,
             owner_id=owner_id,
-            surface=surface,
-            artifact_digest=artifact_digest,
+            surface=artifact.surface,
+            artifact_digest=artifact.artifact_digest,
             published_at=published_at,
         )
 
@@ -308,12 +354,11 @@ class ArtifactBinding(Sealed):
         *,
         owner_id: str,
         run_id: str,
-        surface: str,
-        artifact_digest: str,
+        artifact: PublishedArtifact,
         now: datetime,
     ) -> ArtifactBinding:
         with through_door():
-            return cls._build(run_id, owner_id, surface, artifact_digest, now)
+            return cls._build(run_id, owner_id, artifact, now)
 
     @classmethod
     def _from_storage(
@@ -321,12 +366,11 @@ class ArtifactBinding(Sealed):
         *,
         run_id: str,
         owner_id: str,
-        surface: str,
-        artifact_digest: str,
+        artifact: PublishedArtifact,
         published_at: datetime,
     ) -> ArtifactBinding:
         with through_door():
-            return cls._build(run_id, owner_id, surface, artifact_digest, published_at)
+            return cls._build(run_id, owner_id, artifact, published_at)
 
 
 @dataclass(frozen=True, slots=True)
