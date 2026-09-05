@@ -16,8 +16,13 @@
   <ul class="organization-list">
     {% for organization in organizations %}
     <li class="organization-item">
+      {#
+        Where an organization opens. Overview when the shell holds a workspace reader (blueprint
+        §7.1: orientation first), Team when it does not -- `FR-049` forbids a link to a surface
+        that is not there. `entry_surface` is decided by `_switcher`, not here.
+      #}
       <a id="organization-name-{{ loop.index }}"
-         href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/team">
+         href="{{ prefix }}/{{ language }}/{{ organization.organization_id }}/{{ entry_surface }}">
         {{ organization.name }}
       </a>
       {#

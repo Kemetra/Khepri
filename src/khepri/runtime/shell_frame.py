@@ -41,14 +41,37 @@ def _active_organization_name(organizations: Iterable[Any], organization_id: str
     return ""
 
 
-def organization_frame(organizations: Iterable[Any], organization_id: str) -> dict[str, str]:
+#: The destinations the frame may name, as `(copy key, surface)` in `RCA-005` `FR-121`'s order:
+#: Overview, Data, Analyses, Team. Analyses is absent until the PR that ships its surface.
+_WORKSPACE_DESTINATIONS = (("overview_title", "overview"), ("data_title", "data"))
+_TEAM_DESTINATION = ("team_title", "team")
+
+
+def organization_frame(
+    organizations: Iterable[Any],
+    organization_id: str,
+    *,
+    surface: str,
+    offers_records: bool,
+) -> dict[str, Any]:
     """The frame context for a surface rendered inside one resolved organization.
 
     `organization_name` is what the frame shows and what its organization control is named by;
     `surface_path` is the tail the language control keeps where one renders, so switching language
-    holds the surface rather than dropping the reader on the chooser (`FR-054` scenario 11).
+    holds the surface rather than dropping the reader on the chooser (`FR-054` scenario 11), and
+    the tail the navigation marks as current.
+
+    `destinations` is the navigation, decided here and nowhere else. `FR-121` and `RCA-002`
+    `FR-049` require a link to ship only with its surface, so Overview and Data appear exactly
+    when the shell holds a reader for them (`offers_records`), and Team always -- the one surface
+    every shell has. A template that decided this would be a second place the rule lives.
     """
+    workspace = _WORKSPACE_DESTINATIONS if offers_records else ()
     return {
         "organization_name": _active_organization_name(organizations, organization_id),
-        "surface_path": f"/{organization_id}/team",
+        "surface_path": f"/{organization_id}/{surface}",
+        "destinations": tuple(
+            (label, f"/{organization_id}/{destination}")
+            for label, destination in (*workspace, _TEAM_DESTINATION)
+        ),
     }

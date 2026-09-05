@@ -70,6 +70,36 @@ _EN = {
     # string, its target, and its presence are identical on `unavailable` and on the journey's
     # `expired`, whichever cause brought the reader there.
     "recovery_exit": "Go to your organizations",
+    # `W1-05`. The frame's destination landmark, named for what it is now that it holds more than
+    # `Team`. The surface titles double as navigation labels: design language §3.5 settles the set
+    # as Overview · Data · Analyses · Team, and `DatasetVersion` never appears on screen (§7.2).
+    "frame_surfaces_label": "Sections",
+    "overview_title": "Overview",
+    "overview_intro": "What happened most recently, and what to do next.",
+    "latest_work_title": "Latest work",
+    "overview_no_work": "No analysis has run yet.",
+    "overview_no_data": "No data has been submitted yet.",
+    "processing_title": "Still running",
+    "attention_title": "Needs attention",
+    "attention_run_failed": "An analysis did not complete.",
+    # `KHEPRI-DEC-033` §5: no claim that content expires on its own, because nothing yet makes it.
+    "retention_notice": "Content is kept while this organization exists.",
+    "data_title": "Data",
+    "data_intro": "What was submitted, whether it was admitted, and which analyses used it.",
+    "data_empty": "Nothing has been submitted to this organization yet.",
+    "data_submitted": "Submitted",
+    "data_admitted": "Admitted",
+    "data_awaiting": "Awaiting its first analysis",
+    "data_analysis_started": "Analysis started",
+    "data_in_use": "Used in analysis",
+    "data_uses_title": "Analyses that used this data",
+    "data_no_uses": "No analysis has used this data yet.",
+    "retention_kept": "Kept",
+    # The operational states a run can hold (`FR-117`'s vocabulary). Trust state is a second axis
+    # and is `RRA-012`'s; it is not fused into these words.
+    "run_state_started": "Processing",
+    "run_state_completed": "Completed",
+    "run_state_failed": "Did not complete",
 }
 
 _AR = {
@@ -112,6 +142,30 @@ _AR = {
     "frame_language": "English",
     "frame_language_code": "en",
     "recovery_exit": "الانتقال إلى مؤسساتك",
+    "frame_surfaces_label": "الأقسام",
+    "overview_title": "نظرة عامة",
+    "overview_intro": "ما حدث مؤخرًا، وما الخطوة التالية.",
+    "latest_work_title": "آخر الأعمال",
+    "overview_no_work": "لم يُجرَ أي تحليل بعد.",
+    "overview_no_data": "لم تُرسَل أي بيانات بعد.",
+    "processing_title": "ما زال يعمل",
+    "attention_title": "يحتاج إلى انتباه",
+    "attention_run_failed": "لم يكتمل أحد التحليلات.",
+    "retention_notice": "يُحتفظ بالمحتوى ما دامت هذه المؤسسة قائمة.",
+    "data_title": "البيانات",
+    "data_intro": "ما أُرسل، وهل قُبل، وأي التحليلات استخدمته.",
+    "data_empty": "لم يُرسَل شيء إلى هذه المؤسسة بعد.",
+    "data_submitted": "أُرسل",
+    "data_admitted": "مقبول",
+    "data_awaiting": "بانتظار أول تحليل",
+    "data_analysis_started": "بدأ تحليلها",
+    "data_in_use": "مستخدم في تحليل",
+    "data_uses_title": "التحليلات التي استخدمت هذه البيانات",
+    "data_no_uses": "لم يستخدم أي تحليل هذه البيانات بعد.",
+    "retention_kept": "محفوظ",
+    "run_state_started": "قيد المعالجة",
+    "run_state_completed": "مكتمل",
+    "run_state_failed": "لم يكتمل",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

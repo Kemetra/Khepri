@@ -54,6 +54,7 @@ from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import organization_frame
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
+from khepri.runtime.shell_workspace import UnrenderableRecord, data_rows, overview_view
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -65,13 +66,20 @@ SHELL_ASSETS = f"{SHELL_PREFIX}/assets"
 
 _DEFAULT_LANGUAGE = "en"
 
-#: What the shell serves, by exact name. `shell.css` ships from `R8-01` and lives beside the
-#: journey's assets; it is read from there rather than copied, because two copies of a stylesheet
-#: are two things to keep in step and `test_r801_shell_tokens.py` asserts against the original.
+#: What the shell serves, by exact name, and the package and directory each is read from.
+#: `shell.css` and `shell-components.css` ship from `R8-01` and `R8-07` beside the journey's
+#: assets and are read from there rather than copied, because two copies of a stylesheet are two
+#: things to keep in step and `test_r801_shell_tokens.py` asserts against the original.
+#: `workspace.css` is `W1-05`'s and lives here, in the runtime package: `RCA-005` names
+#: `src/khepri/rra/journey/` as not in its scope, so a slice under it may not write into that tree
+#: (review on `#373`). Every entry is a stylesheet; the allowlist is a `dict` rather than a
+#: directory listing so a file dropped into either package is not served by arriving.
 _ASSETS = {
-    "shell.css": "text/css; charset=utf-8",
-    "shell-components.css": "text/css; charset=utf-8",
+    "shell.css": ("khepri.rra.journey", "assets"),
+    "shell-components.css": ("khepri.rra.journey", "assets"),
+    "workspace.css": ("khepri.runtime", "shell_assets"),
 }
+_STYLESHEET = "text/css; charset=utf-8"
 
 
 class ActorResolver(Protocol):
@@ -148,14 +156,61 @@ class AnalysisOpener(Protocol):
     ) -> Any: ...  # pragma: no cover -- Protocol
 
 
+class WorkspaceReader(Protocol):
+    """Reads one scope's data versions and analysis runs (`W1-05`).
+
+    `SqlWorkspaceRecordStore` is the implementation; this names the two reads Overview and Data
+    make and none of the writes. The shell presents retained rows and creates, completes and
+    deletes nothing, and a reader that could write would make that a convention.
+    """
+
+    def dataset_versions_for_scope(
+        self, owner_id: str
+    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+
+    def analysis_runs_for_scope(
+        self, owner_id: str
+    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+
+
+class ScopeResolver(Protocol):
+    """Resolves an organization to the opaque scope the workspace rows are keyed by (`FR-031`).
+
+    `IsolationService.resolve_scope` is the implementation and the one door: the workspace store
+    filters on `owner_id`, which is *not* the commercial `organization_id` the session carries,
+    and `WorkspaceActions` writes every row under the scope this same call returns. Review on
+    `#373` found the shell passing the organization identifier to the store, so both surfaces
+    would have rendered their empty states over a scope full of rows. Reading through the same
+    door the writer used is what makes the shell show what the actions recorded.
+    """
+
+    def resolve_scope(
+        self, account_id: str, organization_id: str
+    ) -> str: ...  # pragma: no cover -- Protocol
+
+
 @dataclass(frozen=True, slots=True)
 class ShellServices:
-    """What the shell needs to render an authenticated frame, and nothing more."""
+    """What the shell needs to render an authenticated frame, and nothing more.
+
+    `records` and `isolation` are optional the way `invitations` and `bridge` are, and they come
+    as a pair: a shell wired without both has no Overview and no Data surface and no link to
+    either (`FR-049`), rather than two surfaces that exist and refuse -- or, worse, two surfaces
+    that read a scope the session does not own.
+    """
 
     resolver: ActorResolver
     organizations: OrganizationReader
     invitations: InvitationGateway | None = None
     bridge: AnalysisOpener | None = None
+    records: WorkspaceReader | None = None
+    isolation: ScopeResolver | None = None
+
+
+def _offers_workspace(services: ShellServices) -> bool:
+    """Whether Overview and Data exist on this shell: both halves of the read are wired."""
+    return services.records is not None and services.isolation is not None
+
 
 
 def shell_environment() -> Environment:
@@ -298,6 +353,7 @@ def _switcher(
     language: str,
     organizations: list[Any],
     active_organization_id: str | None,
+    entry_surface: str,
 ) -> Response:
     """`FR-051`: only what the reader returned, which is only current memberships.
 
@@ -315,9 +371,70 @@ def _switcher(
         status_code=200,
         organizations=organizations,
         active_organization_id=active_organization_id,
+        entry_surface=entry_surface,
         # The chooser is where the frame's organization control leads, so the control is not
         # rendered here: a link to the surface you are on is a control that does nothing.
     )
+
+
+def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> dict[str, Any]:
+    """What Overview and Data both need: the frame, and the scope's versions and runs.
+
+    `FR-042`: the scope is resolved from `context.organization_id`, which the resolver returned
+    from the session; the address's organization segment was never read. The resolution goes
+    through `ScopeResolver` -- the same door `WorkspaceActions` writes under -- because the store
+    is keyed by the opaque `owner_id` and not by the organization. A refusal there is a
+    `PermissionError` and reaches the reader as the one uniform unavailable surface.
+
+    Both surfaces read both tables because Overview shows the latest of each and Data shows
+    which runs used which data.
+    """
+    assert services.records is not None and services.isolation is not None  # dispatched wired
+    owner_id = services.isolation.resolve_scope(context.account_id, context.organization_id)
+    frame = organization_frame(
+        services.organizations.organizations_for_account(context.account_id),
+        context.organization_id,
+        surface=surface,
+        offers_records=True,
+    )
+    return {
+        **frame,
+        "organization_id": context.organization_id,
+        "versions": services.records.dataset_versions_for_scope(owner_id),
+        "runs": services.records.analysis_runs_for_scope(owner_id),
+    }
+
+
+def _overview_response(
+    services: ShellServices, environment: Environment, *, language: str, context: Any
+) -> Response:
+    """`FR-120`. The rows are shaped in `shell_workspace.py`; the template can only iterate."""
+    reads = _workspace_reads(services, context, surface="overview")
+    view = overview_view(reads.pop("versions"), reads.pop("runs"))
+    return _render(
+        environment,
+        "overview.html.j2",
+        language=language,
+        status_code=200,
+        view=view,
+        bridge_available=services.bridge is not None,
+        **reads,
+    )
+
+
+def _data_response(
+    services: ShellServices, environment: Environment, *, language: str, context: Any
+) -> Response:
+    """Blueprint §7.2, with `FR-117`'s row vocabulary."""
+    reads = _workspace_reads(services, context, surface="data")
+    rows = data_rows(reads.pop("versions"), reads.pop("runs"))
+    return _render(
+        environment, "data.html.j2", language=language, status_code=200, rows=rows, **reads
+    )
+
+
+#: The two surfaces `records` delivers, by the name the address carries, and what renders each.
+_WORKSPACE_SURFACES = {"overview": _overview_response, "data": _data_response}
 
 
 def _team_response(
@@ -339,6 +456,8 @@ def _team_response(
     frame = organization_frame(
         services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
+        surface="team",
+        offers_records=_offers_workspace(services),
     )
     invitations: tuple[Any, ...] = ()
     if services.invitations is not None:
@@ -369,6 +488,25 @@ def _team_response(
     )
 
 
+def _exact(segments: list[str]) -> bool:
+    """`FR-046`: a surface is `/{language}/{organization}/{surface}` -- three non-empty segments
+    -- with at most one trailing slash. Counted rather than tested for truth: `data//` splits into
+    two empty tails, and `//{organization}/data` into an empty language that `_language` would
+    have read as English; both are unknown paths (review on `#373`)."""
+    return len(segments) >= 3 and all(segments[:3]) and segments[3:] in ([], [""])
+
+
+def _names_the_active_organization(segments: list[str], context: Any) -> bool:
+    """`FR-042`'s comparison: the address names the session's own organization, and there is one.
+
+    The session decides the scope; the address may only agree with it. A session with no active
+    organization agrees with nothing, so every scoped surface is denied (`FR-048` scenario 4).
+    """
+    return context.organization_id is not None and (
+        len(segments) > 1 and segments[1] == context.organization_id
+    )
+
+
 def add_shell_routes(
     app: FastAPI,
     *,
@@ -395,18 +533,19 @@ def add_shell_routes(
         `dict` rather than a directory listing so a file dropped into the package is not served by
         arriving, and the name is never joined onto a path from the request.
         """
-        media_type = _ASSETS.get(name)
-        if media_type is None:
+        home = _ASSETS.get(name)
+        if home is None:
             # No language control: the one refusal rendered without resolving the actor, so the
             # canonical tail is not a refusal for every reader who could reach it. See
             # `_unavailable`.
             return _unavailable(
                 environment, language=_DEFAULT_LANGUAGE, language_switch=False
             )
-        content = files("khepri.rra.journey").joinpath("assets", name).read_bytes()
+        package, directory = home
+        content = files(package).joinpath(directory, name).read_bytes()
         return Response(
             content=content,
-            media_type=media_type,
+            media_type=_STYLESHEET,
             headers=dict(SECURITY_HEADERS),
         )
 
@@ -428,9 +567,15 @@ def add_shell_routes(
         """Resolve the actor, then dispatch on the surface the address names.
 
         **The address supplies the surface name and the language, never the scope.** `FR-042`
-        gives the session's active organization that job, so the organization segment of the path
-        is not read at all -- there is no parameter on which the comparison could be skipped
-        because nothing here consults one.
+        gives the session's active organization that job. Where the address also names an
+        organization, `FR-042` requires it to be *compared* with the session's and to fail closed
+        on disagreement (scenario 3) -- so a scoped surface renders only when the two agree, and
+        a disagreement is one more cause the uniform refusal absorbs. Review on `#373` found the
+        segment ignored, which rendered the session's organization under another's address.
+
+        **A surface is an exact address.** `FR-046` closes the surface set, so `/{surface}/more`
+        is an unknown path and reaches `unavailable` like any other; it does not render the
+        surface it begins with. The trailing slash is the one tolerated tail, as on the chooser.
 
         A surface this slice does not deliver falls through to `unavailable`, which is `FR-046`
         holding by construction: an unknown surface and a forbidden one are the same response
@@ -450,10 +595,25 @@ def add_shell_routes(
             return _no_membership(environment, language=language)
 
         surface = segments[2] if len(segments) > 2 else ""
-        if surface == "team" and context.organization_id is not None:
+        scoped = _names_the_active_organization(segments, context) and _exact(segments)
+        if surface == "team" and scoped:
             return _team_response(
                 services, environment, language=language, context=context
             )
+        # `W1-05`. Dispatched only when a reader is wired, so a shell without one has no such
+        # surface -- the address falls through to `unavailable` like any other unknown name.
+        if surface in _WORKSPACE_SURFACES and scoped and _offers_workspace(services):
+            try:
+                return _WORKSPACE_SURFACES[surface](
+                    services, environment, language=language, context=context
+                )
+            except (PermissionError, UnrenderableRecord):
+                # The scope door refused -- a disabled account, a membership gone since the
+                # session was resolved -- or a retained row carries a code the surface has no
+                # governed word for and must not dress up as one (review on `#373`). `FR-050`:
+                # the same surface as every other refusal, and a fault to investigate, not a
+                # page to read.
+                return _unavailable(environment, language=language)
         # The chooser answers the language address and nothing else. `surface` is read at index 2,
         # so it is also `""` for `/{language}/{anything}` -- and testing that name alone made an
         # unknown two-segment path render the chooser at `200`, the one answer `FR-046` says an
@@ -465,6 +625,7 @@ def add_shell_routes(
                 language=language,
                 organizations=organizations,
                 active_organization_id=context.organization_id,
+                entry_surface="overview" if _offers_workspace(services) else "team",
             )
         return _unavailable(environment, language=language)
 
@@ -473,7 +634,9 @@ __all__ = [
     "SHELL_ASSETS",
     "SHELL_PREFIX",
     "ActorResolver",
+    "ScopeResolver",
     "ShellServices",
+    "WorkspaceReader",
     "add_shell_routes",
     "shell_environment",
 ]

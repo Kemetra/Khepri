@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from khepri.rca.identity import IdentityProvider
+from khepri.rca.isolation import IsolationService
 from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
+from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.envelope import MasterKey
 from khepri.rra.report_publication import QueuedReportRequestService
@@ -21,6 +23,7 @@ from khepri.runtime.wiring import (
     build_external_authentication_services,
     build_recovery_security_service,
     build_report_services,
+    build_shell_services,
     build_stack,
     build_web_app,
     build_workspace_actions,
@@ -210,3 +213,18 @@ def test_the_workspace_services_read_the_stacks_own_rra_services() -> None:
     assert ports.packages is stack.services.packages
     assert ports.deliveries is stack.reports.deliveries
     assert ports.artifacts is stack.reports.artifacts
+
+
+def test_the_shell_reads_the_record_store_the_workspace_actions_write() -> None:
+    """`W1-05`: Overview and Data render the rows `WorkspaceActions` recorded, through the same
+    store class over the same factory. A shell without a reader has neither surface and neither
+    link (`FR-049`), so the production root must hand it one."""
+    stack = runtime_stack()
+
+    shell = build_shell_services(stack)
+
+    assert shell is not None
+    assert isinstance(shell.records, SqlWorkspaceRecordStore)
+    # The store is keyed by the opaque scope, so the shell must resolve the session's
+    # organization through the same door the actions write under (`#373` review).
+    assert isinstance(shell.isolation, IsolationService)

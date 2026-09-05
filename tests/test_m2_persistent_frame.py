@@ -139,6 +139,21 @@ class _StubInvitations:
         return "inv_a-one-time-token"
 
 
+class _StubIsolation:
+    def resolve_scope(self, account_id: str, organization_id: str) -> str:
+        return f"scope-{organization_id}"
+
+
+class _StubRecords:
+    """An empty workspace, so the frame under test is the one with every built destination."""
+
+    def dataset_versions_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
+
+    def analysis_runs_for_scope(self, owner_id: str) -> tuple[object, ...]:
+        return ()
+
+
 class _UnreadableOrganizations(_StubOrganizations):
     """A listing read that fails the way a transient database fault would."""
 
@@ -172,6 +187,8 @@ def _shell(
                 else [_organization("org-acme", ORGANIZATION_NAME)]
             ),
             invitations=invitations,
+            records=_StubRecords(),
+            isolation=_StubIsolation(),
         ),
         clock=lambda: NOW,
     )
@@ -206,22 +223,26 @@ class TestTheOrganizationIsNamedWhereItIsResolved:
 
         assert ORGANIZATION_NAME in html
 
-    def test_the_name_follows_the_session_not_the_address(self) -> None:
-        """`FR-042` gives the address no authority over scope, so neither may the frame.
+    def test_an_address_naming_another_organization_fails_closed(self) -> None:
+        """`FR-042` scenario 3: the address names one organization and the session another.
 
-        The address names one organization and the session another; the frame must show the
-        session's. A frame reading the path would show `org-other` here.
+        This case once asserted the opposite -- that the frame rendered the session's
+        organization under the other's address -- and the dispatcher was written to match it.
+        `FR-042`'s text is "MUST be compared against the session's active organization and MUST
+        fail closed on disagreement", which review on `#373` read correctly. The refusal is the
+        uniform one and names neither organization (`FR-051`, `FR-052`).
         """
-        html = _shell(
+        response = _shell(
             context=_Context("acct-1", "org-acme"),
             organizations=[
                 _organization("org-acme", ORGANIZATION_NAME),
                 _organization("org-other", "Someone Else Entirely"),
             ],
-        ).get(f"{SHELL_PREFIX}/en/org-other/team").text
+        ).get(f"{SHELL_PREFIX}/en/org-other/team")
 
-        assert ORGANIZATION_NAME in html
-        assert "Someone Else Entirely" not in html
+        assert response.status_code == 404
+        assert ORGANIZATION_NAME not in response.text
+        assert "Someone Else Entirely" not in response.text
 
     @pytest.mark.parametrize(
         "name",
@@ -259,8 +280,13 @@ class TestTheOrganizationIsNamedWhereItIsResolved:
         assert SHELL_COPY["en"]["frame_organization_label"] not in html
 
 
-class TestTeamIsTheOnlyDestination:
-    """`FR-049`: a navigation entry MUST NOT be rendered for a surface with no implementation."""
+class TestOnlyBuiltDestinationsAreOffered:
+    """`FR-049`: a navigation entry MUST NOT be rendered for a surface with no implementation.
+
+    Team was the only destination until `W1-05` shipped Overview and Data with their links; the
+    rule the class asserts is unchanged, and `test_w105_overview_and_data.py` asserts the two new
+    links appear only when their reader is wired.
+    """
 
     def test_the_frame_offers_team(self) -> None:
         html = _shell().get(f"{SHELL_PREFIX}/en/org-acme/team").text
@@ -286,7 +312,9 @@ class TestTheLanguageControlPreservesPosition:
     """`FR-047` plus scenario 11: "Language switch mid-surface | Position preserved"."""
 
     @pytest.mark.parametrize("language", ["en", "ar"])
-    @pytest.mark.parametrize("path", ["/", "/org-acme/team"])
+    @pytest.mark.parametrize(
+        "path", ["/", "/org-acme/team", "/org-acme/overview", "/org-acme/data"]
+    )
     def test_every_surface_the_frame_may_name_offers_the_control(
         self, path: str, language: str
     ) -> None:
@@ -327,7 +355,8 @@ class TestEverySurfaceCarriesTheFrame:
 
     @pytest.mark.parametrize("language", ["en", "ar"])
     @pytest.mark.parametrize(
-        "path", ["/", "/org-acme/team", UNKNOWN_SURFACE]
+        "path",
+        ["/", "/org-acme/team", "/org-acme/overview", "/org-acme/data", UNKNOWN_SURFACE],
     )
     def test_the_frame_renders_without_a_500(self, path: str, language: str) -> None:
         """`StrictUndefined` turns a missing variable into a render failure, not a blank."""
@@ -388,7 +417,19 @@ class TestTheRefusalKeepsItsSurfaceAcrossLanguages:
 
     @pytest.mark.parametrize(
         "tail",
-        ["/no-such-surface", "/org-acme/no-such-surface", "/a/b/c/d"],
+        [
+            "/no-such-surface",
+            "/org-acme/no-such-surface",
+            "/a/b/c/d",
+            # `FR-046`: a surface is an exact address. A path that begins with one and carries
+            # more is an unknown path, not the surface it begins with (`#373` review).
+            "/org-acme/team/extra",
+            "/org-acme/overview/extra",
+            "/org-acme/data/no-such-object",
+            # Two trailing slashes are two empty tails, not the one tolerated one.
+            "/org-acme/team//",
+            "/org-acme/data//",
+        ],
     )
     def test_an_unknown_address_of_any_shape_reaches_the_refusal(self, tail: str) -> None:
         """`FR-046` is about the address being unknown, not about how many segments it has.
@@ -799,7 +840,8 @@ class TestTheIssuedInvitationSurfaceCarriesTheSameFrame:
         the needle rather than the address.
         """
         issued = self._issued("en")
-        nav = issued[issued.index('class="frame-surfaces"') :][:300]
+        start = issued.index('class="frame-surfaces"')
+        nav = issued[start : issued.index("</nav>", start)]
 
         assert f'href="{SHELL_PREFIX}/en/org-acme/team"' in nav
 

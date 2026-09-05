@@ -393,6 +393,13 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         organizations=SqlOrganizationStore(stack.factory),
         invitations=RcaInvitationService(SqlInvitationStore(stack.factory)),
         bridge=commercial.bridge,
+        # `W1-05`: the same record store the workspace actions write through, resolved through
+        # the same isolation door they write under, so the shell shows exactly the rows the
+        # actions recorded and no second reading of the scope exists.
+        records=SqlWorkspaceRecordStore(stack.factory),
+        isolation=IsolationService(
+            SqlOrganizationStore(stack.factory), SqlAccountStore(stack.factory)
+        ),
     )
 
 
