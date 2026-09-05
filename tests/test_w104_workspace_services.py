@@ -221,9 +221,14 @@ def test_the_service_reaches_admission_only_through_the_profiling_service() -> N
     way to a profile is `ProfilingService`, which is the `RRA-003` entry point."""
     import inspect as py_inspect
 
-    from khepri.runtime import workspace
+    from khepri.runtime import pipeline_recording, workspace, workspace_recording
 
-    source = py_inspect.getsource(workspace)
+    # `W1-04b` split the scope-level recording out of `workspace.py` and added the pipeline door;
+    # the rule binds every module that reads an admission, so all three are scanned.
+    source = "\n".join(
+        py_inspect.getsource(module)
+        for module in (workspace, workspace_recording, pipeline_recording)
+    )
     for forbidden in (
         "khepri.rra.admission",
         "khepri.rra.profiling",

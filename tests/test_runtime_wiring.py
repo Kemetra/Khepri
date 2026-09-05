@@ -18,9 +18,17 @@ from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAda
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.config import ClerkIdentitySettings, RuntimeSettings
 from khepri.runtime.external_auth_api import EXTERNAL_SESSION_PATH
+from khepri.runtime.pipeline_recording import (
+    PipelineRecorder,
+    RecordingProfilingService,
+    RecordingReportRequests,
+    SettlingJobStore,
+)
 from khepri.runtime.wiring import (
     RuntimeClients,
+    build_beta_services,
     build_external_authentication_services,
+    build_pipeline_recorder,
     build_recovery_security_service,
     build_report_services,
     build_shell_services,
@@ -28,6 +36,7 @@ from khepri.runtime.wiring import (
     build_web_app,
     build_workspace_actions,
 )
+from khepri.runtime.worker import build_worker_loop
 
 _MASTER_KEY = MasterKey(material=b"k" * 32)
 
@@ -228,3 +237,53 @@ def test_the_shell_reads_the_record_store_the_workspace_actions_write() -> None:
     # The store is keyed by the opaque scope, so the shell must resolve the session's
     # organization through the same door the actions write under (`#373` review).
     assert isinstance(shell.isolation, IsolationService)
+
+
+def test_the_beta_routes_admit_and_request_through_the_recording_services() -> None:
+    """`W1-04b`: the deployed beta API records the workspace as a side effect of the routes a
+    customer's browser already drives. Review on `#373` found that nothing in `src/khepri` called
+    the workspace actions; this is the composition that does, and `build_web_app` must hand
+    `create_app` these two objects and not the plain services beneath them."""
+    import inspect as py_inspect
+
+    stack = runtime_stack()
+
+    beta = build_beta_services(stack)
+
+    assert isinstance(beta.profiling, RecordingProfilingService)
+    assert beta.profiling.recorder is beta.recorder
+    assert isinstance(beta.reports.jobs, RecordingReportRequests)
+    assert beta.reports.jobs.recorder is beta.recorder
+    # Queue publication stays inside the recording: the job is durable and published before the
+    # workspace learns of it, so a recording fault never hides a queued job from the worker.
+    assert isinstance(beta.reports.jobs.requests, QueuedReportRequestService)
+    source = py_inspect.getsource(build_web_app)
+    assert "profiling_service=beta.profiling" in source
+    assert "report_services=beta.reports" in source
+
+
+def test_the_recorder_reads_the_stacks_own_rra_services() -> None:
+    """The pipeline door reads admission and derivation from the same instances the routes use --
+    `W1-04`'s rule, applied to the second door."""
+    stack = runtime_stack()
+
+    recorder = build_pipeline_recorder(stack)
+
+    ports = recorder.recording.ports
+    assert ports.profiling is stack.services.profiling
+    assert ports.packages is stack.services.packages
+    assert ports.deliveries is stack.reports.deliveries
+    assert ports.artifacts is stack.reports.artifacts
+
+
+def test_the_worker_settles_jobs_through_the_recording_store(tmp_path) -> None:
+    """The worker role is a second process; its job store is wrapped so that a delivered job
+    completes its run and a dead-lettered one fails it. `ReportWorker` holds the wrapped store."""
+    stack = runtime_stack()
+
+    loop = build_worker_loop(stack, printer=object(), workbooks=tmp_path)
+
+    jobs = loop._worker._jobs
+    assert isinstance(jobs, SettlingJobStore)
+    assert jobs.jobs is stack.reports.jobs
+    assert isinstance(jobs.recorder, PipelineRecorder)
