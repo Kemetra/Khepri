@@ -20,6 +20,59 @@
     <span class="row-state">{{ copy[view.state_key] }}</span>
   </p>
 
+  {#
+    `RCA-005` FR-116, blueprint §7.4 (`W1-08`): where this run's governed versions differ from the
+    previous completed run's, say so before the Passport, name each identifier that differs,
+    reach the previous analysis, and state that the two are not numerically comparable. A
+    difference, never a comparison: no figure from either run appears here.
+  #}
+  {% if view.change %}
+  <section class="change-notice" role="note" aria-labelledby="change-title">
+    <h2 id="change-title" class="region-label">{{ copy.notice_title }}</h2>
+    <dl class="change-list">
+      {% for change in view.change.versions %}
+      <div>
+        <dt>{{ copy[change.label_key] }}</dt>
+        <dd dir="ltr">
+          <span class="visually-hidden">{{ copy.notice_earlier }}</span>
+          <span class="change-earlier">{{ change.earlier }}</span>
+          <span class="change-arrow" aria-hidden="true">→</span>
+          <span class="visually-hidden">{{ copy.notice_later }}</span>
+          <span class="change-later">{{ change.later }}</span>
+        </dd>
+      </div>
+      {% endfor %}
+    </dl>
+    {% if view.change.availability %}
+    <h3 class="region-label">{{ copy.notice_availability }}</h3>
+    <ul class="change-availability">
+      {% for change in view.change.availability %}
+      <li>
+        <span class="change-section">{{ change.section }}</span>
+        {#
+          The transition is laid out left-to-right whatever the page's direction. Its words are
+          the report's own and stay in the page's language; only the earlier-then-later *order* is
+          pinned, because the arrow between them is a hard-coded `→`. Under RTL the row would
+          otherwise place the earlier value on the right and read as later → earlier (review on
+          `#377`). The version rows above are already `dir="ltr"`, their identifiers being ASCII.
+        #}
+        <span class="change-transition">
+          <span class="visually-hidden">{{ copy.notice_earlier }}</span>
+          <span class="change-earlier">{{ change.earlier }}</span>
+          <span class="change-arrow" aria-hidden="true">→</span>
+          <span class="visually-hidden">{{ copy.notice_later }}</span>
+          <span class="change-later">{{ change.later }}</span>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <p class="change-caution">{{ copy.notice_not_comparable }}</p>
+    <a class="change-previous"
+       href="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/{{ view.change.previous_run_id }}">{{ copy.notice_previous }}</a>
+  </section>
+  {% endif %}
+
   <h2 class="region-label">{{ copy.passport_title }}</h2>
   {% if view.passport %}
   <dl class="passport">

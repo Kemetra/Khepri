@@ -106,6 +106,22 @@ VERSION_TOMBSTONE_COLUMNS = (
 TOMBSTONE_SECTIONS = ("overview", "comparison", "concentration", "growth", "basket")
 SECTION_COLUMNS = tuple(f"section_{section}" for section in TOMBSTONE_SECTIONS)
 
+#: The report sections that are `RRA-008` families, each stamping its own `rra008.*` version. Every
+#: section but `overview`, which is the package's own summary and carries no family identity.
+#:
+#: A completed run retains the version each family ran under, because `FR-116` requires a
+#: Methodology Change Notice over `rra008.*` as much as over the mapping and package identifiers,
+#: and a family version is not derivable from the core formula: `ADMITTED_FAMILY_PAIRS` records
+#: which pairings are *authorized*, never which one a given run used, and it admits a new pairing
+#: whenever a family lands. Only the run's own record says what it ran under.
+#:
+#: Restated here rather than imported for `TOMBSTONE_SECTIONS`' reason -- `R7-01` §3 forbids
+#: `khepri.rca` importing `khepri.rra` -- and `test_w108_methodology_change_notice.py` asserts
+#: agreement with `bundle.family_versions()` from the one place that may import both, so a fifth
+#: family fails a test rather than going silently unretained.
+FAMILY_SECTIONS = tuple(section for section in TOMBSTONE_SECTIONS if section != "overview")
+FAMILY_VERSION_COLUMNS = tuple(f"family_{section}_version" for section in FAMILY_SECTIONS)
+
 #: The state codes a section may carry: `KHEPRI-DEC-033` §3's three, exactly. "Per-section state
 #: codes (answered, caveated, refused)" is an exhaustive allowlist, not an example.
 #:
@@ -607,6 +623,13 @@ class RunProvenanceRow(Base):
     section_concentration: Mapped[str] = mapped_column(String, nullable=False)
     section_growth: Mapped[str] = mapped_column(String, nullable=False)
     section_basket: Mapped[str] = mapped_column(String, nullable=False)
+    # One per `FAMILY_SECTIONS`, nullable *only* because runs completed before `20260905_0025`
+    # retained none. A run completed since retains all four, and their absence is read as "not
+    # recorded", never as a version that changed.
+    family_comparison_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    family_concentration_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    family_growth_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    family_basket_version: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class WorkspaceAuditEventRow(Base):

@@ -148,6 +148,26 @@ _EN = {
     "audit_manifest": "Coverage manifest digest",
     "audit_upload": "Upload digest",
     "audit_artifacts": "Artifact digest",
+    # `W1-08`. The Methodology Change Notice (`FR-116`): the difference, never a comparison.
+    "notice_title": "Analysis methodology changed since the previous run.",
+    "notice_mapping": "Mapping version",
+    "notice_package": "Package version",
+    "notice_formula": "Formula version",
+    # One per `RRA-008` family (`FR-116` names `rra008.*` beside the mapping and package
+    # identifiers). A family version moves independently of the core formula, so each is named.
+    "notice_family_comparison": "Comparison analysis version",
+    "notice_family_concentration": "Concentration analysis version",
+    "notice_family_growth": "Growth analysis version",
+    "notice_family_basket": "Basket analysis version",
+    # Read to assistive technology in place of the visual arrow, which is `aria-hidden`: without
+    # them a change row announces two adjacent identifiers and never says which is which.
+    "notice_earlier": "previously",
+    "notice_later": "now",
+    "notice_availability": "Availability changed",
+    "notice_not_comparable": (
+        "Figures from this analysis and the previous one are not numerically comparable."
+    ),
+    "notice_previous": "Open the previous analysis",
 }
 
 _AR = {
@@ -257,6 +277,20 @@ _AR = {
     "audit_manifest": "بصمة بيان النطاق",
     "audit_upload": "بصمة الملف",
     "audit_artifacts": "بصمة المخرج",
+    # `W1-08`.
+    "notice_title": "تغيّرت منهجية التحليل منذ التحليل السابق.",
+    "notice_mapping": "إصدار المطابقة",
+    "notice_package": "إصدار الحزمة",
+    "notice_formula": "إصدار الصيغة",
+    "notice_family_comparison": "إصدار تحليل المقارنة",
+    "notice_family_concentration": "إصدار تحليل التركّز",
+    "notice_family_growth": "إصدار تحليل النمو",
+    "notice_family_basket": "إصدار تحليل السلة",
+    "notice_earlier": "سابقًا",
+    "notice_later": "حاليًا",
+    "notice_availability": "تغيّر التوافر",
+    "notice_not_comparable": "أرقام هذا التحليل والتحليل السابق غير قابلة للمقارنة عدديًا.",
+    "notice_previous": "افتح التحليل السابق",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

@@ -17,7 +17,7 @@ case here fails rather than going unmeasured.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from importlib.resources import files
 
 import pytest
@@ -189,8 +189,21 @@ class _StubRecords:
             )
             for kind in REQUIRED_ARTIFACT_KINDS
         )
+        # `W1-08`: an earlier completed run under other governed versions, so detail renders the
+        # Methodology Change Notice and the matrix measures it.
+        earlier = AnalysisRun._from_storage(
+            subject=RunSubject(run_id="run-b", owner_id="org-acme", version_id="ver-a"),
+            outcome=RunOutcome(
+                state=RUN_COMPLETED,
+                package_digest="d" * 64,
+                package_version="package-v-earlier",
+                formula_version="formula-v-earlier",
+                completed_at=NOW - timedelta(days=1),
+            ),
+            started_at=NOW - timedelta(days=1),
+        )
         return WorkspaceHistory(
-            versions=(version,), runs=(run,), bindings=bindings, tombstones=()
+            versions=(version,), runs=(run, earlier), bindings=bindings, tombstones=()
         )
 
 

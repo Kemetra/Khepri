@@ -18,13 +18,18 @@ Written once, never rewritten (`_refuse_any_update`), deleted only with its run 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from khepri.rca.workspace.schema import TOMBSTONE_SECTIONS, RunProvenanceRow
+from khepri.rca.workspace.schema import (
+    FAMILY_SECTIONS,
+    TOMBSTONE_SECTIONS,
+    RunProvenanceRow,
+)
 from khepri.rca.workspace.tombstones import SectionStates
 from khepri.rca.workspace.unit_of_work import reading, writing
 
@@ -42,6 +47,10 @@ class RunProvenance:
     attested_by: str
     row_count: int
     sections: SectionStates
+    #: The `RRA-008` family version each family ran under, by section (`FAMILY_SECTIONS`), as the
+    #: build that ran stamped it. Empty for a run completed before `20260905_0025`, which retained
+    #: none: absence is "not recorded" and is never read as a version that changed (`FR-116`).
+    family_versions: Mapping[str, str] = field(default_factory=dict)
 
 
 class SqlRunProvenanceStore:
@@ -69,6 +78,10 @@ class SqlRunProvenanceStore:
                         f"section_{section}": getattr(provenance.sections, section)
                         for section in TOMBSTONE_SECTIONS
                     },
+                    **{
+                        f"family_{section}_version": provenance.family_versions.get(section)
+                        for section in FAMILY_SECTIONS
+                    },
                 )
             )
         return provenance
@@ -95,6 +108,11 @@ class SqlRunProvenanceStore:
             sections=SectionStates(
                 **{section: getattr(row, f"section_{section}") for section in TOMBSTONE_SECTIONS}
             ),
+            family_versions={
+                section: version
+                for section in FAMILY_SECTIONS
+                if (version := getattr(row, f"family_{section}_version")) is not None
+            },
         )
 
 
