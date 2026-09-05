@@ -56,9 +56,10 @@ def methodology_change(
     outcomes: tuple[SectionStates | None, SectionStates | None],
     language: str,
 ) -> MethodologyChange | None:
-    """The Notice for `current` against `previous`, or `None` when there is no previous run or
-    every governed version is the same."""
-    if previous is None:
+    """The Notice for `current` against `previous`, or `None` when there is no previous run,
+    when `current` has not completed (it has no methodology yet to differ), or when every governed
+    version is the same."""
+    if previous is None or current.run.state != RUN_COMPLETED:
         return None
     versions = tuple(
         VersionChange(key, read(previous), read(current))

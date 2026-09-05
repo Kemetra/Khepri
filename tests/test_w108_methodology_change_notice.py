@@ -52,6 +52,9 @@ EARLIER = NOW - timedelta(days=3)
 ORGANIZATION = "org-acme"
 SCOPE = "scope-acme"
 DIGEST = "d" * 64
+#: Two methodologies, as `(package version, formula version)` pairs.
+V2 = ("rra004.package.v2", "rra004.formula.v1")
+V3 = ("rra004.package.v3", "rra004.formula.v2")
 EN = SHELL_COPY["en"]
 
 
@@ -153,25 +156,28 @@ def _version(version_id: str, mapping: str, *, created_at: datetime = EARLIER) -
 
 
 def _run(
-    run_id: str,
-    version_id: str,
-    *,
-    started_at: datetime,
-    package: str = "rra004.package.v3",
-    formula: str = "rra004.formula.v2",
-    state: str = RUN_COMPLETED,
+    run_id: str, version_id: str, *, started_at: datetime, methodology: tuple[str, str] = V3
 ) -> AnalysisRun:
-    outcome = (
-        RunOutcome(
-            state=state,
-            package_digest=DIGEST,
-            package_version=package,
-            formula_version=formula,
-            completed_at=started_at,
-        )
-        if state == RUN_COMPLETED
-        else RunOutcome(state=state)
+    """A completed run under `methodology`, the `(package, formula)` pair it was derived with."""
+    package, formula = methodology
+    outcome = RunOutcome(
+        state=RUN_COMPLETED,
+        package_digest=DIGEST,
+        package_version=package,
+        formula_version=formula,
+        completed_at=started_at,
     )
+    return _stored_run(run_id, version_id, outcome, started_at)
+
+
+def _started_run(run_id: str, version_id: str, *, started_at: datetime) -> AnalysisRun:
+    """A run still running: no package, no formula, no methodology to compare."""
+    return _stored_run(run_id, version_id, RunOutcome(state=RUN_STARTED), started_at)
+
+
+def _stored_run(
+    run_id: str, version_id: str, outcome: RunOutcome, started_at: datetime
+) -> AnalysisRun:
     return AnalysisRun._from_storage(
         subject=RunSubject(run_id=run_id, owner_id=SCOPE, version_id=version_id),
         outcome=outcome,
@@ -246,13 +252,12 @@ def _two_runs(
             _version("ver-a", "rra003.mapping.v2"),
         ),
         runs=(
-            _run("run-b", "ver-b", started_at=NOW, package=later_package, formula=later_formula),
+            _run("run-b", "ver-b", started_at=NOW, methodology=(later_package, later_formula)),
             _run(
                 "run-a",
                 "ver-a",
                 started_at=EARLIER,
-                package="rra004.package.v2",
-                formula="rra004.formula.v1",
+                methodology=V2,
             ),
         ),
         bindings=_bindings("run-a", "run-b"),
@@ -367,20 +372,18 @@ def test_the_previous_run_is_the_latest_completed_one_over_the_same_data_where_o
         ),
         runs=(
             _run("run-c", "ver-b", started_at=NOW),
-            _run("run-x", "ver-b", started_at=NOW - timedelta(hours=1), state=RUN_STARTED),
+            _started_run("run-x", "ver-b", started_at=NOW - timedelta(hours=1)),
             _run(
                 "run-b",
                 "ver-b",
                 started_at=NOW - timedelta(hours=2),
-                package="rra004.package.v2",
-                formula="rra004.formula.v1",
+                methodology=V2,
             ),
             _run(
                 "run-a",
                 "ver-a",
                 started_at=EARLIER,
-                package="rra004.package.v2",
-                formula="rra004.formula.v1",
+                methodology=V2,
             ),
         ),
         bindings=_bindings("run-a", "run-b", "run-c"),
@@ -409,15 +412,13 @@ def test_the_same_version_is_preferred_over_a_more_recent_run_on_other_data() ->
                 "run-o",
                 "ver-o",
                 started_at=NOW - timedelta(minutes=30),
-                package="rra004.package.v2",
-                formula="rra004.formula.v1",
+                methodology=V2,
             ),
             _run(
                 "run-b",
                 "ver-b",
                 started_at=NOW - timedelta(hours=2),
-                package="rra004.package.v2",
-                formula="rra004.formula.v1",
+                methodology=V2,
             ),
         ),
         bindings=_bindings("run-o", "run-b", "run-c"),
@@ -430,6 +431,25 @@ def test_the_same_version_is_preferred_over_a_more_recent_run_on_other_data() ->
 
 
 # --- Through the deployed pipeline ----------------------------------------------------------------
+
+
+def test_a_run_still_running_after_a_completed_one_carries_no_notice() -> None:
+    """A started run has no package and no formula yet; comparing that absence to the previous
+    run's versions would announce a methodology change no methodology made (review on `#377`)."""
+    records = _StubRecords(
+        versions=(_version("ver-a", "rra003.mapping.v2"),),
+        runs=(
+            _started_run("run-b", "ver-a", started_at=NOW),
+            _run("run-a", "ver-a", started_at=EARLIER, methodology=V2),
+        ),
+        bindings=_bindings("run-a"),
+    )
+
+    html = _detail(records, _StubProvenance(), "run-b")
+
+    assert 'class="change-notice"' not in html
+    assert "None" not in _text(html)
+    assert EN["run_state_started"] in html
 
 
 def test_a_single_run_carries_no_notice() -> None:
