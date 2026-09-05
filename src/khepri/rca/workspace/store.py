@@ -109,8 +109,62 @@ def _live_in(row: object | None, owner_id: str | None) -> bool:
     caller could keep presenting or reusing a record the customer deleted. Review on `#370` found
     the four read paths filtering by scope alone. `retention_state()` is the store's answer for the
     row's state; these return `None` or omit it.
+    **And not revoked.** `FR-126`: a restore must not make a deleted object readable. The row's own
+    `retention_state` cannot answer that, because a restore rewrites it -- measured before this
+    guard existed: a raw `UPDATE ... SET retention_state='active'` made a deleted version read back
+    as live, beneath `_check_one_way_transitions`, which binds the ORM and not a backup.
+
+    The check is against the revocation ledger rather than the tombstone, though a tombstone
+    happens to survive the restore *shape* tested here. A backup taken before the deletion restores
+    the version with **no** tombstone beside it, and then only the ledger still knows -- which is
+    why `KHEPRI-DEC-015` §8 requires the ledger itself be backed up, and what makes it the
+    authority here rather than a convenience.
     """
-    return _visible_in(row, owner_id) and row.retention_state == RETENTION_ACTIVE
+    if not (_visible_in(row, owner_id) and row.retention_state == RETENTION_ACTIVE):
+        return False
+    return not _revoked(row)
+
+
+def _revocation_exists(row_class: type) -> object:
+    """A predicate naming this scope's revocation of the row's version (`FR-126`).
+
+    Kept beside `_revoked` and phrased as SQL so the listing excludes a restored version in the
+    database rather than after reading it: a per-row filter would return the row first and drop it
+    second, which is a different guarantee under a snapshot that another connection can change.
+    """
+    from sqlalchemy import exists
+
+    from khepri.rca.workspace.audit import OBJECT_VERSION
+    from khepri.rca.workspace.schema import WorkspaceRevocationRow
+
+    return exists().where(
+        WorkspaceRevocationRow.object_kind == OBJECT_VERSION,
+        WorkspaceRevocationRow.object_id == row_class.version_id,
+        WorkspaceRevocationRow.owner_id == row_class.owner_id,
+    )
+
+
+def _revoked(row: object) -> bool:
+    """Whether this row's identifier is in the revocation ledger (`FR-126`).
+
+    Read through the row's own session, so the answer comes from the same transaction the caller
+    is already in -- `history_for_scope` reads under `SERIALIZABLE`, and a ledger consulted through
+    a second connection could observe a different instant than the rows it is filtering.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    from khepri.rca.workspace.audit import OBJECT_VERSION
+    from khepri.rca.workspace.schema import WorkspaceRevocationRow
+
+    database = sa_inspect(row).session
+    if database is None:  # pragma: no cover -- a detached row has no session to ask
+        return False
+    return (
+        database.get(
+            WorkspaceRevocationRow, (OBJECT_VERSION, row.version_id, row.owner_id)
+        )
+        is not None
+    )
 
 
 # Every workspace row is append-only, so every one carries both guards. `ArtifactBindingRow` was
@@ -333,12 +387,19 @@ class SqlWorkspaceRecordStore:
             return None if row is None else _version_from_row(row)
 
     def dataset_versions_for_scope(self, owner_id: str) -> tuple[DatasetVersion, ...]:
-        """Newest first, within one scope only."""
+        """Newest first, within one scope only, and never a revoked one (`FR-126`).
+
+        The revocation exclusion is a predicate rather than a filter over the rows, so the listing
+        cannot return a restored version even briefly and its cost does not grow with the scope's
+        deletions. `_live_in` makes the same check for the single read; both are needed, because a
+        restore rewrites `retention_state` and neither path would otherwise see it.
+        """
         with reading(self._factory) as database:
             rows = database.execute(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
                 .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(DatasetVersionRow))
                 .order_by(DatasetVersionRow.created_at.desc(), DatasetVersionRow.version_id.desc())
             ).scalars()
             return tuple(_version_from_row(row) for row in rows)

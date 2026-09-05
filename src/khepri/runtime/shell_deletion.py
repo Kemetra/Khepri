@@ -29,8 +29,8 @@ from typing import Any
 from fastapi import FastAPI, Response
 from fastapi.responses import RedirectResponse
 
-from khepri.runtime.shell_invitations import ShellRendering
 from khepri.rca.session_cookie import CommercialSessionCookie
+from khepri.runtime.shell_invitations import ShellRendering
 
 
 def offers_deletion(services: Any) -> bool:
