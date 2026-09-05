@@ -512,6 +512,25 @@ class SqlWorkspaceRecordStore:
             rows = database.execute(query.order_by(ArtifactBindingRow.surface)).scalars()
             return tuple(_binding_from_row(row) for row in rows)
 
+    def artifact_bindings_for_scope(self, owner_id: str) -> tuple[ArtifactBinding, ...]:
+        """Every binding of every live run in one scope, for the history spine (`FR-117`).
+
+        The spine states whether each run's report is available; reading that per run would be
+        one query per row of an unbounded history. Joined to the run and narrowed to a live one
+        for the same reason `artifact_bindings_for_run` is: a tombstoned run's bindings are
+        withdrawn artifacts, and a scope listing must not hand back what the run read hides.
+        Ordered by run then surface so a listing is stable across reads.
+        """
+        with reading(self._factory) as database:
+            rows = database.execute(
+                select(ArtifactBindingRow)
+                .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
+                .where(ArtifactBindingRow.owner_id == owner_id)
+                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .order_by(ArtifactBindingRow.run_id, ArtifactBindingRow.surface)
+            ).scalars()
+            return tuple(_binding_from_row(row) for row in rows)
+
     # --- retention, the one thing `FR-112` lets a later operation change -----------------
 
     def retention_state(self, version_id: str, owner_id: str | None = None) -> str | None:

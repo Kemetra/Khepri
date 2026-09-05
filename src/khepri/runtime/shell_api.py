@@ -54,7 +54,12 @@ from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import organization_frame
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
-from khepri.runtime.shell_workspace import UnrenderableRecord, data_rows, overview_view
+from khepri.runtime.shell_workspace import (
+    UnrenderableRecord,
+    data_rows,
+    overview_view,
+    spine_rows,
+)
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -169,6 +174,14 @@ class WorkspaceReader(Protocol):
     ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
 
     def analysis_runs_for_scope(
+        self, owner_id: str
+    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+
+    def tombstones_for_scope(
+        self, owner_id: str
+    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+
+    def artifact_bindings_for_scope(
         self, owner_id: str
     ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
 
@@ -400,6 +413,7 @@ def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> 
     return {
         **frame,
         "organization_id": context.organization_id,
+        "owner_id": owner_id,
         "versions": services.records.dataset_versions_for_scope(owner_id),
         "runs": services.records.analysis_runs_for_scope(owner_id),
     }
@@ -410,6 +424,7 @@ def _overview_response(
 ) -> Response:
     """`FR-120`. The rows are shaped in `shell_workspace.py`; the template can only iterate."""
     reads = _workspace_reads(services, context, surface="overview")
+    reads.pop("owner_id")
     view = overview_view(reads.pop("versions"), reads.pop("runs"))
     return _render(
         environment,
@@ -427,14 +442,39 @@ def _data_response(
 ) -> Response:
     """Blueprint §7.2, with `FR-117`'s row vocabulary."""
     reads = _workspace_reads(services, context, surface="data")
+    reads.pop("owner_id")
     rows = data_rows(reads.pop("versions"), reads.pop("runs"))
     return _render(
         environment, "data.html.j2", language=language, status_code=200, rows=rows, **reads
     )
 
 
-#: The two surfaces `records` delivers, by the name the address carries, and what renders each.
-_WORKSPACE_SURFACES = {"overview": _overview_response, "data": _data_response}
+def _analyses_response(
+    services: ShellServices, environment: Environment, *, language: str, context: Any
+) -> Response:
+    """`FR-117`, the history spine. Two more reads over the same scope: the run tombstones, so
+    history does not silently shorten, and the bindings, so a row says whether its report is
+    there from what was published rather than from what its state implies."""
+    assert services.records is not None  # dispatched only when wired
+    reads = _workspace_reads(services, context, surface="analyses")
+    owner_id = reads.pop("owner_id")
+    rows = spine_rows(
+        reads.pop("runs"),
+        services.records.tombstones_for_scope(owner_id),
+        reads.pop("versions"),
+        services.records.artifact_bindings_for_scope(owner_id),
+    )
+    return _render(
+        environment, "analyses.html.j2", language=language, status_code=200, rows=rows, **reads
+    )
+
+
+#: The surfaces `records` delivers, by the name the address carries, and what renders each.
+_WORKSPACE_SURFACES = {
+    "overview": _overview_response,
+    "data": _data_response,
+    "analyses": _analyses_response,
+}
 
 
 def _team_response(

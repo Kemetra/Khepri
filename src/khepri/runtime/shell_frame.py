@@ -42,8 +42,12 @@ def _active_organization_name(organizations: Iterable[Any], organization_id: str
 
 
 #: The destinations the frame may name, as `(copy key, surface)` in `RCA-005` `FR-121`'s order:
-#: Overview, Data, Analyses, Team. Analyses is absent until the PR that ships its surface.
-_WORKSPACE_DESTINATIONS = (("overview_title", "overview"), ("data_title", "data"))
+#: Overview, Data, Analyses, Team.
+_WORKSPACE_DESTINATIONS = (
+    ("overview_title", "overview"),
+    ("data_title", "data"),
+    ("analyses_title", "analyses"),
+)
 _TEAM_DESTINATION = ("team_title", "team")
 
 

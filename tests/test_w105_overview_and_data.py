@@ -15,8 +15,8 @@ expression in every shell template and refuses arithmetic and the aggregating fi
 
 **A link ships with its surface.** `FR-121` and `RCA-002` `FR-049`. The Overview and Data links
 appear only when a reader is wired, and the two surfaces answer `unavailable` when it is not, so a
-shell configured without the workspace has no half-built destination. The Analyses link is the
-next PR's and is asserted absent here.
+shell configured without the workspace has no half-built destination. The Analyses link ships in
+`test_w105_analyses_spine.py`'s PR and is asserted there, in `FR-121`'s order.
 
 **No surface may say content expires on its own.** `KHEPRI-DEC-033` §5: until `W1-07` ships the
 sweep, no surface may tell a customer that content expires automatically. The retention notice is
@@ -244,7 +244,6 @@ class TestTheLinkShipsWithItsSurface:
             nav.index(_link(language, surface)) for surface in ("overview", "data", "team")
         ]
         assert positions == sorted(positions)
-        assert _link(language, "analyses") not in nav
 
     def test_the_labels_are_the_reconciled_set(self) -> None:
         """Design language §3.5: Overview · Data · Analyses · Team, and `DatasetVersion` never."""

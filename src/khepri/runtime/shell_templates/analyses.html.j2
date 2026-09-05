@@ -1,0 +1,59 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.analyses_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  `RCA-005` FR-117, blueprint §7.3: the single history spine, newest first. No filter, no Compare,
+  no fixed count -- this template iterates what `shell_workspace.spine_rows` handed it and decides
+  nothing. A tombstone row reads as a tombstone in both languages (FR-122) and carries no content
+  action: `KHEPRI-DEC-033` §1 keeps the row so history does not silently shorten.
+
+  No row carries a link or a form yet. Analysis detail is `W1-06`'s and Run Again has no route, and
+  `RCA-002` FR-049 forbids a control with nothing behind it. No trust state is shown either: no
+  bundle state is persisted for a live run, and a tombstone is minimal (§7.3).
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.analyses_title }}</h1>
+  <p class="lede">{{ copy.analyses_intro }}</p>
+  {% if rows %}
+  <ul class="spine-list">
+    {% for row in rows %}
+    {% if row.deleted %}
+    <li class="spine-item spine-item--tombstone">
+      {# The same first line as a live row -- when it started -- so the spine reads in one
+         order; the word where a state would be is the retention word, and the second line
+         states when the deletion happened. #}
+      <p class="spine-summary">
+        <span class="row-label">{{ copy.spine_started }}</span>
+        <time datetime="{{ row.started.at }}" dir="ltr">{{ row.started.text }}</time>
+        <span class="row-state">{{ copy.tombstone_deleted }}</span>
+      </p>
+      <p class="spine-detail">
+        <span class="row-label">{{ copy[row.retention_key] }}</span>
+        <time datetime="{{ row.deleted.at }}" dir="ltr">{{ row.deleted.text }}</time>
+      </p>
+      <p class="tombstone-note">{{ copy.tombstone_note }}</p>
+    </li>
+    {% else %}
+    <li class="spine-item">
+      <p class="spine-summary">
+        <span class="row-label">{{ copy.spine_started }}</span>
+        <time datetime="{{ row.started.at }}" dir="ltr">{{ row.started.text }}</time>
+        <span class="row-state">{{ copy[row.state_key] }}</span>
+      </p>
+      <p class="spine-detail">
+        {% if row.data_submitted %}
+        <span class="row-label">{{ copy.spine_data_submitted }}</span>
+        <time datetime="{{ row.data_submitted.at }}" dir="ltr">{{ row.data_submitted.text }}</time>
+        {% endif %}
+        <span class="row-state">{{ copy[row.report_key] }}</span>
+        <span class="row-state">{{ copy[row.retention_key] }}</span>
+      </p>
+    </li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ copy.analyses_empty }}</p>
+  {% endif %}
+</section>
+{% endblock %}

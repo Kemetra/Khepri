@@ -37,6 +37,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_FAILED, RUN_STARTED
+from khepri.rca.workspace.tombstones import RunTombstone
+from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.workspace import ADMISSION_ADMITTED
 
 
@@ -103,6 +105,23 @@ class DataRow:
     readiness_key: str
     retention_key: str
     uses: tuple[WorkRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SpineRow:
+    """One entry on the Analyses history spine (`FR-117`): a live run or a run's tombstone.
+
+    `deleted` is what makes it a tombstone; a tombstone carries no state and no report word,
+    because blueprint §7.3 makes it minimal and `FR-122` makes it read as a tombstone. Nothing
+    here is a digest, a version identifier or a section code.
+    """
+
+    started: Moment
+    data_submitted: Moment | None
+    state_key: str | None
+    report_key: str | None
+    retention_key: str
+    deleted: Moment | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +228,70 @@ def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
     )
 
 
+def _report_key(run: Any, bound_surfaces: frozenset[str]) -> str:
+    """Whether the run's report can be offered, from the bindings rather than from the state.
+
+    `FR-111` makes completion imply every required artifact is bound, so a completed run with a
+    partial set is a record the row must not dress up as available. A run still running has no
+    report *yet*; one that failed, or completed short, has none to offer.
+    """
+    if run.state == RUN_STARTED:
+        return "report_not_yet"
+    if run.state == RUN_COMPLETED and set(REQUIRED_ARTIFACT_KINDS) <= bound_surfaces:
+        return "report_available"
+    return "report_unavailable"
+
+
+def _submitted(version_id: str, submitted_by_version: dict[str, Moment]) -> Moment | None:
+    return submitted_by_version.get(version_id)
+
+
+def spine_rows(
+    runs: Iterable[Any],
+    tombstones: Iterable[Any],
+    versions: Iterable[Any],
+    bindings: Iterable[Any],
+) -> tuple[SpineRow, ...]:
+    """The spine: live runs and run tombstones, newest start first (`FR-117`, blueprint §7.3).
+
+    The store returns runs newest first and tombstones oldest deletion first; the two are merged
+    here by the instant each run started, so the history reads in the order it happened and a
+    deletion's own instant is stated on the row rather than used to place it. This is the one
+    ordering decision made outside the store, and it is a merge of two ordered reads, not a
+    filter: every run and every *run* tombstone the reader returned is a row. The store's
+    tombstone read returns both kinds; a version tombstone is the Data surface's story and arrives
+    there with `W1-07`, so it is set aside here by type rather than by a field it lacks.
+    """
+    submitted = {version.version_id: moment(version.created_at) for version in versions}
+    bound: dict[str, set[str]] = {}
+    for binding in bindings:
+        bound.setdefault(binding.run_id, set()).add(binding.surface)
+    live = [
+        SpineRow(
+            started=moment(run.started_at),
+            data_submitted=_submitted(run.version_id, submitted),
+            state_key=RUN_STATE_COPY[run.state],
+            report_key=_report_key(run, frozenset(bound.get(run.run_id, ()))),
+            retention_key="retention_kept",
+            deleted=None,
+        )
+        for run in runs
+    ]
+    gone = [
+        SpineRow(
+            started=moment(tombstone.started_at),
+            data_submitted=_submitted(tombstone.version_id, submitted),
+            state_key=None,
+            report_key=None,
+            retention_key="retention_deleted",
+            deleted=moment(tombstone.deleted_at),
+        )
+        for tombstone in tombstones
+        if isinstance(tombstone, RunTombstone)
+    ]
+    return tuple(sorted(live + gone, key=lambda row: row.started.at, reverse=True))
+
+
 __all__ = [
     "ADMISSION_COPY",
     "RUN_STATE_COPY",
@@ -216,8 +299,10 @@ __all__ = [
     "DataRow",
     "Moment",
     "OverviewView",
+    "SpineRow",
     "WorkRow",
     "data_rows",
     "moment",
     "overview_view",
+    "spine_rows",
 ]

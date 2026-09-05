@@ -57,11 +57,15 @@ from khepri.rca.workspace.tombstones import RunTombstone, RunTrace
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 from khepri.runtime.shell_copy import SHELL_COPY
+from khepri.runtime.shell_workspace import spine_rows
 
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 EARLIER = datetime(2026, 9, 4, 9, 30, tzinfo=UTC)
 EARLIEST = datetime(2026, 9, 3, 8, 0, tzinfo=UTC)
 DELETED_AT = datetime(2026, 9, 4, 18, 0, tzinfo=UTC)
+#: When the older data version was submitted: its own instant, distinct from every run's, so a
+#: row that showed the wrong version's submission would be caught.
+OLDER_DATA_AT = datetime(2026, 9, 2, 7, 0, tzinfo=UTC)
 
 ORGANIZATION = "org-acme"
 SCOPE = "scope-acme"
@@ -238,7 +242,7 @@ def _history() -> _StubRecords:
     return _StubRecords(
         versions=(
             _version("ver-b", created_at=EARLIER),
-            _version("ver-a", created_at=EARLIEST),
+            _version("ver-a", created_at=OLDER_DATA_AT),
         ),
         runs=(
             _run("run-d", "ver-b", state=RUN_STARTED, started_at=NOW),
@@ -368,6 +372,29 @@ class TestTheSpine:
         assert "<a " not in row and "<form" not in row and "<button" not in row
         assert "answered" not in row
 
+    def test_each_row_states_its_own_versions_submission(self) -> None:
+        """ "Which data it used" is the submission instant of *that* run's version, matched by
+        `version_id` -- not the first version in the scope."""
+        rows = _rows(_spine(_history()))
+        newest, oldest = rows[0], rows[-1]
+
+        assert 'datetime="2026-09-04T09:30:00+00:00"' in newest
+        assert 'datetime="2026-09-02T07:00:00+00:00"' not in newest
+        assert 'datetime="2026-09-02T07:00:00+00:00"' in oldest
+        assert 'datetime="2026-09-04T09:30:00+00:00"' not in oldest
+
+    def test_a_tombstone_row_carries_no_state_and_no_report_key(self) -> None:
+        """Asserted on the row model, not only on the markup: the template happens not to render a
+        tombstone's state, and a model that carried one would be one edit from showing it."""
+        records = _history()
+
+        rows = spine_rows(records.runs, records.tombstones, records.versions, records.bindings)
+        tombstones = [row for row in rows if row.deleted is not None]
+
+        assert len(tombstones) == 1
+        assert tombstones[0].state_key is None and tombstones[0].report_key is None
+        assert tombstones[0].retention_key == "retention_deleted"
+
     def test_no_row_offers_an_action_this_slice_cannot_honour(self) -> None:
         """`FR-049`: Analysis detail is `W1-06`'s and Run Again has no route, so no row carries a
         link or a form. When those ship, this assertion is replaced, not relaxed."""
@@ -387,8 +414,7 @@ class TestTheSpine:
         assert "<input" not in body and "<select" not in body
         assert 'method="get"' not in body
         assert re.search(r"\d", text) is None, text
-        for language in ("en", "ar"):
-            assert "compare" not in text.lower() and "قارن" not in text
+        assert "compare" not in text.lower() and "قارن" not in text
 
     @pytest.mark.parametrize("language", ["en", "ar"])
     def test_an_empty_history_says_so(self, language: str) -> None:
@@ -422,13 +448,13 @@ class TestTheSpine:
             assert word not in html
 
 
-# --- scope -------------------------------------------------------------------------------------------
+# --- scope --------------------------------------------------------------------------------
 
 
 def test_every_read_is_for_the_sessions_scope() -> None:
     records = _StubRecords()
 
-    _shell(records).get(f"{SHELL_PREFIX}/en/org-other/analyses")
+    _shell(records).get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses")
 
     assert len(records.asked) == 4, records.asked
     assert set(records.asked) == {SCOPE}

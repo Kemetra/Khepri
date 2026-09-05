@@ -100,6 +100,20 @@ _EN = {
     "run_state_started": "Processing",
     "run_state_completed": "Completed",
     "run_state_failed": "Did not complete",
+    # The Analyses spine (`FR-117`). The report words are distinct strings on purpose -- none is a
+    # substring of another -- so a test asserting one absent is not fooled by another present.
+    "analyses_title": "Analyses",
+    "analyses_intro": "Every analysis run for this organization, newest first.",
+    "analyses_empty": "No analysis has run for this organization yet.",
+    "spine_started": "Started",
+    "spine_data_submitted": "Data submitted",
+    "report_available": "Report available",
+    "report_not_yet": "Report not ready yet",
+    "report_unavailable": "Report not produced",
+    # A deleted run stays on the spine as a tombstone (`KHEPRI-DEC-033` §1), minimal (§7.3).
+    "retention_deleted": "Deleted",
+    "tombstone_deleted": "Deleted",
+    "tombstone_note": "This analysis was deleted. Its entry stays so the history does not shorten.",
 }
 
 _AR = {
@@ -166,6 +180,17 @@ _AR = {
     "run_state_started": "قيد المعالجة",
     "run_state_completed": "مكتمل",
     "run_state_failed": "لم يكتمل",
+    "analyses_title": "التحليلات",
+    "analyses_intro": "كل تحليل أُجري لهذه المؤسسة، الأحدث أولًا.",
+    "analyses_empty": "لم يُجرَ أي تحليل لهذه المؤسسة بعد.",
+    "spine_started": "بدأ",
+    "spine_data_submitted": "أُرسلت البيانات",
+    "report_available": "التقرير متاح",
+    "report_not_yet": "التقرير غير جاهز بعد",
+    "report_unavailable": "لم يُنتَج تقرير",
+    "retention_deleted": "محذوف",
+    "tombstone_deleted": "محذوف",
+    "tombstone_note": "حُذف هذا التحليل. يبقى مدخله كي لا يقصر التاريخ.",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test
