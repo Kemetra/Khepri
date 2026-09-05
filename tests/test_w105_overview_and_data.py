@@ -340,9 +340,11 @@ class TestOverview:
         reversed_records = _StubRecords(versions=records.versions, runs=records.runs[::-1])
 
         html = _shell(reversed_records).get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/overview").text
+        start = html.index('class="latest-work"')
+        latest = html[start : html.index("</p>", start)]
 
-        assert SHELL_COPY["en"]["run_state_completed"] in html
-        assert SHELL_COPY["en"]["run_state_started"] not in html
+        assert SHELL_COPY["en"]["run_state_completed"] in latest
+        assert SHELL_COPY["en"]["run_state_started"] not in latest
 
     @pytest.mark.parametrize("language", ["en", "ar"])
     def test_it_shows_the_latest_data_state(self, language: str) -> None:
@@ -361,6 +363,35 @@ class TestOverview:
         assert SHELL_COPY[language]["overview_no_work"] in html
         assert SHELL_COPY[language]["overview_no_data"] in html
         assert 'class="latest-work"' not in html
+
+    @pytest.mark.parametrize("language", ["en", "ar"])
+    def test_a_run_still_running_behind_a_newer_finished_one_is_shown(self, language: str) -> None:
+        """Blueprint §7.1: Overview answers "is anything processing". Run A started, then B
+        started and completed; the store lists B first, so "latest work" says Completed -- and A,
+        still running, must not vanish (review on `#373`). Every started run is listed, and the
+        region is absent when nothing runs."""
+        copy = SHELL_COPY[language]
+        busy = _StubRecords(
+            versions=_worked_scope().versions,
+            runs=(
+                _run("run-b", "ver-b", state=RUN_COMPLETED, started_at=NOW),
+                _run("run-a", "ver-a", state=RUN_STARTED, started_at=EARLIER),
+                _run("run-z", "ver-a", state=RUN_STARTED, started_at=EARLIEST),
+            ),
+        )
+        quiet = _StubRecords(
+            versions=_worked_scope().versions,
+            runs=(_run("run-b", "ver-b", state=RUN_COMPLETED, started_at=NOW),),
+        )
+
+        shown = _shell(busy).get(f"{SHELL_PREFIX}/{language}/{ORGANIZATION}/overview").text
+        calm = _shell(quiet).get(f"{SHELL_PREFIX}/{language}/{ORGANIZATION}/overview").text
+
+        assert copy["processing_title"] in shown
+        assert shown.count('class="processing-item"') == 2
+        assert copy["run_state_completed"] in shown
+        assert copy["processing_title"] not in calm
+        assert "processing-item" not in calm
 
     def test_attention_is_rendered_only_when_something_needs_it(self) -> None:
         """Blueprint §7.1: an always-present "no issues" panel is decoration, not reassurance."""
@@ -566,6 +597,18 @@ class TestScopeComesFromTheSession:
 
         assert shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}{tail}").status_code == 404
         assert shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/{surface}/").status_code == 200
+
+    @pytest.mark.parametrize("surface", ["overview", "data", "team"])
+    def test_an_empty_language_segment_is_not_an_address(self, surface: str) -> None:
+        """`//{organization}/{surface}` keeps its empty first segment through `{path:path}`, and
+        `_language("")` would have read it as English (CodeRabbit on `#373`). It is an unknown
+        path, for every scoped surface."""
+        shell = _shell(_worked_scope())
+
+        response = shell.get(f"{SHELL_PREFIX}//{ORGANIZATION}/{surface}")
+
+        assert response.status_code == 404
+        assert SHELL_COPY["en"]["unavailable_title"] in response.text
 
     @pytest.mark.parametrize("surface", ["overview", "data"])
     def test_a_refused_scope_reaches_the_uniform_refusal(self, surface: str) -> None:

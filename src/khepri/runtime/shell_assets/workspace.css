@@ -16,14 +16,16 @@
 
 .data-list,
 .data-uses,
-.attention-list {
+.attention-list,
+.processing-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
 .data-use,
-.attention-item {
+.attention-item,
+.processing-item {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

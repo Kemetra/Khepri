@@ -107,9 +107,17 @@ class DataRow:
 
 @dataclass(frozen=True, slots=True)
 class OverviewView:
-    """What Overview shows: the latest work, the latest data, and what needs attention."""
+    """What Overview shows: the latest work, what is still running, the latest data, and what
+    needs attention.
+
+    `processing` is every run still in its started state, not only the newest run: blueprint §7.1
+    asks Overview to answer "is anything processing", and a run that started before a newer one
+    finished would otherwise vanish from the surface while it was still running (review on
+    `#373`). Rendered only when non-empty, like attention.
+    """
 
     latest_work: WorkRow | None
+    processing: tuple[WorkRow, ...]
     latest_data: DataRow | None
     attention: tuple[WorkRow, ...]
 
@@ -195,6 +203,7 @@ def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
         )
     return OverviewView(
         latest_work=work_row(scope_runs[0]) if scope_runs else None,
+        processing=tuple(work_row(run) for run in scope_runs if run.state == RUN_STARTED),
         latest_data=latest_data,
         attention=tuple(work_row(run) for run in scope_runs if run.state == RUN_FAILED),
     )

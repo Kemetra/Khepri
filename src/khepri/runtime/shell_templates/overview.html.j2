@@ -27,6 +27,22 @@
   <p class="empty-state">{{ copy.overview_no_work }}</p>
   {% endif %}
 
+  {#
+    Everything still running, so a run that started before a newer one finished is not lost
+    behind "latest work" (§7.1: is anything processing?). Rendered only when non-empty.
+  #}
+  {% if view.processing %}
+  <h2 class="region-label">{{ copy.processing_title }}</h2>
+  <ul class="processing-list">
+    {% for item in view.processing %}
+    <li class="processing-item">
+      <span class="row-state">{{ copy[item.state_key] }}</span>
+      <time datetime="{{ item.started.at }}" dir="ltr">{{ item.started.text }}</time>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
   <h2 class="region-label">{{ copy.data_title }}</h2>
   {% if view.latest_data %}
   <p class="latest-data">

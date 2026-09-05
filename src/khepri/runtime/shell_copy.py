@@ -79,6 +79,7 @@ _EN = {
     "latest_work_title": "Latest work",
     "overview_no_work": "No analysis has run yet.",
     "overview_no_data": "No data has been submitted yet.",
+    "processing_title": "Still running",
     "attention_title": "Needs attention",
     "attention_run_failed": "An analysis did not complete.",
     # `KHEPRI-DEC-033` §5: no claim that content expires on its own, because nothing yet makes it.
@@ -147,6 +148,7 @@ _AR = {
     "latest_work_title": "آخر الأعمال",
     "overview_no_work": "لم يُجرَ أي تحليل بعد.",
     "overview_no_data": "لم تُرسَل أي بيانات بعد.",
+    "processing_title": "ما زال يعمل",
     "attention_title": "يحتاج إلى انتباه",
     "attention_run_failed": "لم يكتمل أحد التحليلات.",
     "retention_notice": "يُحتفظ بالمحتوى ما دامت هذه المؤسسة قائمة.",

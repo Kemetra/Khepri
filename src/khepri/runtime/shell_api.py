@@ -489,10 +489,11 @@ def _team_response(
 
 
 def _exact(segments: list[str]) -> bool:
-    """`FR-046`: a surface is `/{language}/{organization}/{surface}` with at most one trailing
-    slash. Counted rather than tested for truth: `data//` splits into two empty tails, and a test
-    on emptiness let it through (review on `#373`)."""
-    return segments[3:] in ([], [""])
+    """`FR-046`: a surface is `/{language}/{organization}/{surface}` -- three non-empty segments
+    -- with at most one trailing slash. Counted rather than tested for truth: `data//` splits into
+    two empty tails, and `//{organization}/data` into an empty language that `_language` would
+    have read as English; both are unknown paths (review on `#373`)."""
+    return len(segments) >= 3 and all(segments[:3]) and segments[3:] in ([], [""])
 
 
 def _names_the_active_organization(segments: list[str], context: Any) -> bool:
