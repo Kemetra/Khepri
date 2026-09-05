@@ -43,6 +43,7 @@ from khepri.rca.workspace.persistence import (
     DatasetVersionRow,
     SqlWorkspaceRecordStore,
 )
+from khepri.rca.workspace.store import VersionAlreadyRecorded
 from tests.rca_lifecycle_support import (  # noqa: F401 -- factory is a pytest fixture
     CREDENTIAL,
     EMAIL,
@@ -131,12 +132,13 @@ def test_a_stored_dataset_version_is_returned_sealed(factory: sessionmaker) -> N
 def test_writing_the_same_version_twice_is_refused(factory: sessionmaker) -> None:
     """`FR-112`: append-only. A second write under one identifier is a content change by another
     route -- the row would be replaced rather than appended -- so it is refused rather than
-    silently upserted."""
+    silently upserted. Since `W1-04b` the refusal is the domain's `VersionAlreadyRecorded`, an
+    `Arbitrated` error the recording layer reads as "already recorded", not the driver's."""
     scope = _scope(factory)
     store = SqlWorkspaceRecordStore(factory)
     version = _version(store, scope)
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(VersionAlreadyRecorded):
         store.add_dataset_version(version)
 
 
