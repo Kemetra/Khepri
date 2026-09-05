@@ -71,3 +71,73 @@ def test_an_audit_event_inside_twelve_months_survives() -> None:
 
     assert report.purged_events == 0
     assert len(audit.events_for_scope(who.owner_id)) == 1
+
+
+def _evidence_aged(j, who, *, attempted_at: datetime) -> int:
+    """One real deletion's evidence, aged to `attempted_at`. Returns how many rows exist.
+
+    Produced by the **production verb** -- the deletion service ends a sealed version and the
+    `RRA` path writes its own evidence -- rather than by inserting rows. Raw setup exempts the
+    transition it skips, so a mutant of the bypassed verb survives every test built on it. Only
+    the *clock* is faked, with a single `UPDATE`, because a test cannot wait thirteen months.
+    """
+    from sqlalchemy import text
+
+    from tests.w107_support import deletion_service, sealed_version
+
+    version, _run = sealed_version(j, who, with_run=True)
+    deletion_service(j).delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+    )
+    with j.w.factory() as database:
+        aged = database.execute(
+            text("UPDATE rra_deletion_evidence SET attempted_at = :t"),
+            {"t": attempted_at},
+        ).rowcount
+        database.commit()
+    assert aged > 0, "the deletion wrote no evidence to age"
+    return aged
+
+
+def test_deletion_evidence_past_twelve_months_is_purged() -> None:
+    """`KHEPRI-DEC-033` `OD-2`: twelve months, "on `KHEPRI-DEC-015` §2a's discipline that no
+    horizon is quietly longer than another". Rejected there: indefinite, by Constitution VII's
+    least-data default."""
+    from khepri.rra.evidence_retention import DeletionEvidenceSweeper
+    from khepri.rra.persistence import SqlDeletionRepository
+
+    j = journey()
+    who = member(j.w)
+    written = _evidence_aged(j, who, attempted_at=THIRTEEN_MONTHS_AGO)
+
+    report = DeletionEvidenceSweeper(SqlDeletionRepository(j.w.factory)).sweep(now=NOW)
+
+    assert report.purged_evidence == written
+
+
+def test_deletion_evidence_inside_twelve_months_survives() -> None:
+    """Evidence is what proves content ended (`FR-124`). Purging it early destroys the proof, so
+    the boundary matters in both directions."""
+    from khepri.rra.evidence_retention import DeletionEvidenceSweeper
+    from khepri.rra.persistence import SqlDeletionRepository
+
+    j = journey()
+    who = member(j.w)
+    _evidence_aged(j, who, attempted_at=ELEVEN_MONTHS_AGO)
+
+    report = DeletionEvidenceSweeper(SqlDeletionRepository(j.w.factory)).sweep(now=NOW)
+
+    assert report.purged_evidence == 0
+
+
+def test_the_two_twelve_month_horizons_agree() -> None:
+    """One decision, restated across a package boundary `R7-01` §3 forbids crossing.
+
+    `KHEPRI-DEC-033` §2 gives audit events and deletion evidence the same twelve months, and
+    `khepri.rra` may not import `khepri.rca`, so the number appears in both packages. This is what
+    keeps that a restatement of one decision rather than two policies: move one and this fails.
+    """
+    from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS
+    from khepri.rra.evidence_retention import EVIDENCE_RETENTION_MONTHS
+
+    assert EVIDENCE_RETENTION_MONTHS == MEMBERSHIP_EVENT_RETENTION_MONTHS

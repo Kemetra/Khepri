@@ -13,6 +13,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     UniqueConstraint,
+    delete,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -813,6 +814,27 @@ class SqlDeletionRepository:
         )
         with self._factory() as database:
             return [_evidence_from_row(row) for row in database.scalars(statement)]
+
+    def purge_evidence_before(self, horizon: datetime) -> int:
+        """Remove evidence attempted before `horizon`, returning how many rows went (`W1-07b`).
+
+        `KHEPRI-DEC-033` §2 gives deletion evidence twelve months and `OD-2` records the reasoning:
+        `KHEPRI-DEC-015` §2a's discipline that no horizon is quietly longer than another. Nothing
+        enforced it before this slice.
+
+        **Keyed on `attempted_at`**, not on the parent job's completion. §2 anchors the horizon to
+        the deletion event, so a job that retried for a week would otherwise hold its first
+        attempt's evidence a week longer than the decision allows -- a horizon that stretches with
+        failure is not the horizon that was decided.
+
+        The parent job row is left alone. `fk_evidence_deletion` is `RESTRICT` in the other
+        direction, so removing evidence never orphans a job; a job whose evidence has elapsed is a
+        completed deletion whose proof has reached its own end, which is what §2 describes.
+        """
+        with self._factory.begin() as database:
+            return database.execute(
+                delete(DeletionEvidenceRow).where(DeletionEvidenceRow.attempted_at < horizon)
+            ).rowcount
 
     @staticmethod
     def _locked_job(database: Session, deletion_id: str) -> DeletionJobRow:
