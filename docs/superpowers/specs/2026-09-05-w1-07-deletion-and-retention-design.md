@@ -23,13 +23,24 @@ Re-measured on `3867b8a` while writing this design, and still true:
 
 `W1-07` is the only slice that can discharge §5.
 
-Deletion itself is also absent on the workspace side. `W1-03` built the tombstone *values* and the
-allowlist, but:
+Deletion on the workspace side is **built but unreachable**. Corrected here after reading
+`store.py` while drafting the implementation plan — an earlier draft of this design claimed the
+cascade was missing, and it is not. What `W1-02`/`W1-03` already deliver:
+
+- `store.set_retention_state` locks the version row, writes its tombstone through
+  `_tombstone_version`, and **cascades to every live run** via `_cascade_tombstone_to_runs`
+- Its early return at `store.py:631` is already `FR-123`'s idempotent retry, and deliberately does
+  not move `retention_changed_at` — `_tombstone_version`'s docstring names this as `FR-123`'s
+  "no new deletion evidence"
+- `tombstones_for_scope` reads both `VersionTombstone` and `RunTombstone` back
+
+What is genuinely missing:
 
 - `store.tombstone_dataset_version` has **no production caller** — only tests reach it
-- **No run tombstone writer exists at all**, though `RunTombstone` is defined and
-  `ck_rca_workspace_tombstone_run_fields` constrains its columns
-- No workspace deletion verb, route, or evidence path exists
+- No deletion **service or route**: a customer cannot delete anything
+- No **evidence** write on the workspace side (`FR-124`)
+- No **audit vocabulary** for deletion (§3.4)
+- No **revocation ledger** anywhere (§3.5)
 
 ## 2. Two slices, and where the line falls
 
@@ -66,6 +77,10 @@ in this repo often enough to be recorded (*a guard that names its own scope disa
 membership table needs an extent assertion*). A table can carry an **extent assertion** — every
 class in the §2 matrix has exactly one rule, and a workspace table with no rule fails a test.
 
+**Scope, given the correction above.** The RCA-side cascade (version → runs) already exists. The
+table's job is therefore to *assert* the matrix over the whole ending — including the RRA content
+`SqlDeletionRepository` ends — not to re-implement the walk `store.py` performs.
+
 ### 3.2 What ends, and how
 
 From `DEC-033` §2, unchanged and not re-derived here:
@@ -82,8 +97,9 @@ From `DEC-033` §2, unchanged and not re-derived here:
 | Raw upload / normalized events | **Purged** |
 | Source profile | **Purged**; deleting a profile deletes no dataset version |
 
-`W1-07a` builds the run tombstone writer that does not yet exist, and gives
-`tombstone_dataset_version` its first production caller.
+This cascade is already implemented by `_tombstone_version` and `_cascade_tombstone_to_runs`.
+`W1-07a` gives `tombstone_dataset_version` its first production caller and asserts the cascade
+against the matrix; it does not rebuild it.
 
 ### 3.3 Reuse, and the package boundary
 
