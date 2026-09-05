@@ -60,6 +60,7 @@ from khepri.runtime.shell_analysis import (
 from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
 from khepri.runtime.shell_change_notice import methodology_change, previous_completed
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
+from khepri.runtime.shell_deletion import add_deletion_route
 from khepri.runtime.shell_frame import (
     Offers,
     offers_analyses,
@@ -249,6 +250,11 @@ class ShellServices:
     #: trust state are read through it, and the artifact handoff resumes a session through the
     #: bridge. See `shell_frame.offers_analyses`.
     provenance: ProvenanceRead | None = None
+    #: `W1-07a`. The one write this shell performs: ending a dataset version and everything
+    #: `KHEPRI-DEC-033` §2 names as cascading from it. Optional like the rest -- a deployment
+    #: without it declares no deletion route, so the address is unknown rather than refused
+    #: differently (`FR-046`). See `shell_deletion.offers_deletion`.
+    deletion: Any | None = None
 
 
 def _offers_workspace(services: ShellServices) -> bool:
@@ -817,6 +823,7 @@ def add_shell_routes(
     add_invitation_routes(app, services=services, rendering=rendering, clock=clock)
     add_journey_entry_route(app, services=services, rendering=rendering, clock=clock)
     add_artifact_handoff_route(app, services=services, rendering=rendering, clock=clock)
+    add_deletion_route(app, services=services, rendering=rendering, clock=clock)
 
     @app.get(f"{SHELL_PREFIX}/{{path:path}}")
     def shell_surface(

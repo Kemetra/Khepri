@@ -922,6 +922,14 @@ _ROW_GUARDS = {
     # `W1-06`: the provenance record is the tombstone's shape too -- written once, deleted only
     # with its run (`W1-07`).
     RunProvenanceRow: (_refuse_any_update, _refuse_delete),
+    # `W1-07a`'s revocation ledger. **Frozen, and deletable** -- the audit event's shape, for the
+    # audit event's reason. Frozen because an entry that could be rewritten could be un-revoked,
+    # which is the one thing `FR-126` exists to prevent; and its idempotent `revoke` never rewrites
+    # an existing row, so no legitimate path needs an update. Deletable because the ledger is
+    # bounded by the backup horizon plus a margin (`KHEPRI-DEC-015` §8 item 6: a ledger that
+    # outlives every backup it guards has outlived its purpose), and `W1-07b`'s sweep is what ends
+    # it -- a delete guard here would make that horizon unenforceable.
+    WorkspaceRevocationRow: (_refuse_any_update, None),
 }
 
 for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():

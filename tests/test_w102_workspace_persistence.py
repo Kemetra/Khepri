@@ -422,6 +422,9 @@ def test_the_slice_delivers_every_table_its_plan_assigns() -> None:
         "rca_workspace_audit_events",
         "rca_workspace_run_reports",
         "rca_workspace_run_provenance",
+        # `W1-07a`'s revocation ledger (`FR-126`), named here for the same reason: it is a
+        # workspace table the guard-shape test must see, and not one of *this* slice's five.
+        "rca_workspace_revocations",
     }
 
 

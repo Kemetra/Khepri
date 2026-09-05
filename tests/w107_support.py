@@ -13,6 +13,7 @@ from typing import Any
 
 from khepri.rca.workspace.audit import WorkspaceAuditEvent
 from khepri.rca.workspace.revocation import SqlRevocationLedger
+from khepri.runtime.shell_api import SHELL_PREFIX
 from tests.w104_support import Member
 from tests.w104b_support import Journey, journey
 from tests.w106_support import completed_run, submitted
@@ -85,13 +86,84 @@ def deletion_service(j: Journey) -> Any:
     )
 
 
+def delete_address(
+    who: Member, version_id: str, language: str = "en", *, organization: str | None = None
+) -> str:
+    """The deletion address. `organization` overrides the segment, so a test can name one the
+    session does not resolve to -- `FR-042` scenario 3."""
+    named = organization or who.organization_id
+    return f"{SHELL_PREFIX}/{language}/{named}/data/{version_id}/delete"
+
+
+class _RefusingOwnerGate:
+    """A resolver that resolves the session but refuses the owner gate.
+
+    `w105_support.StubResolver` answers the same context from `for_request` and `require_owner`,
+    so no test built on it can tell the two apart -- a route that dropped the owner gate entirely
+    passes every one of them. This models the one difference that matters: a real member of the
+    organization, who is not its owner.
+    """
+
+    def __init__(self, context: Any) -> None:
+        self._context = context
+
+    def for_request(self, token: str, *, organization_id: str | None, now: object) -> Any:
+        return self._context
+
+    def require_owner(self, token: str, *, organization_id: str, now: object) -> Any:
+        raise PermissionError("Resource is unavailable.")
+
+
+def shell_with_deletion(
+    j: Journey,
+    who: Member,
+    *,
+    organization_of: Member | None = None,
+    wired: bool = True,
+    owner: bool = True,
+) -> Any:
+    """A shell whose deletion service is wired (or deliberately not).
+
+    `organization_of` lets a member act inside another member's organization, which is how the
+    owner-only refusal is driven through the real route rather than by calling the gate.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from khepri.rca.session_cookie import SESSION_COOKIE
+    from khepri.runtime.shell_api import ShellServices, add_shell_routes
+    from tests.w106_support import HTTPS, services_over
+
+    acting_in = organization_of or who
+    base = services_over(j, acting_in)
+    services = ShellServices(
+        resolver=_RefusingOwnerGate(base.resolver.for_request("", organization_id=None, now=None))
+        if not owner
+        else base.resolver,
+        organizations=base.organizations,
+        invitations=base.invitations,
+        bridge=base.bridge,
+        records=base.records,
+        isolation=base.isolation,
+        provenance=base.provenance,
+        deletion=deletion_service(j) if wired else None,
+    )
+    app = FastAPI()
+    add_shell_routes(app, services=services, clock=j.clock)
+    client = TestClient(app, base_url=HTTPS)
+    client.cookies.set(SESSION_COOKIE, "a-session-token")
+    return client
+
+
 __all__ = [
     "LATER",
     "NOW",
     "audit_events_for",
+    "delete_address",
     "deletion_jobs_for",
     "deletion_service",
     "journey",
     "sealed_version",
+    "shell_with_deletion",
     "uploads_for",
 ]
