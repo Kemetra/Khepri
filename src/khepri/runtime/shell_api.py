@@ -488,6 +488,13 @@ def _team_response(
     )
 
 
+def _exact(segments: list[str]) -> bool:
+    """`FR-046`: a surface is `/{language}/{organization}/{surface}` with at most one trailing
+    slash. Counted rather than tested for truth: `data//` splits into two empty tails, and a test
+    on emptiness let it through (review on `#373`)."""
+    return segments[3:] in ([], [""])
+
+
 def _names_the_active_organization(segments: list[str], context: Any) -> bool:
     """`FR-042`'s comparison: the address names the session's own organization, and there is one.
 
@@ -587,7 +594,7 @@ def add_shell_routes(
             return _no_membership(environment, language=language)
 
         surface = segments[2] if len(segments) > 2 else ""
-        scoped = _names_the_active_organization(segments, context) and not any(segments[3:])
+        scoped = _names_the_active_organization(segments, context) and _exact(segments)
         if surface == "team" and scoped:
             return _team_response(
                 services, environment, language=language, context=context

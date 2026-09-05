@@ -557,7 +557,7 @@ class TestScopeComesFromTheSession:
         assert SHELL_COPY["en"]["unavailable_title"] in response.text
         assert records.asked == [] and isolation.asked == []
 
-    @pytest.mark.parametrize("tail", ["/extra", "/no-such-object", "/x/y"])
+    @pytest.mark.parametrize("tail", ["/extra", "/no-such-object", "/x/y", "//", "///", "/extra/"])
     @pytest.mark.parametrize("surface", ["overview", "data"])
     def test_a_surface_is_an_exact_address(self, surface: str, tail: str) -> None:
         """`FR-046`: `/data/no-such-object` is an unknown path, not the Data surface (`#373`

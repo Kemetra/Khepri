@@ -426,6 +426,9 @@ class TestTheRefusalKeepsItsSurfaceAcrossLanguages:
             "/org-acme/team/extra",
             "/org-acme/overview/extra",
             "/org-acme/data/no-such-object",
+            # Two trailing slashes are two empty tails, not the one tolerated one.
+            "/org-acme/team//",
+            "/org-acme/data//",
         ],
     )
     def test_an_unknown_address_of_any_shape_reaches_the_refusal(self, tail: str) -> None:
