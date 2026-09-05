@@ -34,8 +34,10 @@
       <div>
         <dt>{{ copy[change.label_key] }}</dt>
         <dd dir="ltr">
+          <span class="visually-hidden">{{ copy.notice_earlier }}</span>
           <span class="change-earlier">{{ change.earlier }}</span>
           <span class="change-arrow" aria-hidden="true">→</span>
+          <span class="visually-hidden">{{ copy.notice_later }}</span>
           <span class="change-later">{{ change.later }}</span>
         </dd>
       </div>
@@ -47,9 +49,20 @@
       {% for change in view.change.availability %}
       <li>
         <span class="change-section">{{ change.section }}</span>
-        <span class="change-earlier">{{ change.earlier }}</span>
-        <span class="change-arrow" aria-hidden="true">→</span>
-        <span class="change-later">{{ change.later }}</span>
+        {#
+          The transition is laid out left-to-right whatever the page's direction. Its words are
+          the report's own and stay in the page's language; only the earlier-then-later *order* is
+          pinned, because the arrow between them is a hard-coded `→`. Under RTL the row would
+          otherwise place the earlier value on the right and read as later → earlier (review on
+          `#377`). The version rows above are already `dir="ltr"`, their identifiers being ASCII.
+        #}
+        <span class="change-transition">
+          <span class="visually-hidden">{{ copy.notice_earlier }}</span>
+          <span class="change-earlier">{{ change.earlier }}</span>
+          <span class="change-arrow" aria-hidden="true">→</span>
+          <span class="visually-hidden">{{ copy.notice_later }}</span>
+          <span class="change-later">{{ change.later }}</span>
+        </span>
       </li>
       {% endfor %}
     </ul>

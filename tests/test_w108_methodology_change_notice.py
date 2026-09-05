@@ -578,3 +578,36 @@ def test_an_unreadable_previous_record_leaves_this_analysis_readable() -> None:
 
     assert response.status_code == 200
     assert 'class="change-notice"' not in response.text
+
+
+# --- the change direction, read and seen -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_each_change_says_which_value_is_earlier_and_which_is_later(language: str) -> None:
+    """The `→` between the two values is `aria-hidden`, so with assistive technology a change row
+    would announce two adjacent identifiers and never say which is which. The earlier and later
+    words are governed copy in both languages, carried in the DOM beside each value -- a screen
+    reader reads DOM order, so this is what makes the direction audible (review on `#377`)."""
+    records = _two_runs()
+    provenance = _StubProvenance(outcomes={"run-a": _sections("growth"), "run-b": _sections()})
+
+    notice = _notice(_detail(records, provenance, "run-b", language))
+    text = _text(notice)
+
+    assert SHELL_COPY[language]["notice_earlier"] in text
+    assert SHELL_COPY[language]["notice_later"] in text
+    # Both rows carry it: the version list and the availability list.
+    assert text.count(SHELL_COPY[language]["notice_earlier"]) >= 2
+
+
+def test_the_availability_transition_is_laid_out_left_to_right() -> None:
+    """The availability row's separator is a hard-coded `→` and its values are the report's own
+    words, so under RTL the row placed the earlier value to the right of the arrow and read as
+    later → earlier. The transition carries its own direction; the words inside stay Arabic."""
+    records = _two_runs()
+    provenance = _StubProvenance(outcomes={"run-a": _sections("growth"), "run-b": _sections()})
+
+    notice = _notice(_detail(records, provenance, "run-b", "ar"))
+
+    assert '<span class="change-transition">' in notice

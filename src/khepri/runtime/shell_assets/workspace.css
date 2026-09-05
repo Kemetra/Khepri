@@ -292,6 +292,18 @@
   gap: var(--space-2, 0.5rem);
 }
 
+/* The one place this sheet pins a physical direction, and deliberately. The transition's
+ * separator is a hard-coded `→`; under RTL the row would otherwise place the earlier value on the
+ * right of it and read as later → earlier (review on `#377`). Only the order of the three parts is
+ * pinned -- the availability words inside stay in the page's language, and the version rows carry
+ * their own `dir="ltr"` because their identifiers are ASCII. */
+.change-transition {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  direction: ltr;
+}
+
 .change-arrow {
   color: var(--muted);
 }

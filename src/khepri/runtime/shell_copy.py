@@ -159,6 +159,10 @@ _EN = {
     "notice_family_concentration": "Concentration analysis version",
     "notice_family_growth": "Growth analysis version",
     "notice_family_basket": "Basket analysis version",
+    # Read to assistive technology in place of the visual arrow, which is `aria-hidden`: without
+    # them a change row announces two adjacent identifiers and never says which is which.
+    "notice_earlier": "previously",
+    "notice_later": "now",
     "notice_availability": "Availability changed",
     "notice_not_comparable": (
         "Figures from this analysis and the previous one are not numerically comparable."
@@ -282,6 +286,8 @@ _AR = {
     "notice_family_concentration": "إصدار تحليل التركّز",
     "notice_family_growth": "إصدار تحليل النمو",
     "notice_family_basket": "إصدار تحليل السلة",
+    "notice_earlier": "سابقًا",
+    "notice_later": "حاليًا",
     "notice_availability": "تغيّر التوافر",
     "notice_not_comparable": "أرقام هذا التحليل والتحليل السابق غير قابلة للمقارنة عدديًا.",
     "notice_previous": "افتح التحليل السابق",
