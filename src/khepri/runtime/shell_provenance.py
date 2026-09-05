@@ -119,8 +119,18 @@ class ProvenanceReader:
 
     def for_run(self, owner_id: str, run: object, version: object) -> Provenance | None:
         """The Passport for `run`, in `owner_id`'s scope -- or `None` where no record is retained:
-        before completion, or for a run completed before provenance was retained."""
-        return self.for_runs(owner_id, (run,))[run.run_id]
+        before completion, or for a run completed before provenance was retained.
+
+        Read **by that run**, not by delegating to the batch. Analysis detail, the earlier-run
+        comparison behind the Methodology Change Notice, and an artifact download each ask about
+        one run; answering them from `_read_scope` made every click read every record, link and job
+        the organization holds, on a history the roadmap leaves unbounded (`#380`). The batch stays
+        what the spine uses, where its one pass replaces a read per row.
+        """
+        record = self._sources.provenance.for_run(run.run_id, owner_id)
+        if record is None:
+            return None
+        return self._passport(record, self._job_of(run.run_id, owner_id))
 
     def for_runs(self, owner_id: str, runs: Iterable[object]) -> dict[str, Provenance | None]:
         """The Passport of each of `runs`, by run, from three scope-level reads -- and no read at
@@ -140,11 +150,27 @@ class ProvenanceReader:
             jobs=sources.handoffs.for_scope(owner_id),
         )
 
+    def _job_of(self, run_id: str, owner_id: str) -> JobSession | None:
+        """The job settling one run, read by its own identifier. Refuses for `_settling_job`'s
+        reasons and by the same rule: a link to a job this scope does not hold is corruption, and
+        the owner is checked against the job even though the read was scoped by it."""
+        job_id = self._sources.reports.job_id_for_run(run_id, owner_id)
+        if job_id is None:
+            return None
+        job = self._sources.handoffs.job(job_id, owner_id)
+        if job is None or job.owner_id != owner_id:
+            raise UnrenderableRecord(UNRENDERABLE_FAILURE)
+        return job
+
     def _of(self, run: object, reads: _ScopeReads) -> Provenance | None:
         record = reads.records.get(run.run_id)
         if record is None:
             return None
-        job = _settling_job(run.run_id, reads.owner_id, reads)
+        return self._passport(record, _settling_job(run.run_id, reads.owner_id, reads))
+
+    def _passport(self, record: RunProvenance, job: JobSession | None) -> Provenance:
+        """One run's Passport from its record and the job settling it -- the shape both the
+        targeted read and the batched one answer with, so the two cannot drift."""
         return Provenance(
             session_id=None if job is None else job.session_id,
             job_id=None if job is None else job.job_id,
