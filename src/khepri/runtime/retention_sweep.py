@@ -77,6 +77,11 @@ class SweepReport:
     purged_recovery_events: int = 0
 
 
+    def as_counts(self) -> dict[str, int]:
+        """Every count by name, for the entry point's one JSON line."""
+        return {field: getattr(self, field) for field in self.__dataclass_fields__}
+
+
 @dataclass(frozen=True, slots=True)
 class RetentionCounts:
     """What the retention passes purged, by name.
@@ -242,6 +247,34 @@ def build_retention_sweeper(
     return RetentionSweeper(jobs=jobs, deletion=deletion, factory=factory, retention=retention)
 
 
+def main() -> None:
+    """One retention pass over the configured database (`KHEPRI-DEC-033` §5).
+
+    Prints one content-free JSON line of counts -- no identifier is echoed, per `KHEPRI-DEC-015`
+    §7 -- so an operator or a scheduled invocation has a record of what a pass did without the
+    pass becoming a channel for customer data.
+
+    Builds through `build_stack`, which already constructs the engine, the session factory and the
+    object store `DeletionService` needs. A bespoke construction here would be a second wiring of
+    the same collaborators, which this module's own docstring records as the thing to avoid.
+    """
+    import json
+    from datetime import UTC, datetime
+
+    from khepri.runtime.config import RuntimeSettings
+    from khepri.runtime.wiring import build_retention_sweep, build_stack
+
+    now = datetime.now(UTC)
+    stack = build_stack(RuntimeSettings.from_environment())
+    report = build_retention_sweep(stack).sweep(now=now)
+    print(
+        json.dumps(
+            {"event": "retention_sweep", "occurred_at": now.isoformat()} | report.as_counts(),
+            sort_keys=True,
+        )
+    )
+
+
 __all__ = [
     "REASON_EXPIRED",
     "RetentionCounts",
@@ -249,4 +282,5 @@ __all__ = [
     "RetentionSweeper",
     "SweepReport",
     "build_retention_sweeper",
+    "main",
 ]

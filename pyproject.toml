@@ -46,6 +46,12 @@ khepri-gov = "khepri_gov.cli:main"
 # deliberately: the wheel excludes `src/khepri/local`, so a command there would be absent from the
 # image that actually needs to run it.
 khepri-clerk-hard-stop = "khepri.runtime.clerk_hard_stop:main"
+# `KHEPRI-DEC-033` §5. Every retention horizon in §2 was unenforced because every sweeper's only
+# caller was `khepri.local.cli`, which the wheel excludes -- so the product stated what must happen
+# and the deployed image did none of it. `khepri.runtime` for the reason given just above: a command
+# in `khepri.local` would be absent from the built artifact. This declares the caller; choosing a
+# cadence is an operational decision and `KHEPRI-DEC-033` decides none.
+khepri-retention-sweep = "khepri.runtime.retention_sweep:main"
 
 [dependency-groups]
 dev = [
