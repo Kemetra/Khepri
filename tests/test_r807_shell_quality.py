@@ -17,12 +17,13 @@ case here fails rather than going unmeasured.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from importlib.resources import files
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from khepri.runtime.shell_provenance import Provenance
 from playwright.sync_api import Error, sync_playwright
 
 from khepri.rca.errors import ScopeAccessDenied
@@ -32,12 +33,17 @@ from khepri.rca.workspace.contracts import (
     RUN_COMPLETED,
     AdmittedSource,
     AnalysisRun,
+    ArtifactBinding,
     DatasetVersion,
+    PublishedArtifact,
     RunOutcome,
     RunSubject,
     VersionLifecycle,
 )
 from khepri.rca.workspace.store import WorkspaceHistory
+from khepri.rra.bundle import ORDERED_SECTIONS
+from khepri.rra.definitions import AnalysisQualitySummary
+from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 
 NOW = datetime(2026, 8, 22, tzinfo=UTC)
@@ -55,6 +61,7 @@ SHELL_SURFACES = {
     "overview": "/org-acme/overview",
     "data": "/org-acme/data",
     "analyses": "/org-acme/analyses",
+    "analysis": "/org-acme/analyses/run-a",
 }
 
 #: Templates that render inside another and are never a surface of their own.
@@ -173,7 +180,53 @@ class _StubRecords:
             ),
             started_at=NOW,
         )
-        return WorkspaceHistory(versions=(version,), runs=(run,), bindings=(), tombstones=())
+        bindings = tuple(
+            ArtifactBinding._from_storage(
+                run_id="run-a",
+                owner_id="org-acme",
+                artifact=PublishedArtifact(surface=kind, artifact_digest="d" * 64),
+                published_at=NOW,
+            )
+            for kind in REQUIRED_ARTIFACT_KINDS
+        )
+        return WorkspaceHistory(
+            versions=(version,), runs=(run,), bindings=bindings, tombstones=()
+        )
+
+
+class _StubProvenance:
+    """A Passport for `run-a`: the attested period, the admitted scale, and a quality summary in
+    which every section answered, so detail renders every region it has."""
+
+    def for_run(self, owner_id: str, run: object, version: object) -> Provenance:
+        return Provenance(
+            session_id="ses-a",
+            job_id="job-a",
+            covered_start=date(2026, 1, 5),
+            covered_end=date(2026, 1, 7),
+            timezone="Africa/Cairo",
+            aggregate_scope="all-stores",
+            attested_by="Operator",
+            row_count=4,
+            quality=AnalysisQualitySummary(
+                answered=5,
+                caveated=0,
+                refused=0,
+                refusals=(),
+                refused_results=(),
+                caveats=(),
+                answered_sections=tuple(ORDERED_SECTIONS),
+                caveated_sections=(),
+            ),
+        )
+
+
+class _StubBridge:
+    def open(self, **kwargs: object) -> object:  # pragma: no cover
+        raise AssertionError("the browser cases drive GETs only")
+
+    def resume(self, **kwargs: object) -> object:  # pragma: no cover
+        raise AssertionError("the browser cases drive GETs only")
 
 
 def _client(surface: str) -> TestClient:
@@ -189,6 +242,8 @@ def _client(surface: str) -> TestClient:
             invitations=_StubInvitations(),
             records=_StubRecords(),
             isolation=_StubIsolation(),
+            provenance=_StubProvenance(),
+            bridge=_StubBridge(),
         ),
         clock=lambda: NOW,
     )

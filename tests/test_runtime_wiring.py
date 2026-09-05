@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
+from khepri.runtime.shell_provenance import ProvenanceReader
 
 from khepri.rca.identity import IdentityProvider
 from khepri.rca.isolation import IsolationService
@@ -237,6 +238,22 @@ def test_the_shell_reads_the_record_store_the_workspace_actions_write() -> None:
     # The store is keyed by the opaque scope, so the shell must resolve the session's
     # organization through the same door the actions write under (`#373` review).
     assert isinstance(shell.isolation, IsolationService)
+
+
+def test_the_shell_reads_provenance_from_the_stacks_own_rra_services() -> None:
+    """`W1-06`: the Passport and the trust state are read from the admission and the package the
+    run binds by digest, through the same `ProfilingService` and `FactPackageService` instances
+    the routes and the recorder use -- one reading of each decision, as `W1-04` requires."""
+    stack = runtime_stack()
+
+    shell = build_shell_services(stack)
+
+    assert shell is not None
+    assert isinstance(shell.provenance, ProvenanceReader)
+    assert shell.provenance.profiling is stack.services.profiling
+    assert shell.provenance.packages is stack.services.packages
+    # The handoff resumes the run's own session through the bridge the entry route opens with.
+    assert shell.bridge is not None
 
 
 def test_the_beta_routes_admit_and_request_through_the_recording_services() -> None:
