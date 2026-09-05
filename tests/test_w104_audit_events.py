@@ -19,6 +19,7 @@ from sqlalchemy import inspect
 from khepri.rca.workspace.audit import (
     ACTION_PROFILE_REMEMBERED,
     ACTION_PROFILE_REUSED,
+    ACTION_RETENTION_SWEPT,
     ACTION_RUN_COMPLETED,
     ACTION_RUN_FAILED,
     ACTION_RUN_STARTED,
@@ -72,6 +73,10 @@ def test_the_audit_vocabularies_are_closed() -> None:
         # `W1-07a` (`FR-123`): a customer ending a dataset version. The cascade to its runs is
         # part of this action, so there is no `run_deleted` beside it.
         ACTION_VERSION_DELETED,
+        # `W1-07b` (`FR-125`, which names `sweep` literally): one retention pass over one scope.
+        # Its subject is `None` -- a sweep acts on a class over a horizon, not on an object -- so
+        # `AUDIT_OBJECTS` below is unchanged, which is the point of asserting all three sets here.
+        ACTION_RETENTION_SWEPT,
     }
     assert set(AUDIT_OUTCOMES) == {
         OUTCOME_COMPLETED,

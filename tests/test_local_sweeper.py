@@ -13,7 +13,7 @@ import pathlib
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from khepri.local.sweeper import REASON_EXPIRED, LocalSweeper, RetentionPasses
+from khepri.local.sweeper import REASON_EXPIRED, RetentionPasses, RetentionSweeper
 from khepri.rca.lifecycle import EventPurgeReport, PurgeReport
 from khepri.rca.session_retention import SessionSweepReport
 from khepri.rra.deletion import DeletionRetryRequired
@@ -47,7 +47,7 @@ class FakeDeletion:
         self.deleted.append((session_id, reason))
 
 
-class StubSweeper(LocalSweeper):
+class StubSweeper(RetentionSweeper):
     """Overrides only the database read, so the pass logic is the real one."""
 
     def __init__(
@@ -225,7 +225,9 @@ class TestTheRetentionPassesAreWired:
             "sessions",
             "invitations",
             "recovery_events",
-        }, "all five horizons are wired"
+            "workspace_audit",
+            "evidence",
+        }, "all seven horizons are wired"
         assert "AccountRetentionSweeper" in wired["accounts"]
         assert "MembershipEventSweeper" in wired["events"]
         assert "SessionRetentionSweeper" in wired["sessions"]
@@ -238,6 +240,11 @@ class TestTheRetentionPassesAreWired:
         # the
         # rows it fails to purge hold a `target_identity`.
         assert "InvitationRetentionSweeper" in wired["invitations"]
+        # `W1-07b`'s two `KHEPRI-DEC-033` §2 horizons. These are the only two that had no
+        # implementation *at all* before their slice -- the other five existed and went uncalled --
+        # so an unwired pass here means the class has never had an ending in any deployment.
+        assert "WorkspaceAuditSweeper" in wired["workspace_audit"]
+        assert "DeletionEvidenceSweeper" in wired["evidence"]
         for name, expression in wired.items():
             assert "retention_months" not in expression, (
                 f"the {name} horizon must be the governed default, not an override"

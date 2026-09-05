@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from khepri.local.config import LocalSettings
 from khepri.local.packages import build_package_source
 from khepri.local.storage import build_local_object_store
-from khepri.local.sweeper import LocalSweeper, RetentionPasses, build_local_sweeper
+from khepri.local.sweeper import RetentionPasses, RetentionSweeper, build_retention_sweeper
 from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_retention import InvitationRetentionSweeper
@@ -44,6 +44,8 @@ from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventSto
 # session sweeper is handed the wrong table.
 from khepri.rca.session_persistence import SqlSessionStore as SqlCommercialSessionStore
 from khepri.rca.session_retention import SessionRetentionSweeper
+from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
+from khepri.rca.workspace.audit_retention import WorkspaceAuditSweeper
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -51,6 +53,7 @@ from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
+from khepri.rra.evidence_retention import DeletionEvidenceSweeper
 from khepri.rra.intake import IntakeService
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.journey.routes import JourneyServices
@@ -131,7 +134,7 @@ class WorkerStack:
     """The two background drivers, built over one already-constructed stack."""
 
     worker: LocalReportWorker
-    sweeper: LocalSweeper
+    sweeper: RetentionSweeper
 
 
 def build_engine(settings: LocalSettings):
@@ -303,7 +306,7 @@ def build_worker_stack(
             ),
             clock=stack.clock,
         ),
-        sweeper=build_local_sweeper(
+        sweeper=build_retention_sweeper(
             jobs=stack.reports.jobs,
             deletion=stack.services.deletion,
             factory=stack.factory,
@@ -328,6 +331,12 @@ def build_worker_stack(
                 recovery_events=RecoverySecurityEventSweeper(
                     SqlRecoverySecurityEventStore(stack.factory)
                 ),
+                # `W1-07b`'s two `KHEPRI-DEC-033` §2 horizons, which had no implementation
+                # at all before that slice -- not merely no caller. Without these, the audit
+                # events and deletion evidence `W1-07a` writes accumulate indefinitely under
+                # a stated twelve-month rule, which is the shape §5 exists to close.
+                workspace_audit=WorkspaceAuditSweeper(SqlWorkspaceAuditStore(stack.factory)),
+                evidence=DeletionEvidenceSweeper(SqlDeletionRepository(stack.factory)),
             ),
         ),
     )
