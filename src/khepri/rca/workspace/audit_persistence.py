@@ -73,6 +73,22 @@ class SqlWorkspaceAuditStore:
             )
         return event
 
+    def scopes_with_events_before(self, horizon: datetime) -> tuple[str, ...]:
+        """Every scope holding an event older than `horizon` (`W1-07b`).
+
+        Read *before* the purge, because afterwards the rows that named those scopes are gone.
+        This is what lets the sweep record one event per scope it actually purged from, rather
+        than one per organization that exists -- which would make the table this horizon bounds
+        grow fastest under the sweep that bounds it.
+        """
+        with reading(self._factory) as database:
+            rows = database.scalars(
+                select(WorkspaceAuditEventRow.owner_id)
+                .where(WorkspaceAuditEventRow.occurred_at < horizon)
+                .distinct()
+            )
+            return tuple(rows)
+
     def purge_events_before(self, horizon: datetime) -> int:
         """Remove every event that occurred before `horizon`, returning how many (`W1-07b`).
 

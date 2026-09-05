@@ -31,6 +31,7 @@ from khepri.rca.session_retention import SessionRetentionSweeper
 from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
+from khepri.rca.workspace.audit_retention import WorkspaceAuditSweeper
 from khepri.rca.workspace.persistence import (
     SqlRunProvenanceStore,
     SqlRunReportStore,
@@ -47,6 +48,7 @@ from khepri.rra.datasets import ProfilingService
 from khepri.rra.deletion import DeletionService
 from khepri.rra.delivery_persistence import SqlDeliveryStore
 from khepri.rra.deterministic_narrative import DeterministicNarrator
+from khepri.rra.evidence_retention import DeletionEvidenceSweeper
 from khepri.rra.intake import IntakeService
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.journey.routes import JourneyServices
@@ -557,6 +559,12 @@ def build_retention_sweep(stack: RuntimeStack) -> RetentionSweeper:
             recovery_events=RecoverySecurityEventSweeper(
                 SqlRecoverySecurityEventStore(stack.factory)
             ),
+            # `W1-07b`'s two `KHEPRI-DEC-033` §2 horizons, which had no implementation at all
+            # before that slice -- not merely no caller. Without these the workspace audit events
+            # and the deletion evidence `W1-07a` writes accumulate indefinitely under a stated
+            # twelve-month rule, which is the shape §5 exists to close.
+            workspace_audit=WorkspaceAuditSweeper(SqlWorkspaceAuditStore(stack.factory)),
+            evidence=DeletionEvidenceSweeper(SqlDeletionRepository(stack.factory)),
         ),
     )
 

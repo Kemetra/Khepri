@@ -21,6 +21,12 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS, _months_before
+from khepri.rca.workspace.audit import (
+    ACTION_RETENTION_SWEPT,
+    ACTOR_RETENTION,
+    AuditActor,
+    WorkspaceAuditEvent,
+)
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
 
 
@@ -55,9 +61,31 @@ class WorkspaceAuditSweeper:
         later reference. An event's twelve months begin when it is written; nothing that happens
         afterwards extends them, which is what keeps the horizon from being pushed outward by
         activity elsewhere in the scope.
+
+        **The pass records itself** (`FR-125`, which names `sweep` literally), one event per scope
+        it purged from -- `owner_id` is `nullable=False`, so a cross-scope pass cannot write one
+        global event, and a customer's trail should show the sweeps that touched their rows.
+
+        **It cannot purge its own evidence.** The event is written at `now` and the horizon is
+        twelve months earlier, so no correctly ordered pass reaches it. That is asserted by
+        `test_the_sweep_does_not_purge_its_own_evidence` rather than assumed, because it becomes
+        false the day a later slice moves the horizon or reorders these two statements.
         """
         horizon = _months_before(now, self._retention_months)
-        return WorkspaceAuditSweepReport(purged_events=self._audit.purge_events_before(horizon))
+        # Read before deleting: afterwards the rows that named these scopes are gone.
+        scopes = self._audit.scopes_with_events_before(horizon)
+        purged = self._audit.purge_events_before(horizon)
+        for owner_id in scopes:
+            self._audit.record(
+                WorkspaceAuditEvent.completed(
+                    AuditActor(owner_id=owner_id, actor_account_id=ACTOR_RETENTION),
+                    ACTION_RETENTION_SWEPT,
+                    # No subject: a sweep acts on a class over a horizon, not on an object.
+                    None,
+                    now=now,
+                )
+            )
+        return WorkspaceAuditSweepReport(purged_events=purged)
 
 
 __all__ = ["WorkspaceAuditSweepReport", "WorkspaceAuditSweeper"]

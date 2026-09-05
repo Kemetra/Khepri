@@ -141,3 +141,75 @@ def test_the_two_twelve_month_horizons_agree() -> None:
     from khepri.rra.evidence_retention import EVIDENCE_RETENTION_MONTHS
 
     assert EVIDENCE_RETENTION_MONTHS == MEMBERSHIP_EVENT_RETENTION_MONTHS
+
+
+def test_the_sweep_records_one_audit_event_per_scope_it_purged() -> None:
+    """`FR-125` names `sweep` among the workspace actions that MUST emit an audit event, and
+    `KHEPRI-DEC-033` §2 says the audit class's ending is "run by the retention sweep, recorded as
+    a" content-free record.
+
+    **Per scope**, because `rca_workspace_audit_events.owner_id` is `nullable=False`: a cross-scope
+    pass cannot write one global event, and a customer's audit trail should show the sweeps that
+    touched *their* rows rather than a counter for everyone's.
+
+    **Subject `None`**, because a sweep acts on a class over a horizon and not on an object.
+    `AuditEntry.subject` already admits that, and `ck_rca_workspace_audit_subject_pair` pins the
+    pairing -- naming `version` here would make an evidence consumer read a class-level purge as an
+    act on one customer's dataset version.
+    """
+    from khepri.rca.workspace.audit import ACTION_RETENTION_SWEPT
+
+    j = journey()
+    who = member(j.w)
+    audit = SqlWorkspaceAuditStore(j.w.factory)
+    _event(audit, who.owner_id, who.account_id, THIRTEEN_MONTHS_AGO)
+
+    WorkspaceAuditSweeper(audit).sweep(now=NOW)
+
+    events = audit.events_for_scope(who.owner_id)
+    assert [event.action for event in events] == [ACTION_RETENTION_SWEPT]
+    assert events[0].object_kind is None
+    assert events[0].object_id is None
+
+
+def test_a_sweep_that_purged_nothing_records_nothing() -> None:
+    """An event per scope *purged from*, not per scope that exists.
+
+    Otherwise every pass would write one row per organization forever, and the table this horizon
+    exists to bound would grow fastest under the sweep that bounds it.
+    """
+    from khepri.rca.workspace.audit import ACTION_RETENTION_SWEPT
+
+    j = journey()
+    who = member(j.w)
+    audit = SqlWorkspaceAuditStore(j.w.factory)
+    _event(audit, who.owner_id, who.account_id, ELEVEN_MONTHS_AGO)
+
+    WorkspaceAuditSweeper(audit).sweep(now=NOW)
+
+    actions = [event.action for event in audit.events_for_scope(who.owner_id)]
+    assert ACTION_RETENTION_SWEPT not in actions
+
+
+def test_the_sweep_does_not_purge_its_own_evidence() -> None:
+    """The sweep's event is itself subject to the horizon the sweep enforces.
+
+    It is written at `now` and the horizon is twelve months before `now`, so no correctly ordered
+    pass can reach it -- but that is a property to assert, not to assume: it becomes false the day
+    a later slice moves the horizon or reorders the pass, and nothing else would notice.
+    """
+    from khepri.rca.workspace.audit import ACTION_RETENTION_SWEPT
+
+    j = journey()
+    who = member(j.w)
+    audit = SqlWorkspaceAuditStore(j.w.factory)
+    _event(audit, who.owner_id, who.account_id, THIRTEEN_MONTHS_AGO)
+    sweeper = WorkspaceAuditSweeper(audit)
+
+    sweeper.sweep(now=NOW)
+    second = sweeper.sweep(now=NOW)
+
+    assert second.purged_events == 0
+    assert [event.action for event in audit.events_for_scope(who.owner_id)] == [
+        ACTION_RETENTION_SWEPT
+    ]

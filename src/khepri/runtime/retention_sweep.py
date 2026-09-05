@@ -42,7 +42,9 @@ from khepri.rca.invitation_retention import InvitationRetentionSweeper
 from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
 from khepri.rca.recovery_security import RecoverySecurityEventSweeper
 from khepri.rca.session_retention import SessionRetentionSweeper
+from khepri.rca.workspace.audit_retention import WorkspaceAuditSweeper
 from khepri.rra.deletion import DeletionRetryRequired, DeletionService
+from khepri.rra.evidence_retention import DeletionEvidenceSweeper
 from khepri.rra.job_persistence import SqlReportJobRepository
 from khepri.rra.persistence import BetaSessionRow
 
@@ -75,6 +77,12 @@ class SweepReport:
     # content-free provider-recovery evidence, and two different tables under one name would make
     # a report that reads as consistent while measuring unrelated things.
     purged_recovery_events: int = 0
+    # `W1-07b`'s two `KHEPRI-DEC-033` §2 horizons. Named apart from every count above for the
+    # reason `purged_sessions` is named apart from `expired_sessions`: different tables under
+    # different rules, and one name for two would make a report that reads as consistent while
+    # measuring unrelated things.
+    purged_workspace_audit_events: int = 0
+    purged_evidence: int = 0
 
 
     def as_counts(self) -> dict[str, int]:
@@ -95,6 +103,9 @@ class RetentionCounts:
     sessions: int = 0
     invitations: int = 0
     recovery_events: int = 0
+    #: `W1-07b`'s two `KHEPRI-DEC-033` §2 horizons, which had no implementation before it.
+    workspace_audit_events: int = 0
+    evidence: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +129,11 @@ class RetentionPasses:
     # twelve months, but they are different tables under different requirements, and one sweeper
     # covering both would purge either by accident if a horizon later moved.
     recovery_events: RecoverySecurityEventSweeper | None = None
+    #: `KHEPRI-DEC-033` §2's twelve-month workspace audit horizon (`W1-07b`). Optional for the
+    #: reason every field here is: a stack with no RCA workspace tables has nothing to sweep.
+    workspace_audit: WorkspaceAuditSweeper | None = None
+    #: `KHEPRI-DEC-033` `OD-2`'s twelve-month deletion-evidence horizon (`W1-07b`).
+    evidence: DeletionEvidenceSweeper | None = None
 
     def run(self, *, now: datetime) -> RetentionCounts:
         """All five passes, returning the purged counts by name.
@@ -158,6 +174,14 @@ class RetentionPasses:
                 0
                 if self.recovery_events is None
                 else self.recovery_events.sweep(now=now).purged_events
+            ),
+            workspace_audit_events=(
+                0
+                if self.workspace_audit is None
+                else self.workspace_audit.sweep(now=now).purged_events
+            ),
+            evidence=(
+                0 if self.evidence is None else self.evidence.sweep(now=now).purged_evidence
             ),
         )
 
@@ -200,6 +224,8 @@ class RetentionSweeper:
             purged_sessions=purged.sessions,
             purged_invitations=purged.invitations,
             purged_recovery_events=purged.recovery_events,
+            purged_workspace_audit_events=purged.workspace_audit_events,
+            purged_evidence=purged.evidence,
         )
 
     def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:
