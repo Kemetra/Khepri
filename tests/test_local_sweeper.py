@@ -13,7 +13,7 @@ import pathlib
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from khepri.local.sweeper import REASON_EXPIRED, LocalSweeper, RetentionPasses
+from khepri.local.sweeper import REASON_EXPIRED, RetentionPasses, RetentionSweeper
 from khepri.rca.lifecycle import EventPurgeReport, PurgeReport
 from khepri.rca.session_retention import SessionSweepReport
 from khepri.rra.deletion import DeletionRetryRequired
@@ -47,7 +47,7 @@ class FakeDeletion:
         self.deleted.append((session_id, reason))
 
 
-class StubSweeper(LocalSweeper):
+class StubSweeper(RetentionSweeper):
     """Overrides only the database read, so the pass logic is the real one."""
 
     def __init__(

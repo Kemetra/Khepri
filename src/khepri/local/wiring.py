@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from khepri.local.config import LocalSettings
 from khepri.local.packages import build_package_source
 from khepri.local.storage import build_local_object_store
-from khepri.local.sweeper import LocalSweeper, RetentionPasses, build_local_sweeper
+from khepri.local.sweeper import RetentionPasses, RetentionSweeper, build_retention_sweeper
 from khepri.local.worker import LocalReportWorker, LocalWorkerPorts, build_local_worker
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_retention import InvitationRetentionSweeper
@@ -131,7 +131,7 @@ class WorkerStack:
     """The two background drivers, built over one already-constructed stack."""
 
     worker: LocalReportWorker
-    sweeper: LocalSweeper
+    sweeper: RetentionSweeper
 
 
 def build_engine(settings: LocalSettings):
@@ -303,7 +303,7 @@ def build_worker_stack(
             ),
             clock=stack.clock,
         ),
-        sweeper=build_local_sweeper(
+        sweeper=build_retention_sweeper(
             jobs=stack.reports.jobs,
             deletion=stack.services.deletion,
             factory=stack.factory,
