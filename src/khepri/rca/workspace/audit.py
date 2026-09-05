@@ -38,8 +38,12 @@ ACTION_RUN_COMPLETED = "run_completed"
 ACTION_RUN_FAILED = "run_failed"
 ACTION_PROFILE_REMEMBERED = "profile_remembered"
 ACTION_PROFILE_REUSED = "profile_reused"
-#: The workspace actions this slice performs. `W1-07` adds deletion and the sweep when it writes
-#: them -- `FR-125` names both -- and the migration literal moves in the same commit.
+#: `W1-07a`. A customer ending a dataset version (`FR-123`). The cascade to its runs is part of
+#: *this* action and emits no event of its own: `KHEPRI-DEC-033` §1 calls a named cascade part of
+#: the parent's deletion, so a run that ends because its version did was not separately acted on.
+ACTION_VERSION_DELETED = "version_deleted"
+#: The workspace actions this slice performs. `W1-07b` adds the sweep when it writes it --
+#: `FR-125` names it -- and the migration literal moves in the same commit.
 AUDIT_ACTIONS = (
     ACTION_VERSION_CREATED,
     ACTION_RUN_STARTED,
@@ -47,14 +51,23 @@ AUDIT_ACTIONS = (
     ACTION_RUN_FAILED,
     ACTION_PROFILE_REMEMBERED,
     ACTION_PROFILE_REUSED,
+    ACTION_VERSION_DELETED,
 )
 
 OUTCOME_COMPLETED = "completed"
 OUTCOME_REFUSED = "refused"
-#: `FR-123` gives a repeated deletion the outcome `already_deleted`; this is the same shape for a
-#: repeated creation, so an idempotent retry is recorded as what it was rather than as a second act.
+#: A repeated *creation*: the shape `FR-123` describes, applied to a write that was a duplicate.
 OUTCOME_ALREADY_RECORDED = "already_recorded"
-AUDIT_OUTCOMES = (OUTCOME_COMPLETED, OUTCOME_REFUSED, OUTCOME_ALREADY_RECORDED)
+#: `FR-123`'s repeated *deletion*, and deliberately not `already_recorded`. That one says a write
+#: was a duplicate; this says the object had already ended and no new evidence was written. The
+#: requirement names this string, and an evidence consumer reads it to tell the two apart.
+OUTCOME_ALREADY_DELETED = "already_deleted"
+AUDIT_OUTCOMES = (
+    OUTCOME_COMPLETED,
+    OUTCOME_REFUSED,
+    OUTCOME_ALREADY_RECORDED,
+    OUTCOME_ALREADY_DELETED,
+)
 
 OBJECT_VERSION = "version"
 OBJECT_RUN = "run"
@@ -184,6 +197,17 @@ class WorkspaceAuditEvent(Sealed):
     ) -> WorkspaceAuditEvent:
         """A repeat of an action already performed; `subject` is the object the first produced."""
         return cls._record(actor, AuditAction(action, OUTCOME_ALREADY_RECORDED), subject, now)
+
+    @classmethod
+    def already_deleted(
+        cls, actor: AuditActor, action: str, subject: AuditSubject | None, *, now: datetime
+    ) -> WorkspaceAuditEvent:
+        """`FR-123`'s repeat: the object had already ended, so no new evidence was written.
+
+        Distinct from `already_recorded`, which says a *write* was a duplicate. The requirement
+        names this outcome, and the two reach different consumers.
+        """
+        return cls._record(actor, AuditAction(action, OUTCOME_ALREADY_DELETED), subject, now)
 
     @classmethod
     def _from_storage(

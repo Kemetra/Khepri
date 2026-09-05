@@ -632,6 +632,38 @@ class RunProvenanceRow(Base):
     family_basket_version: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class WorkspaceRevocationRow(Base):
+    """One ended object's identifier, so a restore cannot make it readable (`W1-07a`; `FR-126`;
+    `KHEPRI-DEC-015` §8).
+
+    Live deletion takes effect immediately, but a backup taken before it still holds the row. §8
+    item 5 requires that a restore not resurrect it, and item 6 bounds how: **opaque identifiers,
+    revocation timestamps and status only**. That bound is the design, not a simplification --
+    enforcing the guarantee means retaining what was revoked, which could quietly become a second
+    content store. The four columns here are the whole ledger, and
+    `test_the_ledger_holds_nothing_but_identifiers_and_the_instant` is what keeps it so.
+
+    There is no `status` column: an entry's presence *is* the status. A column admitting
+    `revoked` and something else would be a second state machine over a table whose only question
+    is membership, and §8 asks for less, not more.
+
+    **No foreign key to the object.** Every sibling workspace table binds `owner_id` to the
+    isolation scope, and this one binds nothing to the row it names: the entry must outlive the
+    record it revokes, which is the entire point, so a `RESTRICT` key would enforce the opposite
+    ordering. `rca_workspace_audit_events` omits its scope key for the same shape of reason.
+    """
+
+    __tablename__ = "rca_workspace_revocations"
+    __table_args__ = (
+        _states_check("object_kind", AUDIT_OBJECTS, "ck_rca_workspace_revocation_object"),
+    )
+
+    object_kind: Mapped[str] = mapped_column(String, primary_key=True)
+    object_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class WorkspaceAuditEventRow(Base):
     """One workspace action, content-free (`W1-04`; `RCA-005` `FR-125`). See `audit.py`.
 
@@ -890,6 +922,14 @@ _ROW_GUARDS = {
     # `W1-06`: the provenance record is the tombstone's shape too -- written once, deleted only
     # with its run (`W1-07`).
     RunProvenanceRow: (_refuse_any_update, _refuse_delete),
+    # `W1-07a`'s revocation ledger. **Frozen, and deletable** -- the audit event's shape, for the
+    # audit event's reason. Frozen because an entry that could be rewritten could be un-revoked,
+    # which is the one thing `FR-126` exists to prevent; and its idempotent `revoke` never rewrites
+    # an existing row, so no legitimate path needs an update. Deletable because the ledger is
+    # bounded by the backup horizon plus a margin (`KHEPRI-DEC-015` §8 item 6: a ledger that
+    # outlives every backup it guards has outlived its purpose), and `W1-07b`'s sweep is what ends
+    # it -- a delete guard here would make that horizon unenforceable.
+    WorkspaceRevocationRow: (_refuse_any_update, None),
 }
 
 for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():

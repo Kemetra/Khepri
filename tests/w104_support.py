@@ -110,6 +110,16 @@ class MemoryObjectStore:
     def delete(self, key: str) -> None:
         self.objects.pop(key, None)
 
+    # -- `DeletionObjectStore` (`RRA-002`). Added by `W1-07a`, whose deletion drives the real
+    # `DeletionService`; a double that implements half the protocol fails as a missing attribute
+    # inside a retry handler, which reads as a deletion defect rather than a fixture gap.
+    def delete_prefix(self, prefix: str) -> None:
+        for key in [key for key in self.objects if key.startswith(prefix)]:
+            self.objects.pop(key, None)
+
+    def abort_multipart_uploads(self, prefix: str) -> None:
+        """Nothing to abort: this store has no multipart upload to leave half-written."""
+
 
 class FakeDeliveries:
     """The report boundary, as the service sees it: one delivery record per job, or none."""

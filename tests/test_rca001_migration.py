@@ -14,6 +14,9 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from khepri.rca.persistence import Base as RcaBase
+from khepri.rca.recovery_security_persistence import (  # noqa: F401 -- registers the table
+    RecoverySecurityEventRow,
+)
 from khepri.rca.workspace.persistence import (  # noqa: F401 -- registers the tables
     AnalysisRunRow,
     ArtifactBindingRow,
@@ -71,6 +74,11 @@ RCA_REVISIONS = (
     # than as a table of their own (`FR-116`). The middle element is the revision file's slug, not
     # the table it touches, so it names this migration's own file.
     ("20260905_0025", "rca_workspace_run_family_versions", "20260905_0024"),
+    # `W1-07a`'s deletion vocabulary: a `CHECK` rewrite on `20260905_0022`'s table, so the slug
+    # names this migration's own file rather than the table it widens.
+    ("20260906_0026", "rca_workspace_deletion_audit", "20260905_0025"),
+    # `W1-07a`'s revocation ledger (`FR-126`), so a restore cannot make a deleted object readable.
+    ("20260906_0027", "rca_workspace_revocations", "20260906_0026"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -99,7 +107,44 @@ RCA_TABLES = {
     "rca_workspace_audit_events",
     "rca_workspace_run_reports",
     "rca_workspace_run_provenance",
+    # `W1-07a`'s revocation ledger, so `FR-126` survives an upgrade and is dropped on downgrade.
+    "rca_workspace_revocations",
 }
+
+
+def test_every_rca_table_in_the_models_is_named_here() -> None:
+    """The extent assertion this set has needed three times (`#382`).
+
+    `RCA_TABLES` gates three assertions and every one of them is a *subset* relation -- `present
+    >= RCA_TABLES` twice and `not (RCA_TABLES & present)` once. A table missing from the set
+    therefore makes all three weaker and none of them fail: the upgrade is not checked to create
+    it and the downgrade is not checked to drop it. That is the shape recorded against this repo
+    as *a guard that names its own scope disarms itself*, and this set's own comments show it
+    happening twice before -- `#240`'s table, then the two the first `W1-02` draft omitted, which
+    were "missing from the models *and* from this set, so the equality held over both".
+
+    Comparing against `Base.metadata` closes it: a table added to the models and forgotten here
+    fails, which is what happened to `rca_workspace_revocations` on this very slice.
+
+    `rra_*` tables are excluded because this module is the RCA migration's; the two packages
+    migrate on separate revision lines.
+    """
+    from khepri.rca.persistence import Base
+
+    modelled = {name for name in Base.metadata.tables if name.startswith("rca_")}
+
+    # Both sides are non-empty before they are compared. `Base.metadata` is populated by import
+    # side effects, so an equality over it can hold *vacuously* -- which is precisely how `#240`'s
+    # table stayed invisible to `test_migration_columns_match_the_declared_models` (see the note
+    # on `RCA_REVISIONS`). A guard whose input can be empty must say so itself. This module's
+    # top-level `noqa: F401` imports are what keep it populated; adding a table means adding its
+    # module there.
+    assert modelled, "no rca_ tables registered: the models were never imported"
+
+    assert modelled == RCA_TABLES, (
+        f"in the models but not named here: {sorted(modelled - RCA_TABLES)}; "
+        f"named here but not in the models: {sorted(RCA_TABLES - modelled)}"
+    )
 
 
 def _rca_migration_module(revision: str = RCA_REVISION, slug: str = "rca_identity_spine"):

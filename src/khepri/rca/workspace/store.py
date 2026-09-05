@@ -109,8 +109,90 @@ def _live_in(row: object | None, owner_id: str | None) -> bool:
     caller could keep presenting or reusing a record the customer deleted. Review on `#370` found
     the four read paths filtering by scope alone. `retention_state()` is the store's answer for the
     row's state; these return `None` or omit it.
+    **And not revoked.** `FR-126`: a restore must not make a deleted object readable. The row's own
+    `retention_state` cannot answer that, because a restore rewrites it -- measured before this
+    guard existed: a raw `UPDATE ... SET retention_state='active'` made a deleted version read back
+    as live, beneath `_check_one_way_transitions`, which binds the ORM and not a backup.
+
+    The check is against the revocation ledger rather than the tombstone, though a tombstone
+    happens to survive the restore *shape* tested here. A backup taken before the deletion restores
+    the version with **no** tombstone beside it, and then only the ledger still knows -- which is
+    why `KHEPRI-DEC-015` §8 requires the ledger itself be backed up, and what makes it the
+    authority here rather than a convenience.
     """
-    return _visible_in(row, owner_id) and row.retention_state == RETENTION_ACTIVE
+    if not (_visible_in(row, owner_id) and row.retention_state == RETENTION_ACTIVE):
+        return False
+    return not _revoked(row)
+
+
+def _revocation_exists(row_class: type) -> object:
+    """A predicate naming this scope's revocation of the row's version (`FR-126`).
+
+    Kept beside `_revoked` and phrased as SQL so the listing excludes a restored version in the
+    database rather than after reading it: a per-row filter would return the row first and drop it
+    second, which is a different guarantee under a snapshot that another connection can change.
+
+    Takes any row class carrying `version_id` and `owner_id` -- `DatasetVersionRow`, whose
+    `version_id` is its own identity, and `AnalysisRunRow`, whose `version_id` is the foreign key
+    to its parent. That is the whole polymorphism, and it is why a run needs no ledger row of its
+    own: the ledger records the **ending the owner requested**, and everything beneath it is
+    revoked through the version it derives from, exactly as `_cascade_tombstone_to_runs`
+    tombstones it across the same edge. A second row per run would be a second definition of one
+    fact, and the two would drift the first time a cascade was partial.
+
+    `ArtifactBindingRow` carries no `version_id` and is not passable here; its two reads already
+    join to `AnalysisRunRow`, so they narrow through the run's version -- `_run_revocation_exists`.
+    """
+    from sqlalchemy import exists
+
+    from khepri.rca.workspace.audit import OBJECT_VERSION
+    from khepri.rca.workspace.schema import WorkspaceRevocationRow
+
+    return exists().where(
+        WorkspaceRevocationRow.object_kind == OBJECT_VERSION,
+        WorkspaceRevocationRow.object_id == row_class.version_id,
+        WorkspaceRevocationRow.owner_id == row_class.owner_id,
+    )
+
+
+def _run_revocation_exists() -> object:
+    """The same predicate for a read whose row reaches its version through `AnalysisRunRow`.
+
+    Its own function rather than `_revocation_exists(AnalysisRunRow)` at each call site, because
+    the two reads that need it -- `artifact_bindings_for_run` and `artifact_bindings_for_scope` --
+    are already joined to the run, so the correlation is to the joined row and not to the row
+    being selected. Naming it once keeps that subtlety in one place.
+
+    Review on `#382` found both reads filtering on `retention_state` alone. A binding is a live
+    download address, so one handed back for a revoked version is a deleted analysis a customer
+    can still fetch.
+    """
+    from khepri.rca.workspace.schema import AnalysisRunRow
+
+    return _revocation_exists(AnalysisRunRow)
+
+
+def _revoked(row: object) -> bool:
+    """Whether this row's identifier is in the revocation ledger (`FR-126`).
+
+    Read through the row's own session, so the answer comes from the same transaction the caller
+    is already in -- `history_for_scope` reads under `SERIALIZABLE`, and a ledger consulted through
+    a second connection could observe a different instant than the rows it is filtering.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    from khepri.rca.workspace.audit import OBJECT_VERSION
+    from khepri.rca.workspace.schema import WorkspaceRevocationRow
+
+    database = sa_inspect(row).session
+    if database is None:  # pragma: no cover -- a detached row has no session to ask
+        return False
+    return (
+        database.get(
+            WorkspaceRevocationRow, (OBJECT_VERSION, row.version_id, row.owner_id)
+        )
+        is not None
+    )
 
 
 # Every workspace row is append-only, so every one carries both guards. `ArtifactBindingRow` was
@@ -329,16 +411,24 @@ class SqlWorkspaceRecordStore:
                 .where(DatasetVersionRow.owner_id == owner_id)
                 .where(DatasetVersionRow.upload_ciphertext_digest == ciphertext_digest)
                 .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(DatasetVersionRow))
             ).first()
             return None if row is None else _version_from_row(row)
 
     def dataset_versions_for_scope(self, owner_id: str) -> tuple[DatasetVersion, ...]:
-        """Newest first, within one scope only."""
+        """Newest first, within one scope only, and never a revoked one (`FR-126`).
+
+        The revocation exclusion is a predicate rather than a filter over the rows, so the listing
+        cannot return a restored version even briefly and its cost does not grow with the scope's
+        deletions. `_live_in` makes the same check for the single read; both are needed, because a
+        restore rewrites `retention_state` and neither path would otherwise see it.
+        """
         with reading(self._factory) as database:
             rows = database.execute(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
                 .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(DatasetVersionRow))
                 .order_by(DatasetVersionRow.created_at.desc(), DatasetVersionRow.version_id.desc())
             ).scalars()
             return tuple(_version_from_row(row) for row in rows)
@@ -495,6 +585,7 @@ class SqlWorkspaceRecordStore:
                 select(AnalysisRunRow)
                 .where(AnalysisRunRow.owner_id == owner_id)
                 .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(AnalysisRunRow))
                 .order_by(AnalysisRunRow.started_at.desc(), AnalysisRunRow.run_id.desc())
             ).scalars()
             return tuple(_run_from_row(row) for row in rows)
@@ -548,6 +639,7 @@ class SqlWorkspaceRecordStore:
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.run_id == run_id)
                 .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(~_run_revocation_exists())
             )
             if owner_id is not None:
                 query = query.where(ArtifactBindingRow.owner_id == owner_id)
@@ -569,6 +661,7 @@ class SqlWorkspaceRecordStore:
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.owner_id == owner_id)
                 .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(~_run_revocation_exists())
                 .order_by(ArtifactBindingRow.run_id, ArtifactBindingRow.surface)
             ).scalars()
             return tuple(_binding_from_row(row) for row in rows)

@@ -23,12 +23,14 @@ from khepri.rca.workspace.audit import (
     ACTION_RUN_FAILED,
     ACTION_RUN_STARTED,
     ACTION_VERSION_CREATED,
+    ACTION_VERSION_DELETED,
     AUDIT_ACTIONS,
     AUDIT_OBJECTS,
     AUDIT_OUTCOMES,
     OBJECT_PROFILE,
     OBJECT_RUN,
     OBJECT_VERSION,
+    OUTCOME_ALREADY_DELETED,
     OUTCOME_ALREADY_RECORDED,
     OUTCOME_COMPLETED,
     OUTCOME_REFUSED,
@@ -67,8 +69,18 @@ def test_the_audit_vocabularies_are_closed() -> None:
         ACTION_RUN_FAILED,
         ACTION_PROFILE_REMEMBERED,
         ACTION_PROFILE_REUSED,
+        # `W1-07a` (`FR-123`): a customer ending a dataset version. The cascade to its runs is
+        # part of this action, so there is no `run_deleted` beside it.
+        ACTION_VERSION_DELETED,
     }
-    assert set(AUDIT_OUTCOMES) == {OUTCOME_COMPLETED, OUTCOME_REFUSED, OUTCOME_ALREADY_RECORDED}
+    assert set(AUDIT_OUTCOMES) == {
+        OUTCOME_COMPLETED,
+        OUTCOME_REFUSED,
+        OUTCOME_ALREADY_RECORDED,
+        # `W1-07a`. `FR-123` names this string, and it is not `already_recorded`: that one says a
+        # write was a duplicate, this says the object had already ended.
+        OUTCOME_ALREADY_DELETED,
+    }
     assert set(AUDIT_OBJECTS) == {OBJECT_VERSION, OBJECT_RUN, OBJECT_PROFILE}
 
 
@@ -93,21 +105,34 @@ def test_the_audit_table_holds_exactly_the_events_columns() -> None:
 
 
 def test_the_migration_states_the_same_audit_vocabularies_the_model_does() -> None:
-    """The migration keeps literal strings by this repo's convention, so the two can drift."""
+    """The migration keeps literal strings by this repo's convention, so the two can drift.
+
+    **Each constant is read from the migration that states it *last*, not from a named file.**
+    This guard pointed at `20260905_0022` while that was the only migration to set these
+    constraints; `W1-07a`'s `20260906_0026` widened two of the three, and the guard could not see
+    it. A drift guard that hand-names its source reproduces the drift it exists to catch, and
+    re-pinning it to `0026` would only move the trap one slice along -- `0026` does not restate
+    `_OBJECTS`, so the newest file is not the authority for every constant, only for the ones it
+    spells.
+    """
     import pathlib
     import re
 
-    root = pathlib.Path(__file__).resolve().parents[1]
-    source = (
-        root / "migrations" / "versions" / "20260905_0022_rca_workspace_audit_events.py"
-    ).read_text(encoding="utf-8")
+    versions = pathlib.Path(__file__).resolve().parents[1] / "migrations" / "versions"
+    sources = sorted(
+        (path.name, path.read_text(encoding="utf-8")) for path in versions.glob("*.py")
+    )
 
     def literal(constant: str) -> set[str]:
-        body = source.split(f"{constant} = ", 1)[1].split("\n", 1)[0]
-        return set(re.findall(r"'([a-z_]+)'", body))
+        marker = f"{constant} = "
+        bodies = [
+            text.split(marker, 1)[1].splitlines()[0] for _name, text in sources if marker in text
+        ]
+        assert bodies, f"no migration states {constant}"
+        return set(re.findall(r"'([a-z_]+)'", bodies[-1]))
 
-    assert literal("_ACTIONS") == set(AUDIT_ACTIONS)
-    assert literal("_OUTCOMES") == set(AUDIT_OUTCOMES)
+    assert literal("_ACTIONS_AFTER") == set(AUDIT_ACTIONS)
+    assert literal("_OUTCOMES_AFTER") == set(AUDIT_OUTCOMES)
     assert literal("_OBJECTS") == set(AUDIT_OBJECTS)
 
 

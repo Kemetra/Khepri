@@ -34,6 +34,7 @@ from khepri.rca.workspace.persistence import (
     SqlWorkspaceRecordStore,
 )
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
+from khepri.rca.workspace.revocation import SqlRevocationLedger
 from khepri.rca.workspace.scopes import SqlIsolationScopes
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
@@ -93,6 +94,7 @@ from khepri.runtime.pipeline_recording import (
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
 from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
+from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
 from khepri.runtime.workspace_recording import WorkspaceRecording
 
 # The web role publishes but never claims, so this identity appears in no lease. It
@@ -498,6 +500,25 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
                 handoffs=SqlJobSessions(stack.factory),
             ),
             clock=stack.clock,
+        ),
+        # `W1-07a`: the owner-requested ending (`FR-123`). Without this the field keeps its `None`
+        # default, `offers_deletion` omits the route, and the capability is absent from the
+        # deployed image while every route test passes over a hand-wired `ShellServices` -- which
+        # is what review on `#382` found. `R7-01` §3 puts the composition here: the RCA record
+        # store and the RRA content path may not import each other.
+        #
+        # `stack.services.deletion` is reused rather than rebuilt. It is the same
+        # `DeletionService` `build_web_app` already hands the beta app, so content deleted from
+        # the shell and content deleted through the journey end by one object with one definition
+        # of what ending means.
+        deletion=WorkspaceDeletion(
+            DeletionSources(
+                store=SqlWorkspaceRecordStore(stack.factory),
+                audit=SqlWorkspaceAuditStore(stack.factory),
+                ledger=SqlRevocationLedger(stack.factory),
+                content=stack.services.deletion,
+                factory=stack.factory,
+            )
         ),
     )
 
