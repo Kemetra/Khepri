@@ -309,3 +309,27 @@ def test_the_worker_settles_jobs_through_the_recording_store(tmp_path) -> None:
     # The queue's recovery sweep is where a reclaimed lease reaches the dead letter, so the queue
     # settles through the same store (review on `#375`).
     assert loop._queue._jobs is jobs
+
+
+def test_the_deployed_shell_offers_the_deletion_route() -> None:
+    """`W1-07a`: the built application must carry the deletion endpoint (`FR-123`).
+
+    Asserted against the **routes `build_web_app` actually declares**, not against the field.
+    Every one of `W1-07a`'s route tests builds `ShellServices` by hand with `deletion=` supplied
+    (`tests/w107_support.shell_with_deletion`), so all seven passed while the production root left
+    the field on its `None` default and `offers_deletion` omitted the route -- the deletion
+    capability was unreachable in the deployed image. Review on `#382` found it. This is the
+    "defined but never attached" shape recorded against this repo: governed prose, a service and a
+    route can all exist while no code path reaches them, and nothing fails.
+
+    Reading the route table rather than `shell.deletion is not None` is deliberate: the field
+    being set is a necessary condition, not the guarantee. What a customer needs is a URL.
+    """
+    stack = runtime_stack()
+
+    app = build_web_app(stack)
+
+    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    delete = {path for path in paths if path.endswith("/data/{version_id}/delete")}
+    assert delete, f"no deletion route in the deployed app: {sorted(paths)}"
+    assert all("POST" in route.methods for route in app.routes if route.path in delete)

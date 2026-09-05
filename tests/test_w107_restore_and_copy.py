@@ -97,3 +97,52 @@ def test_no_surface_says_content_expires_automatically() -> None:
             lowered = str(text_value).lower()
             for claim in _EXPIRY_CLAIMS:
                 assert claim not in lowered, f"{language}.{key} states automatic expiry"
+
+
+def _restore_with_ledger(j, version_id: str) -> None:
+    """A restore from a backup taken **before** the deletion: the version comes back live *and*
+    the ledger row that recorded its revocation is gone with it.
+
+    This is the shape the reviewer on `#382` named and the favourable `_restore` above does not
+    model. `WorkspaceRevocationRow` lives in the same schema as the rows it guards, so a
+    point-in-time restore of that schema removes the ledger too, and nothing is left to consult.
+    `FR-126` therefore holds against *in-database restoration* -- a row put back beneath the ORM,
+    which is what `_restore` models and what the guard refuses -- and does **not** hold against
+    restoring a whole-schema snapshot predating the deletion.
+
+    Closing that requires the ledger to have a backup lifecycle of its own, which is a topology
+    decision `KHEPRI-DEC-008` leaves open and this slice does not hold the authority to make. The
+    limitation is asserted here rather than left implicit, so it cannot be mistaken for a
+    guarantee and so the day the ledger does move, this test fails and is rewritten.
+    """
+    with j.w.factory() as database:
+        database.execute(
+            text(
+                "UPDATE rca_workspace_dataset_versions "
+                "SET retention_state='active' WHERE version_id=:v"
+            ),
+            {"v": version_id},
+        )
+        database.execute(
+            text("DELETE FROM rca_workspace_revocations WHERE object_id=:v"),
+            {"v": version_id},
+        )
+        database.commit()
+
+
+def test_a_whole_schema_restore_predating_the_deletion_defeats_the_ledger() -> None:
+    """The stated boundary of `FR-126`, asserted so it is not discovered as a surprise.
+
+    A failure here means the ledger gained a backup lifecycle of its own -- which is the fix, and
+    which makes this test wrong rather than the code.
+    """
+    j = journey()
+    who = member(j.w)
+    version, _ = sealed_version(j, who)
+    deletion_service(j).delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+    )
+
+    _restore_with_ledger(j, version.version_id)
+
+    assert j.w.store.get_dataset_version(version.version_id, who.owner_id) is not None
