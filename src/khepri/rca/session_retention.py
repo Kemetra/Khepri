@@ -9,11 +9,12 @@ sweep, and whether or not one ever runs.
 That ordering makes the sweeper a storage-reclamation mechanism rather than a security one, which
 is why nothing in the authorization path depends on it having run.
 
-**Not a scheduler**, following `khepri.local.sweeper` and `AccountRetentionSweeper`: one pass when
-called. Choosing a cadence is an operational decision, and a loop inventing one here would model a
-deployment nobody has authorized. It plugs into `LocalSweeper` through `RetentionPasses` for the
-reason recorded there: a retention rule whose only caller does not exist is indefinite retention
-with a policy comment on top.
+**Not a scheduler**, following `khepri.runtime.retention_sweep` and `AccountRetentionSweeper`: one
+pass when called. Choosing a cadence is an operational decision, and a loop inventing one here
+would model a deployment nobody has authorized. It plugs into `RetentionSweeper` through
+`RetentionPasses` for the reason recorded there: a retention rule whose only caller does not exist
+is indefinite retention with a policy comment on top. Since `W1-07b` that caller is
+`khepri-retention-sweep`, which ships in the wheel.
 """
 
 from __future__ import annotations
