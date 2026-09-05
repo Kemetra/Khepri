@@ -366,3 +366,25 @@ def test_a_completed_run_retains_the_family_version_each_analysis_ran_under() ->
     assert record is not None
     assert dict(record.family_versions) == dict(FAMILY_VERSIONS)
     assert set(record.family_versions) == set(FAMILY_SECTIONS)
+
+
+def test_the_scope_predicate_reads_the_relation_whose_index_leads_with_owner() -> None:
+    """The spine and the detail page both run this read for every request, and the roadmap leaves
+    the jobs table unbounded across organizations. `rra_report_jobs` carries no index whose leading
+    column is `owner_id` -- only `(state, available_at)`, `(lease_expires_at)` and
+    `(session_id, state)` -- so filtering the scope there scans every tenant's jobs. The sessions
+    table carries `uq_session_owner_scope` on `(owner_id, session_id)`, and its own comment records
+    that `owner_id` leads it so scope lookups stay index-backed without a second index.
+
+    So the scope is asked of the sessions relation, and the jobs are reached from it by
+    `session_id`, which `ix_report_job_session_state` leads with. The composite foreign key
+    `fk_report_job_session_scope` ties a job's `owner_id` to its session's, so the two predicates
+    select exactly the same rows -- this is the same read down an indexed path, not a narrower one
+    (review on `#378`).
+    """
+    statement = SqlJobSessions(object()).scope_statement("scope-1")  # type: ignore[arg-type]
+    sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
+    condensed = " ".join(sql.split())
+
+    assert "rra_beta_sessions.owner_id = 'scope-1'" in condensed
+    assert "rra_report_jobs.owner_id = 'scope-1'" not in condensed

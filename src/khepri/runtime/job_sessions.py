@@ -21,9 +21,13 @@ from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql import Select
 
 from khepri.rra.job_persistence import ReportJobRow
 from khepri.rra.persistence import BetaSessionRow
+
+#: One selected row: the job's identity and scope, then the session's two liveness facts.
+_ScopeRow = tuple[str, str, str, "datetime | None", "datetime"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,8 +51,23 @@ class SqlJobSessions:
     def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
 
-    def for_scope(self, owner_id: str) -> dict[str, JobSession]:
-        statement = (
+    def scope_statement(self, owner_id: str) -> Select[_ScopeRow]:
+        """The scope's jobs, asked of the relation whose index leads with `owner_id`.
+
+        `rra_report_jobs` has no `owner_id`-leading index -- only `(state, available_at)`,
+        `(lease_expires_at)` and `(session_id, state)` -- so asking the scope there scans every
+        organization's jobs, on a spine the roadmap leaves unbounded (review on `#378`).
+        `rra_beta_sessions` carries `uq_session_owner_scope` on `(owner_id, session_id)`, whose
+        leading column is `owner_id`; the jobs are then reached by `session_id`, which
+        `ix_report_job_session_state` leads with. Both sides stay index-backed.
+
+        The same rows either way, and provably: `session_id` is `rra_beta_sessions`' primary key,
+        so the join answers exactly one session per job, and `fk_report_job_session_scope` ties
+        that job's `owner_id` to that session's. No job of this scope hangs off another scope's
+        session, and none of another scope's off this one's. `owner_id` is still selected from the
+        job, so what the reader publishes about scope is unchanged.
+        """
+        return (
             select(
                 ReportJobRow.job_id,
                 ReportJobRow.owner_id,
@@ -57,8 +76,11 @@ class SqlJobSessions:
                 BetaSessionRow.content_expires_at,
             )
             .join(BetaSessionRow, BetaSessionRow.session_id == ReportJobRow.session_id)
-            .where(ReportJobRow.owner_id == owner_id)
+            .where(BetaSessionRow.owner_id == owner_id)
         )
+
+    def for_scope(self, owner_id: str) -> dict[str, JobSession]:
+        statement = self.scope_statement(owner_id)
         with self._factory() as database:
             rows = database.execute(statement).all()
         return {
