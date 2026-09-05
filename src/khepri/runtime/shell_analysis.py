@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
+from khepri.rca.workspace.contracts import RUN_STARTED
 from khepri.rca.workspace.schema import (
     SECTION_STATE_ANSWERED,
     SECTION_STATE_CAVEATED,
@@ -188,10 +188,8 @@ def detail_view(
     address tail, which the Passport's data reference is built under."""
     run, version = record.run, record.version
     bound = {binding.surface: binding.artifact_digest for binding in record.bindings}
-    availability = report_key(run, frozenset(bound))
-    # Offered only while the run's session can still be resumed: the handoff has nothing to hand
-    # off otherwise (`W1-07` reconciles artifact retention with the session's horizon).
-    offers = availability == "report_available" and bool(provenance and provenance.reachable)
+    availability = availability_key(report_key(run, frozenset(bound)), provenance)
+    offers = availability == "report_available"
     return DetailView(
         run_id=run.run_id,
         state_key=worded(RUN_STATE_COPY, run.state),
@@ -240,15 +238,32 @@ def _passport(
     )
 
 
+def availability_key(availability: str, provenance: Provenance | None) -> str:
+    """The report's availability as the surfaces state it, on the spine and in detail alike.
+
+    `report_key` reads the bindings; this reads the session behind them. A report is offered only
+    while the run's session can still be resumed -- the handoff has nothing to hand off otherwise
+    (`W1-07` reconciles artifact retention with the session's horizon) -- so a bound report whose
+    session has ended, or whose run retained no provenance, is stated as one that can no longer
+    be opened rather than as available (review on `#376` round 2).
+    """
+    if availability != "report_available":
+        return availability
+    return "report_available" if _resumable(provenance) else "report_unreachable"
+
+
+def _resumable(provenance: Provenance | None) -> bool:
+    """Whether there is a session to hand the report off from: a record, still reachable."""
+    return provenance is not None and provenance.reachable
+
+
 def _artifacts_key(run: Any, availability: str, offers: bool) -> str | None:
     """Which sentence stands where the artifacts would: none when they are offered."""
     if offers:
         return None
     if run.state == RUN_STARTED or availability == "report_not_yet":
         return "artifacts_not_yet"
-    if run.state == RUN_COMPLETED:
-        # Completed and complete, but the provenance is gone: the report cannot be handed off
-        # because there is no session to resume, and the sentence must not say otherwise.
+    if availability == "report_unreachable":
         return "artifacts_unreachable"
     return "artifacts_none"
 
@@ -261,6 +276,7 @@ __all__ = [
     "Passport",
     "RunRecord",
     "TrustGroup",
+    "availability_key",
     "detail_view",
     "trust_groups",
 ]

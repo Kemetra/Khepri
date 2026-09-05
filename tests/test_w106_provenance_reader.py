@@ -10,8 +10,10 @@ read reports as `reachable` only while that session can be resumed.
 
 At completion the package is rebuilt and checked against its digest before a section outcome is
 recorded; a document that rebuilds to another package, or a digest that names another, is refused
-there and no provenance is written. A completed run without its record is a corrupt record and
-refuses the whole surface (`UnrenderableRecord`).
+there and no provenance is written. A completed run without its record has no Passport to state
+(`None`): runs completed before `20260905_0024` retained none, and the surface must still render
+for them (review on `#376` round 2). Only a link to another scope's job is corruption
+(`UnrenderableRecord`).
 """
 
 from __future__ import annotations
@@ -112,9 +114,10 @@ def test_a_run_completed_through_the_customer_door_retains_provenance_but_has_no
     assert found.job_id is None and found.session_id is None and found.reachable is False
 
 
-def test_a_completed_run_without_its_record_refuses_the_surface() -> None:
-    """A completed run always retains its provenance (the same transaction writes both), so a
-    completed run without one is a corrupt record, not an absence to render around."""
+def test_a_run_completed_before_provenance_was_retained_has_no_passport_and_is_not_reachable():
+    """`20260905_0024` backfills nothing, so a run completed before it has no record. That is an
+    absence to state, not corruption to refuse: the reader answers `None`, and the surfaces say
+    the Passport is unavailable and the report can no longer be opened."""
     j = journey()
     who = member(j.w)
     completed_run(j, who)
@@ -122,8 +125,7 @@ def test_a_completed_run_without_its_record_refuses_the_surface() -> None:
     with j.w.factory.begin() as database:
         database.execute(delete(RunProvenanceRow).where(RunProvenanceRow.run_id == run.run_id))
 
-    with pytest.raises(UnrenderableRecord):
-        provenance(j).for_run(who.owner_id, run, version)
+    assert provenance(j).for_run(who.owner_id, run, version) is None
 
 
 class _LinkTo:
@@ -166,16 +168,15 @@ def test_a_link_to_a_job_of_another_scope_refuses_the_surface() -> None:
 
 
 def test_another_scopes_run_has_no_record_here() -> None:
-    """The provenance store filters by scope, so another scope's completed run reads as a
-    completed run without a record -- refused, never rendered under the wrong organization."""
+    """The provenance store filters by scope, so another scope's completed run reads as a run
+    without a record here -- nothing of it is stated under the wrong organization."""
     j = journey()
     who = member(j.w)
     other = member(j.w, email="other@example.test", name="Other")
     completed_run(j, who)
     run, version = _run_and_version(j, who)
 
-    with pytest.raises(UnrenderableRecord):
-        provenance(j).for_run(other.owner_id, run, version)
+    assert provenance(j).for_run(other.owner_id, run, version) is None
 
 
 # --- The section outcomes are read from a package that verifies -----------------------------------
@@ -210,9 +211,10 @@ def test_a_document_that_rebuilds_to_another_package_is_refused_under_the_right_
         section_states_of(replace(genuine, document=foreign.document))
 
 
-def test_a_run_whose_session_content_was_deleted_keeps_its_passport_but_is_not_reachable() -> None:
-    """Deletion ends the session's content before its horizon does; the Passport stays and the
-    handoff is withdrawn, exactly as after expiry."""
+def test_a_run_whose_session_deletion_was_requested_keeps_its_passport_but_is_not_reachable():
+    """A requested deletion ends the session's content before its horizon does -- the journey and
+    the artifact repository refuse the session from the request, while cleanup is still pending
+    -- so the handoff is withdrawn from the request too, and the Passport stays."""
     from khepri.rra.persistence import BetaSessionRow
 
     j = journey()
@@ -220,9 +222,7 @@ def test_a_run_whose_session_content_was_deleted_keeps_its_passport_but_is_not_r
     _run, _job, session_id = completed_run(j, who)
     run, version = _run_and_version(j, who)
     with j.w.factory.begin() as database:
-        row = database.get(BetaSessionRow, session_id)
-        row.deletion_requested_at = j.clock()
-        row.content_deleted_at = j.clock()
+        database.get(BetaSessionRow, session_id).deletion_requested_at = j.clock()
 
     found = provenance(j).for_run(who.owner_id, run, version)
 

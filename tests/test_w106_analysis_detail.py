@@ -398,6 +398,45 @@ def test_a_run_whose_journey_content_has_expired_keeps_its_passport_but_not_its_
     assert EN["run_state_completed"] in html
 
 
+def test_the_spine_says_what_detail_says_once_the_report_can_no_longer_be_opened() -> None:
+    """A row that said "Report available" while its detail offered nothing sent the reader to a
+    page that contradicted the row (review on `#376` round 2). The spine's word is detail's."""
+    j = journey()
+    who = member(j.w)
+    completed_run(j, who)
+    assert EN["report_available"] in page(j, who, "analyses")
+    j.clock.advance(timedelta(days=8))
+
+    html = page(j, who, "analyses")
+
+    assert EN["report_available"] not in html
+    assert EN["report_unreachable"] in html
+    assert EN["run_state_completed"] in html
+
+
+def test_a_run_completed_before_provenance_was_retained_still_renders_on_both_surfaces() -> None:
+    """`20260905_0024` backfills nothing. A run completed before it is listed, opens, states its
+    Passport as unavailable and its report as no longer openable -- and takes no other run's
+    surface down with it."""
+    from sqlalchemy import delete
+
+    from khepri.rca.workspace.persistence import RunProvenanceRow
+
+    j = journey()
+    who = member(j.w)
+    run, _job, _session = completed_run(j, who)
+    with j.w.factory.begin() as database:
+        database.execute(delete(RunProvenanceRow).where(RunProvenanceRow.run_id == run.run_id))
+
+    spine = shell_over(j, who).get(analyses_address(who))
+    detail = shell_over(j, who).get(detail_address(who, run.run_id))
+
+    assert spine.status_code == 200 and detail.status_code == 200
+    assert EN["report_unreachable"] in spine.text and EN["report_available"] not in spine.text
+    assert EN["passport_unavailable"] in detail.text
+    assert EN["artifacts_unreachable"] in detail.text and "<form" not in detail.text
+
+
 # --- No second index -----------------------------------------------------------------------------
 
 

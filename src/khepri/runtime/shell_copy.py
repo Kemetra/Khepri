@@ -111,6 +111,7 @@ _EN = {
     "report_available": "Report available",
     "report_not_yet": "Report not ready yet",
     "report_unavailable": "Report not produced",
+    "report_unreachable": "Report can no longer be opened",
     # A deleted run stays on the spine as a tombstone (`KHEPRI-DEC-033` §1), minimal (§7.3).
     "retention_deleted": "Deleted",
     "tombstone_deleted": "Deleted",
@@ -222,6 +223,7 @@ _AR = {
     "report_available": "التقرير متاح",
     "report_not_yet": "التقرير غير جاهز بعد",
     "report_unavailable": "لم يُنتَج تقرير",
+    "report_unreachable": "لم يعد بالإمكان فتح التقرير",
     "retention_deleted": "محذوف",
     "tombstone_deleted": "محذوف",
     "tombstone_note": "حُذف هذا التحليل. يبقى مدخله كي لا يقصر التاريخ.",

@@ -28,9 +28,14 @@ layer is the one place that may hold both.
 ## Three answers
 
 - **`Provenance`** -- the run is completed and its record is retained.
-- **`None`** -- the run is not completed yet; there is no provenance to state, honestly.
-- **`UnrenderableRecord`** -- a completed run without its record, or a link to a job another scope
-  owns: a corrupt record, which refuses the whole surface (`FR-050`).
+- **`None`** -- there is no provenance to state: the run is not completed yet, or it completed
+  before provenance was retained (`20260905_0024` backfills nothing: the admission and the package
+  a record is written from may already have ended on their own horizons). Detail states the
+  Passport as unavailable and offers no artifact; the run itself stays on the spine. Review on
+  `#376` round 2: an earlier draft read the absence as corruption and refused the whole Analyses
+  surface, which every organization with a run completed before the upgrade would have met.
+- **`UnrenderableRecord`** -- a link to a job another scope owns: a corrupt record, which refuses
+  the whole surface (`FR-050`).
 """
 
 from __future__ import annotations
@@ -40,7 +45,6 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol
 
-from khepri.rca.workspace.contracts import RUN_COMPLETED
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.rca.workspace.tombstones import SectionStates
@@ -101,12 +105,10 @@ class ProvenanceReader:
         return self._sources
 
     def for_run(self, owner_id: str, run: object, version: object) -> Provenance | None:
-        """The Passport for `run`, in `owner_id`'s scope -- or `None` before completion, or a
-        refusal for a completed run whose record is missing."""
+        """The Passport for `run`, in `owner_id`'s scope -- or `None` where no record is retained:
+        before completion, or for a run completed before provenance was retained."""
         record = self._sources.provenance.for_run(run.run_id, owner_id)
         if record is None:
-            if run.state == RUN_COMPLETED:
-                raise UnrenderableRecord(UNRENDERABLE_FAILURE)
             return None
         job = self._settling_job(owner_id, run)
         return Provenance(
@@ -134,10 +136,12 @@ class ProvenanceReader:
         return job
 
     def _resumable(self, session_id: str) -> bool:
-        """Whether the analysis session's content is still live: present, not deleted, not past
-        `content_expires_at` -- the facts the bridge's resume and the report API read."""
+        """Whether the analysis session's content is still live: present, no deletion requested,
+        not past `content_expires_at` -- the facts the journey and the artifact repository read.
+        A requested deletion is already refused there while its cleanup is pending or retrying, so
+        it is unreachable here from the request, not from the completion."""
         session = self._sources.sessions.get_session(session_id)
-        if session is None or session.content_deleted_at is not None:
+        if session is None or session.deletion_requested_at is not None:
             return False
         return self._clock() < session.content_expires_at
 

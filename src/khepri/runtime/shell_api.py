@@ -41,7 +41,7 @@ cannot be distinguished from a forbidden one.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.resources import files
 from typing import Any, Protocol
 
@@ -51,7 +51,12 @@ from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescap
 from khepri.rca.session_cookie import CommercialSessionCookie
 from khepri.rca.workspace.contracts import RUN_COMPLETED
 from khepri.rra.journey.security import SECURITY_HEADERS
-from khepri.runtime.shell_analysis import RunRecord, detail_view, trust_groups
+from khepri.runtime.shell_analysis import (
+    RunRecord,
+    availability_key,
+    detail_view,
+    trust_groups,
+)
 from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import (
@@ -483,33 +488,42 @@ def _analyses_response(
     owner_id, reads = _workspace_reads(services, context, surface="analyses")
     history = reads.pop("history")
     rows = spine_rows(history.runs, history.tombstones, history.versions, history.bindings)
+    found = _spine_provenance(services, owner_id, history)
     return _render(
         environment,
         "analyses.html.j2",
         language=language,
         status_code=200,
-        rows=rows,
-        trust=_spine_trust(services, owner_id, history, language=language),
+        rows=tuple(_row_availability(row, found) for row in rows),
+        trust={
+            run_id: trust_groups(p.sections, language)
+            for run_id, p in found.items()
+            if p is not None
+        },
         offers_detail=offers_analyses(services),
         **reads,
     )
 
 
-def _spine_trust(
-    services: ShellServices, owner_id: str, history: Any, *, language: str
-) -> dict[str, tuple[Any, ...]]:
-    """Each completed run's quality groups, by run, where the provenance is wired and present."""
+def _spine_provenance(services: ShellServices, owner_id: str, history: Any) -> dict[str, Any]:
+    """Each completed run's provenance, by run, where the reader is wired -- `None` for a run that
+    retained none. Read once for the spine's trust state and its availability word alike."""
     if services.provenance is None:
         return {}
     versions = {version.version_id: version for version in history.versions}
-    trust: dict[str, tuple[Any, ...]] = {}
-    for run in history.runs:
-        if run.state != RUN_COMPLETED:
-            continue
-        found = services.provenance.for_run(owner_id, run, versions[run.version_id])
-        if found is not None:
-            trust[run.run_id] = trust_groups(found.sections, language)
-    return trust
+    return {
+        run.run_id: services.provenance.for_run(owner_id, run, versions[run.version_id])
+        for run in history.runs
+        if run.state == RUN_COMPLETED
+    }
+
+
+def _row_availability(row: Any, found: dict[str, Any]) -> Any:
+    """The row's report word, said as detail says it: a bound report whose session can no longer
+    be resumed is not "available" on the spine either (review on `#376` round 2)."""
+    if row.run_id not in found:  # a tombstone, a run still running, or no reader wired
+        return row
+    return replace(row, report_key=availability_key(row.report_key, found[row.run_id]))
 
 
 @dataclass(frozen=True, slots=True)
