@@ -131,6 +131,17 @@ def _revocation_exists(row_class: type) -> object:
     Kept beside `_revoked` and phrased as SQL so the listing excludes a restored version in the
     database rather than after reading it: a per-row filter would return the row first and drop it
     second, which is a different guarantee under a snapshot that another connection can change.
+
+    Takes any row class carrying `version_id` and `owner_id` -- `DatasetVersionRow`, whose
+    `version_id` is its own identity, and `AnalysisRunRow`, whose `version_id` is the foreign key
+    to its parent. That is the whole polymorphism, and it is why a run needs no ledger row of its
+    own: the ledger records the **ending the owner requested**, and everything beneath it is
+    revoked through the version it derives from, exactly as `_cascade_tombstone_to_runs`
+    tombstones it across the same edge. A second row per run would be a second definition of one
+    fact, and the two would drift the first time a cascade was partial.
+
+    `ArtifactBindingRow` carries no `version_id` and is not passable here; its two reads already
+    join to `AnalysisRunRow`, so they narrow through the run's version -- `_run_revocation_exists`.
     """
     from sqlalchemy import exists
 
@@ -142,6 +153,23 @@ def _revocation_exists(row_class: type) -> object:
         WorkspaceRevocationRow.object_id == row_class.version_id,
         WorkspaceRevocationRow.owner_id == row_class.owner_id,
     )
+
+
+def _run_revocation_exists() -> object:
+    """The same predicate for a read whose row reaches its version through `AnalysisRunRow`.
+
+    Its own function rather than `_revocation_exists(AnalysisRunRow)` at each call site, because
+    the two reads that need it -- `artifact_bindings_for_run` and `artifact_bindings_for_scope` --
+    are already joined to the run, so the correlation is to the joined row and not to the row
+    being selected. Naming it once keeps that subtlety in one place.
+
+    Review on `#382` found both reads filtering on `retention_state` alone. A binding is a live
+    download address, so one handed back for a revoked version is a deleted analysis a customer
+    can still fetch.
+    """
+    from khepri.rca.workspace.schema import AnalysisRunRow
+
+    return _revocation_exists(AnalysisRunRow)
 
 
 def _revoked(row: object) -> bool:
@@ -383,6 +411,7 @@ class SqlWorkspaceRecordStore:
                 .where(DatasetVersionRow.owner_id == owner_id)
                 .where(DatasetVersionRow.upload_ciphertext_digest == ciphertext_digest)
                 .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(DatasetVersionRow))
             ).first()
             return None if row is None else _version_from_row(row)
 
@@ -556,6 +585,7 @@ class SqlWorkspaceRecordStore:
                 select(AnalysisRunRow)
                 .where(AnalysisRunRow.owner_id == owner_id)
                 .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(AnalysisRunRow))
                 .order_by(AnalysisRunRow.started_at.desc(), AnalysisRunRow.run_id.desc())
             ).scalars()
             return tuple(_run_from_row(row) for row in rows)
@@ -609,6 +639,7 @@ class SqlWorkspaceRecordStore:
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.run_id == run_id)
                 .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(~_run_revocation_exists())
             )
             if owner_id is not None:
                 query = query.where(ArtifactBindingRow.owner_id == owner_id)
@@ -630,6 +661,7 @@ class SqlWorkspaceRecordStore:
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.owner_id == owner_id)
                 .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(~_run_revocation_exists())
                 .order_by(ArtifactBindingRow.run_id, ArtifactBindingRow.surface)
             ).scalars()
             return tuple(_binding_from_row(row) for row in rows)
