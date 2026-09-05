@@ -22,9 +22,11 @@ from tests.w107_support import (
     LATER,
     NOW,
     audit_events_for,
+    deletion_jobs_for,
     deletion_service,
     journey,
     sealed_version,
+    uploads_for,
 )
 
 
@@ -142,3 +144,43 @@ def test_a_deleted_version_is_revoked_so_a_restore_cannot_read_it() -> None:
 
     ledger = SqlRevocationLedger(j.w.factory)
     assert ledger.is_revoked(OBJECT_VERSION, version.version_id, who.owner_id) is True
+
+
+def test_deleting_a_version_ends_the_content_it_was_derived_from() -> None:
+    """`KHEPRI-DEC-033` §1: derived content never outlives its input's right to exist. Deleting the
+    dataset version must end the upload it was admitted from and everything derived, so the ending
+    reaches the `RRA` deletion path -- not only the `RCA` records.
+
+    The version holds the upload's *digests* and no session identifier (`KHEPRI-DEC-033` §3 fixes
+    what a version may keep), so the runtime bridges on `ciphertext_sha256_hex`, which is already
+    the key `dataset_version_for_upload` joins on.
+    """
+    j = journey()
+    who = member(j.w)
+    version, _ = sealed_version(j, who)
+
+    deletion_service(j).delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+    )
+
+    assert uploads_for(j, who.owner_id) == (), "the upload outlived the version derived from it"
+
+
+def test_a_repeated_deletion_does_not_begin_a_second_rra_job() -> None:
+    """`FR-124`: evidence is written once per object per ending, and an `RRA` deletion job is what
+    writes it. A repeat that began a second job would write a second evidence record for one
+    ending -- `FR-123`'s "no new deletion evidence", reached through the content side."""
+    j = journey()
+    who = member(j.w)
+    version, _ = sealed_version(j, who)
+    service = deletion_service(j)
+
+    service.delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+    )
+    first = deletion_jobs_for(j, who.owner_id)
+    service.delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=LATER
+    )
+
+    assert deletion_jobs_for(j, who.owner_id) == first

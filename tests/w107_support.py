@@ -41,15 +41,47 @@ def audit_events_for(j: Journey, owner_id: str) -> tuple[WorkspaceAuditEvent, ..
     return j.w.audit.events_for_scope(owner_id)
 
 
+def uploads_for(j: Journey, owner_id: str) -> tuple[Any, ...]:
+    """Every upload row still held by this scope, read as the store reads them."""
+    from sqlalchemy import select
+
+    from khepri.rra.persistence import UploadRow
+
+    with j.w.factory() as database:
+        return tuple(database.scalars(select(UploadRow).where(UploadRow.owner_id == owner_id)))
+
+
+def deletion_jobs_for(j: Journey, owner_id: str) -> tuple[str, ...]:
+    """Every `RRA` deletion job this scope has begun, by identifier."""
+    from sqlalchemy import select
+
+    from khepri.rra.persistence import DeletionJobRow
+
+    with j.w.factory() as database:
+        return tuple(
+            database.scalars(
+                select(DeletionJobRow.deletion_id).where(DeletionJobRow.owner_id == owner_id)
+            )
+        )
+
+
 def deletion_service(j: Journey) -> Any:
     """The deletion service composed as the runtime composes it (`R7-01` §3: the RCA store and the
     RRA deletion path meet here, in `khepri.runtime`, and not inside either package)."""
+    from khepri.rra.deletion import DeletionService
+    from khepri.rra.persistence import SqlDeletionRepository
     from khepri.runtime.workspace_deletion import WorkspaceDeletion
 
     return WorkspaceDeletion(
         store=j.w.store,
         audit=j.w.audit,
         ledger=SqlRevocationLedger(j.w.factory),
+        content=DeletionService(
+            sessions=j.w.sessions,
+            deletions=SqlDeletionRepository(j.w.factory),
+            objects=j.w.objects,
+        ),
+        factory=j.w.factory,
     )
 
 
@@ -57,7 +89,9 @@ __all__ = [
     "LATER",
     "NOW",
     "audit_events_for",
+    "deletion_jobs_for",
     "deletion_service",
     "journey",
     "sealed_version",
+    "uploads_for",
 ]

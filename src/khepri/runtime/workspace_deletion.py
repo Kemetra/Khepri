@@ -48,10 +48,18 @@ class DeletionOutcome:
 class WorkspaceDeletion:
     """Ends a dataset version and everything named as cascading from it."""
 
-    def __init__(self, *, store: Any, audit: Any, ledger: Any) -> None:
+    #: `rra_deletion_jobs` admits `immediate` and `expiry`. An owner-requested deletion is the
+    #: first: `FR-123` makes it immediate, and `expiry` is `W1-07b`'s retention-triggered purge.
+    REASON_IMMEDIATE = "immediate"
+
+    def __init__(
+        self, *, store: Any, audit: Any, ledger: Any, content: Any, factory: Any
+    ) -> None:
         self._store = store
         self._audit = audit
         self._ledger = ledger
+        self._content = content
+        self._factory = factory
 
     def delete_version(
         self, owner_id: str, version_id: str, *, actor_account_id: str, now: datetime
@@ -73,6 +81,8 @@ class WorkspaceDeletion:
                 )
             )
             return DeletionOutcome(version_id=version_id, deleted=False)
+        version = self._store.get_dataset_version(version_id, owner_id)
+        self._end_derived_content(version, now)
         self._store.tombstone_dataset_version(version_id, now=now, owner_id=owner_id)
         self._ledger.revoke(
             RevokedObject(
@@ -86,6 +96,61 @@ class WorkspaceDeletion:
             WorkspaceAuditEvent.completed(actor, ACTION_VERSION_DELETED, subject, now=now)
         )
         return DeletionOutcome(version_id=version_id, deleted=True)
+
+    def _session_of_upload(self, owner_id: str, ciphertext_digest: str) -> str | None:
+        """The session that admitted this upload, by the digest the version retains.
+
+        Read here rather than through a new `SqlUploadRepository` verb: the join is this ending's,
+        not the upload store's, and `R7-01` §3 puts a read that serves an `RCA` ending over an
+        `RRA` row at the composition seam. Scoped by `owner_id` as well as the digest, so a digest
+        two organizations happen to share cannot address the other's session.
+        """
+        from sqlalchemy import select
+
+        from khepri.rra.persistence import UploadRow
+
+        with self._factory() as database:
+            return database.scalar(
+                select(UploadRow.session_id).where(
+                    UploadRow.owner_id == owner_id,
+                    UploadRow.ciphertext_sha256_hex == ciphertext_digest,
+                )
+            )
+
+    def _end_derived_content(self, version: Any, now: datetime) -> None:
+        """End the upload this version was admitted from, and everything derived from it.
+
+        `KHEPRI-DEC-033` §1: *derived content never outlives its input's right to exist*. Ending
+        only the `RCA` records would leave the customer's upload, fact packages and artifacts in
+        place under a version they withdrew.
+
+        **Bridged on the ciphertext digest**, because a `DatasetVersion` holds the upload's digests
+        and no session identifier -- §3 fixes what a version may keep, and a session identifier is
+        not on that list. The upload row carries both the digest and its session, and the digest is
+        already the key `dataset_version_for_upload` joins on, so this reuses an existing link
+        rather than inventing one. Resolved here, in `khepri.runtime`, because it reads an `RRA`
+        row on behalf of an `RCA` ending and `R7-01` §3 forbids either package importing the other.
+
+        Through `DeletionService.delete_session_content`, which is the one implementation of this
+        ending -- `local/sweeper.py` records why: *"an expiry route that deleted differently from
+        the on-demand route would be a second deletion implementation to keep correct"*. It is also
+        what writes `FR-124`'s content-free evidence, so the evidence arrives by using the existing
+        path rather than by this slice writing a second kind.
+
+        The job it begins is idempotent per session, so a repeat that reached here would not start
+        a second ending -- but the caller returns before this on the already-deleted path, so a
+        repeat does not reach it at all.
+        """
+        session_id = self._session_of_upload(
+            version.owner_id, version.upload_ciphertext_digest
+        )
+        if session_id is None:
+            # The upload already ended -- its own seven-day horizon, or an earlier deletion. The
+            # version's ending is not blocked by content that is already gone.
+            return
+        self._content.delete_session_content(
+            session_id=session_id, reason=self.REASON_IMMEDIATE, now=now
+        )
 
 
 __all__ = ["DeletionOutcome", "WorkspaceDeletion"]
