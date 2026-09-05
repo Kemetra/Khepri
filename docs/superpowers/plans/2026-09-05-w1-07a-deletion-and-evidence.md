@@ -383,11 +383,16 @@ def test_a_restored_deleted_version_is_not_readable() -> None:
 
 def test_no_surface_says_content_expires_automatically() -> None:
     """`KHEPRI-DEC-033` §5: until `W1-07b` ships a sweep with a caller, no surface may tell a
-    customer that content expires by itself. A copy check, because the claim would be true only
-    after that slice."""
+    customer that content expires by itself.
+
+    **This guard passes over an empty set today** -- no `SHELL_COPY` string contains the word --
+    so it was proven by the inverse mutant instead: adding a violating string makes it fail, and
+    removing it makes it pass again. Recorded here because a guard nobody has watched fail is not
+    evidence of anything (`W1-07a` review).
+    """
     for language in ("en", "ar"):
         for key, text in SHELL_COPY[language].items():
-            assert "automatic" not in text.lower(), key
+            assert "automatic" not in str(text).lower(), key
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -404,7 +409,13 @@ The workspace read path consults the ledger before returning a version. Keep the
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_w107_restore_and_copy.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Full verification**
+- [ ] **Step 5: Prove the copy check can fail**
+
+Add a violating string to `SHELL_COPY["en"]` (e.g. `"probe": "Content is deleted automatically."`),
+run the test and confirm it FAILS naming that key, then remove the string and confirm it passes.
+A guard that has never been watched fail is not evidence.
+
+- [ ] **Step 6: Full verification**
 
 ```bash
 ./.venv/Scripts/python.exe -m ruff check src/ tests/
@@ -413,7 +424,7 @@ git fetch origin
 ```
 Then CodeScene `analyze_change_set` against `origin/main`. Expected: `4612+` passed, ruff clean, quality gates passed.
 
-- [ ] **Step 6: Commit and open the PR**
+- [ ] **Step 7: Commit and open the PR**
 
 ```bash
 git add -A

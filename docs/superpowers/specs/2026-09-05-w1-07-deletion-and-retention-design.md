@@ -60,8 +60,12 @@ builds. Doing (b) first would sweep classes that have no deletion path.
 
 **What the ordering costs, stated so it is not discovered later:** `DEC-033` §5's constraint — *no
 surface may tell a customer that content expires automatically* — stays in force until (b) merges.
-(a) ships deletion UI, so (a)'s acceptance includes a copy check that no surface implies automatic
-expiry.
+
+**(a) ships the capability, not a button.** Corrected during the plan's critical review: an earlier
+draft said (a) ships deletion UI. It ships the owner-only route and its guarantees; the Data
+surface's delete affordance, its confirmation and its bilingual copy belong to a later slice. This
+keeps (a)'s review surface to the guarantees, and it means no customer-facing deletion copy ships
+while §5's constraint is live. The copy check stays as a standing guard, proven able to fail.
 
 ## 3. `W1-07a` — design
 
