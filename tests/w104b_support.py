@@ -149,7 +149,8 @@ class Journey:
 
 @dataclass(frozen=True)
 class ReportSide:
-    """The report boundary's real stores over one factory: jobs, deliveries, artifacts, publisher."""
+    """The report boundary's real stores over one factory: jobs, deliveries, artifacts, and the
+    publisher that writes them."""
 
     jobs: SqlReportJobRepository
     reader: JobReader
