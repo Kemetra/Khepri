@@ -26,9 +26,9 @@ from sqlalchemy import delete
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
 from khepri.rca.workspace.persistence import RunProvenanceRow
-from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import RunReport
+from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.tombstones import SectionStates
 from khepri.runtime.run_quality import PackageDoesNotVerify, section_states_of
 from khepri.runtime.shell_provenance import Provenance, ProvenanceReader, ProvenanceSources

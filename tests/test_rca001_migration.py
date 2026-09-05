@@ -67,9 +67,10 @@ RCA_REVISIONS = (
     ("20260905_0023", "rca_workspace_run_reports", "20260905_0022"),
     # `W1-06`'s provenance record, retained with the run (`KHEPRI-DEC-033` §2).
     ("20260905_0024", "rca_workspace_run_provenance", "20260905_0023"),
-    # `W1-08`'s family versions on that record: columns, not a table, so the name repeats
-    # (`FR-116` compares `rra008.*` as well as the mapping and package identifiers).
-    ("20260905_0025", "rca_workspace_run_provenance", "20260905_0024"),
+    # `W1-08`'s `rra008.*` family versions, added as columns on `20260905_0024`'s record rather
+    # than as a table of their own (`FR-116`). The middle element is the revision file's slug, not
+    # the table it touches, so it names this migration's own file.
+    ("20260905_0025", "rca_workspace_run_family_versions", "20260905_0024"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running

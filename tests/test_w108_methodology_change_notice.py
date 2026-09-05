@@ -580,7 +580,7 @@ def test_an_unreadable_previous_record_leaves_this_analysis_readable() -> None:
     assert 'class="change-notice"' not in response.text
 
 
-# --- the change direction, read and seen -----------------------------------------------------------
+# --- the change direction, read and seen -------------------------------------------------------
 
 
 @pytest.mark.parametrize("language", ["en", "ar"])
