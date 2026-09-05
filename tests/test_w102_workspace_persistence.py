@@ -407,10 +407,14 @@ def test_the_slice_delivers_every_table_its_plan_assigns() -> None:
     from khepri.rca.persistence import Base
 
     declared = {name for name in Base.metadata.tables if name.startswith("rca_workspace_")}
-    # `W1-04` added the sixth, `rca_workspace_audit_events` (`FR-125`), in the same module so the
-    # guard-shape test sees every workspace table; it is named here rather than folded into
+    # `W1-04` added the sixth, `rca_workspace_audit_events` (`FR-125`), and `W1-04b` the seventh,
+    # `rca_workspace_run_reports` (the job a run is settled by), each in the same metadata so the
+    # guard-shape test sees every workspace table; they are named here rather than folded into
     # `WORKSPACE_TABLES`, which the isolation tests read as *this* slice's five.
-    assert declared == set(WORKSPACE_TABLES) | {"rca_workspace_audit_events"}
+    assert declared == set(WORKSPACE_TABLES) | {
+        "rca_workspace_audit_events",
+        "rca_workspace_run_reports",
+    }
 
 
 def test_a_source_profile_row_round_trips(factory: sessionmaker) -> None:
