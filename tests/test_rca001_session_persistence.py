@@ -420,7 +420,8 @@ class TestTheMigration:
         (`FR-125`). `W1-04b` then added `20260905_0023`, the run-to-report link the worker
         settles a run through. `W1-06` then added `20260905_0024`, the provenance record a
         completed run retains. `W1-08` then added `20260905_0025`, the four `RRA-008` family
-        versions on that record (`FR-116`), and is the head this pin now names.
+        versions on that record (`FR-116`). `W1-07a` then added `20260906_0026`, the deletion action
+        and the `already_deleted` outcome, and is the head this pin now names.
         """
         import subprocess
 
@@ -429,7 +430,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260905_0025" in result.stdout
+        assert "20260906_0026" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:

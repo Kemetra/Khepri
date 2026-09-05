@@ -71,6 +71,9 @@ RCA_REVISIONS = (
     # than as a table of their own (`FR-116`). The middle element is the revision file's slug, not
     # the table it touches, so it names this migration's own file.
     ("20260905_0025", "rca_workspace_run_family_versions", "20260905_0024"),
+    # `W1-07a`'s deletion vocabulary: a `CHECK` rewrite on `20260905_0022`'s table, so the slug
+    # names this migration's own file rather than the table it widens.
+    ("20260906_0026", "rca_workspace_deletion_audit", "20260905_0025"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
