@@ -65,24 +65,43 @@ def test_a_repeated_deletion_answers_the_same() -> None:
     assert second.deleted is False
 
 
-def test_a_repeated_deletion_writes_no_second_evidence() -> None:
-    """`FR-123` claim 2 of 3, and `FR-124`: evidence is written once per object per ending."""
+def test_a_repeated_deletion_performs_no_second_ending() -> None:
+    """`FR-123` claim 2 of 3: a repeat writes no new deletion record.
+
+    **Asserted against the store verb, not against the tombstone's instant.** An earlier version of
+    this test compared `deleted_at` before and after, and could not fail: `set_retention_state`'s
+    own early return (`store.py:631`) already makes a second tombstone a no-op, so the instant is
+    unmoved whatever this service does. That assertion tested the *store's* guarantee while
+    claiming to test this one -- a redundant guard with no separate evidence.
+
+    What this service controls is whether it reaches the ending at all, so that is what is
+    counted. `FR-124`'s evidence record is written by the `RRA` deletion path, which this slice
+    does not yet call; when it does, this test gains the evidence count beside the call count.
+    """
     j = journey()
     who = member(j.w)
     version, _ = sealed_version(j, who)
     service = deletion_service(j)
+    endings: list[str] = []
+    real = j.w.store.tombstone_dataset_version
 
-    service.delete_version(
-        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
-    )
-    before = j.w.store.tombstones_for_scope(who.owner_id)
-    service.delete_version(
-        who.owner_id, version.version_id, actor_account_id=who.account_id, now=LATER
-    )
+    def counted(version_id: str, **kwargs: object) -> None:
+        endings.append(version_id)
+        return real(version_id, **kwargs)
 
-    after = j.w.store.tombstones_for_scope(who.owner_id)
-    assert [t.deleted_at for t in after] == [t.deleted_at for t in before], (
-        "a repeat re-recorded the ending, moving the horizon it anchors"
+    j.w.store.tombstone_dataset_version = counted  # type: ignore[method-assign]
+    try:
+        service.delete_version(
+            who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+        )
+        service.delete_version(
+            who.owner_id, version.version_id, actor_account_id=who.account_id, now=LATER
+        )
+    finally:
+        j.w.store.tombstone_dataset_version = real  # type: ignore[method-assign]
+
+    assert endings == [version.version_id], (
+        f"the repeat reached the ending again: {endings}"
     )
 
 
