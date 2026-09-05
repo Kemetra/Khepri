@@ -36,7 +36,9 @@ def test_deleting_a_version_tombstones_it_and_its_runs() -> None:
     version, run = sealed_version(j, who, with_run=True)
 
     service = deletion_service(j)
-    service.delete_version(who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW)
+    service.delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+    )
 
     kinds = {type(t).__name__ for t in j.w.store.tombstones_for_scope(who.owner_id)}
     assert kinds == {"VersionTombstone", "RunTombstone"}
@@ -70,7 +72,9 @@ def test_a_repeated_deletion_writes_no_second_evidence() -> None:
     version, _ = sealed_version(j, who)
     service = deletion_service(j)
 
-    service.delete_version(who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW)
+    service.delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+    )
     before = j.w.store.tombstones_for_scope(who.owner_id)
     service.delete_version(
         who.owner_id, version.version_id, actor_account_id=who.account_id, now=LATER
@@ -89,7 +93,9 @@ def test_a_repeated_deletion_emits_one_already_deleted_event() -> None:
     version, _ = sealed_version(j, who)
     service = deletion_service(j)
 
-    service.delete_version(who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW)
+    service.delete_version(
+        who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+    )
     service.delete_version(
         who.owner_id, version.version_id, actor_account_id=who.account_id, now=LATER
     )
