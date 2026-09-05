@@ -320,6 +320,16 @@ def test_availability_that_changed_between_the_two_runs_is_named_in_the_reports_
         assert SECTION_HEADINGS["en"][section] in notice, section
     assert chrome["quality_answered"] in notice and chrome["quality_refused"] in notice
     assert SECTION_HEADINGS["en"]["overview"] not in notice
+    # Earlier, then later: the earlier run answered, the later refused, in that order on each line.
+    for line in _availability_lines(notice):
+        assert line.index(chrome["quality_answered"]) < line.index(chrome["quality_refused"])
+
+
+def _availability_lines(notice: str) -> list[str]:
+    start = notice.index('class="change-availability"')
+    items = notice[start : notice.index("</ul>", start)].split("<li>")[1:]
+    assert items, "no availability lines"
+    return [_text(item) for item in items]
 
 
 def test_availability_alone_raises_no_notice() -> None:
@@ -383,6 +393,40 @@ def test_the_previous_run_is_the_latest_completed_one_over_the_same_data_where_o
     # Same data, so the mapping did not change; the package and formula did.
     assert EN["notice_mapping"] not in notice
     assert EN["notice_package"] in notice and EN["notice_formula"] in notice
+
+
+def test_the_same_version_is_preferred_over_a_more_recent_run_on_other_data() -> None:
+    """`FR-116`: the same dataset version wins even when a more recent completed run exists over
+    another version -- a methodology is compared over the same data first, related data second."""
+    records = _StubRecords(
+        versions=(
+            _version("ver-o", "rra003.mapping.v3", created_at=NOW - timedelta(hours=1)),
+            _version("ver-b", "rra003.mapping.v3", created_at=NOW - timedelta(days=1)),
+        ),
+        runs=(
+            _run("run-c", "ver-b", started_at=NOW),
+            _run(
+                "run-o",
+                "ver-o",
+                started_at=NOW - timedelta(minutes=30),
+                package="rra004.package.v2",
+                formula="rra004.formula.v1",
+            ),
+            _run(
+                "run-b",
+                "ver-b",
+                started_at=NOW - timedelta(hours=2),
+                package="rra004.package.v2",
+                formula="rra004.formula.v1",
+            ),
+        ),
+        bindings=_bindings("run-o", "run-b", "run-c"),
+    )
+
+    notice = _notice(_detail(records, _StubProvenance(), "run-c"))
+
+    assert f'href="{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-b"' in notice
+    assert "run-o" not in notice
 
 
 # --- Through the deployed pipeline ----------------------------------------------------------------
