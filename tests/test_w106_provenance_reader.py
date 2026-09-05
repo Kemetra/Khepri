@@ -26,6 +26,7 @@ from sqlalchemy import delete
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
 from khepri.rca.workspace.persistence import RunProvenanceRow
+from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import RunReport
 from khepri.rca.workspace.tombstones import SectionStates
@@ -299,3 +300,26 @@ def test_each_sections_outcome_is_stated_as_its_own_code(monkeypatch) -> None:
     )
     with pytest.raises(PackageDoesNotVerify):
         section_states_of(record)
+
+
+def test_a_completed_run_retains_the_family_version_each_analysis_ran_under() -> None:
+    """`W1-08`, `FR-116`. The Notice compares `rra008.*` as well as the mapping, package and core
+    formula, and a family version is not derivable from the core formula -- `ADMITTED_FAMILY_PAIRS`
+    records which pairings are *authorized*, never which one a run used. So the run must retain
+    them, and the real completion path is what proves it: shaping a record directly would leave
+    the write deletable with every test still green.
+
+    Every family, answered or refused: a family that refused because its pairing was unadmitted
+    still ran under this version and refused because of it.
+    """
+    from khepri.rra.bundle import family_versions
+
+    j = journey()
+    who = member(j.w)
+    run, _job_id, _session_id = completed_run(j, who)
+
+    record = SqlRunProvenanceStore(j.w.factory).for_run(run.run_id, who.owner_id)
+
+    assert record is not None
+    assert dict(record.family_versions) == dict(family_versions())
+    assert set(record.family_versions) == set(FAMILY_SECTIONS)
