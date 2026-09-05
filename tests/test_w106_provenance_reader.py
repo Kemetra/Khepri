@@ -30,6 +30,7 @@ from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import RunReport
 from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.tombstones import SectionStates
+from khepri.rra.bundle import FAMILY_VERSIONS
 from khepri.runtime.run_quality import PackageDoesNotVerify, section_states_of
 from khepri.runtime.shell_provenance import Provenance, ProvenanceReader, ProvenanceSources
 from khepri.runtime.shell_workspace import UnrenderableRecord
@@ -312,8 +313,6 @@ def test_a_completed_run_retains_the_family_version_each_analysis_ran_under() ->
     Every family, answered or refused: a family that refused because its pairing was unadmitted
     still ran under this version and refused because of it.
     """
-    from khepri.rra.bundle import family_versions
-
     j = journey()
     who = member(j.w)
     run, _job_id, _session_id = completed_run(j, who)
@@ -321,5 +320,5 @@ def test_a_completed_run_retains_the_family_version_each_analysis_ran_under() ->
     record = SqlRunProvenanceStore(j.w.factory).for_run(run.run_id, who.owner_id)
 
     assert record is not None
-    assert dict(record.family_versions) == dict(family_versions())
+    assert dict(record.family_versions) == dict(FAMILY_VERSIONS)
     assert set(record.family_versions) == set(FAMILY_SECTIONS)

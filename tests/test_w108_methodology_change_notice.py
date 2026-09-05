@@ -38,7 +38,7 @@ from khepri.rca.workspace.contracts import (
 from khepri.rca.workspace.persistence import WorkspaceHistory
 from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.tombstones import SectionStates
-from khepri.rra.bundle import ORDERED_SECTIONS, family_versions
+from khepri.rra.bundle import FAMILY_VERSIONS, ORDERED_SECTIONS
 from khepri.rra.rendering.wording import COMPONENT_CHROME, SECTION_HEADINGS
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
@@ -135,7 +135,7 @@ class _StubProvenance:
         if run.state != RUN_COMPLETED:
             return None
         return Provenance(
-            family_versions=self.families.get(run.run_id, dict(family_versions())),
+            family_versions=self.families.get(run.run_id, dict(FAMILY_VERSIONS)),
             session_id=f"ses-{run.run_id}",
             job_id=f"job-{run.run_id}",
             covered_start=NOW.date(),
@@ -511,7 +511,7 @@ def _same_methodology() -> _StubRecords:
 
 def _families(**moved: str) -> dict[str, str]:
     """This build's family versions, with the named sections moved to another identifier."""
-    return dict(family_versions()) | moved
+    return dict(FAMILY_VERSIONS) | moved
 
 
 @pytest.mark.parametrize("language", ["en", "ar"])
@@ -558,7 +558,7 @@ def test_every_family_the_report_assembles_can_be_named_by_the_notice() -> None:
     """The extent assertion. `FAMILY_SECTIONS` is restated in `khepri.rca` because `R7-01` §3
     forbids it importing `khepri.rra`; this is the one place that may read both, so a fifth family
     added to `_FAMILIES` fails here rather than going silently uncompared and unnamed."""
-    assert set(FAMILY_SECTIONS) == set(family_versions())
+    assert set(FAMILY_SECTIONS) == set(FAMILY_VERSIONS)
     for language in ("en", "ar"):
         for section in FAMILY_SECTIONS:
             assert SHELL_COPY[language][f"notice_family_{section}"]

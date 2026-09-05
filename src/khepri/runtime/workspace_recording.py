@@ -86,7 +86,7 @@ from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
 from khepri.rca.workspace.provenance import RunProvenance, SqlRunProvenanceStore
 from khepri.rca.workspace.unit_of_work import Arbitrated, unit_of_work
-from khepri.rra.bundle import family_versions
+from khepri.rra.bundle import FAMILY_VERSIONS
 from khepri.rra.datasets import DatasetProfileRecord, ProfilingService, document_digest
 from khepri.rra.datasets import stored_manifest as _stored_manifest
 from khepri.rra.intake import UploadMetadata, UploadRepository
@@ -527,7 +527,7 @@ def _provenance_of(
         # stamps at render time (`FR-116`). Read for every family, answered or refused: a family
         # that refused because its pairing was unadmitted still ran under this version, and the
         # Notice states a version that moved, not an outcome that changed.
-        family_versions=family_versions(),
+        family_versions=FAMILY_VERSIONS,
     )
 
 
