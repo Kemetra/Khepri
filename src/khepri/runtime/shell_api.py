@@ -770,6 +770,27 @@ def _names_the_active_organization(segments: list[str], context: Any) -> bool:
     )
 
 
+#: The route modules the shell composes, in the order they are declared.
+_ROUTE_DECLARATIONS = (
+    add_invitation_routes,
+    add_journey_entry_route,
+    add_artifact_handoff_route,
+    add_deletion_route,
+)
+
+
+def _declare_route_modules(app: FastAPI, **composed: object) -> None:
+    """Let each route module declare what it owns, or nothing where this deployment does not offer
+    it.
+
+    Its own function rather than a loop inside `add_shell_routes`, which already sits above
+    CodeScene's cyclomatic threshold: the iteration is one more branch there, and a fifth surface
+    should not have to pay to be added.
+    """
+    for declare in _ROUTE_DECLARATIONS:
+        declare(app, **composed)
+
+
 def add_shell_routes(
     app: FastAPI,
     *,
@@ -820,10 +841,7 @@ def add_shell_routes(
         render=_render,
         team=_team_response,
     )
-    add_invitation_routes(app, services=services, rendering=rendering, clock=clock)
-    add_journey_entry_route(app, services=services, rendering=rendering, clock=clock)
-    add_artifact_handoff_route(app, services=services, rendering=rendering, clock=clock)
-    add_deletion_route(app, services=services, rendering=rendering, clock=clock)
+    _declare_route_modules(app, services=services, rendering=rendering, clock=clock)
 
     @app.get(f"{SHELL_PREFIX}/{{path:path}}")
     def shell_surface(

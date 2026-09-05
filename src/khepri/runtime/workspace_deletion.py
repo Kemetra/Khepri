@@ -36,6 +36,24 @@ from khepri.rca.workspace.revocation import RevokedObject
 
 
 @dataclass(frozen=True, slots=True)
+class DeletionSources:
+    """Where one ending is performed: the workspace records, the audit log, the revocation ledger,
+    the `RRA` content path, and the session factory the upload bridge reads through.
+
+    Grouped rather than passed flat for `ProvenanceSources`' and `ShellRendering`'s reason -- five
+    parameters trips CodeScene's Excess Number of Function Arguments, and these five travel
+    together on every construction and have no meaning apart. Extracting a helper instead would
+    raise the module's function mean, which the same gate scores.
+    """
+
+    store: Any
+    audit: Any
+    ledger: Any
+    content: Any
+    factory: Any
+
+
+@dataclass(frozen=True, slots=True)
 class DeletionOutcome:
     """What one deletion request produced. `deleted` is `False` for `FR-123`'s idempotent repeat --
     the object had already ended -- and the rest of the response is identical either way, because
@@ -52,14 +70,8 @@ class WorkspaceDeletion:
     #: first: `FR-123` makes it immediate, and `expiry` is `W1-07b`'s retention-triggered purge.
     REASON_IMMEDIATE = "immediate"
 
-    def __init__(
-        self, *, store: Any, audit: Any, ledger: Any, content: Any, factory: Any
-    ) -> None:
-        self._store = store
-        self._audit = audit
-        self._ledger = ledger
-        self._content = content
-        self._factory = factory
+    def __init__(self, sources: DeletionSources) -> None:
+        self._sources = sources
 
     def delete_version(
         self, owner_id: str, version_id: str, *, actor_account_id: str, now: datetime
@@ -74,17 +86,17 @@ class WorkspaceDeletion:
         """
         actor = AuditActor(owner_id=owner_id, actor_account_id=actor_account_id)
         subject = AuditSubject(OBJECT_VERSION, version_id)
-        if self._store.get_dataset_version(version_id, owner_id) is None:
-            self._audit.record(
+        if self._sources.store.get_dataset_version(version_id, owner_id) is None:
+            self._sources.audit.record(
                 WorkspaceAuditEvent.already_deleted(
                     actor, ACTION_VERSION_DELETED, subject, now=now
                 )
             )
             return DeletionOutcome(version_id=version_id, deleted=False)
-        version = self._store.get_dataset_version(version_id, owner_id)
+        version = self._sources.store.get_dataset_version(version_id, owner_id)
         self._end_derived_content(version, now)
-        self._store.tombstone_dataset_version(version_id, now=now, owner_id=owner_id)
-        self._ledger.revoke(
+        self._sources.store.tombstone_dataset_version(version_id, now=now, owner_id=owner_id)
+        self._sources.ledger.revoke(
             RevokedObject(
                 object_kind=OBJECT_VERSION,
                 object_id=version_id,
@@ -92,7 +104,7 @@ class WorkspaceDeletion:
                 revoked_at=now,
             )
         )
-        self._audit.record(
+        self._sources.audit.record(
             WorkspaceAuditEvent.completed(actor, ACTION_VERSION_DELETED, subject, now=now)
         )
         return DeletionOutcome(version_id=version_id, deleted=True)
@@ -109,7 +121,7 @@ class WorkspaceDeletion:
 
         from khepri.rra.persistence import UploadRow
 
-        with self._factory() as database:
+        with self._sources.factory() as database:
             return database.scalar(
                 select(UploadRow.session_id).where(
                     UploadRow.owner_id == owner_id,
@@ -148,9 +160,9 @@ class WorkspaceDeletion:
             # The upload already ended -- its own seven-day horizon, or an earlier deletion. The
             # version's ending is not blocked by content that is already gone.
             return
-        self._content.delete_session_content(
+        self._sources.content.delete_session_content(
             session_id=session_id, reason=self.REASON_IMMEDIATE, now=now
         )
 
 
-__all__ = ["DeletionOutcome", "WorkspaceDeletion"]
+__all__ = ["DeletionOutcome", "DeletionSources", "WorkspaceDeletion"]

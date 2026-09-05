@@ -8,6 +8,7 @@ than once.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -71,18 +72,20 @@ def deletion_service(j: Journey) -> Any:
     RRA deletion path meet here, in `khepri.runtime`, and not inside either package)."""
     from khepri.rra.deletion import DeletionService
     from khepri.rra.persistence import SqlDeletionRepository
-    from khepri.runtime.workspace_deletion import WorkspaceDeletion
+    from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
 
     return WorkspaceDeletion(
-        store=j.w.store,
-        audit=j.w.audit,
-        ledger=SqlRevocationLedger(j.w.factory),
-        content=DeletionService(
-            sessions=j.w.sessions,
-            deletions=SqlDeletionRepository(j.w.factory),
-            objects=j.w.objects,
-        ),
-        factory=j.w.factory,
+        DeletionSources(
+            store=j.w.store,
+            audit=j.w.audit,
+            ledger=SqlRevocationLedger(j.w.factory),
+            content=DeletionService(
+                sessions=j.w.sessions,
+                deletions=SqlDeletionRepository(j.w.factory),
+                objects=j.w.objects,
+            ),
+            factory=j.w.factory,
+        )
     )
 
 
@@ -114,14 +117,25 @@ class _RefusingOwnerGate:
         raise PermissionError("Resource is unavailable.")
 
 
-def shell_with_deletion(
-    j: Journey,
-    who: Member,
-    *,
-    organization_of: Member | None = None,
-    wired: bool = True,
-    owner: bool = True,
-) -> Any:
+@dataclass(frozen=True, slots=True)
+class Acting:
+    """How a request reaches the deletion route: whose organization it names, whether the shell
+    wired deletion at all, and whether the session resolves as that organization's owner.
+
+    Grouped rather than passed flat because five parameters trips CodeScene's Excess Number of
+    Function Arguments -- the same gate `DeletionSources` answers, in the tests.
+    """
+
+    organization_of: Member | None = None
+    wired: bool = True
+    owner: bool = True
+
+
+#: The ordinary case: this member's own organization, deletion wired, session resolving as owner.
+AS_OWNER = Acting()
+
+
+def shell_with_deletion(j: Journey, who: Member, acting: Acting = AS_OWNER) -> Any:
     """A shell whose deletion service is wired (or deliberately not).
 
     `organization_of` lets a member act inside another member's organization, which is how the
@@ -134,11 +148,11 @@ def shell_with_deletion(
     from khepri.runtime.shell_api import ShellServices, add_shell_routes
     from tests.w106_support import HTTPS, services_over
 
-    acting_in = organization_of or who
+    acting_in = acting.organization_of or who
     base = services_over(j, acting_in)
     services = ShellServices(
         resolver=_RefusingOwnerGate(base.resolver.for_request("", organization_id=None, now=None))
-        if not owner
+        if not acting.owner
         else base.resolver,
         organizations=base.organizations,
         invitations=base.invitations,
@@ -146,7 +160,7 @@ def shell_with_deletion(
         records=base.records,
         isolation=base.isolation,
         provenance=base.provenance,
-        deletion=deletion_service(j) if wired else None,
+        deletion=deletion_service(j) if acting.wired else None,
     )
     app = FastAPI()
     add_shell_routes(app, services=services, clock=j.clock)
@@ -164,6 +178,8 @@ __all__ = [
     "deletion_service",
     "journey",
     "sealed_version",
+    "AS_OWNER",
+    "Acting",
     "shell_with_deletion",
     "uploads_for",
 ]

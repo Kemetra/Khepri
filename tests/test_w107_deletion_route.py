@@ -11,6 +11,7 @@ from __future__ import annotations
 from khepri.rca.workspace.audit import ACTION_VERSION_DELETED
 from tests.w104_support import member
 from tests.w107_support import (
+    Acting,
     audit_events_for,
     delete_address,
     journey,
@@ -75,7 +76,7 @@ def test_the_route_is_unknown_where_deletion_is_not_wired() -> None:
     who = member(j.w)
     version, _ = sealed_version(j, who)
 
-    response = shell_with_deletion(j, who, wired=False).post(
+    response = shell_with_deletion(j, who, Acting(wired=False)).post(
         delete_address(who, version.version_id)
     )
 
@@ -130,7 +131,7 @@ def test_a_member_of_the_organization_who_is_not_its_owner_cannot_delete() -> No
     owner = member(j.w)
     version, _ = sealed_version(j, owner)
 
-    response = shell_with_deletion(j, owner, owner=False).post(
+    response = shell_with_deletion(j, owner, Acting(owner=False)).post(
         delete_address(owner, version.version_id)
     )
 
