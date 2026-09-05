@@ -241,3 +241,73 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* `W1-08`: the Methodology Change Notice. A note, not an alert (§10): hairline border, muted ink,
+   the difference stated as text. */
+.change-notice {
+  margin-block: var(--space-4, 1rem);
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2, 0.375rem);
+}
+
+.change-notice > .region-label:first-child {
+  margin-block-start: 0;
+  padding-block-start: 0;
+  border-block-start: 0;
+}
+
+.change-list {
+  display: grid;
+  grid-template-columns: minmax(10rem, max-content) 1fr;
+  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  margin: 0;
+}
+
+.change-list > div {
+  display: contents;
+}
+
+.change-list dt {
+  color: var(--muted);
+}
+
+.change-list dd,
+.change-availability {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm, 0.875rem);
+  overflow-wrap: anywhere;
+}
+
+.change-availability {
+  padding: 0;
+  list-style: none;
+  font-family: inherit;
+}
+
+.change-availability li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
+.change-arrow {
+  color: var(--muted);
+}
+
+.change-caution {
+  margin-block: var(--space-3, 0.75rem) var(--space-2, 0.5rem);
+}
+
+.change-previous {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+@media (max-width: 40rem) {
+  .change-list {
+    grid-template-columns: 1fr;
+  }
+}

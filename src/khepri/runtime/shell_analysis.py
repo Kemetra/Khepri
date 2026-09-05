@@ -129,6 +129,34 @@ class RunRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class VersionChange:
+    """One governed identifier that differs between the previous run and this one."""
+
+    label_key: str
+    earlier: str
+    later: str
+
+
+@dataclass(frozen=True, slots=True)
+class AvailabilityChange:
+    """One section whose quality group differs between the two runs, in the report's words."""
+
+    section: str
+    earlier: str
+    later: str
+
+
+@dataclass(frozen=True, slots=True)
+class MethodologyChange:
+    """The Methodology Change Notice (`FR-116`, `W1-08`): what differs, and which analysis it
+    differs from. A difference and nothing else -- no figure from either run is here to compare."""
+
+    previous_run_id: str
+    versions: tuple[VersionChange, ...]
+    availability: tuple[AvailabilityChange, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class DetailView:
     """Everything the detail template renders for one run."""
 
@@ -142,6 +170,9 @@ class DetailView:
     artifacts: tuple[ArtifactAction, ...]
     artifacts_key: str | None
     audit: AuditDetail
+    #: `W1-08`: set by the surface once the previous completed run is known; `None` when there is
+    #: none, or when every governed version is the same.
+    change: MethodologyChange | None = None
 
 
 def trust_groups(sections: SectionStates | None, language: str) -> tuple[TrustGroup, ...]:
@@ -162,7 +193,7 @@ def trust_groups(sections: SectionStates | None, language: str) -> tuple[TrustGr
     return tuple(
         TrustGroup(
             label=chrome[key],
-            sections=(named := tuple(_heading(headings, s) for s in sections)),
+            sections=(named := tuple(heading_of(headings, s) for s in sections)),
             sections_text=separator.join(named),
         )
         for key, sections in groups
@@ -170,7 +201,14 @@ def trust_groups(sections: SectionStates | None, language: str) -> tuple[TrustGr
     )
 
 
-def _heading(headings: dict[str, str], section_id: str) -> str:
+def group_by_section(sections: SectionStates, language: str) -> dict[str, str]:
+    """Each section's quality group label, from the same codes `trust_groups` presents."""
+    chrome = COMPONENT_CHROME[language]
+    labels = {code: chrome[key] for code, key in _GROUP_LABELS}
+    return {section: labels[code] for section, code in section_codes(sections).items()}
+
+
+def heading_of(headings: dict[str, str], section_id: str) -> str:
     try:
         return headings[section_id]
     except KeyError:
@@ -272,11 +310,16 @@ __all__ = [
     "ARTIFACT_KINDS",
     "ArtifactAction",
     "AuditDetail",
+    "AvailabilityChange",
     "DetailView",
+    "MethodologyChange",
     "Passport",
     "RunRecord",
+    "VersionChange",
     "TrustGroup",
     "availability_key",
     "detail_view",
+    "group_by_section",
+    "heading_of",
     "trust_groups",
 ]

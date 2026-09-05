@@ -148,6 +148,16 @@ _EN = {
     "audit_manifest": "Coverage manifest digest",
     "audit_upload": "Upload digest",
     "audit_artifacts": "Artifact digest",
+    # `W1-08`. The Methodology Change Notice (`FR-116`): the difference, never a comparison.
+    "notice_title": "Analysis methodology changed since the previous run.",
+    "notice_mapping": "Mapping version",
+    "notice_package": "Package version",
+    "notice_formula": "Formula version",
+    "notice_availability": "Availability changed",
+    "notice_not_comparable": (
+        "Figures from this analysis and the previous one are not numerically comparable."
+    ),
+    "notice_previous": "Open the previous analysis",
 }
 
 _AR = {
@@ -257,6 +267,14 @@ _AR = {
     "audit_manifest": "بصمة بيان النطاق",
     "audit_upload": "بصمة الملف",
     "audit_artifacts": "بصمة المخرج",
+    # `W1-08`.
+    "notice_title": "تغيّرت منهجية التحليل منذ التحليل السابق.",
+    "notice_mapping": "إصدار المطابقة",
+    "notice_package": "إصدار الحزمة",
+    "notice_formula": "إصدار الصيغة",
+    "notice_availability": "تغيّر التوافر",
+    "notice_not_comparable": "أرقام هذا التحليل والتحليل السابق غير قابلة للمقارنة عدديًا.",
+    "notice_previous": "افتح التحليل السابق",
 }
 
 if set(_EN) != set(_AR):  # pragma: no cover -- structural guard, not a branch under test

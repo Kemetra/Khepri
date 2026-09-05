@@ -36,8 +36,8 @@ from khepri.rca.workspace.contracts import (
     VersionLifecycle,
 )
 from khepri.rca.workspace.persistence import WorkspaceHistory
+from khepri.rca.workspace.tombstones import SectionStates
 from khepri.rra.bundle import ORDERED_SECTIONS
-from khepri.rra.definitions import AnalysisQualitySummary
 from khepri.rra.rendering.wording import COMPONENT_CHROME, SECTION_HEADINGS
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
@@ -55,7 +55,7 @@ DIGEST = "d" * 64
 EN = SHELL_COPY["en"]
 
 
-# --- records shaped directly --------------------------------------------------------------------------
+# --- records shaped directly ----------------------------------------------------------------------
 
 
 @dataclass
@@ -114,11 +114,13 @@ class _StubRecords:
 
 @dataclass
 class _StubProvenance:
-    """A Passport per run, with the quality each run is given."""
+    """A Passport per run, with the section outcomes each run retained."""
 
-    qualities: dict[str, AnalysisQualitySummary] = field(default_factory=dict)
+    outcomes: dict[str, SectionStates] = field(default_factory=dict)
 
-    def for_run(self, owner_id: str, run: object, version: object) -> Provenance:
+    def for_run(self, owner_id: str, run: object, version: object) -> Provenance | None:
+        if run.state != RUN_COMPLETED:
+            return None
         return Provenance(
             session_id=f"ses-{run.run_id}",
             job_id=f"job-{run.run_id}",
@@ -128,7 +130,8 @@ class _StubProvenance:
             aggregate_scope=None,
             attested_by="Operator",
             row_count=4,
-            quality=self.qualities.get(run.run_id),
+            sections=self.outcomes.get(run.run_id, _sections()),
+            reachable=True,
         )
 
 
@@ -189,18 +192,9 @@ def _bindings(*run_ids: str) -> tuple[ArtifactBinding, ...]:
     )
 
 
-def _quality(*refused: str) -> AnalysisQualitySummary:
-    answered = tuple(s for s in ORDERED_SECTIONS if s not in refused)
-    return AnalysisQualitySummary(
-        answered=len(answered),
-        caveated=0,
-        refused=len(refused),
-        refusals=tuple((s, "coverage_incomplete") for s in refused),
-        refused_results=(),
-        caveats=(),
-        answered_sections=answered,
-        caveated_sections=(),
-        caveat_sections=(),
+def _sections(*refused: str) -> SectionStates:
+    return SectionStates(
+        **{s: ("refused" if s in refused else "answered") for s in ORDERED_SECTIONS}
     )
 
 
@@ -265,7 +259,7 @@ def _two_runs(
     )
 
 
-# --- FR-116: the Notice, when governed versions differ -----------------------------------------------
+# --- FR-116: the Notice, when governed versions differ --------------------------------------------
 
 
 @pytest.mark.parametrize("language", ["en", "ar"])
@@ -315,7 +309,7 @@ def test_availability_that_changed_between_the_two_runs_is_named_in_the_reports_
     """The roadmap's `W1-08` names refusals among what changed. A section the earlier run answered
     and the later refused is listed, in the report's section heading and quality words."""
     provenance = _StubProvenance(
-        qualities={"run-a": _quality(), "run-b": _quality("comparison", "growth")}
+        outcomes={"run-a": _sections(), "run-b": _sections("comparison", "growth")}
     )
 
     notice = _notice(_detail(_two_runs(), provenance, "run-b"))
@@ -336,7 +330,7 @@ def test_availability_alone_raises_no_notice() -> None:
         later_package="rra004.package.v2",
         later_formula="rra004.formula.v1",
     )
-    provenance = _StubProvenance(qualities={"run-a": _quality(), "run-b": _quality("growth")})
+    provenance = _StubProvenance(outcomes={"run-a": _sections(), "run-b": _sections("growth")})
 
     html = _detail(records, provenance, "run-b")
 
@@ -354,7 +348,8 @@ def test_the_earlier_run_carries_no_notice_about_a_later_one() -> None:
 
 def test_the_previous_run_is_the_latest_completed_one_over_the_same_data_where_one_exists() -> None:
     """`FR-116`: "the same or a related dataset version". The same version wins where an earlier
-    completed run over it exists; a started or failed run is not a methodology to compare against."""
+    completed run over it exists; a started or failed run is not a methodology to compare
+    against."""
     records = _StubRecords(
         versions=(
             _version("ver-b", "rra003.mapping.v3", created_at=NOW - timedelta(days=1)),
@@ -390,7 +385,7 @@ def test_the_previous_run_is_the_latest_completed_one_over_the_same_data_where_o
     assert EN["notice_package"] in notice and EN["notice_formula"] in notice
 
 
-# --- Through the deployed pipeline ---------------------------------------------------------------------
+# --- Through the deployed pipeline ----------------------------------------------------------------
 
 
 def test_a_single_run_carries_no_notice() -> None:

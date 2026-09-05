@@ -58,6 +58,7 @@ from khepri.runtime.shell_analysis import (
     trust_groups,
 )
 from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
+from khepri.runtime.shell_change_notice import methodology_change, previous_completed
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import (
     Offers,
@@ -553,14 +554,14 @@ def _analysis_response(
     version = next((v for v in history.versions if v.version_id == run.version_id), None)
     if version is None:
         raise UnrenderableRecord(UNRENDERABLE_FAILURE)
-    bindings = tuple(b for b in history.bindings if b.run_id == run_id)
     assert services.provenance is not None  # dispatched only when offered
+    current = RunRecord(run, version, _bindings_of(history, run_id))
+    provenance = services.provenance.for_run(owner_id, run, version)
     view = detail_view(
-        RunRecord(run, version, bindings),
-        services.provenance.for_run(owner_id, run, version),
-        language=language,
-        prefix=f"/{context.organization_id}",
+        current, provenance, language=language, prefix=f"/{context.organization_id}"
     )
+    read = _DetailRead(services, owner_id, history, language)
+    view = replace(view, change=_change_notice(read, current, provenance))
     # `FR-054`: the language control keeps the reader on this analysis, so the tail is the
     # detail address; the navigation still marks Analyses, whose address the tail begins with.
     reads["surface_path"] = f"/{context.organization_id}/analyses/{run_id}"
@@ -634,6 +635,40 @@ def _exact(segments: list[str]) -> bool:
     two empty tails, and `//{organization}/data` into an empty language that `_language` would
     have read as English; both are unknown paths (review on `#373`)."""
     return len(segments) >= 3 and all(segments[:3]) and segments[3:] in ([], [""])
+
+
+def _bindings_of(history: Any, run_id: str) -> tuple[Any, ...]:
+    return tuple(b for b in history.bindings if b.run_id == run_id)
+
+
+@dataclass(frozen=True, slots=True)
+class _DetailRead:
+    """One detail read once its scope is resolved: the services, the scope, the atomic history it
+    was read from, and the address's language."""
+
+    services: ShellServices
+    owner_id: str
+    history: Any
+    language: str
+
+
+def _change_notice(read: _DetailRead, current: RunRecord, provenance: Any) -> Any:
+    """`W1-08` (`FR-116`): what changed since the previous completed run, from the two runs'
+    records and, for availability, from the section outcomes each run retained."""
+    earlier = previous_completed(current.run, read.history.runs)
+    if earlier is None:
+        return None
+    version = next((v for v in read.history.versions if v.version_id == earlier.version_id), None)
+    if version is None:
+        raise UnrenderableRecord(UNRENDERABLE_FAILURE)
+    assert read.services.provenance is not None  # dispatched only when offered
+    earlier_provenance = read.services.provenance.for_run(read.owner_id, earlier, version)
+    outcomes = (
+        None if earlier_provenance is None else earlier_provenance.sections,
+        None if provenance is None else provenance.sections,
+    )
+    previous = RunRecord(earlier, version, _bindings_of(read.history, earlier.run_id))
+    return methodology_change(current, previous, outcomes, read.language)
 
 
 def _detail_run_id(segments: list[str]) -> str | None:
