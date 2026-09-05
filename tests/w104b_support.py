@@ -147,26 +147,42 @@ class Journey:
             self.worker(handler).process(ReportJobMessage(job_id=job_id))
 
 
-def journey() -> Journey:
-    w = base_world()
-    clock = Clock()
-    objects = ArtifactObjects()
-    jobs = SqlReportJobRepository(w.factory)
-    reader = JobReader(w.factory)
+@dataclass(frozen=True)
+class ReportSide:
+    """The report boundary's real stores over one factory: jobs, deliveries, artifacts, publisher."""
+
+    jobs: SqlReportJobRepository
+    reader: JobReader
+    deliveries: SqlDeliveryStore
+    artifacts: SqlArtifactRepository
+    publisher: ReportArtifactPublisher
+
+
+def _report_side(w: World, clock: Clock) -> ReportSide:
     deliveries = SqlDeliveryStore(w.factory, now=clock)
     artifacts = SqlArtifactRepository(w.factory)
-    publisher = ReportArtifactPublisher(
-        repository=artifacts, deliveries=deliveries, objects=objects, now=clock
+    return ReportSide(
+        jobs=SqlReportJobRepository(w.factory),
+        reader=JobReader(w.factory),
+        deliveries=deliveries,
+        artifacts=artifacts,
+        publisher=ReportArtifactPublisher(
+            repository=artifacts, deliveries=deliveries, objects=ArtifactObjects(), now=clock
+        ),
     )
-    recorder = PipelineRecorder(
+
+
+def _recorder(w: World, side: ReportSide) -> PipelineRecorder:
+    """The pipeline door over the world's stores, as `build_pipeline_recorder` composes it."""
+    return PipelineRecorder(
         recording=WorkspaceRecording(
             rra=WorkspacePorts(
                 sessions=w.sessions,
                 uploads=w.uploads,
                 profiling=w.profiling,
                 packages=w.packages,
-                deliveries=deliveries,
-                artifacts=artifacts,
+                deliveries=side.deliveries,
+                artifacts=side.artifacts,
             ),
             rca=RecordStores(
                 workspace=w.store, profiles=w.profiles, audit=w.audit, factory=w.factory
@@ -176,9 +192,15 @@ def journey() -> Journey:
             sessions=w.sessions,
             scopes=SqlIsolationScopes(w.factory),
             reports=SqlRunReportStore(w.factory),
-            jobs=reader,
+            jobs=side.reader,
         ),
     )
+
+
+def _beta_app(
+    w: World, clock: Clock, side: ReportSide, recorder: PipelineRecorder
+) -> FastAPI:
+    """The beta API as `build_web_app` composes it: recording admission and report requests."""
     profiling = RecordingProfilingService(
         AdmissionPorts(
             sessions=w.sessions,
@@ -189,10 +211,12 @@ def journey() -> Journey:
         recorder=recorder,
     )
     requests = RecordingReportRequests(
-        ReportRequestAdapter(jobs=jobs, reader=reader, packages=w.packages, deliveries=deliveries),
+        ReportRequestAdapter(
+            jobs=side.jobs, reader=side.reader, packages=w.packages, deliveries=side.deliveries
+        ),
         recorder=recorder,
     )
-    app = create_app(
+    return create_app(
         service=InvitationService(w.sessions),
         clock=clock,
         intake_service=w.intake,
@@ -200,22 +224,29 @@ def journey() -> Journey:
         package_service=w.packages,
         report_services=ReportServices(
             jobs=requests,
-            bundles=DeliveredBundleAdapter(deliveries=deliveries, reader=reader),
-            artifacts=ReportArtifactAdapter(publisher),
+            bundles=DeliveredBundleAdapter(deliveries=side.deliveries, reader=side.reader),
+            artifacts=ReportArtifactAdapter(side.publisher),
             packages=w.packages,
         ),
     )
+
+
+def journey() -> Journey:
+    w = base_world()
+    clock = Clock()
+    side = _report_side(w, clock)
+    recorder = _recorder(w, side)
     return Journey(
         w=w,
         clock=clock,
         recorder=recorder,
         reports=SqlRunReportStore(w.factory),
-        jobs=jobs,
-        reader=reader,
-        deliveries=deliveries,
-        artifacts=artifacts,
-        publisher=publisher,
-        app=app,
+        jobs=side.jobs,
+        reader=side.reader,
+        deliveries=side.deliveries,
+        artifacts=side.artifacts,
+        publisher=side.publisher,
+        app=_beta_app(w, clock, side, recorder),
     )
 
 
