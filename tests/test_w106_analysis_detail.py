@@ -398,6 +398,42 @@ def test_a_run_whose_journey_content_has_expired_keeps_its_passport_but_not_its_
     assert EN["run_state_completed"] in html
 
 
+def test_the_spines_reads_do_not_grow_with_the_runs_it_lists() -> None:
+    """Review on `#376` (round 3): a read per completed run was four round trips per row on a spine
+    the roadmap leaves unbounded. The provenance, the links and the jobs' sessions are read per
+    scope, so the statements the spine issues are the same for one completed run as for three."""
+    from sqlalchemy import event
+
+    from tests.w104b_support import commercial_client, request_report, submit
+
+    def statements_for(j, who) -> int:
+        count = 0
+
+        def counting(*_args, **_kwargs):
+            nonlocal count
+            count += 1
+
+        engine = j.w.factory.kw["bind"]
+        event.listen(engine, "before_cursor_execute", counting)
+        try:
+            assert EN["report_available"] in page(j, who, "analyses")
+        finally:
+            event.remove(engine, "before_cursor_execute", counting)
+        return count
+
+    j = journey()
+    who = member(j.w)
+    completed_run(j, who)
+    with_one = statements_for(j, who)
+    for _ in range(2):
+        client, _session = commercial_client(j, who)
+        submit(client)
+        j.run_job(request_report(client))
+    assert len(j.w.store.analysis_runs_for_scope(who.owner_id)) == 3
+
+    assert statements_for(j, who) == with_one
+
+
 def test_the_spine_says_what_detail_says_once_the_report_can_no_longer_be_opened() -> None:
     """A row that said "Report available" while its detail offered nothing sent the reader to a
     page that contradicted the row (review on `#376` round 2). The spine's word is detail's."""

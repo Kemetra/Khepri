@@ -80,6 +80,7 @@ from khepri.runtime.external_auth_api import (
     ExternalAuthenticationServices,
     add_external_authentication_routes,
 )
+from khepri.runtime.job_sessions import SqlJobSessions
 from khepri.runtime.landing_api import add_landing_routes
 from khepri.runtime.legal_api import add_legal_routes
 from khepri.runtime.pipeline_recording import (
@@ -487,16 +488,14 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         isolation=IsolationService(
             SqlOrganizationStore(stack.factory), SqlAccountStore(stack.factory)
         ),
-        # `W1-06`: the Passport and the trust state are read from the admission and the package
-        # the run binds by digest, through the same service instances the routes decide with.
         # `W1-06`: the Passport is read from the provenance the run retained at completion
-        # (`KHEPRI-DEC-033` §2); the link, the job and the session serve the artifact handoff.
+        # (`KHEPRI-DEC-033` §2); the links and the jobs' sessions serve the artifact handoff, read
+        # per scope rather than per run so the spine's cost does not grow with its rows.
         provenance=ProvenanceReader(
             ProvenanceSources(
                 provenance=SqlRunProvenanceStore(stack.factory),
                 reports=SqlRunReportStore(stack.factory),
-                jobs=JobReader(stack.factory),
-                sessions=SqlSessionStore(stack.factory),
+                handoffs=SqlJobSessions(stack.factory),
             ),
             clock=stack.clock,
         ),

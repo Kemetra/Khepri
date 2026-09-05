@@ -225,6 +225,9 @@ class _StubProvenance:
             reachable=True,
         )
 
+    def for_runs(self, owner_id: str, runs: tuple) -> dict:
+        return {run.run_id: self.for_run(owner_id, run, None) for run in runs}
+
 
 class _StubBridge:
     def open(self, **kwargs: object) -> object:  # pragma: no cover

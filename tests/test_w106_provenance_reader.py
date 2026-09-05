@@ -31,12 +31,16 @@ from khepri.rca.workspace.run_reports import RunReport
 from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.tombstones import SectionStates
 from khepri.rra.bundle import FAMILY_VERSIONS
+from khepri.runtime.job_sessions import SqlJobSessions
 from khepri.runtime.run_quality import PackageDoesNotVerify, section_states_of
 from khepri.runtime.shell_provenance import Provenance, ProvenanceReader, ProvenanceSources
 from khepri.runtime.shell_workspace import UnrenderableRecord
 from tests.w104_support import OTHER_CSV, member
 from tests.w104b_support import commercial_client, journey, request_report, submit
 from tests.w106_support import completed_run, provenance, started_run
+
+#: The run identifiers `_LinkTo` answers a link for; appended by the test that uses it.
+_RUNS_ASKED: list[str] = []
 
 
 def _run_and_version(j, who):
@@ -118,16 +122,53 @@ def test_a_run_completed_through_the_customer_door_retains_provenance_but_has_no
 
 def test_a_run_completed_before_provenance_was_retained_has_no_passport_and_is_not_reachable():
     """`20260905_0024` backfills nothing, so a run completed before it has no record. That is an
-    absence to state, not corruption to refuse: the reader answers `None`, and the surfaces say
+    absence to state, not corruption to refuse: the reader answers `None` for that run -- and only
+    for that run, borrowing no other run's record from the scope's batch -- and the surfaces say
     the Passport is unavailable and the report can no longer be opened."""
     j = journey()
     who = member(j.w)
     completed_run(j, who)
-    run, version = _run_and_version(j, who)
+    (older,) = j.w.store.analysis_runs_for_scope(who.owner_id)
+    _second_completed_run(j, who)
+    runs = j.w.store.analysis_runs_for_scope(who.owner_id)
+    (newer,) = [run for run in runs if run.run_id != older.run_id]
     with j.w.factory.begin() as database:
-        database.execute(delete(RunProvenanceRow).where(RunProvenanceRow.run_id == run.run_id))
+        database.execute(delete(RunProvenanceRow).where(RunProvenanceRow.run_id == older.run_id))
 
-    assert provenance(j).for_run(who.owner_id, run, version) is None
+    found = provenance(j).for_runs(who.owner_id, runs)
+
+    assert found[older.run_id] is None
+    assert found[newer.run_id] is not None and found[newer.run_id].row_count == 4
+
+
+def _second_completed_run(j, who) -> None:
+    client, _session = commercial_client(j, who)
+    submit(client)
+    j.run_job(request_report(client))
+
+
+def test_every_scope_level_read_returns_only_the_scopes_rows() -> None:
+    """The batched reads behind the spine are filtered by scope at the store, not by the reader
+    indexing them: another organization's records, links and jobs are not read at all."""
+    from khepri.rca.workspace.run_reports import SqlRunReportStore
+
+    j = journey()
+    who = member(j.w)
+    other = member(j.w, email="other@example.test", name="Other")
+    _run, job_id, session_id = completed_run(j, who)
+    other_client, _other_session = commercial_client(j, other)
+    submit(other_client, OTHER_CSV)
+    j.run_job(request_report(other_client))
+    (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
+
+    records = SqlRunProvenanceStore(j.w.factory).for_scope(who.owner_id)
+    links = SqlRunReportStore(j.w.factory).links_for_scope(who.owner_id)
+    jobs = SqlJobSessions(j.w.factory).for_scope(who.owner_id)
+
+    assert [record.run_id for record in records] == [run.run_id]
+    assert [(link.run_id, link.job_id) for link in links] == [(run.run_id, job_id)]
+    assert list(jobs) == [job_id] and jobs[job_id].session_id == session_id
+    assert jobs[job_id].owner_id == who.owner_id
 
 
 class _LinkTo:
@@ -136,8 +177,11 @@ class _LinkTo:
     def __init__(self, job_id: str) -> None:
         self._job_id = job_id
 
-    def job_id_for_run(self, run_id: str, owner_id: str) -> str | None:
-        return self._job_id
+    def links_for_scope(self, owner_id: str) -> tuple[RunReport, ...]:
+        return tuple(
+            RunReport(run_id=run_id, owner_id=owner_id, job_id=self._job_id)
+            for run_id in _RUNS_ASKED
+        )
 
     def link(self, report: RunReport, *, now):  # pragma: no cover -- never written here
         raise AssertionError
@@ -155,12 +199,12 @@ def test_a_link_to_a_job_of_another_scope_refuses_the_surface() -> None:
     j.run_job(request_report(other_client))
     (other_run,) = j.w.store.analysis_runs_for_scope(other.owner_id)
     (other_version,) = j.w.store.dataset_versions_for_scope(other.owner_id)
+    _RUNS_ASKED.append(other_run.run_id)
     reader = ProvenanceReader(
         ProvenanceSources(
             provenance=SqlRunProvenanceStore(j.w.factory),
             reports=_LinkTo(job_id),
-            jobs=j.reader,
-            sessions=j.w.sessions,
+            handoffs=SqlJobSessions(j.w.factory),
         ),
         clock=j.clock,
     )
@@ -322,3 +366,68 @@ def test_a_completed_run_retains_the_family_version_each_analysis_ran_under() ->
     assert record is not None
     assert dict(record.family_versions) == dict(FAMILY_VERSIONS)
     assert set(record.family_versions) == set(FAMILY_SECTIONS)
+
+
+def test_the_scope_predicate_reads_the_relation_whose_index_leads_with_owner() -> None:
+    """The spine and the detail page both run this read for every request, and the roadmap leaves
+    the jobs table unbounded across organizations. `rra_report_jobs` carries no index whose leading
+    column is `owner_id` -- only `(state, available_at)`, `(lease_expires_at)` and
+    `(session_id, state)` -- so filtering the scope there scans every tenant's jobs. The sessions
+    table carries `uq_session_owner_scope` on `(owner_id, session_id)`, and its own comment records
+    that `owner_id` leads it so scope lookups stay index-backed without a second index.
+
+    So the scope is asked of the sessions relation, and the jobs are reached from it by
+    `session_id`, which `ix_report_job_session_state` leads with. The composite foreign key
+    `fk_report_job_session_scope` ties a job's `owner_id` to its session's, so the two predicates
+    select exactly the same rows -- this is the same read down an indexed path, not a narrower one
+    (review on `#378`).
+    """
+    statement = SqlJobSessions(object()).scope_statement("scope-1")  # type: ignore[arg-type]
+    sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
+    condensed = " ".join(sql.split())
+
+    assert "rra_beta_sessions.owner_id = 'scope-1'" in condensed
+    assert "rra_report_jobs.owner_id = 'scope-1'" not in condensed
+
+
+class _JobsOf:
+    """A handoff read that answers one scope's jobs for any scope -- the faulty scoped read the
+    ownership check exists to catch. `SqlJobSessions` cannot produce this; the point is that the
+    reader does not depend on it not producing it."""
+
+    def __init__(self, jobs: dict[str, object]) -> None:
+        self._jobs = jobs
+
+    def for_scope(self, owner_id: str) -> dict[str, object]:
+        return self._jobs
+
+
+def test_a_job_whose_owner_is_another_scope_refuses_the_surface() -> None:
+    """`W1-06` refused a job whose `owner_id` was not the scope asked about, and the batched read
+    must keep refusing it. The scope filter in `for_scope` makes this unreachable today, which is
+    exactly why the check has to stay: it is what fails closed if that filter is ever wrong, and
+    without it a corrupt or faulty scoped read would mark another scope's handoff `reachable`
+    and leave the bridge as the only thing between it and the customer (review on `#378`).
+
+    The link is this scope's own, so the reader reaches the ownership check rather than the
+    missing-job branch the sibling test covers.
+    """
+    from khepri.rca.workspace.run_reports import SqlRunReportStore
+
+    j = journey()
+    who = member(j.w)
+    other = member(j.w, email="other@example.test", name="Other")
+    run, job_id, _session = completed_run(j, who)
+    (version,) = j.w.store.dataset_versions_for_scope(who.owner_id)
+    borrowed = SqlJobSessions(j.w.factory).for_scope(who.owner_id)[job_id]
+    reader = ProvenanceReader(
+        ProvenanceSources(
+            provenance=SqlRunProvenanceStore(j.w.factory),
+            reports=SqlRunReportStore(j.w.factory),
+            handoffs=_JobsOf({job_id: replace(borrowed, owner_id=other.owner_id)}),
+        ),
+        clock=j.clock,
+    )
+
+    with pytest.raises(UnrenderableRecord):
+        reader.for_run(who.owner_id, run, version)

@@ -136,6 +136,20 @@ class SqlRunReportStore:
                 )
             )
 
+    def links_for_scope(self, owner_id: str) -> tuple[RunReport, ...]:
+        """Every link in one scope, in one read (review on `#376`: the spine reads all of a
+        scope's runs, so their links are read together rather than one per run)."""
+        with reading(self._factory) as database:
+            rows = database.scalars(
+                select(RunReportRow)
+                .where(RunReportRow.owner_id == owner_id)
+                .order_by(RunReportRow.run_id)
+            )
+            return tuple(
+                RunReport(run_id=row.run_id, owner_id=row.owner_id, job_id=row.job_id)
+                for row in rows
+            )
+
     def links_of_started_runs(self) -> tuple[RunReport, ...]:
         """Every link whose run is still `started`, across scopes -- what the worker reconciles.
 
