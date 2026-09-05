@@ -49,6 +49,7 @@ from khepri.rra.worker import (
 from khepri.runtime.pipeline_recording import (
     AdmissionPorts,
     PipelineRecorder,
+    RecorderReads,
     RecordingProfilingService,
     RecordingReportRequests,
     SettlingJobStore,
@@ -171,9 +172,12 @@ def journey() -> Journey:
                 workspace=w.store, profiles=w.profiles, audit=w.audit, factory=w.factory
             ),
         ),
-        sessions=w.sessions,
-        scopes=SqlIsolationScopes(w.factory),
-        reports=SqlRunReportStore(w.factory),
+        reads=RecorderReads(
+            sessions=w.sessions,
+            scopes=SqlIsolationScopes(w.factory),
+            reports=SqlRunReportStore(w.factory),
+            jobs=reader,
+        ),
     )
     profiling = RecordingProfilingService(
         AdmissionPorts(

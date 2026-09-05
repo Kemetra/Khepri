@@ -24,6 +24,7 @@ action inside `WorkspaceRecording.perform`, which writes exactly one event.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -53,6 +54,7 @@ from khepri.runtime.workspace_recording import (
     PROFILE_MISMATCH_FAILURE,
     PROVENANCE_FAILURE,
     ArtifactReader,
+    Attempt,
     DeliveryReader,
     Performed,
     RecordStores,
@@ -75,7 +77,12 @@ class Caller:
 
 
 class WorkspaceActions:
-    """Create versions and runs, complete runs, remember and offer source profiles."""
+    """Create versions and runs, complete runs, remember and offer source profiles.
+
+    Every public method is the same two steps -- resolve the caller to a scope, then perform one
+    `Attempt` in it -- so each is written as the one line that differs: which recording operation,
+    over which arguments. `_perform` holds the two steps once.
+    """
 
     def __init__(
         self, *, isolation: IsolationService, rra: WorkspacePorts, rca: RecordStores
@@ -89,12 +96,16 @@ class WorkspaceActions:
     def create_dataset_version(
         self, caller: Caller, *, session_id: str, now: datetime
     ) -> DatasetVersion:
-        """Record the session's `RRA-003` admission as a dataset version, once."""
-        actor = self._actor(caller)
-        return self._recording.perform(
-            actor,
-            ACTION_VERSION_CREATED,
-            lambda: self._recording.create_version(actor.owner_id, session_id, now),
+        """Record the session's `RRA-003` admission as a dataset version, once. Two callers racing
+        for the same upload are arbitrated by the database, and the loser reads the winner."""
+        recording = self._recording
+        return self._perform(
+            caller,
+            lambda owner: Attempt(
+                ACTION_VERSION_CREATED,
+                lambda: recording.create_version(owner, session_id, now),
+                already=lambda: recording.existing_version(owner, session_id, now),
+            ),
             now=now,
         )
 
@@ -102,38 +113,28 @@ class WorkspaceActions:
 
     def start_analysis_run(self, caller: Caller, *, version_id: str, now: datetime) -> AnalysisRun:
         """Open a run over a live version. Incomplete by construction; the pipeline fills it."""
-        actor = self._actor(caller)
-        return self._recording.perform(
-            actor,
-            ACTION_RUN_STARTED,
-            lambda: self._recording.start_run(actor.owner_id, version_id, now),
-            now=now,
+        act = self._recording.start_run
+        return self._perform(
+            caller, lambda o: Attempt(ACTION_RUN_STARTED, lambda: act(o, version_id, now)), now=now
         )
 
     def complete_analysis_run(
         self, caller: Caller, *, run_id: str, report: ReportLocator, now: datetime
     ) -> AnalysisRun:
         """Record what the pipeline produced for a run: its package and every artifact, by digest.
-
-        `report` says where to look; it is checked, never trusted -- see
-        `WorkspaceRecording.complete_run`.
-        """
-        actor = self._actor(caller)
-        return self._recording.perform(
-            actor,
-            ACTION_RUN_COMPLETED,
-            lambda: self._recording.complete_run(actor.owner_id, run_id, report, now),
+        `report` says where to look; it is checked, never trusted -- `complete_run`."""
+        act = self._recording.complete_run
+        return self._perform(
+            caller,
+            lambda o: Attempt(ACTION_RUN_COMPLETED, lambda: act(o, run_id, report, now)),
             now=now,
         )
 
     def fail_analysis_run(self, caller: Caller, *, run_id: str, now: datetime) -> AnalysisRun:
         """End a run the pipeline did not deliver, as `failed`: a real state, with no provenance."""
-        actor = self._actor(caller)
-        return self._recording.perform(
-            actor,
-            ACTION_RUN_FAILED,
-            lambda: self._recording.fail_run(actor.owner_id, run_id, now),
-            now=now,
+        act = self._recording.fail_run
+        return self._perform(
+            caller, lambda o: Attempt(ACTION_RUN_FAILED, lambda: act(o, run_id, now)), now=now
         )
 
     # --- FR-114 / FR-115 ------------------------------------------------------------------------
@@ -143,11 +144,12 @@ class WorkspaceActions:
     ) -> SourceProfile:
         """Keep the admitted mapping's shape beside its version, as metadata a form can read
         (`FR-115`: descriptive only -- see `WorkspaceRecording.remember_profile`)."""
-        actor = self._actor(caller)
-        return self._recording.perform(
-            actor,
-            ACTION_PROFILE_REMEMBERED,
-            lambda: self._recording.remember_profile(actor.owner_id, version_id, session_id, now),
+        act = self._recording.remember_profile
+        return self._perform(
+            caller,
+            lambda o: Attempt(
+                ACTION_PROFILE_REMEMBERED, lambda: act(o, version_id, session_id, now)
+            ),
             now=now,
         )
 
@@ -158,18 +160,25 @@ class WorkspaceActions:
         action. The proposal pre-fills a form; the admission that follows runs on what the customer
         submits, against the new source, and refuses on its own terms.
         """
-        actor = self._actor(caller)
-        return self._recording.perform(
-            actor,
-            ACTION_PROFILE_REUSED,
-            lambda: self._recording.propose_reuse(actor.owner_id, profile_id),
-            now=now,
+        act = self._recording.propose_reuse
+        return self._perform(
+            caller, lambda o: Attempt(ACTION_PROFILE_REUSED, lambda: act(o, profile_id)), now=now
         )
 
-    # --- authorization ----------------------------------------------------------------------------
+    # --- authorization, then one attempt ---------------------------------------------------------
+
+    def _perform[T](
+        self, caller: Caller, attempt_in: Callable[[str], Attempt[T]], *, now: datetime
+    ) -> T:
+        """Resolve the scope -- the one authorization door -- then perform the attempt in it.
+
+        `attempt_in` receives the resolved `owner_id`, the only identity that crosses, and
+        returns the attempt to perform there.
+        """
+        actor = self._actor(caller)
+        return self._recording.perform(actor, attempt_in(actor.owner_id), now=now)
 
     def _actor(self, caller: Caller) -> AuditActor:
-        """Resolve the scope -- the one authorization door -- and name the actor within it."""
         owner_id = self._isolation.resolve_scope(caller.account_id, caller.organization_id)
         return AuditActor(owner_id=owner_id, actor_account_id=caller.account_id)
 

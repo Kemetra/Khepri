@@ -12,15 +12,23 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
-from khepri.rca.workspace.audit import ACTOR_PIPELINE, AuditActor
-from khepri.rca.workspace.contracts import RUN_STARTED, AnalysisRun
+from khepri.rca.workspace.audit import (
+    ACTION_VERSION_CREATED,
+    ACTOR_PIPELINE,
+    OUTCOME_ALREADY_RECORDED,
+    OUTCOME_COMPLETED,
+    AuditActor,
+)
+from khepri.rca.workspace.contracts import RUN_STARTED, AdmittedSource, AnalysisRun, DatasetVersion
 from khepri.rca.workspace.run_reports import (
     ReportAlreadyLinked,
     RunReport,
     SqlRunReportStore,
 )
 from khepri.rca.workspace.scopes import SqlIsolationScopes
+from khepri.rca.workspace.store import VersionAlreadyRecorded
 from khepri.rra.jobs import (
     JOB_DEAD_LETTERED,
     JOB_RETRYABLE,
@@ -32,10 +40,20 @@ from khepri.rra.jobs import (
     ReportJob,
 )
 from khepri.runtime.pipeline_recording import SettlingJobStore
-from tests.w104_support import NOW, member, world
-from tests.w105_support import admitted_version
+from khepri.runtime.workspace_recording import Attempt, Performed
+from tests.w104_support import NOW, events, member, world
+from tests.w105_support import admitted_version, completed_run
 
 LATER = NOW + timedelta(minutes=1)
+SOURCE = AdmittedSource(
+    plaintext_digest="sha256:" + "a" * 64,
+    ciphertext_digest="sha256:" + "b" * 64,
+    size_bytes=2048,
+    media_type="text/csv",
+    manifest_digest="sha256:" + "c" * 64,
+    mapping_version="rra003.mapping.v3",
+    admission_outcome="admitted",
+)
 RETRY = timedelta(seconds=60)
 
 
@@ -85,6 +103,14 @@ class FakeJobs:
         self._ledger.calls.append("fail")
         return _job(self._fail_to)
 
+    def recover_expired(self, *, now: datetime) -> tuple[ReportJob, ...]:
+        self._ledger.calls.append("recover_expired")
+        return ()
+
+    def recover_orphans(self, *, now: datetime) -> tuple[ReportJob, ...]:
+        self._ledger.calls.append("recover_orphans")
+        return ()
+
 
 class FakeReader:
     def find(self, job_id: str) -> ReportJob | None:
@@ -103,6 +129,10 @@ class FakeRecorder:
     def abandoned(self, job: ReportJob, *, now: datetime) -> None:
         self._ledger.calls.append("abandoned")
         self.seen.append(("abandoned", job, now))
+
+    def reconcile(self, *, now: datetime) -> int:
+        self._ledger.calls.append("reconcile")
+        return 0
 
 
 def _store(fail_to: str = JOB_RETRYABLE) -> tuple[SettlingJobStore, Ledger, FakeRecorder]:
@@ -236,10 +266,103 @@ def test_a_link_cannot_name_a_run_outside_its_scope() -> None:
     run = _run_in(w, who)
     store = SqlRunReportStore(w.factory)
 
-    with pytest.raises(Exception):  # noqa: B017 -- the driver's integrity error, not a domain one
+    with pytest.raises(IntegrityError):
         store.link(RunReport(run_id=run.run_id, owner_id=other.owner_id, job_id="job_a"), now=NOW)
 
     assert store.run_id_for_job(other.owner_id, "job_a") is None
+
+
+# --- Arbitration: the loser of a race reads the winner -------------------------------------------
+
+
+def test_two_versions_of_one_upload_in_one_scope_are_refused_by_the_database() -> None:
+    """Two overlapping profile requests both pass the read-then-insert; only a constraint can
+    refuse the second (review on `#375`). Surfaced as the arbitration, in the caller's unit."""
+    w = world()
+    who = member(w)
+    other = member(w, email="other@example.test", name="Other")
+    first = DatasetVersion.create(owner_id=who.owner_id, source=SOURCE, now=NOW)
+    w.store.add_dataset_version(first)
+
+    with pytest.raises(VersionAlreadyRecorded):
+        w.store.add_dataset_version(
+            DatasetVersion.create(owner_id=who.owner_id, source=SOURCE, now=LATER)
+        )
+
+    # Another scope's version of the same bytes is a different version (`FR-109`).
+    w.store.add_dataset_version(
+        DatasetVersion.create(owner_id=other.owner_id, source=SOURCE, now=NOW)
+    )
+    assert [v.version_id for v in w.store.dataset_versions_for_scope(who.owner_id)] == [
+        first.version_id
+    ]
+
+
+def test_a_lost_arbitration_is_recorded_as_already_recorded_from_the_winners_row() -> None:
+    """`perform`: `act` loses a constraint race, the unit rolls back, and `already` is performed in
+    a fresh unit -- one `already_recorded` event, no `completed`, no fault."""
+    w = world()
+    who = member(w)
+    session_id, version_id = admitted_version(w, who)
+    version = w.store.get_dataset_version(version_id, who.owner_id)
+    recording = w.services._recording
+    actor = AuditActor(owner_id=who.owner_id, actor_account_id=who.account_id)
+
+    def loses() -> Performed[DatasetVersion]:
+        raise VersionAlreadyRecorded("lost")
+
+    result = recording.perform(
+        actor,
+        Attempt(
+            ACTION_VERSION_CREATED,
+            loses,
+            already=lambda: recording.existing_version(who.owner_id, session_id, LATER),
+        ),
+        now=LATER,
+    )
+
+    assert result == version
+    outcomes = [e.outcome for e in events(w, who) if e.action == ACTION_VERSION_CREATED]
+    assert outcomes == [OUTCOME_COMPLETED, OUTCOME_ALREADY_RECORDED]
+
+
+def test_a_lost_arbitration_with_no_reading_is_the_fault_it_is() -> None:
+    w = world()
+    who = member(w)
+    recording = w.services._recording
+    actor = AuditActor(owner_id=who.owner_id, actor_account_id=who.account_id)
+
+    def loses() -> Performed[DatasetVersion]:
+        raise VersionAlreadyRecorded("lost")
+
+    with pytest.raises(VersionAlreadyRecorded):
+        recording.perform(actor, Attempt(ACTION_VERSION_CREATED, loses), now=NOW)
+    assert events(w, who) == ()
+
+
+def test_recovery_runs_the_reconciliation_sweep_after_the_repository() -> None:
+    """A lease reclaimed into the dead letter never passes `fail`; the sweep is what reaches it,
+    and it runs after the repository's recovery so it sees the transition it made."""
+    store, ledger, _recorder = _store()
+
+    assert store.recover_expired(now=LATER) == ()
+    assert store.recover_orphans(now=LATER) == ()
+
+    assert ledger.calls == ["recover_expired", "reconcile", "recover_orphans", "reconcile"]
+
+
+def test_the_sweep_reads_only_the_links_of_runs_still_started() -> None:
+    """`reconcile` must not revisit a settled run: a completed run's link is not returned, so no
+    `already_recorded` event is written for it on every claim."""
+    w = world()
+    who = member(w)
+    store = SqlRunReportStore(w.factory)
+    _session, _version, completed = completed_run(w, who)
+    store.link(RunReport(run_id=completed, owner_id=who.owner_id, job_id="job_done"), now=NOW)
+    started = _run_in(w, who)
+    store.link(RunReport(run_id=started.run_id, owner_id=who.owner_id, job_id="job_open"), now=NOW)
+
+    assert [link.job_id for link in store.links_of_started_runs()] == ["job_open"]
 
 
 # --- Which scopes are workspaces -----------------------------------------------------------------

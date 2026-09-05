@@ -1,4 +1,5 @@
-"""Add the run-to-report link (`W1-04b`, `RCA-005` `FR-111`).
+"""Add the run-to-report link and the one-version-per-upload index (`W1-04b`, `RCA-005` `FR-110`,
+`FR-111`).
 
 A run is started in the web process when its report job is queued and completed in the worker
 process when that job delivers. The worker holds a job and needs the run; this table answers it:
@@ -55,8 +56,18 @@ def upgrade() -> None:
     op.create_index(
         "ix_rca_workspace_run_reports_owner_id", "rca_workspace_run_reports", ["owner_id"]
     )
+    # One version per admitted upload in a scope, arbitrated by the database: two overlapping
+    # profile requests both pass a read-then-insert, and only a constraint refuses the second
+    # (review on `#375`). An index rather than a table constraint so SQLite can add it in place.
+    op.create_index(
+        "uq_rca_workspace_version_upload",
+        "rca_workspace_dataset_versions",
+        ["owner_id", "upload_ciphertext_digest"],
+        unique=True,
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_rca_workspace_version_upload", table_name="rca_workspace_dataset_versions")
     op.drop_index("ix_rca_workspace_run_reports_owner_id", table_name="rca_workspace_run_reports")
     op.drop_table("rca_workspace_run_reports")

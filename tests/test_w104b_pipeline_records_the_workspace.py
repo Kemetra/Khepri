@@ -18,7 +18,7 @@ what admission decided; `FR-111`: the run is what the pipeline delivered):
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from khepri.rca.workspace.audit import (
     ACTION_RUN_COMPLETED,
@@ -30,12 +30,18 @@ from khepri.rca.workspace.audit import (
     OUTCOME_COMPLETED,
 )
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_FAILED, RUN_STARTED
-from khepri.rra.jobs import JOB_DEAD_LETTERED, JOB_RETRYABLE, JOB_SUCCEEDED
+from khepri.rra.jobs import JOB_DEAD_LETTERED, JOB_RETRYABLE, JOB_SUCCEEDED, LeaseRequest
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
+from khepri.rra.report_services import ReportRequestAdapter
+from khepri.rra.worker import WorkerPolicy
+from khepri.runtime.pipeline_recording import SettlingJobStore
 from khepri.runtime.shell_copy import SHELL_COPY
-from tests.w104_support import GOLDEN_CSV, OTHER_CSV, events, member
+from tests.rra003_contract_fixtures import TEST_CONTRACT
+from tests.w104_support import GOLDEN_CSV, OTHER_CSV, attestation, events, member
 from tests.w104b_support import (
+    LEASE_FOR,
     RETRY_DELAY,
+    WORKER_ID,
     BrokenHandler,
     commercial_client,
     invited_client,
@@ -307,6 +313,105 @@ def test_the_same_file_submitted_twice_is_one_version_with_two_runs() -> None:
     assert len(versions) == 1
     assert [run.state for run in runs] == [RUN_COMPLETED, RUN_COMPLETED]
     assert {run.version_id for run in runs} == {versions[0].version_id}
+
+
+# --- The races review found (`#375`), and the safety net -----------------------------------------
+
+
+def test_a_job_the_worker_finished_before_its_run_was_linked_is_completed_at_the_request() -> None:
+    """The job is durable and claimable before the workspace learns of it, so a worker can lease
+    and settle it first -- and find no run. When the request then links the run it must read the
+    job's *current* state, or the run stays `started` for a job nobody will claim again. The same
+    shape covers an idempotent re-request that returns an already-terminal job."""
+    j = journey()
+    who = member(j.w)
+    client, session_id = commercial_client(j, who)
+    submit(client)
+    facts = client.post("/api/v1/beta/facts")
+    assert facts.status_code == 201, facts.text
+    # The job, queued past the recorder -- the window between the queue commit and the link.
+    view, _created = ReportRequestAdapter(
+        jobs=j.jobs, reader=j.reader, packages=j.w.packages, deliveries=j.deliveries
+    ).request_session_report(session_id=session_id, now=j.clock())
+    j.run_job(view.job.job_id)
+    assert j.reader.find(view.job.job_id).state == JOB_SUCCEEDED
+    assert j.w.store.analysis_runs_for_scope(who.owner_id) == ()
+
+    requested = client.post("/api/v1/beta/reports", json={})
+
+    assert requested.status_code == 200, requested.text
+    (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
+    assert run.state == RUN_COMPLETED
+    assert len(j.w.store.artifact_bindings_for_run(run.run_id, who.owner_id)) == len(
+        REQUIRED_ARTIFACT_KINDS
+    )
+    assert _outcomes(j, who, ACTION_RUN_STARTED) == [OUTCOME_COMPLETED]
+    assert _outcomes(j, who, ACTION_RUN_COMPLETED) == [OUTCOME_COMPLETED]
+
+
+def test_the_recovery_sweep_settles_a_run_a_crash_left_started() -> None:
+    """A dead letter written by a lease reclaimed on recovery never passes `fail`; a crash between
+    any terminal transition and its recording leaves the same `started` run. The sweep the queue
+    runs before every claim brings the run level with its job."""
+    j = journey()
+    who = member(j.w)
+    client, _session_id = commercial_client(j, who)
+    submit(client)
+    job_id = request_report(client)
+    # The job reaches the dead letter through the repository alone, as a reclaimed final lease
+    # does: three leases, none of them settled through the worker.
+    policy = WorkerPolicy(worker_id=WORKER_ID, lease_for=LEASE_FOR, retry_delay=RETRY_DELAY)
+    for _attempt in range(3):
+        leased = j.jobs.lease(
+            LeaseRequest(job_id=job_id, worker_id=WORKER_ID, now=j.clock(), lease_for=LEASE_FOR)
+        )
+        assert leased is not None
+        j.clock.advance(LEASE_FOR * 2)
+        j.jobs.recover_expired(now=j.clock())
+    assert j.reader.find(job_id).state == JOB_DEAD_LETTERED
+    (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
+    assert run.state == RUN_STARTED
+
+    settling = SettlingJobStore(j.jobs, reader=j.reader, recorder=j.recorder)
+    settling.recover_expired(now=j.clock())
+
+    (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
+    assert run.state == RUN_FAILED
+    assert _outcomes(j, who, ACTION_RUN_FAILED) == [OUTCOME_COMPLETED]
+    assert policy.worker_id == WORKER_ID
+
+
+def test_an_admission_recorded_nowhere_is_recorded_when_its_report_is_requested() -> None:
+    """The safety net: the profile route's recording failed -- or the profile was written past
+    the recording service -- and the customer went on to the report. The request records the
+    version it finds missing and then the run, so the report is not workspace-invisible."""
+    j = journey()
+    who = member(j.w)
+    client, session_id = commercial_client(j, who)
+    uploaded = client.post(
+        "/api/v1/beta/uploads", content=GOLDEN_CSV, headers={"content-type": "text/csv"}
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    # The plain service: the admission happens, and nothing records it.
+    days = [
+        date.fromisoformat(line.split(b",")[0].decode())
+        for line in GOLDEN_CSV.strip().splitlines()[1:]
+    ]
+    j.w.profiling.profile_session_upload(
+        session_id=session_id,
+        contract=TEST_CONTRACT,
+        now=j.clock(),
+        attestation=attestation(min(days), max(days)),
+    )
+    assert j.w.store.dataset_versions_for_scope(who.owner_id) == ()
+
+    job_id = request_report(client)
+
+    (version,) = j.w.store.dataset_versions_for_scope(who.owner_id)
+    (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
+    assert run.version_id == version.version_id and run.state == RUN_STARTED
+    assert j.reports.run_id_for_job(who.owner_id, job_id) == run.run_id
+    assert _outcomes(j, who, ACTION_VERSION_CREATED) == [OUTCOME_COMPLETED]
 
 
 # --- What is deliberately not recorded ----------------------------------------------------------

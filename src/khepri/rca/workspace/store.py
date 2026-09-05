@@ -17,6 +17,7 @@ from datetime import datetime
 from sqlalchemy import (
     select,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from khepri.rca.persistence import _utc
@@ -53,12 +54,26 @@ from khepri.rca.workspace.schema import (
 )
 from khepri.rca.workspace.tombstone_rows import tombstone_from_row, tombstone_row
 from khepri.rca.workspace.tombstones import RunTombstone, SectionStates, VersionTombstone
-from khepri.rca.workspace.unit_of_work import reading, unit_of_work, writing
+from khepri.rca.workspace.unit_of_work import (
+    Arbitrated,
+    is_uniqueness_clash,
+    reading,
+    unit_of_work,
+    writing,
+)
 
 #: How a deleting caller tells the cascade each run's section states. The live run record carries
 #: none and the bundle that does is `khepri.rra`'s (see `tombstones.py`), so the store asks rather
 #: than reads. Called once per live run, inside the deletion's transaction, with the run as stored.
 SectionsOf = Callable[[AnalysisRun], SectionStates | None]
+
+
+# Content-free, per `rca/errors.py`: the constraint, never the digests.
+VERSION_RECORDED_FAILURE = "This upload already has a dataset version in this scope."
+
+
+class VersionAlreadyRecorded(Arbitrated):
+    """A version for this upload -- or under this identifier -- exists. Read it instead."""
 
 
 def _no_sections(_run: AnalysisRun) -> SectionStates | None:
@@ -259,7 +274,10 @@ class SqlWorkspaceRecordStore:
     # --- dataset versions ---------------------------------------------------------------
 
     def add_dataset_version(self, version: DatasetVersion) -> DatasetVersion:
-        """Append one version. A second write under the same identifier raises."""
+        """Append one version. A second write under the same identifier, or a second version for
+        the same upload in the same scope, raises `VersionAlreadyRecorded` -- flushed here so the
+        caller's unit of work learns it before its audit event is written (`Arbitrated`). Review
+        on `#375` found two overlapping profile requests could each record the one admission."""
         assert_sealed(version)
         with writing(self._factory) as database:
             database.add(
@@ -278,6 +296,12 @@ class SqlWorkspaceRecordStore:
                     retention_state=RETENTION_ACTIVE,
                 )
             )
+            try:
+                database.flush()
+            except IntegrityError as clash:
+                if not is_uniqueness_clash(clash):
+                    raise
+                raise VersionAlreadyRecorded(VERSION_RECORDED_FAILURE) from clash
         return version
 
     def get_dataset_version(

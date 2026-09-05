@@ -20,6 +20,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -284,6 +285,16 @@ class DatasetVersionRow(Base):
         # so `(owner_id, version_id)` is referenceable, which is what makes a cross-scope child
         # unrepresentable rather than merely untested.
         UniqueConstraint("owner_id", "version_id", name="uq_rca_workspace_version_scope"),
+        # `W1-04b`: one version per admitted upload in a scope, arbitrated by the database rather
+        # than by a read-then-insert two overlapping profile requests both pass (review on
+        # `#375`). An index rather than a constraint because SQLite adds an index to an existing
+        # table and the migration runs on both engines. `add_dataset_version` translates the clash.
+        Index(
+            "uq_rca_workspace_version_upload",
+            "owner_id",
+            "upload_ciphertext_digest",
+            unique=True,
+        ),
     )
 
     version_id: Mapped[str] = mapped_column(String, primary_key=True)

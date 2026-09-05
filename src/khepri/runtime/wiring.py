@@ -81,6 +81,7 @@ from khepri.runtime.legal_api import add_legal_routes
 from khepri.runtime.pipeline_recording import (
     AdmissionPorts,
     PipelineRecorder,
+    RecorderReads,
     RecordingProfilingService,
     RecordingReportRequests,
 )
@@ -326,9 +327,12 @@ def build_pipeline_recorder(stack: RuntimeStack) -> PipelineRecorder:
     stores as the customer door, so there is one recording of each fact."""
     return PipelineRecorder(
         recording=WorkspaceRecording(rra=_workspace_ports(stack), rca=_record_stores(stack)),
-        sessions=SqlSessionStore(stack.factory),
-        scopes=SqlIsolationScopes(stack.factory),
-        reports=SqlRunReportStore(stack.factory),
+        reads=RecorderReads(
+            sessions=SqlSessionStore(stack.factory),
+            scopes=SqlIsolationScopes(stack.factory),
+            reports=SqlRunReportStore(stack.factory),
+            jobs=JobReader(stack.factory),
+        ),
     )
 
 

@@ -148,20 +148,21 @@ def build_worker_loop(
     worker_id: str | None = None,
 ) -> ClaimWorkerLoop:
     identity = worker_id or f"worker-{socket.gethostname()}"
+    # `W1-04b`: one settling store for the queue and the worker, so a delivered job completes its
+    # workspace run, a dead-lettered one fails it, and the queue's recovery sweep -- which runs
+    # before every claim -- reconciles any run a crash or a reclaimed lease left `started`.
+    jobs = SettlingJobStore(
+        stack.reports.jobs,
+        reader=JobReader(stack.factory),
+        recorder=build_pipeline_recorder(stack),
+    )
     queue = ClaimingReportQueue(
-        jobs=stack.reports.jobs,
+        jobs=jobs,
         factory=stack.factory,
         policy=ClaimPolicy(worker_id=identity, lease_for=LEASE_FOR),
     )
     worker = ReportWorker(
-        # `W1-04b`: a delivered job completes its workspace run and a dead-lettered one fails it.
-        # The queue's own `complete` (`acknowledge`) is the fallback for a worker that returned
-        # `None`, which `ReportWorker.execute` never does; the worker's store is the settling path.
-        jobs=SettlingJobStore(
-            stack.reports.jobs,
-            reader=JobReader(stack.factory),
-            recorder=build_pipeline_recorder(stack),
-        ),
+        jobs=jobs,
         handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
         clock=stack.clock,
         policy=WorkerPolicy(

@@ -84,7 +84,7 @@ from khepri.rca.workspace.contracts import (
 )
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
-from khepri.rca.workspace.unit_of_work import unit_of_work
+from khepri.rca.workspace.unit_of_work import Arbitrated, unit_of_work
 from khepri.rra.datasets import DatasetProfileRecord, ProfilingService, document_digest
 from khepri.rra.datasets import stored_manifest as _stored_manifest
 from khepri.rra.intake import UploadMetadata, UploadRepository
@@ -184,6 +184,17 @@ class Performed[T]:
     subject: AuditSubject
 
 
+@dataclass(frozen=True, slots=True)
+class Attempt[T]:
+    """One action to perform: what it is called in the audit trail, what performs it, and -- where
+    a database constraint may arbitrate a race -- the reading of the row that won (`Arbitrated`).
+    Grouped because the three are one attempt, and a caller holding two of them has half of one."""
+
+    action: str
+    act: Callable[[], Performed[T]]
+    already: Callable[[], Performed[T]] | None = None
+
+
 class WorkspaceRecording:
     """The operations, in a scope already resolved. Authorization is the doors' concern."""
 
@@ -197,10 +208,13 @@ class WorkspaceRecording:
 
     # --- the audit trail --------------------------------------------------------------------------
 
-    def perform[T](
-        self, actor: AuditActor, action: str, act: Callable[[], Performed[T]], *, now: datetime
-    ) -> T:
+    def perform[T](self, actor: AuditActor, attempt: Attempt[T], *, now: datetime) -> T:
         """Run one action and record exactly one event for it, in one transaction.
+
+        `attempt.already` is the reading of a race lost: when `act` raises `Arbitrated` -- a
+        database constraint decided that another unit recorded this first -- the unit rolls back
+        and `already` is performed in a fresh one, returning the winner's row as
+        `already_recorded`. Without it the arbitration propagates as the fault it is.
 
         The action's writes and its event share a unit of work, so a fault in either leaves neither
         behind: the first draft committed the action and then opened a second transaction for the
@@ -213,6 +227,16 @@ class WorkspaceRecording:
         back with it. Any other exception is a fault, not an outcome: the unit rolls back and
         nothing is recorded, which is the same absence a reader sees for an action never attempted.
         """
+        try:
+            return self._perform_once(actor, attempt.action, attempt.act, now)
+        except Arbitrated:
+            if attempt.already is None:
+                raise
+        return self._perform_once(actor, attempt.action, attempt.already, now)
+
+    def _perform_once[T](
+        self, actor: AuditActor, action: str, act: Callable[[], Performed[T]], now: datetime
+    ) -> T:
         refusal: WorkspaceRefused | None = None
         with unit_of_work(self._rca.factory):
             try:
@@ -286,6 +310,16 @@ class WorkspaceRecording:
         return self._rca.workspace.dataset_version_for_upload(
             owner_id, upload.ciphertext_sha256_hex
         )
+
+    def existing_version(
+        self, owner_id: str, session_id: str, now: datetime
+    ) -> Performed[DatasetVersion]:
+        """The `already` reading for `create_version`: the version another unit recorded for
+        this session's upload. Absent only if that unit also rolled back, which is a fault."""
+        version = self.version_for_session(owner_id, session_id, now)
+        if version is None:  # pragma: no cover -- the constraint that raised names a row
+            raise WorkspaceRefused(NO_VERSION_FAILURE)
+        return Performed(version, OUTCOME_ALREADY_RECORDED, subject_of_version(version))
 
     def _admission(
         self, owner_id: str, session_id: str, now: datetime
@@ -499,6 +533,7 @@ __all__ = [
     "PROFILE_MISMATCH_FAILURE",
     "PROVENANCE_FAILURE",
     "ArtifactReader",
+    "Attempt",
     "DeliveryReader",
     "Performed",
     "RecordStores",

@@ -33,15 +33,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column, sessionmaker
 
 from khepri.rca.persistence import Base
-from khepri.rca.workspace.unit_of_work import reading, writing
+from khepri.rca.workspace.contracts import RUN_STARTED
+from khepri.rca.workspace.unit_of_work import Arbitrated, is_uniqueness_clash, reading, writing
 
 # Content-free, per `rca/errors.py`: it names the constraint and never the identifiers.
 REPORT_LINKED_FAILURE = "This report already settles an analysis run, or this run another report."
 
 
-class ReportAlreadyLinked(RuntimeError):
-    """The link exists for this job or this run. A fault for the unit of work, not a refusal to
-    record: the caller rolls back and reads the link that won."""
+class ReportAlreadyLinked(Arbitrated):
+    """The link exists for this job or this run. The caller rolls back and reads the winner."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +113,8 @@ class SqlRunReportStore:
             try:
                 database.flush()
             except IntegrityError as clash:
+                if not is_uniqueness_clash(clash):
+                    raise
                 raise ReportAlreadyLinked(REPORT_LINKED_FAILURE) from clash
         return report
 
@@ -132,6 +134,27 @@ class SqlRunReportStore:
                 select(RunReportRow.job_id).where(
                     RunReportRow.owner_id == owner_id, RunReportRow.run_id == run_id
                 )
+            )
+
+    def links_of_started_runs(self) -> tuple[RunReport, ...]:
+        """Every link whose run is still `started`, across scopes -- what the worker reconciles.
+
+        Across scopes deliberately: the worker acts for no organization, and a run left `started`
+        by a crash between a job's terminal transition and its recording is found here whichever
+        scope it is in. Each link names its scope, and what follows is read under that scope.
+        """
+        from khepri.rca.workspace.schema import AnalysisRunRow  # noqa: PLC0415 -- schema imports us
+
+        with reading(self._factory) as database:
+            rows = database.scalars(
+                select(RunReportRow)
+                .join(AnalysisRunRow, AnalysisRunRow.run_id == RunReportRow.run_id)
+                .where(AnalysisRunRow.state == RUN_STARTED)
+                .order_by(RunReportRow.linked_at, RunReportRow.run_id)
+            )
+            return tuple(
+                RunReport(run_id=row.run_id, owner_id=row.owner_id, job_id=row.job_id)
+                for row in rows
             )
 
 

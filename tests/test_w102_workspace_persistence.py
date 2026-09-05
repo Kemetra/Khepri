@@ -13,6 +13,7 @@ duplicates. A second head test would be a second place to forget.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -56,6 +57,10 @@ SOURCE = AdmittedSource(
     manifest_digest="sha256:" + "c" * 64,
     mapping_version="rra003.mapping.v3",
     admission_outcome="admitted",
+)
+
+SECOND_SOURCE = replace(
+    SOURCE, plaintext_digest="sha256:" + "d" * 64, ciphertext_digest="sha256:" + "e" * 64
 )
 
 WORKSPACE_TABLES = (
@@ -272,8 +277,10 @@ def test_listing_is_scoped_and_returns_newest_first(factory: sessionmaker) -> No
     mine_early = store.add_dataset_version(
         DatasetVersion.create(owner_id=first, source=SOURCE, now=NOW)
     )
+    # A second *upload*: `W1-04b` made one version per admitted upload a database rule
+    # (`uq_rca_workspace_version_upload`), so two versions in one scope are two sources.
     mine_late = store.add_dataset_version(
-        DatasetVersion.create(owner_id=first, source=SOURCE, now=LATER)
+        DatasetVersion.create(owner_id=first, source=SECOND_SOURCE, now=LATER)
     )
     store.add_dataset_version(DatasetVersion.create(owner_id=second, source=SOURCE, now=NOW))
 

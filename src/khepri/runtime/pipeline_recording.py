@@ -73,7 +73,7 @@ from khepri.rca.workspace.audit import (
     AuditActor,
 )
 from khepri.rca.workspace.contracts import RUN_STARTED, AnalysisRun, DatasetVersion
-from khepri.rca.workspace.run_reports import ReportAlreadyLinked, RunReport, SqlRunReportStore
+from khepri.rca.workspace.run_reports import RunReport, SqlRunReportStore
 from khepri.rca.workspace.scopes import SqlIsolationScopes
 from khepri.rra.datasets import (
     DatasetProfileRecord,
@@ -85,10 +85,18 @@ from khepri.rra.datasets import (
     SessionReader as ProfilingSessionReader,
 )
 from khepri.rra.intake import UploadRepository
-from khepri.rra.jobs import JOB_DEAD_LETTERED, FailureRequest, LeaseAction, LeaseRequest, ReportJob
+from khepri.rra.jobs import (
+    JOB_DEAD_LETTERED,
+    JOB_SUCCEEDED,
+    FailureRequest,
+    LeaseAction,
+    LeaseRequest,
+    ReportJob,
+)
 from khepri.rra.reports import ReportJobView, ReportRequestService
 from khepri.rra.sessions import BetaSession
 from khepri.runtime.workspace_recording import (
+    Attempt,
     Performed,
     ReportLocator,
     WorkspaceRecording,
@@ -105,7 +113,7 @@ class JobReaderPort(Protocol):
 
 
 class ReportJobStore(Protocol):
-    """What `ReportWorker` asks of its job store -- `khepri.rra.worker.ReportJobStore`'s shape."""
+    """What the worker and the claim queue ask of the job store, together."""
 
     def lease(self, request: LeaseRequest) -> ReportJob | None: ...
 
@@ -115,30 +123,41 @@ class ReportJobStore(Protocol):
 
     def fail(self, request: FailureRequest) -> ReportJob: ...
 
+    def recover_expired(self, *, now: datetime) -> tuple[ReportJob, ...]: ...
+
+    def recover_orphans(self, *, now: datetime) -> tuple[ReportJob, ...]: ...
+
 
 class RunRecorder(Protocol):
-    """The two things a settled job tells the workspace."""
+    """What a settled job tells the workspace, and the sweep that catches what a crash missed."""
 
     def settled(self, job: ReportJob, *, now: datetime) -> AnalysisRun | None: ...
 
     def abandoned(self, job: ReportJob, *, now: datetime) -> AnalysisRun | None: ...
 
+    def reconcile(self, *, now: datetime) -> int: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RecorderReads:
+    """What the recorder reads to place a stage's product: the session's scope, whether that
+    scope is a workspace, the run-to-report link, and the job's current state."""
+
+    sessions: SessionReader
+    scopes: SqlIsolationScopes
+    reports: SqlRunReportStore
+    jobs: JobReaderPort
+
 
 class PipelineRecorder:
     """Records, in a scope the session already carries, what each pipeline stage produced."""
 
-    def __init__(
-        self,
-        *,
-        recording: WorkspaceRecording,
-        sessions: SessionReader,
-        scopes: SqlIsolationScopes,
-        reports: SqlRunReportStore,
-    ) -> None:
+    def __init__(self, *, recording: WorkspaceRecording, reads: RecorderReads) -> None:
         self._recording = recording
-        self._sessions = sessions
-        self._scopes = scopes
-        self._reports = reports
+        self._sessions = reads.sessions
+        self._scopes = reads.scopes
+        self._reports = reads.reports
+        self._jobs = reads.jobs
 
     @property
     def recording(self) -> WorkspaceRecording:
@@ -154,8 +173,11 @@ class PipelineRecorder:
             return None
         return self._recording.perform(
             self._actor(owner_id),
-            ACTION_VERSION_CREATED,
-            lambda: self._recording.create_version(owner_id, session_id, now),
+            Attempt(
+                ACTION_VERSION_CREATED,
+                lambda: self._recording.create_version(owner_id, session_id, now),
+                already=lambda: self._recording.existing_version(owner_id, session_id, now),
+            ),
             now=now,
         )
 
@@ -174,22 +196,22 @@ class PipelineRecorder:
         if version is None:
             return None
         actor = self._actor(job.owner_id)
-        linked = self._reports.run_id_for_job(job.owner_id, job.job_id)
-        if linked is not None:
-            return self._already(actor, ACTION_RUN_STARTED, linked, now)
-        try:
-            return self._recording.perform(
-                actor,
+        run = self._recording.perform(
+            actor,
+            Attempt(
                 ACTION_RUN_STARTED,
                 lambda: self._start_linked(job, version.version_id, now),
-                now=now,
-            )
-        except ReportAlreadyLinked:
-            # Another request won the constraint; this unit of work rolled back its run.
-            winner = self._reports.run_id_for_job(job.owner_id, job.job_id)
-            if winner is None:  # pragma: no cover -- the constraint that raised names a row
-                raise
-            return self._already(actor, ACTION_RUN_STARTED, winner, now)
+                # A request that finds the job already linked -- an idempotent repeat, or the
+                # loser of two concurrent requests -- reads the linked run. The unique constraint
+                # on the link is the arbiter; there is no read-then-decide here for it to race.
+                already=lambda: self._linked_run_already(job),
+            ),
+            now=now,
+        )
+        # The job was durable and claimable before this run existed, so a worker may already
+        # have settled it and found no run to record against (review on `#375`). Re-read the
+        # job now that the link is committed: whichever side wrote second sees the other.
+        return self.reconcile_job(job.job_id, now=now) or run
 
     def _start_linked(
         self, job: ReportJob, version_id: str, now: datetime
@@ -201,6 +223,37 @@ class PipelineRecorder:
         )
         return performed
 
+    def _linked_run_already(self, job: ReportJob) -> Performed[AnalysisRun]:
+        run_id = self._reports.run_id_for_job(job.owner_id, job.job_id)
+        run = None if run_id is None else self._recording.run(job.owner_id, run_id)
+        if run is None:  # pragma: no cover -- the constraint that raised names a row
+            raise LookupError(job.job_id)
+        return Performed(run, OUTCOME_ALREADY_RECORDED, subject_of_run(run))
+
+    # --- reconciliation: a run's state follows its job's, whichever side wrote second -------
+
+    def reconcile_job(self, job_id: str, *, now: datetime) -> AnalysisRun | None:
+        """Settle or fail the run of one job from the job's *current* state, if terminal."""
+        job = self._jobs.find(job_id)
+        if job is None:
+            return None
+        if job.state == JOB_SUCCEEDED:
+            return self.settled(job, now=now)
+        if job.state == JOB_DEAD_LETTERED:
+            return self.abandoned(job, now=now)
+        return None
+
+    def reconcile(self, *, now: datetime) -> int:
+        """Every run still `started`, brought level with its job. The worker calls this before
+        each claim (`SettlingJobStore.recover_expired`), so a run left behind by a crash between
+        a job's terminal transition and its recording -- or by a lease reclaimed into the dead
+        letter -- is settled within one loop iteration. Returns how many runs moved."""
+        moved = 0
+        for link in self._reports.links_of_started_runs():
+            if self.reconcile_job(link.job_id, now=now) is not None:
+                moved += 1
+        return moved
+
     def settled(self, job: ReportJob, *, now: datetime) -> AnalysisRun | None:
         """The job delivered: complete its run from the delivery, binding every artifact."""
         actor, run = self._linked_run(job)
@@ -211,8 +264,10 @@ class PipelineRecorder:
         report = ReportLocator(session_id=job.session_id, job_id=job.job_id)
         return self._recording.perform(
             actor,
-            ACTION_RUN_COMPLETED,
-            lambda: self._recording.complete_run(job.owner_id, run.run_id, report, now),
+            Attempt(
+                ACTION_RUN_COMPLETED,
+                lambda: self._recording.complete_run(job.owner_id, run.run_id, report, now),
+            ),
             now=now,
         )
 
@@ -225,8 +280,10 @@ class PipelineRecorder:
             return self._already(actor, ACTION_RUN_FAILED, run.run_id, now)
         return self._recording.perform(
             actor,
-            ACTION_RUN_FAILED,
-            lambda: self._recording.fail_run(job.owner_id, run.run_id, now),
+            Attempt(
+                ACTION_RUN_FAILED,
+                lambda: self._recording.fail_run(job.owner_id, run.run_id, now),
+            ),
             now=now,
         )
 
@@ -255,8 +312,7 @@ class PipelineRecorder:
             raise LookupError(run_id)
         return self._recording.perform(
             actor,
-            action,
-            lambda: Performed(run, OUTCOME_ALREADY_RECORDED, subject_of_run(run)),
+            Attempt(action, lambda: Performed(run, OUTCOME_ALREADY_RECORDED, subject_of_run(run))),
             now=now,
         )
 
@@ -346,7 +402,11 @@ class SettlingJobStore:
     `complete` records first and completes second -- the module docstring says why the order is
     load-bearing. `fail` completes first and records second, because whether a failure is the
     last one is the repository's decision (`attempt_count` against `max_attempts`), read from the
-    job it returns; a retryable failure reaches the workspace as nothing.
+    job it returns; a retryable failure reaches the workspace as nothing. The crash window that
+    order leaves -- a dead-lettered job whose run stayed `started` -- is closed by `reconcile`,
+    which `recover_expired` runs before every claim; the same sweep catches a lease the queue
+    reclaimed straight into the dead letter, which never passes `fail` at all. Handed to the
+    worker *and* to the claim queue, so both settle through it.
     """
 
     def __init__(
@@ -382,11 +442,25 @@ class SettlingJobStore:
             self._recorder.abandoned(job, now=request.lease.now)
         return job
 
+    def recover_expired(self, *, now: datetime) -> tuple[ReportJob, ...]:
+        """The claim loop's sweep, then the workspace's: a lease reclaimed into the dead letter
+        never passes `fail`, and a crash between any terminal transition and its recording
+        leaves a run `started` -- both are caught here, before every claim."""
+        recovered = self._jobs.recover_expired(now=now)
+        self._recorder.reconcile(now=now)
+        return recovered
+
+    def recover_orphans(self, *, now: datetime) -> tuple[ReportJob, ...]:
+        orphaned = self._jobs.recover_orphans(now=now)
+        self._recorder.reconcile(now=now)
+        return orphaned
+
 
 __all__ = [
     "AdmissionPorts",
     "JobReaderPort",
     "PipelineRecorder",
+    "RecorderReads",
     "RecordingProfilingService",
     "RecordingReportRequests",
     "ReportJobStore",

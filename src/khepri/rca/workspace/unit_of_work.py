@@ -27,9 +27,32 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 _AMBIENT: ContextVar[Session | None] = ContextVar("khepri_workspace_unit_of_work", default=None)
+
+
+class Arbitrated(RuntimeError):
+    """A database constraint decided a race this unit of work lost.
+
+    Raised from inside a store on an explicit flush, so the caller learns it before the audit
+    event is written. Not a refusal: `WorkspaceRecording.perform` rolls the unit back on it and,
+    where the caller supplied one, performs the `already_recorded` reading of the winner's row in
+    a fresh unit. Two requests that both found no row are arbitrated by the constraint, and the
+    loser converges on the winner rather than on a driver error carrying both identifiers.
+    """
+
+
+def is_uniqueness_clash(error: IntegrityError) -> bool:
+    """Whether an integrity error is a unique or primary-key violation, and not some other.
+
+    A foreign-key failure is a fault -- a row naming a scope or a run that does not exist -- and
+    must stay the driver error it is, never be read as "already recorded". SQLite says `UNIQUE
+    constraint failed`, PostgreSQL `violates unique constraint`; neither engine puts that word in
+    a foreign-key or check message, which is the whole of what this relies on.
+    """
+    return "unique" in str(error.orig).lower()
 
 
 @contextmanager

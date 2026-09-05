@@ -287,3 +287,6 @@ def test_the_worker_settles_jobs_through_the_recording_store(tmp_path) -> None:
     assert isinstance(jobs, SettlingJobStore)
     assert jobs.jobs is stack.reports.jobs
     assert isinstance(jobs.recorder, PipelineRecorder)
+    # The queue's recovery sweep is where a reclaimed lease reaches the dead letter, so the queue
+    # settles through the same store (review on `#375`).
+    assert loop._queue._jobs is jobs
