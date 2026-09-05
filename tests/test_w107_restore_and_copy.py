@@ -76,15 +76,24 @@ def test_a_version_that_was_never_deleted_stays_readable() -> None:
     assert len(j.w.store.history_for_scope(who.owner_id).versions) == 1
 
 
+#: The claim `KHEPRI-DEC-033` §5 forbids, in each language the shell ships. Arabic is listed
+#: because the first inverse mutant caught only the English half: a violating Arabic string would
+#: have passed a guard reading `"automatic"` alone, and Arabic is where such a claim is most likely
+#: to arrive from a translator who never saw the rule.
+_EXPIRY_CLAIMS = ("automatic", "تلقائي")
+
+
 def test_no_surface_says_content_expires_automatically() -> None:
     """`KHEPRI-DEC-033` §5: until `W1-07b` ships a sweep with a caller, no surface may tell a
     customer that content expires by itself.
 
-    **This guard passes over an empty set today** -- no `SHELL_COPY` string contains the word --
-    so it was proven by the inverse mutant instead: adding a violating string makes it fail, and
-    removing it makes it pass again. Recorded because a guard nobody has watched fail is not
-    evidence of anything.
+    **This guard passes over an empty set today** -- no `SHELL_COPY` string makes the claim -- so
+    it was proven by the inverse mutant instead: adding a violating string in both languages (the
+    module refuses to import at less than parity) makes it fail, and removing it makes it pass
+    again. Recorded because a guard nobody has watched fail is not evidence of anything.
     """
     for language, copy in SHELL_COPY.items():
         for key, text_value in copy.items():
-            assert "automatic" not in str(text_value).lower(), f"{language}.{key}"
+            lowered = str(text_value).lower()
+            for claim in _EXPIRY_CLAIMS:
+                assert claim not in lowered, f"{language}.{key} states automatic expiry"
