@@ -12,6 +12,23 @@ Workspace-scoped by choice. §8 names sessions, memberships and invitations too,
 has a requirement today; their horizon is `OD-3`-bounded, which is a separate approval. Generalizing
 this to four consumers on one consumer's requirement would be authoring scope this slice does not
 hold (`W1-07a` design §3.5).
+
+## What this ledger does not survive
+
+`WorkspaceRevocationRow` lives in the **same schema as the rows it guards**, so a point-in-time
+restore of that schema removes the ledger along with them. State the consequence exactly rather
+than leave it implied (review on `#382`):
+
+- `FR-126` **holds** against in-database restoration -- a row put back beneath the ORM, past
+  `_check_one_way_transitions`, which is the shape a partial or scripted recovery takes and the
+  one the store's read guards refuse.
+- `FR-126` **does not hold** against restoring a whole-schema snapshot predating the deletion.
+  Both the version and its revocation come back, and nothing is left to consult.
+
+Closing the second needs the ledger to have a backup lifecycle of its own, which is a backup
+topology decision `KHEPRI-DEC-008` leaves open while provisioning is frozen -- not something this
+module can fix. `test_a_whole_schema_restore_predating_the_deletion_defeats_the_ledger` asserts the
+limitation as it stands, so it fails and gets rewritten on the day the ledger moves.
 """
 
 from __future__ import annotations

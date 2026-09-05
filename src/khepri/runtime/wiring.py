@@ -33,8 +33,8 @@ from khepri.rca.workspace.persistence import (
     SqlRunReportStore,
     SqlWorkspaceRecordStore,
 )
-from khepri.rca.workspace.revocation import SqlRevocationLedger
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
+from khepri.rca.workspace.revocation import SqlRevocationLedger
 from khepri.rca.workspace.scopes import SqlIsolationScopes
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
@@ -93,8 +93,8 @@ from khepri.runtime.pipeline_recording import (
 )
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
 from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
-from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
+from khepri.runtime.workspace_deletion import DeletionSources, WorkspaceDeletion
 from khepri.runtime.workspace_recording import WorkspaceRecording
 
 # The web role publishes but never claims, so this identity appears in no lease. It

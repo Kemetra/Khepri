@@ -71,7 +71,7 @@ while §5's constraint is live. The copy check stays as a standing guard, proven
 
 ### 3.1 The cascade is a table, not a sequence
 
-`DEC-033` §2 assigns every class an ending. That mapping lives in `workspace/deletion.py` as data:
+`DEC-033` §2 assigns every class an ending. That mapping lives in `workspace/deletion_matrix.py` as data:
 one row per class naming its post-trigger state (tombstone / purge / cascade-from-parent) and its
 parent where it has one. The orchestration reads the table; it does not hand-write the order.
 
@@ -132,10 +132,19 @@ OBJECTS : version, run, profile
 ```
 
 Neither a delete action nor `already_deleted` is admitted. `FR-123` names `already_deleted`
-literally, so `W1-07a` adds a `version_deleted` / `run_deleted` / `profile_deleted` action and the
-`already_deleted` outcome, with the CHECK moved in the same migration. Note `already_recorded`
-already exists and is **not** the same thing — reusing it would make the idempotency contract
-unreadable to the evidence consumer `FR-123` names.
+literally, so `W1-07a` adds the `already_deleted` outcome and a delete action, with the CHECK
+moved in the same migration. Note `already_recorded` already exists and is **not** the same thing
+— reusing it would make the idempotency contract unreadable to the evidence consumer `FR-123`
+names.
+
+**One action ships, not three.** An earlier draft of this section promised `version_deleted` /
+`run_deleted` / `profile_deleted`; `audit.py` defines `ACTION_VERSION_DELETED` alone, and that is
+correct rather than incomplete. A dataset version is the only thing an owner deletes: runs end by
+cascading from it (§3.2), and no route deletes a profile. An admitted action no code path can emit
+is a *widening of the CHECK constraint with no caller* — the "defined but never attached" shape
+this repo has met before — so the vocabulary stays as narrow as the endings that exist. `W1-07b`'s
+sweep adds what its own horizons need. Corrected after review on `#382` compared this section
+against `audit.py`.
 
 ### 3.5 The revocation ledger (`FR-126`)
 
@@ -151,6 +160,22 @@ authoring scope this slice does not hold.
 
 Bounded by the fourteen-day backup horizon plus a margin. The ledger must itself be backed up, or
 it cannot serve its purpose.
+
+**The stated boundary of `FR-126`, and what is not closed here.** Review on `#382` observed that
+`WorkspaceRevocationRow` lives in the *same schema as the rows it guards*, so a point-in-time
+restore of that schema removes the ledger along with them and leaves nothing to consult. So:
+
+- `FR-126` **holds** against in-database restoration — a row put back beneath the ORM, which is
+  what defeats `_check_one_way_transitions` and is the shape a partial or scripted recovery takes.
+- `FR-126` **does not hold** against restoring a whole-schema snapshot predating the deletion.
+
+Closing the second requires the ledger to have a backup lifecycle of its own — a separate
+database, a separate schedule, or an accepted limitation. That is a *backup topology* decision:
+`KHEPRI-DEC-008` is `proposed`, AWS provisioning is frozen on cost, and `W1-07a` does not hold the
+authority to author infrastructure policy. It is therefore recorded rather than implemented, and
+`test_a_whole_schema_restore_predating_the_deletion_defeats_the_ledger` asserts the limitation as
+it stands, so it cannot be mistaken for a guarantee and so the day the ledger moves, that test
+fails and is rewritten. Filed for the owner.
 
 ### 3.6 Authorization
 
