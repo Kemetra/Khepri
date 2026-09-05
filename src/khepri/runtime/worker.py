@@ -25,7 +25,13 @@ from khepri.rra.worker import (
     WorkerPolicy,
 )
 from khepri.runtime.config import RuntimeSettings
-from khepri.runtime.wiring import RuntimeStack, build_pipeline, build_stack
+from khepri.runtime.pipeline_recording import SettlingJobStore
+from khepri.runtime.wiring import (
+    RuntimeStack,
+    build_pipeline,
+    build_pipeline_recorder,
+    build_stack,
+)
 
 LEASE_FOR = timedelta(seconds=300)
 RETRY_DELAY = timedelta(seconds=60)
@@ -148,7 +154,14 @@ def build_worker_loop(
         policy=ClaimPolicy(worker_id=identity, lease_for=LEASE_FOR),
     )
     worker = ReportWorker(
-        jobs=stack.reports.jobs,
+        # `W1-04b`: a delivered job completes its workspace run and a dead-lettered one fails it.
+        # The queue's own `complete` (`acknowledge`) is the fallback for a worker that returned
+        # `None`, which `ReportWorker.execute` never does; the worker's store is the settling path.
+        jobs=SettlingJobStore(
+            stack.reports.jobs,
+            reader=JobReader(stack.factory),
+            recorder=build_pipeline_recorder(stack),
+        ),
         handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
         clock=stack.clock,
         policy=WorkerPolicy(

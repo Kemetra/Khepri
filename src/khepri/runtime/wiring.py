@@ -28,8 +28,9 @@ from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
 from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
-from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
+from khepri.rca.workspace.persistence import SqlRunReportStore, SqlWorkspaceRecordStore
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
+from khepri.rca.workspace.scopes import SqlIsolationScopes
 from khepri.rra.api import create_app
 from khepri.rra.artifact_persistence import SqlArtifactRepository
 from khepri.rra.artifact_publication import ReportArtifactPublisher
@@ -77,8 +78,15 @@ from khepri.runtime.external_auth_api import (
 )
 from khepri.runtime.landing_api import add_landing_routes
 from khepri.runtime.legal_api import add_legal_routes
+from khepri.runtime.pipeline_recording import (
+    AdmissionPorts,
+    PipelineRecorder,
+    RecordingProfilingService,
+    RecordingReportRequests,
+)
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
+from khepri.runtime.workspace_recording import WorkspaceRecording
 
 # The web role publishes but never claims, so this identity appears in no lease. It
 # is required because `ClaimPolicy` refuses an anonymous worker, and a name that is
@@ -270,34 +278,102 @@ def build_commercial_services(stack: RuntimeStack) -> CommercialServices:
     )
 
 
-def build_workspace_actions(stack: RuntimeStack) -> WorkspaceActions:
-    """Pair the workspace records with the `RRA` products they are made from (`W1-04`).
+def _workspace_ports(stack: RuntimeStack) -> WorkspacePorts:
+    """The `RRA` side of the workspace, read from the stack as built -- the same `ProfilingService`
+    and `FactPackageService` the beta routes use, and the same delivery and artifact repositories
+    the report publisher writes -- so the workspace records what those services decided and never
+    a second reading of it."""
+    return WorkspacePorts(
+        sessions=SqlSessionStore(stack.factory),
+        uploads=SqlUploadRepository(stack.factory),
+        profiling=stack.services.profiling,
+        packages=stack.services.packages,
+        deliveries=stack.reports.deliveries,
+        artifacts=stack.reports.artifacts,
+    )
 
-    The `RRA` side is read from the stack as built -- the same `ProfilingService` and
-    `FactPackageService` the beta routes use, and the same delivery and artifact repositories the
-    report publisher writes -- so the workspace records what those services decided and never a
-    second reading of it. The `RCA` side is built here, as `build_commercial_services` builds its
-    half. No route mounts these yet; `W1-05` ships the surfaces and their links together
-    (`FR-121`).
+
+def _record_stores(stack: RuntimeStack) -> RecordStores:
+    """The `RCA` side of the workspace, built here as `build_commercial_services` builds its
+    half."""
+    return RecordStores(
+        workspace=SqlWorkspaceRecordStore(stack.factory),
+        profiles=SqlSourceProfileStore(stack.factory),
+        audit=SqlWorkspaceAuditStore(stack.factory),
+        factory=stack.factory,
+    )
+
+
+def build_workspace_actions(stack: RuntimeStack) -> WorkspaceActions:
+    """The workspace's customer door (`W1-04`): a `Caller`, resolved through `IsolationService`.
+
+    No route mounts these yet. The deployed flow records the workspace through the pipeline door
+    instead -- `build_pipeline_recorder` -- and the customer-initiated actions (`FR-114` Run Again
+    and reuse) take this door when their surfaces ship.
     """
     accounts = SqlAccountStore(stack.factory)
     organizations = SqlOrganizationStore(stack.factory)
     return WorkspaceActions(
         isolation=IsolationService(organizations, accounts),
-        rra=WorkspacePorts(
-            sessions=SqlSessionStore(stack.factory),
-            uploads=SqlUploadRepository(stack.factory),
-            profiling=stack.services.profiling,
-            packages=stack.services.packages,
-            deliveries=stack.reports.deliveries,
-            artifacts=stack.reports.artifacts,
+        rra=_workspace_ports(stack),
+        rca=_record_stores(stack),
+    )
+
+
+def build_pipeline_recorder(stack: RuntimeStack) -> PipelineRecorder:
+    """The workspace's pipeline door (`W1-04b`): the deployed admission and report stages record
+    what they produced, in the scope the analysis session already carries. Over the same ports and
+    stores as the customer door, so there is one recording of each fact."""
+    return PipelineRecorder(
+        recording=WorkspaceRecording(rra=_workspace_ports(stack), rca=_record_stores(stack)),
+        sessions=SqlSessionStore(stack.factory),
+        scopes=SqlIsolationScopes(stack.factory),
+        reports=SqlRunReportStore(stack.factory),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class BetaServices:
+    """What `create_app` receives for admission and reporting, once the recorder is around them."""
+
+    recorder: PipelineRecorder
+    profiling: RecordingProfilingService
+    reports: ReportServices
+
+
+def build_beta_services(stack: RuntimeStack) -> BetaServices:
+    """The beta API's admission and report services, recording the workspace (`W1-04b`).
+
+    `RecordingProfilingService` is a second `ProfilingService` over the same repositories as
+    `stack.services.profiling`: the stack's own instance stays the read port every workspace door
+    reads admissions through, and this one is what the route admits through. Two instances of a
+    stateless service over one set of repositories is one reading; what `W1-04` forbade was a
+    second *decision*.
+    """
+    recorder = build_pipeline_recorder(stack)
+    return BetaServices(
+        recorder=recorder,
+        profiling=RecordingProfilingService(
+            AdmissionPorts(
+                sessions=SqlSessionStore(stack.factory),
+                uploads=SqlUploadRepository(stack.factory),
+                objects=stack.objects,
+                profiles=SqlProfileRepository(stack.factory),
+            ),
+            recorder=recorder,
         ),
-        rca=RecordStores(
-            workspace=SqlWorkspaceRecordStore(stack.factory),
-            profiles=SqlSourceProfileStore(stack.factory),
-            audit=SqlWorkspaceAuditStore(stack.factory),
-            factory=stack.factory,
-        ),
+        reports=_recording_report_services(stack, recorder),
+    )
+
+
+def _recording_report_services(stack: RuntimeStack, recorder: PipelineRecorder) -> ReportServices:
+    """`build_report_services`, with the run started for every job the queued service creates."""
+    services = build_report_services(stack)
+    return ReportServices(
+        jobs=RecordingReportRequests(services.jobs, recorder=recorder),
+        bundles=services.bundles,
+        artifacts=services.artifacts,
+        packages=services.packages,
     )
 
 
@@ -351,14 +427,15 @@ def build_recovery_security_service(stack: RuntimeStack) -> RecoverySecurityServ
 
 
 def build_web_app(stack: RuntimeStack) -> FastAPI:
+    beta = build_beta_services(stack)
     app = create_app(
         service=stack.services.invitations,
         clock=stack.clock,
         intake_service=stack.services.intake,
         deletion_service=stack.services.deletion,
-        profiling_service=stack.services.profiling,
+        profiling_service=beta.profiling,
         package_service=stack.services.packages,
-        report_services=build_report_services(stack),
+        report_services=beta.reports,
         journey_services=JourneyServices(reader=SqlJourneyReader(stack.factory)),
     )
     add_commercial_routes(

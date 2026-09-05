@@ -61,6 +61,14 @@ OBJECT_RUN = "run"
 OBJECT_PROFILE = "profile"
 AUDIT_OBJECTS = (OBJECT_VERSION, OBJECT_RUN, OBJECT_PROFILE)
 
+#: The actor `FR-125` names when the pipeline itself records an action (`W1-04b`): a version at
+#: admission, a run at its job, a completion or failure at settlement. The beta cookie names a
+#: session and not an account, so the member is not recoverable there without persisting an account
+#: beside a bearer-adjacent identifier -- `KHEPRI-DEC-015` §7 -- and the event does not pretend to
+#: know. The `system:` prefix keeps it from colliding with, or reading as, an account identifier.
+#: `W1-07`'s retention sweep will name its own actor in the same shape.
+ACTOR_PIPELINE = "system:pipeline"
+
 # Content-free, per the refusal discipline in `rca/errors.py`.
 AUDIT_ACTION_FAILURE = "Audit action is not one of the workspace actions this domain names."
 AUDIT_OUTCOME_FAILURE = "Audit outcome is not one of the outcomes this domain names."

@@ -37,6 +37,7 @@ from khepri.rca.workspace.contracts import (
     RUN_STARTED,
     RUN_STATES,
 )
+from khepri.rca.workspace.run_reports import RunReportRow
 
 # The retention states a stored object may be in. `KHEPRI-DEC-033` governs the transitions; this
 # slice holds only the vocabulary and the column, because a transition is an operation and `W1-07`
@@ -802,6 +803,9 @@ _ROW_GUARDS = {
     # Frozen, but deletable: `KHEPRI-DEC-015` §2a bounds an audit event at twelve months and
     # `W1-07`'s sweep purges it, so no delete guard -- the source profile's asymmetry, inverted.
     WorkspaceAuditEventRow: (_refuse_audit_update, None),
+    # `W1-04b`'s run-to-report link takes the tombstone's shape: written once, never rewritten,
+    # and deleted only with its run -- which `W1-07` does explicitly, alongside the run's own guard.
+    RunReportRow: (_refuse_any_update, _refuse_delete),
 }
 
 for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():
