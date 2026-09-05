@@ -153,6 +153,12 @@ _EN = {
     "notice_mapping": "Mapping version",
     "notice_package": "Package version",
     "notice_formula": "Formula version",
+    # One per `RRA-008` family (`FR-116` names `rra008.*` beside the mapping and package
+    # identifiers). A family version moves independently of the core formula, so each is named.
+    "notice_family_comparison": "Comparison analysis version",
+    "notice_family_concentration": "Concentration analysis version",
+    "notice_family_growth": "Growth analysis version",
+    "notice_family_basket": "Basket analysis version",
     "notice_availability": "Availability changed",
     "notice_not_comparable": (
         "Figures from this analysis and the previous one are not numerically comparable."
@@ -272,6 +278,10 @@ _AR = {
     "notice_mapping": "إصدار المطابقة",
     "notice_package": "إصدار الحزمة",
     "notice_formula": "إصدار الصيغة",
+    "notice_family_comparison": "إصدار تحليل المقارنة",
+    "notice_family_concentration": "إصدار تحليل التركّز",
+    "notice_family_growth": "إصدار تحليل النمو",
+    "notice_family_basket": "إصدار تحليل السلة",
     "notice_availability": "تغيّر التوافر",
     "notice_not_comparable": "أرقام هذا التحليل والتحليل السابق غير قابلة للمقارنة عدديًا.",
     "notice_previous": "افتح التحليل السابق",

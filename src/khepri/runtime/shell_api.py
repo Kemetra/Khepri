@@ -662,13 +662,30 @@ def _change_notice(read: _DetailRead, current: RunRecord, provenance: Any) -> An
     if version is None:
         raise UnrenderableRecord(UNRENDERABLE_FAILURE)
     assert read.services.provenance is not None  # dispatched only when offered
-    earlier_provenance = read.services.provenance.for_run(read.owner_id, earlier, version)
-    outcomes = (
-        None if earlier_provenance is None else earlier_provenance.sections,
-        None if provenance is None else provenance.sections,
-    )
+    earlier_provenance = _earlier_provenance(read, earlier, version)
     previous = RunRecord(earlier, version, _bindings_of(read.history, earlier.run_id))
-    return methodology_change(current, previous, outcomes, read.language)
+    return methodology_change(current, previous, (earlier_provenance, provenance), read.language)
+
+
+def _earlier_provenance(read: _DetailRead, earlier: Any, version: Any) -> Any:
+    """The previous run's retained record, or `None` where it cannot be read.
+
+    The Notice needs it for two things the run row does not carry: the `RRA-008` family versions
+    (`FR-116`) and the section outcomes availability is stated from. But it belongs to *another*
+    run, and `for_run` refuses a record whose link crosses scopes (`UnrenderableRecord`). Letting
+    that refusal out here would make **this** analysis's detail page unavailable because of a
+    different run's corruption -- a page the customer can otherwise read in full (review on
+    `#377`).
+
+    So a predecessor that cannot be read is a predecessor with no comparable record, exactly as
+    one completed before `20260905_0024` retained none. The current run's own provenance is not
+    read here and still refuses: that record *is* this page's.
+    """
+    assert read.services.provenance is not None  # dispatched only when offered
+    try:
+        return read.services.provenance.for_run(read.owner_id, earlier, version)
+    except UnrenderableRecord:
+        return None
 
 
 def _detail_run_id(segments: list[str]) -> str | None:

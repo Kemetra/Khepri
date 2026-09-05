@@ -40,8 +40,8 @@ layer is the one place that may hold both.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Protocol
 
@@ -80,6 +80,9 @@ class Provenance:
     row_count: int
     sections: SectionStates
     reachable: bool
+    #: Each `RRA-008` family's version as this run ran under it, by section. Empty for a run
+    #: completed before `20260905_0025`; the Notice reads that absence as "not recorded".
+    family_versions: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +124,7 @@ class ProvenanceReader:
             attested_by=record.attested_by,
             row_count=record.row_count,
             sections=record.sections,
+            family_versions=record.family_versions,
             reachable=job is not None and self._resumable(job.session_id),
         )
 

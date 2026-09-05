@@ -36,13 +36,15 @@ from khepri.rca.workspace.contracts import (
     VersionLifecycle,
 )
 from khepri.rca.workspace.persistence import WorkspaceHistory
+from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.tombstones import SectionStates
-from khepri.rra.bundle import ORDERED_SECTIONS
+from khepri.rra.bundle import ORDERED_SECTIONS, family_versions
 from khepri.rra.rendering.wording import COMPONENT_CHROME, SECTION_HEADINGS
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 from khepri.runtime.shell_copy import SHELL_COPY
 from khepri.runtime.shell_provenance import Provenance
+from khepri.runtime.shell_workspace import UnrenderableRecord
 from tests.w104_support import member
 from tests.w104b_support import journey
 from tests.w106_support import completed_run, detail_address, page
@@ -117,14 +119,23 @@ class _StubRecords:
 
 @dataclass
 class _StubProvenance:
-    """A Passport per run, with the section outcomes each run retained."""
+    """A Passport per run, with the section outcomes and family versions each run retained."""
 
     outcomes: dict[str, SectionStates] = field(default_factory=dict)
+    #: Per run, the `RRA-008` family versions it retained. A run absent from this mapping retained
+    #: all four as this build stamps them; a run mapped to `{}` retained none, as every run
+    #: completed before `20260905_0025` did.
+    families: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: Runs whose retained record cannot be read at all -- a link that crosses scopes.
+    unreadable: frozenset[str] = frozenset()
 
     def for_run(self, owner_id: str, run: object, version: object) -> Provenance | None:
+        if run.run_id in self.unreadable:
+            raise UnrenderableRecord("unrenderable")
         if run.state != RUN_COMPLETED:
             return None
         return Provenance(
+            family_versions=self.families.get(run.run_id, dict(family_versions())),
             session_id=f"ses-{run.run_id}",
             job_id=f"job-{run.run_id}",
             covered_start=NOW.date(),
@@ -478,3 +489,92 @@ def test_two_runs_of_one_file_under_one_methodology_carry_no_notice() -> None:
 
     assert 'class="change-notice"' not in html
     assert f'href="{detail_address(who, runs[1].run_id)}"' not in html
+
+
+# --- FR-116: the `rra008.*` family identifiers ----------------------------------------------------
+
+
+def _same_methodology() -> _StubRecords:
+    """Two runs under one core triple: only a family version can differ between them."""
+    return _StubRecords(
+        versions=(
+            _version("ver-b", "rra003.mapping.v3", created_at=NOW - timedelta(days=1)),
+            _version("ver-a", "rra003.mapping.v3"),
+        ),
+        runs=(
+            _run("run-b", "ver-b", started_at=NOW),
+            _run("run-a", "ver-a", started_at=EARLIER),
+        ),
+        bindings=_bindings("run-a", "run-b"),
+    )
+
+
+def _families(**moved: str) -> dict[str, str]:
+    """This build's family versions, with the named sections moved to another identifier."""
+    return dict(family_versions()) | moved
+
+
+@pytest.mark.parametrize("language", ["en", "ar"])
+def test_a_family_version_that_moved_is_named_though_the_core_triple_did_not(
+    language: str,
+) -> None:
+    """`FR-116` names `rra008.*` beside `rra003.mapping.*` and `rra004.*`. A family version is not
+    derivable from the core formula -- `ADMITTED_FAMILY_PAIRS` says which pairings are authorized,
+    never which one a run used -- so a run whose basket analysis moved reports the change from what
+    it retained, and the differing identifier is reachable in both languages."""
+    records = _same_methodology()
+    provenance = _StubProvenance(
+        families={
+            "run-a": _families(basket="rra008.basket.v1"),
+            "run-b": _families(),
+        }
+    )
+
+    notice = _notice(_detail(records, provenance, "run-b", language))
+    text = _text(notice)
+
+    assert SHELL_COPY[language]["notice_family_basket"] in text
+    assert "rra008.basket.v1" in text and "rra008.basket.v2" in text
+    # The families that did not move are not named, as the core identifiers are not.
+    assert SHELL_COPY[language]["notice_family_growth"] not in text
+
+
+def test_a_family_version_recorded_by_only_one_run_is_not_a_change() -> None:
+    """`20260905_0025` backfills nothing, so a run completed before it retained no family version.
+    Absence is "not recorded", never "a version that changed": comparing it against a real
+    identifier would render a Notice naming `None` and declare two analyses not numerically
+    comparable over a methodology that may not have moved. This is the started-run defect one
+    identifier down (review on `#377`)."""
+    records = _same_methodology()
+    provenance = _StubProvenance(families={"run-a": {}, "run-b": _families()})
+
+    html = _detail(records, provenance, "run-b")
+
+    assert 'class="change-notice"' not in html
+    assert "None" not in _text(html)
+
+
+def test_every_family_the_report_assembles_can_be_named_by_the_notice() -> None:
+    """The extent assertion. `FAMILY_SECTIONS` is restated in `khepri.rca` because `R7-01` §3
+    forbids it importing `khepri.rra`; this is the one place that may read both, so a fifth family
+    added to `_FAMILIES` fails here rather than going silently uncompared and unnamed."""
+    assert set(FAMILY_SECTIONS) == set(family_versions())
+    for language in ("en", "ar"):
+        for section in FAMILY_SECTIONS:
+            assert SHELL_COPY[language][f"notice_family_{section}"]
+
+
+def test_an_unreadable_previous_record_leaves_this_analysis_readable() -> None:
+    """The previous run's record is read for its families and its section outcomes, but it belongs
+    to *another* run: a link that crosses scopes refuses it. That refusal must not take down the
+    detail page of an analysis the customer can otherwise read in full -- it means "no comparable
+    record", exactly as a run that retained none does (review on `#377`)."""
+    records = _same_methodology()
+    provenance = _StubProvenance(unreadable=frozenset({"run-a"}))
+
+    response = _shell(records, provenance).get(
+        f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses/run-b"
+    )
+
+    assert response.status_code == 200
+    assert 'class="change-notice"' not in response.text

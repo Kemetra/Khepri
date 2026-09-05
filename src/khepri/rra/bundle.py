@@ -2310,3 +2310,19 @@ def _narrative_document(narrative: NarrativeDraft | None) -> dict[str, object] |
             for entry in sorted(narrative.languages, key=lambda entry: entry.language)
         ],
     }
+
+
+def family_versions() -> dict[str, str]:
+    """Each `RRA-008` family's governed version, by section, as this build would stamp it.
+
+    The methodology a run *ran under*, which is not the same question as what it published: a
+    family whose pairing `admits_family` refuses still ran under this version and refused because
+    of it, so the version is read here for every family in `_FAMILIES`, answered or refused. What
+    a run retains from this is compared by the Methodology Change Notice (`FR-116`, which names
+    `rra008.*` beside the mapping and package identifiers).
+
+    Derived from `_FAMILIES` rather than listed, so a fifth family is reported by the surfaces
+    that consume this without editing them -- a hand-written list would reproduce exactly the
+    drift `versions.py` exists to refuse.
+    """
+    return {section_id: family.version() for section_id, family in _FAMILIES.items()}
