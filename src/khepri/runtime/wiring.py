@@ -86,6 +86,7 @@ from khepri.runtime.pipeline_recording import (
     RecordingReportRequests,
 )
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
+from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
 from khepri.runtime.workspace_recording import WorkspaceRecording
 
@@ -480,6 +481,17 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         records=SqlWorkspaceRecordStore(stack.factory),
         isolation=IsolationService(
             SqlOrganizationStore(stack.factory), SqlAccountStore(stack.factory)
+        ),
+        # `W1-06`: the Passport and the trust state are read from the admission and the package
+        # the run binds by digest, through the same service instances the routes decide with.
+        provenance=ProvenanceReader(
+            ProvenanceSources(
+                reports=SqlRunReportStore(stack.factory),
+                jobs=JobReader(stack.factory),
+                profiling=stack.services.profiling,
+                packages=stack.services.packages,
+            ),
+            clock=stack.clock,
         ),
     )
 

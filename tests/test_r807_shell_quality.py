@@ -23,7 +23,6 @@ from importlib.resources import files
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from khepri.runtime.shell_provenance import Provenance
 from playwright.sync_api import Error, sync_playwright
 
 from khepri.rca.errors import ScopeAccessDenied
@@ -45,6 +44,7 @@ from khepri.rra.bundle import ORDERED_SECTIONS
 from khepri.rra.definitions import AnalysisQualitySummary
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
+from khepri.runtime.shell_provenance import Provenance
 
 NOW = datetime(2026, 8, 22, tzinfo=UTC)
 
@@ -217,6 +217,7 @@ class _StubProvenance:
                 caveats=(),
                 answered_sections=tuple(ORDERED_SECTIONS),
                 caveated_sections=(),
+                caveat_sections=(),
             ),
         )
 

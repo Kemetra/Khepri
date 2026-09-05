@@ -25,6 +25,7 @@ the reader holds no membership in is not in the listing and therefore cannot be 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -42,14 +43,43 @@ def _active_organization_name(organizations: Iterable[Any], organization_id: str
 
 
 #: The destinations the frame may name, as `(copy key, surface)` in `RCA-005` `FR-121`'s order.
-#: Analyses is deliberately absent: its live record cannot yet supply `FR-117`'s trust state and
-#: neither Analysis Detail nor Run Again has a route for its required next action. `FR-049`
-#: withholds the link until both prerequisites exist (review on `#374`).
+#: Overview and Data ship with a reader (`W1-05`); Analyses ships with detail (`W1-06`), which
+#: supplies the trust state and the next valid action `#374` withheld it for.
 _WORKSPACE_DESTINATIONS = (
     ("overview_title", "overview"),
     ("data_title", "data"),
 )
+_ANALYSES_DESTINATION = ("analyses_title", "analyses")
 _TEAM_DESTINATION = ("team_title", "team")
+
+
+@dataclass(frozen=True, slots=True)
+class Offers:
+    """Which destinations this shell may name: Overview and Data (`records`), Analyses and its
+    detail (`analyses`). Decided from the wiring once (`offers_of`) and handed to the frame."""
+
+    records: bool
+    analyses: bool
+
+
+def offers_workspace(services: Any) -> bool:
+    """Whether Overview and Data exist on this shell: both halves of the read are wired."""
+    return services.records is not None and services.isolation is not None
+
+
+def offers_analyses(services: Any) -> bool:
+    """Whether Analyses and Analysis detail exist: the read, the provenance behind the trust state
+    and the Passport, and the bridge the artifact handoff resumes a session through. Without any
+    one of them the destination is absent (`FR-049`), not present and refusing."""
+    return (
+        offers_workspace(services)
+        and getattr(services, "provenance", None) is not None
+        and getattr(services, "bridge", None) is not None
+    )
+
+
+def offers_of(services: Any) -> Offers:
+    return Offers(records=offers_workspace(services), analyses=offers_analyses(services))
 
 
 def organization_frame(
@@ -57,7 +87,7 @@ def organization_frame(
     organization_id: str,
     *,
     surface: str,
-    offers_records: bool,
+    offers: Offers,
 ) -> dict[str, Any]:
     """The frame context for a surface rendered inside one resolved organization.
 
@@ -68,16 +98,17 @@ def organization_frame(
 
     `destinations` is the navigation, decided here and nowhere else. `FR-121` and `RCA-002`
     `FR-049` require a link to ship only with a complete surface, so Overview and Data appear
-    exactly when the shell holds a reader for them (`offers_records`), and Team always -- the one
+    exactly when the shell holds a reader for them (`offers.records`), and Team always -- the one
     surface every shell has. Analyses stays withheld for the prerequisite gap recorded above. A
     template that decided this would be a second place the rule lives.
     """
-    workspace = _WORKSPACE_DESTINATIONS if offers_records else ()
+    workspace = _WORKSPACE_DESTINATIONS if offers.records else ()
+    analyses = (_ANALYSES_DESTINATION,) if offers.records and offers.analyses else ()
     return {
         "organization_name": _active_organization_name(organizations, organization_id),
         "surface_path": f"/{organization_id}/{surface}",
         "destinations": tuple(
             (label, f"/{organization_id}/{destination}")
-            for label, destination in (*workspace, _TEAM_DESTINATION)
+            for label, destination in (*workspace, *analyses, _TEAM_DESTINATION)
         ),
     }

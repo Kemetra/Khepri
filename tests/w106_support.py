@@ -9,9 +9,10 @@ for the artifact handoff -- with only the session checkpoint stubbed to the memb
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from khepri.runtime.shell_provenance import ProvenanceReader
 
 from khepri.rca.isolation import IsolationService
 from khepri.rca.persistence import SqlAccountStore
@@ -20,6 +21,7 @@ from khepri.rca.workspace.contracts import AnalysisRun
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.runtime.bridge import CommercialBridge
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
+from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from tests.w104_support import Member
 from tests.w104b_support import Journey, commercial_client, request_report, submit
 from tests.w105_support import Context, StubResolver
@@ -34,10 +36,12 @@ def isolation(j: Journey) -> IsolationService:
 def provenance(j: Journey) -> ProvenanceReader:
     """The composition-root read the detail surface is given, over the journey's own services."""
     return ProvenanceReader(
-        reports=SqlRunReportStore(j.w.factory),
-        jobs=j.reader,
-        profiling=j.w.profiling,
-        packages=j.w.packages,
+        ProvenanceSources(
+            reports=SqlRunReportStore(j.w.factory),
+            jobs=j.reader,
+            profiling=j.w.profiling,
+            packages=j.w.packages,
+        ),
         clock=j.clock,
     )
 
@@ -65,9 +69,11 @@ def shell_over(j: Journey, who: Member, **wiring: bool) -> TestClient:
     return client
 
 
-def page(j: Journey, who: Member, tail: str, *, language: str = "en", **wiring: bool) -> str:
+def page(j: Journey, who: Member, tail: str, **options: Any) -> str:
+    """One surface as the member sees it; `language` and the wiring flags travel in `options`."""
+    language = options.pop("language", "en")
     address = f"{SHELL_PREFIX}/{language}/{who.organization_id}/{tail}"
-    return shell_over(j, who, **wiring).get(address).text
+    return shell_over(j, who, **options).get(address).text
 
 
 def analyses_address(who: Member, language: str = "en") -> str:

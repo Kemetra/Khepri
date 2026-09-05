@@ -10,14 +10,18 @@ corruption and reads as "unavailable".
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import timedelta
+
 import pytest
-from khepri.runtime.shell_provenance import Provenance, ProvenanceReader
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
+from khepri.rca.workspace.run_reports import RunReport, SqlRunReportStore
 from khepri.rra.rendering.wording import SECTION_HEADINGS
+from khepri.runtime.shell_provenance import Provenance, ProvenanceReader, ProvenanceSources
 from khepri.runtime.shell_workspace import UnrenderableRecord
-from tests.w104_support import member
-from tests.w104b_support import journey
+from tests.w104_support import OTHER_CSV, member
+from tests.w104b_support import commercial_client, journey, submit
 from tests.w106_support import completed_run, provenance, started_run
 
 
@@ -76,16 +80,14 @@ def test_a_run_no_job_settles_has_no_provenance() -> None:
     assert provenance(j).for_run(who.owner_id, run, version) is None
 
 
-def test_deleted_journey_content_reads_as_unavailable_not_as_corruption() -> None:
+def test_expired_journey_content_reads_as_unavailable_not_as_corruption() -> None:
+    """Seven days after the analysis session opened its content is no longer served (`R7-07`);
+    the run keeps its record, and the reader answers absence, not a refusal."""
     j = journey()
     who = member(j.w)
-    from tests.w104b_support import commercial_client, request_report, submit
-
-    client, _session = commercial_client(j, who)
-    submit(client)
-    j.run_job(request_report(client))
+    completed_run(j, who)
     run, version = _run_and_version(j, who)
-    assert client.delete("/api/v1/beta/content").status_code in (200, 204)
+    j.clock.advance(timedelta(days=8))
 
     assert provenance(j).for_run(who.owner_id, run, version) is None
 
@@ -127,14 +129,107 @@ def test_a_package_that_does_not_match_the_runs_digest_refuses_the_surface() -> 
         )
 
 
-def test_a_link_to_a_job_of_another_scope_refuses_the_surface() -> None:
-    """The link's foreign keys make this unrepresentable in the store; the reader still refuses
-    a job whose owner is not the scope asked about, so a corrupt link cannot cross scopes."""
+def test_another_scopes_run_has_no_provenance_here() -> None:
+    """The link store filters by scope, so another scope's run has no job *here*: an absence,
+    which the surface turns into `unavailable` because the run is not in its history either."""
     j = journey()
     who = member(j.w)
     other = member(j.w, email="other@example.test", name="Other")
     completed_run(j, who)
     run, version = _run_and_version(j, who)
 
+    assert provenance(j).for_run(other.owner_id, run, version) is None
+
+
+class _LinkTo:
+    """A link store that answers one job for any run -- the corrupt link the foreign keys forbid."""
+
+    def __init__(self, job_id: str) -> None:
+        self._job_id = job_id
+
+    def job_id_for_run(self, run_id: str, owner_id: str) -> str | None:
+        return self._job_id
+
+    def link(self, report: RunReport, *, now):  # pragma: no cover -- never written here
+        raise AssertionError
+
+
+def test_a_link_to_a_job_of_another_scope_refuses_the_surface() -> None:
+    """The link's foreign keys make this unrepresentable in the store; the reader still refuses a
+    job whose owner is not the scope asked about, so even a corrupt link cannot cross scopes."""
+    j = journey()
+    who = member(j.w)
+    other = member(j.w, email="other@example.test", name="Other")
+    _run, job_id, _session = completed_run(j, who)
+    run, version = _run_and_version(j, who)
+    reader = ProvenanceReader(
+        ProvenanceSources(
+            reports=_LinkTo(job_id),
+            jobs=j.reader,
+            profiling=j.w.profiling,
+            packages=j.w.packages,
+        ),
+        clock=j.clock,
+    )
+
     with pytest.raises(UnrenderableRecord):
-        provenance(j).for_run(other.owner_id, run, version)
+        reader.for_run(other.owner_id, run, version)
+
+
+class _PackagesAnswering:
+    """A package reader that answers one record for any session -- the doubles the two digest
+    checks need, because each guards a corruption the other cannot see."""
+
+    def __init__(self, record) -> None:
+        self._record = record
+
+    def get_session_package(self, *, session_id: str, now):
+        return self._record
+
+
+def _reader_with_packages(j, packages) -> ProvenanceReader:
+    return ProvenanceReader(
+        ProvenanceSources(
+            reports=SqlRunReportStore(j.w.factory),
+            jobs=j.reader,
+            profiling=j.w.profiling,
+            packages=packages,
+        ),
+        clock=j.clock,
+    )
+
+
+def test_a_stored_digest_that_does_not_name_the_runs_package_refuses_before_any_rebuild() -> None:
+    """The record's own digest is the first check: a stored package whose digest is not the one
+    the run binds is refused without rebuilding it, as the catalog refuses it."""
+    j = journey()
+    who = member(j.w)
+    _run, _job, session_id = completed_run(j, who)
+    run, version = _run_and_version(j, who)
+    genuine = j.w.packages.get_session_package(session_id=session_id, now=j.clock())
+    tampered = replace(genuine, package_digest="sha256:" + "1" * 64)
+
+    with pytest.raises(UnrenderableRecord):
+        _reader_with_packages(j, _PackagesAnswering(tampered)).for_run(who.owner_id, run, version)
+
+
+def test_a_document_that_rebuilds_to_another_package_refuses_even_when_its_digest_agrees() -> None:
+    """The second check is the rebuild: a record whose stored digest matches the run but whose
+    document is another package's is a substitution the first check cannot see."""
+    j = journey()
+    who = member(j.w)
+    _run, _job, session_id = completed_run(j, who)
+    run, version = _run_and_version(j, who)
+    other = member(j.w, email="other@example.test", name="Other")
+    other_client, other_session = commercial_client(j, other)
+    submit(other_client, OTHER_CSV)
+    facts = other_client.post("/api/v1/beta/facts")
+    assert facts.status_code == 201, facts.text
+    genuine = j.w.packages.get_session_package(session_id=session_id, now=j.clock())
+    foreign = j.w.packages.get_session_package(session_id=other_session, now=j.clock())
+    substituted = replace(genuine, document=foreign.document)
+
+    with pytest.raises(UnrenderableRecord):
+        _reader_with_packages(j, _PackagesAnswering(substituted)).for_run(
+            who.owner_id, run, version
+        )

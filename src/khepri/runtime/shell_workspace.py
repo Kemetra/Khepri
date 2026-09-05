@@ -140,6 +140,9 @@ class SpineRow:
     report_key: str | None
     retention_key: str
     deleted: Moment | None
+    #: The live run's opaque identifier, carried into the detail link's `href` and never as text
+    #: (`W1-06`); `None` on a tombstone, which has no detail to open (§7.3).
+    run_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,7 +170,7 @@ def moment(instant: datetime) -> Moment:
     return Moment(at=utc.isoformat(), text=utc.strftime(_MOMENT_TEXT))
 
 
-def _worded(table: dict[str, str], code: str) -> str:
+def worded(table: dict[str, str], code: str) -> str:
     """A copy key for a governed code, or the refusal `UnrenderableRecord`."""
     try:
         return table[code]
@@ -176,7 +179,7 @@ def _worded(table: dict[str, str], code: str) -> str:
 
 
 def work_row(run: Any) -> WorkRow:
-    return WorkRow(state_key=_worded(RUN_STATE_COPY, run.state), started=moment(run.started_at))
+    return WorkRow(state_key=worded(RUN_STATE_COPY, run.state), started=moment(run.started_at))
 
 
 def _uses_by_version(runs: Iterable[Any]) -> dict[str, tuple[WorkRow, ...]]:
@@ -207,7 +210,7 @@ def data_row(version: Any, uses: tuple[WorkRow, ...]) -> DataRow:
         anchor=str(version.version_id),
         submitted=moment(version.created_at),
         media_type=str(version.upload_media_type),
-        admission_key=_worded(ADMISSION_COPY, version.admission_outcome),
+        admission_key=worded(ADMISSION_COPY, version.admission_outcome),
         readiness_key=_readiness(version, uses),
         retention_key="retention_kept",
         uses=uses,
@@ -247,7 +250,7 @@ def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
     )
 
 
-def _report_key(run: Any, bound_surfaces: frozenset[str]) -> str:
+def report_key(run: Any, bound_surfaces: frozenset[str]) -> str:
     """Whether the run's report can be offered, from the bindings rather than from the state.
 
     `FR-111` makes completion imply every required artifact is bound, so a completed run with a
@@ -322,10 +325,11 @@ def spine_rows(
         SpineRow(
             started=moment(run.started_at),
             data=references.get(run.version_id),
-            state_key=_worded(RUN_STATE_COPY, run.state),
-            report_key=_report_key(run, frozenset(bound.get(run.run_id, ()))),
+            state_key=worded(RUN_STATE_COPY, run.state),
+            report_key=report_key(run, frozenset(bound.get(run.run_id, ()))),
             retention_key="retention_kept",
             deleted=None,
+            run_id=run.run_id,
         )
         for run in runs
         if run.run_id not in gone
@@ -336,7 +340,10 @@ def spine_rows(
 __all__ = [
     "ADMISSION_COPY",
     "RUN_STATE_COPY",
+    "UNRENDERABLE_FAILURE",
     "UnrenderableRecord",
+    "report_key",
+    "worded",
     "DataReference",
     "DataRow",
     "Moment",

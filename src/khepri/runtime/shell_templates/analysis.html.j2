@@ -1,0 +1,128 @@
+{% extends "shell.html.j2" %}
+{% block title %}{{ copy.analysis_title }} · {{ copy.product }}{% endblock %}
+{% block content %}
+{#
+  `RCA-005` FR-118, FR-119; blueprint §7.4, §10: one analysis, its Passport first, its quality in
+  the report's own words, its artifacts as handoffs, and every digest and identifier behind the
+  audit disclosure. This template iterates what `shell_analysis.detail_view` handed it and decides
+  nothing -- which sentence stands where the artifacts would, which tier a value belongs to, and
+  whether a handoff may be offered were all settled in Python, where they are tested.
+
+  No report-API address appears here: the handoff route builds it (`shell_artifact_handoff.py`),
+  so artifacts are reached from this surface and from nowhere a template could copy them to.
+#}
+<section class="document-card" aria-labelledby="page-title">
+  <h1 id="page-title">{{ copy.analysis_title }}</h1>
+  <p class="lede">{{ copy.analysis_intro }}</p>
+  <p class="analysis-state">
+    <span class="row-label">{{ copy.spine_started }}</span>
+    <time datetime="{{ view.started.at }}" dir="ltr">{{ view.started.text }}</time>
+    <span class="row-state">{{ copy[view.state_key] }}</span>
+  </p>
+
+  <h2 class="region-label">{{ copy.passport_title }}</h2>
+  {% if view.passport %}
+  <dl class="passport">
+    <div>
+      <dt>{{ copy.passport_period }}</dt>
+      <dd dir="ltr">{{ view.passport.covered_start }} – {{ view.passport.covered_end }}</dd>
+    </div>
+    <div>
+      <dt>{{ copy.passport_timezone }}</dt>
+      <dd dir="ltr">{{ view.passport.timezone }}</dd>
+    </div>
+    <div>
+      <dt>{{ copy.passport_data }}</dt>
+      <dd>
+        <a class="data-reference" href="{{ prefix }}/{{ language }}{{ view.passport.data_anchor }}">
+          <span class="row-label">{{ copy.passport_data_link }}</span>
+          <time datetime="{{ view.passport.data_submitted.at }}" dir="ltr">{{ view.passport.data_submitted.text }}</time>
+        </a>
+      </dd>
+    </div>
+    <div>
+      <dt>{{ copy.passport_scope }}</dt>
+      {% if view.passport.scope %}
+      <dd dir="auto">{{ view.passport.scope }}</dd>
+      {% else %}
+      <dd>{{ copy.passport_scope_unstated }}</dd>
+      {% endif %}
+    </div>
+    <div>
+      <dt>{{ copy.passport_rows }}</dt>
+      <dd dir="ltr">{{ view.passport.row_count }}</dd>
+    </div>
+    {% if view.completed %}
+    <div>
+      <dt>{{ copy.passport_ran }}</dt>
+      <dd><time datetime="{{ view.completed.at }}" dir="ltr">{{ view.completed.text }}</time></dd>
+    </div>
+    {% else %}
+    <div>
+      <dt>{{ copy.passport_started }}</dt>
+      <dd><time datetime="{{ view.started.at }}" dir="ltr">{{ view.started.text }}</time></dd>
+    </div>
+    {% endif %}
+    <div>
+      <dt>{{ copy.passport_methodology }}</dt>
+      <dd class="passport-versions" dir="ltr">
+        <span>{{ view.passport.mapping_version }}</span>
+        {% if view.passport.package_version %}<span>{{ view.passport.package_version }}</span>{% endif %}
+        {% if view.passport.formula_version %}<span>{{ view.passport.formula_version }}</span>{% endif %}
+      </dd>
+    </div>
+  </dl>
+  {% else %}
+  <p class="empty-state">{{ copy.passport_unavailable }}</p>
+  {% endif %}
+
+  {% if view.trust %}
+  <h2 class="region-label">{{ view.quality_title }}</h2>
+  <dl class="quality" aria-label="{{ view.quality_title }}">
+    {% for group in view.trust %}
+    <div>
+      <dt>{{ group.label }}</dt>
+      <dd>{{ group.sections_text }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
+  {% endif %}
+
+  <h2 class="region-label">{{ copy.artifacts_title }}</h2>
+  {% if view.artifacts %}
+  <ul class="artifact-actions">
+    {% for artifact in view.artifacts %}
+    <li class="artifact-action">
+      <form method="post"
+            action="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/{{ view.run_id }}/artifacts/{{ artifact.kind }}">
+        <button type="submit">{{ copy[artifact.label_key] }}</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ copy[view.artifacts_key] }}</p>
+  {% endif %}
+
+  {#
+    §10: machine identifiers and digests are contextual audit detail, reached from the analysis
+    they describe and never leading it. A disclosure, closed by default, so a customer reading the
+    Passport is not reading hashes.
+  #}
+  <details class="audit-detail">
+    <summary>{{ copy.audit_title }}</summary>
+    <dl class="audit-list" dir="ltr">
+      <div><dt>{{ copy.audit_run }}</dt><dd>{{ view.audit.run_id }}</dd></div>
+      <div><dt>{{ copy.audit_version }}</dt><dd>{{ view.audit.version_id }}</dd></div>
+      {% if view.audit.package_digest %}
+      <div><dt>{{ copy.audit_package }}</dt><dd>{{ view.audit.package_digest }}</dd></div>
+      {% endif %}
+      <div><dt>{{ copy.audit_manifest }}</dt><dd>{{ view.audit.manifest_digest }}</dd></div>
+      <div><dt>{{ copy.audit_upload }}</dt><dd>{{ view.audit.upload_digest }}</dd></div>
+      {% for kind, digest in view.audit.artifact_digests %}
+      <div><dt>{{ copy.audit_artifacts }} · {{ kind }}</dt><dd>{{ digest }}</dd></div>
+      {% endfor %}
+    </dl>
+  </details>
+</section>
+{% endblock %}

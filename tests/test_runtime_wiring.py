@@ -5,7 +5,6 @@ import json
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from khepri.runtime.shell_provenance import ProvenanceReader
 
 from khepri.rca.identity import IdentityProvider
 from khepri.rca.isolation import IsolationService
@@ -25,6 +24,7 @@ from khepri.runtime.pipeline_recording import (
     RecordingReportRequests,
     SettlingJobStore,
 )
+from khepri.runtime.shell_provenance import ProvenanceReader
 from khepri.runtime.wiring import (
     RuntimeClients,
     build_beta_services,

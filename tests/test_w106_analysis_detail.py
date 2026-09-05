@@ -24,6 +24,7 @@ What the surfaces must hold:
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 from importlib.resources import files
 
 import pytest
@@ -42,7 +43,6 @@ from tests.w106_support import (
     page,
     shell_over,
     started_run,
-    submitted,
 )
 
 EN = SHELL_COPY["en"]
@@ -70,7 +70,7 @@ def _outside_audit(html: str) -> str:
     return html[:start] + html[end:]
 
 
-# --- FR-121: the Analyses destination ships with detail --------------------------------------------
+# --- FR-121: the Analyses destination ships with detail -----------------------------------------
 
 
 @pytest.mark.parametrize("language", ["en", "ar"])
@@ -117,7 +117,7 @@ def test_the_analyses_address_renders_the_spine() -> None:
     assert EN["analyses_empty"] not in response.text
 
 
-# --- FR-117: rows link to their detail and state their trust ---------------------------------------
+# --- FR-117: rows link to their detail and state their trust --------------------------------------
 
 
 def test_a_live_row_links_to_its_detail_and_a_completed_one_states_its_quality() -> None:
@@ -150,7 +150,7 @@ def test_a_started_row_states_no_quality_yet() -> None:
         assert word not in _text(html)
 
 
-# --- FR-119: the Passport leads, digests sit behind audit detail -----------------------------------
+# --- FR-119: the Passport leads, digests sit behind audit detail ----------------------------------
 
 
 def test_detail_leads_with_the_passport_and_keeps_digests_in_audit_detail() -> None:
@@ -170,7 +170,8 @@ def test_detail_leads_with_the_passport_and_keeps_digests_in_audit_detail() -> N
         EN["passport_ran"],
         EN["passport_methodology"],
     ]
-    positions = [html.index(label) for label in labels]
+    passport_region = html[html.index('class="passport"') :]
+    positions = [passport_region.index(f"<dt>{label}</dt>") for label in labels]
     assert positions == sorted(positions)
     assert html.index(EN["passport_title"]) < html.index(EN["audit_title"])
     # The period is the attested coverage, stated as dates.
@@ -378,20 +379,15 @@ def test_an_inexact_or_unknown_detail_address_is_unavailable(tail: str) -> None:
         assert EN["unavailable_title"] in response.text
 
 
-def test_a_run_whose_journey_content_was_deleted_keeps_its_record_and_loses_its_passport() -> None:
-    """The journey's own deletion (`/api/v1/beta/content`) removes the profile and package the
-    Passport is read from. The run stays -- it is history -- but the Passport says provenance is
-    unavailable and no artifact is offered, rather than inventing either (fail closed)."""
+def test_a_run_whose_journey_content_has_expired_keeps_its_record_and_loses_its_passport() -> None:
+    """The analysis session's content lives seven days (`R7-07`); after that the profile and
+    package the Passport is read from are no longer served. The run stays -- it is history -- but
+    the Passport says provenance is unavailable and no artifact is offered, rather than inventing
+    either (fail closed). The journey's own deletion ends the content the same way."""
     j = journey()
     who = member(j.w)
-    client, _session = submitted(j, who)
-    from tests.w104b_support import request_report
-
-    job_id = request_report(client)
-    j.run_job(job_id)
-    (run,) = j.w.store.analysis_runs_for_scope(who.owner_id)
-    deleted = client.delete("/api/v1/beta/content")
-    assert deleted.status_code in (200, 204), deleted.text
+    run, _job, _session = completed_run(j, who)
+    j.clock.advance(timedelta(days=8))
 
     html = page(j, who, f"analyses/{run.run_id}")
 
@@ -412,3 +408,77 @@ def test_no_template_but_detail_offers_an_artifact_and_none_names_the_report_api
         assert "/api/v1/beta" not in source, entry.name
         if entry.name != "analysis.html.j2":
             assert "artifacts/" not in source, entry.name
+
+
+# --- The quality groups, over a summary with every kind of outcome --------------------------------
+
+
+def test_the_groups_are_answered_without_caveat_then_caveated_then_refused() -> None:
+    """A caveated analysis was still answered, so it appears in the caveated group and not in the
+    plain one; a refused analysis appears in the refused group and nowhere else. The words are the
+    report's own, in both languages."""
+    from khepri.rra.definitions import AnalysisQualitySummary
+    from khepri.runtime.shell_analysis import trust_groups
+
+    quality = AnalysisQualitySummary(
+        answered=4,
+        caveated=1,
+        refused=1,
+        refusals=(("comparison", "coverage_incomplete"),),
+        refused_results=(),
+        caveats=("redaction",),
+        answered_sections=("overview", "concentration", "growth", "basket"),
+        caveated_sections=("basket",),
+        caveat_sections=(("redaction", "basket"),),
+    )
+
+    for language in ("en", "ar"):
+        chrome = COMPONENT_CHROME[language]
+        headings = SECTION_HEADINGS[language]
+        groups = {group.label: group.sections for group in trust_groups(quality, language)}
+        assert groups == {
+            chrome["quality_answered"]: tuple(
+                headings[s] for s in ("overview", "concentration", "growth")
+            ),
+            chrome["quality_caveated"]: (headings["basket"],),
+            chrome["quality_refused"]: (headings["comparison"],),
+        }
+
+
+def test_the_handoff_sets_no_cookie_when_the_bridge_will_not_resume() -> None:
+    """`R7-03`: the bridge re-authorizes before it resumes, and refuses a member whose standing is
+    gone. That refusal is the uniform surface with no `Set-Cookie` -- a cookie beside a refusal
+    would hand a session to a reader who was just denied one."""
+    from dataclasses import replace as replace_services
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from khepri.rca.session_cookie import SESSION_COOKIE
+    from khepri.runtime.shell_api import add_shell_routes
+    from tests.w106_support import HTTPS, services_over
+
+    class _RefusingBridge:
+        def open(self, **kwargs):  # pragma: no cover -- the handoff never opens
+            raise AssertionError
+
+        def resume(self, **kwargs):
+            return None
+
+    j = journey()
+    who = member(j.w)
+    run, _job, _session = completed_run(j, who)
+    app = FastAPI()
+    add_shell_routes(
+        app,
+        services=replace_services(services_over(j, who), bridge=_RefusingBridge()),
+        clock=j.clock,
+    )
+    client = TestClient(app, base_url=HTTPS)
+    client.cookies.set(SESSION_COOKIE, "a-session-token")
+
+    response = client.post(handoff_address(who, run.run_id, "web"), follow_redirects=False)
+
+    assert response.status_code == 404
+    assert "set-cookie" not in response.headers
+    assert EN["unavailable_title"] in response.text

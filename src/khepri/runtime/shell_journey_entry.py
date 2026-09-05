@@ -93,16 +93,25 @@ def add_journey_entry_route(
         response = RedirectResponse(
             url=f"/beta/{rendered}/{JOURNEY_ENTRY_STEP}", status_code=303
         )
-        response.set_cookie(
-            key=BETA_SESSION_COOKIE,
-            value=opened.session_id,
-            max_age=BETA_COOKIE_MAX_AGE,
-            secure=True,
-            httponly=True,
-            samesite="strict",
-            path=BETA_COOKIE_PATH,
-        )
+        hand_off_session(response, opened.session_id)
         return response
+
+
+def hand_off_session(response: Response, session_id: str) -> None:
+    """Set the beta cookie for one analysis session, with the one set of flags.
+
+    Shared with the artifact handoff (`W1-06`): three routes now issue this cookie, and a weaker
+    set of flags on any of them would be a downgrade reachable by taking that route instead.
+    """
+    response.set_cookie(
+        key=BETA_SESSION_COOKIE,
+        value=session_id,
+        max_age=BETA_COOKIE_MAX_AGE,
+        secure=True,
+        httponly=True,
+        samesite="strict",
+        path=BETA_COOKIE_PATH,
+    )
 
 
 __all__ = [
@@ -110,4 +119,5 @@ __all__ = [
     "BETA_COOKIE_PATH",
     "JOURNEY_ENTRY_STEP",
     "add_journey_entry_route",
+    "hand_off_session",
 ]
