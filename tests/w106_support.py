@@ -21,6 +21,7 @@ from khepri.rca.workspace.contracts import AnalysisRun
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.runtime.bridge import CommercialBridge
+from khepri.runtime.job_sessions import SqlJobSessions
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from tests.w104_support import Member
@@ -40,8 +41,7 @@ def provenance(j: Journey) -> ProvenanceReader:
         ProvenanceSources(
             provenance=SqlRunProvenanceStore(j.w.factory),
             reports=SqlRunReportStore(j.w.factory),
-            jobs=j.reader,
-            sessions=j.w.sessions,
+            handoffs=SqlJobSessions(j.w.factory),
         ),
         clock=j.clock,
     )

@@ -193,6 +193,10 @@ class ProvenanceRead(Protocol):
         self, owner_id: str, run: Any, version: Any
     ) -> Any: ...  # pragma: no cover -- Protocol
 
+    def for_runs(
+        self, owner_id: str, runs: Any
+    ) -> dict[str, Any]: ...  # pragma: no cover -- Protocol
+
 
 class WorkspaceReader(Protocol):
     """Reads one scope's retained history in one transaction (`W1-05`).
@@ -508,15 +512,12 @@ def _analyses_response(
 
 def _spine_provenance(services: ShellServices, owner_id: str, history: Any) -> dict[str, Any]:
     """Each completed run's provenance, by run, where the reader is wired -- `None` for a run that
-    retained none. Read once for the spine's trust state and its availability word alike."""
+    retained none. One batched read for the spine's trust state and its availability word alike:
+    the spine is unbounded, and a read per run was four round trips per row (`#376`, round 3)."""
     if services.provenance is None:
         return {}
-    versions = {version.version_id: version for version in history.versions}
-    return {
-        run.run_id: services.provenance.for_run(owner_id, run, versions[run.version_id])
-        for run in history.runs
-        if run.state == RUN_COMPLETED
-    }
+    completed = tuple(run for run in history.runs if run.state == RUN_COMPLETED)
+    return services.provenance.for_runs(owner_id, completed)
 
 
 def _row_availability(row: Any, found: dict[str, Any]) -> Any:

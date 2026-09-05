@@ -14,12 +14,12 @@ from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.envelope import MasterKey
-from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
 from khepri.runtime.config import ClerkIdentitySettings, RuntimeSettings
 from khepri.runtime.external_auth_api import EXTERNAL_SESSION_PATH
+from khepri.runtime.job_sessions import SqlJobSessions
 from khepri.runtime.pipeline_recording import (
     PipelineRecorder,
     RecordingProfilingService,
@@ -253,7 +253,7 @@ def test_the_shell_reads_provenance_from_the_stacks_own_rra_services() -> None:
     assert shell is not None
     assert isinstance(shell.provenance, ProvenanceReader)
     assert isinstance(shell.provenance.sources.provenance, SqlRunProvenanceStore)
-    assert isinstance(shell.provenance.sources.sessions, SqlSessionStore)
+    assert isinstance(shell.provenance.sources.handoffs, SqlJobSessions)
     # The handoff resumes the run's own session through the bridge the entry route opens with.
     assert shell.bridge is not None
 

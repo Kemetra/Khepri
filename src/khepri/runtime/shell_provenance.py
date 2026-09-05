@@ -19,6 +19,15 @@ answers whether the run's session can still be resumed (`reachable`), and detail
 only while it can. Reconciling artifact retention with the session's horizon is `W1-07`'s lifecycle
 work; this surface states the state it finds and offers nothing it cannot honour.
 
+## How it reads
+
+In scope-level batches: three reads for however many runs are asked about -- the scope's provenance
+records, its run-to-job links, and its jobs joined to their sessions' liveness
+(`runtime/job_sessions.py`). The spine asks about every completed run at once; detail asks about
+one; both go through `for_runs`, so there is one rule and one cost shape. Review on `#376` (round 3)
+found the first draft reading each run separately: four round trips per completed run on a spine
+the roadmap leaves unbounded.
+
 ## Why this module is in `khepri.runtime`
 
 It reads `khepri.rca.workspace` (the provenance record, the run-to-report link) and `khepri.rra`
@@ -34,31 +43,21 @@ layer is the one place that may hold both.
   Passport as unavailable and offers no artifact; the run itself stays on the spine. Review on
   `#376` round 2: an earlier draft read the absence as corruption and refused the whole Analyses
   surface, which every organization with a run completed before the upgrade would have met.
-- **`UnrenderableRecord`** -- a link to a job another scope owns: a corrupt record, which refuses
-  the whole surface (`FR-050`).
+- **`UnrenderableRecord`** -- a link to a job this scope does not hold: a corrupt record, which
+  refuses the whole surface (`FR-050`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Protocol
 
-from khepri.rca.workspace.provenance import SqlRunProvenanceStore
+from khepri.rca.workspace.provenance import RunProvenance, SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.rca.workspace.tombstones import SectionStates
-from khepri.rra.jobs import ReportJob
-from khepri.rra.sessions import BetaSession
+from khepri.runtime.job_sessions import JobSession, JobSessionsPort
 from khepri.runtime.shell_workspace import UNRENDERABLE_FAILURE, UnrenderableRecord
-
-
-class JobReaderPort(Protocol):
-    def find(self, job_id: str) -> ReportJob | None: ...
-
-
-class SessionReaderPort(Protocol):
-    def get_session(self, session_id: str) -> BetaSession | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,17 +86,25 @@ class Provenance:
 
 @dataclass(frozen=True, slots=True)
 class ProvenanceSources:
-    """Where a run's provenance is read from: its retained record, its link to its job, the job,
-    and the job's session -- the last two for the handoff only."""
+    """Where a scope's provenance is read from: its retained records, its links from run to job,
+    and its jobs with their sessions' liveness -- the last two for the handoff only."""
 
     provenance: SqlRunProvenanceStore
     reports: SqlRunReportStore
-    jobs: JobReaderPort
-    sessions: SessionReaderPort
+    handoffs: JobSessionsPort
+
+
+@dataclass(frozen=True, slots=True)
+class _ScopeReads:
+    """One scope's three reads, indexed for the runs asked about."""
+
+    records: dict[str, RunProvenance]
+    links: dict[str, str]
+    jobs: dict[str, JobSession]
 
 
 class ProvenanceReader:
-    """Reads one run's Passport from the record it retained at completion."""
+    """Reads runs' Passports from the records they retained at completion."""
 
     def __init__(self, sources: ProvenanceSources, *, clock: Callable[[], datetime]) -> None:
         self._sources = sources
@@ -110,10 +117,30 @@ class ProvenanceReader:
     def for_run(self, owner_id: str, run: object, version: object) -> Provenance | None:
         """The Passport for `run`, in `owner_id`'s scope -- or `None` where no record is retained:
         before completion, or for a run completed before provenance was retained."""
-        record = self._sources.provenance.for_run(run.run_id, owner_id)
+        return self.for_runs(owner_id, (run,))[run.run_id]
+
+    def for_runs(self, owner_id: str, runs: Iterable[object]) -> dict[str, Provenance | None]:
+        """The Passport of each of `runs`, by run, from three scope-level reads -- and no read at
+        all when there is nothing to ask about."""
+        asked = tuple(runs)
+        if not asked:
+            return {}
+        reads = self._read_scope(owner_id)
+        return {run.run_id: self._of(run, reads) for run in asked}
+
+    def _read_scope(self, owner_id: str) -> _ScopeReads:
+        sources = self._sources
+        return _ScopeReads(
+            records={p.run_id: p for p in sources.provenance.for_scope(owner_id)},
+            links={link.run_id: link.job_id for link in sources.reports.links_for_scope(owner_id)},
+            jobs=sources.handoffs.for_scope(owner_id),
+        )
+
+    def _of(self, run: object, reads: _ScopeReads) -> Provenance | None:
+        record = reads.records.get(run.run_id)
         if record is None:
             return None
-        job = self._settling_job(owner_id, run)
+        job = _settling_job(run.run_id, reads)
         return Provenance(
             session_id=None if job is None else job.session_id,
             job_id=None if job is None else job.job_id,
@@ -125,35 +152,29 @@ class ProvenanceReader:
             row_count=record.row_count,
             sections=record.sections,
             family_versions=record.family_versions,
-            reachable=job is not None and self._resumable(job.session_id),
+            reachable=job is not None and self._resumable(job),
         )
 
-    def _settling_job(self, owner_id: str, run: object) -> ReportJob | None:
-        """The job the run is settled by, in this scope. A link to another scope's job is a corrupt
-        record, not an absence."""
-        job_id = self._sources.reports.job_id_for_run(run.run_id, owner_id)
-        if job_id is None:
-            return None
-        job = self._sources.jobs.find(job_id)
-        if job is None or job.owner_id != owner_id:
-            raise UnrenderableRecord(UNRENDERABLE_FAILURE)
-        return job
-
-    def _resumable(self, session_id: str) -> bool:
-        """Whether the analysis session's content is still live: present, no deletion requested,
-        not past `content_expires_at` -- the facts the journey and the artifact repository read.
-        A requested deletion is already refused there while its cleanup is pending or retrying, so
-        it is unreachable here from the request, not from the completion."""
-        session = self._sources.sessions.get_session(session_id)
-        if session is None or session.deletion_requested_at is not None:
+    def _resumable(self, job: JobSession) -> bool:
+        """Whether the analysis session's content is still live: no deletion requested, not past
+        `content_expires_at` -- the facts the journey and the artifact repository read. A requested
+        deletion is already refused there while its cleanup is pending or retrying, so it is
+        unreachable here from the request, not from the completion."""
+        if job.deletion_requested_at is not None:
             return False
-        return self._clock() < session.content_expires_at
+        return self._clock() < job.content_expires_at
 
 
-__all__ = [
-    "JobReaderPort",
-    "Provenance",
-    "ProvenanceReader",
-    "ProvenanceSources",
-    "SessionReaderPort",
-]
+def _settling_job(run_id: str, reads: _ScopeReads) -> JobSession | None:
+    """The job the run is settled by, in this scope. A link to a job the scope does not hold is a
+    corrupt record, not an absence."""
+    job_id = reads.links.get(run_id)
+    if job_id is None:
+        return None
+    job = reads.jobs.get(job_id)
+    if job is None:
+        raise UnrenderableRecord(UNRENDERABLE_FAILURE)
+    return job
+
+
+__all__ = ["Provenance", "ProvenanceReader", "ProvenanceSources"]

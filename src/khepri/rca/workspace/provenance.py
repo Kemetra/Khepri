@@ -94,26 +94,43 @@ class SqlRunProvenanceStore:
                     RunProvenanceRow.run_id == run_id, RunProvenanceRow.owner_id == owner_id
                 )
             )
-        if row is None:
-            return None
-        return RunProvenance(
-            run_id=row.run_id,
-            owner_id=row.owner_id,
-            covered_start=row.covered_start,
-            covered_end=row.covered_end,
-            timezone=row.timezone,
-            aggregate_scope=row.aggregate_scope,
-            attested_by=row.attested_by,
-            row_count=row.row_count,
-            sections=SectionStates(
-                **{section: getattr(row, f"section_{section}") for section in TOMBSTONE_SECTIONS}
-            ),
-            family_versions={
-                section: version
-                for section in FAMILY_SECTIONS
-                if (version := getattr(row, f"family_{section}_version")) is not None
-            },
-        )
+        return None if row is None else _provenance_from_row(row)
+
+    def for_scope(self, owner_id: str) -> tuple[RunProvenance, ...]:
+        """Every retained record in one scope, in one read -- what a surface listing the scope's
+        runs asks for, so its cost does not grow with the runs it lists (review on `#376`)."""
+        with reading(self._factory) as database:
+            rows = database.scalars(
+                select(RunProvenanceRow)
+                .where(RunProvenanceRow.owner_id == owner_id)
+                .order_by(RunProvenanceRow.run_id)
+            )
+            return tuple(_provenance_from_row(row) for row in rows)
+
+
+def _provenance_from_row(row: RunProvenanceRow) -> RunProvenance:
+    return RunProvenance(
+        run_id=row.run_id,
+        owner_id=row.owner_id,
+        covered_start=row.covered_start,
+        covered_end=row.covered_end,
+        timezone=row.timezone,
+        aggregate_scope=row.aggregate_scope,
+        attested_by=row.attested_by,
+        row_count=row.row_count,
+        sections=SectionStates(
+            **{section: getattr(row, f"section_{section}") for section in TOMBSTONE_SECTIONS}
+        ),
+        # `W1-08`'s family versions, read here rather than in `for_run` alone: both read paths go
+        # through this helper, and a scope-level read that dropped them would leave the Notice
+        # comparing nothing on every surface that lists runs (`FR-116`). Absent for a run
+        # completed before `20260905_0025`, which is "not recorded", never a version that changed.
+        family_versions={
+            section: version
+            for section in FAMILY_SECTIONS
+            if (version := getattr(row, f"family_{section}_version")) is not None
+        },
+    )
 
 
 __all__ = ["RunProvenance", "SqlRunProvenanceStore"]
