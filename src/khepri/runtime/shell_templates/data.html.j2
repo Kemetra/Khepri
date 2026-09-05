@@ -17,7 +17,8 @@
   {% if rows %}
   <ul class="data-list">
     {% for row in rows %}
-    <li class="data-item">
+    {# `id` is the anchor the Analyses spine points at: which entry a run used (`FR-117`). #}
+    <li class="data-item" id="data-{{ row.anchor }}">
       <p class="data-summary">
         <span class="row-label">{{ copy.data_submitted }}</span>
         <time datetime="{{ row.submitted.at }}" dir="ltr">{{ row.submitted.text }}</time>

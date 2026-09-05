@@ -62,7 +62,7 @@ from khepri.rca.workspace.schema import (
     SourceProfileRow,
     WorkspaceTombstoneRow,
 )
-from khepri.rca.workspace.store import SqlWorkspaceRecordStore
+from khepri.rca.workspace.store import SqlWorkspaceRecordStore, WorkspaceHistory
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
@@ -82,6 +82,7 @@ __all__ = [
     "TOMBSTONE_SUBJECTS",
     "SourceProfileRow",
     "WorkspaceTombstoneRow",
+    "WorkspaceHistory",
     "DELETE_FAILURE",
     "COMPLETION_COLUMNS",
     "RECOMPLETE_FAILURE",

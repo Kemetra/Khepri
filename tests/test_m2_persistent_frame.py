@@ -54,6 +54,7 @@ from fastapi.testclient import TestClient
 
 from khepri.rca.organizations import Organization
 from khepri.rca.session_cookie import SESSION_COOKIE
+from khepri.rca.workspace.store import WorkspaceHistory
 from khepri.rra.journey.copy import JOURNEY_COPY
 from khepri.runtime.shell_api import (
     _UNAVAILABLE_TAIL,
@@ -147,11 +148,8 @@ class _StubIsolation:
 class _StubRecords:
     """An empty workspace, so the frame under test is the one with every built destination."""
 
-    def dataset_versions_for_scope(self, owner_id: str) -> tuple[object, ...]:
-        return ()
-
-    def analysis_runs_for_scope(self, owner_id: str) -> tuple[object, ...]:
-        return ()
+    def history_for_scope(self, owner_id: str) -> WorkspaceHistory:
+        return WorkspaceHistory(versions=(), runs=(), bindings=(), tombstones=())
 
 
 class _UnreadableOrganizations(_StubOrganizations):
@@ -297,9 +295,9 @@ class TestOnlyBuiltDestinationsAreOffered:
     def test_no_entry_exists_for_an_unimplemented_surface(self, surface: str) -> None:
         """Scenario 20: "Navigation entry for an unimplemented surface | Absent".
 
-        `analyses` is deliberately not in this list. It is a real POST action on the chooser's
-        active row -- `R8-06`, merged -- and not a navigation entry, so its address appearing in a
-        form `action` is the implemented capability rather than a link to a surface that has none.
+        `analyses` is deliberately not in this list. It was a real POST action on the chooser's
+        active row before it was a surface (`R8-06`), and since `W1-05` it is a surface with its
+        own link; both are implemented capabilities rather than links to a surface that has none.
         """
         for path in (f"{SHELL_PREFIX}/en/", f"{SHELL_PREFIX}/en/org-acme/team"):
             html = _shell().get(path).text
@@ -313,7 +311,8 @@ class TestTheLanguageControlPreservesPosition:
 
     @pytest.mark.parametrize("language", ["en", "ar"])
     @pytest.mark.parametrize(
-        "path", ["/", "/org-acme/team", "/org-acme/overview", "/org-acme/data"]
+        "path",
+        ["/", "/org-acme/team", "/org-acme/overview", "/org-acme/data", "/org-acme/analyses"],
     )
     def test_every_surface_the_frame_may_name_offers_the_control(
         self, path: str, language: str
@@ -356,7 +355,14 @@ class TestEverySurfaceCarriesTheFrame:
     @pytest.mark.parametrize("language", ["en", "ar"])
     @pytest.mark.parametrize(
         "path",
-        ["/", "/org-acme/team", "/org-acme/overview", "/org-acme/data", UNKNOWN_SURFACE],
+        [
+            "/",
+            "/org-acme/team",
+            "/org-acme/overview",
+            "/org-acme/data",
+            "/org-acme/analyses",
+            UNKNOWN_SURFACE,
+        ],
     )
     def test_the_frame_renders_without_a_500(self, path: str, language: str) -> None:
         """`StrictUndefined` turns a missing variable into a render failure, not a blank."""

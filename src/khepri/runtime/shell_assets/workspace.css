@@ -94,3 +94,52 @@
   border-block-start: 1px solid var(--line);
   color: var(--muted);
 }
+
+/* The Analyses spine (`FR-117`). A row is two lines: what happened and when, then what it used and
+ * what it offers. A tombstone keeps the same shape with a muted rule at its inline start and its
+ * note in italics -- the same treatment as an attention item, because both state something the
+ * reader cannot act on here. */
+.spine-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spine-item {
+  padding-block: var(--space-3, 0.75rem);
+  border-block-end: 1px solid var(--line-subtle);
+}
+
+.spine-summary,
+.spine-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3, 0.75rem);
+  margin: 0;
+}
+
+.spine-detail {
+  margin-block-start: var(--space-1, 0.25rem);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.spine-item--tombstone {
+  padding-inline-start: var(--space-3, 0.75rem);
+  border-inline-start: 4px solid var(--muted);
+}
+
+.tombstone-note {
+  margin: var(--space-2, 0.5rem) 0 0;
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* The spine's reference to a data entry is a link into the Data surface, so it takes the shell's
+ * 44px target rule like every other anchor in `.shell-main`, and reads as two words and a time. */
+.data-reference {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2, 0.5rem);
+}

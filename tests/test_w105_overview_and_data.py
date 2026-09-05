@@ -15,16 +15,17 @@ expression in every shell template and refuses arithmetic and the aggregating fi
 
 **A link ships with its surface.** `FR-121` and `RCA-002` `FR-049`. The Overview and Data links
 appear only when a reader is wired, and the two surfaces answer `unavailable` when it is not, so a
-shell configured without the workspace has no half-built destination. The Analyses link is the
-next PR's and is asserted absent here.
+shell configured without the workspace has no half-built destination. The Analyses destination
+is withheld until its complete `FR-117` row and a valid action can ship together.
 
 **No surface may say content expires on its own.** `KHEPRI-DEC-033` §5: until `W1-07` ships the
 sweep, no surface may tell a customer that content expires automatically. The retention notice is
 asserted against that, in both languages, on the copy itself.
 
 **Customer vocabulary.** Blueprint §7.2: rows do not lead with digests, mapping versions or
-internal identifiers, and `DatasetVersion` does not appear on screen. Here none of them appears at
-all -- contextual evidence is `W1-06`'s -- and the words are *data*, not *dataset version*.
+internal identifiers, and `DatasetVersion` does not appear on screen. No identifier appears in
+customer-visible text; an opaque version identifier exists only as a non-visible anchor so a
+staged Analysis can link to the exact Data row. The words are *data*, not *dataset version*.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ from khepri.rca.workspace.contracts import (
     RunSubject,
     VersionLifecycle,
 )
+from khepri.rca.workspace.persistence import WorkspaceHistory
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 from khepri.runtime.shell_copy import SHELL_COPY
 from khepri.runtime.shell_workspace import moment
@@ -132,13 +134,9 @@ class _StubRecords:
     runs: tuple[AnalysisRun, ...] = ()
     asked: list[str] = field(default_factory=list)
 
-    def dataset_versions_for_scope(self, owner_id: str) -> tuple[DatasetVersion, ...]:
+    def history_for_scope(self, owner_id: str) -> WorkspaceHistory:
         self.asked.append(owner_id)
-        return self.versions
-
-    def analysis_runs_for_scope(self, owner_id: str) -> tuple[AnalysisRun, ...]:
-        self.asked.append(owner_id)
-        return self.runs
+        return WorkspaceHistory(versions=self.versions, runs=self.runs, bindings=(), tombstones=())
 
 
 def _version(
@@ -238,7 +236,6 @@ class TestTheLinkShipsWithItsSurface:
             nav.index(_link(language, surface)) for surface in ("overview", "data", "team")
         ]
         assert positions == sorted(positions)
-        assert _link(language, "analyses") not in nav
 
     def test_the_labels_are_the_reconciled_set(self) -> None:
         """Design language §3.5: Overview · Data · Analyses · Team, and `DatasetVersion` never."""
@@ -516,13 +513,15 @@ class TestData:
 
     def test_no_row_leads_with_an_internal_identifier(self) -> None:
         """§7.2: digests, mapping versions and contract identifiers belong to audit detail, which
-        is `W1-06`'s. Here they do not appear at all, and neither does the domain term."""
+        is `W1-06`'s. The opaque version identifier is only the target anchor for a history link;
+        it is not text the row states, and neither is the internal domain term."""
         html = _shell(_worked_scope()).get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/data").text
+        text = re.sub(r"<[^>]+>", "", html)
 
-        assert DIGEST not in html
-        assert MAPPING_VERSION not in html
-        assert "package-v-alpha" not in html
-        assert "ver-a" not in html and "run-a" not in html
+        assert DIGEST not in text
+        assert MAPPING_VERSION not in text
+        assert "package-v-alpha" not in text
+        assert "ver-a" not in text and "run-a" not in text
         assert "dataset" not in html.lower()
 
     def test_the_analyses_that_used_a_version_sit_under_it(self) -> None:
@@ -758,7 +757,9 @@ def test_no_shell_template_computes() -> None:
     """
     directory = files("khepri.runtime").joinpath("shell_templates")
     templates = [entry for entry in directory.iterdir() if entry.name.endswith(".html.j2")]
-    assert {"overview.html.j2", "data.html.j2"} <= {entry.name for entry in templates}
+    assert {"overview.html.j2", "data.html.j2", "analyses.html.j2"} <= {
+        entry.name for entry in templates
+    }
 
     for entry in templates:
         for match in _EXPRESSIONS.finditer(entry.read_text(encoding="utf-8")):

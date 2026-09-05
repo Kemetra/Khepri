@@ -18,9 +18,9 @@ asserts the rendered text carries no digit outside its `<time>` elements.
 -- one definition of the order, in the store, with the tie-break it chose.
 
 **Customer vocabulary.** Blueprint §7.2: rows do not lead with mapping versions, digests or
-contract identifiers, and `DatasetVersion` does not appear on screen. A `DataRow` carries none of
-those fields, so the template cannot render what it was never given; contextual audit detail is
-`W1-06`'s.
+contract identifiers, and `DatasetVersion` does not appear on screen. A `DataRow` carries an
+opaque identifier only as its non-visible HTML anchor, so an Analysis can identify the exact Data
+row it used without exposing that identifier as copy; contextual audit detail is `W1-06`'s.
 
 **Retention reads as a word.** A version or run this module receives is one the store still holds
 as active -- `dataset_versions_for_scope` and `analysis_runs_for_scope` filter on
@@ -37,6 +37,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_FAILED, RUN_STARTED
+from khepri.rca.workspace.tombstones import RunTombstone, VersionTombstone
+from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.workspace import ADMISSION_ADMITTED
 
 
@@ -93,16 +95,51 @@ class WorkRow:
 class DataRow:
     """One data version as a row, with the runs that used it beneath it.
 
-    Every field is a copy key or a value the customer submitted. Nothing here is a digest, a
-    mapping version or an identifier.
+    Every visible field is a copy key or a value the customer submitted. The opaque anchor is
+    routing metadata and never rendered as customer-visible text.
     """
 
+    anchor: str
     submitted: Moment
     media_type: str
     admission_key: str
     readiness_key: str
     retention_key: str
     uses: tuple[WorkRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DataReference:
+    """Which data entry a run used, as a row states it (`FR-117`).
+
+    `anchor` is the entry's place on the Data surface -- the row's `id` there -- so two entries
+    submitted at the same instant are still two references, and a reader can follow one to the
+    entry itself. It is the opaque version identifier, carried in an `href` and never as text
+    (§7.2). `deleted` is set when the entry itself has been deleted: its submission instant is
+    still stated from the tombstone, and there is nothing to follow (review on `#374`).
+    """
+
+    submitted: Moment
+    anchor: str | None
+    deleted: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SpineRow:
+    """One entry on the Analyses history spine (`FR-117`): a live run or a run's tombstone.
+
+    `deleted` is what makes it a tombstone; a tombstone carries no state and no report word,
+    because blueprint §7.3 makes it minimal and `FR-122` makes it read as a tombstone. Nothing
+    here is a digest or a section code; the version identifier travels only inside `data`'s
+    anchor.
+    """
+
+    started: Moment
+    data: DataReference | None
+    state_key: str | None
+    report_key: str | None
+    retention_key: str
+    deleted: Moment | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +204,7 @@ def data_row(version: Any, uses: tuple[WorkRow, ...]) -> DataRow:
     """One version's row, with the runs that used it -- already matched to it by `version_id` --
     beneath it. They decide the row's readiness together with the record."""
     return DataRow(
+        anchor=str(version.version_id),
         submitted=moment(version.created_at),
         media_type=str(version.upload_media_type),
         admission_key=_worded(ADMISSION_COPY, version.admission_outcome),
@@ -209,15 +247,104 @@ def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
     )
 
 
+def _report_key(run: Any, bound_surfaces: frozenset[str]) -> str:
+    """Whether the run's report can be offered, from the bindings rather than from the state.
+
+    `FR-111` makes completion imply every required artifact is bound, so a completed run with a
+    partial set is a corrupt record the whole surface must refuse, not a completed row with an
+    unavailable report. A run still running has no report *yet*; one that failed has none to offer.
+    """
+    if run.state == RUN_STARTED:
+        return "report_not_yet"
+    if run.state == RUN_COMPLETED:
+        if set(REQUIRED_ARTIFACT_KINDS) <= bound_surfaces:
+            return "report_available"
+        raise UnrenderableRecord(UNRENDERABLE_FAILURE)
+    return "report_unavailable"
+
+
+def _data_references(
+    versions: Iterable[Any], tombstones: Iterable[Any]
+) -> dict[str, DataReference]:
+    """Every data entry a row may refer to: live versions by anchor, deleted ones by their
+    tombstone's instant. A version deleted between two reads appears in both and the tombstone
+    wins, the same way a run's does."""
+    references = {
+        version.version_id: DataReference(
+            submitted=moment(version.created_at), anchor=str(version.version_id), deleted=False
+        )
+        for version in versions
+    }
+    for tombstone in tombstones:
+        if isinstance(tombstone, VersionTombstone):
+            references[tombstone.version_id] = DataReference(
+                submitted=moment(tombstone.created_at), anchor=None, deleted=True
+            )
+    return references
+
+
+def spine_rows(
+    runs: Iterable[Any],
+    tombstones: Iterable[Any],
+    versions: Iterable[Any],
+    bindings: Iterable[Any],
+) -> tuple[SpineRow, ...]:
+    """The spine: live runs and run tombstones, newest start first (`FR-117`, blueprint §7.3).
+
+    The store returns runs newest first and tombstones oldest deletion first; the two are merged
+    here by the instant each run started, so the history reads in the order it happened and a
+    deletion's own instant is stated on the row rather than used to place it. This is the one
+    ordering decision made outside the store, and it is a merge of two ordered reads, not a
+    filter: every run and every *run* tombstone the reader returned is a row. The store's
+    tombstone read returns both kinds; a version tombstone is the Data surface's story and arrives
+    there with `W1-07`, so it is set aside here by type rather than by a field it lacks.
+    """
+    scope_tombstones = tuple(tombstones)
+    references = _data_references(versions, scope_tombstones)
+    bound: dict[str, set[str]] = {}
+    for binding in bindings:
+        bound.setdefault(binding.run_id, set()).add(binding.surface)
+    gone = {
+        tombstone.run_id: SpineRow(
+            started=moment(tombstone.started_at),
+            data=references.get(tombstone.version_id),
+            state_key=None,
+            report_key=None,
+            retention_key="retention_deleted",
+            deleted=moment(tombstone.deleted_at),
+        )
+        for tombstone in scope_tombstones
+        if isinstance(tombstone, RunTombstone)
+    }
+    # A run both live and tombstoned is one deleted between two reads of the same history; the
+    # deletion is the later fact and the row reads as a tombstone (`FR-127`, review on `#374`).
+    live = [
+        SpineRow(
+            started=moment(run.started_at),
+            data=references.get(run.version_id),
+            state_key=_worded(RUN_STATE_COPY, run.state),
+            report_key=_report_key(run, frozenset(bound.get(run.run_id, ()))),
+            retention_key="retention_kept",
+            deleted=None,
+        )
+        for run in runs
+        if run.run_id not in gone
+    ]
+    return tuple(sorted(live + list(gone.values()), key=lambda row: row.started.at, reverse=True))
+
+
 __all__ = [
     "ADMISSION_COPY",
     "RUN_STATE_COPY",
     "UnrenderableRecord",
+    "DataReference",
     "DataRow",
     "Moment",
     "OverviewView",
+    "SpineRow",
     "WorkRow",
     "data_rows",
     "moment",
     "overview_view",
+    "spine_rows",
 ]

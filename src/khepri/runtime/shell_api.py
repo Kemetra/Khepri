@@ -54,7 +54,12 @@ from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
 from khepri.runtime.shell_frame import organization_frame
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
-from khepri.runtime.shell_workspace import UnrenderableRecord, data_rows, overview_view
+from khepri.runtime.shell_workspace import (
+    UnrenderableRecord,
+    data_rows,
+    overview_view,
+    spine_rows,
+)
 
 #: Where the shell is addressed. `FR-047` requires one language-parameterised prefix, so every
 #: surface below this point takes its language from the address rather than from stored state.
@@ -157,20 +162,18 @@ class AnalysisOpener(Protocol):
 
 
 class WorkspaceReader(Protocol):
-    """Reads one scope's data versions and analysis runs (`W1-05`).
+    """Reads one scope's retained history in one transaction (`W1-05`).
 
-    `SqlWorkspaceRecordStore` is the implementation; this names the two reads Overview and Data
-    make and none of the writes. The shell presents retained rows and creates, completes and
-    deletes nothing, and a reader that could write would make that a convention.
+    `SqlWorkspaceRecordStore.history_for_scope` is the implementation; this names the one read
+    Overview, Data, and the staged Analyses renderer make and none of the writes. The shell
+    presents retained rows and creates, completes and deletes nothing, and a reader that could
+    write would make that a convention. One read rather than four so a deletion committed between
+    them cannot tear the page (review on `#374`).
     """
 
-    def dataset_versions_for_scope(
+    def history_for_scope(
         self, owner_id: str
-    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
-
-    def analysis_runs_for_scope(
-        self, owner_id: str
-    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+    ) -> Any: ...  # pragma: no cover -- Protocol
 
 
 class ScopeResolver(Protocol):
@@ -400,8 +403,7 @@ def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> 
     return {
         **frame,
         "organization_id": context.organization_id,
-        "versions": services.records.dataset_versions_for_scope(owner_id),
-        "runs": services.records.analysis_runs_for_scope(owner_id),
+        "history": services.records.history_for_scope(owner_id),
     }
 
 
@@ -410,7 +412,8 @@ def _overview_response(
 ) -> Response:
     """`FR-120`. The rows are shaped in `shell_workspace.py`; the template can only iterate."""
     reads = _workspace_reads(services, context, surface="overview")
-    view = overview_view(reads.pop("versions"), reads.pop("runs"))
+    history = reads.pop("history")
+    view = overview_view(history.versions, history.runs)
     return _render(
         environment,
         "overview.html.j2",
@@ -427,14 +430,38 @@ def _data_response(
 ) -> Response:
     """Blueprint §7.2, with `FR-117`'s row vocabulary."""
     reads = _workspace_reads(services, context, surface="data")
-    rows = data_rows(reads.pop("versions"), reads.pop("runs"))
+    history = reads.pop("history")
+    rows = data_rows(history.versions, history.runs)
     return _render(
         environment, "data.html.j2", language=language, status_code=200, rows=rows, **reads
     )
 
 
-#: The two surfaces `records` delivers, by the name the address carries, and what renders each.
-_WORKSPACE_SURFACES = {"overview": _overview_response, "data": _data_response}
+def _analyses_response(
+    services: ShellServices, environment: Environment, *, language: str, context: Any
+) -> Response:
+    """Stage the `FR-117` history spine from the same atomic history as public Overview and Data.
+
+    Tombstones keep history from silently shortening; bindings say whether a report is available
+    from what was published rather than from what a run state implies. Dispatch remains withheld
+    until the trust-state and valid-action prerequisites documented below exist.
+    """
+    reads = _workspace_reads(services, context, surface="analyses")
+    history = reads.pop("history")
+    rows = spine_rows(history.runs, history.tombstones, history.versions, history.bindings)
+    return _render(
+        environment, "analyses.html.j2", language=language, status_code=200, rows=rows, **reads
+    )
+
+
+#: The surfaces `records` delivers, by the name the address carries, and what renders each.
+#: `_analyses_response` remains the tested staging boundary, but is deliberately not dispatched:
+#: live runs cannot yet supply `FR-117`'s trust state and no valid detail/reuse action route exists.
+#: `FR-049` therefore makes a guessed Analyses address unavailable (review on `#374`).
+_WORKSPACE_SURFACES = {
+    "overview": _overview_response,
+    "data": _data_response,
+}
 
 
 def _team_response(

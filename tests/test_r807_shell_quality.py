@@ -37,6 +37,7 @@ from khepri.rca.workspace.contracts import (
     RunSubject,
     VersionLifecycle,
 )
+from khepri.rca.workspace.store import WorkspaceHistory
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 
 NOW = datetime(2026, 8, 22, tzinfo=UTC)
@@ -53,6 +54,7 @@ SHELL_SURFACES = {
     "team": "/org-acme/team",
     "overview": "/org-acme/overview",
     "data": "/org-acme/data",
+    "analyses": "/org-acme/analyses",
 }
 
 #: Templates that render inside another and are never a surface of their own.
@@ -145,38 +147,33 @@ class _StubRecords:
     """One admitted data version with one completed analysis, so both new surfaces render rows
     rather than their empty states."""
 
-    def dataset_versions_for_scope(self, owner_id: str) -> tuple[DatasetVersion, ...]:
-        return (
-            DatasetVersion._from_storage(
-                version_id="ver-a",
-                owner_id="org-acme",
-                source=AdmittedSource(
-                    plaintext_digest="d" * 64,
-                    ciphertext_digest="d" * 64,
-                    size_bytes=4096,
-                    media_type="text/csv",
-                    manifest_digest="d" * 64,
-                    mapping_version="mapping-v-alpha",
-                    admission_outcome="admitted",
-                ),
-                lifecycle=VersionLifecycle(created_at=NOW, sealed_at=NOW),
+    def history_for_scope(self, owner_id: str) -> WorkspaceHistory:
+        version = DatasetVersion._from_storage(
+            version_id="ver-a",
+            owner_id="org-acme",
+            source=AdmittedSource(
+                plaintext_digest="d" * 64,
+                ciphertext_digest="d" * 64,
+                size_bytes=4096,
+                media_type="text/csv",
+                manifest_digest="d" * 64,
+                mapping_version="mapping-v-alpha",
+                admission_outcome="admitted",
             ),
+            lifecycle=VersionLifecycle(created_at=NOW, sealed_at=NOW),
         )
-
-    def analysis_runs_for_scope(self, owner_id: str) -> tuple[AnalysisRun, ...]:
-        return (
-            AnalysisRun._from_storage(
-                subject=RunSubject(run_id="run-a", owner_id="org-acme", version_id="ver-a"),
-                outcome=RunOutcome(
-                    state=RUN_COMPLETED,
-                    package_digest="d" * 64,
-                    package_version="package-v-alpha",
-                    formula_version="formula-v-alpha",
-                    completed_at=NOW,
-                ),
-                started_at=NOW,
+        run = AnalysisRun._from_storage(
+            subject=RunSubject(run_id="run-a", owner_id="org-acme", version_id="ver-a"),
+            outcome=RunOutcome(
+                state=RUN_COMPLETED,
+                package_digest="d" * 64,
+                package_version="package-v-alpha",
+                formula_version="formula-v-alpha",
+                completed_at=NOW,
             ),
+            started_at=NOW,
         )
+        return WorkspaceHistory(versions=(version,), runs=(run,), bindings=(), tombstones=())
 
 
 def _client(surface: str) -> TestClient:
