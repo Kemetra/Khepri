@@ -44,6 +44,8 @@ class JobSession:
 class JobSessionsPort(Protocol):
     def for_scope(self, owner_id: str) -> dict[str, JobSession]: ...
 
+    def job(self, job_id: str, owner_id: str) -> JobSession | None: ...
+
 
 class SqlJobSessions:
     """Every job of one scope with its session's liveness, by job identifier, in one read."""
@@ -93,6 +95,28 @@ class SqlJobSessions:
             )
             for row in rows
         }
+
+    def job(self, job_id: str, owner_id: str) -> JobSession | None:
+        """One job of this scope, for a surface asking about a single run (`#380`).
+
+        The spine reads the whole scope because it words every row; Analysis detail and an artifact
+        download ask about one run, and answering those from `for_scope` made each click read a
+        history the roadmap leaves unbounded. Same statement, same indexed path -- `owner_id` on
+        `uq_session_owner_scope`, then the job by `session_id` -- narrowed by the job's own
+        identifier, which is `rra_report_jobs`' primary key.
+        """
+        statement = self.scope_statement(owner_id).where(ReportJobRow.job_id == job_id)
+        with self._factory() as database:
+            row = database.execute(statement).first()
+        if row is None:
+            return None
+        return JobSession(
+            job_id=row.job_id,
+            owner_id=row.owner_id,
+            session_id=row.session_id,
+            deletion_requested_at=_utc(row.deletion_requested_at),
+            content_expires_at=_utc(row.content_expires_at),
+        )
 
 
 def _utc(value: datetime | None) -> datetime | None:

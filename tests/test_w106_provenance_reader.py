@@ -27,7 +27,7 @@ from sqlalchemy import delete
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
 from khepri.rca.workspace.persistence import RunProvenanceRow
 from khepri.rca.workspace.provenance import SqlRunProvenanceStore
-from khepri.rca.workspace.run_reports import RunReport
+from khepri.rca.workspace.run_reports import RunReport, SqlRunReportStore
 from khepri.rca.workspace.schema import FAMILY_SECTIONS
 from khepri.rca.workspace.tombstones import SectionStates
 from khepri.rra.bundle import FAMILY_VERSIONS
@@ -182,6 +182,10 @@ class _LinkTo:
             RunReport(run_id=run_id, owner_id=owner_id, job_id=self._job_id)
             for run_id in _RUNS_ASKED
         )
+
+    def job_id_for_run(self, run_id: str, owner_id: str) -> str | None:
+        """The same corrupt link down the targeted path (`#380`)."""
+        return self._job_id if run_id in _RUNS_ASKED else None
 
     def link(self, report: RunReport, *, now):  # pragma: no cover -- never written here
         raise AssertionError
@@ -401,6 +405,11 @@ class _JobsOf:
     def for_scope(self, owner_id: str) -> dict[str, object]:
         return self._jobs
 
+    def job(self, job_id: str, owner_id: str) -> object | None:
+        """The same corruption down the targeted path (`#380`): the job is answered whatever scope
+        asks, so the reader's own ownership check is the only thing that can refuse it."""
+        return self._jobs.get(job_id)
+
 
 def test_a_job_whose_owner_is_another_scope_refuses_the_surface() -> None:
     """`W1-06` refused a job whose `owner_id` was not the scope asked about, and the batched read
@@ -431,3 +440,93 @@ def test_a_job_whose_owner_is_another_scope_refuses_the_surface() -> None:
 
     with pytest.raises(UnrenderableRecord):
         reader.for_run(who.owner_id, run, version)
+
+
+class _CountingSources:
+    """Wraps the three real reads and counts which ones a request makes.
+
+    The bug `#380` reports is invisible to a value assertion: `for_run` returned exactly the right
+    Passport while reading every record, link and job in the organization. What has to be asserted
+    is the access *path*, so this counts scope-level calls against targeted ones.
+    """
+
+    def __init__(self, provenance, reports, handoffs) -> None:
+        self._provenance, self._reports, self._handoffs = provenance, reports, handoffs
+        self.scope_reads = 0
+        self.targeted_reads = 0
+
+    # -- the provenance store
+    def for_scope(self, owner_id):
+        self.scope_reads += 1
+        return self._provenance.for_scope(owner_id)
+
+    def for_run(self, run_id, owner_id):
+        self.targeted_reads += 1
+        return self._provenance.for_run(run_id, owner_id)
+
+    # -- the link store
+    def links_for_scope(self, owner_id):
+        self.scope_reads += 1
+        return self._reports.links_for_scope(owner_id)
+
+    def job_id_for_run(self, run_id, owner_id):
+        self.targeted_reads += 1
+        return self._reports.job_id_for_run(run_id, owner_id)
+
+    # -- the handoff read
+    def jobs_for_scope(self, owner_id):
+        self.scope_reads += 1
+        return self._handoffs.for_scope(owner_id)
+
+    def job(self, job_id, owner_id):
+        self.targeted_reads += 1
+        return self._handoffs.job(job_id, owner_id)
+
+
+def _counting_reader(j, *, counter_out: list) -> ProvenanceReader:
+    counter = _CountingSources(
+        SqlRunProvenanceStore(j.w.factory),
+        SqlRunReportStore(j.w.factory),
+        SqlJobSessions(j.w.factory),
+    )
+    counter_out.append(counter)
+
+    class _Handoffs:
+        def for_scope(self, owner_id):
+            return counter.jobs_for_scope(owner_id)
+
+        def job(self, job_id, owner_id):
+            return counter.job(job_id, owner_id)
+
+    return ProvenanceReader(
+        ProvenanceSources(provenance=counter, reports=counter, handoffs=_Handoffs()),
+        clock=j.clock,
+    )
+
+
+def test_one_runs_passport_is_read_by_that_run_not_by_the_whole_scope() -> None:
+    """`#380`. Analysis detail, the earlier-run comparison and an artifact download each ask about
+    **one** run, and `#378` routed them through the spine's batched read -- so a single detail click
+    read every provenance record, link and job the organization holds, growing with a history the
+    roadmap leaves unbounded.
+
+    The batch is right for the spine and wrong here. `for_run` asks by run: the record by
+    `(run_id, owner_id)` on the record's primary key, the link by run, and the job by its own
+    identifier. A value assertion cannot see this -- the Passport was always correct -- so what is
+    asserted is that no scope-level read happens at all.
+    """
+    j = journey()
+    who = member(j.w)
+    run, _job_id, _session_id = completed_run(j, who)
+    (version,) = j.w.store.dataset_versions_for_scope(who.owner_id)
+    counters: list = []
+    reader = _counting_reader(j, counter_out=counters)
+    (counter,) = counters
+
+    passport = reader.for_run(who.owner_id, run, version)
+
+    assert passport is not None, "the run completed, so it has a Passport"
+    assert counter.scope_reads == 0, (
+        f"one run was asked about, but {counter.scope_reads} scope-level reads were made"
+    )
+    assert counter.targeted_reads > 0, "the reads must still happen, by run rather than by scope"
