@@ -7,10 +7,10 @@
   nothing. A tombstone row reads as a tombstone in both languages (FR-122) and carries no content
   action: `KHEPRI-DEC-033` §1 keeps the row so history does not silently shorten.
 
-  This template is a hardened staging boundary, not a dispatched public surface. Analysis detail
-  is `W1-06`'s and Run Again has no route, so `RCA-002` FR-049 withholds the destination and its
-  navigation link. No trust state is shown either: no bundle state is persisted for a live run,
-  and a tombstone is minimal (§7.3). The route stays withheld until both prerequisites exist.
+  Dispatched since `W1-06`, which supplied the two things `#374` withheld it for: a live row's
+  trust state -- the report's own quality groups, read through the provenance the run binds
+  (`trust`, by run) -- and a next valid action, its detail (`offers_detail`). A tombstone stays
+  minimal (§7.3): no state, no trust, no link.
 #}
 <section class="document-card" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.analyses_title }}</h1>
@@ -37,10 +37,25 @@
     {% else %}
     <li class="spine-item">
       <p class="spine-summary">
+        {% if offers_detail and row.run_id %}
+        <a class="spine-open"
+           href="{{ prefix }}/{{ language }}/{{ organization_id }}/analyses/{{ row.run_id }}">
+          <span class="row-label">{{ copy.spine_started }}</span>
+          <time datetime="{{ row.started.at }}" dir="ltr">{{ row.started.text }}</time>
+        </a>
+        {% else %}
         <span class="row-label">{{ copy.spine_started }}</span>
         <time datetime="{{ row.started.at }}" dir="ltr">{{ row.started.text }}</time>
+        {% endif %}
         <span class="row-state">{{ copy[row.state_key] }}</span>
       </p>
+      {% if row.run_id and row.run_id in trust %}
+      <p class="spine-trust">
+        {% for group in trust[row.run_id] %}
+        <span class="row-state">{{ group.label }}: {{ group.sections_text }}</span>
+        {% endfor %}
+      </p>
+      {% endif %}
       <p class="spine-detail">
         {#
           Which data entry the run used: a link to that entry's row on the Data surface, so two

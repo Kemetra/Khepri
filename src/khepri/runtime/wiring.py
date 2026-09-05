@@ -28,7 +28,11 @@ from khepri.rca.session_persistence import SqlSessionStore as SqlRcaSessionStore
 from khepri.rca.session_service import SessionService as RcaSessionService
 from khepri.rca.switching import OrganizationSwitcher
 from khepri.rca.workspace.audit_persistence import SqlWorkspaceAuditStore
-from khepri.rca.workspace.persistence import SqlRunReportStore, SqlWorkspaceRecordStore
+from khepri.rca.workspace.persistence import (
+    SqlRunProvenanceStore,
+    SqlRunReportStore,
+    SqlWorkspaceRecordStore,
+)
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
 from khepri.rca.workspace.scopes import SqlIsolationScopes
 from khepri.rra.api import create_app
@@ -86,6 +90,7 @@ from khepri.runtime.pipeline_recording import (
     RecordingReportRequests,
 )
 from khepri.runtime.shell_api import ShellServices, add_shell_routes
+from khepri.runtime.shell_provenance import ProvenanceReader, ProvenanceSources
 from khepri.runtime.workspace import RecordStores, WorkspaceActions, WorkspacePorts
 from khepri.runtime.workspace_recording import WorkspaceRecording
 
@@ -302,6 +307,7 @@ def _record_stores(stack: RuntimeStack) -> RecordStores:
         profiles=SqlSourceProfileStore(stack.factory),
         audit=SqlWorkspaceAuditStore(stack.factory),
         factory=stack.factory,
+        provenance=SqlRunProvenanceStore(stack.factory),
     )
 
 
@@ -480,6 +486,19 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         records=SqlWorkspaceRecordStore(stack.factory),
         isolation=IsolationService(
             SqlOrganizationStore(stack.factory), SqlAccountStore(stack.factory)
+        ),
+        # `W1-06`: the Passport and the trust state are read from the admission and the package
+        # the run binds by digest, through the same service instances the routes decide with.
+        # `W1-06`: the Passport is read from the provenance the run retained at completion
+        # (`KHEPRI-DEC-033` §2); the link, the job and the session serve the artifact handoff.
+        provenance=ProvenanceReader(
+            ProvenanceSources(
+                provenance=SqlRunProvenanceStore(stack.factory),
+                reports=SqlRunReportStore(stack.factory),
+                jobs=JobReader(stack.factory),
+                sessions=SqlSessionStore(stack.factory),
+            ),
+            clock=stack.clock,
         ),
     )
 

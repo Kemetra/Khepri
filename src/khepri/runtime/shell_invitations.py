@@ -25,7 +25,7 @@ from jinja2 import Environment
 
 from khepri.rca.invitations import InvitationOffer
 from khepri.rca.session_cookie import CommercialSessionCookie
-from khepri.runtime.shell_frame import organization_frame
+from khepri.runtime.shell_frame import offers_of, organization_frame
 
 #: How long an issued invitation stays redeemable.
 #:
@@ -158,7 +158,7 @@ def add_invitation_routes(
             services.organizations.organizations_for_account(context.account_id),
             context.organization_id,
             surface="team",
-            offers_records=services.records is not None and services.isolation is not None,
+            offers=offers_of(services),
         )
 
         now = clock()

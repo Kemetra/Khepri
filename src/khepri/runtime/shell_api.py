@@ -41,7 +41,7 @@ cannot be distinguished from a forbidden one.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.resources import files
 from typing import Any, Protocol
 
@@ -49,12 +49,27 @@ from fastapi import FastAPI, Response
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 
 from khepri.rca.session_cookie import CommercialSessionCookie
+from khepri.rca.workspace.contracts import RUN_COMPLETED
 from khepri.rra.journey.security import SECURITY_HEADERS
+from khepri.runtime.shell_analysis import (
+    RunRecord,
+    availability_key,
+    detail_view,
+    trust_groups,
+)
+from khepri.runtime.shell_artifact_handoff import add_artifact_handoff_route
 from khepri.runtime.shell_copy import DIRECTIONS, SHELL_COPY
-from khepri.runtime.shell_frame import organization_frame
+from khepri.runtime.shell_frame import (
+    Offers,
+    offers_analyses,
+    offers_of,
+    offers_workspace,
+    organization_frame,
+)
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
 from khepri.runtime.shell_workspace import (
+    UNRENDERABLE_FAILURE,
     UnrenderableRecord,
     data_rows,
     overview_view,
@@ -160,6 +175,23 @@ class AnalysisOpener(Protocol):
         self, *, account_id: str, organization_id: str, now: Any
     ) -> Any: ...  # pragma: no cover -- Protocol
 
+    def resume(
+        self, *, account_id: str, organization_id: str, session_id: str, now: Any
+    ) -> Any: ...  # pragma: no cover -- Protocol
+
+
+class ProvenanceRead(Protocol):
+    """Reads one run's Passport from what its record binds by digest (`W1-06`).
+
+    `ProvenanceReader.for_run` is the implementation. `None` is an honest absence -- no job
+    settles the run, or the session's content is gone -- and `UnrenderableRecord` a record whose
+    digests the session no longer vouches for, which refuses the whole surface.
+    """
+
+    def for_run(
+        self, owner_id: str, run: Any, version: Any
+    ) -> Any: ...  # pragma: no cover -- Protocol
+
 
 class WorkspaceReader(Protocol):
     """Reads one scope's retained history in one transaction (`W1-05`).
@@ -208,11 +240,14 @@ class ShellServices:
     bridge: AnalysisOpener | None = None
     records: WorkspaceReader | None = None
     isolation: ScopeResolver | None = None
+    #: `W1-06`. With `bridge`, what makes Analyses and Analysis detail exist: the Passport and the
+    #: trust state are read through it, and the artifact handoff resumes a session through the
+    #: bridge. See `shell_frame.offers_analyses`.
+    provenance: ProvenanceRead | None = None
 
 
 def _offers_workspace(services: ShellServices) -> bool:
-    """Whether Overview and Data exist on this shell: both halves of the read are wired."""
-    return services.records is not None and services.isolation is not None
+    return offers_workspace(services)
 
 
 
@@ -380,7 +415,9 @@ def _switcher(
     )
 
 
-def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> dict[str, Any]:
+def _workspace_reads(
+    services: ShellServices, context: Any, *, surface: str
+) -> tuple[str, dict[str, Any]]:
     """What Overview and Data both need: the frame, and the scope's versions and runs.
 
     `FR-042`: the scope is resolved from `context.organization_id`, which the resolver returned
@@ -398,9 +435,9 @@ def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> 
         services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
         surface=surface,
-        offers_records=True,
+        offers=Offers(records=True, analyses=offers_analyses(services)),
     )
-    return {
+    return owner_id, {
         **frame,
         "organization_id": context.organization_id,
         "history": services.records.history_for_scope(owner_id),
@@ -411,7 +448,7 @@ def _overview_response(
     services: ShellServices, environment: Environment, *, language: str, context: Any
 ) -> Response:
     """`FR-120`. The rows are shaped in `shell_workspace.py`; the template can only iterate."""
-    reads = _workspace_reads(services, context, surface="overview")
+    _owner_id, reads = _workspace_reads(services, context, surface="overview")
     history = reads.pop("history")
     view = overview_view(history.versions, history.runs)
     return _render(
@@ -429,7 +466,7 @@ def _data_response(
     services: ShellServices, environment: Environment, *, language: str, context: Any
 ) -> Response:
     """Blueprint §7.2, with `FR-117`'s row vocabulary."""
-    reads = _workspace_reads(services, context, surface="data")
+    _owner_id, reads = _workspace_reads(services, context, surface="data")
     history = reads.pop("history")
     rows = data_rows(history.versions, history.runs)
     return _render(
@@ -440,24 +477,100 @@ def _data_response(
 def _analyses_response(
     services: ShellServices, environment: Environment, *, language: str, context: Any
 ) -> Response:
-    """Stage the `FR-117` history spine from the same atomic history as public Overview and Data.
+    """The `FR-117` history spine from the same atomic history as Overview and Data.
 
     Tombstones keep history from silently shortening; bindings say whether a report is available
-    from what was published rather than from what a run state implies. Dispatch remains withheld
-    until the trust-state and valid-action prerequisites documented below exist.
+    from what was published rather than from what a run state implies. Each completed row's trust
+    state is the report's own quality summary, read through the provenance the run binds by
+    digest (`W1-06`); a row links to its detail where detail is offered, and `#374`'s two
+    prerequisites -- trust state and a next valid action -- are what dispatch waited for.
     """
-    reads = _workspace_reads(services, context, surface="analyses")
+    owner_id, reads = _workspace_reads(services, context, surface="analyses")
     history = reads.pop("history")
     rows = spine_rows(history.runs, history.tombstones, history.versions, history.bindings)
+    found = _spine_provenance(services, owner_id, history)
     return _render(
-        environment, "analyses.html.j2", language=language, status_code=200, rows=rows, **reads
+        environment,
+        "analyses.html.j2",
+        language=language,
+        status_code=200,
+        rows=tuple(_row_availability(row, found) for row in rows),
+        trust={
+            run_id: trust_groups(p.sections, language)
+            for run_id, p in found.items()
+            if p is not None
+        },
+        offers_detail=offers_analyses(services),
+        **reads,
+    )
+
+
+def _spine_provenance(services: ShellServices, owner_id: str, history: Any) -> dict[str, Any]:
+    """Each completed run's provenance, by run, where the reader is wired -- `None` for a run that
+    retained none. Read once for the spine's trust state and its availability word alike."""
+    if services.provenance is None:
+        return {}
+    versions = {version.version_id: version for version in history.versions}
+    return {
+        run.run_id: services.provenance.for_run(owner_id, run, versions[run.version_id])
+        for run in history.runs
+        if run.state == RUN_COMPLETED
+    }
+
+
+def _row_availability(row: Any, found: dict[str, Any]) -> Any:
+    """The row's report word, said as detail says it: a bound report whose session can no longer
+    be resumed is not "available" on the spine either (review on `#376` round 2)."""
+    if row.run_id not in found:  # a tombstone, a run still running, or no reader wired
+        return row
+    return replace(row, report_key=availability_key(row.report_key, found[row.run_id]))
+
+
+@dataclass(frozen=True, slots=True)
+class _Scoped:
+    """One scoped request: the address's language and the session's resolved context."""
+
+    language: str
+    context: Any
+
+
+def _analysis_response(
+    services: ShellServices,
+    environment: Environment,
+    scoped: _Scoped,
+    run_id: str,
+) -> Response:
+    """Analysis detail (`FR-118`, `FR-119`; blueprint §7.4): one live run from the same atomic
+    history, its Passport read through the provenance it binds by digest, its artifacts as
+    handoffs. A run the history does not hold live is an unknown address (`FR-046`).
+    """
+    language, context = scoped.language, scoped.context
+    owner_id, reads = _workspace_reads(services, context, surface="analyses")
+    history = reads.pop("history")
+    run = next((r for r in history.runs if r.run_id == run_id), None)
+    if run is None:
+        return _unavailable(environment, language=language)
+    version = next((v for v in history.versions if v.version_id == run.version_id), None)
+    if version is None:
+        raise UnrenderableRecord(UNRENDERABLE_FAILURE)
+    bindings = tuple(b for b in history.bindings if b.run_id == run_id)
+    assert services.provenance is not None  # dispatched only when offered
+    view = detail_view(
+        RunRecord(run, version, bindings),
+        services.provenance.for_run(owner_id, run, version),
+        language=language,
+        prefix=f"/{context.organization_id}",
+    )
+    # `FR-054`: the language control keeps the reader on this analysis, so the tail is the
+    # detail address; the navigation still marks Analyses, whose address the tail begins with.
+    reads["surface_path"] = f"/{context.organization_id}/analyses/{run_id}"
+    return _render(
+        environment, "analysis.html.j2", language=language, status_code=200, view=view, **reads
     )
 
 
 #: The surfaces `records` delivers, by the name the address carries, and what renders each.
-#: `_analyses_response` remains the tested staging boundary, but is deliberately not dispatched:
-#: live runs cannot yet supply `FR-117`'s trust state and no valid detail/reuse action route exists.
-#: `FR-049` therefore makes a guessed Analyses address unavailable (review on `#374`).
+#: Analyses is dispatched separately, because it needs more than a reader (`offers_analyses`).
 _WORKSPACE_SURFACES = {
     "overview": _overview_response,
     "data": _data_response,
@@ -484,7 +597,7 @@ def _team_response(
         services.organizations.organizations_for_account(context.account_id),
         context.organization_id,
         surface="team",
-        offers_records=_offers_workspace(services),
+        offers=offers_of(services),
     )
     invitations: tuple[Any, ...] = ()
     if services.invitations is not None:
@@ -521,6 +634,70 @@ def _exact(segments: list[str]) -> bool:
     two empty tails, and `//{organization}/data` into an empty language that `_language` would
     have read as English; both are unknown paths (review on `#373`)."""
     return len(segments) >= 3 and all(segments[:3]) and segments[3:] in ([], [""])
+
+
+def _detail_run_id(segments: list[str]) -> str | None:
+    """`FR-046` for the one deeper address: `/{language}/{organization}/analyses/{run}`, four
+    non-empty segments with at most one trailing slash. Anything else is not a detail address."""
+    head, tail = segments[:4], segments[4:]
+    if len(head) < 4:
+        return None
+    if head[2] != "analyses":
+        return None
+    if not all(head):
+        return None
+    return head[3] if tail in ([], [""]) else None
+
+
+def _scoped_response(
+    services: ShellServices, environment: Environment, segments: list[str], scoped: _Scoped
+) -> Response | None:
+    """Dispatch an address inside the session's organization, or `None` for one that names no
+    scoped surface. `FR-042`: only an address naming the session's own organization is scoped.
+
+    `W1-06`: Analyses and its detail exist when the read, the provenance and the bridge are all
+    wired (`offers_analyses`); `W1-05`: Overview and Data when a reader is. Otherwise the address
+    is unknown (`FR-049`). Every refusal inside a surface -- the scope door, a retained row the
+    surface has no governed word for -- is the one `unavailable` (`FR-050`).
+    """
+    if not _names_the_active_organization(segments, scoped.context):
+        return None
+    surface = segments[2] if len(segments) > 2 else ""
+    exact = _exact(segments)
+    if surface == "team" and exact:
+        return _team_response(
+            services, environment, language=scoped.language, context=scoped.context
+        )
+    try:
+        return _workspace_response(services, environment, segments, scoped)
+    except (PermissionError, UnrenderableRecord):
+        return _unavailable(environment, language=scoped.language)
+
+
+def _workspace_response(
+    services: ShellServices, environment: Environment, segments: list[str], scoped: _Scoped
+) -> Response | None:
+    """The workspace surfaces: Analysis detail, the Analyses spine, then Overview and Data."""
+    if offers_analyses(services):
+        run_id = _detail_run_id(segments)
+        if run_id is not None:
+            return _analysis_response(services, environment, scoped, run_id)
+    renderer = _surface_renderer(services, segments)
+    if renderer is None:
+        return None
+    return renderer(services, environment, language=scoped.language, context=scoped.context)
+
+
+def _surface_renderer(services: ShellServices, segments: list[str]) -> Any:
+    """Which exact three-segment workspace surface the address names, if this shell offers it."""
+    if not _exact(segments):
+        return None
+    surface = segments[2]
+    if surface == "analyses":
+        return _analyses_response if offers_analyses(services) else None
+    if not _offers_workspace(services):
+        return None
+    return _WORKSPACE_SURFACES.get(surface)
 
 
 def _names_the_active_organization(segments: list[str], context: Any) -> bool:
@@ -586,6 +763,7 @@ def add_shell_routes(
     )
     add_invitation_routes(app, services=services, rendering=rendering, clock=clock)
     add_journey_entry_route(app, services=services, rendering=rendering, clock=clock)
+    add_artifact_handoff_route(app, services=services, rendering=rendering, clock=clock)
 
     @app.get(f"{SHELL_PREFIX}/{{path:path}}")
     def shell_surface(
@@ -621,26 +799,17 @@ def add_shell_routes(
         if not organizations:
             return _no_membership(environment, language=language)
 
+        # Team, Analyses and its detail, Overview and Data: each exists exactly when its wiring
+        # does (`FR-049`), and each refusal inside one is the uniform surface (`FR-050`). The
+        # scope door refusing -- a disabled account, a membership gone since the session was
+        # resolved -- or a retained row carrying a code the surface has no governed word for
+        # (review on `#373`) are faults to investigate, not pages to read.
+        scoped_response = _scoped_response(
+            services, environment, segments, _Scoped(language, context)
+        )
+        if scoped_response is not None:
+            return scoped_response
         surface = segments[2] if len(segments) > 2 else ""
-        scoped = _names_the_active_organization(segments, context) and _exact(segments)
-        if surface == "team" and scoped:
-            return _team_response(
-                services, environment, language=language, context=context
-            )
-        # `W1-05`. Dispatched only when a reader is wired, so a shell without one has no such
-        # surface -- the address falls through to `unavailable` like any other unknown name.
-        if surface in _WORKSPACE_SURFACES and scoped and _offers_workspace(services):
-            try:
-                return _WORKSPACE_SURFACES[surface](
-                    services, environment, language=language, context=context
-                )
-            except (PermissionError, UnrenderableRecord):
-                # The scope door refused -- a disabled account, a membership gone since the
-                # session was resolved -- or a retained row carries a code the surface has no
-                # governed word for and must not dress up as one (review on `#373`). `FR-050`:
-                # the same surface as every other refusal, and a fault to investigate, not a
-                # page to read.
-                return _unavailable(environment, language=language)
         # The chooser answers the language address and nothing else. `surface` is read at index 2,
         # so it is also `""` for `/{language}/{anything}` -- and testing that name alone made an
         # unknown two-segment path render the chooser at `200`, the one answer `FR-046` says an

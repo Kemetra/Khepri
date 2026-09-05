@@ -421,6 +421,7 @@ def test_the_slice_delivers_every_table_its_plan_assigns() -> None:
     assert declared == set(WORKSPACE_TABLES) | {
         "rca_workspace_audit_events",
         "rca_workspace_run_reports",
+        "rca_workspace_run_provenance",
     }
 
 

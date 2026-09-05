@@ -14,10 +14,11 @@ Every public name is re-exported from `persistence.py`; import from there.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKeyConstraint,
     Index,
@@ -562,6 +563,52 @@ class WorkspaceTombstoneRow(Base):
     section_basket: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class RunProvenanceRow(Base):
+    """The provenance record a completed run retains (`W1-06`; `KHEPRI-DEC-033` §2's row).
+
+    Written at completion, in the completion's transaction, from the admission and the package
+    the run binds; read back by Analysis detail for the Passport and the trust state. One column
+    per report section, each holding one of §3's codes and none of them null -- a completed run
+    has an outcome for every section. `RESTRICT`-bound to its run for `_scope_foreign_key`'s
+    reason. See `provenance.py` for the store and the value.
+    """
+
+    __tablename__ = "rca_workspace_run_provenance"
+    __table_args__ = (
+        _scope_foreign_key("fk_rca_workspace_provenance_scope"),
+        ForeignKeyConstraint(
+            ["owner_id", "run_id"],
+            [
+                "rca_workspace_analysis_runs.owner_id",
+                "rca_workspace_analysis_runs.run_id",
+            ],
+            name="fk_rca_workspace_provenance_run",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("covered_end >= covered_start", name="ck_rca_workspace_provenance_period"),
+        CheckConstraint("row_count >= 0", name="ck_rca_workspace_provenance_rows"),
+        *(
+            _states_check(column, SECTION_STATE_CODES, f"ck_rca_workspace_provenance_{column}")
+            for column in SECTION_COLUMNS
+        ),
+    )
+
+    run_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    covered_start: Mapped[date] = mapped_column(Date, nullable=False)
+    covered_end: Mapped[date] = mapped_column(Date, nullable=False)
+    timezone: Mapped[str] = mapped_column(String, nullable=False)
+    aggregate_scope: Mapped[str | None] = mapped_column(String, nullable=True)
+    attested_by: Mapped[str] = mapped_column(String, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    section_overview: Mapped[str] = mapped_column(String, nullable=False)
+    section_comparison: Mapped[str] = mapped_column(String, nullable=False)
+    section_concentration: Mapped[str] = mapped_column(String, nullable=False)
+    section_growth: Mapped[str] = mapped_column(String, nullable=False)
+    section_basket: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class WorkspaceAuditEventRow(Base):
     """One workspace action, content-free (`W1-04`; `RCA-005` `FR-125`). See `audit.py`.
 
@@ -817,6 +864,9 @@ _ROW_GUARDS = {
     # `W1-04b`'s run-to-report link takes the tombstone's shape: written once, never rewritten,
     # and deleted only with its run -- which `W1-07` does explicitly, alongside the run's own guard.
     RunReportRow: (_refuse_any_update, _refuse_delete),
+    # `W1-06`: the provenance record is the tombstone's shape too -- written once, deleted only
+    # with its run (`W1-07`).
+    RunProvenanceRow: (_refuse_any_update, _refuse_delete),
 }
 
 for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():

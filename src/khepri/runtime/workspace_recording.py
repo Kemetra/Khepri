@@ -84,6 +84,7 @@ from khepri.rca.workspace.contracts import (
 )
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
 from khepri.rca.workspace.profile_store import SqlSourceProfileStore
+from khepri.rca.workspace.provenance import RunProvenance, SqlRunProvenanceStore
 from khepri.rca.workspace.unit_of_work import Arbitrated, unit_of_work
 from khepri.rra.datasets import DatasetProfileRecord, ProfilingService, document_digest
 from khepri.rra.datasets import stored_manifest as _stored_manifest
@@ -92,6 +93,7 @@ from khepri.rra.packages import FactPackageRecord, FactPackageService
 from khepri.rra.pipeline import DeliveryRecord
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.rra.sessions import SessionStore
+from khepri.runtime.run_quality import section_states_of
 
 #: The admission outcome code a version records. Only an admitted source becomes a version --
 #: `KHEPRI-DEC-033` §2 calls the version "the durable identity of one admitted source" -- so a
@@ -160,6 +162,9 @@ class RecordStores:
     profiles: SqlSourceProfileStore
     audit: SqlWorkspaceAuditStore
     factory: sessionmaker
+    #: `W1-06`: where a completed run's provenance is retained. Built over `factory` when not
+    #: given, so the three existing construction sites did not have to change.
+    provenance: SqlRunProvenanceStore | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +206,7 @@ class WorkspaceRecording:
     def __init__(self, *, rra: WorkspacePorts, rca: RecordStores) -> None:
         self._rra = rra
         self._rca = rca
+        self._provenance = rca.provenance or SqlRunProvenanceStore(rca.factory)
 
     @property
     def ports(self) -> WorkspacePorts:
@@ -381,6 +387,7 @@ class WorkspaceRecording:
         kind must be present -- or the run stays `started` and nothing is bound.
         """
         run, version = self._awaiting_run(owner_id, run_id)
+        _upload, profile = self._admission(owner_id, report.session_id, now)
         package = self._derivation(owner_id, report.session_id, now)
         if (package.source_sha256_hex, package.mapping_version) != (
             version.upload_plaintext_digest,
@@ -399,6 +406,10 @@ class WorkspaceRecording:
             run.run_id, outcome, artifacts, now=now, owner_id=owner_id
         ):
             raise WorkspaceRefused(NO_RUN_FAILURE)
+        # `W1-06`: the Passport's facts, retained with the run in this same unit of work
+        # (`KHEPRI-DEC-033` §2). The admission and the package end on their own horizons; the
+        # record they are read into does not.
+        self._provenance.record(_provenance_of(run, profile, package), now=now)
         return self._reread_run(run.run_id, owner_id)
 
     def _awaiting_run(self, owner_id: str, run_id: str) -> tuple[AnalysisRun, DatasetVersion]:
@@ -490,6 +501,28 @@ class WorkspaceRecording:
         if profile is None:
             raise WorkspaceRefused(NO_PROFILE_FAILURE)
         return Performed(profile, OUTCOME_COMPLETED, subject_of_profile(profile))
+
+
+def _provenance_of(
+    run: AnalysisRun, profile: DatasetProfileRecord, package: FactPackageRecord
+) -> RunProvenance:
+    """What the run retains for its Passport: the attested coverage, the admitted scale, and each
+    section's outcome. A version exists only for an attested source, so a missing manifest here
+    is a record the session no longer vouches for."""
+    manifest = _stored_manifest(profile)
+    if manifest is None:
+        raise WorkspaceRefused(NO_ATTESTATION_FAILURE)
+    return RunProvenance(
+        run_id=run.run_id,
+        owner_id=run.owner_id,
+        covered_start=manifest.covered_start,
+        covered_end=manifest.covered_end,
+        timezone=manifest.timezone,
+        aggregate_scope=manifest.aggregate_scope,
+        attested_by=manifest.attested_by,
+        row_count=profile.row_count,
+        sections=section_states_of(package),
+    )
 
 
 def subject_of_version(version: DatasetVersion) -> AuditSubject:

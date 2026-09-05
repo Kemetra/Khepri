@@ -11,8 +11,10 @@ from khepri.rca.isolation import IsolationService
 from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
+from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.envelope import MasterKey
+from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
@@ -24,6 +26,7 @@ from khepri.runtime.pipeline_recording import (
     RecordingReportRequests,
     SettlingJobStore,
 )
+from khepri.runtime.shell_provenance import ProvenanceReader
 from khepri.runtime.wiring import (
     RuntimeClients,
     build_beta_services,
@@ -237,6 +240,22 @@ def test_the_shell_reads_the_record_store_the_workspace_actions_write() -> None:
     # The store is keyed by the opaque scope, so the shell must resolve the session's
     # organization through the same door the actions write under (`#373` review).
     assert isinstance(shell.isolation, IsolationService)
+
+
+def test_the_shell_reads_provenance_from_the_stacks_own_rra_services() -> None:
+    """`W1-06`: the Passport and the trust state are read from the provenance record the run
+    retained at completion (`KHEPRI-DEC-033` §2) -- the same store class over the same factory the
+    recorder writes through -- and the handoff's session from the analysis session store."""
+    stack = runtime_stack()
+
+    shell = build_shell_services(stack)
+
+    assert shell is not None
+    assert isinstance(shell.provenance, ProvenanceReader)
+    assert isinstance(shell.provenance.sources.provenance, SqlRunProvenanceStore)
+    assert isinstance(shell.provenance.sources.sessions, SqlSessionStore)
+    # The handoff resumes the run's own session through the bridge the entry route opens with.
+    assert shell.bridge is not None
 
 
 def test_the_beta_routes_admit_and_request_through_the_recording_services() -> None:

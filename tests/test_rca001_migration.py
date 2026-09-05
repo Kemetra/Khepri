@@ -65,6 +65,8 @@ RCA_REVISIONS = (
     ("20260905_0022", "rca_workspace_audit_events", "20260904_0021"),
     # `W1-04b`'s run-to-report link, which is how the worker finds the run a job settles.
     ("20260905_0023", "rca_workspace_run_reports", "20260905_0022"),
+    # `W1-06`'s provenance record, retained with the run (`KHEPRI-DEC-033` §2).
+    ("20260905_0024", "rca_workspace_run_provenance", "20260905_0023"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -92,6 +94,7 @@ RCA_TABLES = {
     "rca_workspace_tombstones",
     "rca_workspace_audit_events",
     "rca_workspace_run_reports",
+    "rca_workspace_run_provenance",
 }
 
 

@@ -143,3 +143,101 @@
   align-items: baseline;
   gap: var(--space-2, 0.5rem);
 }
+
+/* `W1-06`: the spine's link to detail, the Passport, the quality groups, the artifact handoffs and
+   the audit disclosure. Interactive targets keep the 44px minimum (`RCA-002` FR-055). */
+.spine-open {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2, 0.5rem);
+  min-height: 44px;
+  padding-block: var(--space-1, 0.25rem);
+}
+
+.spine-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  margin-block: var(--space-1, 0.25rem) 0;
+}
+
+.analysis-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+}
+
+.passport,
+.quality,
+.audit-list {
+  display: grid;
+  grid-template-columns: minmax(10rem, max-content) 1fr;
+  gap: var(--space-2, 0.5rem) var(--space-4, 1rem);
+  margin: 0;
+}
+
+.passport > div,
+.quality > div,
+.audit-list > div {
+  display: contents;
+}
+
+.passport dt,
+.quality dt,
+.audit-list dt {
+  color: var(--muted);
+}
+
+.passport dd,
+.quality dd,
+.audit-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.passport-versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.artifact-action button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--space-2, 0.5rem) var(--space-4, 1rem);
+}
+
+.audit-detail {
+  margin-block-start: var(--space-4, 1rem);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.audit-detail > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-family: var(--font-sans, inherit);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+@media (max-width: 40rem) {
+  .passport,
+  .quality,
+  .audit-list {
+    grid-template-columns: 1fr;
+  }
+}
