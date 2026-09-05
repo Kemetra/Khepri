@@ -48,15 +48,18 @@ def built_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return next(out.glob("*.whl"))
 
 
+def _entry_point_lines(wheel: Path) -> list[str]:
+    """Every line of the wheel's `entry_points.txt`, across whichever `.dist-info` holds it."""
+    archive = zipfile.ZipFile(wheel)
+    manifests = [name for name in archive.namelist() if name.endswith("entry_points.txt")]
+    return [line for name in manifests for line in archive.read(name).decode().splitlines()]
+
+
 def _declared_target(wheel: Path, name: str) -> str:
     """The `module:function` the wheel declares for one console script."""
-    archive = zipfile.ZipFile(wheel)
-    for entry in archive.namelist():
-        if entry.endswith("entry_points.txt"):
-            for line in archive.read(entry).decode().splitlines():
-                if line.startswith(f"{name} ="):
-                    return line.split("=", 1)[1].strip()
-    raise AssertionError(f"{name} is not declared in the wheel")
+    declarations = [line for line in _entry_point_lines(wheel) if line.startswith(f"{name} =")]
+    assert declarations, f"{name} is not declared in the wheel"
+    return declarations[0].split("=", 1)[1].strip()
 
 
 def test_the_sweep_entry_point_resolves_inside_the_built_wheel(built_wheel: Path) -> None:
