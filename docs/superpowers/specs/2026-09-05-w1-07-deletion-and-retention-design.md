@@ -1,0 +1,202 @@
+# `W1-07` — Deletion, evidence, and the retention sweep
+
+**Date:** 2026-09-05
+**Requirements:** `RCA-005` `FR-123`, `FR-124`, `FR-126`; `KHEPRI-DEC-033` §5
+**Status:** design, pending the owner's review
+**Measured against:** `main` at `3867b8a`
+
+## 1. Why this slice exists
+
+`KHEPRI-DEC-033` §2 fixes a retention horizon for every class of retail content. §5 then says, in
+the decision rather than only in its evidence, that **none of those horizons is enforced**: every
+sweeper's only caller is `khepri.local.cli`, which the wheel excludes. The product states what must
+happen and the deployed image does none of it.
+
+Re-measured on `3867b8a` while writing this design, and still true:
+
+- `pyproject.toml:78` — `exclude = ["src/khepri/local"]`
+- Five retention sweepers exist under `khepri.rca` (`invitation_retention`, `lifecycle` ×2 —
+  purge and event purge — `recovery_security`, `session_retention`). The sixth `sweep` method is
+  `local/sweeper.py`'s, which is the *composition* of the others, not a sweeper of its own; it and
+  `local/wiring.py` are both excluded from the wheel
+- `rca/invitation_retention.py:40` — `INVITATION_HORIZON_IS_UNENFORCED = True`
+
+`W1-07` is the only slice that can discharge §5.
+
+Deletion itself is also absent on the workspace side. `W1-03` built the tombstone *values* and the
+allowlist, but:
+
+- `store.tombstone_dataset_version` has **no production caller** — only tests reach it
+- **No run tombstone writer exists at all**, though `RunTombstone` is defined and
+  `ck_rca_workspace_tombstone_run_fields` constrains its columns
+- No workspace deletion verb, route, or evidence path exists
+
+## 2. Two slices, and where the line falls
+
+`DEC-033` §1 names three kinds of ending: owner-requested deletion, named cascade, and
+retention-triggered purge. The split follows that distinction rather than inventing one.
+
+### `W1-07a` — Deletion, evidence, and the restore guard
+`FR-123`, `FR-124`, `FR-126`. Customer-triggered endings: owner-only cascading deletion, first-
+deletion evidence, the `already_deleted` idempotent path, and a workspace-scoped revocation ledger.
+
+### `W1-07b` — The retention sweep with a caller in the wheel
+`KHEPRI-DEC-033` §5. Time-triggered endings: a `khepri.runtime` composition of the existing
+sweepers plus a workspace sweeper, a console-script entry point, and evidence per §2 horizon.
+
+**(a) precedes (b)** because the sweep's workspace half purges classes whose deletion verbs (a)
+builds. Doing (b) first would sweep classes that have no deletion path.
+
+**What the ordering costs, stated so it is not discovered later:** `DEC-033` §5's constraint — *no
+surface may tell a customer that content expires automatically* — stays in force until (b) merges.
+(a) ships deletion UI, so (a)'s acceptance includes a copy check that no surface implies automatic
+expiry.
+
+## 3. `W1-07a` — design
+
+### 3.1 The cascade is a table, not a sequence
+
+`DEC-033` §2 assigns every class an ending. That mapping lives in `workspace/deletion.py` as data:
+one row per class naming its post-trigger state (tombstone / purge / cascade-from-parent) and its
+parent where it has one. The orchestration reads the table; it does not hand-write the order.
+
+**Why data.** A hand-written cascade is a scope that disarms itself: add a class, and the sequence
+that does not mention it deletes nothing while every test still passes. That failure has recurred
+in this repo often enough to be recorded (*a guard that names its own scope disarms itself*; *a
+membership table needs an extent assertion*). A table can carry an **extent assertion** — every
+class in the §2 matrix has exactly one rule, and a workspace table with no rule fails a test.
+
+### 3.2 What ends, and how
+
+From `DEC-033` §2, unchanged and not re-derived here:
+
+| Class | Ending under owner deletion |
+|---|---|
+| Dataset version | **Tombstone** (allowlist, §3) |
+| Analysis run | **Tombstone**; cascades from its dataset version |
+| Mapping / coverage manifest | Tombstoned with the version |
+| Fact package | **Tombstone**; cascades from the run |
+| Report bundle artifacts | **Purged**; the run's tombstone is the only trace |
+| Narrative | **Purged** |
+| Provenance record | Digests survive in the tombstone; nothing else |
+| Raw upload / normalized events | **Purged** |
+| Source profile | **Purged**; deleting a profile deletes no dataset version |
+
+`W1-07a` builds the run tombstone writer that does not yet exist, and gives
+`tombstone_dataset_version` its first production caller.
+
+### 3.3 Reuse, and the package boundary
+
+RRA content already ends correctly: `SqlDeletionRepository.complete` deletes the profile, fact-
+package, artifact and upload rows, which `G2-01` confirmed. `W1-07a` **calls** it and does not
+reimplement it. `rra/deletion.py` also already carries `DeletionEvidence` with the content-free
+shape and retry state `FR-124` requires.
+
+`R7-01` §3 forbids `khepri.rca` and `khepri.rra` importing each other, so the composition happens in
+`khepri.runtime` — the seam `W1-04b` established.
+
+### 3.4 Evidence and idempotency (`FR-123`, `FR-124`)
+
+- The **first** deletion writes one `DeletionEvidence` record per object per ending.
+- A repeated request returns **the same response**, writes **no second evidence**, and emits **one**
+  audit event with outcome `already_deleted`.
+- Evidence is retained twelve months (`DEC-033` §2), which (b)'s sweep enforces.
+
+**A migration is required and is not optional.** `AUDIT_ACTIONS` and `AUDIT_OUTCOMES` are
+CHECK-constrained and today read:
+
+```
+ACTIONS : version_created, run_started, run_completed, run_failed, profile_remembered, profile_reused
+OUTCOMES: completed, refused, already_recorded
+OBJECTS : version, run, profile
+```
+
+Neither a delete action nor `already_deleted` is admitted. `FR-123` names `already_deleted`
+literally, so `W1-07a` adds a `version_deleted` / `run_deleted` / `profile_deleted` action and the
+`already_deleted` outcome, with the CHECK moved in the same migration. Note `already_recorded`
+already exists and is **not** the same thing — reusing it would make the idempotency contract
+unreadable to the evidence consumer `FR-123` names.
+
+### 3.5 The revocation ledger (`FR-126`)
+
+**No revocation ledger exists anywhere in the tree.** `KHEPRI-DEC-015` §8 describes the pattern;
+nothing implements it. `W1-07a` builds it **workspace-scoped**: deleted workspace object identifiers
+only, holding opaque identifiers, revocation timestamps and status — nothing else, per §8's
+"minimal and purpose-bound" rule.
+
+It is deliberately not generalized to sessions, memberships and invitations. Those are named in §8
+but have no requirement today, and their horizon is `OD-3`-bounded, which is a separate approval. A
+later slice may generalize it; designing for four consumers with one requirement would be
+authoring scope this slice does not hold.
+
+Bounded by the fourteen-day backup horizon plus a margin. The ledger must itself be backed up, or
+it cannot serve its purpose.
+
+### 3.6 Authorization
+
+Owner-only (`FR-123`). A member cannot delete. The refusal is the uniform content-free denial, and
+the test drives the **real route**, not the guard — a test that calls the check directly survives
+deletion of its call site.
+
+## 4. `W1-07b` — design
+
+### 4.1 The caller
+
+The composition moves from `local/sweeper.py` into `khepri.runtime`, exposed as a console script,
+and gains a workspace sweeper for the classes `W1-07a` gives deletion verbs to.
+This follows a precedent already recorded in `pyproject.toml:45`, for another command, in these
+words: *"`khepri.runtime` rather than `khepri.local` deliberately: the wheel excludes
+`src/khepri/local`, so a command there would be absent from the built artifact."*
+
+Rejected: including `khepri/local` in the wheel — `pyproject.toml:70-76` records that it carries
+local database credentials that "have no business in a published artifact". Rejected: a worker-loop
+tick — `DEC-033` §5 says explicitly that the worker's per-claim sweep is *lease recovery, not
+retention*, and coupling the two would blur exactly the distinction the decision draws.
+
+### 4.2 The acceptance test that matters
+
+§5's obligation is discharged by evidence **against the built wheel**, not the source tree. The test
+builds the wheel and asserts the entry point resolves inside it — a source-tree assertion would pass
+today and prove nothing, since the sweepers already exist in source.
+
+`INVITATION_HORIZON_IS_UNENFORCED` is deleted in this slice, and its deletion is part of the
+evidence.
+
+## 5. Testing
+
+**`W1-07a`**
+- A cascade test per `DEC-033` §2 row that names one
+- Extent: every workspace table has exactly one rule in the cascade table
+- Repeated deletion — same response, no second evidence, one `already_deleted` audit event
+- A member cannot delete, driven through the real route
+- A restored deleted object is not readable (ledger)
+- Copy check: no surface implies automatic expiry (see §2)
+- Mutation: each guard fails under a mutant that removes it
+
+**`W1-07b`**
+- The entry point resolves **in the built wheel**
+- One test per §2 horizon
+- `INVITATION_HORIZON_IS_UNENFORCED` is gone
+
+## 6. Non-goals
+
+- **`G2-01` F-2 — plaintext documents.** `rra_dataset_profiles.document` and
+  `rra_fact_packages.document` hold customer labels and values as unencrypted JSON. `DEC-033` §5
+  says whether to envelope-encrypt them is an `RRA-002` reading and "is not decided here". Deletion
+  removes these rows, so it is an at-rest concern, not a deletion gap. **Left to the owner.**
+- **A general revocation ledger** for sessions, memberships and invitations (§3.5).
+- **`W1-11` repeat-use telemetry** — excluded by `RCA-005` and `KHEPRI-DEC-015` §3.
+- **Comparison** — `G4/C1`'s.
+- **`W1-10`** isolation hardening, which follows this slice and exercises its routes.
+
+## 7. Risks
+
+1. **Shipping deletion without the sweep** leaves every horizon unenforced while the product looks
+   finished. Mitigated by (b) following immediately, and by §2's copy check in (a).
+2. **Testing the guard rather than the caller.** Every authorization and cascade test drives the
+   real route.
+3. **A cascade that silently misses a class.** Mitigated by the extent assertion (§3.1).
+4. **Asserting the wheel from the source tree.** The §5 test builds the artifact (§4.2).
+5. **A redundant guard with one shared test.** `FR-123`'s idempotency has three separate claims —
+   same response, no second evidence, one audit event. Each needs its own evidence; one outcome test
+   passes with any two of the three broken.
