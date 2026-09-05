@@ -33,6 +33,7 @@ from khepri.rca.workspace.audit import (
     WorkspaceAuditEvent,
 )
 from khepri.rca.workspace.revocation import RevokedObject
+from khepri.rca.workspace.unit_of_work import unit_of_work
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,19 +95,40 @@ class WorkspaceDeletion:
             )
             return DeletionOutcome(version_id=version_id, deleted=False)
         version = self._sources.store.get_dataset_version(version_id, owner_id)
+        # Content first, records second, and **not** the other way round. The two orderings fail
+        # very differently:
+        #
+        # - Content first, then a fault in the records: the content is gone and the version is
+        #   still live and readable. A retry re-enters, finds the version, gets the already
+        #   `complete` job back from `delete_session_content`, and commits the records. Recoverable.
+        # - Records first, then a fault in the content: the version is withdrawn from every read,
+        #   the content is orphaned, and the already-ended guard above short-circuits every retry.
+        #   Permanently unreachable.
+        #
+        # So this line stays where it is. It is also the only step that cannot join the unit of
+        # work: it deletes from the object store, which no database transaction can roll back, and
+        # it raises `DeletionRetryRequired` as ordinary control flow.
         self._end_derived_content(version, now)
-        self._sources.store.tombstone_dataset_version(version_id, now=now, owner_id=owner_id)
-        self._sources.ledger.revoke(
-            RevokedObject(
-                object_kind=OBJECT_VERSION,
-                object_id=version_id,
-                owner_id=owner_id,
-                revoked_at=now,
+        # The three record writes commit together or not at all (`FR-123`, `FR-125`). Review on
+        # `#382` found them in three transactions, and tombstone-then-fault was unrepairable: the
+        # version reads back `None`, so the guard above answers the next attempt `deleted=False`
+        # and the ledger row is never written -- a version withdrawn from every read with no
+        # revocation recorded, which is `FR-126` silently unmet. `W1-04` closed this same window
+        # on the recording side; `unit_of_work` is that instrument and the three stores below all
+        # reach the database through `writing`, so they join the ambient session unchanged.
+        with unit_of_work(self._sources.factory):
+            self._sources.store.tombstone_dataset_version(version_id, now=now, owner_id=owner_id)
+            self._sources.ledger.revoke(
+                RevokedObject(
+                    object_kind=OBJECT_VERSION,
+                    object_id=version_id,
+                    owner_id=owner_id,
+                    revoked_at=now,
+                )
             )
-        )
-        self._sources.audit.record(
-            WorkspaceAuditEvent.completed(actor, ACTION_VERSION_DELETED, subject, now=now)
-        )
+            self._sources.audit.record(
+                WorkspaceAuditEvent.completed(actor, ACTION_VERSION_DELETED, subject, now=now)
+            )
         return DeletionOutcome(version_id=version_id, deleted=True)
 
     def _session_of_upload(self, owner_id: str, ciphertext_digest: str) -> str | None:

@@ -12,6 +12,8 @@ moving `retention_changed_at`. This service composes that; it does not reimpleme
 
 from __future__ import annotations
 
+import pytest
+
 from khepri.rca.workspace.audit import (
     ACTION_VERSION_DELETED,
     OUTCOME_ALREADY_DELETED,
@@ -184,3 +186,76 @@ def test_a_repeated_deletion_does_not_begin_a_second_rra_job() -> None:
     )
 
     assert deletion_jobs_for(j, who.owner_id) == first
+
+
+def test_a_fault_after_the_tombstone_leaves_nothing_partially_ended() -> None:
+    """The ending's records commit together or not at all (`FR-123`, `FR-125`).
+
+    Review on `#382` found the tombstone, the revocation and the audit event each committing in
+    their own transaction. The fatal ordering was tombstone-then-fault: the version reads back as
+    `None`, so `delete_version`'s own already-ended guard treats the next attempt as complete and
+    returns `deleted=False` **without ever writing the ledger row**. The deletion is then
+    unrepairable by retry -- a version withdrawn from every read, with no revocation recorded, so
+    a restore makes it readable again and `FR-126` is silently unmet.
+
+    `W1-04` solved this exact shape for recording (`unit_of_work`'s docstring: "a fault between
+    the two left a version persisted with no event"); this asserts the deletion path joins it.
+
+    The fault is injected at the ledger because it sits between the two writes whose disagreement
+    is unrecoverable. What is asserted is the *effect* -- the version still reads back -- and not
+    the exception, so the test fails if the rollback is missing rather than if the raise is.
+    """
+    j = journey()
+    who = member(j.w)
+    version, _ = sealed_version(j, who, with_run=True)
+
+    service = deletion_service(j)
+
+    class _FailingLedger:
+        def revoke(self, revoked):
+            raise RuntimeError("the ledger write failed")
+
+    object.__setattr__(service._sources, "ledger", _FailingLedger())
+
+    with pytest.raises(RuntimeError, match="the ledger write failed"):
+        service.delete_version(
+            who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+        )
+
+    still_there = j.w.store.get_dataset_version(version.version_id, who.owner_id)
+    assert still_there is not None, "the tombstone committed without its revocation"
+
+
+def test_a_fault_rolls_back_the_endings_audit_event_too() -> None:
+    """`FR-125`: one action, one event. A rolled-back ending must leave no `completed` event
+    claiming it happened -- which is the same window `#372` found on the recording side."""
+    j = journey()
+    who = member(j.w)
+    version, _ = sealed_version(j, who, with_run=True)
+
+    service = deletion_service(j)
+
+    class _FailingAudit:
+        def __init__(self, real):
+            self._real = real
+
+        def record(self, event):
+            if event.outcome == "completed":
+                raise RuntimeError("the audit write failed")
+            return self._real.record(event)
+
+        def events_for_scope(self, owner_id):
+            return self._real.events_for_scope(owner_id)
+
+    object.__setattr__(service._sources, "audit", _FailingAudit(j.w.audit))
+
+    with pytest.raises(RuntimeError, match="the audit write failed"):
+        service.delete_version(
+            who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
+        )
+
+    assert j.w.store.get_dataset_version(version.version_id, who.owner_id) is not None
+    assert not j.w.audit.events_for_scope(who.owner_id) or all(
+        event.action != ACTION_VERSION_DELETED
+        for event in j.w.audit.events_for_scope(who.owner_id)
+    )
