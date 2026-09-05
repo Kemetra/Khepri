@@ -24,9 +24,11 @@ tables, tables before services, services before surfaces.
 
 ## 2. Slices
 
-Ten PRs across eight roadmap tasks, **numbered as the roadmap's `W1` task table numbers them** —
+Eleven PRs across eight roadmap tasks, **numbered as the roadmap's `W1` task table numbers them** —
 `W1-07` is lifecycle and `W1-08` is the version diff, not the reverse. `W1-05` is one roadmap task
-delivering three surfaces, split into two PRs for reviewable size.
+delivering three surfaces, split into two PRs for reviewable size. `W1-04b` was added on 2026-09-05 after
+review on `#373`: the seam between the services and the surfaces, which the first allocation left
+unnamed.
 
 **Build order is not numeric order.** `W1-08` (the Change Notice) is built before `W1-07` (deletion
 and the sweep), because the Notice is a read over rows `W1-06` already retains, while `W1-07`
@@ -108,6 +110,44 @@ navigation. It is split into two PRs here for reviewable size, not into two road
   no filter system, no Compare control, no fixed result count.
 - **Risk:** reaching for a second trust vocabulary. Trust state must come through `RRA-012`'s
   components; a new badge here is a duplicate source of truth for the same concept.
+
+### `W1-04b` — The pipeline records the workspace
+
+*Added 2026-09-05, after review on `#373` found the seam this plan had not allocated.* `W1-04`
+delivered the actions and `W1-05` the surfaces that read them, and nothing in the deployed
+application called the actions: the shell's entry route (`R8-06`) opens a journey session and the
+journey's own routes admit, derive and report, so a customer's real work would have left Overview
+saying nothing had been submitted -- the fake capability `RCA-002` `FR-049` exists to prevent.
+`#373` carried the question as an owner decision; it was merged with the empty states understood as
+provisional, and this slice is the wiring that follows.
+
+- **Requirements:** `FR-110`, `FR-111`, `FR-125`; `RCA-002` `FR-049`.
+- **Delivers:** three decorators at the composition root and nothing inside `rra/`: the profile
+  route records the admitted, attested source as a dataset version; the report request starts the
+  run and binds it to the job that will settle it (`rca_workspace_run_reports`, one migration, one
+  head); the worker completes the run from the delivery, every artifact by digest, or fails it when
+  the queue dead-letters the job. Events name the pipeline as actor (`ACTOR_PIPELINE`) in the scope
+  the session already carries. The scope-level recording is extracted from `WorkspaceActions` into
+  `workspace_recording.py`, so the customer door and the pipeline door share one implementation.
+- **Acceptance:** the journey's own HTTP routes and the real worker, over one engine, put the
+  submission on Data, the run on Overview as processing, then as completed with seven bindings whose
+  digests are the stored artifacts' own, and the version sealed; a dead-lettered job fails the run
+  and Overview asks for attention; a re-posted profile and a re-requested report are one version and
+  one run with `already_recorded` events; a session no organization owns records nothing and still
+  gets its report; an unattested source records nothing and no event; `build_web_app` hands
+  `create_app` the recording services and `build_worker_loop` the settling store.
+- **Risk:** a run the worker cannot find. Two processes hold one run; the link table is how the
+  second finds it, and the unique constraint on `job_id` is the arbiter between two requests that
+  both found no link. A job identifier is written to a workspace row where a session identifier is
+  not, because it confers nothing (`FR-023`) and is not bearer-adjacent; the column guard in
+  `test_w104_audit_events.py` allows exactly that one column on exactly that table.
+- **Carried, not closed:** an unattested source is not a dataset version (`W1-01` made the manifest
+  part of one; `KHEPRI-DEC-033` §3 keeps its digest) while the journey's attestation is optional, so
+  its analysis is not workspace history. Whether `RCA-005` should admit an unattested version, or the
+  commercial journey should require attestation, is an owner reading this slice states rather than
+  takes. And the journey's own `DELETE /api/v1/beta/content` dead-letters a session's jobs in SQL
+  without passing the worker, so a run whose content was deleted that way stays `started`;
+  `W1-07` owns deletion and reconciles it.
 
 ### `W1-06` — Analysis detail, provenance, and the Analysis Passport
 

@@ -25,7 +25,13 @@ from khepri.rra.worker import (
     WorkerPolicy,
 )
 from khepri.runtime.config import RuntimeSettings
-from khepri.runtime.wiring import RuntimeStack, build_pipeline, build_stack
+from khepri.runtime.pipeline_recording import SettlingJobStore
+from khepri.runtime.wiring import (
+    RuntimeStack,
+    build_pipeline,
+    build_pipeline_recorder,
+    build_stack,
+)
 
 LEASE_FOR = timedelta(seconds=300)
 RETRY_DELAY = timedelta(seconds=60)
@@ -142,13 +148,21 @@ def build_worker_loop(
     worker_id: str | None = None,
 ) -> ClaimWorkerLoop:
     identity = worker_id or f"worker-{socket.gethostname()}"
+    # `W1-04b`: one settling store for the queue and the worker, so a delivered job completes its
+    # workspace run, a dead-lettered one fails it, and the queue's recovery sweep -- which runs
+    # before every claim -- reconciles any run a crash or a reclaimed lease left `started`.
+    jobs = SettlingJobStore(
+        stack.reports.jobs,
+        reader=JobReader(stack.factory),
+        recorder=build_pipeline_recorder(stack),
+    )
     queue = ClaimingReportQueue(
-        jobs=stack.reports.jobs,
+        jobs=jobs,
         factory=stack.factory,
         policy=ClaimPolicy(worker_id=identity, lease_for=LEASE_FOR),
     )
     worker = ReportWorker(
-        jobs=stack.reports.jobs,
+        jobs=jobs,
         handler=build_pipeline(stack, workbooks=workbooks, printer=printer),
         clock=stack.clock,
         policy=WorkerPolicy(

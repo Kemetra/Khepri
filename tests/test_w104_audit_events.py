@@ -143,13 +143,24 @@ def test_the_audit_table_is_a_workspace_table_keyed_by_scope() -> None:
 
 
 def test_no_workspace_column_can_hold_a_session_identifier() -> None:
-    """`KHEPRI-DEC-015` §7: the session identifier never reaches a log, and `RCA-005`'s workspace
-    holds no `RRA` identifier at all -- the link between a version and its upload is the digest,
-    between a run and its package the package digest."""
+    """`KHEPRI-DEC-015` §7: the session identifier never reaches a log, and no workspace column
+    can hold one -- the link between a version and its upload is the digest, between a run and its
+    package the package digest.
+
+    **One job column, on one table.** `W1-04b` binds each run to the report job that settles it
+    (`rca_workspace_run_reports.job_id`), because the worker holds a job and must find the run.
+    A job identifier confers nothing (`FR-023`) and is not bearer-adjacent, which is the property
+    this test protects; the allowance is exact so a job column arriving anywhere else, or a second
+    one here, still fails.
+    """
     w = world()
     inspector = inspect(w.factory().get_bind())
+    job_columns: dict[str, set[str]] = {}
     for table in inspector.get_table_names():
         if not table.startswith("rca_workspace_"):
             continue
         names = {column["name"] for column in inspector.get_columns(table)}
-        assert not {name for name in names if "session" in name or "job" in name}, table
+        assert not {name for name in names if "session" in name}, table
+        if jobs := {name for name in names if "job" in name}:
+            job_columns[table] = jobs
+    assert job_columns == {"rca_workspace_run_reports": {"job_id"}}

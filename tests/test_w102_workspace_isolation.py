@@ -7,6 +7,8 @@ whose scope or source could be reassigned, and a tombstoned row that a live read
 
 from __future__ import annotations
 
+import itertools
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -80,8 +82,20 @@ def _scope(factory: sessionmaker, email: str = EMAIL, name: str = "Acme Pharmacy
     return scope.owner_id
 
 
+_uploads = itertools.count(1)
+
+
 def _version(store: SqlWorkspaceRecordStore, scope: str) -> DatasetVersion:
-    return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=SOURCE, now=NOW))
+    """One version of a *distinct* upload each call. `W1-04b` made one version per admitted
+    upload in a scope a database rule (`uq_rca_workspace_version_upload`), so two versions in one
+    scope are two sources here, as they are in production."""
+    nth = next(_uploads)
+    source = replace(
+        SOURCE,
+        plaintext_digest=f"sha256:{nth:064x}",
+        ciphertext_digest=f"sha256:{nth + 1_000_000:064x}",
+    )
+    return store.add_dataset_version(DatasetVersion.create(owner_id=scope, source=source, now=NOW))
 
 
 # --- One scope never names, keeps or reads another's rows ------------------------------------

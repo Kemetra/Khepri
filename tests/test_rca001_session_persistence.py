@@ -417,7 +417,8 @@ class TestTheMigration:
         `20260822_0020`, which retires the `aws:kms` CHECK constraints and the `kms_key_id`
         column on both storage tables. `W1-02` then added `20260904_0021`, the `RCA-005`
         workspace tables. `W1-04` then added `20260905_0022`, the workspace audit event table
-        (`FR-125`), and is the head this pin now names.
+        (`FR-125`). `W1-04b` then added `20260905_0023`, the run-to-report link the worker
+        settles a run through, and is the head this pin now names.
         """
         import subprocess
 
@@ -426,7 +427,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260905_0022" in result.stdout
+        assert "20260905_0023" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:

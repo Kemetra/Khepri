@@ -32,6 +32,7 @@ it previously defined, so nothing that imported from here changed. See each modu
 from __future__ import annotations
 
 from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, version_for_update
+from khepri.rca.workspace.run_reports import RunReportRow, SqlRunReportStore
 from khepri.rca.workspace.schema import (
     _ROW_GUARDS,  # noqa: F401 -- the guard-shape test asserts this mapping's keys
     APPEND_ONLY_FAILURE,
@@ -96,5 +97,7 @@ __all__ = [
     "AnalysisRunRow",
     "ArtifactBindingRow",
     "DatasetVersionRow",
+    "RunReportRow",
+    "SqlRunReportStore",
     "SqlWorkspaceRecordStore",
 ]

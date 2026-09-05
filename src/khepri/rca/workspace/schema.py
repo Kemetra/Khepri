@@ -20,6 +20,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -37,6 +38,7 @@ from khepri.rca.workspace.contracts import (
     RUN_STARTED,
     RUN_STATES,
 )
+from khepri.rca.workspace.run_reports import RunReportRow
 
 # The retention states a stored object may be in. `KHEPRI-DEC-033` governs the transitions; this
 # slice holds only the vocabulary and the column, because a transition is an operation and `W1-07`
@@ -283,6 +285,16 @@ class DatasetVersionRow(Base):
         # so `(owner_id, version_id)` is referenceable, which is what makes a cross-scope child
         # unrepresentable rather than merely untested.
         UniqueConstraint("owner_id", "version_id", name="uq_rca_workspace_version_scope"),
+        # `W1-04b`: one version per admitted upload in a scope, arbitrated by the database rather
+        # than by a read-then-insert two overlapping profile requests both pass (review on
+        # `#375`). An index rather than a constraint because SQLite adds an index to an existing
+        # table and the migration runs on both engines. `add_dataset_version` translates the clash.
+        Index(
+            "uq_rca_workspace_version_upload",
+            "owner_id",
+            "upload_ciphertext_digest",
+            unique=True,
+        ),
     )
 
     version_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -802,6 +814,9 @@ _ROW_GUARDS = {
     # Frozen, but deletable: `KHEPRI-DEC-015` §2a bounds an audit event at twelve months and
     # `W1-07`'s sweep purges it, so no delete guard -- the source profile's asymmetry, inverted.
     WorkspaceAuditEventRow: (_refuse_audit_update, None),
+    # `W1-04b`'s run-to-report link takes the tombstone's shape: written once, never rewritten,
+    # and deleted only with its run -- which `W1-07` does explicitly, alongside the run's own guard.
+    RunReportRow: (_refuse_any_update, _refuse_delete),
 }
 
 for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():
