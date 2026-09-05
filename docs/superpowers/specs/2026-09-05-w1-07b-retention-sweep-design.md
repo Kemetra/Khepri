@@ -196,11 +196,23 @@ module gains no entry — this migration widens a `CHECK` and creates no table �
 assertion added in `#382` (`test_every_rca_table_in_the_models_is_named_here`) will hold unchanged,
 which is the check that this claim is true rather than assumed.
 
-**A sweep event has no object.** `AuditSubject.__post_init__` validates `object_kind` against
-`AUDIT_OBJECTS` (`version`, `run`, `profile`), so no sweep subject is representable today. A sweep
-acts on a *class* over a horizon, not on an object. The implementation adds an admitted kind for
-it rather than borrowing `version` — borrowing would make an evidence consumer read a class-level
-purge as an act on one customer's dataset version, which is a real signal at the wrong granularity.
+**A sweep event has no object, and the type already allows that.** Corrected while writing the
+implementation plan; an earlier draft of this section said `AUDIT_OBJECTS` needed a new kind for
+the sweep. It does not. `AuditEntry.subject` is already `AuditSubject | None`, every constructor
+takes `subject: AuditSubject | None`, and `WorkspaceAuditEvent` documents the pairing: *"`object_kind`
+and `object_id` are `None` together, for a refusal that produced no object"*, pinned by a `CHECK` in
+`schema.py`. A sweep acts on a *class* over a horizon, so it passes `None` and writes
+`WorkspaceAuditEvent.completed(actor, ACTION_RETENTION_SWEPT, None, now=now)`.
+
+This is better than adding a kind. A sweep subject named `version` would make an evidence consumer
+read a class-level purge as an act on one customer's dataset version — a real signal at the wrong
+granularity — and a new kind like `class` would admit a subject shape nothing else uses. The
+migration therefore widens **only** `AUDIT_ACTIONS`; `AUDIT_OBJECTS` and `AUDIT_OUTCOMES` are
+untouched.
+
+**The actor is `system:retention` **, following `ACTOR_PIPELINE = "system:pipeline"` — whose comment
+already prescribes it: *"`W1-07`'s retention sweep will name its own actor in the same shape."* The
+`system:` prefix keeps it from colliding with, or reading as, an account identifier.
 
 **The pass must not purge its own evidence.** The sweep's audit event and evidence are themselves
 subject to the twelve-month horizon the sweep enforces. Since both are written at `now` and the
