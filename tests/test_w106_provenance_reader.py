@@ -388,3 +388,46 @@ def test_the_scope_predicate_reads_the_relation_whose_index_leads_with_owner() -
 
     assert "rra_beta_sessions.owner_id = 'scope-1'" in condensed
     assert "rra_report_jobs.owner_id = 'scope-1'" not in condensed
+
+
+class _JobsOf:
+    """A handoff read that answers one scope's jobs for any scope -- the faulty scoped read the
+    ownership check exists to catch. `SqlJobSessions` cannot produce this; the point is that the
+    reader does not depend on it not producing it."""
+
+    def __init__(self, jobs: dict[str, object]) -> None:
+        self._jobs = jobs
+
+    def for_scope(self, owner_id: str) -> dict[str, object]:
+        return self._jobs
+
+
+def test_a_job_whose_owner_is_another_scope_refuses_the_surface() -> None:
+    """`W1-06` refused a job whose `owner_id` was not the scope asked about, and the batched read
+    must keep refusing it. The scope filter in `for_scope` makes this unreachable today, which is
+    exactly why the check has to stay: it is what fails closed if that filter is ever wrong, and
+    without it a corrupt or faulty scoped read would mark another scope's handoff `reachable`
+    and leave the bridge as the only thing between it and the customer (review on `#378`).
+
+    The link is this scope's own, so the reader reaches the ownership check rather than the
+    missing-job branch the sibling test covers.
+    """
+    from khepri.rca.workspace.run_reports import SqlRunReportStore
+
+    j = journey()
+    who = member(j.w)
+    other = member(j.w, email="other@example.test", name="Other")
+    run, job_id, _session = completed_run(j, who)
+    (version,) = j.w.store.dataset_versions_for_scope(who.owner_id)
+    borrowed = SqlJobSessions(j.w.factory).for_scope(who.owner_id)[job_id]
+    reader = ProvenanceReader(
+        ProvenanceSources(
+            provenance=SqlRunProvenanceStore(j.w.factory),
+            reports=SqlRunReportStore(j.w.factory),
+            handoffs=_JobsOf({job_id: replace(borrowed, owner_id=other.owner_id)}),
+        ),
+        clock=j.clock,
+    )
+
+    with pytest.raises(UnrenderableRecord):
+        reader.for_run(who.owner_id, run, version)

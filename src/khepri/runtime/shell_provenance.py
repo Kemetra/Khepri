@@ -96,8 +96,11 @@ class ProvenanceSources:
 
 @dataclass(frozen=True, slots=True)
 class _ScopeReads:
-    """One scope's three reads, indexed for the runs asked about."""
+    """One scope's three reads, indexed for the runs asked about, and the scope they were read
+    for -- carried here so what is checked against a job is the scope that was *asked* about, not
+    a scope re-derived from the rows that came back."""
 
+    owner_id: str
     records: dict[str, RunProvenance]
     links: dict[str, str]
     jobs: dict[str, JobSession]
@@ -131,6 +134,7 @@ class ProvenanceReader:
     def _read_scope(self, owner_id: str) -> _ScopeReads:
         sources = self._sources
         return _ScopeReads(
+            owner_id=owner_id,
             records={p.run_id: p for p in sources.provenance.for_scope(owner_id)},
             links={link.run_id: link.job_id for link in sources.reports.links_for_scope(owner_id)},
             jobs=sources.handoffs.for_scope(owner_id),
@@ -140,7 +144,7 @@ class ProvenanceReader:
         record = reads.records.get(run.run_id)
         if record is None:
             return None
-        job = _settling_job(run.run_id, reads)
+        job = _settling_job(run.run_id, reads.owner_id, reads)
         return Provenance(
             session_id=None if job is None else job.session_id,
             job_id=None if job is None else job.job_id,
@@ -165,14 +169,21 @@ class ProvenanceReader:
         return self._clock() < job.content_expires_at
 
 
-def _settling_job(run_id: str, reads: _ScopeReads) -> JobSession | None:
+def _settling_job(run_id: str, owner_id: str, reads: _ScopeReads) -> JobSession | None:
     """The job the run is settled by, in this scope. A link to a job the scope does not hold is a
-    corrupt record, not an absence."""
+    corrupt record, not an absence.
+
+    The owner is checked against the job even though `for_scope` already filtered by it, and that
+    redundancy is the point: this is what fails closed if the scoped read is ever wrong. Without
+    it a faulty read would mark another scope's handoff `reachable` and leave the bridge as the
+    only thing between it and the customer (review on `#378`). `W1-06` made the same check per
+    run; batching the read must not quietly drop it.
+    """
     job_id = reads.links.get(run_id)
     if job_id is None:
         return None
     job = reads.jobs.get(job_id)
-    if job is None:
+    if job is None or job.owner_id != owner_id:
         raise UnrenderableRecord(UNRENDERABLE_FAILURE)
     return job
 
