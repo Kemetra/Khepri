@@ -74,6 +74,8 @@ RCA_REVISIONS = (
     # `W1-07a`'s deletion vocabulary: a `CHECK` rewrite on `20260905_0022`'s table, so the slug
     # names this migration's own file rather than the table it widens.
     ("20260906_0026", "rca_workspace_deletion_audit", "20260905_0025"),
+    # `W1-07a`'s revocation ledger (`FR-126`), so a restore cannot make a deleted object readable.
+    ("20260906_0027", "rca_workspace_revocations", "20260906_0026"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
