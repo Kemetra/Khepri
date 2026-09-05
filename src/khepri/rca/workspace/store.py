@@ -11,6 +11,7 @@ Every public name is re-exported from `persistence.py`; import from there.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import (
@@ -52,7 +53,7 @@ from khepri.rca.workspace.schema import (
 )
 from khepri.rca.workspace.tombstone_rows import tombstone_from_row, tombstone_row
 from khepri.rca.workspace.tombstones import RunTombstone, SectionStates, VersionTombstone
-from khepri.rca.workspace.unit_of_work import reading, writing
+from khepri.rca.workspace.unit_of_work import reading, unit_of_work, writing
 
 #: How a deleting caller tells the cascade each run's section states. The live run record carries
 #: none and the bundle that does is `khepri.rra`'s (see `tombstones.py`), so the store asks rather
@@ -224,6 +225,23 @@ def _cascade_tombstone_to_runs(
         database.add(tombstone_row(tombstone))
         run.retention_state = RETENTION_TOMBSTONED
         run.retention_changed_at = now
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceHistory:
+    """One scope's retained history, read in one transaction (`FR-117`, `FR-127`).
+
+    Four reads made separately can be torn by a deletion committed between them -- a run live in
+    one read and tombstoned in the next, a completed run whose bindings were withdrawn before they
+    were read. Reading them inside one serializable unit of work gives the consumer one database
+    snapshot. The consumer also resolves a run that appears both live and deleted in the
+    tombstone's favour, so a corrupt duplicate still fails closed (review on `#374`).
+    """
+
+    versions: tuple[DatasetVersion, ...]
+    runs: tuple[AnalysisRun, ...]
+    bindings: tuple[ArtifactBinding, ...]
+    tombstones: tuple[VersionTombstone | RunTombstone, ...]
 
 
 class SqlWorkspaceRecordStore:
@@ -530,6 +548,24 @@ class SqlWorkspaceRecordStore:
                 .order_by(ArtifactBindingRow.run_id, ArtifactBindingRow.surface)
             ).scalars()
             return tuple(_binding_from_row(row) for row in rows)
+
+    def history_for_scope(self, owner_id: str) -> WorkspaceHistory:
+        """Everything the history surfaces show, from one serializable snapshot.
+
+        `unit_of_work` publishes one session for the four existing reads to join. Serializable
+        isolation makes that transaction one snapshot on PostgreSQL as well as SQLite; merely
+        sharing a default READ COMMITTED transaction would still let each statement observe a
+        later deletion. The consumer also resolves any restored or corrupt live-plus-tombstoned
+        duplicate in the tombstone's favour (review on `#374`).
+        """
+        with unit_of_work(self._factory) as database:
+            database.connection(execution_options={"isolation_level": "SERIALIZABLE"})
+            return WorkspaceHistory(
+                versions=self.dataset_versions_for_scope(owner_id),
+                runs=self.analysis_runs_for_scope(owner_id),
+                bindings=self.artifact_bindings_for_scope(owner_id),
+                tombstones=self.tombstones_for_scope(owner_id),
+            )
 
     # --- retention, the one thing `FR-112` lets a later operation change -----------------
 

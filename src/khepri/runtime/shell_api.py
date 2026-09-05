@@ -162,28 +162,18 @@ class AnalysisOpener(Protocol):
 
 
 class WorkspaceReader(Protocol):
-    """Reads one scope's data versions and analysis runs (`W1-05`).
+    """Reads one scope's retained history in one transaction (`W1-05`).
 
-    `SqlWorkspaceRecordStore` is the implementation; this names the two reads Overview and Data
-    make and none of the writes. The shell presents retained rows and creates, completes and
-    deletes nothing, and a reader that could write would make that a convention.
+    `SqlWorkspaceRecordStore.history_for_scope` is the implementation; this names the one read
+    Overview, Data, and the staged Analyses renderer make and none of the writes. The shell
+    presents retained rows and creates, completes and deletes nothing, and a reader that could
+    write would make that a convention. One read rather than four so a deletion committed between
+    them cannot tear the page (review on `#374`).
     """
 
-    def dataset_versions_for_scope(
+    def history_for_scope(
         self, owner_id: str
-    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
-
-    def analysis_runs_for_scope(
-        self, owner_id: str
-    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
-
-    def tombstones_for_scope(
-        self, owner_id: str
-    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
-
-    def artifact_bindings_for_scope(
-        self, owner_id: str
-    ) -> tuple[Any, ...]: ...  # pragma: no cover -- Protocol
+    ) -> Any: ...  # pragma: no cover -- Protocol
 
 
 class ScopeResolver(Protocol):
@@ -413,9 +403,7 @@ def _workspace_reads(services: ShellServices, context: Any, *, surface: str) -> 
     return {
         **frame,
         "organization_id": context.organization_id,
-        "owner_id": owner_id,
-        "versions": services.records.dataset_versions_for_scope(owner_id),
-        "runs": services.records.analysis_runs_for_scope(owner_id),
+        "history": services.records.history_for_scope(owner_id),
     }
 
 
@@ -424,8 +412,8 @@ def _overview_response(
 ) -> Response:
     """`FR-120`. The rows are shaped in `shell_workspace.py`; the template can only iterate."""
     reads = _workspace_reads(services, context, surface="overview")
-    reads.pop("owner_id")
-    view = overview_view(reads.pop("versions"), reads.pop("runs"))
+    history = reads.pop("history")
+    view = overview_view(history.versions, history.runs)
     return _render(
         environment,
         "overview.html.j2",
@@ -442,8 +430,8 @@ def _data_response(
 ) -> Response:
     """Blueprint §7.2, with `FR-117`'s row vocabulary."""
     reads = _workspace_reads(services, context, surface="data")
-    reads.pop("owner_id")
-    rows = data_rows(reads.pop("versions"), reads.pop("runs"))
+    history = reads.pop("history")
+    rows = data_rows(history.versions, history.runs)
     return _render(
         environment, "data.html.j2", language=language, status_code=200, rows=rows, **reads
     )
@@ -452,28 +440,27 @@ def _data_response(
 def _analyses_response(
     services: ShellServices, environment: Environment, *, language: str, context: Any
 ) -> Response:
-    """`FR-117`, the history spine. Two more reads over the same scope: the run tombstones, so
-    history does not silently shorten, and the bindings, so a row says whether its report is
-    there from what was published rather than from what its state implies."""
-    assert services.records is not None  # dispatched only when wired
+    """Stage the `FR-117` history spine from the same atomic history as public Overview and Data.
+
+    Tombstones keep history from silently shortening; bindings say whether a report is available
+    from what was published rather than from what a run state implies. Dispatch remains withheld
+    until the trust-state and valid-action prerequisites documented below exist.
+    """
     reads = _workspace_reads(services, context, surface="analyses")
-    owner_id = reads.pop("owner_id")
-    rows = spine_rows(
-        reads.pop("runs"),
-        services.records.tombstones_for_scope(owner_id),
-        reads.pop("versions"),
-        services.records.artifact_bindings_for_scope(owner_id),
-    )
+    history = reads.pop("history")
+    rows = spine_rows(history.runs, history.tombstones, history.versions, history.bindings)
     return _render(
         environment, "analyses.html.j2", language=language, status_code=200, rows=rows, **reads
     )
 
 
 #: The surfaces `records` delivers, by the name the address carries, and what renders each.
+#: `_analyses_response` remains the tested staging boundary, but is deliberately not dispatched:
+#: live runs cannot yet supply `FR-117`'s trust state and no valid detail/reuse action route exists.
+#: `FR-049` therefore makes a guessed Analyses address unavailable (review on `#374`).
 _WORKSPACE_SURFACES = {
     "overview": _overview_response,
     "data": _data_response,
-    "analyses": _analyses_response,
 }
 
 

@@ -54,6 +54,7 @@ from fastapi.testclient import TestClient
 
 from khepri.rca.organizations import Organization
 from khepri.rca.session_cookie import SESSION_COOKIE
+from khepri.rca.workspace.store import WorkspaceHistory
 from khepri.rra.journey.copy import JOURNEY_COPY
 from khepri.runtime.shell_api import (
     _UNAVAILABLE_TAIL,
@@ -147,17 +148,8 @@ class _StubIsolation:
 class _StubRecords:
     """An empty workspace, so the frame under test is the one with every built destination."""
 
-    def dataset_versions_for_scope(self, owner_id: str) -> tuple[object, ...]:
-        return ()
-
-    def analysis_runs_for_scope(self, owner_id: str) -> tuple[object, ...]:
-        return ()
-
-    def tombstones_for_scope(self, owner_id: str) -> tuple[object, ...]:
-        return ()
-
-    def artifact_bindings_for_scope(self, owner_id: str) -> tuple[object, ...]:
-        return ()
+    def history_for_scope(self, owner_id: str) -> WorkspaceHistory:
+        return WorkspaceHistory(versions=(), runs=(), bindings=(), tombstones=())
 
 
 class _UnreadableOrganizations(_StubOrganizations):

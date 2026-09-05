@@ -41,12 +41,13 @@ def _active_organization_name(organizations: Iterable[Any], organization_id: str
     return ""
 
 
-#: The destinations the frame may name, as `(copy key, surface)` in `RCA-005` `FR-121`'s order:
-#: Overview, Data, Analyses, Team.
+#: The destinations the frame may name, as `(copy key, surface)` in `RCA-005` `FR-121`'s order.
+#: Analyses is deliberately absent: its live record cannot yet supply `FR-117`'s trust state and
+#: neither Analysis Detail nor Run Again has a route for its required next action. `FR-049`
+#: withholds the link until both prerequisites exist (review on `#374`).
 _WORKSPACE_DESTINATIONS = (
     ("overview_title", "overview"),
     ("data_title", "data"),
-    ("analyses_title", "analyses"),
 )
 _TEAM_DESTINATION = ("team_title", "team")
 
@@ -66,9 +67,10 @@ def organization_frame(
     the tail the navigation marks as current.
 
     `destinations` is the navigation, decided here and nowhere else. `FR-121` and `RCA-002`
-    `FR-049` require a link to ship only with its surface, so Overview and Data appear exactly
-    when the shell holds a reader for them (`offers_records`), and Team always -- the one surface
-    every shell has. A template that decided this would be a second place the rule lives.
+    `FR-049` require a link to ship only with a complete surface, so Overview and Data appear
+    exactly when the shell holds a reader for them (`offers_records`), and Team always -- the one
+    surface every shell has. Analyses stays withheld for the prerequisite gap recorded above. A
+    template that decided this would be a second place the rule lives.
     """
     workspace = _WORKSPACE_DESTINATIONS if offers_records else ()
     return {

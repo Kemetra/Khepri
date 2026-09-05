@@ -1,4 +1,4 @@
-"""`W1-05` (second PR) -- the Analyses history spine (`RCA-005` `FR-117`, `FR-121`, `FR-122`).
+"""`W1-05` (second PR) -- the staged Analyses history spine (`RCA-005` `FR-117`, `FR-122`).
 
 **One list, newest first, and nothing that narrows it.** Blueprint §7.3 locks the spine as the
 single history: no filter system, no Compare, no fixed result count. The rows are the scope's live
@@ -6,21 +6,23 @@ runs and its run tombstones, merged by the instant each started, newest first. A
 reads as a tombstone in both languages and offers no content action (`FR-122`; `KHEPRI-DEC-033`
 §1: the row remains so history does not silently shorten).
 
-**What a row states, and what it cannot yet.** `FR-117` names seven things. Five are here: when it
-ran, which data it used (stated as when that data was submitted -- `DatasetVersion` and its
-identifier never appear on screen, blueprint §7.2), its operational state, whether its report is
-available, and its retention state. The other two are stated in this module's plan and not
-rendered, because rendering either would be a claim the record cannot back:
+**What a staged row states, and why it is not exposed.** `FR-117` names seven things. Five can be
+shaped faithfully: when it ran, which exact Data row it used, its operational state, whether its
+report is available, and its retention state. The other two cannot yet be backed:
 
 - *Trust state* comes "through `RRA-012`'s components where a bundle state is shown". No bundle
   state is persisted for a live run -- `AnalysisRunRow` carries no section states, the delivery
   record carries `narrative_state` only, and the bundle is not retained. The one record that
   carries section codes is the run tombstone, and §7.3 makes a tombstone *minimal*. So no row shows
   a trust state, no second vocabulary is reached for (the `G3-04` plan's named risk), and the
-  owner is told that showing one needs section states recorded at completion.
+  adding one needs section states recorded at completion.
 - *The next valid action* is rendered only where a route exists to take it. Analysis detail is
   `W1-06`'s and Run Again has a service (`W1-04`) but no route, so no row offers an action yet.
   `RCA-002` `FR-049` forbids a control with nothing behind it.
+
+Therefore the navigation destination and guessed address are withheld. The tests exercise the
+internal renderer as a hardened staging boundary, including atomic history reads, exact Data-row
+references, tombstone precedence, and refusal of incomplete completed records.
 
 **No figure, as on Overview.** The visible text with `<time>` elements removed carries no digit:
 no result count, no percentage, no total.
@@ -53,11 +55,23 @@ from khepri.rca.workspace.contracts import (
     RunSubject,
     VersionLifecycle,
 )
-from khepri.rca.workspace.tombstones import RunTombstone, RunTrace
+from khepri.rca.workspace.persistence import WorkspaceHistory
+from khepri.rca.workspace.tombstones import (
+    RunTombstone,
+    RunTrace,
+    VersionSubject,
+    VersionTombstone,
+)
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
-from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
+from khepri.runtime.shell_api import (
+    SHELL_PREFIX,
+    ShellServices,
+    _analyses_response,
+    add_shell_routes,
+    shell_environment,
+)
 from khepri.runtime.shell_copy import SHELL_COPY
-from khepri.runtime.shell_workspace import spine_rows
+from khepri.runtime.shell_workspace import UnrenderableRecord, spine_rows
 
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 EARLIER = datetime(2026, 9, 4, 9, 30, tzinfo=UTC)
@@ -115,25 +129,18 @@ class _StubRecords:
 
     versions: tuple[DatasetVersion, ...] = ()
     runs: tuple[AnalysisRun, ...] = ()
-    tombstones: tuple[RunTombstone, ...] = ()
+    tombstones: tuple[RunTombstone | VersionTombstone, ...] = ()
     bindings: tuple[ArtifactBinding, ...] = ()
     asked: list[str] = field(default_factory=list)
 
-    def dataset_versions_for_scope(self, owner_id: str) -> tuple[DatasetVersion, ...]:
+    def history_for_scope(self, owner_id: str) -> WorkspaceHistory:
         self.asked.append(owner_id)
-        return self.versions
-
-    def analysis_runs_for_scope(self, owner_id: str) -> tuple[AnalysisRun, ...]:
-        self.asked.append(owner_id)
-        return self.runs
-
-    def tombstones_for_scope(self, owner_id: str) -> tuple[RunTombstone, ...]:
-        self.asked.append(owner_id)
-        return self.tombstones
-
-    def artifact_bindings_for_scope(self, owner_id: str) -> tuple[ArtifactBinding, ...]:
-        self.asked.append(owner_id)
-        return self.bindings
+        return WorkspaceHistory(
+            versions=self.versions,
+            runs=self.runs,
+            bindings=self.bindings,
+            tombstones=self.tombstones,
+        )
 
 
 def _version(version_id: str, *, created_at: datetime) -> DatasetVersion:
@@ -189,6 +196,23 @@ def _tombstone(run_id: str, version_id: str, *, started_at: datetime) -> RunTomb
     )
 
 
+def _version_tombstone(version_id: str, *, created_at: datetime) -> VersionTombstone:
+    return VersionTombstone._from_storage(
+        subject=VersionSubject(version_id=version_id, owner_id=SCOPE),
+        source=AdmittedSource(
+            plaintext_digest=DIGEST,
+            ciphertext_digest=DIGEST,
+            size_bytes=4096,
+            media_type="text/csv",
+            manifest_digest=DIGEST,
+            mapping_version="mapping-v-alpha",
+            admission_outcome="admitted",
+        ),
+        lifecycle=VersionLifecycle(created_at=created_at, sealed_at=created_at),
+        deleted_at=DELETED_AT,
+    )
+
+
 def _bindings(run_id: str, kinds=REQUIRED_ARTIFACT_KINDS) -> tuple[ArtifactBinding, ...]:
     return tuple(
         ArtifactBinding._from_storage(
@@ -201,25 +225,33 @@ def _bindings(run_id: str, kinds=REQUIRED_ARTIFACT_KINDS) -> tuple[ArtifactBindi
     )
 
 
+def _services(
+    records: _StubRecords | None, *, context: _Context | None = None
+) -> ShellServices:
+    return ShellServices(
+        resolver=_StubResolver(context or _Context("acct-a", ORGANIZATION)),
+        organizations=_StubOrganizations(),
+        records=records,
+        isolation=_StubIsolation() if records is not None else None,
+    )
+
+
 def _shell(records: _StubRecords | None, *, context: _Context | None = None) -> TestClient:
     app = FastAPI()
-    add_shell_routes(
-        app,
-        services=ShellServices(
-            resolver=_StubResolver(context or _Context("acct-a", ORGANIZATION)),
-            organizations=_StubOrganizations(),
-            records=records,
-            isolation=_StubIsolation() if records is not None else None,
-        ),
-        clock=lambda: NOW,
-    )
+    add_shell_routes(app, services=_services(records, context=context), clock=lambda: NOW)
     client = TestClient(app)
     client.cookies.set(SESSION_COOKIE, "a-session-token")
     return client
 
 
 def _spine(records: _StubRecords, language: str = "en") -> str:
-    return _shell(records).get(f"{SHELL_PREFIX}/{language}/{ORGANIZATION}/analyses").text
+    response = _analyses_response(
+        _services(records),
+        shell_environment(),
+        language=language,
+        context=_Context("acct-a", ORGANIZATION),
+    )
+    return response.body.decode()
 
 
 def _nav(html: str) -> str:
@@ -259,37 +291,28 @@ def _history() -> _StubRecords:
 # --- navigation ---------------------------------------------------------------------------------
 
 
-class TestTheAnalysesLinkShipsWithItsSurface:
+class TestTheAnalysesSurfaceWaitsForItsRequirements:
     @pytest.mark.parametrize("language", ["en", "ar"])
-    def test_the_four_destinations_in_fr121s_order(self, language: str) -> None:
+    def test_the_shipped_destinations_exclude_analyses(self, language: str) -> None:
+        """`FR-117` requires trust state and a next valid action. Neither can be read or followed
+        yet, so `FR-049` withholds it instead of shipping a knowingly partial surface.
+        """
         nav = _nav(_shell(_history()).get(f"{SHELL_PREFIX}/{language}/{ORGANIZATION}/team").text)
 
         positions = [
-            nav.index(_link(language, surface))
-            for surface in ("overview", "data", "analyses", "team")
+            nav.index(_link(language, surface)) for surface in ("overview", "data", "team")
         ]
         assert positions == sorted(positions)
-        assert SHELL_COPY[language]["analyses_title"] in nav
+        assert _link(language, "analyses") not in nav
 
-    def test_without_a_reader_there_is_no_analyses(self) -> None:
-        shell = _shell(None)
+    @pytest.mark.parametrize("records", [_history(), None])
+    def test_the_analyses_address_is_withheld(self, records: _StubRecords | None) -> None:
+        shell = _shell(records)
 
         assert _link("en", "analyses") not in _nav(
             shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/team").text
         )
         assert shell.get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses").status_code == 404
-
-    def test_the_current_surface_is_marked(self) -> None:
-        nav = _nav(_spine(_history()))
-
-        current = re.findall(r'<a href="([^"]+)"[^>]*aria-current="page"', nav)
-        assert current == [f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses"]
-
-    @pytest.mark.parametrize("language,alternate", [("en", "ar"), ("ar", "en")])
-    def test_the_language_control_keeps_the_surface(self, language: str, alternate: str) -> None:
-        html = _spine(_history(), language)
-
-        assert f'href="{SHELL_PREFIX}/{alternate}/{ORGANIZATION}/analyses"' in html
 
 
 # --- the spine ------------------------------------------------------------------------------------
@@ -326,24 +349,32 @@ class TestTheSpine:
         assert 'datetime="2026-09-05T12:00:00+00:00"' in newest
         assert copy["spine_data_submitted"] in newest
         assert 'datetime="2026-09-04T09:30:00+00:00"' in newest
+        assert f'href="{SHELL_PREFIX}/{language}/{ORGANIZATION}/data#data-ver-b"' in newest
         assert copy["run_state_started"] in newest
         assert copy["report_not_yet"] in newest
         assert copy["retention_kept"] in newest
 
     @pytest.mark.parametrize("language", ["en", "ar"])
     def test_report_availability_follows_the_bindings(self, language: str) -> None:
-        """A completed run with every required artifact bound has a report; one without has
-        none to offer. `FR-111` makes completion imply the full set, and the row says what the
-        bindings say rather than what the state implies."""
+        """A completed run with every required artifact bound has a report."""
         copy = SHELL_COPY[language]
         full = _rows(_spine(_history(), language))[-1]
-        partial_records = _history()
-        partial_records.bindings = _bindings("run-a", REQUIRED_ARTIFACT_KINDS[:1])
-        partial = _rows(_spine(partial_records, language))[-1]
 
         assert copy["report_available"] in full
-        assert copy["report_unavailable"] in partial
-        assert copy["report_available"] not in partial
+
+    def test_an_incomplete_completed_run_is_unrenderable(self) -> None:
+        """`FR-111`: a persisted completed run missing a required binding is corrupt, not a
+        completed row whose report happens to be unavailable (review on `#374`)."""
+        partial_records = _history()
+        partial_records.bindings = _bindings("run-a", REQUIRED_ARTIFACT_KINDS[:1])
+
+        with pytest.raises(UnrenderableRecord):
+            spine_rows(
+                partial_records.runs,
+                partial_records.tombstones,
+                partial_records.versions,
+                partial_records.bindings,
+            )
 
     @pytest.mark.parametrize("language", ["en", "ar"])
     def test_a_failed_run_has_no_report(self, language: str) -> None:
@@ -396,12 +427,66 @@ class TestTheSpine:
         assert tombstones[0].retention_key == "retention_deleted"
 
     def test_no_row_offers_an_action_this_slice_cannot_honour(self) -> None:
-        """`FR-049`: Analysis detail is `W1-06`'s and Run Again has no route, so no row carries a
-        link or a form. When those ship, this assertion is replaced, not relaxed."""
+        """`FR-049`: Analysis detail is `W1-06`'s and Run Again has no route, so the only link on a
+        row is the reference to its data entry on the Data surface, which exists. When detail
+        ships, this assertion is replaced, not relaxed."""
         html = _spine(_history())
         spine = html[html.index('class="spine-list"') :]
 
-        assert "<a " not in spine and "<form" not in spine and "<button" not in spine
+        assert "<form" not in spine and "<button" not in spine
+        for href in re.findall(r'<a [^>]*href="([^"]+)"', spine):
+            assert href.startswith(f"{SHELL_PREFIX}/en/{ORGANIZATION}/data#data-"), href
+
+    def test_two_entries_submitted_at_the_same_instant_are_two_references(self) -> None:
+        """`FR-117`: a row identifies *which* data entry it used. The schema permits two versions
+        with one `created_at`, so the reference is the entry's anchor on the Data surface -- the
+        row's `id` there -- and not its timestamp (review on `#374`)."""
+        records = _StubRecords(
+            versions=(
+                _version("ver-twin-b", created_at=EARLIER),
+                _version("ver-twin-a", created_at=EARLIER),
+            ),
+            runs=(
+                _run("run-b", "ver-twin-b", state=RUN_STARTED, started_at=NOW),
+                _run("run-a", "ver-twin-a", state=RUN_STARTED, started_at=EARLIER),
+            ),
+        )
+
+        spine = _spine(records)
+        data = _shell(records).get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/data").text
+        rows = _rows(spine)
+
+        assert f'href="{SHELL_PREFIX}/en/{ORGANIZATION}/data#data-ver-twin-b"' in rows[0]
+        assert f'href="{SHELL_PREFIX}/en/{ORGANIZATION}/data#data-ver-twin-a"' in rows[1]
+        assert 'id="data-ver-twin-b"' in data and 'id="data-ver-twin-a"' in data
+
+    def test_a_run_whose_data_was_deleted_says_so(self) -> None:
+        """The version is gone from the live listing; its tombstone still states when it was
+        submitted, and the row says the data was deleted with nothing to follow."""
+        records = _StubRecords(
+            versions=(),
+            runs=(_run("run-a", "ver-gone", state=RUN_COMPLETED, started_at=NOW),),
+            tombstones=(_version_tombstone("ver-gone", created_at=EARLIEST),),
+            bindings=_bindings("run-a"),
+        )
+
+        row = _rows(_spine(records))[0]
+
+        assert SHELL_COPY["en"]["spine_data_deleted"] in row
+        assert 'datetime="2026-09-03T08:00:00+00:00"' in row
+        assert "<a " not in row
+
+    def test_a_run_both_live_and_deleted_reads_as_deleted(self) -> None:
+        """`FR-127`: a deletion committed between the reads of one history shows the same run live
+        and tombstoned. The deletion is the later fact; one row, a tombstone (review on `#374`)."""
+        records = _history()
+        records.tombstones = records.tombstones + (_tombstone("run-d", "ver-b", started_at=NOW),)
+
+        rows = _rows(_spine(records))
+
+        assert len(rows) == 4
+        assert "spine-item--tombstone" in rows[0]
+        assert SHELL_COPY["en"]["run_state_started"] not in rows[0]
 
     def test_no_filter_no_compare_no_count(self) -> None:
         """Blueprint §7.3's three prohibitions, and `FR-120`'s figure rule carried over."""
@@ -423,8 +508,12 @@ class TestTheSpine:
         assert SHELL_COPY[language]["analyses_empty"] in html
         assert "spine-item" not in html
 
-    def test_no_internal_identifier_reaches_the_row(self) -> None:
+    def test_no_internal_identifier_reaches_the_rows_text(self) -> None:
+        """§7.2: digests, versions and identifiers are not what a row *says*. The opaque version
+        identifier travels inside the data reference's `href`, the way organization identifiers do
+        across the shell, and nowhere in the text."""
         html = _spine(_history())
+        text = re.sub(r"<[^>]+>", "", html)
 
         for token in (
             DIGEST,
@@ -434,7 +523,8 @@ class TestTheSpine:
             "ver-a",
             "run-a",
         ):
-            assert token not in html, token
+            assert token not in text, token
+        assert "run-a" not in html and DIGEST not in html
         assert "dataset" not in html.lower()
 
     def test_a_tombstone_shows_no_trust_state(self) -> None:
@@ -454,10 +544,9 @@ class TestTheSpine:
 def test_every_read_is_for_the_sessions_scope() -> None:
     records = _StubRecords()
 
-    _shell(records).get(f"{SHELL_PREFIX}/en/{ORGANIZATION}/analyses")
+    _spine(records)
 
-    assert len(records.asked) == 4, records.asked
-    assert set(records.asked) == {SCOPE}
+    assert records.asked == [SCOPE], "one read, in one transaction, for the session's scope"
 
 
 def test_the_template_is_in_the_scanned_set() -> None:

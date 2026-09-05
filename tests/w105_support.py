@@ -1,10 +1,10 @@
-"""Shared fixtures for the `W1-05` end-to-end cases: the shell over `tests/w104_support.py`'s world.
+"""Shared fixtures for the `W1-05` integration cases over `tests/w104_support.py`'s world.
 
-The two end-to-end modules -- Overview and Data, then the Analyses spine -- drive the same shape:
+The modules -- public Overview and Data, then the staged Analyses renderer -- drive the same shape:
 a member whose `owner_id` differs from their `organization_id`, rows written by the real
-`WorkspaceActions` through the real `RRA-003` admission, and a shell built over the same stores
-and a real `IsolationService`. Holding that here keeps each module to its cases and lets CodeScene
-see one definition of the wiring rather than two similar ones.
+`WorkspaceActions` through the real `RRA-003` admission, and rendering over the same stores and a
+real `IsolationService`. Holding that here keeps each module to its cases and lets CodeScene see
+one definition of the wiring rather than two similar ones.
 """
 
 from __future__ import annotations
@@ -17,7 +17,13 @@ from fastapi.testclient import TestClient
 from khepri.rca.isolation import IsolationService
 from khepri.rca.persistence import SqlAccountStore
 from khepri.rca.session_cookie import SESSION_COOKIE
-from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
+from khepri.runtime.shell_api import (
+    SHELL_PREFIX,
+    ShellServices,
+    _analyses_response,
+    add_shell_routes,
+    shell_environment,
+)
 from khepri.runtime.workspace import ReportLocator
 from tests.w104_support import (
     JOB,
@@ -54,19 +60,20 @@ class StubResolver:
         return self._context
 
 
+def services_over(w: World, who: Member) -> ShellServices:
+    """The real stores and isolation boundary the shell receives."""
+    return ShellServices(
+        resolver=StubResolver(Context(who.account_id, who.organization_id)),
+        organizations=w.organizations,
+        records=w.store,
+        isolation=IsolationService(w.organizations, SqlAccountStore(w.factory)),
+    )
+
+
 def shell_over(w: World, who: Member) -> TestClient:
     """The shell over the world's own stores, the way `build_shell_services` wires it."""
     app = FastAPI()
-    add_shell_routes(
-        app,
-        services=ShellServices(
-            resolver=StubResolver(Context(who.account_id, who.organization_id)),
-            organizations=w.organizations,
-            records=w.store,
-            isolation=IsolationService(w.organizations, SqlAccountStore(w.factory)),
-        ),
-        clock=lambda: LATER,
-    )
+    add_shell_routes(app, services=services_over(w, who), clock=lambda: LATER)
     client = TestClient(app)
     client.cookies.set(SESSION_COOKIE, "a-session-token")
     return client
@@ -75,6 +82,21 @@ def shell_over(w: World, who: Member) -> TestClient:
 def page(w: World, who: Member, surface: str) -> str:
     """The surface as the member sees it, addressed by their own organization."""
     return shell_over(w, who).get(f"{SHELL_PREFIX}/en/{who.organization_id}/{surface}").text
+
+
+def staged_analyses_page(w: World, who: Member) -> str:
+    """Render the hardened Analyses staging boundary without exposing its public route.
+
+    `FR-049` withholds that route until live runs persist trust state and a valid next action can
+    be followed. These tests still exercise the read model that will back the eventual surface.
+    """
+    response = _analyses_response(
+        services_over(w, who),
+        shell_environment(),
+        language="en",
+        context=Context(who.account_id, who.organization_id),
+    )
+    return response.body.decode()
 
 
 def admitted_version(w: World, who: Member, content: bytes | None = None) -> tuple[str, str]:

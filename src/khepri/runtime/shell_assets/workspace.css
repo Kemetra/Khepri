@@ -134,3 +134,12 @@
   font-style: italic;
   color: var(--muted);
 }
+
+/* The spine's reference to a data entry is a link into the Data surface, so it takes the shell's
+ * 44px target rule like every other anchor in `.shell-main`, and reads as two words and a time. */
+.data-reference {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2, 0.5rem);
+}

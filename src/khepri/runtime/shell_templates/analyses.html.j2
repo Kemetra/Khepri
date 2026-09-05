@@ -7,9 +7,10 @@
   nothing. A tombstone row reads as a tombstone in both languages (FR-122) and carries no content
   action: `KHEPRI-DEC-033` §1 keeps the row so history does not silently shorten.
 
-  No row carries a link or a form yet. Analysis detail is `W1-06`'s and Run Again has no route, and
-  `RCA-002` FR-049 forbids a control with nothing behind it. No trust state is shown either: no
-  bundle state is persisted for a live run, and a tombstone is minimal (§7.3).
+  This template is a hardened staging boundary, not a dispatched public surface. Analysis detail
+  is `W1-06`'s and Run Again has no route, so `RCA-002` FR-049 withholds the destination and its
+  navigation link. No trust state is shown either: no bundle state is persisted for a live run,
+  and a tombstone is minimal (§7.3). The route stays withheld until both prerequisites exist.
 #}
 <section class="document-card" aria-labelledby="page-title">
   <h1 id="page-title">{{ copy.analyses_title }}</h1>
@@ -41,9 +42,20 @@
         <span class="row-state">{{ copy[row.state_key] }}</span>
       </p>
       <p class="spine-detail">
-        {% if row.data_submitted %}
-        <span class="row-label">{{ copy.spine_data_submitted }}</span>
-        <time datetime="{{ row.data_submitted.at }}" dir="ltr">{{ row.data_submitted.text }}</time>
+        {#
+          Which data entry the run used: a link to that entry's row on the Data surface, so two
+          entries submitted at the same instant are still two references. A deleted entry states
+          its instant and that it was deleted, with nothing to follow.
+        #}
+        {% if row.data and row.data.deleted %}
+        <span class="row-label">{{ copy.spine_data_deleted }}</span>
+        <time datetime="{{ row.data.submitted.at }}" dir="ltr">{{ row.data.submitted.text }}</time>
+        {% elif row.data %}
+        <a class="data-reference"
+           href="{{ prefix }}/{{ language }}/{{ organization_id }}/data#data-{{ row.data.anchor }}">
+          <span class="row-label">{{ copy.spine_data_submitted }}</span>
+          <time datetime="{{ row.data.submitted.at }}" dir="ltr">{{ row.data.submitted.text }}</time>
+        </a>
         {% endif %}
         <span class="row-state">{{ copy[row.report_key] }}</span>
         <span class="row-state">{{ copy[row.retention_key] }}</span>
