@@ -379,11 +379,11 @@ def test_an_inexact_or_unknown_detail_address_is_unavailable(tail: str) -> None:
         assert EN["unavailable_title"] in response.text
 
 
-def test_a_run_whose_journey_content_has_expired_keeps_its_record_and_loses_its_passport() -> None:
-    """The analysis session's content lives seven days (`R7-07`); after that the profile and
-    package the Passport is read from are no longer served. The run stays -- it is history -- but
-    the Passport says provenance is unavailable and no artifact is offered, rather than inventing
-    either (fail closed). The journey's own deletion ends the content the same way."""
+def test_a_run_whose_journey_content_has_expired_keeps_its_passport_but_not_its_handoff() -> None:
+    """`KHEPRI-DEC-033` §2: the provenance record lives with the run, so eight days on the
+    Passport still reads -- period, scale, outcomes. The analysis session's content is gone, so
+    no artifact is offered and the page says the report can no longer be opened rather than
+    offering a handoff that would refuse (`FR-049`; `W1-07` reconciles artifact retention)."""
     j = journey()
     who = member(j.w)
     run, _job, _session = completed_run(j, who)
@@ -391,8 +391,10 @@ def test_a_run_whose_journey_content_has_expired_keeps_its_record_and_loses_its_
 
     html = page(j, who, f"analyses/{run.run_id}")
 
-    assert EN["passport_unavailable"] in html
+    assert EN["passport_period"] in html and "2026-01-05" in html and ">4<" in html
+    assert EN["passport_unavailable"] not in html
     assert "<form" not in html
+    assert EN["artifacts_unreachable"] in html
     assert EN["run_state_completed"] in html
 
 
@@ -415,27 +417,24 @@ def test_no_template_but_detail_offers_an_artifact_and_none_names_the_report_api
 
 def test_the_groups_are_answered_without_caveat_then_caveated_then_refused() -> None:
     """A caveated analysis was still answered, so it appears in the caveated group and not in the
-    plain one; a refused analysis appears in the refused group and nowhere else. The words are the
-    report's own, in both languages."""
-    from khepri.rra.definitions import AnalysisQualitySummary
+    plain one; a refused analysis appears in the refused group and nowhere else. The codes are
+    `KHEPRI-DEC-033` §3's, retained with the run; the words are the report's own, in both
+    languages."""
+    from khepri.rca.workspace.tombstones import SectionStates
     from khepri.runtime.shell_analysis import trust_groups
 
-    quality = AnalysisQualitySummary(
-        answered=4,
-        caveated=1,
-        refused=1,
-        refusals=(("comparison", "coverage_incomplete"),),
-        refused_results=(),
-        caveats=("redaction",),
-        answered_sections=("overview", "concentration", "growth", "basket"),
-        caveated_sections=("basket",),
-        caveat_sections=(("redaction", "basket"),),
+    sections = SectionStates(
+        overview="answered",
+        comparison="refused",
+        concentration="answered",
+        growth="answered",
+        basket="caveated",
     )
 
     for language in ("en", "ar"):
         chrome = COMPONENT_CHROME[language]
         headings = SECTION_HEADINGS[language]
-        groups = {group.label: group.sections for group in trust_groups(quality, language)}
+        groups = {group.label: group.sections for group in trust_groups(sections, language)}
         assert groups == {
             chrome["quality_answered"]: tuple(
                 headings[s] for s in ("overview", "concentration", "growth")
@@ -482,3 +481,38 @@ def test_the_handoff_sets_no_cookie_when_the_bridge_will_not_resume() -> None:
     assert response.status_code == 404
     assert "set-cookie" not in response.headers
     assert EN["unavailable_title"] in response.text
+
+
+def test_the_handoff_refuses_a_run_whose_content_has_expired_and_sets_no_cookie() -> None:
+    """The handoff's rule is detail's rule: what the page will not offer, the route will not hand
+    off, so a stale address cannot resume a session whose content has ended (`FR-049`)."""
+    j = journey()
+    who = member(j.w)
+    run, _job, _session = completed_run(j, who)
+    j.clock.advance(timedelta(days=8))
+
+    response = shell_over(j, who).post(
+        handoff_address(who, run.run_id, "web"), follow_redirects=False
+    )
+
+    assert response.status_code == 404
+    assert "set-cookie" not in response.headers
+    assert EN["unavailable_title"] in response.text
+
+
+def test_the_handoff_redirect_carries_the_shells_security_headers() -> None:
+    """`FR-043`/`FR-045`: every shell response carries the security headers, and the handoff's
+    redirect is one -- the same set the journey entry's redirect carries (review on `#376`)."""
+    from khepri.rra.journey.security import SECURITY_HEADERS
+
+    j = journey()
+    who = member(j.w)
+    run, _job, _session = completed_run(j, who)
+
+    response = shell_over(j, who).post(
+        handoff_address(who, run.run_id, "web"), follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    for header, value in SECURITY_HEADERS.items():
+        assert response.headers[header] == value, header

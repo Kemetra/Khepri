@@ -40,8 +40,8 @@ from khepri.rca.workspace.contracts import (
     VersionLifecycle,
 )
 from khepri.rca.workspace.store import WorkspaceHistory
+from khepri.rca.workspace.tombstones import SectionStates
 from khepri.rra.bundle import ORDERED_SECTIONS
-from khepri.rra.definitions import AnalysisQualitySummary
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
 from khepri.runtime.shell_provenance import Provenance
@@ -208,17 +208,8 @@ class _StubProvenance:
             aggregate_scope="all-stores",
             attested_by="Operator",
             row_count=4,
-            quality=AnalysisQualitySummary(
-                answered=5,
-                caveated=0,
-                refused=0,
-                refusals=(),
-                refused_results=(),
-                caveats=(),
-                answered_sections=tuple(ORDERED_SECTIONS),
-                caveated_sections=(),
-                caveat_sections=(),
-            ),
+            sections=SectionStates(**dict.fromkeys(ORDERED_SECTIONS, "answered")),
+            reachable=True,
         )
 
 

@@ -95,24 +95,32 @@ def add_artifact_handoff_route(
 
 
 def _locate(services: Any, context: Any, run_id: str) -> Any:
-    """The provenance of a completed, fully bound run in the session's scope, or `None`.
+    """The provenance of a completed, fully bound, still-reachable run in the session's scope, or
+    `None`.
 
     Resolved through the same door the surfaces read under (`FR-042`): the scope comes from the
     session's organization, and the run must be in it. A run with no report has nothing to hand
-    off, whatever the address asks for.
+    off, whatever the address asks for; nor has one whose session can no longer be resumed.
     """
     owner_id = services.isolation.resolve_scope(context.account_id, context.organization_id)
     history = services.records.history_for_scope(owner_id)
-    run = next((r for r in history.runs if r.run_id == run_id), None)
+    run = _run_with_report(history, run_id)
     if run is None:
-        return None
-    bound = frozenset(b.surface for b in history.bindings if b.run_id == run_id)
-    if report_key(run, bound) != "report_available":
         return None
     version = next((v for v in history.versions if v.version_id == run.version_id), None)
     if version is None:
         raise UnrenderableRecord("A run names a version the history does not hold.")
-    return services.provenance.for_run(owner_id, run, version)
+    located = services.provenance.for_run(owner_id, run, version)
+    return located if located is not None and located.reachable else None
+
+
+def _run_with_report(history: Any, run_id: str) -> Any:
+    """The live run the address names, if its report is available (`report_key`'s rule)."""
+    run = next((r for r in history.runs if r.run_id == run_id), None)
+    if run is None:
+        return None
+    bound = frozenset(b.surface for b in history.bindings if b.run_id == run_id)
+    return run if report_key(run, bound) == "report_available" else None
 
 
 __all__ = ["ARTIFACT_TARGETS", "add_artifact_handoff_route"]

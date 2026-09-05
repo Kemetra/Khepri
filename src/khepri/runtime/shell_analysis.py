@@ -32,7 +32,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
-from khepri.rra.definitions import AnalysisQualitySummary
+from khepri.rca.workspace.schema import (
+    SECTION_STATE_ANSWERED,
+    SECTION_STATE_CAVEATED,
+    SECTION_STATE_REFUSED,
+    TOMBSTONE_SECTIONS,
+)
+from khepri.rca.workspace.tombstones import SectionStates, section_codes
 from khepri.rra.rendering.wording import COMPONENT_CHROME, SECTION_HEADINGS
 from khepri.rra.report_artifacts import REQUIRED_ARTIFACT_KINDS
 from khepri.runtime.shell_provenance import Provenance
@@ -47,6 +53,14 @@ from khepri.runtime.shell_workspace import (
 
 #: How a list of section names reads in each language: the Arabic comma, not the Latin one.
 _SEPARATORS = {"en": ", ", "ar": "، "}
+
+#: `KHEPRI-DEC-033` §3's three codes, in the order the groups are presented, each with the
+#: report chrome key that words it. No adjective of this shell's.
+_GROUP_LABELS = (
+    (SECTION_STATE_ANSWERED, "quality_answered"),
+    (SECTION_STATE_CAVEATED, "quality_caveated"),
+    (SECTION_STATE_REFUSED, "quality_refused"),
+)
 
 #: The artifacts detail may hand off, by the kind the address names, in the order they are offered:
 #: the report and its evidence to read, then the other formats -- the journey's report step groups
@@ -130,22 +144,19 @@ class DetailView:
     audit: AuditDetail
 
 
-def trust_groups(quality: AnalysisQualitySummary | None, language: str) -> tuple[TrustGroup, ...]:
-    """The report's grouping of its sections, worded in its own words; empty groups are omitted.
-
-    `answered_sections` includes the caveated ones (a caveated analysis was still answered), so
-    the plain group is the difference -- a set operation over identifiers the summary already made,
-    which computes nothing about the data.
+def trust_groups(sections: SectionStates | None, language: str) -> tuple[TrustGroup, ...]:
+    """The run's retained section outcomes, grouped and worded in the report's own words; empty
+    groups are omitted. The codes are `KHEPRI-DEC-033` §3's; the labels are the report component
+    chrome's (`RRA-012`) and the section names its headings (`RRA-011`). Nothing is computed.
     """
-    if quality is None:
+    if sections is None:
         return ()
     chrome = COMPONENT_CHROME[language]
     headings = SECTION_HEADINGS[language]
-    caveated = frozenset(quality.caveated_sections)
-    groups = (
-        ("quality_answered", [s for s in quality.answered_sections if s not in caveated]),
-        ("quality_caveated", list(quality.caveated_sections)),
-        ("quality_refused", [section for section, _reason in quality.refusals]),
+    codes = section_codes(sections)
+    groups = tuple(
+        (label, [s for s in TOMBSTONE_SECTIONS if codes[s] == code])
+        for code, label in _GROUP_LABELS
     )
     separator = _SEPARATORS[language]
     return tuple(
@@ -178,14 +189,16 @@ def detail_view(
     run, version = record.run, record.version
     bound = {binding.surface: binding.artifact_digest for binding in record.bindings}
     availability = report_key(run, frozenset(bound))
-    offers = availability == "report_available" and provenance is not None
+    # Offered only while the run's session can still be resumed: the handoff has nothing to hand
+    # off otherwise (`W1-07` reconciles artifact retention with the session's horizon).
+    offers = availability == "report_available" and bool(provenance and provenance.reachable)
     return DetailView(
         run_id=run.run_id,
         state_key=worded(RUN_STATE_COPY, run.state),
         started=moment(run.started_at),
         completed=None if run.completed_at is None else moment(run.completed_at),
         passport=_passport(version, run, provenance, prefix=prefix),
-        trust=trust_groups(None if provenance is None else provenance.quality, language),
+        trust=trust_groups(None if provenance is None else provenance.sections, language),
         quality_title=COMPONENT_CHROME[language]["quality_summary"],
         artifacts=_artifact_actions(offers),
         artifacts_key=_artifacts_key(run, availability, offers),

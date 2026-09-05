@@ -18,6 +18,7 @@ from khepri.rca.isolation import IsolationService
 from khepri.rca.persistence import SqlAccountStore
 from khepri.rca.session_cookie import SESSION_COOKIE
 from khepri.rca.workspace.contracts import AnalysisRun
+from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
 from khepri.runtime.bridge import CommercialBridge
 from khepri.runtime.shell_api import SHELL_PREFIX, ShellServices, add_shell_routes
@@ -37,10 +38,10 @@ def provenance(j: Journey) -> ProvenanceReader:
     """The composition-root read the detail surface is given, over the journey's own services."""
     return ProvenanceReader(
         ProvenanceSources(
+            provenance=SqlRunProvenanceStore(j.w.factory),
             reports=SqlRunReportStore(j.w.factory),
             jobs=j.reader,
-            profiling=j.w.profiling,
-            packages=j.w.packages,
+            sessions=j.w.sessions,
         ),
         clock=j.clock,
     )

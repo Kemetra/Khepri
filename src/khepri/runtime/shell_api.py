@@ -507,8 +507,8 @@ def _spine_trust(
         if run.state != RUN_COMPLETED:
             continue
         found = services.provenance.for_run(owner_id, run, versions[run.version_id])
-        if found is not None and found.quality is not None:
-            trust[run.run_id] = trust_groups(found.quality, language)
+        if found is not None:
+            trust[run.run_id] = trust_groups(found.sections, language)
     return trust
 
 

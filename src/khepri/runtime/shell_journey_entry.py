@@ -26,6 +26,7 @@ from fastapi import FastAPI, Response
 from fastapi.responses import RedirectResponse
 
 from khepri.rca.session_cookie import CommercialSessionCookie
+from khepri.rra.journey.security import SECURITY_HEADERS
 from khepri.rra.session_cookie import SESSION_COOKIE as BETA_SESSION_COOKIE
 from khepri.runtime.shell_invitations import ShellRendering
 
@@ -98,11 +99,14 @@ def add_journey_entry_route(
 
 
 def hand_off_session(response: Response, session_id: str) -> None:
-    """Set the beta cookie for one analysis session, with the one set of flags.
+    """Set the beta cookie for one analysis session, with the one set of flags -- and the shell's
+    security headers, which `FR-043` puts on every shell response and a redirect is one.
 
     Shared with the artifact handoff (`W1-06`): three routes now issue this cookie, and a weaker
-    set of flags on any of them would be a downgrade reachable by taking that route instead.
+    set of flags or headers on any of them would be a downgrade reachable by taking that route
+    instead (review on `#376`).
     """
+    response.headers.update(SECURITY_HEADERS)
     response.set_cookie(
         key=BETA_SESSION_COOKIE,
         value=session_id,

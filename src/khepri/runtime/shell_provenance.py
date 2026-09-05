@@ -1,40 +1,36 @@
-"""The provenance read behind Analysis detail (`W1-06`; `RCA-005` `FR-119`).
+"""The provenance read behind Analysis detail (`W1-06`; `RCA-005` `FR-119`; `KHEPRI-DEC-033` §2).
 
 ## What the Passport is read from
 
-A run and its version already bind, by digest, everything the Passport states: the version carries
-the coverage manifest's digest (`FR-109`, `KHEPRI-DEC-033` §3) and the run its package's
-(`FR-111`). This module reads the manifest and the package back from the session the run's job
-belongs to -- through `ProfilingService` and `FactPackageService`, the same instances the routes
-and the recorder use -- and **checks each against the digest the record holds before presenting a
-word of it**. A record is therefore provenance without a second copy of it: nothing is stored
-twice, and nothing is presented that the record does not vouch for.
+The run's **retained provenance record** (`rca/workspace/provenance.py`), written at completion in
+the completion's own transaction from the admission and the package the run binds: the attested
+period and its day boundary, the coverage scope, who attested, the admitted row count, and one
+governed state code per report section. It lives with the run, as `KHEPRI-DEC-033` gives the
+provenance record its own row -- so a Passport does not vanish when the analysis session's content
+ends on its seven-day horizon. An earlier draft read the admission and the package back through the
+session-gated services at render time; review on `#376` found that every otherwise-retained analysis
+would have lost its Passport on that timer.
+
+## What is still the session's
+
+The artifacts. `KHEPRI-DEC-033` retains them with the run, but today they are served by the report
+API under the analysis session's cookie, and the handoff resumes that session. So this read also
+answers whether the run's session can still be resumed (`reachable`), and detail offers an artifact
+only while it can. Reconciling artifact retention with the session's horizon is `W1-07`'s lifecycle
+work; this surface states the state it finds and offers nothing it cannot honour.
 
 ## Why this module is in `khepri.runtime`
 
-It reads `khepri.rca.workspace` (the run-to-report link) and `khepri.rra` (the job, the admission,
-the package). `R7-01` §3 forbids either package importing the other, so the composition layer is
-the one place that may hold both, beside `workspace_recording.py`, which records the argument.
-
-## The rebuild is admissible
-
-`ReportBundle.of(package)` is rebuilt from the stored package exactly as the catalog's
-package-scoped routes rebuild it (`report_api._session_bundle`), which `KHEPRI-DEC-032` reads as
-admissible because it publishes no figure. This module publishes none either: it asks the bundle
-which sections answered, which carried a caveat and which refused (`definitions.summarize`), and the
-surface words that through the report's own component chrome.
+It reads `khepri.rca.workspace` (the provenance record, the run-to-report link) and `khepri.rra`
+(the job, the session). `R7-01` §3 forbids either package importing the other, so the composition
+layer is the one place that may hold both.
 
 ## Three answers
 
-- **`Provenance`** -- the run's job settles it, its session's admission and package are present
-  and agree with the record.
-- **`None`** -- nothing to present, honestly: no job settles this run (a run the customer door
-  started and never queued), or the session's content is gone (the journey's own deletion, or
-  expiry). Detail says the provenance is unavailable and offers no artifact.
-- **`UnrenderableRecord`** -- the record and the session disagree: a manifest or package whose
-  digest is not the one the record binds, or a link to a job another scope owns. That is a corrupt
-  or substituted record, and the whole surface refuses (`FR-050`) rather than presenting a Passport
-  with one field quietly wrong.
+- **`Provenance`** -- the run is completed and its record is retained.
+- **`None`** -- the run is not completed yet; there is no provenance to state, honestly.
+- **`UnrenderableRecord`** -- a completed run without its record, or a link to a job another scope
+  owns: a corrupt record, which refuses the whole surface (`FR-050`).
 """
 
 from __future__ import annotations
@@ -45,14 +41,11 @@ from datetime import date, datetime
 from typing import Protocol
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED
+from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import SqlRunReportStore
-from khepri.rra.bundle import ReportBundle
-from khepri.rra.datasets import DatasetProfileRecord, ProfilingService, document_digest
-from khepri.rra.datasets import stored_manifest as _stored_manifest
-from khepri.rra.definitions import AnalysisQualitySummary, summarize
+from khepri.rca.workspace.tombstones import SectionStates
 from khepri.rra.jobs import ReportJob
-from khepri.rra.package_source import rebuild_fact_package
-from khepri.rra.packages import FactPackageService
+from khepri.rra.sessions import BetaSession
 from khepri.runtime.shell_workspace import UNRENDERABLE_FAILURE, UnrenderableRecord
 
 
@@ -60,123 +53,99 @@ class JobReaderPort(Protocol):
     def find(self, job_id: str) -> ReportJob | None: ...
 
 
+class SessionReaderPort(Protocol):
+    def get_session(self, session_id: str) -> BetaSession | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class Provenance:
-    """What Analysis detail presents for one run, read from what the run binds.
+    """What Analysis detail presents for one completed run.
 
-    `session_id` and `job_id` are the handoff's address (`ReportLocator`'s two identifiers) and
-    reach no template: the handoff route builds the report API's address from them in Python.
-    `quality` is `None` for a run that has no package yet -- a started run -- and never for a
-    completed one, whose package is checked against the run's digest before it is summarized.
+    `session_id` and `job_id` are the handoff's address and reach no template; both are `None` for
+    a run no job settled (one the customer door started and never queued). `reachable` says whether
+    that session can still be resumed, which is what an artifact handoff needs.
     """
 
-    session_id: str
-    job_id: str
+    session_id: str | None
+    job_id: str | None
     covered_start: date
     covered_end: date
     timezone: str
     aggregate_scope: str | None
     attested_by: str
     row_count: int
-    quality: AnalysisQualitySummary | None
+    sections: SectionStates
+    reachable: bool
 
 
 @dataclass(frozen=True, slots=True)
 class ProvenanceSources:
-    """Where a run's provenance is read from: the link to its job, the job, the admission, the
-    package -- the same `RRA` service instances the routes and the recorder use."""
+    """Where a run's provenance is read from: its retained record, its link to its job, the job,
+    and the job's session -- the last two for the handoff only."""
 
+    provenance: SqlRunProvenanceStore
     reports: SqlRunReportStore
     jobs: JobReaderPort
-    profiling: ProfilingService
-    packages: FactPackageService
+    sessions: SessionReaderPort
 
 
 class ProvenanceReader:
-    """Reads one run's Passport from the admission and package its record binds by digest."""
+    """Reads one run's Passport from the record it retained at completion."""
 
     def __init__(self, sources: ProvenanceSources, *, clock: Callable[[], datetime]) -> None:
-        self._reports = sources.reports
-        self._jobs = sources.jobs
-        self._profiling = sources.profiling
-        self._packages = sources.packages
+        self._sources = sources
         self._clock = clock
 
     @property
-    def profiling(self) -> ProfilingService:
-        return self._profiling
-
-    @property
-    def packages(self) -> FactPackageService:
-        return self._packages
+    def sources(self) -> ProvenanceSources:
+        return self._sources
 
     def for_run(self, owner_id: str, run: object, version: object) -> Provenance | None:
-        """The Passport for `run` over `version`, in `owner_id`'s scope -- or `None`, or a refusal.
-
-        `run` and `version` are the records the history read returned; they are trusted for their
-        digests and nothing read here is trusted until it matches one of them.
-        """
+        """The Passport for `run`, in `owner_id`'s scope -- or `None` before completion, or a
+        refusal for a completed run whose record is missing."""
+        record = self._sources.provenance.for_run(run.run_id, owner_id)
+        if record is None:
+            if run.state == RUN_COMPLETED:
+                raise UnrenderableRecord(UNRENDERABLE_FAILURE)
+            return None
         job = self._settling_job(owner_id, run)
-        if job is None:
-            return None
-        now = self._clock()
-        profile = self._admission(job.session_id, now)
-        if profile is None:
-            return None
-        manifest = _stored_manifest(profile)
-        if manifest is None or document_digest(manifest.as_document()) != version.manifest_digest:
-            raise UnrenderableRecord(UNRENDERABLE_FAILURE)
         return Provenance(
-            session_id=job.session_id,
-            job_id=job.job_id,
-            covered_start=manifest.covered_start,
-            covered_end=manifest.covered_end,
-            timezone=manifest.timezone,
-            aggregate_scope=manifest.aggregate_scope,
-            attested_by=manifest.attested_by,
-            row_count=profile.row_count,
-            quality=self._quality(job.session_id, run, now),
+            session_id=None if job is None else job.session_id,
+            job_id=None if job is None else job.job_id,
+            covered_start=record.covered_start,
+            covered_end=record.covered_end,
+            timezone=record.timezone,
+            aggregate_scope=record.aggregate_scope,
+            attested_by=record.attested_by,
+            row_count=record.row_count,
+            sections=record.sections,
+            reachable=job is not None and self._resumable(job.session_id),
         )
 
     def _settling_job(self, owner_id: str, run: object) -> ReportJob | None:
         """The job the run is settled by, in this scope. A link to another scope's job is a corrupt
         record, not an absence."""
-        job_id = self._reports.job_id_for_run(run.run_id, owner_id)
+        job_id = self._sources.reports.job_id_for_run(run.run_id, owner_id)
         if job_id is None:
             return None
-        job = self._jobs.find(job_id)
+        job = self._sources.jobs.find(job_id)
         if job is None or job.owner_id != owner_id:
             raise UnrenderableRecord(UNRENDERABLE_FAILURE)
         return job
 
-    def _admission(self, session_id: str, now: datetime) -> DatasetProfileRecord | None:
-        """The admission the session holds, or `None` once its content is gone."""
-        try:
-            return self._profiling.get_session_profile(session_id=session_id, now=now)
-        except PermissionError:
-            return None
-
-    def _quality(
-        self, session_id: str, run: object, now: datetime
-    ) -> AnalysisQualitySummary | None:
-        """The report's own grouping of what it answered and refused, for a completed run.
-
-        The package is rebuilt and checked against the run's digest first: a completed run whose
-        session holds a different package -- or none -- is a record that no longer vouches for what
-        it binds, and the surface refuses rather than summarizing another package.
-        """
-        if run.state != RUN_COMPLETED:
-            return None
-        try:
-            record = self._packages.get_session_package(session_id=session_id, now=now)
-        except PermissionError:
-            record = None
-        if record is None or record.package_digest != run.package_digest:
-            raise UnrenderableRecord(UNRENDERABLE_FAILURE)
-        package = rebuild_fact_package(record.document)
-        if package.digest != run.package_digest:
-            raise UnrenderableRecord(UNRENDERABLE_FAILURE)
-        return summarize(ReportBundle.of(package))
+    def _resumable(self, session_id: str) -> bool:
+        """Whether the analysis session's content is still live: present, not deleted, not past
+        `content_expires_at` -- the facts the bridge's resume and the report API read."""
+        session = self._sources.sessions.get_session(session_id)
+        if session is None or session.content_deleted_at is not None:
+            return False
+        return self._clock() < session.content_expires_at
 
 
-__all__ = ["JobReaderPort", "Provenance", "ProvenanceReader", "ProvenanceSources"]
+__all__ = [
+    "JobReaderPort",
+    "Provenance",
+    "ProvenanceReader",
+    "ProvenanceSources",
+    "SessionReaderPort",
+]

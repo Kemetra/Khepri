@@ -11,8 +11,10 @@ from khepri.rca.isolation import IsolationService
 from khepri.rca.recovery_security import RecoverySecurityService
 from khepri.rca.recovery_security_persistence import SqlRecoverySecurityEventStore
 from khepri.rca.workspace.persistence import SqlWorkspaceRecordStore
+from khepri.rca.workspace.provenance import SqlRunProvenanceStore
 from khepri.rra.artifact_publication import ReportArtifactPublisher
 from khepri.rra.envelope import MasterKey
+from khepri.rra.persistence import SqlSessionStore
 from khepri.rra.report_publication import QueuedReportRequestService
 from khepri.rra.report_services import DeliveredBundleAdapter, ReportArtifactAdapter
 from khepri.rra.storage import S3EncryptedObjectStore
@@ -241,17 +243,17 @@ def test_the_shell_reads_the_record_store_the_workspace_actions_write() -> None:
 
 
 def test_the_shell_reads_provenance_from_the_stacks_own_rra_services() -> None:
-    """`W1-06`: the Passport and the trust state are read from the admission and the package the
-    run binds by digest, through the same `ProfilingService` and `FactPackageService` instances
-    the routes and the recorder use -- one reading of each decision, as `W1-04` requires."""
+    """`W1-06`: the Passport and the trust state are read from the provenance record the run
+    retained at completion (`KHEPRI-DEC-033` §2) -- the same store class over the same factory the
+    recorder writes through -- and the handoff's session from the analysis session store."""
     stack = runtime_stack()
 
     shell = build_shell_services(stack)
 
     assert shell is not None
     assert isinstance(shell.provenance, ProvenanceReader)
-    assert shell.provenance.profiling is stack.services.profiling
-    assert shell.provenance.packages is stack.services.packages
+    assert isinstance(shell.provenance.sources.provenance, SqlRunProvenanceStore)
+    assert isinstance(shell.provenance.sources.sessions, SqlSessionStore)
     # The handoff resumes the run's own session through the bridge the entry route opens with.
     assert shell.bridge is not None
 

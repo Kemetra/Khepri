@@ -1,11 +1,17 @@
-"""`W1-06` -- the provenance read, one collaborator at a time (`RCA-005` `FR-119`).
+"""`W1-06` -- the provenance a run retains, and the read behind its Passport (`RCA-005` `FR-119`;
+`KHEPRI-DEC-033` §2).
 
-The Passport is read from what the version and run already bind by digest: the coverage manifest
-the admission recorded (`manifest_digest`) and the package the run was completed from
-(`package_digest`). Each read is checked against the record before a word of it is presented; a
-mismatch is a corrupt or substituted record and refuses the whole surface (`UnrenderableRecord`),
-never a Passport with one field quietly wrong. Absence -- the journey's content deleted -- is not
-corruption and reads as "unavailable".
+The Passport is read from the record the run retained at completion -- the attested period and day
+boundary, the coverage scope, who attested, the admitted row count, and each section's outcome --
+written in the completion's own transaction from the admission and the package the run binds. It
+lives with the run: the analysis session's content ends on its own horizon and the Passport does
+not end with it (review on `#376`). What is still the session's is the artifact handoff, which the
+read reports as `reachable` only while that session can be resumed.
+
+At completion the package is rebuilt and checked against its digest before a section outcome is
+recorded; a document that rebuilds to another package, or a digest that names another, is refused
+there and no provenance is written. A completed run without its record is a corrupt record and
+refuses the whole surface (`UnrenderableRecord`).
 """
 
 from __future__ import annotations
@@ -14,14 +20,18 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import delete
 
 from khepri.rca.workspace.contracts import RUN_COMPLETED, RUN_STARTED
-from khepri.rca.workspace.run_reports import RunReport, SqlRunReportStore
-from khepri.rra.rendering.wording import SECTION_HEADINGS
+from khepri.rca.workspace.persistence import RunProvenanceRow
+from khepri.rca.workspace.provenance import SqlRunProvenanceStore
+from khepri.rca.workspace.run_reports import RunReport
+from khepri.rca.workspace.tombstones import SectionStates
+from khepri.runtime.run_quality import PackageDoesNotVerify, section_states_of
 from khepri.runtime.shell_provenance import Provenance, ProvenanceReader, ProvenanceSources
 from khepri.runtime.shell_workspace import UnrenderableRecord
 from tests.w104_support import OTHER_CSV, member
-from tests.w104b_support import commercial_client, journey, submit
+from tests.w104b_support import commercial_client, journey, request_report, submit
 from tests.w106_support import completed_run, provenance, started_run
 
 
@@ -31,7 +41,10 @@ def _run_and_version(j, who):
     return run, version
 
 
-def test_a_completed_run_reads_its_period_scale_and_quality_from_what_it_binds() -> None:
+# --- The record a completed run retains -----------------------------------------------------------
+
+
+def test_completion_retains_the_period_scale_and_section_outcomes_with_the_run() -> None:
     j = journey()
     who = member(j.w)
     _run, job_id, session_id = completed_run(j, who)
@@ -40,105 +53,77 @@ def test_a_completed_run_reads_its_period_scale_and_quality_from_what_it_binds()
     found = provenance(j).for_run(who.owner_id, run, version)
 
     assert isinstance(found, Provenance)
-    assert found.job_id == job_id and found.session_id == session_id
+    assert found.job_id == job_id and found.session_id == session_id and found.reachable
     assert (found.covered_start.isoformat(), found.covered_end.isoformat()) == (
         "2026-01-05",
         "2026-01-07",
     )
     assert found.timezone == "Africa/Cairo" and found.row_count == 4
-    assert found.quality is not None
-    # The summary is the report's own grouping: every section is answered or refused, none both.
-    sections = set(found.quality.answered_sections) | {s for s, _ in found.quality.refusals}
-    assert sections == set(SECTION_HEADINGS["en"])
+    # Every governed section has one of the three codes; the record is what the store holds.
+    assert isinstance(found.sections, SectionStates)
+    retained = SqlRunProvenanceStore(j.w.factory).for_run(run.run_id, who.owner_id)
+    assert retained is not None and retained.sections == found.sections
     assert run.state == RUN_COMPLETED
 
 
-def test_a_started_run_has_its_period_but_no_quality_yet() -> None:
+def test_a_started_run_has_no_passport_yet() -> None:
+    """Provenance is a fact about a completed derivation; before completion there is nothing to
+    state, and the reader says so with `None` rather than a Passport of a run that has not run."""
     j = journey()
     who = member(j.w)
     started_run(j, who)
     run, version = _run_and_version(j, who)
 
-    found = provenance(j).for_run(who.owner_id, run, version)
-
     assert run.state == RUN_STARTED
-    assert found is not None and found.quality is None
-    assert found.row_count == 4
-
-
-def test_a_run_no_job_settles_has_no_provenance() -> None:
-    """A run started through the customer door (`W1-04`) and never queued has no job, no session
-    to read an admission from, and so no Passport: `None`, not a guess."""
-    from tests.w105_support import admitted_version
-
-    j = journey()
-    who = member(j.w)
-    _session, version_id = admitted_version(j.w, who)
-    run = j.w.services.start_analysis_run(who.caller, version_id=version_id, now=j.clock())
-    version = j.w.store.get_dataset_version(version_id, who.owner_id)
-
     assert provenance(j).for_run(who.owner_id, run, version) is None
 
 
-def test_expired_journey_content_reads_as_unavailable_not_as_corruption() -> None:
-    """Seven days after the analysis session opened its content is no longer served (`R7-07`);
-    the run keeps its record, and the reader answers absence, not a refusal."""
+def test_the_passport_outlives_the_sessions_content_but_the_handoff_does_not() -> None:
+    """`KHEPRI-DEC-033` §2: the provenance record lives with the run; the analysis session's
+    content ends on its seven-day horizon. After it the Passport is still read, and `reachable`
+    says the artifacts cannot be handed off -- `W1-07` reconciles artifact retention."""
     j = journey()
     who = member(j.w)
     completed_run(j, who)
     run, version = _run_and_version(j, who)
     j.clock.advance(timedelta(days=8))
 
-    assert provenance(j).for_run(who.owner_id, run, version) is None
+    found = provenance(j).for_run(who.owner_id, run, version)
+
+    assert found is not None
+    assert found.row_count == 4 and found.covered_start.isoformat() == "2026-01-05"
+    assert found.reachable is False
 
 
-class _Corrupt:
-    """A version or run whose recorded digest disagrees with what the session holds."""
+def test_a_run_completed_through_the_customer_door_retains_provenance_but_has_no_report():
+    """The customer door completes a run from the same admission and package, so the record is
+    retained; with no job settling it there is no session to resume and nothing to hand off."""
+    from tests.w105_support import completed_run as customer_completed
 
-    def __init__(self, record, **fields) -> None:
-        self._record = record
-        self._fields = fields
+    j = journey()
+    who = member(j.w)
+    _session, _version, run_id = customer_completed(j.w, who)
+    run = j.w.store.get_analysis_run(run_id, who.owner_id)
+    version = j.w.store.get_dataset_version(run.version_id, who.owner_id)
 
-    def __getattr__(self, name):
-        if name in self._fields:
-            return self._fields[name]
-        return getattr(self._record, name)
+    found = provenance(j).for_run(who.owner_id, run, version)
+
+    assert found is not None and found.row_count == 4
+    assert found.job_id is None and found.session_id is None and found.reachable is False
 
 
-def test_a_manifest_that_does_not_match_the_versions_digest_refuses_the_surface() -> None:
+def test_a_completed_run_without_its_record_refuses_the_surface() -> None:
+    """A completed run always retains its provenance (the same transaction writes both), so a
+    completed run without one is a corrupt record, not an absence to render around."""
     j = journey()
     who = member(j.w)
     completed_run(j, who)
     run, version = _run_and_version(j, who)
+    with j.w.factory.begin() as database:
+        database.execute(delete(RunProvenanceRow).where(RunProvenanceRow.run_id == run.run_id))
 
     with pytest.raises(UnrenderableRecord):
-        provenance(j).for_run(
-            who.owner_id, run, _Corrupt(version, manifest_digest="sha256:" + "0" * 64)
-        )
-
-
-def test_a_package_that_does_not_match_the_runs_digest_refuses_the_surface() -> None:
-    j = journey()
-    who = member(j.w)
-    completed_run(j, who)
-    run, version = _run_and_version(j, who)
-
-    with pytest.raises(UnrenderableRecord):
-        provenance(j).for_run(
-            who.owner_id, _Corrupt(run, package_digest="sha256:" + "0" * 64), version
-        )
-
-
-def test_another_scopes_run_has_no_provenance_here() -> None:
-    """The link store filters by scope, so another scope's run has no job *here*: an absence,
-    which the surface turns into `unavailable` because the run is not in its history either."""
-    j = journey()
-    who = member(j.w)
-    other = member(j.w, email="other@example.test", name="Other")
-    completed_run(j, who)
-    run, version = _run_and_version(j, who)
-
-    assert provenance(j).for_run(other.owner_id, run, version) is None
+        provenance(j).for_run(who.owner_id, run, version)
 
 
 class _LinkTo:
@@ -161,65 +146,58 @@ def test_a_link_to_a_job_of_another_scope_refuses_the_surface() -> None:
     who = member(j.w)
     other = member(j.w, email="other@example.test", name="Other")
     _run, job_id, _session = completed_run(j, who)
-    run, version = _run_and_version(j, who)
+    other_client, _other_session = commercial_client(j, other)
+    submit(other_client, OTHER_CSV)
+    j.run_job(request_report(other_client))
+    (other_run,) = j.w.store.analysis_runs_for_scope(other.owner_id)
+    (other_version,) = j.w.store.dataset_versions_for_scope(other.owner_id)
     reader = ProvenanceReader(
         ProvenanceSources(
+            provenance=SqlRunProvenanceStore(j.w.factory),
             reports=_LinkTo(job_id),
             jobs=j.reader,
-            profiling=j.w.profiling,
-            packages=j.w.packages,
+            sessions=j.w.sessions,
         ),
         clock=j.clock,
     )
 
     with pytest.raises(UnrenderableRecord):
-        reader.for_run(other.owner_id, run, version)
+        reader.for_run(other.owner_id, other_run, other_version)
 
 
-class _PackagesAnswering:
-    """A package reader that answers one record for any session -- the doubles the two digest
-    checks need, because each guards a corruption the other cannot see."""
-
-    def __init__(self, record) -> None:
-        self._record = record
-
-    def get_session_package(self, *, session_id: str, now):
-        return self._record
-
-
-def _reader_with_packages(j, packages) -> ProvenanceReader:
-    return ProvenanceReader(
-        ProvenanceSources(
-            reports=SqlRunReportStore(j.w.factory),
-            jobs=j.reader,
-            profiling=j.w.profiling,
-            packages=packages,
-        ),
-        clock=j.clock,
-    )
-
-
-def test_a_stored_digest_that_does_not_name_the_runs_package_refuses_before_any_rebuild() -> None:
-    """The record's own digest is the first check: a stored package whose digest is not the one
-    the run binds is refused without rebuilding it, as the catalog refuses it."""
+def test_another_scopes_run_has_no_record_here() -> None:
+    """The provenance store filters by scope, so another scope's completed run reads as a
+    completed run without a record -- refused, never rendered under the wrong organization."""
     j = journey()
     who = member(j.w)
-    _run, _job, session_id = completed_run(j, who)
+    other = member(j.w, email="other@example.test", name="Other")
+    completed_run(j, who)
     run, version = _run_and_version(j, who)
-    genuine = j.w.packages.get_session_package(session_id=session_id, now=j.clock())
-    tampered = replace(genuine, package_digest="sha256:" + "1" * 64)
 
     with pytest.raises(UnrenderableRecord):
-        _reader_with_packages(j, _PackagesAnswering(tampered)).for_run(who.owner_id, run, version)
+        provenance(j).for_run(other.owner_id, run, version)
 
 
-def test_a_document_that_rebuilds_to_another_package_refuses_even_when_its_digest_agrees() -> None:
-    """The second check is the rebuild: a record whose stored digest matches the run but whose
-    document is another package's is a substitution the first check cannot see."""
+# --- The section outcomes are read from a package that verifies -----------------------------------
+
+
+def test_the_section_outcomes_come_from_a_package_that_matches_its_own_digest() -> None:
     j = journey()
     who = member(j.w)
     _run, _job, session_id = completed_run(j, who)
-    run, version = _run_and_version(j, who)
+    record = j.w.packages.get_session_package(session_id=session_id, now=j.clock())
+
+    states = section_states_of(record)
+
+    assert isinstance(states, SectionStates)
+    with pytest.raises(PackageDoesNotVerify):
+        section_states_of(replace(record, package_digest="sha256:" + "1" * 64))
+
+
+def test_a_document_that_rebuilds_to_another_package_is_refused_under_the_right_digest() -> None:
+    j = journey()
+    who = member(j.w)
+    _run, _job, session_id = completed_run(j, who)
     other = member(j.w, email="other@example.test", name="Other")
     other_client, other_session = commercial_client(j, other)
     submit(other_client, OTHER_CSV)
@@ -227,9 +205,97 @@ def test_a_document_that_rebuilds_to_another_package_refuses_even_when_its_diges
     assert facts.status_code == 201, facts.text
     genuine = j.w.packages.get_session_package(session_id=session_id, now=j.clock())
     foreign = j.w.packages.get_session_package(session_id=other_session, now=j.clock())
-    substituted = replace(genuine, document=foreign.document)
 
-    with pytest.raises(UnrenderableRecord):
-        _reader_with_packages(j, _PackagesAnswering(substituted)).for_run(
-            who.owner_id, run, version
+    with pytest.raises(PackageDoesNotVerify):
+        section_states_of(replace(genuine, document=foreign.document))
+
+
+def test_a_run_whose_session_content_was_deleted_keeps_its_passport_but_is_not_reachable() -> None:
+    """Deletion ends the session's content before its horizon does; the Passport stays and the
+    handoff is withdrawn, exactly as after expiry."""
+    from khepri.rra.persistence import BetaSessionRow
+
+    j = journey()
+    who = member(j.w)
+    _run, _job, session_id = completed_run(j, who)
+    run, version = _run_and_version(j, who)
+    with j.w.factory.begin() as database:
+        row = database.get(BetaSessionRow, session_id)
+        row.deletion_requested_at = j.clock()
+        row.content_deleted_at = j.clock()
+
+    found = provenance(j).for_run(who.owner_id, run, version)
+
+    assert found is not None and found.row_count == 4
+    assert found.reachable is False
+
+
+def test_completion_refuses_a_profile_that_carries_no_attestation() -> None:
+    """A version exists only for an attested source, so a profile without its manifest at
+    completion is a record the session no longer vouches for -- refused, nothing recorded."""
+    from khepri.runtime.workspace_recording import (
+        NO_ATTESTATION_FAILURE,
+        WorkspaceRefused,
+        _provenance_of,
+    )
+
+    j = journey()
+    who = member(j.w)
+    _run, _job, session_id = completed_run(j, who)
+    run, _version = _run_and_version(j, who)
+    profile = j.w.profiling.get_session_profile(session_id=session_id, now=j.clock())
+    package = j.w.packages.get_session_package(session_id=session_id, now=j.clock())
+    stripped = replace(
+        profile, document={k: v for k, v in profile.document.items() if k != "coverage_manifest"}
+    )
+
+    assert _provenance_of(run, profile, package).row_count == 4
+    with pytest.raises(WorkspaceRefused, match=NO_ATTESTATION_FAILURE):
+        _provenance_of(run, stripped, package)
+
+
+def test_each_sections_outcome_is_stated_as_its_own_code(monkeypatch) -> None:
+    """The translation to `KHEPRI-DEC-033` §3: a caveated section is `caveated` (it answered, and
+    was qualified), a refused one is `refused`, the rest `answered`; a bundle that does not name
+    every governed section exactly once is refused rather than recorded with a gap."""
+    from khepri.rra.definitions import AnalysisQualitySummary
+    from khepri.runtime import run_quality
+
+    def _summary(answered: tuple[str, ...], caveated: tuple[str, ...], refused: tuple[str, ...]):
+        return AnalysisQualitySummary(
+            answered=len(answered),
+            caveated=len(caveated),
+            refused=len(refused),
+            refusals=tuple((s, "coverage_incomplete") for s in refused),
+            refused_results=(),
+            caveats=("chart_not_drawn",) if caveated else (),
+            answered_sections=answered,
+            caveated_sections=caveated,
+            caveat_sections=tuple(("chart_not_drawn", s) for s in caveated),
         )
+
+    j = journey()
+    who = member(j.w)
+    _run, _job, session_id = completed_run(j, who)
+    record = j.w.packages.get_session_package(session_id=session_id, now=j.clock())
+    monkeypatch.setattr(
+        run_quality,
+        "summarize",
+        lambda bundle: _summary(
+            ("overview", "concentration", "growth", "basket"), ("basket",), ("comparison",)
+        ),
+    )
+
+    assert section_states_of(record) == SectionStates(
+        overview="answered",
+        comparison="refused",
+        concentration="answered",
+        growth="answered",
+        basket="caveated",
+    )
+
+    monkeypatch.setattr(
+        run_quality, "summarize", lambda bundle: _summary(("overview", "growth"), (), ())
+    )
+    with pytest.raises(PackageDoesNotVerify):
+        section_states_of(record)

@@ -418,7 +418,8 @@ class TestTheMigration:
         column on both storage tables. `W1-02` then added `20260904_0021`, the `RCA-005`
         workspace tables. `W1-04` then added `20260905_0022`, the workspace audit event table
         (`FR-125`). `W1-04b` then added `20260905_0023`, the run-to-report link the worker
-        settles a run through, and is the head this pin now names.
+        settles a run through. `W1-06` then added `20260905_0024`, the provenance record a
+        completed run retains, and is the head this pin now names.
         """
         import subprocess
 
@@ -427,7 +428,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260905_0023" in result.stdout
+        assert "20260905_0024" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:
