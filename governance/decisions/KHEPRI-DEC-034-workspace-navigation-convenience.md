@@ -1,9 +1,7 @@
 # KHEPRI-DEC-034: Workspace navigation convenience — pins and recent activity
 
-> **PROPOSED.** Under Constitution II a change is proposed while it exists only on a branch or pull
-> request, and becomes governing when the sole owner merges it. This document is drafted for the
-> owner's decision and is **not** approved by its own existence. It was drafted by automation, which
-> checks facts and consistency and does not approve changes (Constitution I).
+> **ACTIVE.** Approved by the owner's merge of `#386` on 2026-09-06 (`1d8c5de`), which is what
+> Constitution II makes an approval. The registry row is authoritative for its state.
 
 ## Context
 
