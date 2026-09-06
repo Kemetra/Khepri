@@ -41,6 +41,7 @@ from khepri.rca.workspace.schema import (
     DELETE_FAILURE,
     GOVERNED_SECTION_STATE_CODES,
     MUTABLE_COLUMNS,
+    PIN_KINDS,
     PROFILE_IDENTITY_COLUMNS,
     PROFILE_IDENTITY_FAILURE,
     RECOMPLETE_FAILURE,
@@ -63,6 +64,7 @@ from khepri.rca.workspace.schema import (
     DatasetVersionRow,
     RunProvenanceRow,
     SourceProfileRow,
+    WorkspacePinRow,
     WorkspaceTombstoneRow,
 )
 from khepri.rca.workspace.store import SqlWorkspaceRecordStore, WorkspaceHistory
@@ -92,6 +94,7 @@ __all__ = [
     "RESEAL_FAILURE",
     "TOMBSTONE_FAILURE",
     "MUTABLE_COLUMNS",
+    "PIN_KINDS",
     "RETENTION_ACTIVE",
     "RETENTION_STATES",
     "RETENTION_STATE_FAILURE",
@@ -105,4 +108,5 @@ __all__ = [
     "SqlRunProvenanceStore",
     "SqlRunReportStore",
     "SqlWorkspaceRecordStore",
+    "WorkspacePinRow",
 ]

@@ -84,6 +84,11 @@ RCA_REVISIONS = (
     # because this creates no table -- which `test_every_rca_table_in_the_models_is_named_here`
     # checks rather than leaves assumed.
     ("20260906_0028", "rca_workspace_sweep_audit", "20260906_0027"),
+    # `W1-09`'s pin table (`FR-128`, `KHEPRI-DEC-034` §1). Unlike `0026` and `0028`, which rewrote
+    # a CHECK on an existing table, this one *creates* a table -- so `RCA_TABLES` gains a member
+    # alongside it, which `test_every_rca_table_in_the_models_is_named_here` checks by equality
+    # rather than leaving assumed. The middle element is this revision file's own slug.
+    ("20260906_0029", "rca_workspace_pins", "20260906_0028"),
 )
 # The revision that backfilled `rca_membership_events` from the attribution columns. Tests that
 # insert `changed_by`/`changed_at` must stop here: `20260814_0014` drops those columns, so running
@@ -114,6 +119,8 @@ RCA_TABLES = {
     "rca_workspace_run_provenance",
     # `W1-07a`'s revocation ledger, so `FR-126` survives an upgrade and is dropped on downgrade.
     "rca_workspace_revocations",
+    # `W1-09`'s pin table (`FR-128`).
+    "rca_workspace_pins",
 }
 
 
