@@ -215,6 +215,15 @@ artifacts:
       - KHEPRI-DEC-015
       - RRA-002
 
+  - type: decision
+    id: KHEPRI-DEC-034
+    state: active
+    document: governance/decisions/KHEPRI-DEC-034-workspace-navigation-convenience.md
+    depends_on:
+      - KHEPRI-DEC-015
+      - KHEPRI-DEC-033
+      - RCA-005
+
   - type: specification
     id: FND-001
     state: active
