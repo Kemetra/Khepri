@@ -111,6 +111,31 @@ def cascade_to_pins(database, version: DatasetVersionRow) -> None:
 
 
 
+def _object_is_live(database, object_id: str, object_kind: str, *, owner_id: str) -> bool:
+    """Whether this scope holds a live object of that kind under that identifier.
+
+    Read inside the caller's transaction, so the answer comes from the same instant as the insert
+    it gates. Narrowed by `owner_id` as everything here is: an object in another scope is not
+    findable, which is what keeps a fabricated pin and a cross-scope pin indistinguishable to the
+    caller.
+
+    Retention state is checked as well as existence -- pinning a version the customer has already
+    deleted would create the same unendable row, since the cascade that would have removed it has
+    already run.
+    """
+    row_class = DatasetVersionRow if object_kind == PIN_KIND_VERSION else AnalysisRunRow
+    identifier = (
+        DatasetVersionRow.version_id if object_kind == PIN_KIND_VERSION else AnalysisRunRow.run_id
+    )
+    found = database.scalars(
+        select(identifier)
+        .where(identifier == object_id)
+        .where(row_class.owner_id == owner_id)
+        .where(row_class.retention_state == RETENTION_ACTIVE)
+    ).first()
+    return found is not None
+
+
 class PinReads:
     """The pin and recency methods `SqlWorkspaceRecordStore` composes.
 
@@ -138,6 +163,20 @@ class PinReads:
         if object_kind not in PIN_KINDS:
             raise ValueError(PIN_KIND_FAILURE)
         with writing(self._factory) as database:
+            if not _object_is_live(database, object_id, object_kind, owner_id=owner_id):
+                # **Silently, and the silence is the requirement.** `KHEPRI-DEC-034` §1 ends a pin
+                # when "the object ends, or the pin is removed, or the organization ends" -- so a
+                # pin naming an object that never existed has no end trigger that can ever fire,
+                # and `cascade_to_pins` only reaches rows whose version is tombstoned. It would be
+                # a retained row outside the matrix this decision authorizes.
+                #
+                # Refused by returning rather than raising, because the alternative turns this
+                # address into an existence probe: a caller who could tell "pinned" from "refused"
+                # could ask whether an opaque identifier belongs to another organization, one
+                # guess at a time. That is what `FR-050`'s uniform answer exists to prevent, and
+                # it is the property this method's own docstring claims. A repeat and a fabricated
+                # identifier now take the same path and produce the same response.
+                return
             try:
                 with database.begin_nested():
                     database.add(

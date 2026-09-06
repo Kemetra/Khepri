@@ -26,8 +26,14 @@ from tests.w107_support import NOW, deletion_service, journey, sealed_version
 
 
 def _restored(j, who) -> object:
-    """A version this scope deleted, then put back live beneath the ORM by a restore."""
+    """A version this scope deleted, then put back live beneath the ORM by a restore.
+
+    The version is **pinned before the deletion** (`W1-09`), so `pins_for_scope` in the extent
+    test below is answering a real question. Without the pin it returned `()` whether or not
+    `cascade_to_pins` existed -- a test that could not fail, which review on `#390` found.
+    """
     version, _run = sealed_version(j, who, with_run=True)
+    j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
     deletion_service(j).delete_version(
         who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
     )

@@ -186,7 +186,14 @@ class TestTheExclusionsStand:
         Constitution III makes the registry authoritative, and `AGENTS.md` says to answer "is X
         approved?" from the registry `state`, never from prose or green CI.
         """
-        registry = yaml.safe_load(Path("governance/registry.yaml").read_text(encoding="utf-8"))
+        # Anchored to the repository root rather than the process working directory, following
+        # `test_governance_validator.py` and `test_portable_storage_boundary.py`: pytest may run
+        # from elsewhere, and a CWD-relative read then raises `FileNotFoundError` instead of
+        # answering the question. Review on `#390`.
+        root = Path(__file__).resolve().parents[1]
+        registry = yaml.safe_load(
+            (root / "governance" / "registry.yaml").read_text(encoding="utf-8")
+        )
         states = {
             entry["id"]: entry["state"]
             for entry in registry["artifacts"]

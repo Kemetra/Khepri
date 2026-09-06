@@ -241,3 +241,83 @@ class TestTheStoreVerbs:
         j.w.store.unpin(mine.version_id, owner_id=other.owner_id)
 
         assert len(j.w.store.pins_for_scope(who.owner_id)) == 1
+
+
+class TestWhatMayBePinned:
+    """`KHEPRI-DEC-034` §1's end trigger is what makes this a requirement rather than tidiness.
+
+    The matrix ends a pin when "the object ends, or the pin is removed, or the organization ends".
+    A pin naming an object that never existed has **no end trigger that can ever fire** --
+    `cascade_to_pins` only reaches rows whose version is tombstoned -- so it would be a retained
+    row outside the matrix the decision authorizes. Found by review on `#390`.
+    """
+
+    def test_a_fabricated_identifier_pins_nothing(self) -> None:
+        j = journey()
+        who = member(j.w)
+
+        j.w.store.pin("dsv-never-existed", "dataset_version", owner_id=who.owner_id, now=NOW)
+
+        assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+    def test_an_object_of_the_wrong_kind_pins_nothing(self) -> None:
+        """A real version identifier offered as an analysis run. Both kinds resolve against their
+        own table, so the identifier exists and still finds nothing."""
+        j = journey()
+        who = member(j.w)
+        version, _ = sealed_version(j, who)
+
+        j.w.store.pin(version.version_id, "analysis_run", owner_id=who.owner_id, now=NOW)
+
+        assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+    def test_another_scopes_object_pins_nothing(self) -> None:
+        """The isolation half. A caller holding another organization's opaque identifier must not
+        be able to pin it -- and must not be able to tell that it exists."""
+        j = journey()
+        who = member(j.w)
+        other = member(j.w, email="other@example.test", name="Other")
+        theirs, _ = sealed_version(j, other)
+
+        j.w.store.pin(theirs.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
+
+        assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+    def test_a_deleted_object_pins_nothing(self) -> None:
+        """Pinning a version the customer already deleted would create the same unendable row: the
+        cascade that would have removed the pin has already run."""
+        j = journey()
+        who = member(j.w)
+        version, _ = sealed_version(j, who)
+        j.w.store.set_retention_state(
+            version.version_id, RETENTION_TOMBSTONED, now=NOW, owner_id=who.owner_id
+        )
+
+        j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=LATER)
+
+        assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+    def test_a_refusal_is_indistinguishable_from_a_repeat(self) -> None:
+        """**The reason this refuses by returning rather than raising.**
+
+        If a caller could tell "pinned" from "refused", the pin address would be an existence
+        probe: ask whether an opaque identifier belongs to another organization, one guess at a
+        time. `FR-050`'s uniform answer exists to prevent exactly that, and `shell_pins.py`'s
+        docstring claims this property -- so it gets an assertion rather than a comment.
+
+        Both calls return `None` and raise nothing. The only observable difference is the scope's
+        own pin list, which the caller was entitled to read anyway.
+        """
+        j = journey()
+        who = member(j.w)
+        version, _ = sealed_version(j, who)
+        j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
+
+        repeat = j.w.store.pin(
+            version.version_id, "dataset_version", owner_id=who.owner_id, now=LATER
+        )
+        fabricated = j.w.store.pin(
+            "dsv-never-existed", "dataset_version", owner_id=who.owner_id, now=LATER
+        )
+
+        assert repeat is None and fabricated is None

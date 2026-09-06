@@ -793,9 +793,14 @@ class TestTheExclusionsStand:
         approved?" from the registry `state` and never from prose or green CI. So that is what is
         read here: both decisions `active`, which is the fact this slice's authority rests on.
         """
+        from pathlib import Path
+
         import yaml
 
-        registry = yaml.safe_load(Path("governance/registry.yaml").read_text(encoding="utf-8"))
+        root = Path(__file__).resolve().parents[1]
+        registry = yaml.safe_load(
+            (root / "governance" / "registry.yaml").read_text(encoding="utf-8")
+        )
         states = {
             entry["id"]: entry["state"]
             for entry in registry["artifacts"]

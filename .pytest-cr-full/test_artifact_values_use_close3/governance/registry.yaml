@@ -1,0 +1,13 @@
+schema_version: 2
+artifacts:
+- type: family
+  id: FND
+  state: active
+  document: governance/families/FND.md
+  depends_on: FND-001
+- type: specification
+  id: FND-001
+  state: active
+  document: governance/specifications/FND-001.md
+  depends_on:
+  - FND
