@@ -67,6 +67,49 @@
   {% endif %}
 
   {#
+    `W1-09` (`FR-128`/`FR-129`), under active `KHEPRI-DEC-034`.
+
+    Both regions render whether or not they hold rows, unlike attention: an empty "Pinned" tells a
+    reader the capability exists and how to use it, where an empty "no issues" panel would be
+    reassurance nobody asked for (§7.1).
+
+    **No count anywhere.** `KHEPRI-DEC-034` §2 refuses counting and ranking, and
+    `test_overview_carries_no_figure` already asserts the rendered text holds no digit outside a
+    `<time>` -- so "3 pinned" would fail a test that predates this slice. Order is carried by the
+    list, never numbered.
+
+    Neither region says anything about expiry: §5's caution, and the retention notice below is the
+    one place this surface speaks about retention at all.
+  #}
+  <h2 class="region-label">{{ copy.pinned_title }}</h2>
+  {% if view.pinned %}
+  <ul class="pinned-list">
+    {% for item in view.pinned %}
+    <li class="pinned-item">
+      <span class="row-state">{{ copy[item.kind_key] }}</span>
+      <time datetime="{{ item.at.at }}" dir="ltr">{{ item.at.text }}</time>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ copy.pinned_empty }}</p>
+  {% endif %}
+
+  <h2 class="region-label">{{ copy.recent_title }}</h2>
+  {% if view.recent %}
+  <ul class="recent-list">
+    {% for item in view.recent %}
+    <li class="recent-item">
+      <span class="row-state">{{ copy[item.kind_key] }}</span>
+      <time datetime="{{ item.at.at }}" dir="ltr">{{ item.at.text }}</time>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">{{ copy.recent_empty }}</p>
+  {% endif %}
+
+  {#
     The one dominant action (§7.1), posting to `R8-06`'s route exactly as the chooser's active row
     does. Offered only when a bridge is wired: a form whose every submission the shell refuses
     reads as a fault, not as a capability nobody installed.

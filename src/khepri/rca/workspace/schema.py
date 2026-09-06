@@ -417,6 +417,7 @@ RESEAL_FAILURE = "A sealed version cannot be sealed again."
 RECOMPLETE_FAILURE = "A run that has left the started state cannot be completed again."
 DELETE_FAILURE = "A workspace record is removed through its retention lifecycle, not deleted."
 PROFILE_IDENTITY_FAILURE = "a source profile's identity and isolation scope cannot be reassigned"
+PIN_KIND_FAILURE = "A pin's object kind is not one of the kinds this domain defines."
 TOMBSTONE_IMMUTABLE_FAILURE = "a deletion record cannot be rewritten"
 AUDIT_IMMUTABLE_FAILURE = "an audit event cannot be rewritten"
 TOMBSTONED_FROZEN_FAILURE = "a tombstoned record accepts no further update"
@@ -892,6 +893,52 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
     _check_append_only(target, changed)
 
 
+#: The two object kinds a pin may name (`KHEPRI-DEC-034` §1). A closed set, so a third kind cannot
+#: arrive without a migration widening the CHECK alongside it.
+#:
+#: **Deliberately not `audit.py`'s `OBJECT_VERSION`/`OBJECT_RUN`.** Those spell the same two things
+#: `version` and `run` for a *content-free audit record* under `KHEPRI-DEC-015` §7; these name the
+#: objects a customer sees on a workspace surface. Reusing the audit vocabulary here would tie a
+#: presentation label to a governed evidence vocabulary, so widening one would silently widen the
+#: other -- and `FR-128` puts a pin outside the governed actions entirely. `W1-09`'s recency view
+#: uses these same two constants, so a pin and a recent item name one kind one way.
+PIN_KIND_VERSION = "dataset_version"
+PIN_KIND_RUN = "analysis_run"
+PIN_KINDS: tuple[str, ...] = (PIN_KIND_VERSION, PIN_KIND_RUN)
+
+
+class WorkspacePinRow(Base):
+    """One owner's mark on one object, and nothing about how often they visit it (`FR-128`).
+
+    **The absent columns are the requirement.** There is no `opened_count`, no `last_opened_at`, no
+    ordering weight -- each would be an access record, which `KHEPRI-DEC-034` §2 refuses by name.
+    A pin is a *stated preference*; a counter is a *measurement*, and the decision authorizes only
+    the first. `KHEPRI-DEC-015` §3 is unamended by it, so product analytics remains an
+    unauthorized purpose and this row may never grow toward one.
+
+    **No retention state and no tombstone**, unlike every content row above. `KHEPRI-DEC-034` §1's
+    matrix ends this row by deletion with no tombstone: `KHEPRI-DEC-033` §3's allowlist governs
+    what survives a customer's deletion, and a stated preference survives nothing.
+
+    Idempotency is a `UNIQUE` constraint rather than a read-then-insert in the store, for
+    `set_retention_state`'s recorded reason -- SQLite serializes writes, so a read-then-insert
+    passes there while PostgreSQL admits the duplicate.
+    """
+
+    __tablename__ = "rca_workspace_pins"
+    __table_args__ = (
+        _scope_foreign_key("fk_rca_workspace_pin_scope"),
+        _states_check("object_kind", PIN_KINDS, "ck_rca_workspace_pin_kind"),
+        UniqueConstraint("owner_id", "object_id", name="uq_rca_workspace_pin_owner_object"),
+    )
+
+    pin_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    object_id: Mapped[str] = mapped_column(String, nullable=False)
+    object_kind: Mapped[str] = mapped_column(String, nullable=False)
+    pinned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 #: Three guard shapes, side by side, because this table is the only place they are comparable.
 #: A single loop over every row class had encoded one shape and left the other two unguarded --
 #: review on `#370` found a profile's scope reassignable and a tombstone freely rewritable.
@@ -930,9 +977,29 @@ _ROW_GUARDS = {
     # outlives every backup it guards has outlived its purpose), and `W1-07b`'s sweep is what ends
     # it -- a delete guard here would make that horizon unenforceable.
     WorkspaceRevocationRow: (_refuse_any_update, None),
+    # `W1-09`'s pin. **Neither guard, and stated rather than omitted.** This dict is what a reader
+    # consults to learn a row's guards, so a class absent from it reads as an oversight -- the
+    # shape the block above records from `#370`, where a single loop left two row classes
+    # unguarded. Both absences are deliberate:
+    #
+    # *No update guard*, because no path updates a pin. `pin` inserts or does nothing, and a
+    # repeat must not move `pinned_at` -- a guard would be asserting a property nothing can
+    # violate, and `KHEPRI-DEC-034` §2's real risk is a *new column*, which `test_w109_pins.py`
+    # catches by extent rather than a listener catching a write.
+    #
+    # *No delete guard*, because deleting is how a pin ends. `unpin` removes one on demand and
+    # `_cascade_to_pins` removes them with the object -- `KHEPRI-DEC-034` §1's matrix says "Row
+    # deleted, no tombstone", so a delete guard would make the ending it prescribes unreachable.
+    # The revocation ledger's asymmetry, with both halves inverted.
+    WorkspacePinRow: (None, None),
 }
 
 for _row_class, (_on_update, _on_delete) in _ROW_GUARDS.items():
-    event.listen(_row_class, "before_update", _on_update)
+    # Both sides are conditional. The update side became so with `W1-09`'s pin, the first row with
+    # no update guard: registering `None` raises at import, so the alternative to this branch is
+    # leaving the pin out of `_ROW_GUARDS` entirely -- which is exactly the silent omission the
+    # dict's own comment block warns about.
+    if _on_update is not None:
+        event.listen(_row_class, "before_update", _on_update)
     if _on_delete is not None:
         event.listen(_row_class, "before_delete", _on_delete)

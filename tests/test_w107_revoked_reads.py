@@ -26,8 +26,14 @@ from tests.w107_support import NOW, deletion_service, journey, sealed_version
 
 
 def _restored(j, who) -> object:
-    """A version this scope deleted, then put back live beneath the ORM by a restore."""
+    """A version this scope deleted, then put back live beneath the ORM by a restore.
+
+    The version is **pinned before the deletion** (`W1-09`), so `pins_for_scope` in the extent
+    test below is answering a real question. Without the pin it returned `()` whether or not
+    `cascade_to_pins` existed -- a test that could not fail, which review on `#390` found.
+    """
     version, _run = sealed_version(j, who, with_run=True)
+    j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
     deletion_service(j).delete_version(
         who.owner_id, version.version_id, actor_account_id=who.account_id, now=NOW
     )
@@ -127,6 +133,12 @@ def test_every_scope_read_excludes_a_revoked_version() -> None:
         "history_for_scope.versions": store.history_for_scope(who.owner_id).versions,
         "history_for_scope.runs": store.history_for_scope(who.owner_id).runs,
         "history_for_scope.bindings": store.history_for_scope(who.owner_id).bindings,
+        # `W1-09`'s pins. Included in the *checked* set rather than exempted, because the property
+        # holds and is worth proving: a pin on a deleted version is `DELETE`d by
+        # `_cascade_to_pins`, not tombstoned, so a restore that puts the version rows back live
+        # finds no pin row to resurrect. That is a stronger guarantee than the ledger check the
+        # other reads rely on, and this asserts it rather than assuming it.
+        "pins_for_scope": store.pins_for_scope(who.owner_id),
     }
 
     leaked = {name: rows for name, rows in returned.items() if rows}

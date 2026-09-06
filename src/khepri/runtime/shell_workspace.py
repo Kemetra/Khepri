@@ -146,6 +146,24 @@ class SpineRow:
 
 
 @dataclass(frozen=True, slots=True)
+class MarkedRow:
+    """One pinned object or one recent object, shaped for the template (`W1-09`).
+
+    **No count and no ordinal.** `KHEPRI-DEC-034` §2 refuses counting and ranking, and Overview's
+    own `test_overview_carries_no_figure` asserts the rendered text holds no digit outside a
+    `<time>` -- so a "3 pinned" heading would fail a test that predates this slice. Position in
+    the tuple carries the order; nothing numbers it.
+
+    `kind_key` is a copy key rather than the stored kind, so the template looks up bilingual
+    wording instead of deciding anything (`test_no_shell_template_computes`).
+    """
+
+    object_id: str
+    kind_key: str
+    at: Moment
+
+
+@dataclass(frozen=True, slots=True)
 class OverviewView:
     """What Overview shows: the latest work, what is still running, the latest data, and what
     needs attention.
@@ -160,6 +178,10 @@ class OverviewView:
     processing: tuple[WorkRow, ...]
     latest_data: DataRow | None
     attention: tuple[WorkRow, ...]
+    #: `W1-09`, under active `KHEPRI-DEC-034`. Both default to empty so a deployment that has not
+    #: wired pins renders Overview exactly as before rather than raising on a missing field.
+    pinned: tuple[MarkedRow, ...] = ()
+    recent: tuple[MarkedRow, ...] = ()
 
 
 def moment(instant: datetime) -> Moment:
@@ -247,6 +269,36 @@ def overview_view(versions: Iterable[Any], runs: Iterable[Any]) -> OverviewView:
         processing=tuple(work_row(run) for run in scope_runs if run.state == RUN_STARTED),
         latest_data=latest_data,
         attention=tuple(work_row(run) for run in scope_runs if run.state == RUN_FAILED),
+    )
+
+
+#: The copy key for each pin kind, so the template renders bilingual wording rather than the
+#: stored value. Keyed by `PIN_KINDS`' members, which the store also writes.
+_KIND_KEYS = {"dataset_version": "pin_kind_data", "analysis_run": "pin_kind_analysis"}
+
+
+def marked_rows(items: Iterable[Any]) -> tuple[MarkedRow, ...]:
+    """Shape pins or recent items for the template, in the order the store returned them.
+
+    One function for both because the two carry the same three things -- which object, of what
+    kind, at what instant -- and differ only in what the instant *means*: when the mark was made,
+    or when the work happened. Neither is a measure of use.
+
+    An unknown kind refuses through `worded` rather than rendering the raw value, so a kind added
+    to the store without copy fails a test instead of leaking a stored string onto the surface.
+
+    The instant is read by field name rather than by `getattr(..., None) or ...`: a falsy-or chain
+    would silently fall through to the second field if the first were ever absent *or* zero, which
+    is how a `WorkspacePin` with no `pinned_at` would end up rendering someone else's timestamp.
+    An attribute error here is the correct outcome -- it names the record that does not fit.
+    """
+    return tuple(
+        MarkedRow(
+            object_id=item.object_id,
+            kind_key=worded(_KIND_KEYS, item.object_kind),
+            at=moment(item.pinned_at if hasattr(item, "pinned_at") else item.occurred_at),
+        )
+        for item in items
     )
 
 

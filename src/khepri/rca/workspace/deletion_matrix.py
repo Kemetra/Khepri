@@ -54,6 +54,15 @@ ENDINGS: dict[str, str] = {
     "rca_workspace_tombstones": ENDING_SURVIVES,
     "rca_workspace_audit_events": ENDING_SURVIVES,
     "rca_workspace_revocations": ENDING_SURVIVES,
+    # `W1-09`'s pin. `KHEPRI-DEC-034` §1's matrix: "The object ends, or the pin is removed, or the
+    # organization ends" -> "Row deleted, no tombstone". Reached because the object it names
+    # ended, which is §1's named cascade.
+    #
+    # **No tombstone, and the asymmetry with the rows above is the point.** `KHEPRI-DEC-033` §3's
+    # allowlist decides what survives a customer's deletion, and it is about *content*. A pin is a
+    # stated preference over an object -- once the object is gone the preference names nothing, so
+    # there is no allowlist entry to keep and nothing for a reader to consult afterwards.
+    "rca_workspace_pins": ENDING_CASCADE,
 }
 
 __all__ = [

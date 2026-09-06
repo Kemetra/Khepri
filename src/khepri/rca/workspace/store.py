@@ -36,6 +36,7 @@ from khepri.rca.workspace.contracts import (
     _identifier,
 )
 from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, version_for_update
+from khepri.rca.workspace.pins import PinReads, cascade_to_pins
 
 # The retention states a stored object may be in. `KHEPRI-DEC-033` governs the transitions; this
 # slice holds only the vocabulary and the column, because a transition is an operation and `W1-07`
@@ -281,6 +282,7 @@ def _tombstone_version(
     tombstone = VersionTombstone.project(_version_from_row(version), deleted_at=now)
     database.add(tombstone_row(tombstone))
     _cascade_tombstone_to_runs(database, version, now, sections_of)
+    cascade_to_pins(database, version)
 
 
 def _cascade_tombstone_to_runs(
@@ -341,7 +343,7 @@ class WorkspaceHistory:
     tombstones: tuple[VersionTombstone | RunTombstone, ...]
 
 
-class SqlWorkspaceRecordStore:
+class SqlWorkspaceRecordStore(PinReads):
     """Rows for the workspace records, and the one transition `FR-112` permits.
 
     Nothing here authorizes. A caller reaching this store has already been authorized by `W1-04`,

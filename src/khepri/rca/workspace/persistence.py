@@ -32,6 +32,7 @@ it previously defined, so nothing that imported from here changed. See each modu
 from __future__ import annotations
 
 from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, version_for_update
+from khepri.rca.workspace.pins import RecentItem, WorkspacePin
 from khepri.rca.workspace.provenance import RunProvenance, SqlRunProvenanceStore
 from khepri.rca.workspace.run_reports import RunReportRow, SqlRunReportStore
 from khepri.rca.workspace.schema import (
@@ -41,6 +42,7 @@ from khepri.rca.workspace.schema import (
     DELETE_FAILURE,
     GOVERNED_SECTION_STATE_CODES,
     MUTABLE_COLUMNS,
+    PIN_KINDS,
     PROFILE_IDENTITY_COLUMNS,
     PROFILE_IDENTITY_FAILURE,
     RECOMPLETE_FAILURE,
@@ -63,6 +65,7 @@ from khepri.rca.workspace.schema import (
     DatasetVersionRow,
     RunProvenanceRow,
     SourceProfileRow,
+    WorkspacePinRow,
     WorkspaceTombstoneRow,
 )
 from khepri.rca.workspace.store import SqlWorkspaceRecordStore, WorkspaceHistory
@@ -92,6 +95,7 @@ __all__ = [
     "RESEAL_FAILURE",
     "TOMBSTONE_FAILURE",
     "MUTABLE_COLUMNS",
+    "PIN_KINDS",
     "RETENTION_ACTIVE",
     "RETENTION_STATES",
     "RETENTION_STATE_FAILURE",
@@ -105,4 +109,7 @@ __all__ = [
     "SqlRunProvenanceStore",
     "SqlRunReportStore",
     "SqlWorkspaceRecordStore",
+    "RecentItem",
+    "WorkspacePin",
+    "WorkspacePinRow",
 ]
