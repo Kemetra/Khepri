@@ -488,6 +488,9 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     commercial = build_commercial_services(stack)
     if commercial is None:
         return None
+    # One store, bound to a name because two fields share it: the surfaces read through `records`
+    # and `W1-09`'s pins write through the same object. See the `pins=` comment below.
+    records = SqlWorkspaceRecordStore(stack.factory)
     return ShellServices(
         resolver=commercial.resolver,
         organizations=SqlOrganizationStore(stack.factory),
@@ -496,7 +499,7 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         # `W1-05`: the same record store the workspace actions write through, resolved through
         # the same isolation door they write under, so the shell shows exactly the rows the
         # actions recorded and no second reading of the scope exists.
-        records=SqlWorkspaceRecordStore(stack.factory),
+        records=records,
         isolation=IsolationService(
             SqlOrganizationStore(stack.factory), SqlAccountStore(stack.factory)
         ),
@@ -521,6 +524,7 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
         # `DeletionService` `build_web_app` already hands the beta app, so content deleted from
         # the shell and content deleted through the journey end by one object with one definition
         # of what ending means.
+        pins=records,
         deletion=WorkspaceDeletion(
             DeletionSources(
                 store=SqlWorkspaceRecordStore(stack.factory),
@@ -530,6 +534,15 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
                 factory=stack.factory,
             )
         ),
+        # `W1-09`: pins (`FR-128`, under active `KHEPRI-DEC-034`). Wired here for the reason the
+        # comment above records from `#382` -- without the field, `offers_pins` omits the routes
+        # and the capability is absent from the deployed image while every route test passes over
+        # a hand-wired `ShellServices`.
+        #
+        # **The `records` store, not a second one.** `pin` and `pins_for_scope` write and read the
+        # same tables the Overview and Data surfaces read, and the cascade that ends a pin lives
+        # inside `set_retention_state` on this very class. A second `SqlWorkspaceRecordStore` over
+        # the same factory would work and would be a second object holding one definition.
     )
 
 

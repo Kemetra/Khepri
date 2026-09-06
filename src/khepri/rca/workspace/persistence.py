@@ -67,7 +67,12 @@ from khepri.rca.workspace.schema import (
     WorkspacePinRow,
     WorkspaceTombstoneRow,
 )
-from khepri.rca.workspace.store import SqlWorkspaceRecordStore, WorkspaceHistory
+from khepri.rca.workspace.store import (
+    RecentItem,
+    SqlWorkspaceRecordStore,
+    WorkspaceHistory,
+    WorkspacePin,
+)
 
 __all__ = [
     "APPEND_ONLY_FAILURE",
@@ -108,5 +113,7 @@ __all__ = [
     "SqlRunProvenanceStore",
     "SqlRunReportStore",
     "SqlWorkspaceRecordStore",
+    "RecentItem",
+    "WorkspacePin",
     "WorkspacePinRow",
 ]

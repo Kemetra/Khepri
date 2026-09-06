@@ -70,6 +70,7 @@ from khepri.runtime.shell_frame import (
 )
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
+from khepri.runtime.shell_pins import add_pin_routes
 from khepri.runtime.shell_workspace import (
     UNRENDERABLE_FAILURE,
     UnrenderableRecord,
@@ -255,6 +256,10 @@ class ShellServices:
     #: without it declares no deletion route, so the address is unknown rather than refused
     #: differently (`FR-046`). See `shell_deletion.offers_deletion`.
     deletion: Any | None = None
+    #: `W1-09`. The pin store (`FR-128`, under active `KHEPRI-DEC-034`). Optional like the rest --
+    #: a deployment without it declares no pin routes, so the address is unknown rather than
+    #: refused differently (`FR-046`). See `shell_pins.offers_pins`.
+    pins: Any | None = None
 
 
 def _offers_workspace(services: ShellServices) -> bool:
@@ -776,6 +781,7 @@ _ROUTE_DECLARATIONS = (
     add_journey_entry_route,
     add_artifact_handoff_route,
     add_deletion_route,
+    add_pin_routes,
 )
 
 
