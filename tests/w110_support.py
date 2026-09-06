@@ -56,7 +56,10 @@ def assert_uniform_denial(
 
     1. **Identical bytes.** Not "each contains `unavailable_title`" -- identical status and
        identical body. A denial that grows a detail distinguishing *absent* from *forbidden* hands
-       back existence, and a substring assertion cannot see it happen.
+       back existence, and a substring assertion cannot see it happen. The comparison is over
+       `.content` and not `.text`: `.text` is the body *decoded*, so two responses that differ
+       in encoding but agree once decoded would compare equal, and this claims bytes. The leak
+       checks below stay on `.text`, where a decoded string is the right thing to search.
     2. **The shape this surface refuses in**, so a test cannot pass because two surfaces both
        answered `200`. Read surfaces refuse with `404` and the `unavailable` body. The deletion
        route's uniform answer is the `303` back to Data that a *successful* delete also gets --
@@ -76,7 +79,7 @@ def assert_uniform_denial(
             f"{denials.addresses[index]} answered {other.status_code}, "
             f"{denials.addresses[0]} answered {first.status_code}"
         )
-        assert other.text == first.text, (
+        assert other.content == first.content, (
             f"{denials.addresses[index]} and {denials.addresses[0]} are not the same refusal; "
             "a denial that varies by cause discloses which cause applied"
         )

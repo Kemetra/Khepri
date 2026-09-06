@@ -298,6 +298,10 @@ class TestPartialAndCorrupt:
 
         assert detail.status_code == 200, "an in-progress run is not an error"
         assert j.w.store.artifact_bindings_for_scope(who.owner_id) == ()
+        assert "artifact-action" not in detail.text, (
+            "the surface offered an artifact action for a run that has none; a store assertion "
+            "alone cannot see a phantom action the template renders"
+        )
 
     def test_a_corrupt_admission_outcome_in_the_database_refuses_the_surface(self) -> None:
         """`test_w105_overview_and_data.py:641` proves the renderer refuses a bad outcome from a
@@ -321,16 +325,33 @@ class TestConcurrent:
     """Two operations racing on one object leave one outcome, and the loser fails closed.
 
     `test_w102_workspace_locks.py` asserts `"FOR UPDATE" in compiled` and
-    `"run_for_update" in source` -- that the code *mentions* a lock, which survives the lock being
-    taken on the wrong row or released too early. **SQLite cannot exhibit the row-lock race**, as
-    that file concedes; what is asserted here is the property that holds regardless of engine:
-    the second operation through the real route neither succeeds twice nor corrupts the first.
+    `"run_for_update" in source` -- that the code *mentions* a lock, which survives the lock
+    being taken on the wrong row or released too early.
+
+    **These are the sequential halves, and they are named as such.** Genuine overlap cannot be
+    driven on this fixture: `w104_support.py:178-181` builds the engine with `StaticPool` and
+    `check_same_thread=False`, so threads share one connection and a parallel write raises
+    `InterfaceError` rather than racing. `test_w102_workspace_locks.py:142` concedes the same
+    limitation and `test_concurrency_postgres.py` is gated on `KHEPRI_TEST_DATABASE_URL` for it.
+    A genuinely overlapping case needs a PostgreSQL-backed `journey()`, which this fixture does
+    not offer; **that is a real gap in `FR-127`'s concurrent class, recorded in the pull request
+    rather than papered over with a test that could only ever skip.**
+
+    What these prove is the property that must hold whatever the engine does: a repeat neither
+    succeeds twice nor corrupts the first ending, and a handoff after a recorded ending refuses.
     """
 
-    def test_deleting_the_same_version_twice_ends_it_once(self) -> None:
-        """The repeat is the reachable concurrency case: a customer double-submits, or a retry
-        arrives after the first completed. Both answer identically, and the second writes no
-        second ending -- a cascade run twice could double-count in any evidence built on it.
+    def test_repeating_a_deletion_ends_the_version_once(self) -> None:
+        """The **retry**, named for what it is.
+
+        The first draft of this PR called this a concurrency test and it is not one: the second
+        request begins after the first has committed, so no interleaving is possible. Review on
+        `#385` made that point, and it is the same criticism this class makes of
+        `test_w102_workspace_locks.py`.
+
+        What it does prove is worth keeping: a repeat -- a double-submit, a retried POST --
+        answers identically and writes no second ending. A cascade run twice could double-count
+        in any evidence built on it.
         """
         j = journey()
         who = member(j.w)
@@ -352,10 +373,12 @@ class TestConcurrent:
         ]
         assert len(for_version) == 1, "the repeat wrote a second tombstone for one ending"
 
-    def test_a_handoff_racing_a_deletion_does_not_hand_over_ended_content(self) -> None:
-        """The order that matters: content ends while a handoff is in flight. The handoff must
-        not succeed on an object whose ending has been recorded -- an artifact cookie issued after
-        the tombstone hands out exactly what the deletion was for.
+    def test_a_handoff_after_a_deletion_does_not_hand_over_ended_content(self) -> None:
+        """The ending is recorded, *then* the handoff arrives -- the after case, not a race.
+
+        Named for the order it actually drives. An artifact cookie issued once the ending is
+        recorded hands out exactly what the deletion was for, so this is the half of the
+        ordering that must never succeed.
         """
         j = journey()
         who = member(j.w)
