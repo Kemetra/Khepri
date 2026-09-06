@@ -7,10 +7,19 @@ preference; a counter is a measurement, and `KHEPRI-DEC-034` §2 authorizes only
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import inspect
 
 from khepri.rca.persistence import Base
-from khepri.rca.workspace.persistence import PIN_KINDS, WorkspacePinRow
+from khepri.rca.workspace.persistence import (
+    PIN_KINDS,
+    RETENTION_TOMBSTONED,
+    WorkspacePinRow,
+)
+from khepri.rca.workspace.schema import PIN_KIND_FAILURE
+from tests.w104_support import member
+from tests.w104b_support import journey
+from tests.w107_support import LATER, NOW, sealed_version
 
 
 class TestThePinTable:
@@ -89,3 +98,146 @@ class TestThePinTable:
         owner = WorkspacePinRow.__table__.columns["owner_id"]
         assert owner.index, "every pin read is scoped by owner_id"
         assert not owner.nullable
+
+
+class TestTheEnding:
+    def test_the_pin_table_has_a_stated_ending(self) -> None:
+        """`test_every_workspace_table_has_exactly_one_stated_ending` compares `ENDINGS` against
+        `Base.metadata`, so this entry is what lets that guard pass -- and its absence is what made
+        it fail when the table was added.
+
+        `deletion_matrix.py` is built as data for exactly this reason: a hand-written cascade
+        sequence would have ended nothing here while every existing test stayed green.
+        """
+        from khepri.rca.workspace.deletion_matrix import ENDING_CASCADE, ENDINGS
+
+        assert ENDINGS["rca_workspace_pins"] == ENDING_CASCADE
+
+
+class TestTheStoreVerbs:
+    """The three verbs, driven through the journey's real store.
+
+    Setup runs through production verbs -- `sealed_version` submits an upload and drives the
+    worker -- because raw setup exempts the transition it skips, and a mutant of the bypassed verb
+    then survives every test built on it.
+    """
+
+    def test_a_pin_round_trips(self) -> None:
+        j = journey()
+        who = member(j.w)
+        version, _ = sealed_version(j, who)
+
+        j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
+
+        (pin,) = j.w.store.pins_for_scope(who.owner_id)
+        assert pin.object_id == version.version_id
+        assert pin.object_kind == "dataset_version"
+        assert pin.pinned_at == NOW
+
+    def test_pinning_twice_is_a_no_op_and_does_not_move_the_instant(self) -> None:
+        """`KHEPRI-DEC-034` §1: "Immediate and idempotent on demand."
+
+        The second assertion is the one that matters. Rewriting `pinned_at` on every request would
+        turn a stated preference into a record of when it was last asserted -- an access record by
+        the back door, which §2 refuses by name.
+        """
+        j = journey()
+        who = member(j.w)
+        version, _ = sealed_version(j, who)
+
+        j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
+        j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=LATER)
+
+        (pin,) = j.w.store.pins_for_scope(who.owner_id)
+        assert pin.pinned_at == NOW, "a repeat must not move the instant"
+
+    def test_unpinning_something_unpinned_is_a_no_op(self) -> None:
+        """Removing nothing is success: the post-condition a caller wants is that the object is
+        not pinned, and it already holds."""
+        j = journey()
+        who = member(j.w)
+
+        j.w.store.unpin("dsv-absent", owner_id=who.owner_id)
+
+        assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+    def test_a_kind_the_domain_does_not_name_is_refused(self) -> None:
+        """Refused in the store as well as by the `CHECK`, and the duplication is the point: the
+        constraint holds when a row arrives by another route, and this gives a caller a
+        content-free refusal rather than a driver error carrying its input."""
+        j = journey()
+        who = member(j.w)
+
+        with pytest.raises(ValueError, match=PIN_KIND_FAILURE):
+            j.w.store.pin("dsv-1", "organization", owner_id=who.owner_id, now=NOW)
+
+    def test_deleting_the_version_removes_its_pin(self) -> None:
+        """`KHEPRI-DEC-034` §1: the pin ends when "the object ends", cascading from the pinned
+        object's deletion.
+
+        Driven through `set_retention_state`, the production verb, rather than by deleting the row:
+        a fixture that bypasses the verb exempts the transition, and a mutant of the bypassed verb
+        survives.
+        """
+        j = journey()
+        who = member(j.w)
+        version, _ = sealed_version(j, who)
+        j.w.store.pin(version.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
+
+        j.w.store.set_retention_state(
+            version.version_id, RETENTION_TOMBSTONED, now=LATER, owner_id=who.owner_id
+        )
+
+        assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+    def test_deleting_the_version_removes_a_pin_on_its_run(self) -> None:
+        """The run arm of the cascade, which the version arm cannot prove.
+
+        A pin may name a run directly. That run ends with its version through
+        `_cascade_tombstone_to_runs`, so its pin must end too -- and a test that pinned only the
+        version would pass with the run arm of `_cascade_to_pins` deleted entirely.
+        """
+        j = journey()
+        who = member(j.w)
+        version, run = sealed_version(j, who, with_run=True)
+        j.w.store.pin(run.run_id, "analysis_run", owner_id=who.owner_id, now=NOW)
+
+        j.w.store.set_retention_state(
+            version.version_id, RETENTION_TOMBSTONED, now=LATER, owner_id=who.owner_id
+        )
+
+        assert j.w.store.pins_for_scope(who.owner_id) == ()
+
+    def test_a_pin_is_not_visible_to_another_scope(self) -> None:
+        """Two scopes written, one read.
+
+        With one organization's rows in the table an unfiltered query returns exactly what a
+        filtered one does, so a single-scope test cannot see a missing `WHERE` -- `W1-02`'s
+        convention, and the reason both scopes here hold a pin.
+        """
+        j = journey()
+        who = member(j.w)
+        other = member(j.w, email="other@example.test", name="Other")
+        mine, _ = sealed_version(j, who)
+        theirs, _ = sealed_version(j, other)
+
+        j.w.store.pin(mine.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
+        j.w.store.pin(theirs.version_id, "dataset_version", owner_id=other.owner_id, now=NOW)
+
+        assert [pin.object_id for pin in j.w.store.pins_for_scope(who.owner_id)] == [
+            mine.version_id
+        ]
+
+    def test_one_scope_cannot_unpin_another_scopes_mark(self) -> None:
+        """`unpin` is scoped by `owner_id` as well as by the object. The filter is the isolation,
+        not an optimization: without it, knowing an opaque identifier would be enough to remove
+        another organization's pin."""
+        j = journey()
+        who = member(j.w)
+        other = member(j.w, email="other@example.test", name="Other")
+        mine, _ = sealed_version(j, who)
+        j.w.store.pin(mine.version_id, "dataset_version", owner_id=who.owner_id, now=NOW)
+
+        j.w.store.unpin(mine.version_id, owner_id=other.owner_id)
+
+        assert len(j.w.store.pins_for_scope(who.owner_id)) == 1

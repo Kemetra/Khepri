@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import (
+    delete,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -42,6 +43,8 @@ from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, ver
 # is where the lifecycle that drives it is written.
 from khepri.rca.workspace.schema import (
     PARENT_TOMBSTONED_FAILURE,
+    PIN_KIND_FAILURE,
+    PIN_KINDS,
     RECOMPLETE_FAILURE,
     RETENTION_ACTIVE,
     RETENTION_STATE_FAILURE,
@@ -50,6 +53,7 @@ from khepri.rca.workspace.schema import (
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
+    WorkspacePinRow,
     WorkspaceTombstoneRow,
 )
 from khepri.rca.workspace.tombstone_rows import tombstone_from_row, tombstone_row
@@ -281,6 +285,41 @@ def _tombstone_version(
     tombstone = VersionTombstone.project(_version_from_row(version), deleted_at=now)
     database.add(tombstone_row(tombstone))
     _cascade_tombstone_to_runs(database, version, now, sections_of)
+    _cascade_to_pins(database, version)
+
+
+def _cascade_to_pins(database, version: DatasetVersionRow) -> None:
+    """Remove every pin naming a version being tombstoned, and every pin naming one of its runs.
+
+    `KHEPRI-DEC-034` §1's matrix ends a pin when "the object ends", cascading from the pinned
+    object's deletion. Called from inside `_tombstone_version` rather than beside it, so the
+    removal shares the transaction that ends the version: one transaction ends the object and
+    everything §1 says ends with it, or neither happens.
+
+    Reached only after `set_retention_state`'s idempotency return, so a repeated deletion removes
+    nothing a second time -- `_tombstone_version`'s discipline, inherited by being inside it.
+
+    **Deleted outright, with no tombstone and no evidence row.** A pin is a stated preference
+    rather than content, so `KHEPRI-DEC-033` §3's allowlist has nothing to say about it, and there
+    is no `FR-125` event either: `FR-128` puts a pin outside the governed workspace actions
+    entirely, and a cascade is part of its parent's deletion in any case (`KHEPRI-DEC-033` §1).
+
+    Runs are collected rather than assumed absent: a pin may name a run directly, and that run
+    ends with its version through `_cascade_tombstone_to_runs`. Reading them here keeps both
+    object kinds on one pass instead of leaving the run's pins for a sweep that does not exist.
+    """
+    run_ids = database.scalars(
+        select(AnalysisRunRow.run_id).where(
+            AnalysisRunRow.owner_id == version.owner_id,
+            AnalysisRunRow.version_id == version.version_id,
+        )
+    ).all()
+    database.execute(
+        delete(WorkspacePinRow).where(
+            WorkspacePinRow.owner_id == version.owner_id,
+            WorkspacePinRow.object_id.in_({version.version_id, *run_ids}),
+        )
+    )
 
 
 def _cascade_tombstone_to_runs(
@@ -339,6 +378,24 @@ class WorkspaceHistory:
     runs: tuple[AnalysisRun, ...]
     bindings: tuple[ArtifactBinding, ...]
     tombstones: tuple[VersionTombstone | RunTombstone, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspacePin:
+    """One owner's mark on one object, as a reader sees it (`FR-128`).
+
+    Three fields, and no fourth. There is deliberately no `opened_count`, no `last_opened_at` and
+    no ordering weight -- a surface that wanted to rank by use would have to add one, and
+    `KHEPRI-DEC-034` §2 refuses exactly that. `pinned_at` says when the mark was made, which is not
+    a measurement of use.
+
+    The `pin_id` is not projected: it identifies the row, and a caller addresses a pin by the
+    object it names.
+    """
+
+    object_id: str
+    object_kind: str
+    pinned_at: datetime
 
 
 class SqlWorkspaceRecordStore:
@@ -782,6 +839,79 @@ class SqlWorkspaceRecordStore:
         self.set_retention_state(
             version_id, RETENTION_TOMBSTONED, now=now, owner_id=owner_id, sections_of=sections_of
         )
+
+    def pin(self, object_id: str, object_kind: str, *, owner_id: str, now: datetime) -> None:
+        """Mark one object for quick return (`FR-128`, under active `KHEPRI-DEC-034`).
+
+        **Idempotent by constraint, not by a preceding read.** A read-then-insert passes under
+        SQLite, which serializes writes, and admits a duplicate under PostgreSQL -- the shape
+        `set_retention_state` records from `#370`, where the environment supplied the property the
+        assertion checked. The clash is translated to a no-op here because a repeat is `FR-128`'s
+        idempotent retry.
+
+        **A repeat must not move `pinned_at`.** Rewriting it on every request would turn a stated
+        preference into a record of when it was last asserted -- an access record by the back door,
+        which `KHEPRI-DEC-034` §2 refuses by name. Doing nothing is the whole of the correct
+        behaviour.
+
+        No `FR-125` audit event: `FR-128` puts a pin outside the governed workspace actions and
+        adds no member to `AUDIT_ACTIONS`.
+        """
+        if object_kind not in PIN_KINDS:
+            raise ValueError(PIN_KIND_FAILURE)
+        with writing(self._factory) as database:
+            try:
+                with database.begin_nested():
+                    database.add(
+                        WorkspacePinRow(
+                            pin_id=_identifier("pin"),
+                            owner_id=owner_id,
+                            object_id=object_id,
+                            object_kind=object_kind,
+                            pinned_at=now,
+                        )
+                    )
+            except IntegrityError as clash:
+                if not is_uniqueness_clash(clash):
+                    raise
+                return
+
+    def unpin(self, object_id: str, *, owner_id: str) -> None:
+        """Remove one pin, on demand and idempotently (`KHEPRI-DEC-034` §1).
+
+        Scoped by `owner_id` as well as by the object, so one scope cannot unpin another's mark --
+        the filter is the isolation, not an optimization. Removing nothing is success: the
+        post-condition a caller wants is that the object is not pinned.
+        """
+        with writing(self._factory) as database:
+            database.execute(
+                delete(WorkspacePinRow).where(
+                    WorkspacePinRow.owner_id == owner_id,
+                    WorkspacePinRow.object_id == object_id,
+                )
+            )
+
+    def pins_for_scope(self, owner_id: str) -> tuple[WorkspacePin, ...]:
+        """Every pin in one scope, most recently pinned first.
+
+        Ordered by `pinned_at`, which is *when the mark was made* -- not by how often or how
+        recently the object was opened, neither of which is recorded anywhere. `pin_id` breaks
+        ties so a listing is stable across reads.
+        """
+        with reading(self._factory) as database:
+            rows = database.scalars(
+                select(WorkspacePinRow)
+                .where(WorkspacePinRow.owner_id == owner_id)
+                .order_by(WorkspacePinRow.pinned_at.desc(), WorkspacePinRow.pin_id)
+            )
+            return tuple(
+                WorkspacePin(
+                    object_id=row.object_id,
+                    object_kind=row.object_kind,
+                    pinned_at=_utc(row.pinned_at),
+                )
+                for row in rows
+            )
 
     def tombstones_for_scope(self, owner_id: str) -> tuple[VersionTombstone | RunTombstone, ...]:
         """Every deletion record in one scope, oldest deletion first, a version before its runs.
