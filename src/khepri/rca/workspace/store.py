@@ -15,9 +15,6 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import (
-    delete,
-    func,
-    literal,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -39,16 +36,13 @@ from khepri.rca.workspace.contracts import (
     _identifier,
 )
 from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, version_for_update
+from khepri.rca.workspace.pins import PinReads, cascade_to_pins
 
 # The retention states a stored object may be in. `KHEPRI-DEC-033` governs the transitions; this
 # slice holds only the vocabulary and the column, because a transition is an operation and `W1-07`
 # is where the lifecycle that drives it is written.
 from khepri.rca.workspace.schema import (
     PARENT_TOMBSTONED_FAILURE,
-    PIN_KIND_FAILURE,
-    PIN_KIND_RUN,
-    PIN_KIND_VERSION,
-    PIN_KINDS,
     RECOMPLETE_FAILURE,
     RETENTION_ACTIVE,
     RETENTION_STATE_FAILURE,
@@ -57,7 +51,6 @@ from khepri.rca.workspace.schema import (
     AnalysisRunRow,
     ArtifactBindingRow,
     DatasetVersionRow,
-    WorkspacePinRow,
     WorkspaceTombstoneRow,
 )
 from khepri.rca.workspace.tombstone_rows import tombstone_from_row, tombstone_row
@@ -289,41 +282,7 @@ def _tombstone_version(
     tombstone = VersionTombstone.project(_version_from_row(version), deleted_at=now)
     database.add(tombstone_row(tombstone))
     _cascade_tombstone_to_runs(database, version, now, sections_of)
-    _cascade_to_pins(database, version)
-
-
-def _cascade_to_pins(database, version: DatasetVersionRow) -> None:
-    """Remove every pin naming a version being tombstoned, and every pin naming one of its runs.
-
-    `KHEPRI-DEC-034` §1's matrix ends a pin when "the object ends", cascading from the pinned
-    object's deletion. Called from inside `_tombstone_version` rather than beside it, so the
-    removal shares the transaction that ends the version: one transaction ends the object and
-    everything §1 says ends with it, or neither happens.
-
-    Reached only after `set_retention_state`'s idempotency return, so a repeated deletion removes
-    nothing a second time -- `_tombstone_version`'s discipline, inherited by being inside it.
-
-    **Deleted outright, with no tombstone and no evidence row.** A pin is a stated preference
-    rather than content, so `KHEPRI-DEC-033` §3's allowlist has nothing to say about it, and there
-    is no `FR-125` event either: `FR-128` puts a pin outside the governed workspace actions
-    entirely, and a cascade is part of its parent's deletion in any case (`KHEPRI-DEC-033` §1).
-
-    Runs are collected rather than assumed absent: a pin may name a run directly, and that run
-    ends with its version through `_cascade_tombstone_to_runs`. Reading them here keeps both
-    object kinds on one pass instead of leaving the run's pins for a sweep that does not exist.
-    """
-    run_ids = database.scalars(
-        select(AnalysisRunRow.run_id).where(
-            AnalysisRunRow.owner_id == version.owner_id,
-            AnalysisRunRow.version_id == version.version_id,
-        )
-    ).all()
-    database.execute(
-        delete(WorkspacePinRow).where(
-            WorkspacePinRow.owner_id == version.owner_id,
-            WorkspacePinRow.object_id.in_({version.version_id, *run_ids}),
-        )
-    )
+    cascade_to_pins(database, version)
 
 
 def _cascade_tombstone_to_runs(
@@ -384,42 +343,7 @@ class WorkspaceHistory:
     tombstones: tuple[VersionTombstone | RunTombstone, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class WorkspacePin:
-    """One owner's mark on one object, as a reader sees it (`FR-128`).
-
-    Three fields, and no fourth. There is deliberately no `opened_count`, no `last_opened_at` and
-    no ordering weight -- a surface that wanted to rank by use would have to add one, and
-    `KHEPRI-DEC-034` §2 refuses exactly that. `pinned_at` says when the mark was made, which is not
-    a measurement of use.
-
-    The `pin_id` is not projected: it identifies the row, and a caller addresses a pin by the
-    object it names.
-    """
-
-    object_id: str
-    object_kind: str
-    pinned_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class RecentItem:
-    """One object this scope worked on, as the recency view presents it (`FR-129`).
-
-    `occurred_at` is an instant the underlying record **already carried** -- a version's creation,
-    a run's completion or start. It is not a "last opened" time, because nothing records when an
-    object was opened: that would be the access record `KHEPRI-DEC-034` §2 refuses.
-
-    There is no `count` and no rank. Recency is an ordering over records that exist; frequency
-    would need a record of each visit, which is the thing not authorized.
-    """
-
-    object_id: str
-    object_kind: str
-    occurred_at: datetime
-
-
-class SqlWorkspaceRecordStore:
+class SqlWorkspaceRecordStore(PinReads):
     """Rows for the workspace records, and the one transition `FR-112` permits.
 
     Nothing here authorizes. A caller reaching this store has already been authorized by `W1-04`,
@@ -859,142 +783,6 @@ class SqlWorkspaceRecordStore:
         """
         self.set_retention_state(
             version_id, RETENTION_TOMBSTONED, now=now, owner_id=owner_id, sections_of=sections_of
-        )
-
-    def pin(self, object_id: str, object_kind: str, *, owner_id: str, now: datetime) -> None:
-        """Mark one object for quick return (`FR-128`, under active `KHEPRI-DEC-034`).
-
-        **Idempotent by constraint, not by a preceding read.** A read-then-insert passes under
-        SQLite, which serializes writes, and admits a duplicate under PostgreSQL -- the shape
-        `set_retention_state` records from `#370`, where the environment supplied the property the
-        assertion checked. The clash is translated to a no-op here because a repeat is `FR-128`'s
-        idempotent retry.
-
-        **A repeat must not move `pinned_at`.** Rewriting it on every request would turn a stated
-        preference into a record of when it was last asserted -- an access record by the back door,
-        which `KHEPRI-DEC-034` §2 refuses by name. Doing nothing is the whole of the correct
-        behaviour.
-
-        No `FR-125` audit event: `FR-128` puts a pin outside the governed workspace actions and
-        adds no member to `AUDIT_ACTIONS`.
-        """
-        if object_kind not in PIN_KINDS:
-            raise ValueError(PIN_KIND_FAILURE)
-        with writing(self._factory) as database:
-            try:
-                with database.begin_nested():
-                    database.add(
-                        WorkspacePinRow(
-                            pin_id=_identifier("pin"),
-                            owner_id=owner_id,
-                            object_id=object_id,
-                            object_kind=object_kind,
-                            pinned_at=now,
-                        )
-                    )
-            except IntegrityError as clash:
-                if not is_uniqueness_clash(clash):
-                    raise
-                return
-
-    def unpin(self, object_id: str, *, owner_id: str) -> None:
-        """Remove one pin, on demand and idempotently (`KHEPRI-DEC-034` §1).
-
-        Scoped by `owner_id` as well as by the object, so one scope cannot unpin another's mark --
-        the filter is the isolation, not an optimization. Removing nothing is success: the
-        post-condition a caller wants is that the object is not pinned.
-        """
-        with writing(self._factory) as database:
-            database.execute(
-                delete(WorkspacePinRow).where(
-                    WorkspacePinRow.owner_id == owner_id,
-                    WorkspacePinRow.object_id == object_id,
-                )
-            )
-
-    def pins_for_scope(self, owner_id: str) -> tuple[WorkspacePin, ...]:
-        """Every pin in one scope, most recently pinned first.
-
-        Ordered by `pinned_at`, which is *when the mark was made* -- not by how often or how
-        recently the object was opened, neither of which is recorded anywhere. `pin_id` breaks
-        ties so a listing is stable across reads.
-        """
-        with reading(self._factory) as database:
-            rows = database.scalars(
-                select(WorkspacePinRow)
-                .where(WorkspacePinRow.owner_id == owner_id)
-                .order_by(WorkspacePinRow.pinned_at.desc(), WorkspacePinRow.pin_id)
-            )
-            return tuple(
-                WorkspacePin(
-                    object_id=row.object_id,
-                    object_kind=row.object_kind,
-                    pinned_at=_utc(row.pinned_at),
-                )
-                for row in rows
-            )
-
-    def recent_activity(self, owner_id: str, *, limit: int = 5) -> tuple[RecentItem, ...]:
-        """What this owner last worked on, most recent first (`FR-129`).
-
-        **This writes nothing, and that is the requirement rather than an optimization.**
-        `KHEPRI-DEC-034` §1: "a query over dataset versions and analysis runs the workspace already
-        stores ... ordered by instants those records already carry. This is the whole of why it
-        needs no telemetry: a view that stores no event is not an event stream." A version of this
-        that recorded each read -- to rank, to count, to show "most used" -- would be product
-        analytics, which `KHEPRI-DEC-015` §3 does not authorize and §2 declines to seek.
-
-        **It reads the workspace records, never `rca_workspace_audit_events`.** Rendering the audit
-        trail as a customer-facing feed is the conversion `RCA-005` forbids in advance: the audit
-        carve-out "does not reach" product use, and "an audit event that begins to carry a product
-        metric has become telemetry and is excluded". The events are the right *shape* for a feed
-        and the wrong *source*, which is exactly why the door is closed by name.
-
-        Three filters per arm, not two. Scope and retention state are the obvious pair; the
-        revocation predicate is the third, for `dataset_versions_for_scope`'s reason -- a restore
-        rewrites `retention_state`, so only the ledger still knows the object ended (`FR-126`).
-        Without it a restored version would reappear here after the customer deleted it.
-
-        Ordered by the instants the records already carry -- `created_at` for a version, the run's
-        completion or start for a run. Recency, never frequency: how *often* an object was opened
-        is not recorded anywhere, and `KHEPRI-DEC-034` §2 refuses the counter that would record it.
-        """
-        versions = (
-            select(
-                DatasetVersionRow.version_id.label("object_id"),
-                literal(PIN_KIND_VERSION).label("object_kind"),
-                DatasetVersionRow.created_at.label("occurred_at"),
-            )
-            .where(DatasetVersionRow.owner_id == owner_id)
-            .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
-            .where(~_revocation_exists(DatasetVersionRow))
-        )
-        runs = (
-            select(
-                AnalysisRunRow.run_id.label("object_id"),
-                literal(PIN_KIND_RUN).label("object_kind"),
-                func.coalesce(AnalysisRunRow.completed_at, AnalysisRunRow.started_at).label(
-                    "occurred_at"
-                ),
-            )
-            .where(AnalysisRunRow.owner_id == owner_id)
-            .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
-            .where(~_revocation_exists(AnalysisRunRow))
-        )
-        combined = versions.union_all(runs).subquery()
-        with reading(self._factory) as database:
-            rows = database.execute(
-                select(combined)
-                .order_by(combined.c.occurred_at.desc(), combined.c.object_id.desc())
-                .limit(limit)
-            ).all()
-        return tuple(
-            RecentItem(
-                object_id=row.object_id,
-                object_kind=row.object_kind,
-                occurred_at=_utc(row.occurred_at),
-            )
-            for row in rows
         )
 
     def tombstones_for_scope(self, owner_id: str) -> tuple[VersionTombstone | RunTombstone, ...]:
