@@ -213,3 +213,52 @@ def test_the_sweep_does_not_purge_its_own_evidence() -> None:
     assert [event.action for event in audit.events_for_scope(who.owner_id)] == [
         ACTION_RETENTION_SWEPT
     ]
+
+
+def test_the_sweep_records_only_scopes_whose_rows_it_deleted() -> None:
+    """Evidence follows the rows *this* call removed, not a separate earlier read.
+
+    The pass used to ask `scopes_with_events_before` which scopes held expired rows, then issue a
+    second statement to delete them. Between those two statements the rows can go: two overlapping
+    `khepri-retention-sweep` invocations both read the scope, one deletes its rows and the other
+    deletes none -- and both then wrote `retention_swept`, an audit record for a purge that did not
+    happen. `FR-125`'s event attests an action; one attesting nothing is worse than absent, because
+    a reader cannot tell it apart from the real thing.
+
+    The interleaving is driven at the seam where it occurs -- the other invocation commits its
+    delete *after* this pass has read and *before* it purges -- rather than by running two
+    connections and hoping for the ordering. Deleting with `RETURNING` closes the window by making
+    the recorded scopes be the rows this statement removed.
+    """
+    from khepri.rca.workspace.audit import ACTION_RETENTION_SWEPT
+
+    j = journey()
+    who = member(j.w)
+    audit = SqlWorkspaceAuditStore(j.w.factory)
+    _event(audit, who.owner_id, who.account_id, THIRTEEN_MONTHS_AGO)
+
+    class TheOtherInvocationWinsFirst:
+        """The real store, with the rival invocation's delete committing first.
+
+        Hooked at `purge_events_before` because that is where this pass now learns what it
+        removed. A pass whose rows a rival already took must come back empty-handed from its own
+        statement -- and record nothing on the strength of it.
+        """
+
+        def __init__(self, store: SqlWorkspaceAuditStore) -> None:
+            self._store = store
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._store, name)
+
+        def purge_events_before(self, horizon: datetime) -> object:
+            self._store.purge_events_before(horizon)  # the rival invocation, committing.
+            return self._store.purge_events_before(horizon)
+
+    report = WorkspaceAuditSweeper(TheOtherInvocationWinsFirst(audit)).sweep(now=NOW)
+
+    assert report.purged_events == 0
+    actions = [event.action for event in audit.events_for_scope(who.owner_id)]
+    assert ACTION_RETENTION_SWEPT not in actions, (
+        "recorded a sweep of a scope whose rows another invocation had already deleted"
+    )

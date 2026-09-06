@@ -158,10 +158,14 @@ the seam `W1-04b` established and `W1-07a` used.
 | Workspace audit events | `khepri.rca.workspace` | `rca_workspace_audit_events` | `KHEPRI-DEC-015` §2a |
 | Deletion evidence | `khepri.rra` | `rra_deletion_evidence` | `KHEPRI-DEC-033` §2, `OD-2` |
 
-Each reuses `MEMBERSHIP_EVENT_RETENTION_MONTHS` and `_months_before` rather than re-deriving
-twelve, exactly as `invitation_retention.py:80` already does — §2's own words are that this horizon
-is *"adopted rather than re-derived"*, and two literals for one decided number is how they come to
-disagree.
+The workspace-audit pass reuses `MEMBERSHIP_EVENT_RETENTION_MONTHS` and `_months_before` rather
+than re-deriving twelve, exactly as `invitation_retention.py:80` already does. The deletion-evidence
+pass **cannot**: `R7-01` §3 forbids `khepri.rra` importing `khepri.rca`, so it restates the governed
+value as `EVIDENCE_RETENTION_MONTHS` with its own calendar arithmetic, and
+`test_the_two_twelve_month_horizons_agree` fails if either moves alone. That makes it a second
+constant for one decision, which the package boundary requires — not a second decision. §2's own
+words are that this horizon is *"adopted rather than re-derived"*, and two unchecked literals for
+one decided number is how they come to disagree.
 
 Neither store has a purge verb today: `SqlWorkspaceAuditStore` has `record` and `events_for_scope`;
 the `RRA` side has `list_evidence`. Each gains one, following
@@ -329,8 +333,10 @@ Two comments become false on this merge and are corrected in the same commit:
    guards; the flag's deletion is evidence only if something else can fail.
 4. **The migration's head pin missed in one of three places.** CI caught exactly this on `#377`.
    Enumerated in §4.1.
-5. **A sweep event borrowing an object kind that means something else.** Mitigated by an admitted
-   kind of its own (§4.1).
+5. **A sweep event borrowing an object kind that means something else.** Mitigated by the
+   existing subjectless-event pairing — §4.1 writes `subject=None`, which
+   `ck_rca_workspace_audit_subject_pair` already admits, leaving `AUDIT_OBJECTS` unchanged. A
+   sweep acts on a class over a horizon, not on an object, so no new kind is warranted.
 6. **Reading §5 as discharged because this slice merged.** The horizons are enforced when the
    command exists *and* something invokes it. This spec states what ships; it does not state that
    a deployment runs it, and §6 keeps the amendment with the owner.

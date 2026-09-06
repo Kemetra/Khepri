@@ -30,7 +30,7 @@
 | `src/khepri/runtime/retention_sweep.py` | **Create.** The moved composition (`RetentionSweeper`, `RetentionPasses`, `RetentionCounts`, `SweepReport`, `REASON_EXPIRED`, `build_retention_sweeper`) plus `main()`, the console-script entry point. |
 | `src/khepri/local/sweeper.py` | **Replace with a re-export.** Keeps `local/wiring.py` and `tests/test_local_sweeper.py` importing the same names from the same path. |
 | `src/khepri/rca/workspace/audit.py` | **Modify.** Add `ACTION_RETENTION_SWEPT`, `ACTOR_RETENTION`; extend `AUDIT_ACTIONS`. |
-| `src/khepri/rca/workspace/audit_persistence.py` | **Modify.** Add `purge_events_before(horizon)` and `scopes_with_events_before(horizon)`. |
+| `src/khepri/rca/workspace/audit_persistence.py` | **Modify.** Add `purge_events_before(horizon) -> PurgedEvents`, deleting with `RETURNING owner_id` so the count and the purged scopes come from one statement. |
 | `src/khepri/rca/workspace/audit_retention.py` | **Create.** `WorkspaceAuditSweeper` — the RCA twelve-month pass. |
 | `src/khepri/rra/evidence_retention.py` | **Create.** `DeletionEvidenceSweeper` — the RRA twelve-month pass. |
 | `src/khepri/rra/persistence.py` | **Modify.** Add `purge_evidence_before(horizon)` to `SqlDeletionRepository`. |
@@ -1058,10 +1058,11 @@ def downgrade() -> None:
 
 - [ ] **Step 6: Write the event, and wire both passes**
 
-In `src/khepri/rca/workspace/audit_retention.py`, `WorkspaceAuditSweeper.sweep` records one event per scope it purged from. Add `scopes_with_events_before(horizon) -> tuple[str, ...]` to `SqlWorkspaceAuditStore` (a `select(distinct(owner_id)).where(occurred_at < horizon)`), read the scopes **before** deleting, then after the delete record for each:
+In `src/khepri/rca/workspace/audit_retention.py`, `WorkspaceAuditSweeper.sweep` records one event per scope it purged from. Have `purge_events_before` delete with `.returning(WorkspaceAuditEventRow.owner_id)` and hand back a `PurgedEvents(count, scopes)` built from the rows it removed, then record for each scope it returned:
 
 ```python
-        for owner_id in scopes:
+        purged = self._audit.purge_events_before(horizon)
+        for owner_id in purged.scopes:
             self._audit.record(
                 WorkspaceAuditEvent.completed(
                     AuditActor(owner_id=owner_id, actor_account_id=ACTOR_RETENTION),

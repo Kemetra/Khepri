@@ -66,16 +66,23 @@ class WorkspaceAuditSweeper:
         it purged from -- `owner_id` is `nullable=False`, so a cross-scope pass cannot write one
         global event, and a customer's trail should show the sweeps that touched their rows.
 
+        The scopes come back from the delete itself rather than from a read issued beforehand.
+        Two overlapping invocations could both see a scope, one delete its rows and the other
+        delete none, and both record `retention_swept` -- evidence of a purge that did not happen.
+        `purge_events_before` returns what it removed, so a pass that purged nothing records
+        nothing, which `test_the_sweep_records_only_scopes_whose_rows_it_deleted` drives at the
+        seam where the interleaving occurs.
+
         **It cannot purge its own evidence.** The event is written at `now` and the horizon is
         twelve months earlier, so no correctly ordered pass reaches it. That is asserted by
         `test_the_sweep_does_not_purge_its_own_evidence` rather than assumed, because it becomes
         false the day a later slice moves the horizon or reorders these two statements.
         """
         horizon = _months_before(now, self._retention_months)
-        # Read before deleting: afterwards the rows that named these scopes are gone.
-        scopes = self._audit.scopes_with_events_before(horizon)
+        # One statement deletes and says which scopes went, so the evidence below attests the rows
+        # this pass removed and not a scope some other invocation had already emptied (`#384`).
         purged = self._audit.purge_events_before(horizon)
-        for owner_id in scopes:
+        for owner_id in purged.scopes:
             self._audit.record(
                 WorkspaceAuditEvent.completed(
                     AuditActor(owner_id=owner_id, actor_account_id=ACTOR_RETENTION),
@@ -85,7 +92,7 @@ class WorkspaceAuditSweeper:
                     now=now,
                 )
             )
-        return WorkspaceAuditSweepReport(purged_events=purged)
+        return WorkspaceAuditSweepReport(purged_events=purged.count)
 
 
 __all__ = ["WorkspaceAuditSweepReport", "WorkspaceAuditSweeper"]
