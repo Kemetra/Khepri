@@ -3,6 +3,11 @@
 **Baseline:** `origin/main` at `844d51b`, 2026-08-29.
 **Finding:** R8-08 cannot begin implementation. Recorded rather than worked around.
 
+> **Historical, and not re-verified.** Every statement below describes the tree as observed on
+> 2026-08-29 at `844d51b`. It was rescued into the tree on 2026-09-06 because the branch holding
+> it was pruned and it existed nowhere else; the rescue did not re-run its checks. Read it as a
+> record of what was found then, and re-measure before relying on any line of it.
+
 ## The blocker
 
 R8-08 is *"Govern and implement content-free product activation telemetry"* (roadmap §R8 completion
@@ -12,7 +17,9 @@ independent checks agree it is absent:
 1. **Roadmap line 796** — the dependency is literally an approval, not an artifact.
 2. **Roadmap line 1714** — R8 is `READY_FOR_PLAN`, and the stated reason is *"R8-08 telemetry scope
    remains."* Per §15, a program's status is the status of its next actionable task.
-3. **`governance/registry.yaml`** — no `R8-08` row, and no activation-telemetry artifact of any kind.
+3. **`governance/registry.yaml`** — no `R8-08` row, and no **registered** activation-telemetry
+   artifact. The registry is authoritative for registered artifacts (Constitution III); this
+   check establishes nothing about unregistered material, which it did not search.
 
 ## Why the two ACTIVE specs do not supply the authority
 
@@ -53,12 +60,19 @@ An owner-approved scope for content-free activation telemetry, carrying its own 
 
 - the eight journey events, and that they are content-free;
 - where they persist, and under whose retention authority;
-- the amendment or successor that lets `RRA-010:93` admit a new telemetry event, or the new
-  specification that owns them instead.
+- **both** authorities, not either one. `RRA-010:93` excludes a new telemetry event, and
+  `KHEPRI-DEC-015` §3 independently lists **product analytics** among the purposes retention
+  never authorizes, saying a new purpose *"requires its own Constitution VII decision"*. So an
+  `RRA-010` amendment alone would admit an event the privacy authority still refuses: R8-08
+  needs the owner-authored amendment or successor to `KHEPRI-DEC-015` §3 **and** the amendment
+  that lets `RRA-010:93` admit the event — or a new specification that explicitly supersedes
+  both.
 
 Governance work is a separate lane from implementation and does not belong in this branch.
 
 ## Disposition
 
-No code written. The worktree and branch exist and are clean. Lane B should either take an
-owner-approved governance slice for the scope above, or stand down until one exists.
+No code written. The worktree and branch existed and were clean **as observed on 2026-08-29**;
+both were pruned on 2026-09-06, which is what prompted this document's rescue. Lane B should
+either take an owner-approved governance slice for the scope above, or stand down until one
+exists.
