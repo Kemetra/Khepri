@@ -81,6 +81,16 @@ _EN = {
     "overview_no_data": "No data has been submitted yet.",
     "processing_title": "Still running",
     "attention_title": "Needs attention",
+    # `W1-09` (`FR-128`/`FR-129`, under active `KHEPRI-DEC-034`). No wording here counts or ranks:
+    # "Pinned" and "Recent", never "Most used" or "Opened 12 times", which §2 refuses by name.
+    "pinned_title": "Pinned",
+    "pinned_empty": "Nothing is pinned yet.",
+    "recent_title": "Recent",
+    "recent_empty": "No recent activity yet.",
+    "pin_kind_data": "Data",
+    "pin_kind_analysis": "Analysis",
+    "pin_action": "Pin",
+    "unpin_action": "Unpin",
     "attention_run_failed": "An analysis did not complete.",
     # `KHEPRI-DEC-033` §5: no claim that content expires on its own, because nothing yet makes it.
     "retention_notice": "Content is kept while this organization exists.",
@@ -218,6 +228,15 @@ _AR = {
     "overview_no_data": "لم تُرسَل أي بيانات بعد.",
     "processing_title": "ما زال يعمل",
     "attention_title": "يحتاج إلى انتباه",
+    # `W1-09`. Parity with the English above, and the same refusal: no counting, no ranking.
+    "pinned_title": "مثبَّت",
+    "pinned_empty": "لا يوجد أي عنصر مثبَّت بعد.",
+    "recent_title": "الأحدث",
+    "recent_empty": "لا يوجد نشاط حديث بعد.",
+    "pin_kind_data": "بيانات",
+    "pin_kind_analysis": "تحليل",
+    "pin_action": "تثبيت",
+    "unpin_action": "إلغاء التثبيت",
     "attention_run_failed": "لم يكتمل أحد التحليلات.",
     "retention_notice": "يُحتفظ بالمحتوى ما دامت هذه المؤسسة قائمة.",
     "data_title": "البيانات",

@@ -17,7 +17,11 @@
 .data-list,
 .data-uses,
 .attention-list,
-.processing-list {
+.processing-list,
+/* `W1-09`'s two regions take the processing list's shape rather than a near-duplicate rule of
+   their own: same list reset, same row metrics, same 44px target. */
+.pinned-list,
+.recent-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -25,6 +29,8 @@
 
 .data-use,
 .attention-item,
+.pinned-item,
+.recent-item,
 .processing-item {
   display: flex;
   flex-wrap: wrap;

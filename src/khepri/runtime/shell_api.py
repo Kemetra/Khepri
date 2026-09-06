@@ -70,11 +70,12 @@ from khepri.runtime.shell_frame import (
 )
 from khepri.runtime.shell_invitations import ShellRendering, add_invitation_routes
 from khepri.runtime.shell_journey_entry import add_journey_entry_route
-from khepri.runtime.shell_pins import add_pin_routes
+from khepri.runtime.shell_pins import add_pin_routes, offers_pins
 from khepri.runtime.shell_workspace import (
     UNRENDERABLE_FAILURE,
     UnrenderableRecord,
     data_rows,
+    marked_rows,
     overview_view,
     spine_rows,
 )
@@ -464,9 +465,19 @@ def _overview_response(
     services: ShellServices, environment: Environment, *, language: str, context: Any
 ) -> Response:
     """`FR-120`. The rows are shaped in `shell_workspace.py`; the template can only iterate."""
-    _owner_id, reads = _workspace_reads(services, context, surface="overview")
+    owner_id, reads = _workspace_reads(services, context, surface="overview")
     history = reads.pop("history")
     view = overview_view(history.versions, history.runs)
+    # `W1-09`: both regions come from the pin store where one is wired, and stay empty where it is
+    # not -- a deployment without pins renders Overview exactly as before (`FR-046`). The recency
+    # view writes nothing to answer (`FR-129`), so reading it here costs the request one query and
+    # retains nothing.
+    if offers_pins(services):
+        view = replace(
+            view,
+            pinned=marked_rows(services.pins.pins_for_scope(owner_id)),
+            recent=marked_rows(services.pins.recent_activity(owner_id)),
+        )
     return _render(
         environment,
         "overview.html.j2",
