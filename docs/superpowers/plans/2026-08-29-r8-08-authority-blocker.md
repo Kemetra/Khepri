@@ -30,8 +30,10 @@ sufficient: the question is whether the spec's **scope admits the work**.
 
 > Any new data collection, field, **telemetry event**, or persistence.
 
-So `RRA-010` explicitly excludes the thing R8-08 would build. `RCA-002` does not mention telemetry at
-all. Neither spec can carry this slice.
+So `RRA-010` explicitly excludes the thing R8-08 would build. `RCA-002` does not establish authority
+for it either: it governs the shell surfaces and is **silent** on telemetry, and silence is not a
+grant -- Constitution IV admits code only against a specification whose scope names the work.
+Neither spec can carry this slice, the first by exclusion and the second by absence.
 
 This is the "proposals must carry their registry row" pattern that blocked the AI provider work
 twice: an ACTIVE neighbour is not authority for work its scope excludes.
