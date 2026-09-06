@@ -69,7 +69,7 @@ directly would have skipped all four steps.
 | 3b | history — the Methodology Change Notice (`W1-08`) | The diff surface is wired and correctly renders nothing; **this run cannot exercise a changed methodology** — see below | **NOT EXERCISED** |
 | 4 | report reopen | All four artifact kinds hand off `303` with a scoped beta cookie | **PASS** |
 | 5 | deletion, with evidence | Version deleted, absent from the surface that listed it, evidence rows written | **PASS** |
-| 6 | metric catalog | Four catalog routes answer `200`, both languages, none carrying a figure | **PASS** |
+| 6 | metric catalog | **All six** `RRA-011` route patterns answer `200` — 11 requests, both languages wherever the route carries a language segment, none carrying a figure | **PASS** |
 
 **Two readings this table makes, stated rather than assumed.** *"History"* is read as covering both
 provenance surfaces `W1` built — the Passport (`W1-06`) and the Change Notice (`W1-08`) — because
@@ -167,16 +167,29 @@ one deletion produced one revocation and two tombstones in both runs.
 
 ### 6 — metric catalog
 
-| Route | Status | Bytes | Carries a figure |
-|---|---|---|---|
-| `/catalog/quality/en` | `200` | 3,149 | no |
-| `/catalog/quality/ar` | `200` | 4,095 | no |
-| `/catalog/populations/sales_posted` | `200` | 41 | no |
-| `/catalog/metrics/revenue/en` | `200` | 274 | no |
+**All six route patterns the image declares**, measured — not a subset. Both languages wherever the
+route carries a language segment; `populations` has none, by its own route shape.
 
-`quality/en` and `quality/ar` reproduce `M2`'s byte counts exactly (3,149 / 4,095), measured five
-days later on a later tree. No response carries a `"value"` field, re-checking against live
-responses the property `test_no_catalog_response_carries_a_figure_value` holds in process.
+| Route pattern | `en` | `ar` | Carries a figure |
+|---|---|---|---|
+| `/catalog/quality/{lang}` | `200`, 3,149 B | `200`, 4,095 B | no |
+| `/catalog/metrics/{code}/{lang}` | `200`, 274 B | `200`, 436 B | no |
+| `/catalog/reasons/{code}/{scope}/{lang}` | `200`, 227 B | `200`, 319 B | no |
+| `/catalog/caveats/{code}/{lang}` | `200`, 167 B | `200`, 181 B | no |
+| `/catalog/citations/{id}/evidence/{lang}` | `200`, 4,583 B | `200`, 5,276 B | no |
+| `/catalog/populations/{code}` | `200`, 41 B — no language segment | — | no |
+
+Eleven requests, every one `200`. The codes were read out of the running image
+(`definitions.REASON_SCOPES`, `CAVEAT_CODES`) rather than guessed, and the citation identifier is
+one **this journey's own evidence surface produced** — so the route is exercised against a citation
+that exists rather than an invented one.
+
+`quality/en` and `quality/ar` reproduce `M2`'s byte counts exactly (3,149 / 4,095), and the citation
+route's 4,583 / 5,276 B sit beside `M2`'s 4,592 / 5,285 for a different citation. Measured five days
+later on a later tree.
+
+No response carries a `"value"` field, re-checking against live responses the property
+`test_no_catalog_response_carries_a_figure_value` holds in process.
 
 ---
 
