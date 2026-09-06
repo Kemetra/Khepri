@@ -26,7 +26,8 @@ Every task's requirements implicitly include this section. Values are copied ver
 - **Bilingual parity (en/ar), RTL, target size, no colour alone, no inline script or style, CSP unweakened.**
 - **No figure computed, rounded or summed on a workspace surface.**
 - **Run tests with `./.venv/Scripts/python.exe -m pytest`.** Do **not** run `ruff format` (no CI format gate); `ruff check` only.
-- **Commits:** `git commit -F <file>` (rebase ignores `-c commit.gpgsign`).
+- **Commits:** `git commit -F <file>` (rebase ignores `-c commit.gpgsign`). Each commit step below references `.git/COMMIT_W109_N`; **write that file first** with `printf '...' > .git/COMMIT_W109_N`, as the plan commit did. The files are not in the repository and no earlier task creates them.
+- **`AnalysisRunRow` carries `retention_state`** (`schema.py:365`, defaulting to `RETENTION_ACTIVE`, with `ck_rca_workspace_run_retention`), verified rather than assumed — so Task 3's UNION filters the same predicate on both arms. It also carries a separate `state` column over `RUN_STATES`; these are different properties, and the recency view reads retention, not run state.
 
 ---
 
@@ -422,7 +423,12 @@ def _cascade_to_pins(database, version: DatasetVersionRow, sections_of: Sections
     Deleted outright, with no tombstone and no evidence row: a pin is a stated preference rather
     than content, and `KHEPRI-DEC-033` §3's allowlist has nothing to say about it.
     """
-    run_ids = database.scalars(runs_of_version(version.version_id, version.owner_id)).all()
+    run_ids = database.scalars(
+        select(AnalysisRunRow.run_id).where(
+            AnalysisRunRow.owner_id == version.owner_id,
+            AnalysisRunRow.version_id == version.version_id,
+        )
+    ).all()
     object_ids = {version.version_id, *run_ids}
     database.execute(
         delete(WorkspacePinRow).where(
@@ -543,11 +549,20 @@ class TestTheOrdering:
 
         assert store.recent_activity(other_scope.owner_id) == ()
 
-    def test_a_tombstoned_object_is_not_recent(self, store, scope) -> None:
+    def test_a_tombstoned_version_and_its_run_are_both_dropped(self, store, scope) -> None:
         """Deleting the underlying record removes it from the view -- `KHEPRI-DEC-034` §1's
-        matrix, which gives the view no end trigger of its own precisely because it holds
-        nothing."""
+        matrix, which gives the view no end trigger of its own precisely because it holds nothing.
+
+        **Both arms of the UNION, in one case.** `AnalysisRunRow` carries its own
+        `retention_state` (`schema.py:365`), so the read has two filters, and a version-only
+        assertion proves one of them while the run arm could return tombstoned rows untouched. The
+        run here is tombstoned by the cascade rather than directly, which is also how it happens in
+        production.
+        """
         store.add_dataset_version(_version(VERSION_ID, created_at=EARLY), owner_id=scope.owner_id)
+        store.add_analysis_run(_run(RUN_ID, VERSION_ID, started_at=EARLY), owner_id=scope.owner_id)
+        assert len(store.recent_activity(scope.owner_id)) == 2, "both arms populated"
+
         store.set_retention_state(
             VERSION_ID, RETENTION_TOMBSTONED, now=LATE, owner_id=scope.owner_id
         )
@@ -640,9 +655,14 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Mutation-check the isolation and the tombstone filter**
 
-Delete the `owner_id` filter from `recent_for_scope`; re-run `test_another_scope_sees_none_of_it`. Expected: FAIL.
-Delete the `retention_state` filter; re-run `test_a_tombstoned_object_is_not_recent`. Expected: FAIL.
-Restore both. A guard that survives its own mutant is not tested.
+Four mutants, **each applied alone** — the UNION has two arms and each arm has two filters, so mutating both arms together lets either one's test carry the other:
+
+1. Delete the `owner_id` filter from the **version** arm → `test_another_scope_sees_none_of_it` FAILS.
+2. Delete the `owner_id` filter from the **run** arm → same test FAILS. (If it passes, the test's fixture writes no run into the second scope — fix the fixture.)
+3. Delete the `retention_state` filter from the **version** arm → `test_a_tombstoned_version_and_its_run_are_both_dropped` FAILS.
+4. Delete the `retention_state` filter from the **run** arm → same test FAILS.
+
+Restore after each. A guard that survives its own mutant is not tested, and a mutant that both arms' filters can mask proves only that one of them works.
 
 - [ ] **Step 6: Commit**
 
@@ -700,12 +720,25 @@ class TestNoAuditEventIsEmitted:
     def test_the_audit_vocabulary_gained_no_member(self) -> None:
         """A vocabulary is pinned in three places -- the tuple, the closed-set test in
         `test_w104_audit_events.py`, and the migration's CHECK literal. This asserts the first,
-        and the CHECK asserts the third; adding a pin action would have to move all three."""
+        and the CHECK asserts the third; adding a pin action would have to move all three.
+
+        **Exact extent, not a count and not a pair of absences.** `len(...) == 8` breaks on a
+        legitimate unrelated widening while proving nothing about *which* members are present, and
+        "`pin_added` not in" cannot see a member added under any other name. `RCA_TABLES` drifted
+        three times under assertions that could only ever weaken.
+        """
         from khepri.rca.workspace.audit import AUDIT_ACTIONS
 
-        assert "pin_added" not in AUDIT_ACTIONS
-        assert "pin_removed" not in AUDIT_ACTIONS
-        assert len(AUDIT_ACTIONS) == 8, AUDIT_ACTIONS
+        assert AUDIT_ACTIONS == (
+            "version_created",
+            "run_started",
+            "run_completed",
+            "run_failed",
+            "profile_remembered",
+            "profile_reused",
+            "version_deleted",
+            "retention_swept",
+        )
 
 
 class TestNoCounterExists:
@@ -745,22 +778,39 @@ class TestNoCounterExists:
 
 
 class TestTheExclusionsStand:
-    def test_dec_015_section_3_is_unamended(self) -> None:
+    def test_both_governing_decisions_are_active(self) -> None:
         """`KHEPRI-DEC-034` §2: "`KHEPRI-DEC-015` §3 is **not amended** by this decision. Product
         analytics remains an unauthorized purpose, `W1-11` remains excluded, and `R8-08` remains
-        excluded. Nothing here may be read as precedent for either."
+        excluded."
 
-        Asserted against the governance document rather than restated, because a test comparing a
-        restatement against itself passes every mutant.
+        **This asserts the registry state, not the prose.** A first draft of this test checked
+        that the phrase "product analytics" appeared in `KHEPRI-DEC-015` -- which passes even if
+        §3 were rewritten to *permit* product analytics, as long as the words survived. A test
+        that cannot fail for the reason it names is worse than no test, because it reports as
+        evidence.
+
+        Constitution III makes the registry authoritative, and `AGENTS.md` says to answer "is X
+        approved?" from the registry `state` and never from prose or green CI. So that is what is
+        read here: both decisions `active`, which is the fact this slice's authority rests on.
         """
-        from pathlib import Path
+        import yaml
 
-        text = Path("governance/decisions/KHEPRI-DEC-015-*.md").read_text(encoding="utf-8")
+        registry = yaml.safe_load(Path("governance/registry.yaml").read_text(encoding="utf-8"))
+        states = {
+            entry["id"]: entry["state"]
+            for entry in registry["artifacts"]
+            if entry.get("type") == "decision"
+        }
 
-        assert "product analytics" in text.lower()
+        assert states["KHEPRI-DEC-015"] == "active"
+        assert states["KHEPRI-DEC-034"] == "active"
 ```
 
-Resolve the `KHEPRI-DEC-015` filename with `glob` rather than the literal pattern above, and assert exactly one match — a glob that silently matches nothing would make the assertion vacuous.
+Confirm the registry's top-level key before writing this — the plan assumes `artifacts`, and if the
+key differs the comprehension raises `KeyError` rather than passing vacuously, which is the
+acceptable failure direction. Do **not** soften it to `.get("artifacts", [])`: an empty list would
+make both assertions raise `KeyError` on the lookup, but a `.get` on the entries would let the whole
+guard pass over nothing.
 
 - [ ] **Step 2: Run it**
 
@@ -916,11 +966,18 @@ Reproduce E501 with `ruff check .`, never `awk`/`wc` — Ruff counts characters,
 
 `git fetch origin` first — a stale `origin/main` makes `analyze_change_set` return empty results and a meaningless "passed" — then run it against `origin/main`. Read the finding rather than guessing: `gh api .../check-runs` names the file, rule, score and method.
 
-- [ ] **Step 4: Correct the roadmap rows**
+- [ ] **Step 4: Correct the roadmap rows — to what is falsifiable now, and no further**
 
-§16's `W1` row currently reads `READY_FOR_PLAN` with "next actionable task: `W1-01`" and "nine slices", while ten IDs merged. Rewrite it to `MERGED` with the `main` SHAs, per §15's rule that `MERGED` requires a `main` SHA — and only after this PR merges does that row become true, so the commit states the SHA it will carry and the PR body records it.
+§16's `W1` row currently reads `READY_FOR_PLAN` with "next actionable task: `W1-01`" and "nine slices", while ten IDs merged. Correct **only what is true at the moment of the commit**:
 
-§17 item 17 gains `W1-09` in the build order and records that the chain is closed.
+- `W1-01`…`W1-08` and `W1-10` merged, each with its `main` SHA (`#368` `1397b69`, `#370` `d66fe3d`, `#371` `9e7989b`, `#372` `882166d`, `#375` `b16165f`, `#373` `99db705`, `#374` `fedb723`, `#376` `e93356c`, `#378` `a894074`, `#381` `3867b8a`, `#377` `267c50c`, `#382` `4d79692`, `#384` `89796bd`, `#385` `916d679`).
+- `W1-09` is the remainder, unblocked by `KHEPRI-DEC-034` (`#386`, `1d8c5de`).
+- The "nine slices" arithmetic is wrong; `G3-04` allocated ten IDs and never carried a `W1-09`.
+- Status becomes `READY_FOR_IMPLEMENTATION` — this PR's plan and RED tests are what satisfy §15's definition of it.
+
+**Do not write `MERGED` for `W1-09` or for the `W1` program in this PR.** §15: *"Never mark a task complete because it exists on a branch. Use `MERGED` only with a `main` SHA."* The SHA this PR will carry does not exist while the PR is open, so stating it would be authoring a completion claim for a commit that may never land in that form. A follow-up flips the row to `MERGED` with the real SHA once it does — the same discipline every other W1 slice followed.
+
+§17 item 17 gains `W1-09` in the build order. It does **not** declare the chain closed, for the same reason.
 
 - [ ] **Step 5: Commit and open the PR**
 
