@@ -127,6 +127,12 @@ def test_every_scope_read_excludes_a_revoked_version() -> None:
         "history_for_scope.versions": store.history_for_scope(who.owner_id).versions,
         "history_for_scope.runs": store.history_for_scope(who.owner_id).runs,
         "history_for_scope.bindings": store.history_for_scope(who.owner_id).bindings,
+        # `W1-09`'s pins. Included in the *checked* set rather than exempted, because the property
+        # holds and is worth proving: a pin on a deleted version is `DELETE`d by
+        # `_cascade_to_pins`, not tombstoned, so a restore that puts the version rows back live
+        # finds no pin row to resurrect. That is a stronger guarantee than the ledger check the
+        # other reads rely on, and this asserts it rather than assuming it.
+        "pins_for_scope": store.pins_for_scope(who.owner_id),
     }
 
     leaked = {name: rows for name, rows in returned.items() if rows}

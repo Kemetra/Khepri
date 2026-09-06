@@ -425,6 +425,10 @@ def test_the_slice_delivers_every_table_its_plan_assigns() -> None:
         # `W1-07a`'s revocation ledger (`FR-126`), named here for the same reason: it is a
         # workspace table the guard-shape test must see, and not one of *this* slice's five.
         "rca_workspace_revocations",
+        # `W1-09`'s pin table (`FR-128`, under active `KHEPRI-DEC-034`), for the same reason
+        # again. This assertion is an *extent* check, so a table added without a line here fails
+        # -- which is what it did when the pin table landed, and is the whole point of the form.
+        "rca_workspace_pins",
     }
 
 

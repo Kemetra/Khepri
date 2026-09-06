@@ -488,7 +488,8 @@ class SqlWorkspaceRecordStore:
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
                 .where(DatasetVersionRow.upload_ciphertext_digest == ciphertext_digest)
-                    .where(~_revocation_exists(DatasetVersionRow))
+                .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(DatasetVersionRow))
             ).first()
             return None if row is None else _version_from_row(row)
 
@@ -504,7 +505,8 @@ class SqlWorkspaceRecordStore:
             rows = database.execute(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
-                    .where(~_revocation_exists(DatasetVersionRow))
+                .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+                .where(~_revocation_exists(DatasetVersionRow))
                 .order_by(DatasetVersionRow.created_at.desc(), DatasetVersionRow.version_id.desc())
             ).scalars()
             return tuple(_version_from_row(row) for row in rows)
@@ -659,7 +661,8 @@ class SqlWorkspaceRecordStore:
         with reading(self._factory) as database:
             rows = database.execute(
                 select(AnalysisRunRow)
-                    .where(AnalysisRunRow.owner_id == owner_id)
+                .where(AnalysisRunRow.owner_id == owner_id)
+                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
                 .where(~_revocation_exists(AnalysisRunRow))
                 .order_by(AnalysisRunRow.started_at.desc(), AnalysisRunRow.run_id.desc())
             ).scalars()
@@ -713,7 +716,7 @@ class SqlWorkspaceRecordStore:
                 select(ArtifactBindingRow)
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.run_id == run_id)
-                .where(AnalysisRunRow.owner_id == owner_id)
+                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
                 .where(~_run_revocation_exists())
             )
             if owner_id is not None:
@@ -735,7 +738,7 @@ class SqlWorkspaceRecordStore:
                 select(ArtifactBindingRow)
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.owner_id == owner_id)
-                .where(AnalysisRunRow.owner_id == owner_id)
+                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
                 .where(~_run_revocation_exists())
                 .order_by(ArtifactBindingRow.run_id, ArtifactBindingRow.surface)
             ).scalars()
