@@ -23,7 +23,6 @@ from khepri.rca.accounts import AccountService
 from khepri.rca.credentials import KdfParams, Verifier
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_retention import (
-    INVITATION_HORIZON_IS_UNENFORCED,
     InvitationRetentionSweeper,
 )
 from khepri.rca.invitations import Invitation, InvitationOffer, issue_secret
@@ -171,12 +170,23 @@ def test_the_redeemed_horizon_is_anchored_to_the_event_horizon_not_a_literal(
     assert "12" not in source, f"a literal horizon appears in the signature: {source!r}"
 
 
-def test_the_unenforced_horizon_is_recorded_rather_than_assumed(factory: sessionmaker) -> None:
-    """`R4-01` §8.1 asks `R4-03` to record that the horizon has no scheduled caller, so "the
-    cadence is operational" cannot imply somebody is choosing one. Asserted so the note cannot be
-    deleted quietly: no scheduler exists in this repository, and `RetentionPasses` is reached only
-    by the manual `sweep` subcommand."""
-    assert INVITATION_HORIZON_IS_UNENFORCED is True
+def test_the_horizon_has_a_caller_in_the_shipped_image() -> None:
+    """`R4-01` §8.1 asks `R4-03` to record that "the cadence is operational" cannot imply somebody
+    is choosing one. That obligation outlives the flag it used to be asserted through.
+
+    Until `W1-07b` this asserted `INVITATION_HORIZON_IS_UNENFORCED is True`, which was accurate:
+    `RetentionPasses` was reached only by `khepri.local.cli` and the wheel excludes it.
+    `KHEPRI-DEC-033` §5 makes deleting that flag part of the evidence the gap closed, so what is
+    asserted now is the fact that replaced it -- the deployed composition reaches this pass.
+
+    Still not a claim that anything is *scheduled*. `tests/test_w107b_unenforced_flag.py` carries
+    the scan that fails if any horizon is documented as unenforced again.
+    """
+    import inspect  # noqa: PLC0415
+
+    from khepri.runtime.wiring import build_retention_sweep  # noqa: PLC0415
+
+    assert "InvitationRetentionSweeper" in inspect.getsource(build_retention_sweep)
 
 
 def test_the_sweep_reports_counts_and_no_identifier(factory: sessionmaker) -> None:

@@ -42,8 +42,17 @@ ACTION_PROFILE_REUSED = "profile_reused"
 #: *this* action and emits no event of its own: `KHEPRI-DEC-033` §1 calls a named cascade part of
 #: the parent's deletion, so a run that ends because its version did was not separately acted on.
 ACTION_VERSION_DELETED = "version_deleted"
-#: The workspace actions this slice performs. `W1-07b` adds the sweep when it writes it --
-#: `FR-125` names it -- and the migration literal moves in the same commit.
+#: `W1-07b`. One retention pass over one scope. `FR-125` names `sweep` literally among the
+#: workspace actions that MUST emit an event, and `KHEPRI-DEC-033` §2's audit row states the
+#: class's ending is "run by the retention sweep, recorded as a" content-free record.
+#:
+#: Its subject is `None`: a sweep acts on a *class* over a horizon, not on an object, and
+#: `AuditEntry.subject` already admits that pairing. Naming an object kind here would make an
+#: evidence consumer read a class-level purge as an act on one customer's dataset version -- a real
+#: signal at the wrong granularity, which is always wrong.
+ACTION_RETENTION_SWEPT = "retention_swept"
+#: The workspace actions this slice performs. `20260906_0028` admits `retention_swept`; the literal
+#: there and this tuple are compared by `test_migration_columns_match_the_declared_models`.
 AUDIT_ACTIONS = (
     ACTION_VERSION_CREATED,
     ACTION_RUN_STARTED,
@@ -52,6 +61,7 @@ AUDIT_ACTIONS = (
     ACTION_PROFILE_REMEMBERED,
     ACTION_PROFILE_REUSED,
     ACTION_VERSION_DELETED,
+    ACTION_RETENTION_SWEPT,
 )
 
 OUTCOME_COMPLETED = "completed"
@@ -79,8 +89,12 @@ AUDIT_OBJECTS = (OBJECT_VERSION, OBJECT_RUN, OBJECT_PROFILE)
 #: session and not an account, so the member is not recoverable there without persisting an account
 #: beside a bearer-adjacent identifier -- `KHEPRI-DEC-015` §7 -- and the event does not pretend to
 #: know. The `system:` prefix keeps it from colliding with, or reading as, an account identifier.
-#: `W1-07`'s retention sweep will name its own actor in the same shape.
+#: `W1-07b`'s retention sweep names its own actor in the same shape, just below.
 ACTOR_PIPELINE = "system:pipeline"
+#: `W1-07b`. A retention pass is performed by no account -- it is the horizon elapsing, not a
+#: person acting -- and `system:` keeps this from colliding with, or reading as, an account
+#: identifier.
+ACTOR_RETENTION = "system:retention"
 
 # Content-free, per the refusal discipline in `rca/errors.py`.
 AUDIT_ACTION_FAILURE = "Audit action is not one of the workspace actions this domain names."

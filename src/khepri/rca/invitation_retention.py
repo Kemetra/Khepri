@@ -13,8 +13,8 @@ reaches it: `find_for_redemption` destroys on touch, and this bounds the untouch
 therefore a retention control with a privacy obligation behind it, not a disk-space measure.
 
 **Not a scheduler**, following `AccountRetentionSweeper`, `MembershipEventSweeper`, and
-`SessionRetentionSweeper`: one pass when called. See the note on `INVITATION_HORIZON_IS_UNENFORCED`
-below, which records what that currently means in this repository.
+`SessionRetentionSweeper`: one pass when called. See the note below the imports, which records what
+that means now that `W1-07b` has put a caller in the shipped image.
 """
 
 from __future__ import annotations
@@ -25,19 +25,23 @@ from datetime import datetime
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.lifecycle import MEMBERSHIP_EVENT_RETENTION_MONTHS, _months_before
 
-#: **There is no scheduled caller in this repository, so this horizon is unenforced.**
+#: **The caller now exists; the cadence is still an operational decision.**
 #:
-#: `RetentionPasses` is invoked only by the manual `sweep` subcommand (`khepri.local.cli`), and no
-#: scheduler exists. Every sweeper in the repository shares this gap -- accounts, membership events,
-#: sessions, and now invitations -- so the horizons `KHEPRI-DEC-015` fixes for those classes are
-#: equally unenforced without one.
+#: `W1-07b` moved the composition into `khepri.runtime` and gave it a console script,
+#: `khepri-retention-sweep`, which ships in the wheel -- so `RetentionPasses` is reachable from the
+#: deployed image and this horizon is enforced when that command runs. Until then it was reached
+#: only by `khepri.local.cli`, which the wheel excludes, and this module carried
+#: `INVITATION_HORIZON_IS_UNENFORCED = True` to say so; `KHEPRI-DEC-033` §5 makes deleting that
+#: flag part of the evidence that the gap closed.
 #:
-#: Recorded here rather than left implicit because `R4-01` §8.1 asks for exactly that: the cadence
-#: being an operational decision must not be allowed to imply that *somebody* is choosing one. A
-#: reader of this module should know that "one pass when called" currently means "one pass when an
-#: operator runs the command". Building the scheduler is larger than `R4`, and `R4-01` §8.1 assigns
-#: it elsewhere; naming the gap is this slice's obligation and the whole of it.
-INVITATION_HORIZON_IS_UNENFORCED = True
+#: `R4-01` §8.1's obligation survives the flag and is restated here: *the cadence being an
+#: operational decision must not be allowed to imply that somebody is choosing one.* Nothing in
+#: this repository schedules the command. "One pass when called" now means "one pass when the
+#: deployment invokes the command it has", which is a different sentence from the one this note
+#: used to make and is still not "a scheduler exists".
+#:
+#: `tests/test_w107b_unenforced_flag.py` is what replaced the deleted flag's assertion: it scans
+#: for any `*_IS_UNENFORCED` constant and asserts the deployed composition reaches every pass.
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +104,6 @@ class InvitationRetentionSweeper:
 
 
 __all__ = [
-    "INVITATION_HORIZON_IS_UNENFORCED",
     "InvitationRetentionSweeper",
     "InvitationSweepReport",
 ]

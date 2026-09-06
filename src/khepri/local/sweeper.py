@@ -1,242 +1,27 @@
-"""The driver for the recovery and expiry work nothing currently calls.
+"""Re-export of the retention sweep, which now lives in `khepri.runtime`.
 
-**What this fills.** `SqlReportJobRepository.recover_expired` and
-`recover_orphans` implement the restart recovery and orphan detection RRA-007
-requires, and `DeletionService.delete_session_content` implements the deletion
-RRA-002 requires. All three are complete; none of them has a caller. In the
-deployed design that caller is whatever runs on a schedule, and no slice has added
-one. This is that caller for a local run.
-
-**Expiry deletes, it does not merely mark.** RRA-002 requires content to be gone
-at seven days across input, materializations, facts, narrative and exports, so a
-session past `content_expires_at` is swept through the same
-`delete_session_content` path an immediate request uses, with a different reason.
-Sharing the path is the point: an expiry route that deleted differently from the
-on-demand route would be a second deletion implementation to keep correct.
-
-**Nothing here is a scheduler.** It runs one pass when called. Choosing a cadence
-is an operational decision, and a local loop that invented one would be modelling
-a deployment nobody has authorized.
+The composition moved to `khepri/runtime/retention_sweep.py` in `W1-07b` so it ships in the wheel
+(`KHEPRI-DEC-033` §5). This module keeps `khepri.local`'s import path working and holds **no
+second definition** -- `test_the_composition_has_exactly_one_definition` asserts identity, so a
+copy here fails rather than drifting.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import datetime
-
-from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
-
-from khepri.rca.invitation_retention import InvitationRetentionSweeper
-from khepri.rca.lifecycle import AccountRetentionSweeper, MembershipEventSweeper
-from khepri.rca.recovery_security import RecoverySecurityEventSweeper
-from khepri.rca.session_retention import SessionRetentionSweeper
-from khepri.rra.deletion import DeletionRetryRequired, DeletionService
-from khepri.rra.job_persistence import SqlReportJobRepository
-from khepri.rra.persistence import BetaSessionRow
-
-REASON_EXPIRED = "expired"
-
-
-@dataclass(frozen=True, slots=True)
-class SweepReport:
-    """What one pass did, in counts only. No identifier is echoed."""
-
-    expired_leases: int
-    orphaned_jobs: int
-    expired_sessions: int
-    deletions_deferred: int
-    purged_accounts: int = 0
-    purged_events: int = 0
-    # Distinct from `expired_sessions` above, which counts RRA beta sessions whose *content* was
-    # deleted. This counts commercial session records removed after their retention horizon
-    # (`R3-07`). Two different tables and two different policies; one name for both would make a
-    # report that reads as consistent while measuring unrelated things.
-    purged_sessions: int = 0
-    # `R4-03`'s invitation horizon. Distinct from every count above for the same reason
-    # `purged_sessions` is distinct from `expired_sessions`: a different table and a different
-    # policy. This one carries a privacy obligation the others do not -- an invitation row holds a
-    # `target_identity`, so a pass that purged none when it should have is a retention failure
-    # rather than a housekeeping one.
-    purged_invitations: int = 0
-    # `KHEPRI-DEC-025` §4's recovery security evidence. Named apart from `purged_events` above
-    # rather than folded into it: that field counts FR-014 membership events, this one counts
-    # content-free provider-recovery evidence, and two different tables under one name would make
-    # a report that reads as consistent while measuring unrelated things.
-    purged_recovery_events: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class RetentionCounts:
-    """What the retention passes purged, by name.
-
-    Replaces a positional five-tuple. Every field is a distinct table under a distinct governed
-    horizon, so position is the wrong way to tell them apart.
-    """
-
-    accounts: int = 0
-    events: int = 0
-    sessions: int = 0
-    invitations: int = 0
-    recovery_events: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class RetentionPasses:
-    """`KHEPRI-DEC-015`'s two horizons, travelling together.
-
-    They are one parameter rather than two because they are one concern with one reason to be
-    absent: a stack with no RCA tables has neither. Passing them separately also pushed
-    `LocalSweeper.__init__` to five arguments, which CodeScene flagged — the signature had been
-    accumulating one collaborator per slice, and the smell was real rather than incidental.
-
-    Both stay optional so a stack that sweeps only RRA content can construct this with nothing.
-    """
-
-    accounts: AccountRetentionSweeper | None = None
-    events: MembershipEventSweeper | None = None
-    sessions: SessionRetentionSweeper | None = None
-    invitations: InvitationRetentionSweeper | None = None
-    # `KHEPRI-DEC-025` §4's recovery security evidence, anchored to the same twelve-month audit
-    # horizon as `events` above. A fifth pass rather than a reuse of `events`: both purge at
-    # twelve months, but they are different tables under different requirements, and one sweeper
-    # covering both would purge either by accident if a horizon later moved.
-    recovery_events: RecoverySecurityEventSweeper | None = None
-
-    def run(self, *, now: datetime) -> RetentionCounts:
-        """All five passes, returning the purged counts by name.
-
-        Independent of each other: §2a's twelve-month audit horizon is shorter than §2b's
-        twenty-four month account horizon, so an event never outlives the account it refers to,
-        and neither pass depends on the other having run. `R3-07`'s session horizon is shorter
-        still and references neither — a session record is an operational artifact, so purging one
-        removes no audit evidence and changes no authority.
-
-        **The invitation pass is anchored to the event pass but does not depend on it having run.**
-        `R4-03`'s redeemed-invitation horizon is `MEMBERSHIP_EVENT_RETENTION_MONTHS`, so the two
-        move
-        together by construction — but each evaluates its own predicate against `now`, and running
-        them in either order over the same instant gives the same result. Ordering here is field
-        order, not a dependency.
-
-        **The recovery-evidence pass is independent of all four.** It purges only the content-free
-        `RecoverySecurityEvent` rows, which reference an account but carry no identity data, so it
-        neither depends on nor blocks any other horizon.
-
-        Returns a named record rather than a tuple: this began as a four-element tuple destructured
-        by position, and a fifth pass is where that stops being readable. The same reasoning made
-        these sweepers one value object in the first place.
-        """
-        return RetentionCounts(
-            accounts=0 if self.accounts is None else self.accounts.sweep(now=now).purged_accounts,
-            events=0 if self.events is None else self.events.sweep(now=now).purged_events,
-            sessions=(
-                0 if self.sessions is None else self.sessions.sweep(now=now).purged_sessions
-            ),
-            invitations=(
-                0
-                if self.invitations is None
-                else self.invitations.sweep(now=now).purged_invitations
-            ),
-            recovery_events=(
-                0
-                if self.recovery_events is None
-                else self.recovery_events.sweep(now=now).purged_events
-            ),
-        )
-
-
-class LocalSweeper:
-    """One recovery-and-expiry pass over the local database."""
-
-    def __init__(
-        self,
-        *,
-        jobs: SqlReportJobRepository,
-        deletion: DeletionService,
-        factory: sessionmaker[Session],
-        retention: RetentionPasses | None = None,
-    ) -> None:
-        self._jobs = jobs
-        self._deletion = deletion
-        self._factory = factory
-        # Optional so a stack with no RCA tables can still sweep RRA content. When present,
-        # KHEPRI-DEC-015's retention passes run here rather than nowhere: a retention rule whose
-        # only caller does not exist is indefinite retention with a policy comment on top.
-        self._retention = retention
-
-    def sweep(self, *, now: datetime) -> SweepReport:
-        """Recover stalled work, delete expired sessions, then apply both retention horizons."""
-        expired = self._jobs.recover_expired(now=now)
-        orphaned = self._jobs.recover_orphans(now=now)
-        swept, deferred = self._expire_sessions(now=now)
-        # `getattr` because a stack without RCA tables, and the test stubs that subclass this
-        # without calling __init__, legitimately have no retention pass to run.
-        retention = getattr(self, "_retention", None) or RetentionPasses()
-        purged = retention.run(now=now)
-        return SweepReport(
-            expired_leases=len(expired),
-            orphaned_jobs=len(orphaned),
-            expired_sessions=swept,
-            deletions_deferred=deferred,
-            purged_accounts=purged.accounts,
-            purged_events=purged.events,
-            purged_sessions=purged.sessions,
-            purged_invitations=purged.invitations,
-            purged_recovery_events=purged.recovery_events,
-        )
-
-    def _expire_sessions(self, *, now: datetime) -> tuple[int, int]:
-        """Delete content for every session past its expiry instant.
-
-        A session whose deletion needs another attempt is counted rather than
-        retried here: `DeletionRetryRequired` means the store asked for a later
-        try, and looping on it inside one pass would turn a backoff into a spin.
-        """
-        swept = 0
-        deferred = 0
-        for session_id in self._expired_session_ids(now=now):
-            try:
-                self._deletion.delete_session_content(
-                    session_id=session_id,
-                    reason=REASON_EXPIRED,
-                    now=now,
-                )
-            except DeletionRetryRequired:
-                deferred += 1
-            else:
-                swept += 1
-        return swept, deferred
-
-    def _expired_session_ids(self, *, now: datetime) -> Sequence[str]:
-        """Sessions past expiry whose content has not already been deleted."""
-        with self._factory() as database:
-            return list(
-                database.execute(
-                    select(BetaSessionRow.session_id).where(
-                        BetaSessionRow.content_expires_at <= now,
-                        BetaSessionRow.content_deleted_at.is_(None),
-                    )
-                ).scalars()
-            )
-
-
-def build_local_sweeper(
-    *,
-    jobs: SqlReportJobRepository,
-    deletion: DeletionService,
-    factory: sessionmaker[Session],
-    retention: RetentionPasses | None = None,
-) -> LocalSweeper:
-    return LocalSweeper(jobs=jobs, deletion=deletion, factory=factory, retention=retention)
-
+from khepri.runtime.retention_sweep import (
+    REASON_EXPIRED,
+    RetentionCounts,
+    RetentionPasses,
+    RetentionSweeper,
+    SweepReport,
+    build_retention_sweeper,
+)
 
 __all__ = [
     "REASON_EXPIRED",
-    "LocalSweeper",
     "RetentionCounts",
     "RetentionPasses",
+    "RetentionSweeper",
     "SweepReport",
-    "build_local_sweeper",
+    "build_retention_sweeper",
 ]

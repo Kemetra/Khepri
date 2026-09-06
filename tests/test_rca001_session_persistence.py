@@ -422,6 +422,7 @@ class TestTheMigration:
         completed run retains. `W1-08` then added `20260905_0025`, the four `RRA-008` family
         versions on that record (`FR-116`). `W1-07a` then added `20260906_0026`, the deletion action
         and the `already_deleted` outcome, then `20260906_0027`, the revocation ledger (`FR-126`),
+        then `20260906_0028`, which admits the retention sweep's own action (`FR-125`),
         which is the head this pin now names.
         """
         import subprocess
@@ -431,7 +432,7 @@ class TestTheMigration:
         )
 
         assert result.stdout.count("(head)") == 1, result.stdout
-        assert "20260906_0027" in result.stdout
+        assert "20260906_0028" in result.stdout
 
 
 def test_a_session_and_an_rra_beta_session_cannot_be_confused(factory: sessionmaker) -> None:
