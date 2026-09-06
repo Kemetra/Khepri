@@ -16,6 +16,8 @@ from datetime import datetime
 
 from sqlalchemy import (
     delete,
+    func,
+    literal,
     select,
 )
 from sqlalchemy.exc import IntegrityError
@@ -44,6 +46,8 @@ from khepri.rca.workspace.locks import live_runs_for_update, run_for_update, ver
 from khepri.rca.workspace.schema import (
     PARENT_TOMBSTONED_FAILURE,
     PIN_KIND_FAILURE,
+    PIN_KIND_RUN,
+    PIN_KIND_VERSION,
     PIN_KINDS,
     RECOMPLETE_FAILURE,
     RETENTION_ACTIVE,
@@ -398,6 +402,23 @@ class WorkspacePin:
     pinned_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class RecentItem:
+    """One object this scope worked on, as the recency view presents it (`FR-129`).
+
+    `occurred_at` is an instant the underlying record **already carried** -- a version's creation,
+    a run's completion or start. It is not a "last opened" time, because nothing records when an
+    object was opened: that would be the access record `KHEPRI-DEC-034` §2 refuses.
+
+    There is no `count` and no rank. Recency is an ordering over records that exist; frequency
+    would need a record of each visit, which is the thing not authorized.
+    """
+
+    object_id: str
+    object_kind: str
+    occurred_at: datetime
+
+
 class SqlWorkspaceRecordStore:
     """Rows for the workspace records, and the one transition `FR-112` permits.
 
@@ -467,8 +488,7 @@ class SqlWorkspaceRecordStore:
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
                 .where(DatasetVersionRow.upload_ciphertext_digest == ciphertext_digest)
-                .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
-                .where(~_revocation_exists(DatasetVersionRow))
+                    .where(~_revocation_exists(DatasetVersionRow))
             ).first()
             return None if row is None else _version_from_row(row)
 
@@ -484,8 +504,7 @@ class SqlWorkspaceRecordStore:
             rows = database.execute(
                 select(DatasetVersionRow)
                 .where(DatasetVersionRow.owner_id == owner_id)
-                .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
-                .where(~_revocation_exists(DatasetVersionRow))
+                    .where(~_revocation_exists(DatasetVersionRow))
                 .order_by(DatasetVersionRow.created_at.desc(), DatasetVersionRow.version_id.desc())
             ).scalars()
             return tuple(_version_from_row(row) for row in rows)
@@ -640,8 +659,7 @@ class SqlWorkspaceRecordStore:
         with reading(self._factory) as database:
             rows = database.execute(
                 select(AnalysisRunRow)
-                .where(AnalysisRunRow.owner_id == owner_id)
-                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                    .where(AnalysisRunRow.owner_id == owner_id)
                 .where(~_revocation_exists(AnalysisRunRow))
                 .order_by(AnalysisRunRow.started_at.desc(), AnalysisRunRow.run_id.desc())
             ).scalars()
@@ -695,7 +713,7 @@ class SqlWorkspaceRecordStore:
                 select(ArtifactBindingRow)
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.run_id == run_id)
-                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(AnalysisRunRow.owner_id == owner_id)
                 .where(~_run_revocation_exists())
             )
             if owner_id is not None:
@@ -717,7 +735,7 @@ class SqlWorkspaceRecordStore:
                 select(ArtifactBindingRow)
                 .join(AnalysisRunRow, AnalysisRunRow.run_id == ArtifactBindingRow.run_id)
                 .where(ArtifactBindingRow.owner_id == owner_id)
-                .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+                .where(AnalysisRunRow.owner_id == owner_id)
                 .where(~_run_revocation_exists())
                 .order_by(ArtifactBindingRow.run_id, ArtifactBindingRow.surface)
             ).scalars()
@@ -912,6 +930,69 @@ class SqlWorkspaceRecordStore:
                 )
                 for row in rows
             )
+
+    def recent_activity(self, owner_id: str, *, limit: int = 5) -> tuple[RecentItem, ...]:
+        """What this owner last worked on, most recent first (`FR-129`).
+
+        **This writes nothing, and that is the requirement rather than an optimization.**
+        `KHEPRI-DEC-034` §1: "a query over dataset versions and analysis runs the workspace already
+        stores ... ordered by instants those records already carry. This is the whole of why it
+        needs no telemetry: a view that stores no event is not an event stream." A version of this
+        that recorded each read -- to rank, to count, to show "most used" -- would be product
+        analytics, which `KHEPRI-DEC-015` §3 does not authorize and §2 declines to seek.
+
+        **It reads the workspace records, never `rca_workspace_audit_events`.** Rendering the audit
+        trail as a customer-facing feed is the conversion `RCA-005` forbids in advance: the audit
+        carve-out "does not reach" product use, and "an audit event that begins to carry a product
+        metric has become telemetry and is excluded". The events are the right *shape* for a feed
+        and the wrong *source*, which is exactly why the door is closed by name.
+
+        Three filters per arm, not two. Scope and retention state are the obvious pair; the
+        revocation predicate is the third, for `dataset_versions_for_scope`'s reason -- a restore
+        rewrites `retention_state`, so only the ledger still knows the object ended (`FR-126`).
+        Without it a restored version would reappear here after the customer deleted it.
+
+        Ordered by the instants the records already carry -- `created_at` for a version, the run's
+        completion or start for a run. Recency, never frequency: how *often* an object was opened
+        is not recorded anywhere, and `KHEPRI-DEC-034` §2 refuses the counter that would record it.
+        """
+        versions = (
+            select(
+                DatasetVersionRow.version_id.label("object_id"),
+                literal(PIN_KIND_VERSION).label("object_kind"),
+                DatasetVersionRow.created_at.label("occurred_at"),
+            )
+            .where(DatasetVersionRow.owner_id == owner_id)
+            .where(DatasetVersionRow.retention_state == RETENTION_ACTIVE)
+            .where(~_revocation_exists(DatasetVersionRow))
+        )
+        runs = (
+            select(
+                AnalysisRunRow.run_id.label("object_id"),
+                literal(PIN_KIND_RUN).label("object_kind"),
+                func.coalesce(AnalysisRunRow.completed_at, AnalysisRunRow.started_at).label(
+                    "occurred_at"
+                ),
+            )
+            .where(AnalysisRunRow.owner_id == owner_id)
+            .where(AnalysisRunRow.retention_state == RETENTION_ACTIVE)
+            .where(~_revocation_exists(AnalysisRunRow))
+        )
+        combined = versions.union_all(runs).subquery()
+        with reading(self._factory) as database:
+            rows = database.execute(
+                select(combined)
+                .order_by(combined.c.occurred_at.desc(), combined.c.object_id.desc())
+                .limit(limit)
+            ).all()
+        return tuple(
+            RecentItem(
+                object_id=row.object_id,
+                object_kind=row.object_kind,
+                occurred_at=_utc(row.occurred_at),
+            )
+            for row in rows
+        )
 
     def tombstones_for_scope(self, owner_id: str) -> tuple[VersionTombstone | RunTombstone, ...]:
         """Every deletion record in one scope, oldest deletion first, a version before its runs.

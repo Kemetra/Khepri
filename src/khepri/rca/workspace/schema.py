@@ -895,7 +895,16 @@ def _refuse_content_update(_mapper, _connection, target: object) -> None:
 
 #: The two object kinds a pin may name (`KHEPRI-DEC-034` §1). A closed set, so a third kind cannot
 #: arrive without a migration widening the CHECK alongside it.
-PIN_KINDS: tuple[str, ...] = ("dataset_version", "analysis_run")
+#:
+#: **Deliberately not `audit.py`'s `OBJECT_VERSION`/`OBJECT_RUN`.** Those spell the same two things
+#: `version` and `run` for a *content-free audit record* under `KHEPRI-DEC-015` §7; these name the
+#: objects a customer sees on a workspace surface. Reusing the audit vocabulary here would tie a
+#: presentation label to a governed evidence vocabulary, so widening one would silently widen the
+#: other -- and `FR-128` puts a pin outside the governed actions entirely. `W1-09`'s recency view
+#: uses these same two constants, so a pin and a recent item name one kind one way.
+PIN_KIND_VERSION = "dataset_version"
+PIN_KIND_RUN = "analysis_run"
+PIN_KINDS: tuple[str, ...] = (PIN_KIND_VERSION, PIN_KIND_RUN)
 
 
 class WorkspacePinRow(Base):
