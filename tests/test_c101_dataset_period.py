@@ -30,6 +30,7 @@ population.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -44,34 +45,30 @@ from khepri.rra.analysis.dataset_period import (
 )
 
 
-def _month(
-    year: int,
-    month: int,
-    *,
-    last_day: int,
-    complete: bool = True,
-    granularity: str = GRANULARITY_MONTH,
-    retail_day_start_hour: int = 0,
-    version_id: str | None = None,
-) -> DatasetPeriod:
-    """One month-shaped period, varying only the field a test is about.
+def _month(year: int, month: int, last_day: int) -> DatasetPeriod:
+    """One complete, month-granular period with no retail-day offset.
 
-    Every keyword defaults to the comparable case, so each test names the single
-    field it changes. Building these inline instead put four near-identical
-    constructions in the file, which CodeScene flagged as duplication on `#401`.
+    The comparable case, and the only constructor in this file. A test that needs
+    an incomparable period derives it with `replace`, naming the single field it
+    changes -- which keeps the reason a test refuses the only thing visible in it.
+
+    `#401` went through two worse shapes first: four near-identical inline
+    constructions (CodeScene: Code Duplication), then one helper with seven
+    keywords (CodeScene: Excess Number of Function Arguments). `replace` on a
+    frozen dataclass needs neither.
     """
     return DatasetPeriod(
-        dataset_version_id=version_id or f"dsv_{year:04d}{month:02d}",
+        dataset_version_id=f"dsv_{year:04d}{month:02d}",
         start=date(year, month, 1),
         end=date(year, month, last_day),
-        granularity=granularity,
-        retail_day_start_hour=retail_day_start_hour,
-        complete=complete,
+        granularity=GRANULARITY_MONTH,
+        retail_day_start_hour=0,
+        complete=True,
     )
 
 
-FEBRUARY = _month(2026, 2, last_day=28)
-MARCH = _month(2026, 3, last_day=31)
+FEBRUARY = _month(2026, 2, 28)
+MARCH = _month(2026, 3, 31)
 
 
 class TestOrderedPair:
@@ -110,14 +107,14 @@ class TestPeriodRule:
         assert periods_comparable(VersionPair(subject=MARCH, baseline=FEBRUARY)) is None
 
     def test_differing_granularity_refuses(self) -> None:
-        daily = _month(2026, 3, last_day=31, granularity=GRANULARITY_DAY, version_id="dsv_daily")
+        daily = replace(MARCH, granularity=GRANULARITY_DAY)
 
         assert periods_comparable(VersionPair(subject=daily, baseline=FEBRUARY)) == (
             "granularity mismatch"
         )
 
     def test_differing_retail_day_boundary_refuses(self) -> None:
-        shifted = _month(2026, 3, last_day=31, retail_day_start_hour=6, version_id="dsv_shifted")
+        shifted = replace(MARCH, retail_day_start_hour=6)
 
         assert periods_comparable(VersionPair(subject=shifted, baseline=FEBRUARY)) == (
             "retail day boundary mismatch"
@@ -125,14 +122,14 @@ class TestPeriodRule:
 
     def test_incomplete_subject_refuses(self) -> None:
         """`D-6` requires both complete; the prefix concession does not cross versions."""
-        partial = _month(2026, 3, last_day=17, complete=False)
+        partial = replace(MARCH, complete=False)
 
         assert periods_comparable(VersionPair(subject=partial, baseline=FEBRUARY)) == (
             "incomplete coverage"
         )
 
     def test_incomplete_baseline_refuses(self) -> None:
-        partial = _month(2026, 2, last_day=14, complete=False)
+        partial = replace(FEBRUARY, complete=False)
 
         assert periods_comparable(VersionPair(subject=MARCH, baseline=partial)) == (
             "incomplete coverage"
@@ -140,14 +137,7 @@ class TestPeriodRule:
 
     def test_granularity_is_reported_before_completeness(self) -> None:
         """One stated cause per refusal, and the structural one is stated first."""
-        partial_daily = _month(
-            2026,
-            3,
-            last_day=17,
-            complete=False,
-            granularity=GRANULARITY_DAY,
-            version_id="dsv_both_wrong",
-        )
+        partial_daily = replace(MARCH, granularity=GRANULARITY_DAY, complete=False)
 
         assert periods_comparable(VersionPair(subject=partial_daily, baseline=FEBRUARY)) == (
             "granularity mismatch"
