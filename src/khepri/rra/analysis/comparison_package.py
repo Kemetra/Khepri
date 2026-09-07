@@ -38,6 +38,7 @@ from khepri.rra.facts import fact_identity
 __all__ = [
     "COMPARISON_CROSSVERSION_VERSION",
     "CrossVersionFact",
+    "IdentityMismatch",
     "MeasuredPair",
     "PairProvenance",
     "build_cross_version_fact",
@@ -52,6 +53,10 @@ COMPARISON_CROSSVERSION_VERSION = "rra008.crossversion.v1"
 #: distinguishable and not merely a set". Recorded literally so a reader of one
 #: serialized fact needs no convention to interpret its two halves.
 OPERAND_ORDER: tuple[str, ...] = ("subject", "baseline")
+
+
+class IdentityMismatch(Exception):
+    """A fact whose identifiers do not name its own metric, pair and version."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +111,31 @@ class CrossVersionFact:
     unit_kind: str
     provenance: PairProvenance
     formula_version: str = COMPARISON_CROSSVERSION_VERSION
+
+    def __post_init__(self) -> None:
+        """Refuse a fact whose identifiers disagree with what they name.
+
+        Frozen prevents mutation, and prevents nothing else: `dataclasses.replace`
+        legally builds a copy with a different `metric` or `provenance` while
+        carrying the original `fact_id` forward, and that fact would serialize
+        identity *inputs* contradicting its own identifiers -- two different
+        facts able to claim one identity, which is exactly what §Composite
+        provenance's "operand order is part of fact identity" forbids.
+
+        `#404`'s review found this. The first draft had a test *documenting* the
+        hazard and asserting the stale identifier as expected, which is not the
+        same as preventing it.
+        """
+        expected_fact_id, expected_citation_id = fact_identity(
+            metric=self.metric,
+            scope=self.provenance.scope,
+            formula_version=self.formula_version,
+        )
+        if (self.fact_id, self.citation_id) != (expected_fact_id, expected_citation_id):
+            raise IdentityMismatch(
+                f"identity {self.fact_id} does not name metric {self.metric!r} "
+                f"over {self.provenance.scope} under {self.formula_version}"
+            )
 
     @property
     def absolute_delta(self) -> Decimal:

@@ -34,6 +34,7 @@ import pytest
 from khepri.rra.analysis.comparison_package import (
     COMPARISON_CROSSVERSION_VERSION,
     CrossVersionFact,
+    IdentityMismatch,
     MeasuredPair,
     PairProvenance,
     build_cross_version_fact,
@@ -175,20 +176,74 @@ class TestImmutableAndDeterministic:
         with pytest.raises(AttributeError):
             fact.metric = "other"  # type: ignore[misc]
 
-    def test_replace_returns_a_new_fact_and_leaves_the_original(self) -> None:
-        """`replace` is legal on a frozen dataclass; it copies rather than mutates.
+    def test_replace_with_a_changed_metric_refuses(self) -> None:
+        """`replace` cannot smuggle a stale identity past the constructor.
 
-        Its identity is deliberately **not** recomputed: `replace` is not the
-        governed constructor, so a copy carrying a changed metric keeps the old
-        `fact_id`. That is why `build_cross_version_fact` exists and why nothing
-        in this family should reach for `replace` to derive a fact.
+        Frozen prevents mutation and prevents nothing else: `replace` legally
+        builds a copy with a different `metric` while carrying the original
+        `fact_id` forward. A first draft of this test **asserted that stale
+        identifier as expected** and called it documentation; `#404`'s review
+        pointed out that two different facts could then claim one identity.
+        `__post_init__` now refuses it.
         """
         original = _fact()
-        copy = replace(original, metric="other_metric")
 
-        assert original.metric == "sales_revenue"
-        assert copy.metric == "other_metric"
-        assert copy.fact_id == original.fact_id
+        with pytest.raises(IdentityMismatch):
+            replace(original, metric="other_metric")
+
+    def test_replace_with_a_changed_pair_refuses(self) -> None:
+        """The same hazard through the provenance rather than the metric."""
+        original = _fact()
+        other_pair = replace(PROVENANCE, subject_version_id="dsv_202604")
+
+        with pytest.raises(IdentityMismatch):
+            replace(original, provenance=other_pair)
+
+    def test_replace_with_a_changed_version_refuses(self) -> None:
+        """`formula_version` is hashed, so changing it invalidates the identity."""
+        original = _fact()
+
+        with pytest.raises(IdentityMismatch):
+            replace(original, formula_version="rra008.comparison.v2")
+
+    def test_a_mismatched_citation_id_alone_refuses(self) -> None:
+        """`citation_id` is checked independently of `fact_id`.
+
+        Mutation testing found this twice. Dropping `citation_id` from the
+        comparison first passed every test, because none built a fact whose
+        `fact_id` was right and whose citation was wrong; then dropping
+        `fact_id` passed, because the replacement test got *both* wrong at once
+        and could not say which half caught it. Each half now has a case that
+        leaves the other valid -- the two identifiers share one digest under
+        different prefixes, so that is expressible.
+
+        A citation is how a rendered figure points back at its fact, so a stale
+        one misroutes provenance without invalidating the fact it cites.
+        """
+        good = _fact()
+
+        with pytest.raises(IdentityMismatch):
+            replace(good, citation_id="cit_0000000000000000")
+
+    def test_a_mismatched_fact_id_alone_refuses(self) -> None:
+        good = _fact()
+
+        with pytest.raises(IdentityMismatch):
+            replace(good, fact_id="fct_000000000000000000000000")
+
+    def test_replace_of_a_value_is_permitted(self) -> None:
+        """Values are not identity inputs, so a corrected figure keeps its name.
+
+        This is the boundary of the guard, and it is deliberate: `fact_identity`
+        hashes metric, pair and version, so re-deriving the same metric over the
+        same ordered pair under the same version must reach the same identity
+        whatever the numbers turn out to be.
+        """
+        original = _fact()
+        corrected = replace(original, subject_value=Decimal("1200"))
+
+        assert corrected.fact_id == original.fact_id
+        assert corrected.absolute_delta == Decimal("200")
 
     def test_two_builds_serialize_byte_identically(self) -> None:
         assert canonical_json(_fact().as_document()) == canonical_json(_fact().as_document())
