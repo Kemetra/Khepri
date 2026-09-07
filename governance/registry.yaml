@@ -286,6 +286,7 @@ artifacts:
       - RRA
       - RRA-004
       - RRA-005
+      - RRA-008
   - type: specification
     id: RRA-007
     state: active
