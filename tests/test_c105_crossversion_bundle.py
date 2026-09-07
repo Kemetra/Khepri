@@ -178,6 +178,16 @@ def test_reversed_pair_changes_bundle_and_figure_identities(
     assert {figure.figure_id for figure in forward.figures}.isdisjoint(
         figure.figure_id for figure in backward.figures
     )
+    # The identity document's slots follow the caller's order, not a canonical one.
+    # Mutation testing found this gap: an identity that sorted its two packages still
+    # produced a distinct bundle_id, because figures and citations are order-sensitive on
+    # their own, while the document named the wrong package as subject.
+    subject_id = request.subject_period.dataset_version_id
+    baseline_id = request.baseline_period.dataset_version_id
+    assert forward.identity.as_document()["subject"]["dataset_version_id"] == subject_id
+    assert forward.identity.as_document()["baseline"]["dataset_version_id"] == baseline_id
+    assert backward.identity.as_document()["subject"]["dataset_version_id"] == baseline_id
+    assert backward.identity.as_document()["baseline"]["dataset_version_id"] == subject_id
 
 
 def test_every_delta_has_both_operands(comparison_request: CrossVersionRequest) -> None:
