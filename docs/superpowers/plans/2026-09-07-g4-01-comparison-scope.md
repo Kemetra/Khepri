@@ -71,7 +71,7 @@ later slice is prevented from assuming them.
 | # | Customer sentence | Admitted pair | In `C1`? |
 |---|---|---|---|
 | **UC-1** | "The same report, one period later." | Two versions of **the same source lineage**, same mapping and formula versions, disjoint or adjacent periods | **Yes — primary** |
-| **UC-2** | "This branch against that branch, same period." | Two versions, **same period**, differing only in a single governed dimension member | **Yes — secondary** |
+| **UC-2** | "The same report, the same period, re-issued after a correction." | Two versions, **same period**, same governed aggregate scope and admitted store set — differing only in the *contents* of the corrected extraction | **Yes — secondary** |
 | **UC-3** | "This year's file against last year's, after we changed the mapping." | Two versions with **differing `rra003.mapping` or `rra004.formula` versions** | **No — refused** |
 | **UC-4** | "All twelve months at once." | Three or more versions | **No — deferred** |
 
@@ -87,6 +87,16 @@ whose counterpart period is merely incomplete — so admitting a cross-version-s
 make `C1` weaker than the spec it builds beside. `C1-02`'s "mapping drift and versions" detection
 is therefore a **refusal path, not a reconciliation path**. See §4.
 
+**UC-2 does not admit a cross-scope or cross-store pair, and this is the correction `#394`'s review
+forced.** An earlier draft admitted two versions "differing only in a single governed dimension
+member," which reads as exactly the mismatch `RRA-008` refuses: it requires "the same governed
+aggregate scope **or** complete admitted store set and the same event-kind and status filters," and
+refuses "scope-mismatched, store-mismatched" structures outright. **"This branch against that
+branch" is therefore not `C1` scope** — it is a breakdown *within* one population, which is
+`RRA-004`'s dimension work, and admitting it here would have put `C1` in direct conflict with the
+specification `G4-02` must amend. UC-2 is instead the re-issued correction: same scope, same store
+set, same period, different extraction. See D-5.
+
 **UC-4 is deferred** because pairwise is a two-column table and N-way is a chart, which is
 `RRA-012`'s presentation layer and a different design. Nothing in UC-1/UC-2 forecloses it.
 
@@ -101,15 +111,24 @@ substitute for missing exact counterparts."
 
 `G4` adds **one** period rule, and it is a constraint rather than a capability:
 
-> **P-1. The two versions' periods are compared as stated, never aligned.** If the periods differ in
-> length, granularity, or retail-day boundary, the pair is refused. `G4` introduces no truncation,
-> no rescaling, and no per-day normalization.
+> **P-1. The two versions' periods are compared as stated, never aligned.** `G4` introduces no
+> truncation, no rescaling, and no per-day normalization. A pair is refused when the periods differ
+> in **granularity** or **retail-day boundary**, and when either period is incomplete.
+>
+> **P-1 does not refuse a natural calendar length difference.** `RRA-008` is explicit that "natural
+> calendar length differences, including 28-, 29-, 30-, and 31-day months, do **not** make otherwise
+> complete full periods incompatible," and P-1 inherits that unchanged: February against March is
+> `UC-1`'s ordinary case, not a refusal.
 
-This is deliberately narrower than `RRA-008`, which does truncate two windows "to the same day
-count." That truncation is safe *within* one population's retained daily bases; across two versions
-it would require reconciling two coverage manifests, which no active artifact authorizes. **P-1 is
-the least-data reading**, and it is the rule most likely to be relaxed later by an owner who decides
-the truncation is worth its evidence burden.
+**What P-1 declines is `RRA-008`'s prefix truncation, not its calendar tolerance** — two different
+things that an earlier draft of this note conflated, and `#394`'s review caught. `RRA-008` lets an
+*incomplete* current month compare "the contiguous prefix from day 1 through its last proven
+complete day `k`" against the prior period's day-`1..k` projection. That is safe *within* one
+population's retained daily bases; across two dataset versions it would require reconciling two
+coverage manifests, which no active artifact authorizes — so D-6 requires both periods complete
+and the prefix case is out of scope. **That** is the least-data reading, and it is the rule most
+likely to be relaxed later by an owner who decides the prefix comparison is worth its evidence
+burden. Full complete periods of unequal natural length were never the narrowing.
 
 ---
 
@@ -125,8 +144,8 @@ enumerated.
 | **D-2** | Identical `rra003.mapping` version | mapping drift | Different mapping = different measurement (UC-3) |
 | **D-3** | Identical `rra004.formula` version | formula drift | Same, and `RRA-008` already hashes formula version into fact identity |
 | **D-4** | Identical `rra004.package` shape version | package drift | A shape difference means the two fact packages are not addressable alike |
-| **D-5** | Same **currency** and same governed **population** definition | incomparable basis | A delta across two currencies is not a number |
-| **D-6** | Both versions' coverage is **complete** for their stated period, per the authoritative `RRA-003` manifest | incomplete coverage | `RRA-008`'s own rule; partial-prefix and sparse cases refuse there and must refuse here |
+| **D-5** | Same **currency**, and the same governed **aggregate scope or complete admitted store set** plus identical event-kind and status filters | incomparable basis / scope mismatch / store mismatch | A delta across two currencies is not a number; and `RRA-008` refuses "scope-mismatched, store-mismatched" structures in its own single-population comparison, so `C1` cannot admit across two |
+| **D-6** | Both versions' coverage is **complete full calendar periods** for their stated period, per the authoritative `RRA-003` manifest | incomplete coverage | `RRA-008` refuses sparse, gap-containing and closure cases; its *prefix* concession needs two reconciled manifests, which nothing authorizes across versions (P-1) |
 
 **D-2/D-3/D-4 together are the version triple** the `M3` ledger found pinned — `rra003.mapping.v3`,
 `rra004.package.v3`, `rra004.formula.v2`. That is not a coincidence worth passing over: **the
