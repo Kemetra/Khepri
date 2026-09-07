@@ -382,5 +382,6 @@ artifacts:
     depends_on:
       - RCA
       - RCA-002
+      - RRA-008
       - RRA-009
       - RRA-011
