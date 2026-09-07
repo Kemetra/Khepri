@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import (
     Context,
     Decimal,
@@ -923,7 +923,13 @@ class ReportBundle:
     #: would rename every report for no change in what was published. Defaulted so
     #: a bundle built by hand still constructs.
     evidence: tuple[CitedEvidence, ...] = ()
-    bundle_version: str = BUNDLE_VERSION
+    #: `RRA-006`: the report bundle's own document version. Not a constructor
+    #: argument: `BundleIdentity.as_document()` always serializes `BUNDLE_VERSION`, so
+    #: a caller-supplied value here would give one bundle two versions -- one in its
+    #: identity and another in its `BundleAttempt`. An attribute rather than a
+    #: property because the sibling `RenderableBundle` Protocol reads it either way
+    #: and this module is at its function budget.
+    bundle_version: str = field(default=BUNDLE_VERSION, init=False)
 
     def __post_init__(self) -> None:
         _require_governed_section_order(self.sections)

@@ -72,7 +72,7 @@ def require_identity(identity: CrossVersionIdentity) -> None:
     require_comparison_formula(identity.comparison_formula_version)
     require_narrative_version(identity.narrative_version)
     require_identity_bundle_version(identity.bundle_version)
-    require_citations(identity.citations)
+    require_citations(identity)
 
 
 def require_distinct_operands(
@@ -102,10 +102,39 @@ def require_identity_bundle_version(version: str) -> None:
     raise ValueError("cross-version identity has the wrong bundle version")
 
 
-def require_citations(citations: tuple[CrossVersionCitationProvenance, ...]) -> None:
-    if citations:
+def require_citations(identity: CrossVersionIdentity) -> None:
+    """Non-empty, and every citation names the identity's own ordered pair."""
+    if not identity.citations:
+        raise ValueError("cross-version identity has no composite provenance")
+    for citation in identity.citations:
+        require_citation_bound(citation, identity)
+
+
+def require_citation_bound(
+    citation: CrossVersionCitationProvenance,
+    identity: CrossVersionIdentity,
+) -> None:
+    """A citation's pair is the identity's pair, in the identity's order.
+
+    Without this a directly constructed identity could name one subject and
+    baseline while its citations named other versions or manifests, and the
+    rendered provenance would contradict the bundle that carried it.
+    """
+    expected = (
+        identity.subject.dataset_version_id,
+        identity.subject.coverage_manifest_identity,
+        identity.baseline.dataset_version_id,
+        identity.baseline.coverage_manifest_identity,
+    )
+    actual = (
+        citation.pair.subject_version_id,
+        citation.pair.subject_manifest_id,
+        citation.pair.baseline_version_id,
+        citation.pair.baseline_manifest_id,
+    )
+    if actual == expected:
         return
-    raise ValueError("cross-version identity has no composite provenance")
+    raise ValueError("cross-version citation names a different pair than its identity")
 
 
 def require_section(section: CrossVersionSection) -> None:
@@ -259,18 +288,28 @@ def require_delta_operands(figures: tuple[CitedFigure, ...]) -> None:
 
 
 def require_delta_has_operands(labels: set[str | None]) -> None:
-    has_delta = bool(labels & {LABEL_DIFFERENCE, LABEL_PERCENTAGE_DIFFERENCE})
-    if not has_delta:
+    """Every comparison group shows subject, baseline and the absolute difference.
+
+    Only the percentage difference is conditional (`RRA-008` §Operand order refuses
+    it unless `baseline > 0`); the other three are what makes a group a comparison.
+    """
+    if {LABEL_SUBJECT, LABEL_BASELINE, LABEL_DIFFERENCE} <= labels:
         return
-    if {LABEL_SUBJECT, LABEL_BASELINE} <= labels:
-        return
-    raise ValueError("cross-version delta has no complete operands")
+    raise ValueError("cross-version delta lacks its subject, baseline or difference operands")
 
 
 def require_evidence(bundle: CrossVersionBundle) -> None:
+    require_evidence_unique(bundle.evidence)
     require_evidence_matches_figures(bundle.figures, bundle.evidence)
     require_evidence_matches_identity(bundle.evidence, bundle.identity.citations)
     require_evidence_records(bundle.evidence)
+
+
+def require_evidence_unique(evidence: tuple[CitedEvidence, ...]) -> None:
+    ids = [record.citation_id for record in evidence]
+    if len(ids) == len(set(ids)):
+        return
+    raise ValueError("cross-version evidence repeats a citation")
 
 
 def require_evidence_matches_figures(
@@ -279,20 +318,57 @@ def require_evidence_matches_figures(
 ) -> None:
     figure_ids = {figure.citation_id for figure in figures}
     evidence_ids = {record.citation_id for record in evidence}
-    if figure_ids == evidence_ids:
-        return
-    raise ValueError("cross-version citations and evidence disagree")
+    if figure_ids != evidence_ids:
+        raise ValueError("cross-version citations and evidence disagree")
+    for record in evidence:
+        require_record_matches_figures(record, figures)
+
+
+def require_record_matches_figures(
+    record: CitedEvidence,
+    figures: tuple[CitedFigure, ...],
+) -> None:
+    """The record says what its figures are made of: same metric, same unit.
+
+    The percentage-difference cell is the one figure whose unit is not the fact's:
+    it is a ratio of two monetary values, so its unit kind is exempt and only its
+    metric must agree.
+    """
+    for figure in figures:
+        if figure.citation_id != record.citation_id:
+            continue
+        if figure.metric != record.metric:
+            raise ValueError("cross-version evidence disagrees with its figure")
+        if figure.label == LABEL_PERCENTAGE_DIFFERENCE:
+            continue
+        if figure.unit_kind != record.unit_kind:
+            raise ValueError("cross-version evidence disagrees with its figure")
 
 
 def require_evidence_matches_identity(
     evidence: tuple[CitedEvidence, ...],
     citations: tuple[CrossVersionCitationProvenance, ...],
 ) -> None:
-    evidence_ids = {record.citation_id for record in evidence}
-    provenance_ids = {entry.citation_id for entry in citations}
-    if evidence_ids == provenance_ids:
-        return
-    raise ValueError("cross-version citations and evidence disagree")
+    by_citation = {entry.citation_id: entry for entry in citations}
+    if {record.citation_id for record in evidence} != set(by_citation):
+        raise ValueError("cross-version citations and evidence disagree")
+    for record in evidence:
+        require_record_matches_citation(record, by_citation[record.citation_id])
+
+
+def require_record_matches_citation(
+    record: CitedEvidence,
+    citation: CrossVersionCitationProvenance,
+) -> None:
+    """One record, one identity citation, the same metric and the same pair.
+
+    Compared as the serialized pairs the record carries, so a forged provenance
+    under a real citation identifier is refused rather than rendered.
+    """
+    if record.metric != citation.metric:
+        raise ValueError("cross-version evidence disagrees with its citation")
+    if record.provenance != citation.provenance_pairs():
+        raise ValueError("cross-version evidence carries a different pair than its citation")
 
 
 def require_evidence_records(evidence: tuple[CitedEvidence, ...]) -> None:

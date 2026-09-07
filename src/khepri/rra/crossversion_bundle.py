@@ -115,6 +115,16 @@ class CrossVersionCitationProvenance:
             **self.pair.as_document(),
         }
 
+    def provenance_pairs(self) -> tuple[tuple[str, str], ...]:
+        """The pair as the ordered `(key, value)` pairs an evidence record carries.
+
+        One derivation, used by assembly to fill `CitedEvidence.provenance` and by
+        the rules to check it, so the two cannot drift.
+        """
+        document = dict(self.pair.as_document())
+        document["operand_order"] = ",".join(document["operand_order"])
+        return tuple((key, str(value)) for key, value in document.items())
+
 
 @dataclass(frozen=True, slots=True)
 class CrossVersionIdentity:

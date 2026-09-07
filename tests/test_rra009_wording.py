@@ -16,7 +16,6 @@ from khepri.rra.analysis.comparison import (
     REASON_COVERAGE_INCOMPATIBLE,
     REASON_NEGATIVE_BASE,
 )
-from khepri.rra.analysis.comparison_narrative import CROSSVERSION_CAVEATS
 from khepri.rra.analysis.growth import (
     CAVEAT_INTERACTION_ASSIGNED_TO_PRICE,
     CAVEAT_ROUNDING_RESIDUAL,
@@ -240,7 +239,13 @@ _ACCEPTED_ARABIC_CAVEAT_MESSAGES = {
         "بمقدار وحدة واحدة من آخر خانة عشرية معروضة عن أثر السعر محسوباً "
         "بمفرده. لم يسقط أي رقم ولم يُعدَّل شيء."
     ),
-    CROSSVERSION_ADMITTED_CAVEAT: CROSSVERSION_CAVEATS[LANGUAGE_ARABIC],
+    # Pinned as a literal rather than read from `CROSSVERSION_CAVEATS`: an oracle that
+    # reads the production string passes whatever that string becomes.
+    CROSSVERSION_ADMITTED_CAVEAT: (
+        "تقارن هذه النتيجة مجموعتي بيانات أدخلتهما بشكل منفصل، لا فترتين داخل "
+        "مجموعة واحدة. قد يعني الفرق هنا أن التداول تغيّر أو أن المجموعة الثانية "
+        "استُخرجت بطريقة مختلفة."
+    ),
 }
 
 _ARABIC_SCRIPT = re.compile(r"[؀-ۿ]")

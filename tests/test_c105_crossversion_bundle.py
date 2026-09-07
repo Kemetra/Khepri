@@ -7,9 +7,11 @@ order, plus RCA-005 §Comparison retention by name.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import re
 from dataclasses import replace
 from datetime import date, timedelta
+from decimal import Decimal
 from types import ModuleType
 
 import pytest
@@ -46,6 +48,7 @@ from khepri.rra.bundle import (
     REQUIRED_SURFACES,
     BundleAssembler,
     CitedEvidence,
+    ReportBundle,
     reconcile,
 )
 from khepri.rra.crossversion_bundle import (
@@ -502,3 +505,108 @@ def test_same_pair_serializes_byte_identically(
     first = canonical_json(_bundle(comparison_request).as_document()).encode()
     second = canonical_json(_bundle(comparison_request).as_document()).encode()
     assert first == second
+
+
+# --- Review round 1 (#408): the invariants a directly constructed bundle must hold ----
+
+
+def test_report_bundle_version_is_not_a_constructor_argument() -> None:
+    """A caller-supplied version would give one bundle two versions.
+
+    `BundleIdentity.as_document()` always serializes `BUNDLE_VERSION`, and
+    `BundleAttempt` copies `bundle_version`; if the field were settable the two could
+    disagree. `init=False` makes that unrepresentable.
+    """
+    assert "bundle_version" not in inspect.signature(ReportBundle).parameters
+    report = ReportBundle.of(_package("100.00"))
+    with pytest.raises(TypeError, match="init=False"):
+        replace(report, bundle_version="rra006.bundle.v0")
+
+
+def test_citation_naming_a_different_pair_than_its_identity_refuses(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """Every identity citation is bound to the identity's own ordered pair."""
+    identity = _bundle(comparison_request).identity
+    first, *rest = identity.citations
+    swapped_pair = replace(
+        first.pair,
+        subject_version_id=first.pair.baseline_version_id,
+        baseline_version_id=first.pair.subject_version_id,
+    )
+
+    with pytest.raises(ValueError, match="different pair"):
+        replace(identity, citations=(replace(first, pair=swapped_pair), *rest))
+
+
+def test_group_without_an_absolute_difference_refuses(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """Subject and baseline alone are two numbers, not a comparison."""
+    bundle = _bundle(comparison_request)
+    kept = tuple(figure for figure in bundle.figures if figure.label != LABEL_DIFFERENCE)
+    section = replace(bundle.sections[0], figure_ids=tuple(figure.figure_id for figure in kept))
+
+    with pytest.raises(ValueError, match="difference"):
+        replace(bundle, figures=kept, sections=(section,))
+
+
+def test_duplicate_evidence_record_refuses(comparison_request: CrossVersionRequest) -> None:
+    bundle = _bundle(comparison_request)
+
+    with pytest.raises(ValueError, match="repeats"):
+        replace(bundle, evidence=(*bundle.evidence, bundle.evidence[0]))
+
+
+def test_evidence_with_a_different_metric_than_its_figure_refuses(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    bundle = _bundle(comparison_request)
+    first, *rest = bundle.evidence
+
+    with pytest.raises(ValueError, match="disagrees"):
+        replace(bundle, evidence=(replace(first, metric="another_metric"), *rest))
+
+
+def test_forged_provenance_under_a_real_citation_refuses(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """A real citation identifier does not launder a different pair."""
+    bundle = _bundle(comparison_request)
+    first, *rest = bundle.evidence
+    assert first.provenance is not None
+    forged = tuple(
+        (key, {"subject_version_id": "dsv_forged"}.get(key, value))
+        for key, value in first.provenance
+    )
+
+    with pytest.raises(ValueError, match="different pair"):
+        replace(bundle, evidence=(replace(first, provenance=forged), *rest))
+
+
+def test_percentage_cell_is_a_ratio_presented_as_a_percentage(
+    comparison_request: CrossVersionRequest,
+) -> None:
+    """120 against 100 is the fraction 0.2000, shown as 20.00%.
+
+    Review of #408 (debate-review) found the cell pre-formatted `"20%"` into the
+    text handed to `_renderings`, which could not parse it and returned it
+    verbatim: ungrouped, unquantized, and at up to 28 significant digits for a
+    non-terminating ratio. The cell now carries the four-place fraction every
+    ratio figure carries, and the shared formatter scales it.
+    """
+    bundle = _bundle(comparison_request)
+    cells = [
+        figure
+        for figure in bundle.figures
+        if figure.label == LABEL_PERCENTAGE_DIFFERENCE and figure.metric == "revenue"
+    ]
+    assert len(cells) == 1
+    cell = cells[0]
+
+    assert cell.value == Decimal("0.2000")
+    assert cell.renderings[LANGUAGE_ENGLISH] == "20.00%"
+    arabic = cell.renderings[LANGUAGE_ARABIC]
+    # The Arabic form carries the Arabic percent sign (U+066A), not the ASCII one.
+    assert arabic.endswith("٪")
+    assert not any(character.isascii() and character.isdigit() for character in arabic)

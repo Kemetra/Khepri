@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from khepri.rra.analysis.comparison import METRIC_DELTA_PERCENT
 from khepri.rra.analysis.comparison_narrative import refusal_wording
 from khepri.rra.analysis.comparison_package import (
     COMPARISON_CROSSVERSION_VERSION,
@@ -95,12 +96,28 @@ _BASIS_BY_METRIC = {
 }
 
 
+#: `facts.RATIO_PRECISION` as a quantum: every `UNIT_RATIO` figure that reaches a
+#: surface is a four-place fraction, which is what lets `bundle._percentage` scale it
+#: to two places exactly, with no rounding mode chosen at presentation.
+_RATIO_QUANTUM = Decimal("0.0001")
+
+
 @dataclass(frozen=True, slots=True)
 class _FigureCell:
+    """One rendered cell of a cross-version fact.
+
+    `presented_as` is the metric whose presentation rule the cell borrows; it is
+    the fact's own metric for every cell but the percentage difference, which is
+    a ratio and is shown as the period-comparison family shows its percentage
+    delta. The figure's `metric` is always the fact's, so the rule that a figure's
+    metric is its fact's metric holds.
+    """
+
     label: str
     value: Decimal
     unit_kind: str
     text: str
+    presented_as: str
 
 
 def assemble_crossversion(
@@ -123,6 +140,14 @@ def assemble_crossversion(
 
 
 def _admission_cause(request: CrossVersionRequest) -> str | None:
+    """The first RRA-008 cause that refuses the pair, or None.
+
+    A package with no coverage-manifest identity or no retained basis refuses under
+    `CAUSE_INCOMPLETE`, deliberately: `D-6` requires completeness "per the
+    authoritative RRA-003 coverage manifest", and a package that cannot name its
+    manifest cannot establish it. RRA-008 §Frozen contracts freezes the cause set,
+    so a provenance-specific cause is not this slice's to add.
+    """
     if request.subject_organization_scope != request.baseline_organization_scope:
         return CAUSE_SCOPE
     cause = packages_compatible(
@@ -230,30 +255,48 @@ def _figures(fact: CrossVersionFact) -> tuple[CitedFigure, ...]:
             fact.subject_value,
             fact.unit_kind,
             str(fact.subject_value),
+            fact.metric,
         ),
         _FigureCell(
             LABEL_BASELINE,
             fact.baseline_value,
             fact.unit_kind,
             str(fact.baseline_value),
+            fact.metric,
         ),
         _FigureCell(
             LABEL_DIFFERENCE,
             fact.absolute_delta,
             fact.unit_kind,
             str(fact.absolute_delta),
+            fact.metric,
         ),
     ]
     if fact.percentage_delta is not None:
         cells.append(
             _FigureCell(
                 LABEL_PERCENTAGE_DIFFERENCE,
-                fact.percentage_delta,
+                _percentage_ratio(fact),
                 UNIT_RATIO,
-                f"{fact.percentage_delta}%",
+                str(_percentage_ratio(fact)),
+                METRIC_DELTA_PERCENT,
             )
         )
     return tuple(_figure(fact, cell, position) for position, cell in enumerate(cells))
+
+
+def _percentage_ratio(fact: CrossVersionFact) -> Decimal:
+    """The percentage difference as the four-place fraction a ratio figure carries.
+
+    `CrossVersionFact.percentage_delta` states the value scaled by one hundred and
+    unquantized; a surface shows a ratio, and `bundle._percentage` scales a
+    four-place fraction to two places exactly. So the cell carries
+    `(subject - baseline) / baseline` quantized to `RATIO_PRECISION`, as the
+    period-comparison family's `revenue_delta_percent` fact does. Review of `#408`
+    found the earlier cell pre-formatted a percent sign into text the shared
+    formatter could not parse, so it was published ungrouped at full precision.
+    """
+    return (fact.absolute_delta / fact.baseline_value).quantize(_RATIO_QUANTUM)
 
 
 def _figure(fact: CrossVersionFact, cell: _FigureCell, position: int) -> CitedFigure:
@@ -270,7 +313,7 @@ def _figure(fact: CrossVersionFact, cell: _FigureCell, position: int) -> CitedFi
         renderings=_renderings(
             cell.text,
             unit_kind=cell.unit_kind,
-            metric=fact.metric,
+            metric=cell.presented_as,
         ),
     )
 
@@ -283,14 +326,10 @@ def _evidence(fact: CrossVersionFact) -> CitedEvidence:
         formula_version=COMPARISON_CROSSVERSION_VERSION,
         precision=None,
         inputs=None,
-        provenance=_provenance_pairs(fact.provenance),
+        provenance=CrossVersionCitationProvenance(
+            fact.citation_id, fact.metric, fact.provenance
+        ).provenance_pairs(),
     )
-
-
-def _provenance_pairs(pair: PairProvenance) -> tuple[tuple[str, str], ...]:
-    document = dict(pair.as_document())
-    document["operand_order"] = ",".join(document["operand_order"])
-    return tuple((key, str(value)) for key, value in document.items())
 
 
 def _identity(
