@@ -1,6 +1,6 @@
 # Khepri Constitution
 
-Version: 2.0.0
+Version: 2.1.0
 
 Effective when merged to `main`
 
@@ -34,6 +34,12 @@ data use. Material boundary changes require the owner to merge an updated or new
 Unknown schemas, artifact types, states, documents, dependencies, cycles, family relationships,
 and supersession references block validation. Automation reports ambiguity instead of inferring
 missing authority or intent.
+
+## VII. Privacy and least data
+
+Khepri defaults to collecting, retaining, exposing, and processing the least data necessary.
+New data use requires an explicit purpose, owner, boundary, retention decision, and approval.
+Approval here is Article II's: the owner's merge to `main`.
 
 ## Lifecycle
 
