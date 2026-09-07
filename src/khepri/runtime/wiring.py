@@ -20,6 +20,7 @@ from khepri.rca.identity import IdentityProvider
 from khepri.rca.invitation_persistence import SqlInvitationStore
 from khepri.rca.invitation_retention import InvitationRetentionSweeper
 from khepri.rca.invitation_service import InvitationService as RcaInvitationService
+from khepri.rca.invitations import Invitation, InvitationOffer
 from khepri.rca.isolation import IsolationService
 from khepri.rca.lifecycle import AccountRetentionSweeper, LifecycleService, MembershipEventSweeper
 from khepri.rca.persistence import SqlAccountStore, SqlOrganizationStore
@@ -356,6 +357,67 @@ def build_pipeline_recorder(stack: RuntimeStack) -> PipelineRecorder:
 
 
 @dataclass(frozen=True, slots=True)
+class ShellInvitations:
+    """`shell_api.InvitationGateway`, composed from the two objects that own its verbs.
+
+    **Neither existing object satisfies the gateway alone, and neither should be made to.** The
+    listing is the store's -- `invitations_for_organization` was written for this very screen and
+    is expiry-aware, destroying the verifier of any stale row it touches (`test_r805_team_surface`
+    records that this slice consumes it rather than adding a second listing). The writes are
+    `InvitationService`'s, and they are not thin passes to the store: `issue` canonicalizes the
+    target address **at rest** (`R4-01` §4) and mints through `Invitation.create`, and `revoke`
+    turns the store's `False` into the one uniform refusal `FR-025` requires for all four causes.
+    Reaching past the service for either write would drop a governed rule; teaching the service the
+    read would put a second listing beside the one already written for this screen.
+
+    So the composition is here, exactly as `R7-01` §3 puts the deletion composition here -- and for
+    the same reason `#382` found: a field wired to an object that cannot answer the surface's call
+    is absent from the deployed image while every route test passes over a hand-wired
+    `ShellServices`. `wiring.py:497` previously passed the service alone, so the Team surface
+    raised `AttributeError` on `invitations_for_organization` in the built wheel.
+    """
+
+    store: SqlInvitationStore
+    service: RcaInvitationService
+
+    def invitations_for_organization(
+        self, organization_id: str, *, now: datetime
+    ) -> tuple[Invitation, ...]:
+        """The organization's invitations, from the store's expiry-aware listing."""
+        return self.store.invitations_for_organization(organization_id, now=now)
+
+    def issue(self, offer: InvitationOffer, *, expires_at: datetime, now: datetime) -> str:
+        """Mint through the service, so canonicalization and `Invitation.create` still run.
+
+        `offer` stays grouped rather than expanded into its four fields: `InvitationService.issue`
+        records that spelling the signature flat cost seven parameters and scored 9.69 on
+        CodeScene's Excess Number of Function Arguments.
+        """
+        return self.service.issue(offer, expires_at=expires_at, now=now)
+
+    def revoke(
+        self,
+        organization_id: str,
+        invitation_id: str,
+        *,
+        actor_account_id: str,
+        now: datetime,
+    ) -> None:
+        """Revoke through the service, which owns `FR-025`'s uniform refusal.
+
+        `actor_account_id` is forwarded rather than dropped even though the service `del`s it:
+        `R4-01` §4.1 fixes the signature with it, and a seam that quietly narrowed the call
+        contract would be the place a later actor-carrying revocation silently lost its actor.
+        """
+        self.service.revoke(
+            organization_id,
+            invitation_id,
+            actor_account_id=actor_account_id,
+            now=now,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class BetaServices:
     """What `create_app` receives for admission and reporting, once the recorder is around them."""
 
@@ -477,6 +539,17 @@ def build_web_app(stack: RuntimeStack) -> FastAPI:
     return app
 
 
+def _shell_invitations(stack: RuntimeStack) -> ShellInvitations:
+    """The shell's invitation gateway over one store and the service that owns the writes.
+
+    One `SqlInvitationStore` instance, shared by both halves: the service reads and writes through
+    the same rows the listing returns, so a revocation the shell performs is absent from the very
+    next listing rather than from a second store's view of the table.
+    """
+    store = SqlInvitationStore(stack.factory)
+    return ShellInvitations(store=store, service=RcaInvitationService(store))
+
+
 def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     """The shell over the same resolver the commercial API uses (`RCA-002` `FR-041`).
 
@@ -494,7 +567,10 @@ def build_shell_services(stack: RuntimeStack) -> ShellServices | None:
     return ShellServices(
         resolver=commercial.resolver,
         organizations=SqlOrganizationStore(stack.factory),
-        invitations=RcaInvitationService(SqlInvitationStore(stack.factory)),
+        # The gateway needs one read and two writes, and they live on two different objects --
+        # see `ShellInvitations`. Passing the service alone left the Team surface raising
+        # `AttributeError` on `invitations_for_organization` in the built wheel.
+        invitations=_shell_invitations(stack),
         bridge=commercial.bridge,
         # `W1-05`: the same record store the workspace actions write through, resolved through
         # the same isolation door they write under, so the shell shows exactly the rows the
