@@ -1,0 +1,223 @@
+"""The immutable two-population fact package, and the provenance it must disclose.
+
+`RRA-008` §Composite provenance names four disclosures and declines to say how
+they are carried: `Fact.inputs` "keeps its existing meaning and is not
+repurposed" and the `RRA-004` `Fact` type "is not modified", so the carrier is
+this slice's to choose.
+
+**The repository already answered it.** `FactComparison` is a sibling of `Fact`,
+not a modification of it, composing a value object and merging its document with
+`**self.comparison.as_document(...)`. `CrossVersionFact` follows that shape
+exactly, which is why no `Fact` field is added here and `Fact.inputs` keeps its
+meaning.
+
+Two rules carry the weight, and each is asserted against the real
+`fact_identity` rather than a restatement of it:
+
+**Operand order is part of fact identity.** §Composite provenance: "the same pair
+with the order reversed is a different fact with a different identity, not the
+same fact negated." So the pair's two identifiers go into `scope` as an ordered
+tuple, and the reversed pair must hash differently. A carrier that stored the
+pair as a set, or sorted it, would produce one identity for two different facts.
+
+**Reruns are byte-equivalent only for the same ordered pair.** The same inputs
+must serialize identically twice, and the reversed pair must not.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from decimal import Decimal
+
+import pytest
+
+from khepri.rra.analysis.comparison_package import (
+    COMPARISON_CROSSVERSION_VERSION,
+    CrossVersionFact,
+    MeasuredPair,
+    PairProvenance,
+    build_cross_version_fact,
+)
+from khepri.rra.facts import fact_identity
+from khepri.rra.profiling import canonical_json
+
+PROVENANCE = PairProvenance(
+    subject_version_id="dsv_202603",
+    subject_basis_id="basis_mar",
+    subject_manifest_id="manifest_mar",
+    baseline_version_id="dsv_202602",
+    baseline_basis_id="basis_feb",
+    baseline_manifest_id="manifest_feb",
+)
+
+
+MEASURED = MeasuredPair(
+    metric="sales_revenue",
+    subject_value=Decimal("1100"),
+    baseline_value=Decimal("1000"),
+    precision=2,
+    unit_kind="monetary",
+)
+
+
+def _fact(*, provenance: PairProvenance = PROVENANCE, **measured: object) -> CrossVersionFact:
+    """One fact, varying only the field a test is about.
+
+    `replace` on the two frozen inputs rather than a keyword per field -- the
+    shape `#401` and `#402` settled on, and the reason `build_cross_version_fact`
+    itself takes two objects instead of six arguments.
+    """
+    return build_cross_version_fact(replace(MEASURED, **measured), provenance)  # type: ignore[arg-type]
+
+
+class TestCompositeProvenance:
+    """§Composite provenance: four disclosures, none of them in `Fact.inputs`."""
+
+    def test_discloses_both_version_identifiers(self) -> None:
+        document = _fact().as_document()
+
+        assert document["subject_version_id"] == "dsv_202603"
+        assert document["baseline_version_id"] == "dsv_202602"
+
+    def test_discloses_both_retained_bases(self) -> None:
+        document = _fact().as_document()
+
+        assert document["subject_basis_id"] == "basis_mar"
+        assert document["baseline_basis_id"] == "basis_feb"
+
+    def test_discloses_both_coverage_manifests(self) -> None:
+        """`D-6` is asserted against each version separately."""
+        document = _fact().as_document()
+
+        assert document["subject_manifest_id"] == "manifest_mar"
+        assert document["baseline_manifest_id"] == "manifest_feb"
+
+    def test_discloses_the_operand_order(self) -> None:
+        assert _fact().as_document()["operand_order"] == ["subject", "baseline"]
+
+    def test_records_the_governed_formula_version(self) -> None:
+        assert _fact().as_document()["formula_version"] == "rra008.crossversion.v1"
+
+    def test_does_not_repurpose_fact_inputs(self) -> None:
+        """`Fact.inputs` names semantic measures; identifiers never enter it."""
+        document = _fact().as_document()
+
+        assert "dsv_202603" not in document.get("inputs", [])
+        assert "dsv_202602" not in document.get("inputs", [])
+
+
+class TestOperandOrderIsIdentity:
+    def test_reversed_pair_has_a_different_identity(self) -> None:
+        forward = _fact()
+        reversed_provenance = PairProvenance(
+            subject_version_id=PROVENANCE.baseline_version_id,
+            subject_basis_id=PROVENANCE.baseline_basis_id,
+            subject_manifest_id=PROVENANCE.baseline_manifest_id,
+            baseline_version_id=PROVENANCE.subject_version_id,
+            baseline_basis_id=PROVENANCE.subject_basis_id,
+            baseline_manifest_id=PROVENANCE.subject_manifest_id,
+        )
+        backward = _fact(
+            subject_value=Decimal("1000"),
+            baseline_value=Decimal("1100"),
+            provenance=reversed_provenance,
+        )
+
+        assert forward.fact_id != backward.fact_id
+        assert forward.citation_id != backward.citation_id
+
+    def test_identity_matches_the_governed_helper(self) -> None:
+        """Asserted against `fact_identity` itself, not a restatement of it."""
+        expected, _ = fact_identity(
+            metric="sales_revenue",
+            scope=("dsv_202603", "dsv_202602"),
+            formula_version=COMPARISON_CROSSVERSION_VERSION,
+        )
+
+        assert _fact().fact_id == expected
+
+    def test_identity_is_stable_across_two_builds(self) -> None:
+        assert _fact().fact_id == _fact().fact_id
+
+
+class TestDeltas:
+    """§Operand order: `subject - baseline`, percentage refusing on a zero base."""
+
+    def test_absolute_delta_is_subject_minus_baseline(self) -> None:
+        assert _fact().absolute_delta == Decimal("100")
+
+    def test_absolute_delta_survives_a_negative_baseline(self) -> None:
+        fact = _fact(subject_value=Decimal("10"), baseline_value=Decimal("-5"))
+
+        assert fact.absolute_delta == Decimal("15")
+
+    def test_percentage_delta_is_stated_against_the_baseline(self) -> None:
+        assert _fact().percentage_delta == Decimal("10")
+
+    @pytest.mark.parametrize("baseline", [Decimal("0"), Decimal("-5")])
+    def test_percentage_delta_refuses_a_non_positive_baseline(self, baseline: Decimal) -> None:
+        fact = _fact(subject_value=Decimal("10"), baseline_value=baseline)
+
+        assert fact.percentage_delta is None
+
+
+class TestImmutableAndDeterministic:
+    def test_assigning_a_field_raises(self) -> None:
+        """Frozen, asserted on the specific error rather than any `Exception`.
+
+        A first draft wrapped `replace(...)` and an assignment in one bare
+        `pytest.raises(Exception)`. `replace` *succeeds* -- constructing a new
+        object is what it is for -- so that test passed on the second statement
+        alone and would have passed with the dataclass unfrozen.
+        """
+        fact = _fact()
+
+        with pytest.raises(AttributeError):
+            fact.metric = "other"  # type: ignore[misc]
+
+    def test_replace_returns_a_new_fact_and_leaves_the_original(self) -> None:
+        """`replace` is legal on a frozen dataclass; it copies rather than mutates.
+
+        Its identity is deliberately **not** recomputed: `replace` is not the
+        governed constructor, so a copy carrying a changed metric keeps the old
+        `fact_id`. That is why `build_cross_version_fact` exists and why nothing
+        in this family should reach for `replace` to derive a fact.
+        """
+        original = _fact()
+        copy = replace(original, metric="other_metric")
+
+        assert original.metric == "sales_revenue"
+        assert copy.metric == "other_metric"
+        assert copy.fact_id == original.fact_id
+
+    def test_two_builds_serialize_byte_identically(self) -> None:
+        assert canonical_json(_fact().as_document()) == canonical_json(_fact().as_document())
+
+    def test_reversed_pair_does_not_serialize_identically(self) -> None:
+        reversed_provenance = PairProvenance(
+            subject_version_id=PROVENANCE.baseline_version_id,
+            subject_basis_id=PROVENANCE.baseline_basis_id,
+            subject_manifest_id=PROVENANCE.baseline_manifest_id,
+            baseline_version_id=PROVENANCE.subject_version_id,
+            baseline_basis_id=PROVENANCE.subject_basis_id,
+            baseline_manifest_id=PROVENANCE.subject_manifest_id,
+        )
+        backward = _fact(provenance=reversed_provenance)
+
+        assert canonical_json(_fact().as_document()) != canonical_json(backward.as_document())
+
+
+class TestFormulaVersionIsNotTheSingleFamilyVersion:
+    def test_crossversion_is_not_the_period_comparison_version(self) -> None:
+        """`#400`: a cross-version delta must not be confusable with a PoP one."""
+        from khepri.rra.analysis.comparison import COMPARISON_FORMULA_VERSION
+
+        assert COMPARISON_CROSSVERSION_VERSION != COMPARISON_FORMULA_VERSION
+        assert COMPARISON_CROSSVERSION_VERSION == "rra008.crossversion.v1"
+
+    def test_every_fact_carries_it_explicitly(self) -> None:
+        """The `C1-03` obligation from item 20: hashed *and* recorded."""
+        fact = _fact()
+
+        assert fact.formula_version == COMPARISON_CROSSVERSION_VERSION
+        assert fact.as_document()["formula_version"] == COMPARISON_CROSSVERSION_VERSION
