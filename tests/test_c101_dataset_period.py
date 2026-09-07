@@ -44,13 +44,28 @@ from khepri.rra.analysis.dataset_period import (
 )
 
 
-def _month(year: int, month: int, *, last_day: int, complete: bool = True) -> DatasetPeriod:
+def _month(
+    year: int,
+    month: int,
+    *,
+    last_day: int,
+    complete: bool = True,
+    granularity: str = GRANULARITY_MONTH,
+    retail_day_start_hour: int = 0,
+    version_id: str | None = None,
+) -> DatasetPeriod:
+    """One month-shaped period, varying only the field a test is about.
+
+    Every keyword defaults to the comparable case, so each test names the single
+    field it changes. Building these inline instead put four near-identical
+    constructions in the file, which CodeScene flagged as duplication on `#401`.
+    """
     return DatasetPeriod(
-        dataset_version_id=f"dsv_{year:04d}{month:02d}",
+        dataset_version_id=version_id or f"dsv_{year:04d}{month:02d}",
         start=date(year, month, 1),
         end=date(year, month, last_day),
-        granularity=GRANULARITY_MONTH,
-        retail_day_start_hour=0,
+        granularity=granularity,
+        retail_day_start_hour=retail_day_start_hour,
         complete=complete,
     )
 
@@ -95,28 +110,14 @@ class TestPeriodRule:
         assert periods_comparable(VersionPair(subject=MARCH, baseline=FEBRUARY)) is None
 
     def test_differing_granularity_refuses(self) -> None:
-        daily = DatasetPeriod(
-            dataset_version_id="dsv_daily",
-            start=date(2026, 3, 1),
-            end=date(2026, 3, 31),
-            granularity=GRANULARITY_DAY,
-            retail_day_start_hour=0,
-            complete=True,
-        )
+        daily = _month(2026, 3, last_day=31, granularity=GRANULARITY_DAY, version_id="dsv_daily")
 
         assert periods_comparable(VersionPair(subject=daily, baseline=FEBRUARY)) == (
             "granularity mismatch"
         )
 
     def test_differing_retail_day_boundary_refuses(self) -> None:
-        shifted = DatasetPeriod(
-            dataset_version_id="dsv_shifted",
-            start=date(2026, 3, 1),
-            end=date(2026, 3, 31),
-            granularity=GRANULARITY_MONTH,
-            retail_day_start_hour=6,
-            complete=True,
-        )
+        shifted = _month(2026, 3, last_day=31, retail_day_start_hour=6, version_id="dsv_shifted")
 
         assert periods_comparable(VersionPair(subject=shifted, baseline=FEBRUARY)) == (
             "retail day boundary mismatch"
@@ -139,13 +140,13 @@ class TestPeriodRule:
 
     def test_granularity_is_reported_before_completeness(self) -> None:
         """One stated cause per refusal, and the structural one is stated first."""
-        partial_daily = DatasetPeriod(
-            dataset_version_id="dsv_both_wrong",
-            start=date(2026, 3, 1),
-            end=date(2026, 3, 17),
-            granularity=GRANULARITY_DAY,
-            retail_day_start_hour=0,
+        partial_daily = _month(
+            2026,
+            3,
+            last_day=17,
             complete=False,
+            granularity=GRANULARITY_DAY,
+            version_id="dsv_both_wrong",
         )
 
         assert periods_comparable(VersionPair(subject=partial_daily, baseline=FEBRUARY)) == (
