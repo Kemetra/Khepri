@@ -95,8 +95,6 @@ from khepri.rra.bundle import (
     SURFACE_EXCEL,
     ChartSpec,
     CitedFigure,
-    ReportBundle,
-    Section,
     StatedCaveat,
     StatedFigure,
     SurfaceContent,
@@ -105,6 +103,7 @@ from khepri.rra.bundle import (
     is_drawable,
 )
 from khepri.rra.narrative import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from khepri.rra.renderable import PresentationSection, RenderableBundle
 from khepri.rra.rendering.excel_layout import (
     BUSINESS_SHEETS,
     BusinessSheet,
@@ -414,10 +413,10 @@ class ExcelSurfaceRenderer:
     def surface(self) -> str:
         return SURFACE_EXCEL
 
-    def path_for(self, bundle: ReportBundle) -> Path:
+    def path_for(self, bundle: RenderableBundle) -> Path:
         return self.directory / f"{bundle.bundle_id}{WORKBOOK_SUFFIX}"
 
-    def _attempt_path(self, bundle: ReportBundle) -> Path:
+    def _attempt_path(self, bundle: RenderableBundle) -> Path:
         """A destination no concurrent render of this bundle can be holding.
 
         `path_for` is derived from `bundle_id` alone, so two workers rendering the
@@ -427,7 +426,7 @@ class ExcelSurfaceRenderer:
         """
         return self.directory / f"{bundle.bundle_id}.{_new_attempt_id()}{WORKBOOK_SUFFIX}"
 
-    def render(self, bundle: ReportBundle) -> SurfaceContent:
+    def render(self, bundle: RenderableBundle) -> SurfaceContent:
         """Write the workbook, then report what it presents and how large it is.
 
         The size is read from the closed file rather than accumulated while
@@ -449,7 +448,7 @@ class ExcelSurfaceRenderer:
             raise WorkbookUnavailable("The Excel surface could not be written.") from error
         return _content(bundle, written)
 
-    def payload_for(self, bundle: ReportBundle, content: SurfaceContent) -> bytes:
+    def payload_for(self, bundle: RenderableBundle, content: SurfaceContent) -> bytes:
         """The archive bytes this renderer wrote, verified against what it reported.
 
         Reading the shared path can observe a concurrent worker's half-written
@@ -463,7 +462,7 @@ class ExcelSurfaceRenderer:
             raise WorkbookUnavailable("The Excel surface could not be read.")
         return payload
 
-    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+    def render_materialized(self, bundle: RenderableBundle) -> MaterializedSurface:
         content = self.render(bundle)
         payload = self.payload_for(bundle, content)
         return MaterializedSurface(
@@ -483,7 +482,7 @@ def _new_attempt_id() -> str:
     return uuid4().hex
 
 
-def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:
+def _write_workbook(workbook: Workbook, bundle: RenderableBundle) -> None:
     """Business worksheets first, then the limitations, then the audit region.
 
     Order *is* the information architecture in a workbook: it is what a reader sees
@@ -511,7 +510,7 @@ def _write_workbook(workbook: Workbook, bundle: ReportBundle) -> None:
 
 def _write_business_sheet(
     workbook: Workbook,
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
     sheet: BusinessSheet,
 ) -> Worksheet | None:
@@ -585,7 +584,7 @@ def _business_name(figure: CitedFigure, language: str) -> str:
     return f"{name} — {label}" if name else label
 
 
-def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
+def _write_report(workbook: Workbook, bundle: RenderableBundle, language: str) -> None:
     """The index sheet: the disclosure, the sections, and the report-level caveats.
 
     It carries no figures. Each analysis has its own worksheet, so a reader opening
@@ -612,7 +611,11 @@ def _write_report(workbook: Workbook, bundle: ReportBundle, language: str) -> No
         row = _write_row(sheet, row, _caveat_cells(caveat))
 
 
-def _write_audit_trail(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
+def _write_audit_trail(
+    workbook: Workbook,
+    bundle: RenderableBundle,
+    language: str,
+) -> None:
     """Every identifier the business sheets do not carry, on one sheet.
 
     This is the ledger the section sheets used to be, moved rather than rebuilt:
@@ -642,7 +645,11 @@ def _write_audit_trail(workbook: Workbook, bundle: ReportBundle, language: str) 
         row = _write_row(sheet, row, _figure_cells(figure, language))
 
 
-def _write_limitations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
+def _write_limitations(
+    workbook: Workbook,
+    bundle: RenderableBundle,
+    language: str,
+) -> None:
     """Every refusal and every caveat, in the customer's language, as prose.
 
     Ordered last among the business sheets and before the audit sheets: it is
@@ -677,9 +684,9 @@ def _write_limitations(workbook: Workbook, bundle: ReportBundle, language: str) 
 
 def _write_section(
     workbook: Workbook,
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
-    section: Section,
+    section: PresentationSection,
 ) -> Worksheet:
     """One analysis: its state, its figures, and the caveats that qualify it.
 
@@ -704,7 +711,7 @@ def _write_section(
 def _write_section_figures(
     sheet: Worksheet,
     row: int,
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
     section_id: str,
 ) -> int:
@@ -722,7 +729,7 @@ def _write_section_figures(
 def _write_section_caveats(
     sheet: Worksheet,
     row: int,
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
     section_id: str,
 ) -> int:
@@ -759,7 +766,7 @@ class _ChartBlock:
 
 def _draw_charts(
     workbook: Workbook,
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
     written: list[tuple[BusinessSheet, Worksheet]],
 ) -> None:
@@ -815,7 +822,7 @@ def _described(block: _ChartBlock, language: str) -> str:
 
 def _write_chartdata(
     workbook: Workbook,
-    bundle: ReportBundle,
+    bundle: RenderableBundle,
     language: str,
 ) -> tuple[_ChartBlock, ...]:
     """The one sheet in this workbook whose cells are numbers.
@@ -837,7 +844,7 @@ def _write_chartdata(
     return blocks
 
 
-def _chart_blocks(bundle: ReportBundle, language: str) -> tuple[_ChartBlock, ...]:
+def _chart_blocks(bundle: RenderableBundle, language: str) -> tuple[_ChartBlock, ...]:
     """The layout: one block per charted section, in the bundle's section order.
 
     A section whose chart cannot be resolved contributes no block and no chart, rather
@@ -870,7 +877,10 @@ def _chart_blocks(bundle: ReportBundle, language: str) -> tuple[_ChartBlock, ...
     return tuple(blocks)
 
 
-def _plotted(bundle: ReportBundle, spec: ChartSpec) -> tuple[CitedFigure, ...] | None:
+def _plotted(
+    bundle: RenderableBundle,
+    spec: ChartSpec,
+) -> tuple[CitedFigure, ...] | None:
     """The figures a spec names, in its order, or nothing if the series is undrawable.
 
     Two checks, and the second is `bundle.is_drawable` rather than a rule of this
@@ -1013,7 +1023,11 @@ def _series_range(block: _ChartBlock, language: str, column: int) -> list[object
     ]
 
 
-def _write_citations(workbook: Workbook, bundle: ReportBundle, language: str) -> None:
+def _write_citations(
+    workbook: Workbook,
+    bundle: RenderableBundle,
+    language: str,
+) -> None:
     """One row per cited fact, so a figure's citation is followable in-workbook."""
     sheet = _sheet(workbook, _CITATION_SHEET[language], language)
     sheet.set_column(0, len(_CITATION_COLUMNS[language]) - 1, _VALUE_WIDTH)
@@ -1027,7 +1041,7 @@ def _write_citations(workbook: Workbook, bundle: ReportBundle, language: str) ->
         )
 
 
-def _write_provenance(workbook: Workbook, bundle: ReportBundle) -> None:
+def _write_provenance(workbook: Workbook, bundle: RenderableBundle) -> None:
     """The provenance record, as field/value rows a machine can read.
 
     Governed field names rather than translated ones: this sheet is the
@@ -1043,7 +1057,7 @@ def _write_provenance(workbook: Workbook, bundle: ReportBundle) -> None:
         row = _write_row(sheet, row, (field, value))
 
 
-def _provenance(bundle: ReportBundle) -> tuple[tuple[str, str], ...]:
+def _provenance(bundle: RenderableBundle) -> tuple[tuple[str, str], ...]:
     entries = {
         **{field: str(value) for field, value in bundle.identity.as_document().items()},
         _PROVENANCE_BUNDLE_ID: bundle.bundle_id,
@@ -1053,7 +1067,7 @@ def _provenance(bundle: ReportBundle) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(entries.items()))
 
 
-def _cited(bundle: ReportBundle) -> tuple[CitedFigure, ...]:
+def _cited(bundle: RenderableBundle) -> tuple[CitedFigure, ...]:
     """The first figure of each citation, in the order the bundle carries them."""
     seen: dict[str, CitedFigure] = {}
     for figure in bundle.figures:
@@ -1097,7 +1111,7 @@ def _write_row(sheet: Worksheet, row: int, values: tuple[str | None, ...]) -> in
     return row + 1
 
 
-def _content(bundle: ReportBundle, output_size_bytes: int) -> SurfaceContent:
+def _content(bundle: RenderableBundle, output_size_bytes: int) -> SurfaceContent:
     return SurfaceContent(
         surface=SURFACE_EXCEL,
         bundle_id=bundle.bundle_id,
@@ -1106,7 +1120,7 @@ def _content(bundle: ReportBundle, output_size_bytes: int) -> SurfaceContent:
     )
 
 
-def _content_language(bundle: ReportBundle, language: str) -> SurfaceLanguage:
+def _content_language(bundle: RenderableBundle, language: str) -> SurfaceLanguage:
     return SurfaceLanguage(
         language=language,
         direction=LANGUAGE_DIRECTION[language],

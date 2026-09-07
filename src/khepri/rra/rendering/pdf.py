@@ -43,10 +43,10 @@ from jinja2 import Environment
 from khepri.rra.bundle import (
     LANGUAGE_DIRECTION,
     SURFACE_PDF,
-    ReportBundle,
     SurfaceContent,
 )
 from khepri.rra.narrative import REQUIRED_LANGUAGES
+from khepri.rra.renderable import RenderableBundle
 from khepri.rra.rendering.fonts import EmbeddedFont, load_report_fonts
 from khepri.rra.rendering.html import (
     FigureCell,
@@ -162,10 +162,10 @@ class PdfReportRenderer:
     def fonts(self) -> tuple[EmbeddedFont, ...]:
         return self._fonts
 
-    def render(self, bundle: ReportBundle) -> SurfaceContent:
+    def render(self, bundle: RenderableBundle) -> SurfaceContent:
         return self.render_pdf(bundle).content
 
-    def render_materialized(self, bundle: ReportBundle) -> MaterializedSurface:
+    def render_materialized(self, bundle: RenderableBundle) -> MaterializedSurface:
         surface = self.render_pdf(bundle)
         return MaterializedSurface(
             content=surface.content,
@@ -180,7 +180,7 @@ class PdfReportRenderer:
             ),
         )
 
-    def render_pdf(self, bundle: ReportBundle) -> PdfSurface:
+    def render_pdf(self, bundle: RenderableBundle) -> PdfSurface:
         """Print one document per governed language, and claim what they present."""
         template = self._environment.get_template(PDF_TEMPLATE_NAME)
         cells = {language: build_cells(bundle, language) for language in REQUIRED_LANGUAGES}
@@ -206,7 +206,7 @@ class PdfReportRenderer:
 
     def _context(
         self,
-        bundle: ReportBundle,
+        bundle: RenderableBundle,
         language: str,
         cells: tuple[FigureCell, ...],
     ) -> dict[str, object]:
